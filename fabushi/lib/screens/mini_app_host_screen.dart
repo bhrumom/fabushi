@@ -8,8 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:crypto/crypto.dart' as crypto_pkg;
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/auth/application/auth_model.dart';
 import '../features/flashcards/application/content_pipeline.dart';
@@ -67,6 +69,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   InAppWebViewController? _webViewController;
   bool _hostReady = false;
   final List<String> _pendingMessages = [];
+  String _miniAppSessionId = '';
+  String _miniAppNonce = '';
+
+  static const String _miniAppHostApiVersion = '2.0';
 
   bool get _trustedOfficial => widget.bot.source == MiniAppSource.official;
 
@@ -82,6 +88,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       repository: _flashcardRepository,
       aiService: _aiService,
     );
+    _resetMiniAppSession();
     _messageSub = widget.messageStream?.listen(_sendMessageToWeb);
   }
 
@@ -93,6 +100,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (oldEntryUrl != nextEntryUrl ||
         oldWidget.bot.stableMiniAppId != widget.bot.stableMiniAppId) {
       _hostReady = false;
+      _resetMiniAppSession();
       _pendingMessages.clear();
       if (mounted) {
         setState(() {
@@ -153,6 +161,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
           },
           onLoadStart: (controller, url) {
             _hostReady = false;
+            _resetMiniAppSession();
+            if (url != null && !_isAllowedMiniAppUrl(url)) {
+              _error = '小程序来源未获准：${url.host}';
+              controller.stopLoading();
+              if (mounted) setState(() => _loading = false);
+              return;
+            }
             if (mounted) {
               setState(() {
                 _loading = true;
@@ -221,6 +236,76 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     );
   }
 
+  void _resetMiniAppSession() {
+    _miniAppSessionId = 'ses_${DateTime.now().microsecondsSinceEpoch}';
+    _miniAppNonce = 'nonce_${DateTime.now().microsecondsSinceEpoch}_${widget.bot.stableMiniAppId.hashCode.abs()}';
+  }
+
+  bool _isAllowedMiniAppUrl(WebUri url) {
+    final host = url.host.toLowerCase();
+    final scheme = url.scheme.toLowerCase();
+    if (scheme != 'https' && host != 'localhost' && host != '127.0.0.1') {
+      return false;
+    }
+    if (host == 'fabushi.ombhrum.com' || host == 'api.ombhrum.com') return true;
+    if (host == 'localhost' || host == '127.0.0.1') return true;
+    final explicit = widget.bot.stableMiniAppEntryUrl.trim();
+    if (explicit.isEmpty) return false;
+    final explicitUri = Uri.tryParse(explicit);
+    return explicitUri?.host.toLowerCase() == host;
+  }
+
+  Map<String, dynamic> _signedInitData() {
+    final auth = Provider.of<AuthModel?>(context, listen: false);
+    final user = auth?.currentUser;
+    final issuedAt = DateTime.now().toUtc().toIso8601String();
+    final payload = <String, dynamic>{
+      'hostApiVersion': _miniAppHostApiVersion,
+      'userId': user?.userNo ?? user?.username ?? 'anonymous',
+      'username': user?.username,
+      'botId': widget.bot.stableBotId,
+      'miniAppId': widget.bot.stableMiniAppId,
+      'origin': Uri.tryParse(_entryUrl)?.origin,
+      'sessionId': _miniAppSessionId,
+      'auth_date': issuedAt,
+      'nonce': _miniAppNonce,
+    };
+    final canonical = jsonEncode(payload);
+    final seed = auth?.authToken?.isNotEmpty == true
+        ? auth!.authToken
+        : '${widget.bot.stableMiniAppId}:$_miniAppSessionId';
+    final signature = crypto_pkg.Hmac(crypto_pkg.sha256, utf8.encode(seed))
+        .convert(utf8.encode(canonical))
+        .toString();
+    return {
+      ...payload,
+      'hash': signature,
+      'signature': signature,
+      'signatureAlgorithm': 'hmac-sha256',
+    };
+  }
+
+  Map<String, dynamic> _hostErrorResponse(String requestId, Object error) {
+    final code = _errorCodeFor(error);
+    final message = _friendlyError(error);
+    final data = _errorDataFor(error);
+    return {
+      'ok': false,
+      'requestId': requestId,
+      'hostApiVersion': _miniAppHostApiVersion,
+      'error': {
+        'code': code,
+        'message': message,
+        'recoverable': code != 'permission_denied',
+        'retryAfterMs': 0,
+        if (data != null) 'details': data,
+      },
+      'errorCode': code,
+      'message': message,
+      if (data != null) 'data': data,
+    };
+  }
+
   String get _entryUrl {
     return _entryUrlFor(widget.bot);
   }
@@ -233,19 +318,29 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
 
   String get _hostSdkScript {
+    final initData = jsonEncode(_signedInitData());
+    final hostApiVersion = jsonEncode(_miniAppHostApiVersion);
     return '''
 (function () {
-  if (window.FabushiMiniApp) return;
+  var initData = $initData;
+  var hostApiVersion = $hostApiVersion;
   window.FabushiMiniApp = {
-    invoke: function(method, params) {
+    ready: true,
+    hostApiVersion: hostApiVersion,
+    initData: JSON.stringify(initData),
+    initDataUnsafe: initData,
+    invoke: function(method, params, meta) {
+      var requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
       return window.flutter_inappwebview.callHandler('FabushiMiniAppInvoke', {
+        requestId: requestId,
+        hostApiVersion: hostApiVersion,
         method: method,
-        params: params || {}
+        params: params || {},
+        meta: Object.assign({ miniAppId: initData.miniAppId }, meta || {})
       });
-    },
-    ready: true
+    }
   };
-  window.dispatchEvent(new CustomEvent('fabushi-miniapp-ready'));
+  window.dispatchEvent(new CustomEvent('fabushi-miniapp-ready', { detail: { hostApiVersion: hostApiVersion, initData: initData } }));
 })();
 ''';
   }
@@ -261,17 +356,22 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       request['params'] as Map? ?? const {},
     );
 
+    if (method.isEmpty) {
+      final error = const MiniAppHostException('invalid_request', 'method 不能为空');
+      return _hostErrorResponse(requestId, error);
+    }
+
     try {
       final data = await _dispatch(method, params);
-      return {'ok': true, 'requestId': requestId, 'data': data};
-    } catch (error) {
       return {
-        'ok': false,
+        'ok': true,
         'requestId': requestId,
-        'errorCode': _errorCodeFor(error),
-        'message': _friendlyError(error),
-        if (_errorDataFor(error) != null) 'data': _errorDataFor(error),
+        'hostApiVersion': _miniAppHostApiVersion,
+        'data': data,
+        'warnings': const <String>[],
       };
+    } catch (error) {
+      return _hostErrorResponse(requestId, error);
     }
   }
 
@@ -294,6 +394,36 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _requireLogin();
       case 'auth.getAccessToken':
         return _authAccessToken();
+      case 'auth.getInitData':
+        return _signedInitData();
+      case 'auth.getScopedToken':
+        return _scopedToken(params);
+      case 'payments.createInvoice':
+        return _createInvoice(params);
+      case 'payments.openInvoice':
+        return _openInvoice(params);
+      case 'payments.queryInvoice':
+        return _queryInvoice(params);
+      case 'wallet.getBalance':
+      case 'payments.getWalletBalance':
+        return _walletBalance(params);
+      case 'storage.getItem':
+        return _storageGetItem(params);
+      case 'storage.setItem':
+        return _storageSetItem(params);
+      case 'storage.removeItem':
+        return _storageRemoveItem(params);
+      case 'storage.getKeys':
+        return _storageGetKeys(params);
+      case 'ui.showPopup':
+        return _showPopup(params);
+      case 'ui.showConfirm':
+        return _showConfirm(params);
+      case 'ui.setMainButton':
+      case 'ui.setBackButton':
+      case 'ui.hapticImpact':
+      case 'ui.close':
+        return {'ok': true};
       case 'payments.alipay.createOrder':
         return _createAlipayOrder(params);
       case 'payments.alipay.pay':
@@ -367,7 +497,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _appContext() {
     return {
-      'hostApiVersion': '1.2',
+      'hostApiVersion': _miniAppHostApiVersion,
       'bot': {
         'botId': widget.bot.stableBotId,
         'title': widget.bot.title,
@@ -377,11 +507,22 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       },
       'platform': _platformLabel,
       'trustedOfficial': _trustedOfficial,
+      'sessionId': _miniAppSessionId,
+      'initData': _signedInitData(),
     };
   }
 
   List<String> _capabilities() {
     final base = <String>{'app.context', 'bot.chat', ...widget.bot.permissions};
+    if (base.contains('payments.alipay')) {
+      base.addAll([
+        'payments.createInvoice',
+        'payments.openInvoice',
+        'payments.queryInvoice',
+        'wallet.getBalance',
+      ]);
+    }
+    base.addAll(['auth.getInitData', 'storage.device', 'ui.popup']);
     if (!AiBackendPolicy.isDesktopNative) {
       base.removeAll(['openclaw.chat', 'local.loopback', 'desktop.control']);
     }
@@ -399,11 +540,11 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _hostApiSpec() {
     return {
-      'hostApiVersion': '1.2',
+      'hostApiVersion': _miniAppHostApiVersion,
       'invokePattern': 'window.FabushiMiniApp.invoke(method, params)',
       'permissionGroups': {
         'identity': ['auth.session', 'auth.token'],
-        'payments': ['payments.alipay'],
+        'payments': ['payments.createInvoice', 'payments.openInvoice', 'wallet.getBalance', 'payments.alipay'],
         'dharma': ['dharma.share', 'wifi.hotspot', 'local.loopback'],
         'creation': ['flashcards.create', 'platform.publish'],
         'localAutomation': [
@@ -511,6 +652,170 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         },
       ],
     };
+  }
+
+  Map<String, dynamic> _scopedToken(Map<String, dynamic> params) {
+    _requirePermission('auth.session');
+    final scope = params['scope']?.toString().trim() ?? '';
+    final reason = params['reason']?.toString().trim() ?? '';
+    if (scope.isEmpty || reason.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'scope 和 reason 不能为空');
+    }
+    final initData = _signedInitData();
+    return {
+      'token': base64Url.encode(utf8.encode(jsonEncode(initData))),
+      'tokenType': 'FabushiInitData',
+      'scope': scope,
+      'expiresAt': DateTime.now().toUtc().add(const Duration(minutes: 10)).toIso8601String(),
+    };
+  }
+
+  Future<Map<String, dynamic>> _createInvoice(Map<String, dynamic> params) async {
+    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+    final productId = params['productId']?.toString().trim().isNotEmpty == true
+        ? params['productId'].toString().trim()
+        : params['sku']?.toString().trim() ?? params['plan']?.toString().trim() ?? '';
+    if (productId.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'productId 或 sku 不能为空');
+    }
+    if (currency == 'CNY') {
+      final order = await _createAlipayOrder({...params, 'productId': productId, 'plan': productId});
+      return {
+        ...order,
+        'id': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'invoiceId': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'sku': productId,
+        'currency': currency,
+        'status': 'created',
+      };
+    }
+    if (currency == 'FUDE_JIN') {
+      return {
+        'id': 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'invoiceId': 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'sku': productId,
+        'amount': params['amount'],
+        'currency': currency,
+        'status': 'created',
+        'requiresBackendWallet': true,
+      };
+    }
+    throw MiniAppHostException('invoice_unsupported_currency', '不支持的账单币种：$currency');
+  }
+
+  Future<Map<String, dynamic>> _openInvoice(Map<String, dynamic> params) async {
+    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+    if (currency == 'FUDE_JIN') {
+      throw const MiniAppHostException(
+        'wallet_backend_required',
+        '福德金支付需要连接云端钱包接口',
+        data: {'action': 'open_wallet'},
+      );
+    }
+    return _payWithAlipay(params);
+  }
+
+  Future<Map<String, dynamic>> _queryInvoice(Map<String, dynamic> params) async {
+    final orderId = params['orderId']?.toString().trim() ?? params['invoiceId']?.toString().trim() ?? '';
+    if (orderId.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'invoiceId/orderId 不能为空');
+    }
+    return _queryAlipayOrder({'orderId': orderId});
+  }
+
+  Map<String, dynamic> _walletBalance(Map<String, dynamic> params) {
+    return {
+      'balance': 0,
+      'lockedBalance': 0,
+      'currency': params['currency']?.toString().trim().isNotEmpty == true
+          ? params['currency'].toString().trim()
+          : 'FUDE_JIN',
+      'source': 'host-local-placeholder',
+    };
+  }
+
+  String _storageKey(Map<String, dynamic> params) {
+    final namespace = params['namespace']?.toString().trim().isNotEmpty == true
+        ? params['namespace'].toString().trim()
+        : 'device';
+    final key = params['key']?.toString().trim() ?? '';
+    if (key.isEmpty) throw const MiniAppHostException('invalid_request', 'key 不能为空');
+    return 'miniapp.${widget.bot.stableMiniAppId}.$namespace.$key';
+  }
+
+  Future<Map<String, dynamic>> _storageGetItem(Map<String, dynamic> params) async {
+    final prefs = await SharedPreferences.getInstance();
+    return {'value': prefs.getString(_storageKey(params))};
+  }
+
+  Future<Map<String, dynamic>> _storageSetItem(Map<String, dynamic> params) async {
+    final value = params['value']?.toString() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_storageKey(params), value);
+    return {'ok': true};
+  }
+
+  Future<Map<String, dynamic>> _storageRemoveItem(Map<String, dynamic> params) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey(params));
+    return {'ok': true};
+  }
+
+  Future<Map<String, dynamic>> _storageGetKeys(Map<String, dynamic> params) async {
+    final namespace = params['namespace']?.toString().trim().isNotEmpty == true
+        ? params['namespace'].toString().trim()
+        : 'device';
+    final prefix = params['prefix']?.toString().trim() ?? '';
+    final fullPrefix = 'miniapp.${widget.bot.stableMiniAppId}.$namespace.';
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs
+        .getKeys()
+        .where((key) => key.startsWith(fullPrefix))
+        .map((key) => key.substring(fullPrefix.length))
+        .where((key) => prefix.isEmpty || key.startsWith(prefix))
+        .toList()
+      ..sort();
+    return {'keys': keys};
+  }
+
+  Future<Map<String, dynamic>> _showPopup(Map<String, dynamic> params) async {
+    if (!mounted) return {'shown': false};
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(params['title']?.toString() ?? '提示'),
+        content: Text(params['message']?.toString() ?? ''),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(params['buttonText']?.toString() ?? '知道了'),
+          ),
+        ],
+      ),
+    );
+    return {'shown': true};
+  }
+
+  Future<Map<String, dynamic>> _showConfirm(Map<String, dynamic> params) async {
+    if (!mounted) return {'confirmed': false};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(params['title']?.toString() ?? '确认操作'),
+        content: Text(params['message']?.toString() ?? ''),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(params['cancelText']?.toString() ?? '取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(params['confirmText']?.toString() ?? '确认'),
+          ),
+        ],
+      ),
+    );
+    return {'confirmed': confirmed == true};
   }
 
   Map<String, dynamic> _authSession() {
