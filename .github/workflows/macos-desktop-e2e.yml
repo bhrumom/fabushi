@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 35
     env:
-      EVIDENCE_DIR: ${{ runner.temp }}/macos-desktop-e2e-evidence
+      EVIDENCE_DIR: ${{ github.workspace }}/macos-desktop-e2e-evidence
     steps:
       - name: Checkout test helpers
         uses: actions/checkout@v5
