@@ -1,16 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BookOpenCheck, Layers, Sparkles, WandSparkles } from "lucide-react";
+import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import "./miniapps.css";
-
-async function invokeHost(method: string, params: Record<string, any> = {}) {
-  const sdk = (window as any).FabushiMiniApp;
-  if (!sdk?.invoke) throw new Error("SDK 尚未就绪");
-  const res = await sdk.invoke(method, params);
-  if (!res?.ok) throw new Error(res?.message || "宿主调用失败");
-  return res.data;
-}
 
 export default function FlashcardsApp() {
   const [text, setText] = useState("");
@@ -22,18 +15,22 @@ export default function FlashcardsApp() {
 
   const log = (msg: string) => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
+  useEffect(() => {
+    void bootMiniApp("official.flashcards", "背诵闪卡");
+  }, []);
+
   const handleCreate = async () => {
     const fullText = text.trim();
     if (!fullText) {
       log("请输入需要制卡的内容");
       return;
     }
-    
+
     setLoading(true);
     setDeck(null);
     try {
       log(`正在使用${mode === "ai" ? "AI 制卡" : "随机挖空"}模式...`);
-      const data = await invokeHost("flashcards.createDeck", {
+      const data = await fbApp.invoke<any>("flashcards.createDeck", {
         title: "背诵闪卡",
         text: fullText,
         mode,
@@ -42,8 +39,8 @@ export default function FlashcardsApp() {
       });
       setDeck(data.deck);
       log(data.message || `制卡完成：${data.deck?.cardCount || 0} 张`);
-    } catch (error: any) {
-      log(error.message || "制卡失败");
+    } catch (error) {
+      log(hostErrorMessage(error, "制卡失败"));
     } finally {
       setLoading(false);
     }
@@ -52,9 +49,9 @@ export default function FlashcardsApp() {
   const handleOpenDeck = async () => {
     if (!deck?.id) return;
     try {
-      await invokeHost("flashcards.openDeck", { deckId: deck.id });
-    } catch (error: any) {
-      log(error.message || "打开卡组失败");
+      await fbApp.invoke("flashcards.openDeck", { deckId: deck.id });
+    } catch (error) {
+      log(hostErrorMessage(error, "打开卡组失败"));
     }
   };
 
