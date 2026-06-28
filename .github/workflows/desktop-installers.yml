@@ -418,7 +418,8 @@ jobs:
       - name: Run macOS package CLI smoke
         if: matrix.target == 'macos'
         shell: bash
-        run: build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+        run: |
+          build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
           build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Import macOS Developer ID certificate
@@ -541,7 +542,8 @@ jobs:
       - name: Run Linux package CLI smoke
         if: matrix.target == 'linux'
         shell: bash
-        run: build/linux/x64/release/bundle/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+        run: |
+          build/linux/x64/release/bundle/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
           build/linux/x64/release/bundle/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Package Linux installers
@@ -589,7 +591,8 @@ jobs:
       - name: Run Windows package CLI smoke
         if: matrix.target == 'windows'
         shell: pwsh
-        run: .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe gateway-smoke --timeout-seconds 120 --json
+        run: |
+          .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe gateway-smoke --timeout-seconds 120 --json
           .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe miniapp-smoke --json
 
       - name: Package Windows installer
