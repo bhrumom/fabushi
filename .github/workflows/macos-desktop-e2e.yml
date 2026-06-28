@@ -172,24 +172,24 @@ jobs:
         run: |
           set -euo pipefail
           cat > "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" <<'EOF'
-Mini app E2E chain required by the hourly guard:
-- enter
-- load
-- core interaction
-- return to desktop
-- exception recovery
-- desktop/mini-app state consistency
+          Mini app E2E chain required by the hourly guard:
+          - enter
+          - load
+          - core interaction
+          - return to desktop
+          - exception recovery
+          - desktop/mini-app state consistency
 
-Current automated evidence in this workflow:
-- macOS release package download and checksum evidence
-- app bundle structure evidence
-- packaged CLI doctor evidence
-- OpenClaw gateway route evidence
-- GUI launch screenshot evidence when earlier package checks allow the app to launch
+          Current automated evidence in this workflow:
+          - macOS release package download and checksum evidence
+          - app bundle structure evidence
+          - packaged CLI doctor evidence
+          - OpenClaw gateway route evidence
+          - GUI launch screenshot evidence when earlier package checks allow the app to launch
 
-Coverage gap:
-No stable macOS accessibility selector map, deep link, CLI test hook, or scripted mini-app route contract is currently available in the release package. This workflow preserves the gap as explicit evidence instead of claiming mini-app coverage passed.
-EOF
+          Coverage gap:
+          No stable macOS accessibility selector map, deep link, CLI test hook, or scripted mini-app route contract is currently available in the release package. This workflow preserves the gap as explicit evidence instead of claiming mini-app coverage passed.
+          EOF
           cat "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write result summary
