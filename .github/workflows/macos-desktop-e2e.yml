@@ -71,8 +71,8 @@ jobs:
             echo "Resolved release is not a desktop release: $tag" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
             exit 1
           fi
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isLatest,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
-          jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nLatest: \(.isLatest)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isPrerelease,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
+          jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nPrerelease: \(.isPrerelease)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "- Release: \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
 
