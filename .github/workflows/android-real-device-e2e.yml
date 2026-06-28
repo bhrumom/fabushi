@@ -86,12 +86,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          lfs: true
+          lfs: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+            !/fabushi/temp_models/**
 
       - name: Set up Java
         uses: actions/setup-java@v5
