@@ -11,6 +11,7 @@ import { T0278_JUAN_5_BODHISATTVA_MINGNAN_MUSHOU_MERIT_BENEFITS } from "./faliu-
 import { T0278_JUAN_5_BODHISATTVA_MINGNAN_JINSHOU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan5-bodhisattva-mingnan-jinshou";
 import { T0278_JUAN_5_BODHISATTVA_MINGNAN_FASHOU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan5-bodhisattva-mingnan-fashou";
 import { T0278_JUAN_5_BODHISATTVA_MINGNAN_ZHISHOU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan5-bodhisattva-mingnan-zhishou";
+import { T0278_JUAN_5_BODHISATTVA_MINGNAN_XIANSHOU_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan5-bodhisattva-mingnan-xianshou";
 
 export const T0278_JUAN_5_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...T0278_JUAN_5_BASE_MERIT_BENEFITS,
@@ -25,4 +26,5 @@ export const T0278_JUAN_5_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...T0278_JUAN_5_BODHISATTVA_MINGNAN_JINSHOU_MERIT_BENEFITS,
   ...T0278_JUAN_5_BODHISATTVA_MINGNAN_FASHOU_MERIT_BENEFITS,
   ...T0278_JUAN_5_BODHISATTVA_MINGNAN_ZHISHOU_MERIT_BENEFITS,
+  ...T0278_JUAN_5_BODHISATTVA_MINGNAN_XIANSHOU_MERIT_BENEFITS,
 ];
