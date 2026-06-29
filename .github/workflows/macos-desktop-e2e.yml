@@ -88,6 +88,55 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SHA256SUMS.txt' --dir "$EVIDENCE_DIR/release" --clobber || true
           find "$EVIDENCE_DIR/release" -maxdepth 1 -type f -print | sort | tee "$EVIDENCE_DIR/logs/02-downloaded-assets.log"
 
+      - name: Upgrade compatibility smoke from previous desktop release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -uo pipefail
+          status=0
+          arch="$(uname -m)"
+          case "$arch" in
+            arm64) previous_zip_pattern='*macos-arm64.zip' ;;
+            *) previous_zip_pattern='*macos-x64.zip' ;;
+          esac
+          previous_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 --json tagName --jq '[.[].tagName | select(startswith("desktop-") and . != env.RELEASE_TAG)][0] // ""')"
+          if [ -z "$previous_tag" ]; then
+            echo "No previous desktop release found; upgrade compatibility smoke skipped." | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+            exit 0
+          fi
+          previous_dir="$RUNNER_TEMP/previous-release"
+          previous_install="$RUNNER_TEMP/previous-installed"
+          mkdir -p "$previous_dir" "$previous_install"
+          echo "Previous desktop release: $previous_tag" | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+          gh release download "$previous_tag" --repo "$GITHUB_REPOSITORY" --pattern "$previous_zip_pattern" --dir "$previous_dir" --clobber >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
+          previous_zip="$(find "$previous_dir" -maxdepth 1 -name "$previous_zip_pattern" -print -quit)"
+          if [ -z "$previous_zip" ]; then
+            echo "Previous macOS ZIP asset not found for pattern $previous_zip_pattern" | tee -a "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+            exit 1
+          fi
+          ditto -x -k "$previous_zip" "$previous_install" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
+          previous_app="$(find "$previous_install" -maxdepth 3 -name '*.app' -type d -print -quit)"
+          if [ -z "$previous_app" ]; then
+            echo "Previous .app bundle not found after unzip" | tee -a "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+            exit 1
+          fi
+          echo "Previous app: $previous_app" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+          xattr -dr com.apple.quarantine "$previous_app" 2>/dev/null || true
+          screencapture -x "$EVIDENCE_DIR/screenshots/04-before-previous-launch.png" || true
+          open -n "$previous_app" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
+          sleep 8
+          pgrep -fl global_dharma_sharing >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
+          screencapture -x "$EVIDENCE_DIR/screenshots/05-after-previous-launch.png" || true
+          pkill -f global_dharma_sharing >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || true
+          sleep 2
+          if [ "$status" -ne 0 ]; then
+            echo "Previous desktop release launch failed during upgrade compatibility smoke." >&2
+            exit "$status"
+          fi
+          echo "Previous desktop release launch succeeded before current release validation." >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+
       - name: Verify checksums and install app
         id: install
         shell: bash
@@ -211,6 +260,7 @@ jobs:
             echo "## Coverage"
             echo "- Install/package/checksum: captured"
             echo "- Startup/process: captured when package checks permit launch"
+            echo "- Upgrade compatibility: previous desktop Release launch captured before current Release validation"
             echo "- Gateway core route: captured by packaged CLI"
             echo "- Mini-app host contract: captured by json/08-miniapp-smoke.json"
             echo "- Mini-app chain: enter/load/core interaction/return/exception recovery/state consistency captured by CLI contract smoke"
