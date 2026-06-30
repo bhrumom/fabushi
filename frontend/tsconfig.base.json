@@ -25,6 +25,9 @@
       ],
       "@fabushi/api-client": [
         "packages/api-client/src/index.ts"
+      ],
+      "@fabushi/miniapp-sdk": [
+        "packages/miniapp-sdk/src/index.ts"
       ]
     }
   }
