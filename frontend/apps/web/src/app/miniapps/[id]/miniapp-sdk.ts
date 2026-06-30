@@ -1,6 +1,27 @@
 "use client";
 
-export const MINIAPP_SDK_VERSION = "1.4.0";
+import {
+  MINIAPP_HOST_API_VERSION,
+  MINIAPP_HOST_CAPABILITIES,
+  MINIAPP_HOST_METHODS,
+  MINIAPP_HOST_NATIVE_CAPABILITIES,
+  MINIAPP_HOST_SDK_VERSION,
+  MINIAPP_HOST_SPEC,
+  type MiniAppCapabilityId,
+  type MiniAppHostMethod,
+} from "./miniapp-host-spec.generated";
+
+export {
+  MINIAPP_HOST_API_VERSION,
+  MINIAPP_HOST_CAPABILITIES,
+  MINIAPP_HOST_METHODS,
+  MINIAPP_HOST_NATIVE_CAPABILITIES,
+  MINIAPP_HOST_SPEC,
+  type MiniAppCapabilityId,
+  type MiniAppHostMethod,
+};
+
+export const MINIAPP_SDK_VERSION = MINIAPP_HOST_SDK_VERSION;
 
 export type HostInvokeResponse<T = any> = {
   ok?: boolean;
@@ -252,7 +273,7 @@ export function isHostErrorCode(error: unknown, ...codes: string[]) {
 }
 
 export async function invokeHost<T = any>(
-  method: string,
+  method: MiniAppHostMethod | string,
   params: Record<string, any> = {},
 ): Promise<T> {
   const sdk = hostSdk();
@@ -330,8 +351,48 @@ export const miniAppHost = {
   app: {
     getContext: () => invokeHost("app.getContext"),
     getCapabilities: () => invokeHost<{ capabilities?: string[] }>("app.getCapabilities"),
+    requestCapabilities: (capabilities: Array<string | { id: string; reason?: string }>) =>
+      invokeHost<{ capabilities?: Array<Record<string, any>> }>("app.requestCapabilities", { capabilities }),
     getHostApiSpec: () => invokeHost("app.getHostApiSpec"),
     getTheme: () => invokeHost("app.getTheme"),
+  },
+  ui: {
+    alert: (params: { title?: string; message?: string; text?: string; buttonText?: string }) =>
+      invokeHost("ui.alert", params),
+    confirm: (params: { title?: string; message?: string; text?: string; confirmText?: string; cancelText?: string }) =>
+      invokeHost<{ confirmed?: boolean }>("ui.confirm", params),
+    mainButton: {
+      set: (params: { text?: string; visible?: boolean; enabled?: boolean; loading?: boolean }) =>
+        invokeHost("ui.mainButton.set", params),
+    },
+  },
+  haptics: {
+    impact: (style: "light" | "medium" | "heavy" = "light") =>
+      invokeHost("haptics.impact", { style }),
+    notification: (type: "success" | "warning" | "error" = "success") =>
+      invokeHost("haptics.notification", { type }),
+    selection: () => invokeHost("haptics.selection", {}),
+  },
+  device: {
+    biometrics: {
+      authenticate: (params: Record<string, any> = {}) =>
+        invokeHost("device.biometrics.authenticate", params),
+    },
+    qrScanner: {
+      scan: (params: Record<string, any> = {}) =>
+        invokeHost("device.qrScanner.scan", params),
+    },
+  },
+  cloud: {
+    kv: {
+      get: (key: string) => invokeHost<{ key: string; value?: any }>("cloud.kv.get", { key }),
+      set: (key: string, value: any) => invokeHost("cloud.kv.set", { key, value }),
+      delete: (key: string) => invokeHost("cloud.kv.delete", { key }),
+    },
+  },
+  share: {
+    chat: (params: { title?: string; text?: string; url?: string; data?: any }) =>
+      invokeHost("share.chat.send", params),
   },
   auth: {
     getSession: () => invokeHost("auth.getSession"),
@@ -366,12 +427,22 @@ export const miniAppHost = {
     onCommand: onBotCommand,
     exposeCommand: exposeBotCommand,
   },
-  dharma: {
-    getSendStatus: () => invokeHost("dharma.getSendStatus"),
-    setSendOptions: (params: Record<string, any>) => invokeHost("dharma.setSendOptions", params),
-    selectHighEnergyMaterial: () => invokeHost("dharma.selectHighEnergyMaterial"),
-    startGlobalSend: (params: Record<string, any>) => invokeHost("dharma.startGlobalSend", params),
-    stopGlobalSend: () => invokeHost("dharma.stopGlobalSend"),
+  network: {
+    udp: {
+      open: (params: Record<string, any>) => invokeHost("network.udp.open", params),
+      send: (params: Record<string, any>) => invokeHost("network.udp.send", params),
+      broadcast: (params: Record<string, any>) => invokeHost("network.udp.broadcast", params),
+      close: (params: Record<string, any>) => invokeHost("network.udp.close", params),
+    },
+    interfaces: {
+      list: (params: Record<string, any> = {}) => invokeHost("network.interfaces.list", params),
+    },
+  },
+  system: {
+    keepAwake: (params: Record<string, any>) => invokeHost("system.keepAwake", params),
+  },
+  hotspot: {
+    openSettings: (params: Record<string, any> = {}) => invokeHost("hotspot.openSettings", params),
   },
   flashcards: {
     createDeck: (params: Record<string, any>) => invokeHost("flashcards.createDeck", params),

@@ -1,0 +1,16 @@
+[package]
+name = "fabushi-miniapp-core"
+version = "0.1.0"
+edition = "2021"
+description = "Fabushi Mini App host capability contract, policy core, and SDK schema generator."
+publish = false
+
+[lib]
+name = "fabushi_miniapp_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "miniapp-codegen"
+path = "src/bin/miniapp-codegen.rs"
+
+[dependencies]
