@@ -996,10 +996,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
 
   Map<String, dynamic> _theme() {
-    return {
-      'bg': '#1E1E1E',
-      'text': '#FFFFFF',
-    };
+    return {'bg': '#1E1E1E', 'text': '#FFFFFF'};
   }
 
   Map<String, dynamic> _signedInitData() {
@@ -1018,11 +1015,12 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
     final canonical = jsonEncode(payload);
     final seed = auth?.authToken?.isNotEmpty == true
-        ? auth!.authToken
+        ? auth!.authToken!
         : '${widget.bot.stableMiniAppId}:$_cacheBuster';
-    final signature = crypto_pkg.Hmac(crypto_pkg.sha256, utf8.encode(seed))
-        .convert(utf8.encode(canonical))
-        .toString();
+    final signature = crypto_pkg.Hmac(
+      crypto_pkg.sha256,
+      utf8.encode(seed),
+    ).convert(utf8.encode(canonical)).toString();
     return {
       ...payload,
       'hash': signature,
@@ -1032,23 +1030,40 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
 
   Map<String, dynamic> _scopedToken(Map<String, dynamic> params) {
-    throw const MiniAppHostException('unsupported_auth', '暂时不支持生成带有短时过期的 scoped token');
+    throw const MiniAppHostException(
+      'unsupported_auth',
+      '暂时不支持生成带有短时过期的 scoped token',
+    );
   }
 
-  Future<Map<String, dynamic>> _createInvoice(Map<String, dynamic> params) async {
-    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+  Future<Map<String, dynamic>> _createInvoice(
+    Map<String, dynamic> params,
+  ) async {
+    final currency =
+        params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
     final productId = params['productId']?.toString().trim().isNotEmpty == true
         ? params['productId'].toString().trim()
-        : params['sku']?.toString().trim() ?? params['plan']?.toString().trim() ?? '';
+        : params['sku']?.toString().trim() ??
+              params['plan']?.toString().trim() ??
+              '';
     if (productId.isEmpty) {
-      throw const MiniAppHostException('invalid_request', 'productId 或 sku 不能为空');
+      throw const MiniAppHostException(
+        'invalid_request',
+        'productId 或 sku 不能为空',
+      );
     }
     if (currency == 'CNY') {
-      final order = await _createAlipayOrder({...params, 'productId': productId, 'plan': productId});
+      final order = await _createAlipayOrder({
+        ...params,
+        'productId': productId,
+        'plan': productId,
+      });
       return {
         ...order,
-        'id': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
-        'invoiceId': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'id':
+            order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'invoiceId':
+            order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
         'sku': productId,
         'currency': currency,
         'status': 'created',
@@ -1065,11 +1080,15 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         'requiresBackendWallet': true,
       };
     }
-    throw MiniAppHostException('invoice_unsupported_currency', '不支持的账单币种：$currency');
+    throw MiniAppHostException(
+      'invoice_unsupported_currency',
+      '不支持的账单币种：$currency',
+    );
   }
 
   Future<Map<String, dynamic>> _openInvoice(Map<String, dynamic> params) async {
-    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+    final currency =
+        params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
     if (currency == 'FUDE_GOLD') {
       // 兼容 FUDE_GOLD (旧称 FUDE_JIN) 原生拉起
       return _requestFudeGoldPayment(params);
@@ -1077,10 +1096,18 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return _payWithAlipay(params);
   }
 
-  Future<Map<String, dynamic>> _queryInvoice(Map<String, dynamic> params) async {
-    final orderId = params['orderId']?.toString().trim() ?? params['invoiceId']?.toString().trim() ?? '';
+  Future<Map<String, dynamic>> _queryInvoice(
+    Map<String, dynamic> params,
+  ) async {
+    final orderId =
+        params['orderId']?.toString().trim() ??
+        params['invoiceId']?.toString().trim() ??
+        '';
     if (orderId.isEmpty) {
-      throw const MiniAppHostException('invalid_request', 'invoiceId/orderId 不能为空');
+      throw const MiniAppHostException(
+        'invalid_request',
+        'invoiceId/orderId 不能为空',
+      );
     }
     return _queryAlipayOrder({'orderId': orderId});
   }
