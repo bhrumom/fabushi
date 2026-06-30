@@ -101,6 +101,7 @@ export * from "./faliu-merit-benefits-t0278-juan5";
 export * from "./faliu-merit-benefits-t0278-juan6";
 export * from "./faliu-merit-benefits-t0278-juan6-xianshou-immovable-consecration";
 export * from "./faliu-merit-benefits-t0278-juan7";
+export * from "./faliu-merit-benefits-t0278-juan7-faith-upholding-conclusion";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -205,6 +206,7 @@ import * as t0278Juan5 from "./faliu-merit-benefits-t0278-juan5";
 import * as t0278Juan6 from "./faliu-merit-benefits-t0278-juan6";
 import * as t0278Juan6XianshouImmovableConsecration from "./faliu-merit-benefits-t0278-juan6-xianshou-immovable-consecration";
 import * as t0278Juan7 from "./faliu-merit-benefits-t0278-juan7";
+import * as t0278Juan7FaithUpholdingConclusion from "./faliu-merit-benefits-t0278-juan7-faith-upholding-conclusion";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -350,7 +352,10 @@ const overrideMeritBenefits = {
     ...t0278Juan6.T0278_JUAN_6_MERIT_BENEFITS,
     ...t0278Juan6XianshouImmovableConsecration.T0278_JUAN_6_XIANSHOU_IMMOVABLE_CONSECRATION_MERIT_BENEFITS,
   ],
-  "T0278:7": t0278Juan7.T0278_JUAN_7_MERIT_BENEFITS,
+  "T0278:7": [
+    ...t0278Juan7.T0278_JUAN_7_MERIT_BENEFITS,
+    ...t0278Juan7FaithUpholdingConclusion.T0278_JUAN_7_XIANSHOU_FAITH_UPHOLDING_CONCLUSION_MERIT_BENEFITS,
+  ],
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
