@@ -60,6 +60,28 @@ class HotspotManagerService {
     return HotspotResult(success: false, message: '当前平台不支持');
   }
 
+  /// 只打开或引导用户进入热点设置，不替业务层决定是否开启热点。
+  Future<HotspotResult> openHotspotSettings() async {
+    if (kIsWeb) {
+      return HotspotResult(success: false, message: 'Web 平台不支持热点设置');
+    }
+
+    try {
+      if (Platform.isAndroid) {
+        return await _openAndroidHotspotSettings();
+      } else if (Platform.isIOS) {
+        return await _enableIOSHotspot();
+      } else if (Platform.isMacOS) {
+        return await _enableMacOSHotspot();
+      }
+    } catch (e) {
+      debugPrint('打开热点设置失败: $e');
+      return HotspotResult(success: false, message: '打开热点设置失败: $e');
+    }
+
+    return HotspotResult(success: false, message: '当前平台不支持');
+  }
+
   /// 关闭热点
   Future<void> disableHotspot() async {
     if (kIsWeb) return;
