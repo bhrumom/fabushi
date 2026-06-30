@@ -8,9 +8,11 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/app_config.dart';
 import '../features/auth/application/auth_model.dart';
@@ -21,6 +23,7 @@ import '../features/flashcards/domain/flashcard_models.dart';
 import '../features/flashcards/presentation/flashcard_study_screen.dart';
 import '../models/file_transfer_model.dart'
     if (dart.library.html) '../models/file_transfer_model_web.dart';
+import '../models/mini_app_host_spec_generated.dart';
 import '../models/mini_app_model.dart';
 import '../services/ai_backend_policy.dart';
 import '../services/alipay_service.dart'
@@ -28,6 +31,8 @@ import '../services/alipay_service.dart'
 import '../services/dacheng_ai_service.dart';
 import '../services/desktop_control/desktop_control_bridge.dart';
 import '../services/dharma_publish_service.dart';
+import '../services/hotspot_manager_service.dart';
+import '../services/miniapp/miniapp_host_policy.dart';
 import '../services/membership_service.dart';
 import '../services/openclaw/openclaw_runtime.dart';
 import '../services/project_service.dart';
@@ -173,10 +178,14 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   final DharmaPublishService _publishService = DharmaPublishService();
   final MembershipService _membershipService = MembershipService();
   final AlipayService _alipayService = AlipayService();
+  final HotspotManagerService _hotspotManager = HotspotManagerService();
   final http.Client _httpClient = http.Client();
+  final Map<String, RawDatagramSocket> _udpSockets = {};
   late final FlashcardRepository _flashcardRepository;
   late final ContentPipeline _contentPipeline;
   late final FlashcardService _flashcardService;
+  var _udpSocketSequence = 0;
+  var _keepAwakeEnabled = false;
   bool _loading = true;
   String? _error;
 
@@ -229,6 +238,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   @override
   void dispose() {
     widget.controller?._detach(this);
+    for (final socket in _udpSockets.values) {
+      socket.close();
+    }
+    _udpSockets.clear();
     _httpClient.close();
     super.dispose();
   }
@@ -660,14 +673,45 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     window.dispatchEvent(new CustomEvent('fabushi-miniapp-command', { detail: detail }));
   }
   window.FabushiMiniApp = {
-    version: '1.4.0',
+    version: '$miniAppHostSdkVersion',
     invoke: invoke,
     __deliverCommand: deliverFromHost,
     app: {
       getContext: function() { return invoke('app.getContext'); },
       getCapabilities: function() { return invoke('app.getCapabilities'); },
+      requestCapabilities: function(params) { return invoke('app.requestCapabilities', params || {}); },
       getHostApiSpec: function() { return invoke('app.getHostApiSpec'); },
       getTheme: function() { return invoke('app.getTheme'); }
+    },
+    ui: {
+      alert: function(params) { return invoke('ui.alert', params || {}); },
+      confirm: function(params) { return invoke('ui.confirm', params || {}); },
+      mainButton: {
+        set: function(params) { return invoke('ui.mainButton.set', params || {}); }
+      }
+    },
+    haptics: {
+      impact: function(params) { return invoke('haptics.impact', params || {}); },
+      notification: function(params) { return invoke('haptics.notification', params || {}); },
+      selection: function(params) { return invoke('haptics.selection', params || {}); }
+    },
+    device: {
+      biometrics: {
+        authenticate: function(params) { return invoke('device.biometrics.authenticate', params || {}); }
+      },
+      qrScanner: {
+        scan: function(params) { return invoke('device.qrScanner.scan', params || {}); }
+      }
+    },
+    cloud: {
+      kv: {
+        get: function(params) { return invoke('cloud.kv.get', params || {}); },
+        set: function(params) { return invoke('cloud.kv.set', params || {}); },
+        delete: function(params) { return invoke('cloud.kv.delete', params || {}); }
+      }
+    },
+    share: {
+      chat: function(params) { return invoke('share.chat.send', params || {}); }
     },
     auth: {
       getSession: function() { return invoke('auth.getSession'); },
@@ -700,12 +744,22 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       onCommand: onCommand,
       exposeCommand: exposeCommand
     },
-    dharma: {
-      getSendStatus: function() { return invoke('dharma.getSendStatus'); },
-      setSendOptions: function(params) { return invoke('dharma.setSendOptions', params || {}); },
-      selectHighEnergyMaterial: function() { return invoke('dharma.selectHighEnergyMaterial'); },
-      startGlobalSend: function(params) { return invoke('dharma.startGlobalSend', params || {}); },
-      stopGlobalSend: function() { return invoke('dharma.stopGlobalSend'); }
+    network: {
+      udp: {
+        open: function(params) { return invoke('network.udp.open', params || {}); },
+        send: function(params) { return invoke('network.udp.send', params || {}); },
+        broadcast: function(params) { return invoke('network.udp.broadcast', params || {}); },
+        close: function(params) { return invoke('network.udp.close', params || {}); }
+      },
+      interfaces: {
+        list: function(params) { return invoke('network.interfaces.list', params || {}); }
+      }
+    },
+    system: {
+      keepAwake: function(params) { return invoke('system.keepAwake', params || {}); }
+    },
+    hotspot: {
+      openSettings: function(params) { return invoke('hotspot.openSettings', params || {}); }
     },
     ready: true
   };
@@ -726,6 +780,14 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     );
 
     try {
+      final policy = _evaluateMethodPolicy(method);
+      if (!policy.allowed) {
+        throw MiniAppHostException(
+          policy.errorCode,
+          policy.message,
+          data: policy.toJson(),
+        );
+      }
       final data = await _dispatch(method, params);
       return {'ok': true, 'requestId': requestId, 'data': data};
     } catch (error) {
@@ -748,10 +810,36 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _appContext();
       case 'app.getCapabilities':
         return {'capabilities': _capabilities()};
+      case 'app.requestCapabilities':
+        return _requestCapabilities(params);
       case 'app.getHostApiSpec':
         return _hostApiSpec();
       case 'app.getTheme':
         return {'theme': _theme()};
+      case 'ui.alert':
+        return _uiAlert(params);
+      case 'ui.confirm':
+        return _uiConfirm(params);
+      case 'ui.mainButton.set':
+        return _setMainButton(params);
+      case 'haptics.impact':
+        return _hapticImpact(params);
+      case 'haptics.notification':
+        return _hapticNotification(params);
+      case 'haptics.selection':
+        return _hapticSelection(params);
+      case 'device.biometrics.authenticate':
+        return _adapterUnavailable('device.biometrics');
+      case 'device.qrScanner.scan':
+        return _adapterUnavailable('device.qrScanner');
+      case 'cloud.kv.get':
+        return _cloudKvGet(params);
+      case 'cloud.kv.set':
+        return _cloudKvSet(params);
+      case 'cloud.kv.delete':
+        return _cloudKvDelete(params);
+      case 'share.chat.send':
+        return _shareChat(params);
       case 'auth.getSession':
         return _authSession();
       case 'auth.requireLogin':
@@ -771,12 +859,20 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _payWithAlipay(params);
       case 'payments.alipay.queryOrder':
         return _queryAlipayOrder(params);
-      case 'wifiHotspot.getStatus':
-        return _wifiHotspotStatus();
-      case 'wifiHotspot.enable':
-        return _enableWifiHotspot();
-      case 'wifiHotspot.disable':
-        return _disableWifiHotspot();
+      case 'network.udp.open':
+        return _openUdpSocket(params);
+      case 'network.udp.send':
+        return _sendUdpPacket(params);
+      case 'network.udp.broadcast':
+        return _broadcastUdpPacket(params);
+      case 'network.udp.close':
+        return _closeUdpSocket(params);
+      case 'network.interfaces.list':
+        return _listNetworkInterfaces(params);
+      case 'system.keepAwake':
+        return _setKeepAwake(params);
+      case 'hotspot.openSettings':
+        return _openHotspotSettings(params);
       case 'bot.sendMessage':
         return _botSendMessage(params);
       case 'bot.postMessage':
@@ -802,20 +898,6 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       case 'openclaw.chat':
         _requirePermission('openclaw.chat');
         return _aiChat(params);
-      case 'dharma.prepareContent':
-        return _prepareDharmaContent(params);
-      case 'dharma.setSendOptions':
-        return _setDharmaSendOptions(params);
-      case 'dharma.selectHighEnergyMaterial':
-        return _selectHighEnergyMaterial();
-      case 'dharma.clearContent':
-        return _clearDharmaContent();
-      case 'dharma.startGlobalSend':
-        return _startGlobalDharma(params);
-      case 'dharma.stopGlobalSend':
-        return _stopGlobalDharma();
-      case 'dharma.getSendStatus':
-        return _globalDharmaStatus();
       case 'platformPublish.createDraft':
         return _createPlatformDraft(params);
       case 'platformPublish.publishDraft':
@@ -853,8 +935,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _appContext() {
     return {
-      'hostApiVersion': '1.4',
-      'hostSdkVersion': '1.4.0',
+      'hostApiVersion': miniAppHostApiVersion,
+      'hostSdkVersion': miniAppHostSdkVersion,
       'bot': {
         'botId': widget.bot.stableBotId,
         'title': widget.bot.title,
@@ -867,12 +949,39 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
   }
 
+  Set<String> _declaredPermissions() {
+    return MiniAppHostPolicy.declaredPermissions(widget.bot.permissions);
+  }
+
+  MiniAppHostPolicyDecision _evaluateMethodPolicy(String method) {
+    return MiniAppHostPolicy.evaluateMethod(
+      method: method,
+      declaredPermissions: _declaredPermissions(),
+      platform: _platformLabel,
+      desktopNative: AiBackendPolicy.isDesktopNative,
+      nativeIo: !kIsWeb,
+      trustedOfficial: _trustedOfficial,
+    );
+  }
+
   List<String> _capabilities() {
-    final base = <String>{'app.context', 'bot.chat', ...widget.bot.permissions};
-    if (!AiBackendPolicy.isDesktopNative) {
-      base.removeAll(['openclaw.chat', 'local.loopback', 'desktop.control']);
-    }
-    return base.toList()..sort();
+    return MiniAppHostPolicy.grantedCapabilityIds(
+      declaredPermissions: _declaredPermissions(),
+      desktopNative: AiBackendPolicy.isDesktopNative,
+      nativeIo: !kIsWeb,
+      trustedOfficial: _trustedOfficial,
+    );
+  }
+
+  Map<String, dynamic> _requestCapabilities(Map<String, dynamic> params) {
+    return MiniAppHostPolicy.requestCapabilities(
+      requested: params['capabilities'] as List? ?? const [],
+      declaredPermissions: _declaredPermissions(),
+      platform: _platformLabel,
+      desktopNative: AiBackendPolicy.isDesktopNative,
+      nativeIo: !kIsWeb,
+      trustedOfficial: _trustedOfficial,
+    );
   }
 
   Map<String, dynamic> _theme() {
@@ -885,173 +994,193 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
 
   Map<String, dynamic> _hostApiSpec() {
+    return MiniAppHostPolicy.hostApiSpec(
+      declaredPermissions: _declaredPermissions(),
+      platform: _platformLabel,
+      desktopNative: AiBackendPolicy.isDesktopNative,
+      nativeIo: !kIsWeb,
+      trustedOfficial: _trustedOfficial,
+    );
+  }
+
+  Future<Map<String, dynamic>> _uiAlert(Map<String, dynamic> params) async {
+    _requirePermission('ui.native');
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
+    final title = params['title']?.toString().trim();
+    final message = params['message']?.toString().trim().isNotEmpty == true
+        ? params['message'].toString().trim()
+        : params['text']?.toString().trim() ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title == null || title.isEmpty ? '提示' : title),
+        content: Text(message.isEmpty ? ' ' : message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(
+              params['buttonText']?.toString().trim().isNotEmpty == true
+                  ? params['buttonText'].toString().trim()
+                  : '知道了',
+            ),
+          ),
+        ],
+      ),
+    );
+    return {'accepted': true};
+  }
+
+  Future<Map<String, dynamic>> _uiConfirm(Map<String, dynamic> params) async {
+    _requirePermission('ui.native');
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
+    final title = params['title']?.toString().trim();
+    final message = params['message']?.toString().trim().isNotEmpty == true
+        ? params['message'].toString().trim()
+        : params['text']?.toString().trim() ?? '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title == null || title.isEmpty ? '确认' : title),
+        content: Text(message.isEmpty ? ' ' : message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              params['cancelText']?.toString().trim().isNotEmpty == true
+                  ? params['cancelText'].toString().trim()
+                  : '取消',
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              params['confirmText']?.toString().trim().isNotEmpty == true
+                  ? params['confirmText'].toString().trim()
+                  : '确认',
+            ),
+          ),
+        ],
+      ),
+    );
+    return {'confirmed': confirmed == true};
+  }
+
+  Map<String, dynamic> _setMainButton(Map<String, dynamic> params) {
+    _requirePermission('ui.native');
     return {
-      'hostApiVersion': '1.4',
-      'hostSdkVersion': '1.4.0',
-      'invokePattern': 'window.FabushiMiniApp.invoke(method, params)',
-      'commandProtocol': {
-        'event': 'fabushi-miniapp-command',
-        'lastCommandCache': 'window.__fabushiLastMiniAppCommand',
-        'helpers': [
-          'window.FabushiMiniApp.bot.onAnyCommand(callback)',
-          'window.FabushiMiniApp.bot.onCommand(command, callback)',
-        ],
-        'defaultCommand': '/start',
-        'detail': {
-          'id': 'stable command id',
-          'command': '/start',
-          'args': 'message text without command prefix',
-          'text': 'raw chat text',
-          'background': true,
-          'source': 'chat',
-        },
-        'resultMethods': ['bot.postMessage', 'bot.reportCommandResult'],
+      'accepted': true,
+      'state': {
+        'text': params['text']?.toString() ?? '',
+        'visible': params['visible'] == true,
+        'enabled': params['enabled'] != false,
+        'loading': params['loading'] == true,
       },
-      'permissionGroups': {
-        'identity': ['auth.session', 'auth.token'],
-        'payments': [
-          'payments.alipay',
-          'payments.entitlement',
-          'payments.fudeGold',
-          'wallet.balance',
-        ],
-        'dharma': ['dharma.share', 'wifi.hotspot', 'local.loopback'],
-        'creation': ['flashcards.create', 'platform.publish'],
-        'localAutomation': [
-          'fs.readWrite',
-          'shell.execute',
-          'browser.external',
-          'desktop.control',
-        ],
-      },
-      'methods': [
-        {
-          'method': 'app.getContext',
-          'permission': 'app.context',
-          'description': '读取宿主、小程序、机器人和平台上下文。',
-        },
-        {
-          'method': 'app.getCapabilities',
-          'permission': 'app.context',
-          'description': '读取当前小程序已获准的权限列表。',
-        },
-        {
-          'method': 'bot.postMessage',
-          'permission': 'bot.chat',
-          'description': '小程序把后台命令进度、结果或错误写回机器人聊天框。',
-        },
-        {
-          'method': 'bot.reportCommandResult',
-          'permission': 'bot.chat',
-          'description': '小程序按 commandId 上报后台命令完成、失败或仍在运行。',
-        },
-        {
-          'method': 'bot.takePendingCommands',
-          'permission': 'bot.chat',
-          'description': '小程序从宿主消息队列拉取聊天命令；宿主只做消息媒介，不执行业务逻辑。',
-        },
-        {
-          'method': 'auth.getSession',
-          'permission': 'auth.session',
-          'description': '读取宿主登录态、脱敏用户资料和会员状态，不返回 token。',
-        },
-        {
-          'method': 'auth.requireLogin',
-          'permission': 'auth.session',
-          'description': '要求用户登录；未登录时由宿主打开登录页。',
-        },
-        {
-          'method': 'auth.getAccessToken',
-          'permission': 'auth.token',
-          'description': '读取宿主访问 token，仅给受信小程序或明确授权场景使用。',
-        },
-        {
-          'method': 'payments.alipay.createOrder',
-          'permission': 'payments.alipay',
-          'description': '可选：用宿主官方支付后台创建支付宝订单；小程序自己的商品和购买记录仍由小程序保存。',
-        },
-        {
-          'method': 'payments.checkEntitlement',
-          'permission': 'payments.entitlement',
-          'description': '查询宿主后端是否已解锁一次性付费商品，供小程序避免重复购买。',
-        },
-        {
-          'method': 'payments.requestPayment',
-          'permission': 'payments.fudeGold',
-          'description': '请求宿主弹出原生确认并扣除福德金，成功后由宿主登记权益。',
-        },
-        {
-          'method': 'wallet.getBalance',
-          'permission': 'wallet.balance',
-          'description': '读取当前用户福德金余额。',
-        },
-        {
-          'method': 'payments.alipay.pay',
-          'permission': 'payments.alipay',
-          'description': '拉起支付宝 App 支付或网页支付，返回支付结果；宿主不保存小程序购买信息。',
-        },
-        {
-          'method': 'payments.alipay.queryOrder',
-          'permission': 'payments.alipay',
-          'description': '查询支付宝订单状态，并把支付状态传回小程序自行保存。',
-        },
-        {
-          'method': 'dharma.prepareContent',
-          'permission': 'dharma.share',
-          'description': '从正文或链接提取可法布施内容。',
-        },
-        {
-          'method': 'dharma.startGlobalSend',
-          'permission': 'dharma.share',
-          'description': '启动全球法布施发送。',
-        },
-        {
-          'method': 'dharma.selectHighEnergyMaterial',
-          'permission': 'dharma.share',
-          'description': '选择高能素材；是否已购买由全球法布施小程序自行判断和保存。',
-        },
-        {
-          'method': 'wifiHotspot.enable',
-          'permission': 'wifi.hotspot',
-          'description': '请求宿主开启或引导开启 Wi-Fi 热点，供本地场能使用。',
-        },
-        {
-          'method': 'flashcards.createDeck',
-          'permission': 'flashcards.create',
-          'description': '复用宿主背诵闪卡流水线，从正文或链接生成卡组。',
-        },
-        {
-          'method': 'platformPublish.createDraft',
-          'permission': 'platform.publish',
-          'description': '复用宿主发布草稿生成能力。',
-        },
-        {
-          'method': 'files.pick',
-          'permission': 'files.pick',
-          'description': '调用宿主文件选择器并把文件加入当前素材。',
-        },
-        {
-          'method': 'fs.writeFile',
-          'permission': 'fs.readWrite',
-          'description': '写入小程序私有目录或经授权的本地路径。',
-        },
-        {
-          'method': 'fs.readFile',
-          'permission': 'fs.readWrite',
-          'description': '读取小程序私有目录或经授权的本地路径。',
-        },
-        {
-          'method': 'shell.execute',
-          'permission': 'shell.execute',
-          'description': '启动本地命令并将日志流回宿主聊天。',
-        },
-        {
-          'method': 'browser.open',
-          'permission': 'browser.external',
-          'description': '使用系统浏览器打开 URL。',
-        },
-      ],
     };
+  }
+
+  Map<String, dynamic> _hapticImpact(Map<String, dynamic> params) {
+    _requirePermission('haptics.feedback');
+    final style = params['style']?.toString().trim().toLowerCase();
+    switch (style) {
+      case 'heavy':
+        HapticFeedback.heavyImpact();
+        break;
+      case 'medium':
+        HapticFeedback.mediumImpact();
+        break;
+      case 'light':
+      default:
+        HapticFeedback.lightImpact();
+        break;
+    }
+    return {'accepted': true, 'style': style ?? 'light'};
+  }
+
+  Map<String, dynamic> _hapticNotification(Map<String, dynamic> params) {
+    _requirePermission('haptics.feedback');
+    HapticFeedback.vibrate();
+    return {
+      'accepted': true,
+      'type': params['type']?.toString().trim().isNotEmpty == true
+          ? params['type'].toString().trim()
+          : 'success',
+    };
+  }
+
+  Map<String, dynamic> _hapticSelection(Map<String, dynamic> params) {
+    _requirePermission('haptics.feedback');
+    HapticFeedback.selectionClick();
+    return {'accepted': true};
+  }
+
+  Future<Map<String, dynamic>> _cloudKvGet(Map<String, dynamic> params) async {
+    _requirePermission('cloud.kv');
+    final key = _requiredString(params['key'], 'key');
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_miniAppKvKey(key));
+    Object? value;
+    if (raw != null) {
+      try {
+        value = jsonDecode(raw);
+      } catch (_) {
+        value = raw;
+      }
+    }
+    return {'key': key, 'value': value};
+  }
+
+  Future<Map<String, dynamic>> _cloudKvSet(Map<String, dynamic> params) async {
+    _requirePermission('cloud.kv');
+    final key = _requiredString(params['key'], 'key');
+    final value = params['value'];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_miniAppKvKey(key), jsonEncode(value));
+    return {'ok': true, 'key': key};
+  }
+
+  Future<Map<String, dynamic>> _cloudKvDelete(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('cloud.kv');
+    final key = _requiredString(params['key'], 'key');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_miniAppKvKey(key));
+    return {'ok': true, 'key': key};
+  }
+
+  Map<String, dynamic> _shareChat(Map<String, dynamic> params) {
+    _requirePermission('share.chat');
+    final title = params['title']?.toString().trim() ?? '';
+    final text = params['text']?.toString().trim() ?? '';
+    final url = params['url']?.toString().trim() ?? '';
+    widget.onMiniAppEvent?.call({
+      'type': 'share.chat',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'title': title,
+      'text': text,
+      'url': url,
+      if (params['data'] != null) 'data': params['data'],
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return {'accepted': true};
+  }
+
+  Map<String, dynamic> _adapterUnavailable(String capabilityId) {
+    throw MiniAppHostException(
+      'adapter_unavailable',
+      '$capabilityId adapter 尚未在当前宿主接入',
+      data: {'capability': capabilityId, 'platform': _platformLabel},
+    );
+  }
+
+  String _miniAppKvKey(String key) {
+    final normalized = key.replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
+    return 'miniapp:${widget.bot.stableMiniAppId}:kv:$normalized';
   }
 
   Map<String, dynamic> _authSession() {
@@ -1390,38 +1519,246 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
   }
 
-  Map<String, dynamic> _wifiHotspotStatus() {
-    _requirePermission('wifi.hotspot');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
+  Future<Map<String, dynamic>> _openUdpSocket(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('network.udp');
+    if (kIsWeb) {
+      throw const MiniAppHostException('unsupported_platform', 'Web 宿主不支持 UDP');
+    }
+    final port = _readUdpPort(params['port'], allowZero: true);
+    final bindAddress = params['bindAddress']?.toString().trim() ?? '';
+    final socket = await RawDatagramSocket.bind(
+      bindAddress.isEmpty
+          ? InternetAddress.anyIPv4
+          : InternetAddress(bindAddress),
+      port,
+      reuseAddress: params['reuseAddress'] != false,
+      reusePort: params['reusePort'] == true,
+    );
+    socket.broadcastEnabled = params['broadcast'] == true;
+    final socketId =
+        'udp_${DateTime.now().microsecondsSinceEpoch}_${_udpSocketSequence++}';
+    _udpSockets[socketId] = socket;
     return {
+      'socketId': socketId,
+      'address': socket.address.address,
+      'port': socket.port,
+      'broadcast': socket.broadcastEnabled,
+    };
+  }
+
+  Future<Map<String, dynamic>> _sendUdpPacket(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('network.udp');
+    final socketId = _requiredString(params['socketId'], 'socketId');
+    final socket = _udpSocketById(socketId);
+    final host = _requiredString(params['host'], 'host');
+    final port = _readUdpPort(params['port']);
+    final payload = _decodeUdpPayload(params['data']);
+    final address = await _resolveUdpAddress(host);
+    final sentBytes = socket.send(payload, address, port);
+    return {
+      'socketId': socketId,
+      'host': address.address,
+      'port': port,
+      'sentBytes': sentBytes,
+    };
+  }
+
+  Future<Map<String, dynamic>> _broadcastUdpPacket(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('network.udp');
+    final host = (params['host']?.toString().trim() ?? '').isEmpty
+        ? '255.255.255.255'
+        : params['host'].toString().trim();
+    final port = _readUdpPort(params['port']);
+    final payload = _decodeUdpPayload(params['data']);
+    final socketId = params['socketId']?.toString().trim() ?? '';
+    RawDatagramSocket? temporarySocket;
+    final RawDatagramSocket socket;
+    if (socketId.isNotEmpty) {
+      socket = _udpSocketById(socketId);
+    } else {
+      temporarySocket = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        0,
+        reuseAddress: true,
+      );
+      socket = temporarySocket;
+    }
+    socket.broadcastEnabled = true;
+    final address = await _resolveUdpAddress(host);
+    try {
+      final sentBytes = socket.send(payload, address, port);
+      return {
+        if (socketId.isNotEmpty) 'socketId': socketId,
+        'host': address.address,
+        'port': port,
+        'sentBytes': sentBytes,
+        'temporarySocket': socketId.isEmpty,
+      };
+    } finally {
+      temporarySocket?.close();
+    }
+  }
+
+  Map<String, dynamic> _closeUdpSocket(Map<String, dynamic> params) {
+    _requirePermission('network.udp');
+    final socketId = _requiredString(params['socketId'], 'socketId');
+    final socket = _udpSockets.remove(socketId);
+    if (socket == null) {
+      throw MiniAppHostException(
+        'socket_not_found',
+        'UDP socket 不存在：$socketId',
+      );
+    }
+    socket.close();
+    return {'closed': true, 'socketId': socketId};
+  }
+
+  Future<Map<String, dynamic>> _listNetworkInterfaces(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('network.interfaces');
+    if (kIsWeb) {
+      throw const MiniAppHostException('unsupported_platform', 'Web 宿主不能列出网卡');
+    }
+    final includeLoopback = params['includeLoopback'] == true;
+    final interfaces = await NetworkInterface.list(
+      includeLoopback: includeLoopback,
+      type: InternetAddressType.any,
+    );
+    return {
+      'interfaces': [
+        for (final item in interfaces)
+          {
+            'name': item.name,
+            'index': item.index,
+            'addresses': [
+              for (final address in item.addresses)
+                {
+                  'address': address.address,
+                  'type': _addressTypeLabel(address.type),
+                  'isLoopback': address.isLoopback,
+                  if (_suggestedIpv4Broadcast(address.address) != null)
+                    'suggestedBroadcast': _suggestedIpv4Broadcast(
+                      address.address,
+                    ),
+                },
+            ],
+          },
+      ],
+      'defaultBroadcast': '255.255.255.255',
+    };
+  }
+
+  Map<String, dynamic> _setKeepAwake(Map<String, dynamic> params) {
+    _requirePermission('system.keepAwake');
+    _keepAwakeEnabled = params['enabled'] == true;
+    return {
+      'enabled': _keepAwakeEnabled,
+      'supported': false,
+      'platform': _platformLabel,
+      'message': _keepAwakeEnabled ? '已记录保持唤醒请求，当前宿主未接入原生唤醒锁' : '已释放保持唤醒请求',
+    };
+  }
+
+  Future<Map<String, dynamic>> _openHotspotSettings(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('hotspot.settings');
+    final result = await _hotspotManager.openHotspotSettings();
+    return {
+      'opened': result.success,
       'supported': !kIsWeb,
-      'enabled': model.isFieldEnergyMode,
-      'needsManualAction': model.needsHotspotGuide,
-      'message': _hotspotMessageFor(model),
+      'needsManualAction': result.needsManualAction,
+      'message': result.message,
       'platform': _platformLabel,
     };
   }
 
-  Future<Map<String, dynamic>> _enableWifiHotspot() async {
-    _requirePermission('wifi.hotspot');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    await model.setFieldEnergyMode(true);
-    return _wifiHotspotStatus();
+  RawDatagramSocket _udpSocketById(String socketId) {
+    final socket = _udpSockets[socketId];
+    if (socket == null) {
+      throw MiniAppHostException(
+        'socket_not_found',
+        'UDP socket 不存在：$socketId',
+      );
+    }
+    return socket;
   }
 
-  Future<Map<String, dynamic>> _disableWifiHotspot() async {
-    _requirePermission('wifi.hotspot');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    await model.setFieldEnergyMode(false);
-    return _wifiHotspotStatus();
+  Future<InternetAddress> _resolveUdpAddress(String host) async {
+    try {
+      final parsed = InternetAddress.tryParse(host);
+      if (parsed != null) return parsed;
+      final addresses = await InternetAddress.lookup(host);
+      return addresses.firstWhere(
+        (address) => address.type == InternetAddressType.IPv4,
+        orElse: () => addresses.first,
+      );
+    } catch (error) {
+      throw MiniAppHostException('invalid_host', '无法解析 UDP 目标地址：$host');
+    }
   }
 
-  String _hotspotMessageFor(FileTransferModel model) {
-    final message = model.hotspotMessage.trim();
-    if (message.isNotEmpty) return message;
-    if (model.needsHotspotGuide) return '请按系统提示开启 Wi-Fi 热点';
-    if (model.isFieldEnergyMode) return '本地场能已开启';
-    return '本地场能未开启';
+  Uint8List _decodeUdpPayload(Object? value) {
+    final encoded = value?.toString().trim() ?? '';
+    if (encoded.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'data 不能为空');
+    }
+    try {
+      return base64Decode(encoded);
+    } catch (_) {
+      throw const MiniAppHostException(
+        'invalid_request',
+        'data 必须是 base64 字符串',
+      );
+    }
+  }
+
+  int _readUdpPort(Object? value, {bool allowZero = false}) {
+    final parsed = switch (value) {
+      int v => v,
+      num v => v.toInt(),
+      String v => int.tryParse(v.trim()),
+      _ => null,
+    };
+    final min = allowZero ? 0 : 1;
+    if (parsed == null || parsed < min || parsed > 65535) {
+      throw const MiniAppHostException(
+        'invalid_request',
+        'UDP port 必须是 1-65535',
+      );
+    }
+    return parsed;
+  }
+
+  String _requiredString(Object? value, String field) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) {
+      throw MiniAppHostException('invalid_request', '$field 不能为空');
+    }
+    return text;
+  }
+
+  String _addressTypeLabel(InternetAddressType type) {
+    if (type == InternetAddressType.IPv4) return 'IPv4';
+    if (type == InternetAddressType.IPv6) return 'IPv6';
+    return 'any';
+  }
+
+  String? _suggestedIpv4Broadcast(String address) {
+    final parts = address.split('.');
+    if (parts.length != 4 || parts.first == '127') return null;
+    final parsed = parts.map(int.tryParse).toList();
+    if (parsed.any((part) => part == null || part < 0 || part > 255)) {
+      return null;
+    }
+    return '${parts[0]}.${parts[1]}.${parts[2]}.255';
   }
 
   Map<String, dynamic> _botSetCommands(Map<String, dynamic> params) {
@@ -1534,194 +1871,6 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       'message': result.message,
       'provider': result.provider,
       'model': result.model,
-    };
-  }
-
-  Future<Map<String, dynamic>> _prepareDharmaContent(
-    Map<String, dynamic> params,
-  ) async {
-    _requirePermission('dharma.share');
-    final content = await _prepareContentFromParams(
-      params,
-      defaultTitle: '小程序内容',
-      sourceApp: '全球法布施小程序',
-    );
-    if (content.isFailed) {
-      throw MiniAppHostException(
-        'content_extract_failed',
-        content.errorMessage ?? '内容提取失败',
-      );
-    }
-    if (!mounted) {
-      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
-    }
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    await model.addTextContentForSending(
-      title: content.title,
-      text: content.text,
-      sourceKind: content.sourceUrl == null ? '小程序' : '链接',
-      sourceUrl: content.sourceUrl,
-      previewText: content.previewText,
-      replaceExisting: params['replaceExisting'] != false,
-    );
-    return {
-      'prepared': true,
-      'content': _preparedContentPayload(content),
-      'status': _globalDharmaStatus(),
-    };
-  }
-
-  Future<Map<String, dynamic>> _setDharmaSendOptions(
-    Map<String, dynamic> params,
-  ) async {
-    _requirePermission('dharma.share');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    final regionMode = params['regionMode']?.toString().trim() ?? '';
-    final countryCodes = (params['countryCodes'] as List? ?? const [])
-        .map((item) => item.toString().trim().toUpperCase())
-        .where((item) => item.isNotEmpty)
-        .toList();
-    final wantsGlobal =
-        params['global'] == true ||
-        regionMode == 'global' ||
-        regionMode == 'countries' ||
-        countryCodes.isNotEmpty;
-    final touchesGlobal =
-        params.containsKey('global') ||
-        params.containsKey('countryCodes') ||
-        regionMode == 'global' ||
-        regionMode == 'countries';
-
-    if (touchesGlobal) {
-      model.setGlobalSendEnabled(wantsGlobal);
-      model.setCountryList(
-        wantsGlobal ? (countryCodes.isEmpty ? ['ALL'] : countryCodes) : [],
-      );
-    }
-
-    if (params.containsKey('loop')) {
-      model.setLooping(params['loop'] == true);
-    }
-
-    if (params.containsKey('fieldEnergy') || regionMode == 'field') {
-      final enableFieldEnergy =
-          params['fieldEnergy'] == true || regionMode == 'field';
-      if (enableFieldEnergy) {
-        await _enableWifiHotspot();
-      } else {
-        await _disableWifiHotspot();
-      }
-    }
-
-    if (params.containsKey('localLoopback') || regionMode == 'loopback') {
-      final enableLoopback =
-          params['localLoopback'] == true || regionMode == 'loopback';
-      if (enableLoopback) {
-        if (!mounted) {
-          throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
-        }
-        final auth = Provider.of<AuthModel?>(context, listen: false);
-        final hasPremiumAccess = auth?.hasPermission('premium') ?? false;
-        if (!hasPremiumAccess) {
-          throw const MiniAppHostException(
-            'membership_required',
-            '本地转经轮需要会员权限',
-          );
-        }
-      }
-      model.setLocalLoopbackEnabled(enableLoopback);
-    }
-
-    return _globalDharmaStatus();
-  }
-
-  Future<Map<String, dynamic>> _selectHighEnergyMaterial() async {
-    _requirePermission('dharma.share');
-    await _requireProductEntitlement(AppConfig.zenBuddhaAssetProductId);
-    if (!mounted) {
-      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
-    }
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    await model.addZenBuddhaAssetForSending();
-    return _globalDharmaStatus();
-  }
-
-  Future<Map<String, dynamic>> _clearDharmaContent() async {
-    _requirePermission('dharma.share');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    model.clearFiles();
-    return _globalDharmaStatus();
-  }
-
-  Future<Map<String, dynamic>> _startGlobalDharma(
-    Map<String, dynamic> params,
-  ) async {
-    _requirePermission('dharma.share');
-    final text = params['text']?.toString().trim() ?? '';
-    final url = params['url']?.toString().trim() ?? '';
-    if (text.isNotEmpty || url.isNotEmpty) {
-      await _prepareDharmaContent(params);
-    }
-    if (!mounted) {
-      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
-    }
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    if (!model.hasFiles) {
-      throw const MiniAppHostException('invalid_state', '没有可发送的素材');
-    }
-    await _setDharmaSendOptions(params);
-    if (!model.isGlobalSendEnabled &&
-        !model.isFieldEnergyMode &&
-        !model.isLocalLoopbackEnabled) {
-      await _setDharmaSendOptions({
-        'global': true,
-        'countryCodes': const ['ALL'],
-      });
-    }
-    await model.startGlobalTransfer();
-    return _globalDharmaStatus();
-  }
-
-  Future<Map<String, dynamic>> _stopGlobalDharma() async {
-    _requirePermission('dharma.share');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    model.stopTransfer();
-    return _globalDharmaStatus();
-  }
-
-  Map<String, dynamic> _globalDharmaStatus() {
-    _requirePermission('dharma.share');
-    final model = Provider.of<FileTransferModel>(context, listen: false);
-    return {
-      'isPreparingSend': model.isPreparingSend,
-      'isTransferring': model.isTransferring,
-      'message': model.preparingSendMessage,
-      'sentCount': model.globalSentCount,
-      'sentMB': model.globalDataSentMB,
-      'hasFiles': model.hasFiles,
-      'options': {
-        'global': model.isGlobalSendEnabled,
-        'countryCodes': model.countryList,
-        'loop': model.isLooping,
-        'fieldEnergy': model.isFieldEnergyMode,
-        'localLoopback': model.isLocalLoopbackEnabled,
-      },
-      'wifiHotspot': {
-        'supported': !kIsWeb,
-        'enabled': model.isFieldEnergyMode,
-        'needsManualAction': model.needsHotspotGuide,
-        'message': _hotspotMessageFor(model),
-        'platform': _platformLabel,
-      },
-      'selectedContent': model.hasFiles
-          ? {
-              'kind': model.selectedContentKind,
-              'title': model.selectedContentTitle,
-              'subtitle': model.selectedContentSubtitle,
-              'previewText': model.selectedContentPreviewText,
-              'sourceUrl': model.selectedContentSourceUrl,
-            }
-          : null,
     };
   }
 
@@ -2176,13 +2325,14 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
 
   void _requirePermission(String permission) {
-    if (widget.bot.permissions.contains(permission)) return;
+    if (_declaredPermissions().contains(permission)) return;
     throw MiniAppHostException('permission_denied', '小程序未声明或未获准使用 $permission');
   }
 
   void _requireAnyPermission(List<String> permissions) {
+    final declared = _declaredPermissions();
     for (final permission in permissions) {
-      if (widget.bot.permissions.contains(permission)) return;
+      if (declared.contains(permission)) return;
     }
     throw MiniAppHostException(
       'permission_denied',
@@ -2210,18 +2360,6 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       result = await request(token);
     }
     return result;
-  }
-
-  Future<void> _requireProductEntitlement(String productId) async {
-    final entitlement = await _checkPurchaseEntitlement({
-      'productId': productId,
-    });
-    if (entitlement['unlocked'] != true) {
-      throw MiniAppHostException(
-        'purchase_required',
-        '${AppConfig.zenBuddhaAssetDisplayName}尚未解锁',
-      );
-    }
   }
 
   bool _isAuthFailureResponse(Map<String, dynamic> result) {

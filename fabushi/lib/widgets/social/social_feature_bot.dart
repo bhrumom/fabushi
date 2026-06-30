@@ -114,12 +114,17 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           permissions: [
             'app.context',
             'bot.chat',
+            'ui.native',
+            'haptics.feedback',
             'auth.session',
             'payments.alipay',
-            'dharma.share',
             'files.pick',
-            'wifi.hotspot',
-            'local.loopback',
+            'network.udp',
+            'network.interfaces',
+            'system.keepAwake',
+            'hotspot.settings',
+            'cloud.kv',
+            'share.chat',
           ],
         );
       case SocialFeatureBotType.flashcards:
@@ -139,7 +144,11 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           permissions: [
             'app.context',
             'bot.chat',
+            'ui.native',
+            'haptics.feedback',
             'flashcards.create',
+            'cloud.kv',
+            'share.chat',
           ],
         );
       case SocialFeatureBotType.platformPublish:
@@ -159,11 +168,15 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
           permissions: [
             'app.context',
             'bot.chat',
+            'ui.native',
+            'haptics.feedback',
             'platform.publish',
             'files.pick',
             'fs.readWrite',
             'shell.execute',
             'browser.external',
+            'cloud.kv',
+            'share.chat',
           ],
         );
       case SocialFeatureBotType.assistant:
