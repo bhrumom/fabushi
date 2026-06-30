@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BookOpenCheck, Layers, Sparkles, WandSparkles } from "lucide-react";
-import { miniAppHost } from "./miniapp-sdk";
+import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import "./miniapps.css";
 
 export default function FlashcardsApp() {
@@ -15,48 +15,22 @@ export default function FlashcardsApp() {
 
   const log = (msg: string) => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  const handleCreateRef = React.useRef<(overrideText?: string, commandId?: string) => Promise<void>>();
-
-  React.useEffect(() => {
-    const { startParam } = miniAppHost.bot.getInitData?.() || {};
-    if (startParam) {
-      setText(startParam);
-      log(`收到启动参数: ${startParam}`);
-      if (startParam.trim().startsWith("http://") || startParam.trim().startsWith("https://")) {
-        setTimeout(() => handleCreateRef.current?.(startParam), 100);
-      }
-    }
-    const unsubscribeStart = (
-      miniAppHost.bot.exposeCommand?.(
-        "/start",
-        (args, event) => {
-          if (args) setText(args);
-          log("收到 /start 制卡命令");
-          void handleCreateRef.current?.(args, event?.commandId);
-        },
-        { description: "用正文或链接生成背诵闪卡" },
-      ) ||
-      miniAppHost.bot.onCommand?.("/start", (args, event) => {
-        if (args) setText(args);
-        log("收到 /start 制卡命令");
-        void handleCreateRef.current?.(args, event?.commandId);
-      })
-    );
-    return () => unsubscribeStart?.();
+  useEffect(() => {
+    void bootMiniApp("official.flashcards", "背诵闪卡");
   }, []);
 
-  const handleCreate = async (overrideText?: string, commandId?: string) => {
-    const fullText = (overrideText ?? text).trim();
+  const handleCreate = async () => {
+    const fullText = text.trim();
     if (!fullText) {
       log("请输入需要制卡的内容");
       return;
     }
-    
+
     setLoading(true);
     setDeck(null);
     try {
       log(`正在使用${mode === "ai" ? "AI 制卡" : "随机挖空"}模式...`);
-      const data = await miniAppHost.flashcards.createDeck({
+      const data = await fbApp.invoke<any>("flashcards.createDeck", {
         title: "背诵闪卡",
         text: fullText,
         mode,
@@ -65,35 +39,19 @@ export default function FlashcardsApp() {
       });
       setDeck(data.deck);
       log(data.message || `制卡完成：${data.deck?.cardCount || 0} 张`);
-      if (commandId) {
-        await miniAppHost.bot.reportCommandResult?.({
-          commandId,
-          status: "completed",
-          message: data.message || `制卡完成：${data.deck?.cardCount || 0} 张`,
-          data,
-        });
-      }
-    } catch (error: any) {
-      log(error.message || "制卡失败");
-      if (commandId) {
-        await miniAppHost.bot.reportCommandResult?.({
-          commandId,
-          status: "failed",
-          message: error.message || "制卡失败",
-        }).catch(() => {});
-      }
+    } catch (error) {
+      log(hostErrorMessage(error, "制卡失败"));
     } finally {
       setLoading(false);
     }
   };
-  handleCreateRef.current = handleCreate;
 
   const handleOpenDeck = async () => {
     if (!deck?.id) return;
     try {
-      await miniAppHost.flashcards.openDeck(deck.id);
-    } catch (error: any) {
-      log(error.message || "打开卡组失败");
+      await fbApp.invoke("flashcards.openDeck", { deckId: deck.id });
+    } catch (error) {
+      log(hostErrorMessage(error, "打开卡组失败"));
     }
   };
 
@@ -138,7 +96,7 @@ export default function FlashcardsApp() {
         </>
       )}
 
-      <button className="ma-btn" onClick={() => handleCreate()} disabled={loading}>
+      <button className="ma-btn" onClick={handleCreate} disabled={loading}>
         <BookOpenCheck size={19} />
         {loading ? "生成中" : "生成卡组"}
       </button>
