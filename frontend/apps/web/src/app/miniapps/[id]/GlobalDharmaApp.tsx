@@ -3,6 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CircleStop, Globe, Link2, RefreshCw, Send, Sparkles } from "lucide-react";
 import * as THREE from "three";
+import {
+  createEntitlementCache,
+  EntitlementState,
+  isHostErrorCode,
+  isHostReady,
+  miniAppHost,
+  onMiniAppReady,
+} from "./miniapp-sdk";
 import "./miniapps.css";
 
 type RegionPreset = {
@@ -28,27 +36,34 @@ const HIGH_ENERGY_PRODUCT = {
   title: "3D佛像素材",
   priceLabel: "¥33.00",
   amount: 33,
+  fudeGoldPrice: 33,
+  fudeGoldPriceLabel: "33 福德金",
 };
 const HIGH_ENERGY_PURCHASE_KEY = "fabushi.official.global-dharma.purchase.zen_buddha_asset";
+const highEnergyPurchaseCache = createEntitlementCache(
+  HIGH_ENERGY_PURCHASE_KEY,
+  HIGH_ENERGY_PRODUCT,
+);
+const GLOBAL_DHARMA_LOGS_KEY = "fabushi.official.global-dharma.session.logs";
 
-class HostInvokeError extends Error {
-  code?: string;
-  data?: any;
-
-  constructor(response: any) {
-    super(response?.message || "宿主调用失败");
-    this.name = "HostInvokeError";
-    this.code = response?.errorCode;
-    this.data = response?.data;
+function readStoredGlobalDharmaLogs() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(GLOBAL_DHARMA_LOGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(-120).map(String) : [];
+  } catch {
+    return [];
   }
 }
 
-async function invokeHost(method: string, params: Record<string, any> = {}) {
-  const sdk = (window as any).FabushiMiniApp;
-  if (!sdk?.invoke) throw new Error("SDK 尚未就绪");
-  const res = await sdk.invoke(method, params);
-  if (!res?.ok) throw new HostInvokeError(res);
-  return res.data;
+function storeGlobalDharmaLogs(logs: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(GLOBAL_DHARMA_LOGS_KEY, JSON.stringify(logs.slice(-120)));
+  } catch {
+    // 忽略私密模式或存储配额错误；内存态日志仍然可用。
+  }
 }
 
 export default function GlobalDharmaApp() {
@@ -58,42 +73,36 @@ export default function GlobalDharmaApp() {
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [highEnergyUnlocked, setHighEnergyUnlocked] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<string[]>(readStoredGlobalDharmaLogs);
   const [busy, setBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const earthRef = useRef<THREE.Mesh | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
   const transferringRef = useRef(false);
+  const handleStartRef = useRef<((overrideText?: string, commandId?: string) => Promise<void>) | null>(null);
   const selectedRegion = useMemo(
     () => regionPresets.find((item) => item.id === regionId) || regionPresets[0],
     [regionId],
   );
 
-  const log = (msg: string) => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
-
-  const readHighEnergyPurchase = () => {
-    try {
-      const raw = window.localStorage.getItem(HIGH_ENERGY_PURCHASE_KEY);
-      if (!raw) return false;
-      const record = JSON.parse(raw);
-      return record?.productId === HIGH_ENERGY_PRODUCT.productId && record?.paid === true;
-    } catch {
-      return false;
-    }
+  const log = (msg: string) => {
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    setLogs((prev) => {
+      const next = [...prev, line].slice(-120);
+      storeGlobalDharmaLogs(next);
+      return next;
+    });
   };
 
   const saveHighEnergyPurchase = (payment: any) => {
-    const record = {
-      productId: HIGH_ENERGY_PRODUCT.productId,
-      title: HIGH_ENERGY_PRODUCT.title,
-      priceLabel: HIGH_ENERGY_PRODUCT.priceLabel,
-      paid: true,
-      paidAt: new Date().toISOString(),
-      payment,
-    };
-    window.localStorage.setItem(HIGH_ENERGY_PURCHASE_KEY, JSON.stringify(record));
+    highEnergyPurchaseCache.save(payment);
     setHighEnergyUnlocked(true);
+  };
+
+  const clearHighEnergyPurchase = () => {
+    highEnergyPurchaseCache.clear();
+    setHighEnergyUnlocked(false);
   };
 
   const isPaidPayment = (payment: any) => {
@@ -101,59 +110,157 @@ export default function GlobalDharmaApp() {
     return payment?.paid === true || status === "PAID" || status === "SUCCESS" || status === "9000";
   };
 
+  const checkHighEnergyEntitlement = async (
+    options: { silent?: boolean } = {},
+  ): Promise<EntitlementState> => {
+    try {
+      const entitlement = await miniAppHost.payments.checkEntitlement(HIGH_ENERGY_PRODUCT.productId);
+      if (entitlement === "unlocked") {
+        saveHighEnergyPurchase({
+          provider: "host",
+          source: "entitlement",
+          productId: HIGH_ENERGY_PRODUCT.productId,
+        });
+        return "unlocked";
+      }
+      if (entitlement === "unavailable") return "unavailable";
+      clearHighEnergyPurchase();
+      return "locked";
+    } catch (error: any) {
+      if (!options.silent) {
+        log(error.message || "购买权益查询失败");
+      }
+      return "unavailable";
+    }
+  };
+
   useEffect(() => {
     transferringRef.current = Boolean(status?.isTransferring);
   }, [status?.isTransferring]);
 
   useEffect(() => {
-    setHighEnergyUnlocked(readHighEnergyPurchase());
+    setHighEnergyUnlocked(highEnergyPurchaseCache.read());
     const refresh = () => {
-      if (!(window as any).FabushiMiniApp?.ready) return;
-      invokeHost("dharma.getSendStatus")
+      if (!isHostReady()) return;
+      checkHighEnergyEntitlement({ silent: true });
+      miniAppHost.dharma.getSendStatus()
         .then((data) => {
           setStatus(data);
           setSelectedMaterial(data?.selectedContent);
         })
         .catch((error) => log(error.message));
     };
-    refresh();
-    window.addEventListener("fabushi-miniapp-ready", refresh);
-    return () => window.removeEventListener("fabushi-miniapp-ready", refresh);
+    const unsubscribeReady = onMiniAppReady(refresh);
+    const unsubscribeMessage = miniAppHost.bot.onMessage?.((msg) => {
+      setText(msg);
+      log(`已收到内容: ${msg}`);
+      if (msg.trim().startsWith("http://") || msg.trim().startsWith("https://")) {
+        handleStartRef.current?.(msg);
+      }
+    });
+    const unsubscribeCommand = (
+      miniAppHost.bot.exposeCommand?.(
+        "/start",
+        (args, event) => {
+          log(`收到 /start 命令`);
+          if (args) setText(args);
+          handleStartRef.current?.(args || undefined, event?.commandId);
+        },
+        { description: "启动全球法布施" },
+      ) ||
+      miniAppHost.bot.onCommand?.("/start", (args, event) => {
+        log(`收到 /start 命令`);
+        if (args) setText(args);
+        handleStartRef.current?.(args || undefined, event?.commandId);
+      })
+    );
+
+    const { startParam } = miniAppHost.bot.getInitData?.() || {};
+    if (startParam) {
+      setText(startParam);
+      log(`收到启动参数: ${startParam}`);
+      if (startParam.trim().startsWith("http://") || startParam.trim().startsWith("https://")) {
+        setTimeout(() => handleStartRef.current?.(startParam), 100);
+      }
+    }
+
+    return () => {
+      unsubscribeReady();
+      unsubscribeMessage?.();
+      unsubscribeCommand?.();
+    };
   }, []);
 
   const waitForPaymentConfirmation = async (orderId: string) => {
     for (let i = 0; i < 8; i += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, i === 0 ? 600 : 2500));
-      const queried = await invokeHost("payments.alipay.queryOrder", { orderId });
+      const queried = await miniAppHost.payments.alipay.queryOrder(orderId);
       if (isPaidPayment(queried)) return queried;
     }
     return null;
   };
 
   const ensureHighEnergyPurchase = async () => {
-    if (highEnergyUnlocked || readHighEnergyPurchase()) {
-      setHighEnergyUnlocked(true);
-      return true;
+    const localUnlocked = highEnergyUnlocked || highEnergyPurchaseCache.read();
+    if (localUnlocked) {
+      const entitlement = await checkHighEnergyEntitlement({ silent: true });
+      if (entitlement !== "locked") {
+        if (entitlement === "unavailable") setHighEnergyUnlocked(true);
+        return true;
+      }
+      log("本地购买记录未在宿主后端确认，将重新发起支付。");
     }
     log(`${HIGH_ENERGY_PRODUCT.title}需要购买，正在请求宿主支付能力。`);
     try {
-      await invokeHost("auth.requireLogin");
+      await miniAppHost.auth.requireLogin();
     } catch (error: any) {
-      if (error?.code === "unknown_method" || error?.code === "permission_denied") {
+      if (isHostErrorCode(error, "unknown_method", "permission_denied")) {
         log("宿主没有提供登录确认接口，将继续尝试支付。");
       } else {
         throw error;
       }
     }
+    const entitlement = await checkHighEnergyEntitlement();
+    if (entitlement === "unlocked") {
+      log(`${HIGH_ENERGY_PRODUCT.title}已同步购买权益。`);
+      return true;
+    }
 
-    const order = await invokeHost("payments.alipay.createOrder", {
+    try {
+      const tokenPayment = await miniAppHost.payments.requestPayment({
+        productId: HIGH_ENERGY_PRODUCT.productId,
+        title: HIGH_ENERGY_PRODUCT.title,
+        amount: HIGH_ENERGY_PRODUCT.fudeGoldPrice,
+        currency: "FUDE_GOLD",
+        idempotencyKey: `${HIGH_ENERGY_PRODUCT.productId}:${Date.now()}`,
+      });
+      if (isPaidPayment(tokenPayment)) {
+        saveHighEnergyPurchase(tokenPayment);
+        log(`福德金支付成功，剩余 ${tokenPayment?.balance ?? 0} 福德金。`);
+        return true;
+      }
+    } catch (error: any) {
+      if (isHostErrorCode(error, "payment_cancelled")) {
+        log("已取消福德金支付。");
+        return false;
+      }
+      if (isHostErrorCode(error, "wallet_insufficient_funds")) {
+        log("福德金余额不足，将尝试支付宝支付。");
+      } else if (isHostErrorCode(error, "unknown_method", "permission_denied", "unsupported_currency")) {
+        log("宿主暂未提供福德金支付，将尝试支付宝支付。");
+      } else {
+        throw error;
+      }
+    }
+
+    const order = await miniAppHost.payments.alipay.createOrder({
       productId: HIGH_ENERGY_PRODUCT.productId,
       title: HIGH_ENERGY_PRODUCT.title,
       subject: HIGH_ENERGY_PRODUCT.title,
       amount: HIGH_ENERGY_PRODUCT.amount,
       priceLabel: HIGH_ENERGY_PRODUCT.priceLabel,
     });
-    const payment = await invokeHost("payments.alipay.pay", {
+    const payment = await miniAppHost.payments.alipay.pay({
       ...order,
       productId: HIGH_ENERGY_PRODUCT.productId,
       title: HIGH_ENERGY_PRODUCT.title,
@@ -248,7 +355,7 @@ export default function GlobalDharmaApp() {
   }, []);
 
   const applyOptions = async (preset = selectedRegion, loop = loopEnabled) => {
-    const data = await invokeHost("dharma.setSendOptions", {
+    const data = await miniAppHost.dharma.setSendOptions({
       regionMode: preset.id,
       global: preset.global === true,
       countryCodes: preset.countryCodes || [],
@@ -260,8 +367,9 @@ export default function GlobalDharmaApp() {
     return data;
   };
 
-  const handleStart = async () => {
-    if (!text.trim() && !selectedMaterial) {
+  const handleStart = async (overrideText?: string, commandId?: string) => {
+    const t = overrideText ?? text;
+    if (!t.trim() && !selectedMaterial) {
       log("请先输入链接、正文，或选择高能素材");
       return;
     }
@@ -269,9 +377,9 @@ export default function GlobalDharmaApp() {
     try {
       log("正在提取内容并启动全球法布施...");
       await applyOptions();
-      const data = await invokeHost("dharma.startGlobalSend", {
+      const data = await miniAppHost.dharma.startGlobalSend({
         title: selectedMaterial?.title || "小程序全球法布施",
-        text: text.trim(),
+        text: t.trim(),
         global: selectedRegion.global === true,
         countryCodes: selectedRegion.countryCodes || [],
         fieldEnergy: selectedRegion.fieldEnergy === true,
@@ -281,20 +389,36 @@ export default function GlobalDharmaApp() {
       setStatus(data);
       setSelectedMaterial(data?.selectedContent);
       log("启动成功，正在发送。");
+      if (commandId) {
+        await miniAppHost.bot.reportCommandResult?.({
+          commandId,
+          status: "completed",
+          message: `全球法布施已启动：${data?.selectedContent?.title || "小程序内容"}`,
+          data,
+        });
+      }
       if (selectedRegion.fieldEnergy && data?.wifiHotspot?.message) {
         log(data.wifiHotspot.message);
       }
     } catch (error: any) {
       log(error.message || "启动失败");
+      if (commandId) {
+        await miniAppHost.bot.reportCommandResult?.({
+          commandId,
+          status: "failed",
+          message: error.message || "全球法布施启动失败",
+        }).catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
   };
+  handleStartRef.current = handleStart;
 
   const handleStop = async () => {
     try {
       log("正在停止全球传输...");
-      const data = await invokeHost("dharma.stopGlobalSend");
+      const data = await miniAppHost.dharma.stopGlobalSend();
       setStatus(data);
       log("传输已停止。");
     } catch (error: any) {
@@ -322,18 +446,18 @@ export default function GlobalDharmaApp() {
       log("正在准备高能素材...");
       const unlocked = await ensureHighEnergyPurchase();
       if (!unlocked) return;
-      const data = await invokeHost("dharma.selectHighEnergyMaterial");
+      const data = await miniAppHost.dharma.selectHighEnergyMaterial();
       setStatus(data);
       setSelectedMaterial(data?.selectedContent);
       log("已选择高能素材。");
     } catch (error: any) {
-      if (error?.code === "login_required") {
+      if (isHostErrorCode(error, "login_required")) {
         log("需要先登录，正在请求宿主打开登录。");
         try {
-          await invokeHost("auth.requireLogin");
+          await miniAppHost.auth.requireLogin();
           const unlocked = await ensureHighEnergyPurchase();
           if (!unlocked) return;
-          const data = await invokeHost("dharma.selectHighEnergyMaterial");
+          const data = await miniAppHost.dharma.selectHighEnergyMaterial();
           setStatus(data);
           setSelectedMaterial(data?.selectedContent);
           log("已选择高能素材。");
@@ -365,7 +489,7 @@ export default function GlobalDharmaApp() {
           <h1 className="ma-header-title">全球法布施</h1>
           <p className="ma-header-subtitle">已发送 {status?.sentCount || 0} 个节点 · {(status?.sentMB || 0).toFixed(2)} MB</p>
         </div>
-        <button className="ma-icon-btn" onClick={() => invokeHost("dharma.getSendStatus").then(setStatus).catch((error) => log(error.message))} aria-label="刷新状态">
+        <button className="ma-icon-btn" onClick={() => miniAppHost.dharma.getSendStatus().then(setStatus).catch((error) => log(error.message))} aria-label="刷新状态">
           <RefreshCw size={18} />
         </button>
       </div>
@@ -403,7 +527,7 @@ export default function GlobalDharmaApp() {
       <label className="ma-label">高能素材</label>
       <button className={`ma-material-button ${selectedMaterial ? "selected" : ""}`} onClick={handleMaterial} disabled={busy}>
         <Sparkles size={18} />
-        <span>{selectedMaterial?.title || `${HIGH_ENERGY_PRODUCT.title}${highEnergyUnlocked ? " · 已购买" : ` · ${HIGH_ENERGY_PRODUCT.priceLabel}`}`}</span>
+        <span>{selectedMaterial?.title || `${HIGH_ENERGY_PRODUCT.title}${highEnergyUnlocked ? " · 已购买" : ` · ${HIGH_ENERGY_PRODUCT.fudeGoldPriceLabel}`}`}</span>
       </button>
 
       <label className="ma-label">链接或正文</label>

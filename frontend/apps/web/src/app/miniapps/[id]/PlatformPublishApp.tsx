@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, FileText, FolderOpen, Play, RefreshCw, Terminal, Upload } from "lucide-react";
 import "./miniapps.css";
 
@@ -47,6 +47,9 @@ export default function PlatformPublishApp() {
   const [running, setRunning] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const handleChatCommandRef = useRef<
+    ((body: string, commandId?: string, mode?: "draft" | "run") => Promise<void>) | null
+  >(null);
 
   const platform = useMemo(
     () => platforms.find((item) => item.id === platformId) || platforms[0],
@@ -69,7 +72,117 @@ export default function PlatformPublishApp() {
     return () => window.removeEventListener("fabushi-miniapp-ready", refresh);
   }, []);
 
+  useEffect(() => {
+    const { startParam } = miniAppHost.bot.getInitData?.() || {};
+    if (startParam) {
+      setText(startParam);
+      log(`收到启动参数: ${startParam}`);
+    }
+    const unsubscribeStart = (
+      miniAppHost.bot.exposeCommand?.(
+        "/start",
+        (args, event) => {
+          log("收到 /start 发布草稿命令");
+          void handleChatCommandRef.current?.(args, event?.commandId, "draft");
+        },
+        { description: "生成发布草稿" },
+      ) ||
+      miniAppHost.bot.onCommand?.("/start", (args, event) => {
+        log("收到 /start 发布草稿命令");
+        void handleChatCommandRef.current?.(args, event?.commandId, "draft");
+      })
+    );
+    const unsubscribeRun = (
+      miniAppHost.bot.exposeCommand?.(
+        "/run",
+        (args, event) => {
+          log("收到 /run 发布流水线命令");
+          void handleChatCommandRef.current?.(args, event?.commandId, "run");
+        },
+        { description: "生成草稿并运行本地发布流水线" },
+      ) ||
+      miniAppHost.bot.onCommand?.("/run", (args, event) => {
+        log("收到 /run 发布流水线命令");
+        void handleChatCommandRef.current?.(args, event?.commandId, "run");
+      })
+    );
+    return () => {
+      unsubscribeStart?.();
+      unsubscribeRun?.();
+    };
+  }, []);
+
   const hasCapability = (permission: string) => capabilities.includes(permission);
+
+  const handleChatCommand = async (
+    body: string,
+    commandId?: string,
+    mode: "draft" | "run" = "draft",
+  ) => {
+    const fullText = body.trim();
+    if (!fullText) {
+      log("请在命令后输入正文或链接。");
+      return;
+    }
+    setText(fullText);
+    setRunning(true);
+    try {
+      const data = await miniAppHost.platformPublish.createDraft({ title, text: fullText });
+      setDraft(data);
+      setTitle(data?.title || title);
+      if (data?.body) setText(data.body);
+      log("草稿已生成。");
+
+      let resultMessage = `发布草稿已生成：${data?.title || title}`;
+      if (mode === "run") {
+        const bodyText = data?.body || fullText;
+        const markdown = `# ${data?.title || title}\n\n${bodyText}\n`;
+        const saved = await miniAppHost.fs.writeFile({
+          path: `platform-publish/${platform.id}-${slugTime()}.md`,
+          content: markdown,
+        });
+        setSavedPath(saved?.path || "");
+        const script = [
+          `console.log("Fabushi platform pipeline: ${platform.label}");`,
+          `console.log("title: ${JSON.stringify(data?.title || title)}");`,
+          `console.log("body chars: ${bodyText.length}");`,
+          `console.log("draft file: ${JSON.stringify(saved?.path || "")}");`,
+          `console.log("ready to hand off to browser automation.");`,
+        ].join("\n");
+        const file = await miniAppHost.fs.writeFile({
+          path: `platform-publish/run-${platform.id}-${slugTime()}.js`,
+          content: script,
+        });
+        await miniAppHost.shell.execute({
+          title: `${platform.label} 发布流水线`,
+          command: "node",
+          arguments: [file.path],
+        });
+        resultMessage = `${platform.label} 发布流水线已启动。`;
+      }
+
+      if (commandId) {
+        await miniAppHost.bot.reportCommandResult?.({
+          commandId,
+          status: "completed",
+          message: resultMessage,
+          data,
+        });
+      }
+    } catch (error: any) {
+      log(error.message || "发布命令执行失败");
+      if (commandId) {
+        await miniAppHost.bot.reportCommandResult?.({
+          commandId,
+          status: "failed",
+          message: error.message || "发布命令执行失败",
+        }).catch(() => {});
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+  handleChatCommandRef.current = handleChatCommand;
 
   const handlePickFiles = async () => {
     try {
