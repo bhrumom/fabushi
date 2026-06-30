@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,6 +12,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
+import '../core/config/app_config.dart';
 import '../features/auth/application/auth_model.dart';
 import '../features/flashcards/application/content_pipeline.dart';
 import '../features/flashcards/application/flashcard_service.dart';
@@ -31,21 +33,136 @@ import '../services/openclaw/openclaw_runtime.dart';
 import '../services/project_service.dart';
 import '../widgets/social/social_feature_bot.dart';
 
+typedef MiniAppHostEventCallback = void Function(Map<String, dynamic> event);
+
+class MiniAppHostCommand {
+  MiniAppHostCommand({
+    required this.text,
+    String? commandId,
+    String? command,
+    String? args,
+    this.background = true,
+    DateTime? createdAt,
+  }) : commandId = commandId ?? 'cmd_${DateTime.now().microsecondsSinceEpoch}',
+       command = command ?? _defaultCommandFor(text),
+       args = args ?? _defaultArgsFor(text),
+       createdAt = createdAt ?? DateTime.now();
+
+  final String commandId;
+  final String text;
+  final String command;
+  final String args;
+  final bool background;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': commandId,
+    'commandId': commandId,
+    'command': command,
+    'args': args,
+    'text': text,
+    'rawText': text,
+    'background': background,
+    'source': 'chat',
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  static String _defaultCommandFor(String text) {
+    final trimmed = text.trim();
+    if (!trimmed.startsWith('/')) return '/start';
+    final firstSpace = trimmed.indexOf(RegExp(r'\s'));
+    return firstSpace < 0 ? trimmed : trimmed.substring(0, firstSpace);
+  }
+
+  static String _defaultArgsFor(String text) {
+    final trimmed = text.trim();
+    if (!trimmed.startsWith('/')) return trimmed;
+    final firstSpace = trimmed.indexOf(RegExp(r'\s'));
+    if (firstSpace < 0) return '';
+    return trimmed.substring(firstSpace).trim();
+  }
+}
+
+class MiniAppHostController {
+  _MiniAppHostScreenState? _state;
+  Completer<_MiniAppHostScreenState> _attachedCompleter =
+      Completer<_MiniAppHostScreenState>();
+
+  bool get isAttached => _state != null;
+
+  void _attach(_MiniAppHostScreenState state) {
+    _state = state;
+    if (!_attachedCompleter.isCompleted) {
+      _attachedCompleter.complete(state);
+    }
+  }
+
+  void _detach(_MiniAppHostScreenState state) {
+    if (!identical(_state, state)) return;
+    _state = null;
+    if (_attachedCompleter.isCompleted) {
+      _attachedCompleter = Completer<_MiniAppHostScreenState>();
+    }
+  }
+
+  Future<Map<String, dynamic>> runCommand(
+    String text, {
+    String? command,
+    String? args,
+    String? commandId,
+    bool background = true,
+  }) async {
+    final state = await _waitForAttached();
+    return state._runCommand(
+      MiniAppHostCommand(
+        text: text,
+        command: command,
+        args: args,
+        commandId: commandId,
+        background: background,
+      ),
+    );
+  }
+
+  Future<_MiniAppHostScreenState> _waitForAttached() async {
+    final state = _state;
+    if (state != null) return state;
+    return _attachedCompleter.future.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        throw const MiniAppHostException('host_not_ready', '小程序后台尚未挂载');
+      },
+    );
+  }
+}
+
 class MiniAppHostScreen extends StatefulWidget {
   const MiniAppHostScreen({
     super.key,
     required this.bot,
     this.inline = false,
-    this.messageStream,
+    this.headless = false,
+    this.onMinimize,
+    this.onClose,
+    this.startParam,
+    this.controller,
+    this.onMiniAppEvent,
     this.onCliStart,
     this.onCliLog,
+    this.reloadToken,
   });
 
   final SocialFeatureBot bot;
   final bool inline;
-  final Stream<String>? messageStream;
+  final bool headless;
+  final VoidCallback? onMinimize;
+  final VoidCallback? onClose;
+  final String? startParam;
+  final MiniAppHostController? controller;
+  final MiniAppHostEventCallback? onMiniAppEvent;
   final void Function(String title, String taskId)? onCliStart;
-  final void Function(String taskId, String log)? onCliLog;
+  final void Function(String taskId, String data)? onCliLog;
+  final String? reloadToken;
 
   @override
   State<MiniAppHostScreen> createState() => _MiniAppHostScreenState();
@@ -62,17 +179,21 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   late final FlashcardService _flashcardService;
   bool _loading = true;
   String? _error;
-  
-  StreamSubscription<String>? _messageSub;
+
   InAppWebViewController? _webViewController;
   bool _hostReady = false;
-  final List<String> _pendingMessages = [];
+  Completer<void> _hostReadyCompleter = Completer<void>();
+  final Map<String, Map<String, dynamic>> _exposedBotCommands = {};
+  final List<Map<String, dynamic>> _pendingBotCommands = [];
+  final String _cacheBuster = DateTime.now().millisecondsSinceEpoch.toString();
 
   bool get _trustedOfficial => widget.bot.source == MiniAppSource.official;
 
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(this);
+    _seedBuiltInBotCommands();
     _flashcardRepository = FlashcardRepository();
     _contentPipeline = ContentPipeline(
       repository: _flashcardRepository,
@@ -82,46 +203,32 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       repository: _flashcardRepository,
       aiService: _aiService,
     );
-    _messageSub = widget.messageStream?.listen(_sendMessageToWeb);
   }
 
   @override
   void didUpdateWidget(covariant MiniAppHostScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
     final oldEntryUrl = _entryUrlFor(oldWidget.bot);
     final nextEntryUrl = _entryUrlFor(widget.bot);
-    if (oldEntryUrl != nextEntryUrl ||
-        oldWidget.bot.stableMiniAppId != widget.bot.stableMiniAppId) {
-      _hostReady = false;
-      _pendingMessages.clear();
-      if (mounted) {
-        setState(() {
-          _loading = true;
-          _error = null;
-        });
-      }
-      _webViewController?.loadUrl(
-        urlRequest: URLRequest(url: WebUri(nextEntryUrl)),
-      );
-    }
-    if (widget.messageStream != oldWidget.messageStream) {
-      _messageSub?.cancel();
-      _messageSub = widget.messageStream?.listen(_sendMessageToWeb);
-    }
-  }
 
-  void _sendMessageToWeb(String msg) {
-    if (_hostReady && _webViewController != null) {
-      final script = "window.dispatchEvent(new CustomEvent('fabushi-bot-message', { detail: { text: ${jsonEncode(msg)} } }));";
-      _webViewController!.evaluateJavascript(source: script);
-    } else {
-      _pendingMessages.add(msg);
+    if (oldEntryUrl != nextEntryUrl ||
+        oldWidget.bot.stableMiniAppId != widget.bot.stableMiniAppId ||
+        oldWidget.startParam != widget.startParam ||
+        oldWidget.reloadToken != widget.reloadToken) {
+      _markHostNotReady();
+      _exposedBotCommands.clear();
+      _seedBuiltInBotCommands();
+      if (mounted) setState(() {});
     }
   }
 
   @override
   void dispose() {
-    _messageSub?.cancel();
+    widget.controller?._detach(this);
     _httpClient.close();
     super.dispose();
   }
@@ -133,6 +240,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         InAppWebView(
           key: ValueKey(_entryUrl),
           initialUrlRequest: URLRequest(url: WebUri(_entryUrl)),
+          initialUserScripts: UnmodifiableListView<UserScript>([
+            UserScript(
+              source: _hostSdkScript,
+              injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+              contentWorld: ContentWorld.PAGE,
+            ),
+          ]),
           initialSettings: InAppWebViewSettings(
             javaScriptEnabled: true,
             transparentBackground: false,
@@ -152,7 +266,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             );
           },
           onLoadStart: (controller, url) {
-            _hostReady = false;
+            _markHostNotReady();
             if (mounted) {
               setState(() {
                 _loading = true;
@@ -163,14 +277,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
           onLoadStop: (controller, _) async {
             _webViewController = controller;
             await controller.evaluateJavascript(source: _hostSdkScript);
-            _hostReady = true;
+            _markHostReady();
             if (mounted) setState(() => _loading = false);
-            
-            for (final msg in _pendingMessages) {
-              final script = "window.dispatchEvent(new CustomEvent('fabushi-bot-message', { detail: { text: ${jsonEncode(msg)} } }));";
-              controller.evaluateJavascript(source: script);
-            }
-            _pendingMessages.clear();
           },
           onReceivedError: (controller, request, error) {
             if (mounted) {
@@ -203,10 +311,87 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       ],
     );
 
+    if (widget.headless) {
+      return ColoredBox(color: const Color(0xFF0F1722), child: content);
+    }
+
     if (widget.inline) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        child: ColoredBox(color: const Color(0xFF0F1722), child: content),
+        child: ColoredBox(
+          color: const Color(0xFF0F1722),
+          child: Column(
+            children: [
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF17212B),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.bot.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.more_vert,
+                        size: 20,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () {},
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    if (widget.onMinimize != null) ...[
+                      const SizedBox(width: 16),
+                      IconButton(
+                        tooltip: '收起到后台',
+                        icon: const Icon(
+                          Icons.keyboard_tab,
+                          size: 20,
+                          color: Colors.white70,
+                        ),
+                        onPressed: widget.onMinimize,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                    const SizedBox(width: 16),
+                    IconButton(
+                      tooltip: '关闭并销毁',
+                      icon: const Icon(
+                        Icons.close,
+                        size: 20,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () {
+                        if (widget.onClose != null) {
+                          widget.onClose!();
+                        } else if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: content),
+            ],
+          ),
+        ),
       );
     }
 
@@ -227,21 +412,300 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   String _entryUrlFor(SocialFeatureBot bot) {
     final explicitEntryUrl = bot.stableMiniAppEntryUrl;
-    if (explicitEntryUrl.isNotEmpty) return explicitEntryUrl;
-    final id = Uri.encodeComponent(bot.stableMiniAppId);
-    return 'https://fabushi.ombhrum.com/miniapps/$id';
+    var base = explicitEntryUrl.isNotEmpty
+        ? explicitEntryUrl
+        : 'https://fabushi.ombhrum.com/miniapps/${Uri.encodeComponent(bot.stableMiniAppId)}';
+
+    final uri = Uri.parse(base);
+    final queryParams = Map<String, String>.from(uri.queryParameters);
+    queryParams['_t'] = _cacheBuster;
+    if (widget.startParam != null && widget.startParam!.isNotEmpty) {
+      queryParams['tgWebAppStartParam'] = base64UrlEncode(
+        utf8.encode(widget.startParam!),
+      );
+    }
+    if (widget.reloadToken != null && widget.reloadToken!.isNotEmpty) {
+      queryParams['_cmd'] = widget.reloadToken!;
+    }
+    return uri.replace(queryParameters: queryParams).toString();
+  }
+
+  void _markHostNotReady() {
+    _hostReady = false;
+    if (_hostReadyCompleter.isCompleted) {
+      _hostReadyCompleter = Completer<void>();
+    }
+  }
+
+  void _markHostReady() {
+    _hostReady = true;
+    if (!_hostReadyCompleter.isCompleted) {
+      _hostReadyCompleter.complete();
+    }
+  }
+
+  Future<void> _waitForHostReady() async {
+    if (_hostReady && _webViewController != null) return;
+    await _hostReadyCompleter.future.timeout(
+      const Duration(seconds: 20),
+      onTimeout: () {
+        throw const MiniAppHostException('host_not_ready', '小程序后台加载超时');
+      },
+    );
+  }
+
+  void _seedBuiltInBotCommands() {
+    final description = switch (widget.bot.effectiveKind) {
+      MiniAppBotKind.globalDharma => '启动全球法布施',
+      MiniAppBotKind.flashcards => '开始制作背诵闪卡',
+      MiniAppBotKind.platformPublish => '生成平台发布草稿',
+      MiniAppBotKind.botFather ||
+      MiniAppBotKind.assistant ||
+      MiniAppBotKind.thirdParty => null,
+    };
+    if (description == null) return;
+    _exposedBotCommands['/start'] = {
+      'command': '/start',
+      'description': description,
+      'source': 'manifest',
+      'registeredAt': DateTime.now().toIso8601String(),
+    };
+  }
+
+  Future<void> _waitForCommandExposed(String command) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      if (_exposedBotCommands.containsKey(command)) return;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    throw MiniAppHostException(
+      'command_not_exposed',
+      '小程序未暴露 $command 能力',
+      data: {
+        'command': command,
+        'exposedCommands': _exposedBotCommands.keys.toList(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _runCommand(MiniAppHostCommand command) async {
+    await _waitForHostReady();
+    final controller = _webViewController;
+    if (controller == null) {
+      throw const MiniAppHostException('host_not_ready', '小程序后台尚未就绪');
+    }
+    await _waitForCommandExposed(command.command);
+    final commandJson = command.toJson();
+    _enqueueBotCommand(commandJson);
+    final payload = jsonEncode(commandJson);
+    await controller.evaluateJavascript(
+      source:
+          '''
+(function () {
+  var detail = $payload;
+  if (window.FabushiMiniApp && window.FabushiMiniApp.__deliverCommand) {
+    window.FabushiMiniApp.__deliverCommand(detail);
+    return;
+  }
+  window.__fabushiLastMiniAppCommand = detail;
+  window.__fabushiMiniAppCommandQueue = window.__fabushiMiniAppCommandQueue || [];
+  window.__fabushiMiniAppCommandQueue.push(detail);
+  try {
+    var commandQueue = JSON.parse(window.localStorage.getItem('__fabushiMiniAppCommandQueue') || '[]');
+    commandQueue.push(detail);
+    window.localStorage.setItem('__fabushiMiniAppCommandQueue', JSON.stringify(commandQueue.slice(-50)));
+  } catch (e) {}
+  window.dispatchEvent(new CustomEvent('fabushi-miniapp-command', { detail: detail }));
+})();
+''',
+    );
+    return {
+      'accepted': true,
+      'delivered': true,
+      'queued': true,
+      'commandId': command.commandId,
+      'command': command.command,
+      'args': command.args,
+      'background': command.background,
+    };
+  }
+
+  void _enqueueBotCommand(Map<String, dynamic> command) {
+    _pendingBotCommands.add(command);
+    if (_pendingBotCommands.length > 50) {
+      _pendingBotCommands.removeRange(0, _pendingBotCommands.length - 50);
+    }
+  }
+
+  Map<String, dynamic> _takePendingBotCommands(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final requestedCommand = params['command']?.toString().trim();
+    final taken = <Map<String, dynamic>>[];
+    final kept = <Map<String, dynamic>>[];
+    for (final command in _pendingBotCommands) {
+      if (requestedCommand == null ||
+          requestedCommand.isEmpty ||
+          command['command']?.toString() == requestedCommand) {
+        taken.add(command);
+      } else {
+        kept.add(command);
+      }
+    }
+    _pendingBotCommands
+      ..clear()
+      ..addAll(kept);
+    return {'commands': taken};
   }
 
   String get _hostSdkScript {
     return '''
 (function () {
   if (window.FabushiMiniApp) return;
+  function invoke(method, params) {
+    return window.flutter_inappwebview.callHandler('FabushiMiniAppInvoke', {
+      method: method,
+      params: params || {}
+    });
+  }
+  function commandKey(detail) {
+    if (!detail || typeof detail !== "object") return "";
+    return detail.commandId ||
+      detail.id ||
+      [detail.createdAt, detail.command, detail.rawText || detail.text]
+        .filter(Boolean)
+        .join(":");
+  }
+  function readStoredCommandQueue() {
+    try {
+      var raw = window.localStorage.getItem('__fabushiMiniAppCommandQueue') || '[]';
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function writeStoredCommandQueue(queue) {
+    try {
+      window.localStorage.setItem('__fabushiMiniAppCommandQueue', JSON.stringify(queue.slice(-50)));
+    } catch (e) {}
+  }
+  function rememberCommand(detail) {
+    window.__fabushiLastMiniAppCommand = detail;
+    window.__fabushiMiniAppCommandQueue = window.__fabushiMiniAppCommandQueue || [];
+    window.__fabushiMiniAppCommandQueue.push(detail);
+    var stored = readStoredCommandQueue();
+    stored.push(detail);
+    writeStoredCommandQueue(stored);
+    try {
+      var log = JSON.parse(window.localStorage.getItem('__fabushiMiniAppCommandLog') || '[]');
+      log.push(detail);
+      window.localStorage.setItem('__fabushiMiniAppCommandLog', JSON.stringify(log.slice(-50)));
+    } catch (e) {}
+  }
+  function queuedCommands() {
+    var commands = [];
+    if (window.__fabushiLastMiniAppCommand) commands.push(window.__fabushiLastMiniAppCommand);
+    if (Array.isArray(window.__fabushiMiniAppCommandQueue)) {
+      commands = commands.concat(window.__fabushiMiniAppCommandQueue);
+      window.__fabushiMiniAppCommandQueue = [];
+    }
+    commands = commands.concat(readStoredCommandQueue());
+    writeStoredCommandQueue([]);
+    return commands;
+  }
+  function deliverCommand(callback, seen, detail) {
+    if (!detail || typeof detail !== "object") return;
+    var key = commandKey(detail);
+    if (key) {
+      if (seen.has(key)) return;
+      seen.add(key);
+    }
+    callback(detail);
+  }
+  function drainQueuedCommands(callback, seen) {
+    var commands = queuedCommands();
+    commands.forEach(function(detail) {
+      deliverCommand(callback, seen, detail);
+    });
+  }
+  function onAnyCommand(callback) {
+    var seen = new Set();
+    var handler = function(event) {
+      deliverCommand(callback, seen, event && event.detail);
+    };
+    window.addEventListener("fabushi-miniapp-command", handler);
+    (window.queueMicrotask || function(fn) { setTimeout(fn, 0); })(function() {
+      drainQueuedCommands(callback, seen);
+    });
+    return function() {
+      window.removeEventListener("fabushi-miniapp-command", handler);
+    };
+  }
+  function onCommand(command, callback) {
+    return onAnyCommand(function(detail) {
+      if (detail.command === command) callback(detail.args || "", detail);
+    });
+  }
+  function exposeCommand(command, callback, options) {
+    options = options || {};
+    var commands = [{
+      command: command,
+      description: options.description || ''
+    }];
+    invoke('bot.setCommands', { commands: commands }).catch(function() {});
+    return onCommand(command, callback);
+  }
+  function deliverFromHost(detail) {
+    rememberCommand(detail);
+    window.dispatchEvent(new CustomEvent('fabushi-miniapp-command', { detail: detail }));
+  }
   window.FabushiMiniApp = {
-    invoke: function(method, params) {
-      return window.flutter_inappwebview.callHandler('FabushiMiniAppInvoke', {
-        method: method,
-        params: params || {}
-      });
+    version: '1.4.0',
+    invoke: invoke,
+    __deliverCommand: deliverFromHost,
+    app: {
+      getContext: function() { return invoke('app.getContext'); },
+      getCapabilities: function() { return invoke('app.getCapabilities'); },
+      getHostApiSpec: function() { return invoke('app.getHostApiSpec'); },
+      getTheme: function() { return invoke('app.getTheme'); }
+    },
+    auth: {
+      getSession: function() { return invoke('auth.getSession'); },
+      requireLogin: function() { return invoke('auth.requireLogin'); },
+      getAccessToken: function() { return invoke('auth.getAccessToken'); }
+    },
+    payments: {
+      requestPayment: function(params) { return invoke('payments.requestPayment', params || {}); },
+      checkEntitlement: function(params) { return invoke('payments.checkEntitlement', params || {}); },
+      alipay: {
+        createOrder: function(params) { return invoke('payments.alipay.createOrder', params || {}); },
+        pay: function(params) { return invoke('payments.alipay.pay', params || {}); },
+        queryOrder: function(params) { return invoke('payments.alipay.queryOrder', params || {}); },
+        checkEntitlement: function(params) { return invoke('payments.alipay.checkEntitlement', params || {}); }
+      }
+    },
+    wallet: {
+      getBalance: function(params) { return invoke('wallet.getBalance', params || {}); }
+    },
+    bot: {
+      sendMessage: function(params) { return invoke('bot.sendMessage', params || {}); },
+      postMessage: function(params) { return invoke('bot.postMessage', params || {}); },
+      reportCommandResult: function(params) { return invoke('bot.reportCommandResult', params || {}); },
+      takePendingCommands: function(params) { return invoke('bot.takePendingCommands', params || {}); },
+      openPanel: function(params) { return invoke('bot.openPanel', params || {}); },
+      setPanelState: function(params) { return invoke('bot.setPanelState', params || {}); },
+      setCommands: function(params) { return invoke('bot.setCommands', params || {}); },
+      close: function(params) { return invoke('bot.close', params || {}); },
+      onAnyCommand: onAnyCommand,
+      onCommand: onCommand,
+      exposeCommand: exposeCommand
+    },
+    dharma: {
+      getSendStatus: function() { return invoke('dharma.getSendStatus'); },
+      setSendOptions: function(params) { return invoke('dharma.setSendOptions', params || {}); },
+      selectHighEnergyMaterial: function() { return invoke('dharma.selectHighEnergyMaterial'); },
+      startGlobalSend: function(params) { return invoke('dharma.startGlobalSend', params || {}); },
+      stopGlobalSend: function() { return invoke('dharma.stopGlobalSend'); }
     },
     ready: true
   };
@@ -294,6 +758,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _requireLogin();
       case 'auth.getAccessToken':
         return _authAccessToken();
+      case 'wallet.getBalance':
+        return _getWalletBalance(params);
+      case 'payments.requestPayment':
+        return _requestFudeGoldPayment(params);
+      case 'payments.checkEntitlement':
+      case 'payments.alipay.checkEntitlement':
+        return _checkPurchaseEntitlement(params);
       case 'payments.alipay.createOrder':
         return _createAlipayOrder(params);
       case 'payments.alipay.pay':
@@ -308,8 +779,23 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _disableWifiHotspot();
       case 'bot.sendMessage':
         return _botSendMessage(params);
+      case 'bot.postMessage':
+        return _botPostMessage(params);
+      case 'bot.reportCommandResult':
+        return _botReportCommandResult(params);
+      case 'bot.takePendingCommands':
+        return _takePendingBotCommands(params);
       case 'bot.openPanel':
       case 'bot.setPanelState':
+        return {'accepted': true};
+      case 'bot.setCommands':
+        return _botSetCommands(params);
+      case 'bot.close':
+        if (widget.onClose != null) {
+          widget.onClose!();
+        } else if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
         return {'accepted': true};
       case 'ai.chat':
         return _aiChat(params);
@@ -367,7 +853,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _appContext() {
     return {
-      'hostApiVersion': '1.2',
+      'hostApiVersion': '1.4',
+      'hostSdkVersion': '1.4.0',
       'bot': {
         'botId': widget.bot.stableBotId,
         'title': widget.bot.title,
@@ -399,11 +886,35 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _hostApiSpec() {
     return {
-      'hostApiVersion': '1.2',
+      'hostApiVersion': '1.4',
+      'hostSdkVersion': '1.4.0',
       'invokePattern': 'window.FabushiMiniApp.invoke(method, params)',
+      'commandProtocol': {
+        'event': 'fabushi-miniapp-command',
+        'lastCommandCache': 'window.__fabushiLastMiniAppCommand',
+        'helpers': [
+          'window.FabushiMiniApp.bot.onAnyCommand(callback)',
+          'window.FabushiMiniApp.bot.onCommand(command, callback)',
+        ],
+        'defaultCommand': '/start',
+        'detail': {
+          'id': 'stable command id',
+          'command': '/start',
+          'args': 'message text without command prefix',
+          'text': 'raw chat text',
+          'background': true,
+          'source': 'chat',
+        },
+        'resultMethods': ['bot.postMessage', 'bot.reportCommandResult'],
+      },
       'permissionGroups': {
         'identity': ['auth.session', 'auth.token'],
-        'payments': ['payments.alipay'],
+        'payments': [
+          'payments.alipay',
+          'payments.entitlement',
+          'payments.fudeGold',
+          'wallet.balance',
+        ],
         'dharma': ['dharma.share', 'wifi.hotspot', 'local.loopback'],
         'creation': ['flashcards.create', 'platform.publish'],
         'localAutomation': [
@@ -425,6 +936,21 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
           'description': '读取当前小程序已获准的权限列表。',
         },
         {
+          'method': 'bot.postMessage',
+          'permission': 'bot.chat',
+          'description': '小程序把后台命令进度、结果或错误写回机器人聊天框。',
+        },
+        {
+          'method': 'bot.reportCommandResult',
+          'permission': 'bot.chat',
+          'description': '小程序按 commandId 上报后台命令完成、失败或仍在运行。',
+        },
+        {
+          'method': 'bot.takePendingCommands',
+          'permission': 'bot.chat',
+          'description': '小程序从宿主消息队列拉取聊天命令；宿主只做消息媒介，不执行业务逻辑。',
+        },
+        {
           'method': 'auth.getSession',
           'permission': 'auth.session',
           'description': '读取宿主登录态、脱敏用户资料和会员状态，不返回 token。',
@@ -443,6 +969,21 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
           'method': 'payments.alipay.createOrder',
           'permission': 'payments.alipay',
           'description': '可选：用宿主官方支付后台创建支付宝订单；小程序自己的商品和购买记录仍由小程序保存。',
+        },
+        {
+          'method': 'payments.checkEntitlement',
+          'permission': 'payments.entitlement',
+          'description': '查询宿主后端是否已解锁一次性付费商品，供小程序避免重复购买。',
+        },
+        {
+          'method': 'payments.requestPayment',
+          'permission': 'payments.fudeGold',
+          'description': '请求宿主弹出原生确认并扣除福德金，成功后由宿主登记权益。',
+        },
+        {
+          'method': 'wallet.getBalance',
+          'permission': 'wallet.balance',
+          'description': '读取当前用户福德金余额。',
         },
         {
           'method': 'payments.alipay.pay',
@@ -541,15 +1082,28 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
   }
 
-  Future<Map<String, dynamic>> _requireLogin() async {
+  Future<Map<String, dynamic>> _requireLogin({bool force = false}) async {
     _requirePermission('auth.session');
     final auth = Provider.of<AuthModel?>(context, listen: false);
-    if (auth?.isLoggedIn == true) return _authSession();
+    if (!force && auth?.isLoggedIn == true) return _authSession();
     if (!mounted) {
       throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
     }
+    if (force && auth?.isLoggedIn == true) {
+      await auth!.logout();
+      if (!mounted) {
+        throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+      }
+    }
     await Navigator.of(context, rootNavigator: true).pushNamed('/login');
-    return _authSession();
+    final session = _authSession();
+    if (session['authenticated'] != true) {
+      throw MiniAppHostException(
+        'login_required',
+        force ? '登录已过期，请重新登录' : '请先登录',
+      );
+    }
+    return session;
   }
 
   Map<String, dynamic> _authAccessToken() {
@@ -562,16 +1116,129 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return {'token': token, 'tokenType': 'Bearer'};
   }
 
+  Future<Map<String, dynamic>> _getWalletBalance(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('wallet.balance');
+    final currency = params['currency']?.toString().trim().toUpperCase();
+    final result = await _runMembershipRequestWithAuthRetry(
+      (token) => _membershipService.getWalletBalance(
+        token,
+        currency: currency == null || currency.isEmpty ? 'FUDE_GOLD' : currency,
+      ),
+    );
+    _throwIfAuthFailure(result);
+    if (result['success'] != true) {
+      throw MiniAppHostException(
+        'wallet_balance_failed',
+        result['message']?.toString() ?? '查询福德金余额失败',
+      );
+    }
+    return {
+      'currency': result['currency'] ?? 'FUDE_GOLD',
+      'displayName': result['displayName'] ?? '福德金',
+      'balance': result['balance'] ?? 0,
+    };
+  }
+
+  Future<Map<String, dynamic>> _requestFudeGoldPayment(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('payments.fudeGold');
+    final currency =
+        (params['currency']?.toString().trim().toUpperCase() ?? 'FUDE_GOLD');
+    if (currency != 'FUDE_GOLD') {
+      throw const MiniAppHostException('unsupported_currency', '暂仅支持福德金支付');
+    }
+    final productId = _readProductId(params);
+    final amount = _readPaymentAmount(params);
+    final rawTitle = params['title']?.toString().trim() ?? '';
+    final title = rawTitle.isNotEmpty
+        ? rawTitle
+        : AppConfig.zenBuddhaAssetDisplayName;
+    final confirmed = await _confirmFudeGoldPayment(
+      title: title,
+      amount: amount,
+    );
+    if (!confirmed) {
+      throw const MiniAppHostException('payment_cancelled', '已取消福德金支付');
+    }
+
+    final result = await _runMembershipRequestWithAuthRetry(
+      (token) => _membershipService.spendWalletBalance(
+        token,
+        productId: productId,
+        amount: amount,
+        currency: currency,
+        miniAppId: widget.bot.stableMiniAppId,
+        idempotencyKey: params['idempotencyKey']?.toString(),
+        description: title,
+      ),
+    );
+    _throwIfAuthFailure(result);
+    if (result['success'] != true) {
+      final details = result['details'];
+      throw MiniAppHostException(
+        result['statusCode'] == 402
+            ? 'wallet_insufficient_funds'
+            : 'wallet_payment_failed',
+        result['message']?.toString() ?? '福德金支付失败',
+        data: details,
+      );
+    }
+
+    return {
+      'paid': result['paid'] == true,
+      'provider': result['provider'] ?? 'fude_gold',
+      'currency': result['currency'] ?? currency,
+      'productId': result['productId'] ?? productId,
+      'amount': result['amount'] ?? amount,
+      'transactionId': result['transactionId'],
+      'balance': result['balance'],
+      'unlocked': result['unlocked'] == true,
+      'alreadyProcessed': result['alreadyProcessed'] == true,
+    };
+  }
+
+  Future<bool> _confirmFudeGoldPayment({
+    required String title,
+    required int amount,
+  }) async {
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认福德金支付'),
+        content: Text('是否支付 $amount 福德金解锁「$title」？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('支付'),
+          ),
+        ],
+      ),
+    );
+    return accepted == true;
+  }
+
   Future<Map<String, dynamic>> _createAlipayOrder(
     Map<String, dynamic> params,
   ) async {
     _requirePermission('payments.alipay');
-    final token = _requireAuthToken();
     final plan = _readProductId(params);
     final useWeb = params['web'] == true || !_isNativeAndroid;
-    final result = useWeb
-        ? await _membershipService.createAlipayWebOrder(token, plan)
-        : await _membershipService.createAlipayOrder(token, plan);
+    final result = await _runMembershipRequestWithAuthRetry(
+      (token) => useWeb
+          ? _membershipService.createAlipayWebOrder(token, plan)
+          : _membershipService.createAlipayOrder(token, plan),
+    );
+    _throwIfAuthFailure(result);
     if (result['success'] != true) {
       throw MiniAppHostException(
         'alipay_order_failed',
@@ -588,6 +1255,33 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       'qrCode': result['qrCode'],
       'orderString': result['orderString'],
       'web': useWeb,
+    };
+  }
+
+  Future<Map<String, dynamic>> _checkPurchaseEntitlement(
+    Map<String, dynamic> params,
+  ) async {
+    _requireAnyPermission(const [
+      'payments.entitlement',
+      'payments.alipay',
+      'payments.fudeGold',
+    ]);
+    final productId = _readProductId(params);
+    final token = _requireAuthToken();
+    final result = await _membershipService.checkPurchaseEntitlement(
+      token,
+      productId,
+    );
+    _throwIfAuthFailure(result);
+    if (result['success'] != true) {
+      throw MiniAppHostException(
+        'entitlement_check_failed',
+        result['message']?.toString() ?? '查询付费项目状态失败',
+      );
+    }
+    return {
+      'productId': result['product'] ?? productId,
+      'unlocked': result['unlocked'] == true,
     };
   }
 
@@ -659,6 +1353,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     Map<String, dynamic> result;
     if (auth?.isLoggedIn == true && token != null && token.isNotEmpty) {
       result = await _membershipService.queryAlipayOrderStatus(token, orderId);
+      if (_isAuthFailureResponse(result)) {
+        result = await _membershipService.queryAlipayOrderPublic(orderId);
+      }
     } else {
       result = await _membershipService.queryAlipayOrderPublic(orderId);
     }
@@ -672,14 +1369,15 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final nestedOrder = result['order'] is Map
         ? Map<String, dynamic>.from(result['order'] as Map)
         : const <String, dynamic>{};
-    final status = (result['status'] ??
-            result['tradeStatus'] ??
-            result['resultStatus'] ??
-            nestedOrder['status'] ??
-            nestedOrder['tradeStatus'] ??
-            '')
-        .toString()
-        .toUpperCase();
+    final status =
+        (result['status'] ??
+                result['tradeStatus'] ??
+                result['resultStatus'] ??
+                nestedOrder['status'] ??
+                nestedOrder['tradeStatus'] ??
+                '')
+            .toString()
+            .toUpperCase();
     final paidStatuses = {'PAID', 'SUCCESS', 'TRADE_SUCCESS', '9000'};
     final pendingStatuses = {'PENDING', 'WAIT_BUYER_PAY', '8000', '6004'};
     return {
@@ -726,6 +1424,37 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return '本地场能未开启';
   }
 
+  Map<String, dynamic> _botSetCommands(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final commands = params['commands'];
+    if (commands is! List) {
+      throw const MiniAppHostException('invalid_request', 'commands 必须是数组');
+    }
+
+    final registered = <Map<String, dynamic>>[];
+    for (final item in commands) {
+      if (item is! Map) continue;
+      final spec = Map<String, dynamic>.from(item);
+      final rawCommand = spec['command']?.toString().trim() ?? '';
+      if (rawCommand.isEmpty) continue;
+      final command = rawCommand.startsWith('/') ? rawCommand : '/$rawCommand';
+      final normalizedSpec = <String, dynamic>{
+        ...spec,
+        'command': command,
+        'source': 'mini_app',
+        'registeredAt': DateTime.now().toIso8601String(),
+      };
+      _exposedBotCommands[command] = normalizedSpec;
+      registered.add(normalizedSpec);
+    }
+
+    return {
+      'accepted': true,
+      'commands': registered,
+      'exposedCommands': _exposedBotCommands.keys.toList()..sort(),
+    };
+  }
+
   Future<Map<String, dynamic>> _botSendMessage(
     Map<String, dynamic> params,
   ) async {
@@ -734,6 +1463,53 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       throw const MiniAppHostException('invalid_request', 'message 不能为空');
     }
     return _aiChat({'message': message});
+  }
+
+  Map<String, dynamic> _botPostMessage(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final message = params['message']?.toString().trim().isNotEmpty == true
+        ? params['message'].toString().trim()
+        : params['text']?.toString().trim() ?? '';
+    if (message.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'message 不能为空');
+    }
+    final level = params['level']?.toString().trim().toLowerCase() ?? 'info';
+    final event = {
+      'type': 'bot.message',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'text': message,
+      'level': level,
+      'isError': level == 'error',
+      if (params['commandId'] != null) 'commandId': params['commandId'],
+      if (params['data'] != null) 'data': params['data'],
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    widget.onMiniAppEvent?.call(event);
+    return {'accepted': true};
+  }
+
+  Map<String, dynamic> _botReportCommandResult(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final status =
+        params['status']?.toString().trim().toLowerCase() ?? 'completed';
+    final message = params['message']?.toString().trim().isNotEmpty == true
+        ? params['message'].toString().trim()
+        : params['text']?.toString().trim() ?? '';
+    final event = {
+      'type': 'bot.commandResult',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'status': status,
+      'text': message,
+      'level': status == 'failed' ? 'error' : 'info',
+      'isError': status == 'failed',
+      if (params['commandId'] != null) 'commandId': params['commandId'],
+      if (params['data'] != null) 'data': params['data'],
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    widget.onMiniAppEvent?.call(event);
+    return {'accepted': true};
   }
 
   Future<Map<String, dynamic>> _aiChat(Map<String, dynamic> params) async {
@@ -776,6 +1552,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         content.errorMessage ?? '内容提取失败',
       );
     }
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
     final model = Provider.of<FileTransferModel>(context, listen: false);
     await model.addTextContentForSending(
       title: content.title,
@@ -815,7 +1594,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
     if (touchesGlobal) {
       model.setGlobalSendEnabled(wantsGlobal);
-      model.setCountryList(wantsGlobal ? (countryCodes.isEmpty ? ['ALL'] : countryCodes) : []);
+      model.setCountryList(
+        wantsGlobal ? (countryCodes.isEmpty ? ['ALL'] : countryCodes) : [],
+      );
     }
 
     if (params.containsKey('loop')) {
@@ -836,6 +1617,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       final enableLoopback =
           params['localLoopback'] == true || regionMode == 'loopback';
       if (enableLoopback) {
+        if (!mounted) {
+          throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+        }
         final auth = Provider.of<AuthModel?>(context, listen: false);
         final hasPremiumAccess = auth?.hasPermission('premium') ?? false;
         if (!hasPremiumAccess) {
@@ -853,6 +1637,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Future<Map<String, dynamic>> _selectHighEnergyMaterial() async {
     _requirePermission('dharma.share');
+    await _requireProductEntitlement(AppConfig.zenBuddhaAssetProductId);
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
     final model = Provider.of<FileTransferModel>(context, listen: false);
     await model.addZenBuddhaAssetForSending();
     return _globalDharmaStatus();
@@ -954,9 +1742,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         url: url == null || url.isEmpty ? null : url,
         title: title.isEmpty ? defaultTitle : title,
         sourceApp: sourceApp,
-        sourceType: url == null || url.isEmpty
-            ? 'miniapp_text'
-            : 'miniapp_url',
+        sourceType: url == null || url.isEmpty ? 'miniapp_text' : 'miniapp_url',
       ),
     );
   }
@@ -1002,6 +1788,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       requirement: requirement,
       maxCards: maxCards,
     );
+    if (!mounted) {
+      throw const MiniAppHostException('host_disposed', '小程序宿主已关闭');
+    }
     final auth = Provider.of<AuthModel?>(context, listen: false);
     final stream = mode == 'ai'
         ? _flashcardService.generateAiCardsStream(
@@ -1059,10 +1848,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     }
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => FlashcardStudyScreen(
-          deck: deck!,
-          repository: _flashcardRepository,
-        ),
+        builder: (_) =>
+            FlashcardStudyScreen(deck: deck!, repository: _flashcardRepository),
       ),
     );
     return {'opened': true, 'deckId': deckId};
@@ -1285,7 +2072,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (path.isEmpty) {
       throw const MiniAppHostException('invalid_request', '路径不能为空');
     }
-    
+
     // Convert to absolute path if relative, storing in Documents
     final resolvedPath = await _resolvePath(path);
     final file = File(resolvedPath);
@@ -1303,7 +2090,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (path.isEmpty) {
       throw const MiniAppHostException('invalid_request', '路径不能为空');
     }
-    
+
     final resolvedPath = await _resolvePath(path);
     final file = File(resolvedPath);
     if (!await file.exists()) {
@@ -1313,7 +2100,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return {'ok': true, 'content': content, 'path': resolvedPath};
   }
 
-  Future<Map<String, dynamic>> _shellExecute(Map<String, dynamic> params) async {
+  Future<Map<String, dynamic>> _shellExecute(
+    Map<String, dynamic> params,
+  ) async {
     _requirePermission('shell.execute');
     if (!AiBackendPolicy.isDesktopNative) {
       throw const MiniAppHostException('unsupported_platform', '当前平台不支持执行终端命令');
@@ -1324,7 +2113,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         .toList();
     final workingDirectory = params['workingDirectory']?.toString();
     final title = params['title']?.toString() ?? '执行终端命令';
-    
+
     if (command.isEmpty) {
       throw const MiniAppHostException('invalid_request', '命令不能为空');
     }
@@ -1332,28 +2121,25 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     try {
       final taskId = DateTime.now().millisecondsSinceEpoch.toString();
       widget.onCliStart?.call(title, taskId);
-      
+
       final process = await Process.start(
         command,
         arguments,
         workingDirectory: workingDirectory,
         runInShell: true,
       );
-      
+
       process.stdout.transform(utf8.decoder).listen((data) {
         widget.onCliLog?.call(taskId, data);
       });
       process.stderr.transform(utf8.decoder).listen((data) {
         widget.onCliLog?.call(taskId, data);
       });
-      
+
       final exitCode = await process.exitCode;
       widget.onCliLog?.call(taskId, '\\n[进程已结束，退出码: $exitCode]');
-      
-      return {
-        'ok': exitCode == 0,
-        'exitCode': exitCode,
-      };
+
+      return {'ok': exitCode == 0, 'exitCode': exitCode};
     } catch (e) {
       throw MiniAppHostException('execution_failed', '执行失败: $e');
     }
@@ -1383,13 +2169,25 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   Future<String> _resolvePath(String inputPath) async {
     if (p.isAbsolute(inputPath)) return inputPath;
     final docs = await getApplicationDocumentsDirectory();
-    final miniAppDir = Directory(p.join(docs.path, 'fabushi_miniapps', widget.bot.stableMiniAppId));
+    final miniAppDir = Directory(
+      p.join(docs.path, 'fabushi_miniapps', widget.bot.stableMiniAppId),
+    );
     return p.normalize(p.join(miniAppDir.path, inputPath));
   }
 
   void _requirePermission(String permission) {
     if (widget.bot.permissions.contains(permission)) return;
     throw MiniAppHostException('permission_denied', '小程序未声明或未获准使用 $permission');
+  }
+
+  void _requireAnyPermission(List<String> permissions) {
+    for (final permission in permissions) {
+      if (widget.bot.permissions.contains(permission)) return;
+    }
+    throw MiniAppHostException(
+      'permission_denied',
+      '小程序未声明或未获准使用 ${permissions.join('/')}',
+    );
   }
 
   String _requireAuthToken() {
@@ -1401,6 +2199,41 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return token;
   }
 
+  Future<Map<String, dynamic>> _runMembershipRequestWithAuthRetry(
+    Future<Map<String, dynamic>> Function(String token) request,
+  ) async {
+    var token = _requireAuthToken();
+    var result = await request(token);
+    if (_isAuthFailureResponse(result)) {
+      await _requireLogin(force: true);
+      token = _requireAuthToken();
+      result = await request(token);
+    }
+    return result;
+  }
+
+  Future<void> _requireProductEntitlement(String productId) async {
+    final entitlement = await _checkPurchaseEntitlement({
+      'productId': productId,
+    });
+    if (entitlement['unlocked'] != true) {
+      throw MiniAppHostException(
+        'purchase_required',
+        '${AppConfig.zenBuddhaAssetDisplayName}尚未解锁',
+      );
+    }
+  }
+
+  bool _isAuthFailureResponse(Map<String, dynamic> result) {
+    return result['statusCode'] == 401 || result['errorKey'] == 'INVALID_TOKEN';
+  }
+
+  void _throwIfAuthFailure(Map<String, dynamic> result) {
+    if (_isAuthFailureResponse(result)) {
+      throw const MiniAppHostException('login_required', '登录已过期，请重新登录');
+    }
+  }
+
   String _readProductId(Map<String, dynamic> params) {
     final rawProductId = params['productId']?.toString().trim() ?? '';
     final rawPlan = params['plan']?.toString().trim() ?? '';
@@ -1409,6 +2242,20 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       throw const MiniAppHostException('invalid_request', 'productId 不能为空');
     }
     return productId;
+  }
+
+  int _readPaymentAmount(Map<String, dynamic> params) {
+    final raw = params['amount'];
+    final parsed = switch (raw) {
+      int v => v,
+      num v => v.toInt(),
+      String v => int.tryParse(v),
+      _ => null,
+    };
+    if (parsed == null || parsed <= 0) {
+      throw const MiniAppHostException('invalid_request', '福德金金额不能为空');
+    }
+    return parsed;
   }
 
   bool get _isNativeAndroid {
