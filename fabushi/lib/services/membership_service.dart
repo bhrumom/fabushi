@@ -139,6 +139,84 @@ class MembershipService {
     }
   }
 
+  Future<Map<String, dynamic>> getWalletBalance(
+    String token, {
+    String currency = 'FUDE_GOLD',
+  }) async {
+    try {
+      final endpoint = Uri.parse(AppConfig.walletBalanceUrl).path;
+      final response = await _apiClient.get(
+        endpoint,
+        token: token,
+        queryParams: {'currency': currency},
+      );
+
+      if (_isSuccess(response)) {
+        final wallet = response['wallet'] is Map
+            ? Map<String, dynamic>.from(response['wallet'] as Map)
+            : const <String, dynamic>{};
+        return {
+          'success': true,
+          'currency': wallet['currency'] ?? currency,
+          'balance': wallet['balance'] ?? 0,
+          'displayName': wallet['displayName'] ?? currency,
+        };
+      }
+
+      return _failureResponse(response, '查询福德金余额失败');
+    } catch (e) {
+      debugPrint('查询福德金余额失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
+  Future<Map<String, dynamic>> spendWalletBalance(
+    String token, {
+    required String productId,
+    required int amount,
+    String currency = 'FUDE_GOLD',
+    String? miniAppId,
+    String? idempotencyKey,
+    String? description,
+  }) async {
+    try {
+      final endpoint = Uri.parse(AppConfig.walletSpendUrl).path;
+      final body = <String, dynamic>{
+        'productId': productId,
+        'amount': amount,
+        'currency': currency,
+        'miniAppId': miniAppId,
+        'idempotencyKey': idempotencyKey,
+        'description': description,
+      }..removeWhere((_, value) => value == null);
+      final response = await _apiClient.post(
+        endpoint,
+        token: token,
+        body: body,
+      );
+
+      if (_isSuccess(response)) {
+        return {
+          'success': true,
+          'paid': response['paid'] == true,
+          'provider': response['provider'],
+          'currency': response['currency'] ?? currency,
+          'productId': response['productId'] ?? productId,
+          'amount': response['amount'] ?? amount,
+          'transactionId': response['transactionId'],
+          'balance': response['balance'],
+          'unlocked': response['unlocked'] == true,
+          'alreadyProcessed': response['alreadyProcessed'] == true,
+        };
+      }
+
+      return _failureResponse(response, '福德金支付失败');
+    } catch (e) {
+      debugPrint('福德金支付失败: $e');
+      return {'success': false, 'message': '网络连接失败'};
+    }
+  }
+
   Future<Map<String, dynamic>> queryAlipayOrderStatus(
     String token,
     String orderId,

@@ -7,11 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../core/config/app_config.dart';
 import '../features/auth/application/auth_model.dart';
-import '../features/flashcards/application/content_pipeline.dart';
-import '../features/flashcards/application/flashcard_service.dart';
-import '../features/flashcards/data/flashcard_repository.dart';
 import '../features/flashcards/domain/flashcard_models.dart';
-import '../features/flashcards/presentation/flashcard_study_screen.dart';
 import '../models/file_transfer_model.dart'
     if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../models/mini_app_model.dart';
@@ -33,11 +29,12 @@ class SocialFeatureChatScreen extends StatefulWidget {
 class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final TextEditingController _composer = TextEditingController();
   final ScrollController _scroll = ScrollController();
-  final Map<String, List<_ChatMessage>> _messages = {};
-  late final FlashcardRepository _flashcardRepository;
-  late final ContentPipeline _contentPipeline;
-  late final FlashcardService _flashcardService;
-  final DharmaPublishService _publishService = DharmaPublishService();
+  static final Map<String, List<_ChatMessage>> _sharedMessages = {};
+  static final Map<String, _MiniAppSession> _sharedMiniAppSessions = {};
+
+  final Map<String, List<_ChatMessage>> _messages = _sharedMessages;
+  final Map<String, _MiniAppSession> _miniAppSessions = _sharedMiniAppSessions;
+  final Map<String, String> _cliTaskBotIds = {};
   final http.Client _httpClient = http.Client();
   final Set<DharmaPublishPlatform> _platforms = {
     DharmaPublishPlatform.xiaohongshu,
@@ -46,11 +43,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   bool _busy = false;
   String _activity = '';
   bool _miniAppPanelOpen = false;
-  SocialFeatureBot? _panelBot;
-  final StreamController<String> _miniAppMessageController = StreamController<String>.broadcast();
+  String? _visibleMiniAppKey;
 
   SocialFeatureBot get _bot => widget.bot;
-  SocialFeatureBot get _activePanelBot => _panelBot ?? _bot;
   MiniAppBotKind get _kind => widget.bot.effectiveKind;
   List<_ChatMessage> get _botMessages =>
       _messages.putIfAbsent(widget.bot.stableBotId, () => []);
@@ -58,12 +53,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   @override
   void initState() {
     super.initState();
-    _flashcardRepository = FlashcardRepository();
-    _contentPipeline = ContentPipeline(repository: _flashcardRepository);
-    _flashcardService = FlashcardService(
-      repository: _flashcardRepository,
-      aiService: DachengAiService(),
-    );
     _ensureGreeting(widget.bot);
   }
 
@@ -73,7 +62,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     if (oldWidget.bot.stableBotId != widget.bot.stableBotId) {
       _composer.clear();
       _miniAppPanelOpen = false;
-      _panelBot = null;
+      _visibleMiniAppKey = null;
       _ensureGreeting(widget.bot);
       _scrollBottom();
     }
@@ -81,7 +70,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   @override
   void dispose() {
-    _miniAppMessageController.close();
     _httpClient.close();
     _composer.dispose();
     _scroll.dispose();
@@ -114,6 +102,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 980;
         final chatPaddingRight = (wide && _miniAppPanelOpen) ? 430.0 : 0.0;
+        final sessions = _orderedMiniAppSessions();
 
         return Stack(
           children: [
@@ -130,51 +119,77 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                   child: Container(color: Colors.black54),
                 ),
               ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              top: wide ? 0 : (_miniAppPanelOpen ? constraints.maxHeight * 0.14 : constraints.maxHeight),
-              bottom: wide ? 0 : (_miniAppPanelOpen ? 0 : -constraints.maxHeight * 0.86),
-              right: wide ? (_miniAppPanelOpen ? 0 : -430) : 0,
-              left: wide ? null : 0,
-              width: wide ? 430 : null,
-              child: Container(
-                padding: wide ? const EdgeInsets.all(12) : const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0B111A),
-                  border: wide ? const Border(left: BorderSide(color: Color(0xFF223040))) : null,
-                  borderRadius: wide ? null : const BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: MiniAppHostScreen(
-                  key: ValueKey(
-                    '${_activePanelBot.stableBotId}:${_activePanelBot.stableMiniAppId}:${_activePanelBot.stableMiniAppEntryUrl}',
-                  ),
-                  bot: _activePanelBot,
-                  inline: true,
-                  messageStream: _miniAppMessageController.stream,
-                  onCliStart: (title, taskId) {
-                    if (!mounted) return;
-                    setState(() {
-                      _botMessages.add(_ChatMessage.cliTask(title, taskId));
-                    });
-                    _scrollBottom();
-                  },
-                  onCliLog: (taskId, log) {
-                    if (!mounted) return;
-                    setState(() {
-                      final msg = _botMessages.lastWhere((m) => m.cliTaskId == taskId, orElse: () => _botMessages.first);
-                      if (msg.cliLogs != null) {
-                        msg.cliLogs!.add(log);
-                      }
-                    });
-                    _scrollBottom();
-                  },
-                ),
+            for (var i = 0; i < sessions.length; i++)
+              _buildMiniAppSessionHost(
+                sessions[i],
+                index: i,
+                constraints: constraints,
+                wide: wide,
               ),
-            ),
           ],
         );
       },
+    );
+  }
+
+  List<_MiniAppSession> _orderedMiniAppSessions() {
+    final sessions = _miniAppSessions.values.toList(growable: false);
+    sessions.sort((a, b) {
+      final aVisible = a.key == _visibleMiniAppKey;
+      final bVisible = b.key == _visibleMiniAppKey;
+      if (aVisible == bVisible) return 0;
+      return aVisible ? 1 : -1;
+    });
+    return sessions;
+  }
+
+  Widget _buildMiniAppSessionHost(
+    _MiniAppSession session, {
+    required int index,
+    required BoxConstraints constraints,
+    required bool wide,
+  }) {
+    assert(index >= 0);
+    final visible = _miniAppPanelOpen && session.key == _visibleMiniAppKey;
+    final compactTop = constraints.maxHeight * 0.14;
+
+    // 不把后台小程序移出屏幕。macOS/桌面端 PlatformView/WebView 在被移出可见区域后，
+    // 再回到前台时可能重新挂载，导致 React 内存态日志丢失，看起来像“新小程序”。
+    // 保持同一个 WebView 在原位置，只做透明和 IgnorePointer，打开时就是刚刚后台调用的实例。
+    return Positioned(
+      key: ValueKey('miniapp-position:${session.key}'),
+      top: wide ? 0 : compactTop,
+      bottom: 0,
+      right: 0,
+      left: wide ? null : 0,
+      width: wide ? 430 : null,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0.001,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeInOut,
+          child: _MiniAppHostFrame(
+            wide: wide,
+            child: MiniAppHostScreen(
+              key: ValueKey('miniapp-session:${session.key}'),
+              bot: session.bot,
+              inline: true,
+              onMinimize: _hideMiniAppPanel,
+              onClose: _closeVisibleMiniAppSession,
+              startParam: session.startParam,
+              reloadToken: session.startParamVersion == 0
+                  ? null
+                  : session.startParamVersion.toString(),
+              controller: session.controller,
+              onMiniAppEvent: _handleMiniAppEvent,
+              onCliStart: (title, taskId) =>
+                  _handleMiniAppCliStart(session.bot.stableBotId, title, taskId),
+              onCliLog: _handleMiniAppCliLog,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -239,7 +254,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           ),
           IconButton(
             tooltip: _miniAppPanelOpen ? '关闭侧栏' : '打开侧栏',
-            onPressed: _openMiniAppPanel,
+            onPressed: _toggleMiniAppPanel,
             icon: Icon(
               _miniAppPanelOpen ? Icons.web_asset_off : Icons.web_asset,
               color: const Color(0xFF91A3B7),
@@ -298,7 +313,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           icon: _bot.icon,
           label: '小程序面板',
           active: _miniAppPanelOpen,
-          onTap: _openMiniAppPanel,
+          onTap: _toggleMiniAppPanel,
         ),
       ],
     };
@@ -328,12 +343,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       itemCount: count,
       itemBuilder: (context, index) {
         if (index < _botMessages.length) {
-          return _MessageBubble(
-            message: _botMessages[index],
-            bot: _bot,
-            onDeck: _openDeck,
-            onOpenMiniApp: () => setState(() => _miniAppPanelOpen = true),
-          );
+          return _MessageBubble(message: _botMessages[index], bot: _bot);
         }
         if (_busy && index == _botMessages.length) {
           return _ThinkingBubble(label: _activity.isEmpty ? '正在处理' : _activity);
@@ -345,7 +355,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   Widget _buildComposer(FileTransferModel model, bool canSend) {
     final hasMiniApp = _bot.miniAppId != null && _bot.miniAppId!.isNotEmpty;
-    
+
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
       decoration: const BoxDecoration(
@@ -366,7 +376,10 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   elevation: 0,
                 ),
                 icon: const Icon(Icons.web_asset, size: 20),
@@ -379,10 +392,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           IconButton(
             tooltip: '附件',
             onPressed: () {},
-            icon: const Icon(
-              Icons.attach_file,
-              color: Color(0xFF91A3B7),
-            ),
+            icon: const Icon(Icons.attach_file, color: Color(0xFF91A3B7)),
           ),
           Expanded(
             child: TextField(
@@ -410,7 +420,10 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                   vertical: 10,
                 ),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.sentiment_satisfied_alt, color: Color(0xFF91A3B7)),
+                  icon: const Icon(
+                    Icons.sentiment_satisfied_alt,
+                    color: Color(0xFF91A3B7),
+                  ),
                   onPressed: () {},
                 ),
               ),
@@ -461,37 +474,162 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   void _submit(FileTransferModel model) {
+    if (_shouldRouteMessageToMiniApp) {
+      unawaited(_startMiniAppCommand());
+      return;
+    }
+
     switch (_kind) {
-      case MiniAppBotKind.globalDharma:
-      case MiniAppBotKind.flashcards:
-      case MiniAppBotKind.platformPublish:
-        _startMiniAppChat();
-        return;
       case MiniAppBotKind.botFather:
         unawaited(_startBotFather());
         return;
       case MiniAppBotKind.assistant:
-      case MiniAppBotKind.thirdParty:
         unawaited(_startGenericBotChat());
+        return;
+      case MiniAppBotKind.globalDharma:
+      case MiniAppBotKind.flashcards:
+      case MiniAppBotKind.platformPublish:
+      case MiniAppBotKind.thirdParty:
+        unawaited(_startMiniAppCommand());
         return;
     }
   }
 
-  void _startMiniAppChat() {
+  bool get _shouldRouteMessageToMiniApp {
+    final hasMiniApp = _bot.miniAppId?.trim().isNotEmpty == true;
+    if (!hasMiniApp) return false;
+    return switch (_kind) {
+      MiniAppBotKind.globalDharma ||
+      MiniAppBotKind.flashcards ||
+      MiniAppBotKind.platformPublish ||
+      MiniAppBotKind.thirdParty => true,
+      MiniAppBotKind.botFather || MiniAppBotKind.assistant => false,
+    };
+  }
+
+  Future<void> _startMiniAppCommand() async {
     final text = _composer.text.trim();
     if (text.isEmpty) return;
     _composer.clear();
     setState(() {
       _botMessages.add(_ChatMessage.user(text));
-      _botMessages.add(_ChatMessage.miniAppAction(
-        '已收到消息，正在后台静默处理。您随时可以点击下方组件进入应用查看。',
-        '打开 ${_bot.title}',
-      ));
+      _busy = true;
+      _activity = '正在调用 ${_bot.title}...';
     });
     _scrollBottom();
-    
-    // Send to background silent webview
-    _miniAppMessageController.add(text);
+
+    try {
+      final session = await _ensureMiniAppSession(_bot);
+      final wasForeground =
+          _miniAppPanelOpen && _visibleMiniAppKey == session.key;
+      final result = await session.controller.runCommand(text);
+      session
+        ..lastCommandAt = DateTime.now()
+        ..lastCommandText = text;
+      if (!mounted) return;
+      setState(() {
+        _botMessages.add(
+          _ChatMessage.bot(
+            wasForeground
+                ? '已发送给当前打开的「${_bot.title}」，由小程序执行。\n命令：${result['command'] ?? '/start'}'
+                : '已发送给后台运行的「${_bot.title}」，由小程序执行。\n点击「打开应用」会回到同一个小程序实例。\n命令：${result['command'] ?? '/start'}',
+          ),
+        );
+      });
+    } catch (e) {
+      if (mounted) _botMessages.add(_ChatMessage.error('调用失败：$e'));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _activity = '';
+        });
+      }
+      _scrollBottom();
+    }
+  }
+
+  Future<_MiniAppSession> _ensureMiniAppSession(
+    SocialFeatureBot bot, {
+    String? startParam,
+  }) async {
+    final key = _miniAppSessionKey(bot);
+    var session = _miniAppSessions[key];
+    if (session == null) {
+      session = _MiniAppSession(
+        key: key,
+        bot: bot,
+        startParam: startParam,
+        controller: MiniAppHostController(),
+      );
+      setState(() => _miniAppSessions[key] = session!);
+      await WidgetsBinding.instance.endOfFrame;
+    } else {
+      if (startParam != null) {
+        setState(() {
+          session!
+            ..bot = bot
+            ..startParam = startParam
+            ..startParamVersion += 1;
+        });
+        await WidgetsBinding.instance.endOfFrame;
+      } else {
+        session.bot = bot;
+      }
+    }
+    return session;
+  }
+
+  String _miniAppSessionKey(SocialFeatureBot bot) {
+    return '${bot.stableBotId}:${bot.stableMiniAppId}';
+  }
+
+  void _handleMiniAppEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final text = event['text']?.toString().trim() ?? '';
+    if (text.isEmpty) return;
+    final isError = event['isError'] == true || event['level'] == 'error';
+    final botId = event['botId']?.toString().trim() ?? _bot.stableBotId;
+    setState(() {
+      final messages = _messages.putIfAbsent(botId, () => []);
+      messages.add(isError ? _ChatMessage.error(text) : _ChatMessage.bot(text));
+    });
+    if (botId == _bot.stableBotId) _scrollBottom();
+  }
+
+  void _handleMiniAppCliStart(String botId, String title, String taskId) {
+    if (!mounted) return;
+    _cliTaskBotIds[taskId] = botId;
+    setState(() {
+      final messages = _messages.putIfAbsent(botId, () => []);
+      messages.add(_ChatMessage.cliTask(title, taskId));
+    });
+    if (botId == _bot.stableBotId) _scrollBottom();
+  }
+
+  void _handleMiniAppCliLog(String taskId, String data) {
+    if (!mounted) return;
+    setState(() {
+      _ChatMessage? message;
+      final botId = _cliTaskBotIds[taskId];
+      final candidateLists = botId == null
+          ? _messages.values
+          : [_messages.putIfAbsent(botId, () => [])];
+      for (final list in candidateLists) {
+        for (final item in list) {
+          if (item.cliTaskId == taskId) message = item;
+        }
+      }
+      final logs = message?.cliLogs;
+      if (logs == null) return;
+      logs.addAll(
+        data.split(RegExp(r'\r?\n')).where((line) => line.trim().isNotEmpty),
+      );
+      if (logs.length > 160) {
+        logs.removeRange(0, logs.length - 160);
+      }
+    });
+    if (_cliTaskBotIds[taskId] == _bot.stableBotId) _scrollBottom();
   }
 
   Future<void> _startBotFather() async {
@@ -615,207 +753,48 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     }
   }
 
-  void _openMiniAppPanel([SocialFeatureBot? panelBot]) {
-    setState(() {
-      if (panelBot != null) _panelBot = panelBot;
-      _miniAppPanelOpen = panelBot != null ? true : !_miniAppPanelOpen;
-    });
-  }
-
-  Future<void> _startGlobal(FileTransferModel model) async {
-    final text = _composer.text.trim();
-    _composer.clear();
-    setState(() {
-      if (text.isNotEmpty) {
-        _botMessages.add(_ChatMessage.user(text));
-      }
-      _busy = true;
-      _activity = '正在准备素材...';
-    });
-    _scrollBottom();
-    try {
-      if (text.isNotEmpty) {
-        await _saveTextToModel(
-          model,
-          text,
-          '全球法布施',
-          replaceExisting: !model.hasFiles,
-        );
-      }
-      if (!model.hasFiles) throw StateError('请先输入文字、链接，或点击 + 添加素材。');
-      setState(() => _activity = '正在启动发送...');
-      await model.startGlobalTransfer();
-      if (!mounted) return;
-      _botMessages.add(
-        _ChatMessage.bot(
-          '已完成：${model.globalSentCount} 个节点，${model.globalDataSentMB.toStringAsFixed(2)} MB。',
-        ),
-      );
-    } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('启动失败：$e'));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = '';
-        });
-      }
-      _scrollBottom();
+  void _toggleMiniAppPanel() {
+    if (_miniAppPanelOpen) {
+      _hideMiniAppPanel();
+    } else {
+      _openMiniAppPanel();
     }
   }
 
-  Future<void> _startFlashcards() async {
-    final text = _composer.text.trim();
-    if (text.isEmpty) return;
-    _composer.clear();
-    final progress = _ChatMessage.bot('正在准备内容...');
-    setState(() {
-      _botMessages.add(_ChatMessage.user(text));
-      _botMessages.add(progress);
-      _busy = true;
-      _activity = '正在提取正文...';
-    });
-    _scrollBottom();
-    try {
-      final url = ContentPipeline.firstHttpUrl(text);
-      final content = await _contentPipeline.prepare(
-        ContentInput(
-          text: text,
-          url: url,
-          title: url == null ? '背诵内容' : '链接内容',
-        ),
-      );
-      if (content.isFailed) throw StateError(content.errorMessage ?? '内容提取失败');
-      if (!mounted) return;
-      final auth = Provider.of<AuthModel?>(context, listen: false);
-      final input = FlashcardInput(
-        title: content.title,
-        text: content.text,
-        documentId: content.document?.id,
-        sourceUrl: content.sourceUrl,
-      );
-      final stream = _flashcardMode == FlashcardCreationMode.aiCards
-          ? _flashcardService.generateAiCardsStream(
-              input,
-              token: auth?.authToken,
-              username: auth?.currentUser?.username,
-              isMember: auth?.hasPermission('premium') ?? false,
-            )
-          : _flashcardService.generateRandomClozeStream(input);
-      await for (final event in stream) {
-        if (!mounted) return;
-        setState(() {
-          _activity = event.message;
-          progress.text = event.progress > 0
-              ? '${event.message} (${event.progress}%)'
-              : event.message;
-        });
-        if (event.isDone && event.deck != null) {
-          _botMessages.add(
-            _ChatMessage.deck(
-              '制卡完成：${event.deck!.cardCount} 张 · ${event.deck!.mode.label}',
-              event.deck!,
-            ),
-          );
-        }
-        if (event.isError) throw StateError(event.message);
-        _scrollBottom();
-      }
-    } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('制卡失败：$e'));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = '';
-        });
-      }
-      _scrollBottom();
-    }
+  void _hideMiniAppPanel() {
+    setState(() => _miniAppPanelOpen = false);
   }
 
-  Future<void> _startPublish(FileTransferModel model) async {
-    final text = _composer.text.trim();
-    _composer.clear();
-    setState(() {
-      if (text.isNotEmpty) {
-        _botMessages.add(_ChatMessage.user(text));
-      }
-      _busy = true;
-      _activity = '正在生成发布草稿...';
-    });
-    _scrollBottom();
-    try {
-      if (text.isNotEmpty) {
-        await _saveTextToModel(model, text, '法布施发布', replaceExisting: true);
-      }
-      if (!model.hasFiles && text.isEmpty) {
-        throw StateError('请输入正文/链接，或点击 + 添加素材。');
-      }
-      var draft = _publishService.buildDraftFromModel(
-        model,
-        fallbackText: text,
-      );
-      if (draft.title.trim().isEmpty) {
-        draft = draft.copyWith(title: _publishService.suggestTitle(draft));
-      }
-      if (draft.body.trim().length < 12) {
-        draft = draft.copyWith(body: _publishService.polishBody(draft));
-      }
-      _botMessages.add(
-        _ChatMessage.bot(
-          _publishService.buildPreviewMarkdown(draft, _platforms),
-        ),
-      );
-      setState(() => _activity = '正在复制草稿并打开入口...');
-      final results = await _publishService.publishDraft(
-        draft: draft,
-        platforms: _platforms,
-      );
-      if (!mounted) return;
-      _botMessages.add(
-        _ChatMessage.bot(
-          results
-              .map((r) => '${r.platform.info.shortLabel}：${r.message}')
-              .join('\n'),
-        ),
-      );
-    } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('发布失败：$e'));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = '';
-        });
-      }
-      _scrollBottom();
-    }
+  void _openMiniAppPanel([SocialFeatureBot? bot, String? startParam]) {
+    unawaited(_showMiniAppPanel(bot, startParam));
   }
 
-  Future<void> _saveTextToModel(
-    FileTransferModel model,
-    String text,
-    String fallbackTitle, {
-    required bool replaceExisting,
-  }) async {
-    final uri = Uri.tryParse(text);
-    final isLink =
-        uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
-    await model.addTextContentForSending(
-      title: isLink ? uri.host : _shortTitle(text, fallbackTitle),
-      text: isLink ? '来源链接: ${uri.toString()}\n\n${uri.toString()}' : text,
-      sourceKind: isLink ? '链接' : '文本',
-      sourceUrl: isLink ? uri.toString() : null,
-      previewText: text,
-      replaceExisting: replaceExisting,
+  Future<void> _showMiniAppPanel([
+    SocialFeatureBot? bot,
+    String? startParam,
+  ]) async {
+    final session = await _ensureMiniAppSession(
+      bot ?? _bot,
+      startParam: startParam,
     );
+    if (!mounted) return;
+    setState(() {
+      _visibleMiniAppKey = session.key;
+      _miniAppPanelOpen = true;
+    });
   }
 
-  String _shortTitle(String text, String fallback) {
-    final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (normalized.isEmpty) return fallback;
-    return normalized.length <= 18 ? normalized : normalized.substring(0, 18);
+  void _closeVisibleMiniAppSession() {
+    final key = _visibleMiniAppKey;
+    if (key == null) {
+      _hideMiniAppPanel();
+      return;
+    }
+    setState(() {
+      _miniAppSessions.remove(key);
+      _visibleMiniAppKey = null;
+      _miniAppPanelOpen = false;
+    });
   }
 
   void _openCurrentSettings(FileTransferModel model) {
@@ -1007,16 +986,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         : '${labels.take(2).join('、')} 等 ${labels.length} 个';
   }
 
-  void _openDeck(FlashcardDeck deck) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            FlashcardStudyScreen(deck: deck, repository: _flashcardRepository),
-      ),
-    );
-  }
-
   void _scrollBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
@@ -1034,18 +1003,12 @@ class _ChatMessage {
     this.text, {
     required this.isUser,
     this.isError = false,
-    this.deck,
-    this.isMiniAppAction = false,
-    this.actionLabel,
     this.cliTaskId,
     this.cliLogs,
   });
   String text;
   final bool isUser;
   final bool isError;
-  final FlashcardDeck? deck;
-  final bool isMiniAppAction;
-  final String? actionLabel;
   final String? cliTaskId;
   List<String>? cliLogs;
 
@@ -1053,25 +1016,31 @@ class _ChatMessage {
   factory _ChatMessage.bot(String text) => _ChatMessage(text, isUser: false);
   factory _ChatMessage.error(String text) =>
       _ChatMessage(text, isUser: false, isError: true);
-  factory _ChatMessage.deck(String text, FlashcardDeck deck) =>
-      _ChatMessage(text, isUser: false, deck: deck);
-  factory _ChatMessage.miniAppAction(String text, String actionLabel) =>
-      _ChatMessage(text, isUser: false, isMiniAppAction: true, actionLabel: actionLabel);
   factory _ChatMessage.cliTask(String text, String taskId) =>
       _ChatMessage(text, isUser: false, cliTaskId: taskId, cliLogs: []);
 }
 
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    required this.message,
+class _MiniAppSession {
+  _MiniAppSession({
+    required this.key,
     required this.bot,
-    required this.onDeck,
-    required this.onOpenMiniApp,
+    required this.controller,
+    this.startParam,
   });
+
+  final String key;
+  SocialFeatureBot bot;
+  final MiniAppHostController controller;
+  String? startParam;
+  int startParamVersion = 0;
+  DateTime? lastCommandAt;
+  String? lastCommandText;
+}
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({required this.message, required this.bot});
   final _ChatMessage message;
   final SocialFeatureBot bot;
-  final ValueChanged<FlashcardDeck> onDeck;
-  final VoidCallback onOpenMiniApp;
 
   @override
   Widget build(BuildContext context) {
@@ -1120,7 +1089,9 @@ class _MessageBubble extends StatelessWidget {
                   child: Text(
                     message.text,
                     style: TextStyle(
-                      color: message.isError ? const Color(0xFFFFD4D8) : Colors.white,
+                      color: message.isError
+                          ? const Color(0xFFFFD4D8)
+                          : Colors.white,
                       fontSize: 15,
                       height: 1.4,
                       fontWeight: FontWeight.w400,
@@ -1133,45 +1104,24 @@ class _MessageBubble extends StatelessWidget {
                     Text(
                       '10:42', // Placeholder time
                       style: TextStyle(
-                        color: user ? const Color(0xFF75AEEB) : const Color(0xFF728196),
+                        color: user
+                            ? const Color(0xFF75AEEB)
+                            : const Color(0xFF728196),
                         fontSize: 11,
                       ),
                     ),
                     if (user) ...[
                       const SizedBox(width: 4),
-                      const Icon(Icons.done_all, color: Color(0xFF40A7E3), size: 14),
+                      const Icon(
+                        Icons.done_all,
+                        color: Color(0xFF40A7E3),
+                        size: 14,
+                      ),
                     ],
                   ],
                 ),
               ],
             ),
-            if (message.deck != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: FilledButton.icon(
-                  onPressed: () => onDeck(message.deck!),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('开始背诵'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2A394C),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            if (message.isMiniAppAction)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: FilledButton.icon(
-                  onPressed: onOpenMiniApp,
-                  icon: const Icon(Icons.web_asset),
-                  label: Text(message.actionLabel ?? '打开应用'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2A394C),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 44),
-                  ),
-                ),
-              ),
             if (message.cliTaskId != null && message.cliLogs != null)
               Container(
                 margin: const EdgeInsets.only(top: 8),
@@ -1187,15 +1137,42 @@ class _MessageBubble extends StatelessWidget {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.terminal, color: Colors.greenAccent, size: 16),
+                        Icon(
+                          Icons.terminal,
+                          color: Colors.greenAccent,
+                          size: 16,
+                        ),
                         SizedBox(width: 8),
-                        Text('执行日志', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text(
+                          '执行日志',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     if (message.cliLogs!.isEmpty)
-                      const Text('等待输出...', style: TextStyle(color: Colors.grey, fontSize: 13, fontFamily: 'monospace')),
-                    ...message.cliLogs!.map((log) => Text(log, style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontFamily: 'monospace'))),
+                      const Text(
+                        '等待输出...',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ...message.cliLogs!.map(
+                      (log) => Text(
+                        log,
+                        style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1242,6 +1219,32 @@ class _ThinkingBubble extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _MiniAppHostFrame extends StatelessWidget {
+  const _MiniAppHostFrame({required this.wide, required this.child});
+
+  final bool wide;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: wide
+          ? const EdgeInsets.all(12)
+          : const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B111A),
+        border: wide
+            ? const Border(left: BorderSide(color: Color(0xFF223040)))
+            : null,
+        borderRadius: wide
+            ? null
+            : const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: child,
+    );
+  }
 }
 
 class _GlobalProgress extends StatelessWidget {
