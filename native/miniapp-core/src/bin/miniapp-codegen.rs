@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &spec_json,
     )?;
     write_typescript(
-        &repo_root.join("frontend/apps/web/src/app/miniapps/[id]/miniapp-host-spec.generated.ts"),
+        &repo_root.join("frontend/packages/miniapp-sdk/src/miniapp-host-spec.generated.ts"),
         &spec_json,
     )?;
 

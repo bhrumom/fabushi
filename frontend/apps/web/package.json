@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fabushi/api-client": "workspace:*",
+    "@fabushi/miniapp-sdk": "workspace:*",
     "@fabushi/shared": "workspace:*",
     "@types/three": "^0.185.0",
     "lucide-react": "^1.14.0",

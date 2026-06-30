@@ -2,14 +2,14 @@
 // Source: native/miniapp-core. Regenerate with:
 //   cargo run --manifest-path native/miniapp-core/Cargo.toml --bin miniapp-codegen
 
-export const MINIAPP_SPEC_SCHEMA_VERSION = 2;
-export const MINIAPP_HOST_API_VERSION = "1.6";
-export const MINIAPP_HOST_SDK_VERSION = "1.6.0";
+export const MINIAPP_SPEC_SCHEMA_VERSION = 3;
+export const MINIAPP_HOST_API_VERSION = "2.0";
+export const MINIAPP_HOST_SDK_VERSION = "2.0.0";
 
 export const MINIAPP_HOST_SPEC = {
-  "schemaVersion": 2,
-  "hostApiVersion": "1.6",
-  "hostSdkVersion": "1.6.0",
+  "schemaVersion": 3,
+  "hostApiVersion": "2.0",
+  "hostSdkVersion": "2.0.0",
   "invokePattern": "window.FabushiMiniApp.invoke(method, params)",
   "commandProtocol": {
     "event": "fabushi-miniapp-command",
@@ -35,14 +35,17 @@ export const MINIAPP_HOST_SPEC = {
     "creation": ["flashcards.create", "platform.publish"],
     "device": ["device.biometrics", "device.qrScanner", "haptics.feedback"],
     "externalNavigation": ["browser.external"],
+    "game": ["game.assets", "game.input", "game.nativeSurface", "game.runtime", "game.save"],
     "identity": ["auth.session", "auth.token"],
     "localAutomation": ["desktop.control", "files.pick", "fs.readWrite", "local.loopback", "openclaw.chat", "openclaw.status", "projects.read", "shell.execute"],
     "nativeNetwork": ["network.interfaces", "network.udp"],
     "nativeUi": ["ui.native"],
-    "payments": ["payments.alipay", "payments.entitlement", "payments.fudeGold", "wallet.balance"],
+    "payments": ["payments.alipay", "payments.entitlement", "payments.fudeGold", "payments.invoice", "wallet.balance"],
+    "performance": ["game.performance"],
     "share": ["share.chat"],
     "storage": ["cloud.kv"],
-    "system": ["hotspot.settings", "system.keepAwake"]
+    "system": ["hotspot.settings", "system.keepAwake"],
+    "window": ["window.lifecycle"]
   },
   "capabilityModel": {
     "name": "Rust-backed capability negotiation layer",
@@ -97,7 +100,7 @@ export const MINIAPP_HOST_SPEC = {
       "availability": "always",
       "trust": "declared",
       "risk": "medium",
-      "methods": ["auth.getSession", "auth.requireLogin"],
+      "methods": ["auth.getSession", "auth.requireLogin", "auth.getInitData", "auth.getScopedToken"],
       "note": "返回脱敏用户与会员状态；不返回宿主访问 token。"
     },
     {
@@ -131,6 +134,17 @@ export const MINIAPP_HOST_SPEC = {
       "trust": "declared",
       "risk": "medium",
       "methods": ["payments.checkEntitlement", "payments.alipay.checkEntitlement"]
+    },
+    {
+      "id": "payments.invoice",
+      "layer": "payments",
+      "native": false,
+      "adapter": "InvoicePaymentAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "high",
+      "methods": ["payments.createInvoice", "payments.openInvoice", "payments.queryInvoice"],
+      "note": "统一平台发票结算入口，取代零散的支付方法。"
     },
     {
       "id": "payments.fudeGold",
@@ -194,6 +208,83 @@ export const MINIAPP_HOST_SPEC = {
       "trust": "trustedOfficial",
       "risk": "high",
       "methods": ["hotspot.openSettings"]
+    },
+    {
+      "id": "game.runtime",
+      "layer": "game",
+      "native": true,
+      "adapter": "GameRuntimeAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "low",
+      "methods": ["game.runtime.getInfo"],
+      "note": "小游戏运行时能力协商入口；返回平台、性能档、渲染后端、输入和资源缓存建议。"
+    },
+    {
+      "id": "game.performance",
+      "layer": "performance",
+      "native": true,
+      "adapter": "GamePerformanceAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.performance.setMode"],
+      "note": "允许小游戏请求 battery / balanced / performance / ultra 运行档，宿主按平台映射到帧预算和资源优先级。"
+    },
+    {
+      "id": "game.nativeSurface",
+      "layer": "game",
+      "native": true,
+      "adapter": "NativeGameSurfaceAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "high",
+      "methods": ["game.surface.request", "game.surface.release"],
+      "note": "为端游级小游戏预留 Metal / Vulkan / Direct3D / OpenGL 原生渲染面；WebView 只能作为降级路径。"
+    },
+    {
+      "id": "game.input",
+      "layer": "game",
+      "native": true,
+      "adapter": "GameInputAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.input.setCapture", "game.input.getState"],
+      "note": "统一键盘、鼠标、触控、手柄和指针锁输入抽象，便于小游戏迁移桌面级交互。"
+    },
+    {
+      "id": "game.assets",
+      "layer": "game",
+      "native": false,
+      "adapter": "MiniAppAssetCacheAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.assets.prefetch"],
+      "note": "宿主侧资源预热缓存，用来降低小游戏首帧和切场景等待。"
+    },
+    {
+      "id": "game.save",
+      "layer": "game",
+      "native": false,
+      "adapter": "MiniAppSaveDataAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.save.read", "game.save.write", "game.save.delete"],
+      "note": "每个小程序隔离的存档 API，可被后续云存档同步层复用。"
+    },
+    {
+      "id": "window.lifecycle",
+      "layer": "window",
+      "native": true,
+      "adapter": "HostWindowLifecycleAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["window.fullscreen.request", "window.fullscreen.exit", "window.orientation.lock", "window.orientation.unlock"],
+      "note": "对标 Telegram fullscreen/safe area，又比 WebView 更接近原生窗口与方向控制。"
     },
     {
       "id": "ui.native",
@@ -431,6 +522,61 @@ export const MINIAPP_HOST_SPEC = {
       "methods": ["hotspot.openSettings"]
     },
     {
+      "id": "game.runtime",
+      "layer": "game",
+      "native": true,
+      "adapter": "GameRuntimeAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "low",
+      "methods": ["game.runtime.getInfo"],
+      "note": "小游戏运行时能力协商入口；返回平台、性能档、渲染后端、输入和资源缓存建议。"
+    },
+    {
+      "id": "game.performance",
+      "layer": "performance",
+      "native": true,
+      "adapter": "GamePerformanceAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.performance.setMode"],
+      "note": "允许小游戏请求 battery / balanced / performance / ultra 运行档，宿主按平台映射到帧预算和资源优先级。"
+    },
+    {
+      "id": "game.nativeSurface",
+      "layer": "game",
+      "native": true,
+      "adapter": "NativeGameSurfaceAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "high",
+      "methods": ["game.surface.request", "game.surface.release"],
+      "note": "为端游级小游戏预留 Metal / Vulkan / Direct3D / OpenGL 原生渲染面；WebView 只能作为降级路径。"
+    },
+    {
+      "id": "game.input",
+      "layer": "game",
+      "native": true,
+      "adapter": "GameInputAdapter",
+      "availability": "always",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["game.input.setCapture", "game.input.getState"],
+      "note": "统一键盘、鼠标、触控、手柄和指针锁输入抽象，便于小游戏迁移桌面级交互。"
+    },
+    {
+      "id": "window.lifecycle",
+      "layer": "window",
+      "native": true,
+      "adapter": "HostWindowLifecycleAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "medium",
+      "methods": ["window.fullscreen.request", "window.fullscreen.exit", "window.orientation.lock", "window.orientation.unlock"],
+      "note": "对标 Telegram fullscreen/safe area，又比 WebView 更接近原生窗口与方向控制。"
+    },
+    {
       "id": "ui.native",
       "layer": "nativeUi",
       "native": true,
@@ -640,19 +786,31 @@ export const MINIAPP_HOST_SPEC = {
       "method": "auth.getSession",
       "permission": "auth.session",
       "risk": "medium",
-      "description": "读取宿主登录态、脱敏用户资料和会员状态。"
+      "description": "读取宿主已登录用户的简要状态（不含敏感 token）。"
     },
     {
       "method": "auth.requireLogin",
       "permission": "auth.session",
       "risk": "medium",
-      "description": "要求用户登录；未登录时由宿主打开登录页。"
+      "description": "通知宿主弹出原生登录；如果已登录则立即返回 session。"
+    },
+    {
+      "method": "auth.getInitData",
+      "permission": "auth.session",
+      "risk": "medium",
+      "description": "获取 Telegram 风格的安全签名 InitData，用于向第三方后端自证身份。"
+    },
+    {
+      "method": "auth.getScopedToken",
+      "permission": "auth.session",
+      "risk": "medium",
+      "description": "获取带有严格范围和有效期的短时 token。"
     },
     {
       "method": "auth.getAccessToken",
       "permission": "auth.token",
       "risk": "critical",
-      "description": "读取宿主访问 token，仅受信官方小程序可用。"
+      "description": "【高危】读取宿主完整通行 token，仅限受信官方小程序。"
     },
     {
       "method": "payments.alipay.createOrder",
@@ -683,6 +841,24 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "payments.entitlement",
       "risk": "medium",
       "description": "查询宿主后端是否已解锁一次性付费商品。"
+    },
+    {
+      "method": "payments.createInvoice",
+      "permission": "payments.invoice",
+      "risk": "high",
+      "description": "创建统一支付发票。"
+    },
+    {
+      "method": "payments.openInvoice",
+      "permission": "payments.invoice",
+      "risk": "high",
+      "description": "打开并支付给定的发票。"
+    },
+    {
+      "method": "payments.queryInvoice",
+      "permission": "payments.invoice",
+      "risk": "high",
+      "description": "查询发票支付状态。"
     },
     {
       "method": "payments.requestPayment",
@@ -737,6 +913,90 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "hotspot.settings",
       "risk": "high",
       "description": "打开或引导系统热点设置。"
+    },
+    {
+      "method": "game.runtime.getInfo",
+      "permission": "game.runtime",
+      "risk": "low",
+      "description": "读取小游戏运行时、渲染后端、输入、帧预算和宿主能力建议。"
+    },
+    {
+      "method": "game.performance.setMode",
+      "permission": "game.performance",
+      "risk": "medium",
+      "description": "请求宿主切换小游戏性能档和帧预算。"
+    },
+    {
+      "method": "game.surface.request",
+      "permission": "game.nativeSurface",
+      "risk": "high",
+      "description": "请求宿主分配原生游戏渲染面或返回可用降级路径。"
+    },
+    {
+      "method": "game.surface.release",
+      "permission": "game.nativeSurface",
+      "risk": "high",
+      "description": "释放宿主分配的原生游戏渲染面。"
+    },
+    {
+      "method": "game.input.setCapture",
+      "permission": "game.input",
+      "risk": "medium",
+      "description": "设置键鼠、触控、手柄和指针捕获策略。"
+    },
+    {
+      "method": "game.input.getState",
+      "permission": "game.input",
+      "risk": "medium",
+      "description": "读取当前输入捕获能力和最近一次设置。"
+    },
+    {
+      "method": "game.assets.prefetch",
+      "permission": "game.assets",
+      "risk": "medium",
+      "description": "请求宿主预热并缓存小游戏资源。"
+    },
+    {
+      "method": "game.save.read",
+      "permission": "game.save",
+      "risk": "medium",
+      "description": "读取小游戏隔离存档。"
+    },
+    {
+      "method": "game.save.write",
+      "permission": "game.save",
+      "risk": "medium",
+      "description": "写入小游戏隔离存档。"
+    },
+    {
+      "method": "game.save.delete",
+      "permission": "game.save",
+      "risk": "medium",
+      "description": "删除小游戏隔离存档。"
+    },
+    {
+      "method": "window.fullscreen.request",
+      "permission": "window.lifecycle",
+      "risk": "medium",
+      "description": "请求宿主进入沉浸式全屏。"
+    },
+    {
+      "method": "window.fullscreen.exit",
+      "permission": "window.lifecycle",
+      "risk": "medium",
+      "description": "请求宿主退出沉浸式全屏。"
+    },
+    {
+      "method": "window.orientation.lock",
+      "permission": "window.lifecycle",
+      "risk": "medium",
+      "description": "请求宿主锁定屏幕方向。"
+    },
+    {
+      "method": "window.orientation.unlock",
+      "permission": "window.lifecycle",
+      "risk": "medium",
+      "description": "请求宿主恢复系统方向。"
     },
     {
       "method": "ui.alert",

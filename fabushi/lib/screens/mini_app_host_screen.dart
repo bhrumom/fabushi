@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:crypto/crypto.dart' as crypto_pkg;
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -844,12 +845,22 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _authSession();
       case 'auth.requireLogin':
         return _requireLogin();
+      case 'auth.getInitData':
+        return _signedInitData();
+      case 'auth.getScopedToken':
+        return _scopedToken(params);
       case 'auth.getAccessToken':
         return _authAccessToken();
       case 'wallet.getBalance':
         return _getWalletBalance(params);
       case 'payments.requestPayment':
         return _requestFudeGoldPayment(params);
+      case 'payments.createInvoice':
+        return _createInvoice(params);
+      case 'payments.openInvoice':
+        return _openInvoice(params);
+      case 'payments.queryInvoice':
+        return _queryInvoice(params);
       case 'payments.checkEntitlement':
       case 'payments.alipay.checkEntitlement':
         return _checkPurchaseEntitlement(params);
@@ -986,11 +997,92 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   Map<String, dynamic> _theme() {
     return {
-      'background': '#0F1722',
-      'surface': '#17212B',
-      'accent': '#3390EC',
+      'bg': '#1E1E1E',
       'text': '#FFFFFF',
     };
+  }
+
+  Map<String, dynamic> _signedInitData() {
+    final auth = Provider.of<AuthModel?>(context, listen: false);
+    final user = auth?.currentUser;
+    final issuedAt = DateTime.now().toUtc().toIso8601String();
+    final payload = <String, dynamic>{
+      'hostApiVersion': miniAppHostApiVersion,
+      'userId': user?.userNo ?? user?.username ?? 'anonymous',
+      'username': user?.username,
+      'botId': widget.bot.stableBotId,
+      'miniAppId': widget.bot.stableMiniAppId,
+      'origin': Uri.tryParse(_entryUrlFor(widget.bot))?.origin,
+      'sessionId': _cacheBuster,
+      'auth_date': issuedAt,
+    };
+    final canonical = jsonEncode(payload);
+    final seed = auth?.authToken?.isNotEmpty == true
+        ? auth!.authToken
+        : '${widget.bot.stableMiniAppId}:$_cacheBuster';
+    final signature = crypto_pkg.Hmac(crypto_pkg.sha256, utf8.encode(seed))
+        .convert(utf8.encode(canonical))
+        .toString();
+    return {
+      ...payload,
+      'hash': signature,
+      'signature': signature,
+      'signatureAlgorithm': 'hmac-sha256',
+    };
+  }
+
+  Map<String, dynamic> _scopedToken(Map<String, dynamic> params) {
+    throw const MiniAppHostException('unsupported_auth', '暂时不支持生成带有短时过期的 scoped token');
+  }
+
+  Future<Map<String, dynamic>> _createInvoice(Map<String, dynamic> params) async {
+    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+    final productId = params['productId']?.toString().trim().isNotEmpty == true
+        ? params['productId'].toString().trim()
+        : params['sku']?.toString().trim() ?? params['plan']?.toString().trim() ?? '';
+    if (productId.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'productId 或 sku 不能为空');
+    }
+    if (currency == 'CNY') {
+      final order = await _createAlipayOrder({...params, 'productId': productId, 'plan': productId});
+      return {
+        ...order,
+        'id': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'invoiceId': order['orderId'] ?? 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'sku': productId,
+        'currency': currency,
+        'status': 'created',
+      };
+    }
+    if (currency == 'FUDE_GOLD') {
+      return {
+        'id': 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'invoiceId': 'inv_${DateTime.now().microsecondsSinceEpoch}',
+        'sku': productId,
+        'amount': params['amount'],
+        'currency': currency,
+        'status': 'created',
+        'requiresBackendWallet': true,
+      };
+    }
+    throw MiniAppHostException('invoice_unsupported_currency', '不支持的账单币种：$currency');
+  }
+
+  Future<Map<String, dynamic>> _openInvoice(Map<String, dynamic> params) async {
+    final currency = params['currency']?.toString().trim().toUpperCase() ?? 'CNY';
+    if (currency == 'FUDE_GOLD') {
+      // 兼容 FUDE_GOLD (旧称 FUDE_JIN) 原生拉起
+      return _requestFudeGoldPayment(params);
+    }
+    return _payWithAlipay(params);
+  }
+
+  Future<Map<String, dynamic>> _queryInvoice(Map<String, dynamic> params) async {
+    final orderId = params['orderId']?.toString().trim() ?? params['invoiceId']?.toString().trim() ?? '';
+    if (orderId.isEmpty) {
+      throw const MiniAppHostException('invalid_request', 'invoiceId/orderId 不能为空');
+    }
+    return _queryAlipayOrder({'orderId': orderId});
   }
 
   Map<String, dynamic> _hostApiSpec() {

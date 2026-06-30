@@ -11,7 +11,7 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@fabushi/shared", "@fabushi/api-client"],
+  transpilePackages: ["@fabushi/shared", "@fabushi/api-client", "@fabushi/miniapp-sdk"],
   typedRoutes: true,
   typescript: {
     ignoreBuildErrors: true,
