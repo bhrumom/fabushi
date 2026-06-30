@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const HOST_API_VERSION: &str = "1.7";
-pub const HOST_SDK_VERSION: &str = "1.7.0";
+pub const HOST_API_VERSION: &str = "2.0";
+pub const HOST_SDK_VERSION: &str = "2.0.0";
 pub const SPEC_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,7 +271,7 @@ pub fn capabilities() -> Vec<Capability> {
             Always,
             Declared,
             Medium,
-            &["auth.getSession", "auth.requireLogin"],
+            &["auth.getSession", "auth.requireLogin", "auth.getInitData", "auth.getScopedToken"],
             Some("返回脱敏用户与会员状态；不返回宿主访问 token。"),
         ),
         capability(
@@ -313,6 +313,17 @@ pub fn capabilities() -> Vec<Capability> {
                 "payments.alipay.checkEntitlement",
             ],
             None,
+        ),
+        capability(
+            "payments.invoice",
+            Payments,
+            false,
+            "InvoicePaymentAdapter",
+            Always,
+            Declared,
+            High,
+            &["payments.createInvoice", "payments.openInvoice", "payments.queryInvoice"],
+            Some("统一平台发票结算入口，取代零散的支付方法。"),
         ),
         capability(
             "payments.fudeGold",
@@ -874,13 +885,18 @@ fn method_description(method: &str) -> &'static str {
         "app.requestCapabilities" => "按 manifest、adapter、平台、信任等级协商能力状态。",
         "app.getHostApiSpec" => "读取宿主 API 规格。",
         "app.getTheme" => "读取宿主主题 token。",
-        "auth.getSession" => "读取宿主登录态、脱敏用户资料和会员状态。",
-        "auth.requireLogin" => "要求用户登录；未登录时由宿主打开登录页。",
-        "auth.getAccessToken" => "读取宿主访问 token，仅受信官方小程序可用。",
+        "auth.getSession" => "读取宿主已登录用户的简要状态（不含敏感 token）。",
+        "auth.requireLogin" => "通知宿主弹出原生登录；如果已登录则立即返回 session。",
+        "auth.getInitData" => "获取 Telegram 风格的安全签名 InitData，用于向第三方后端自证身份。",
+        "auth.getScopedToken" => "获取带有严格范围和有效期的短时 token。",
+        "auth.getAccessToken" => "【高危】读取宿主完整通行 token，仅限受信官方小程序。",
         "payments.requestPayment" => "请求宿主弹出原生确认并扣除福德金。",
+        "payments.createInvoice" => "创建统一支付发票。",
+        "payments.openInvoice" => "打开并支付给定的发票。",
+        "payments.queryInvoice" => "查询发票支付状态。",
         "payments.checkEntitlement" | "payments.alipay.checkEntitlement" => {
             "查询宿主后端是否已解锁一次性付费商品。"
-        }
+        },
         "payments.alipay.createOrder" => "创建支付宝订单；开放平台应优先使用统一 invoice。",
         "payments.alipay.pay" => "拉起支付宝 App 或网页支付。",
         "payments.alipay.queryOrder" => "查询支付宝订单状态。",
@@ -906,7 +922,7 @@ fn method_description(method: &str) -> &'static str {
         "window.fullscreen.exit" => "请求宿主退出沉浸式全屏。",
         "window.orientation.lock" => "请求宿主锁定屏幕方向。",
         "window.orientation.unlock" => "请求宿主恢复系统方向。",
-        "ui.alert" => "显示宿主原生提示弹窗。"
+        "ui.alert" => "显示宿主原生提示弹窗。",
         "ui.confirm" => "显示宿主原生确认弹窗。",
         "ui.mainButton.set" => "设置宿主底部主按钮状态。",
         "haptics.impact" => "触发冲击触觉反馈。",
