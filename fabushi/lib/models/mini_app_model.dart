@@ -163,7 +163,7 @@ class MiniAppRegistry {
   factory MiniAppRegistry.fromJson(Map<String, dynamic> json) {
     return MiniAppRegistry(
       schemaVersion: _readInt(json['schemaVersion']) ?? 1,
-      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '1.4'),
+      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '1.6'),
       bots: (json['bots'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => MiniAppBot.fromJson(Map<String, dynamic>.from(item)))
@@ -274,19 +274,25 @@ MiniAppRegistry defaultMiniAppRegistry() {
   final permissions = <String>[
     'app.context',
     'bot.chat',
+    'ui.native',
+    'haptics.feedback',
     'auth.session',
     'wallet.balance',
     'payments.entitlement',
     'payments.fudeGold',
     'payments.alipay',
-    'dharma.share',
+    'network.udp',
+    'network.interfaces',
+    'system.keepAwake',
+    'hotspot.settings',
     'flashcards.create',
     'platform.publish',
+    'cloud.kv',
+    'share.chat',
     'files.pick',
     'projects.read',
     'openclaw.status',
     'openclaw.chat',
-    'wifi.hotspot',
     'local.loopback',
     'desktop.control',
     'fs.readWrite',
@@ -353,7 +359,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
   ];
   return MiniAppRegistry(
     schemaVersion: 1,
-    hostApiVersion: '1.4',
+    hostApiVersion: '1.6',
     bots: bots,
     miniApps: [
       for (final bot in bots)
@@ -362,8 +368,9 @@ MiniAppRegistry defaultMiniAppRegistry() {
           botId: bot.botId,
           title: bot.title,
           subtitle: bot.subtitle,
-          entryUrl: 'https://fabushi-miniapps.pages.dev/miniapps/${bot.miniAppId}',
-          version: '1.4.0',
+          entryUrl:
+              'https://fabushi-miniapps.pages.dev/miniapps/${bot.miniAppId}',
+          version: '1.6.0',
           permissions: bot.permissions,
           surfaces: const ['homePinned', 'chatPanel'],
           theme: 'telegramDark',
