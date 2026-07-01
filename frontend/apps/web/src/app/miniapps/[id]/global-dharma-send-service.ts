@@ -165,7 +165,7 @@ export class GlobalDharmaSendService {
           Accept: "application/json",
           "User-Agent": "FabushiMiniApp/GlobalDharma",
         },
-        bodyBase64: bytesToBase64(textBytes(JSON.stringify(payload))),
+        body: JSON.stringify(payload),
         timeoutMs: 30000,
         maxBodyBytes: 2 * 1024 * 1024,
         responseEncoding: "base64+text",
