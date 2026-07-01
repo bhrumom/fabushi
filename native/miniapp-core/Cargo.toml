@@ -14,3 +14,4 @@ name = "miniapp-codegen"
 path = "src/bin/miniapp-codegen.rs"
 
 [dependencies]
+ureq = "2"

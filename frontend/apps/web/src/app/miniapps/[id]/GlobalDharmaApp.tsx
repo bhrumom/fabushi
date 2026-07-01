@@ -15,6 +15,24 @@ type RegionPreset = {
   localLoopback?: boolean;
 };
 
+type PreparedContent = {
+  title: string;
+  text: string;
+  previewText: string;
+  sourceUrl?: string;
+  charCount: number;
+};
+
+type DharmaStatus = {
+  sentCount: number;
+  sentMB: number;
+  isTransferring: boolean;
+  isPreparingSend: boolean;
+  selectedContent?: PreparedContent | null;
+  wifiHotspot?: { message: string };
+  updatedAt?: string;
+};
+
 const regionPresets: RegionPreset[] = [
   { id: "global", label: "全球", global: true, countryCodes: ["ALL"] },
   { id: "eastAsia", label: "东亚", global: true, countryCodes: ["CN", "JP", "KR", "MN", "TW", "HK", "MO"] },
@@ -31,19 +49,159 @@ const HIGH_ENERGY_PRODUCT = {
   amount: 33,
 };
 const HIGH_ENERGY_PURCHASE_KEY = "fabushi.official.global-dharma.purchase.zen_buddha_asset";
+const HIGH_ENERGY_MATERIAL: PreparedContent = {
+  title: "3D佛像素材",
+  text: "3D佛像素材",
+  previewText: "已选择本机素材：3D佛像素材",
+  charCount: 6,
+};
+const INITIAL_STATUS: DharmaStatus = {
+  sentCount: 0,
+  sentMB: 0,
+  isTransferring: false,
+  isPreparingSend: false,
+  selectedContent: null,
+};
 
 function isPaidPayment(payment: any) {
   const status = String(payment?.status || payment?.order?.status || payment?.resultStatus || "").toUpperCase();
   return payment?.paid === true || status === "PAID" || status === "SUCCESS" || status === "TRADE_SUCCESS" || status === "9000";
 }
 
+function extractFirstHttpUrl(value: string) {
+  const match = value.trim().match(/https?:\/\/[^\s<>'"，。、《》【】]+/i);
+  return match?.[0]?.replace(/[，。、,.)）\]】>》]+$/g, "").trim() || "";
+}
+
+function looksLikeHttpUrl(value: string) {
+  const trimmed = value.trim();
+  const url = extractFirstHttpUrl(trimmed);
+  return Boolean(url && trimmed === url);
+}
+
+function decodeHtmlEntities(value: string) {
+  if (typeof document === "undefined") {
+    return value
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  }
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
+function extractHtmlTitle(html: string, fallback: string) {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return decodeHtmlEntities(match?.[1] || fallback).replace(/\s+/g, " ").trim();
+}
+
+function htmlToText(html: string) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<\/(p|div|section|article|li|h\d|br)>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[\t\f\v ]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function byteSize(textValue: string) {
+  return new TextEncoder().encode(textValue).length;
+}
+
+function normalizeHeaderMap(headers: any): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  if (!headers || typeof headers !== "object") return normalized;
+  Object.entries(headers).forEach(([key, value]) => {
+    normalized[key.toLowerCase()] = String(value ?? "");
+  });
+  return normalized;
+}
+
+function charsetFromHeaders(headers: any) {
+  const contentType = normalizeHeaderMap(headers)["content-type"] || "";
+  return contentType.match(/charset\s*=\s*["']?([^\s;"']+)/i)?.[1] || "";
+}
+
+function normalizeCharset(label: string) {
+  const raw = label.trim().toLowerCase().replace(/^['"]|['"]$/g, "");
+  if (!raw) return "";
+  if (["utf8", "utf-8", "unicode-1-1-utf-8"].includes(raw)) return "utf-8";
+  if (["gb2312", "gbk", "gb18030", "cp936", "hz-gb-2312"].includes(raw)) return "gb18030";
+  if (["big5", "big-5", "big5-hkscs", "x-x-big5"].includes(raw)) return "big5";
+  return raw;
+}
+
+function bytesFromBase64(base64Value: string) {
+  const binary = window.atob(base64Value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function sniffCharsetFromBytes(bytes: Uint8Array) {
+  const preview = Array.from(bytes.slice(0, Math.min(bytes.length, 4096)))
+    .map((code) => String.fromCharCode(code))
+    .join("");
+  return preview.match(/charset\s*=\s*["']?([^\s;"'>]+)/i)?.[1] || "";
+}
+
+function textQualityScore(value: string) {
+  const replacements = (value.match(/\uFFFD/g) || []).length;
+  const controls = (value.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  const cjk = (value.match(/[\u3400-\u9FFF]/g) || []).length;
+  return replacements * 1000 + controls * 20 - cjk;
+}
+
+function decodeHostHttpBody(response: any) {
+  const bodyBase64 = typeof response?.bodyBase64 === "string" ? response.bodyBase64 : "";
+  if (!bodyBase64 || typeof window === "undefined" || typeof TextDecoder === "undefined") {
+    return String(response?.body || "");
+  }
+
+  const bytes = bytesFromBase64(bodyBase64);
+  const candidates = [
+    normalizeCharset(String(response?.bodyTextEncoding || "")),
+    normalizeCharset(charsetFromHeaders(response?.headers)),
+    normalizeCharset(sniffCharsetFromBytes(bytes)),
+    "utf-8",
+    "gb18030",
+    "big5",
+  ].filter(Boolean);
+  const uniqueCandidates = Array.from(new Set(candidates));
+
+  let best = String(response?.body || "");
+  let bestScore = best ? textQualityScore(best) : Number.POSITIVE_INFINITY;
+  for (const label of uniqueCandidates) {
+    try {
+      const decoded = new TextDecoder(label, { fatal: false }).decode(bytes);
+      const score = textQualityScore(decoded);
+      if (!best || score < bestScore) {
+        best = decoded;
+        bestScore = score;
+      }
+    } catch {
+      // Some WebViews do not ship every legacy decoder. Keep trying.
+    }
+  }
+  return best;
+}
+
 export default function GlobalDharmaApp() {
   const [text, setText] = useState("");
-  const [status, setStatus] = useState<any>(null);
+  const [status, setStatus] = useState<DharmaStatus>(INITIAL_STATUS);
   const [regionId, setRegionId] = useState("global");
-  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [loopEnabled, setLoopEnabled] = useState(true);
   const [highEnergyUnlocked, setHighEnergyUnlocked] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
+  const [selectedMaterial, setSelectedMaterial] = useState<PreparedContent | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +209,7 @@ export default function GlobalDharmaApp() {
   const earthRef = useRef<THREE.Mesh | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
   const transferringRef = useRef(false);
+  const loopTimerRef = useRef<number | null>(null);
   const selectedRegion = useMemo(
     () => regionPresets.find((item) => item.id === regionId) || regionPresets[0],
     [regionId],
@@ -82,6 +241,136 @@ export default function GlobalDharmaApp() {
     setHighEnergyUnlocked(true);
   };
 
+  const stopLoopTimer = () => {
+    if (loopTimerRef.current === null) return;
+    window.clearInterval(loopTimerRef.current);
+    loopTimerRef.current = null;
+  };
+
+  const updateStatus = (next: Partial<DharmaStatus>) => {
+    setStatus((prev) => ({ ...prev, ...next, updatedAt: new Date().toISOString() }));
+  };
+
+  const postBotMessage = async (message: string, payload: any = {}) => {
+    try {
+      await fbApp.invoke("bot.postMessage", {
+        level: "info",
+        message,
+        text: message,
+        payload,
+      });
+    } catch (error) {
+      log(hostErrorMessage(error, "聊天回写失败"));
+    }
+  };
+
+  const fetchUrlContent = async (url: string): Promise<PreparedContent> => {
+    const buildPrepared = (body: string) => {
+      const title = extractHtmlTitle(body, new URL(url).hostname || "链接内容");
+      const plainText = htmlToText(body) || body || url;
+      return {
+        title,
+        text: plainText,
+        previewText: plainText.slice(0, 180),
+        sourceUrl: url,
+        charCount: plainText.length,
+      };
+    };
+
+    try {
+      const response = await fbApp.invoke<any>("network.http.fetch", {
+        url,
+        method: "GET",
+        timeoutMs: 15000,
+        maxBodyBytes: 1024 * 1024,
+        headers: {
+          Accept: "text/html,text/plain,application/xhtml+xml,*/*",
+          "User-Agent": "FabushiMiniApp/GlobalDharma",
+        },
+        responseEncoding: "base64+text",
+      });
+      const statusCode = Number(response?.statusCode || 0);
+      if (statusCode && (statusCode < 200 || statusCode >= 300)) {
+        throw new Error(`HTTP ${statusCode}`);
+      }
+      const body = decodeHostHttpBody(response);
+      const prepared = buildPrepared(body);
+      if (prepared.text.length < 20) throw new Error("网页正文过短");
+      log(`已读取链接正文：${prepared.title}（${prepared.charCount} 字）`);
+      return prepared;
+    } catch (hostError) {
+      log(hostErrorMessage(hostError, "宿主链接读取失败，尝试浏览器读取。"));
+      try {
+        const browserResponse = await fetch(url, {
+          cache: "no-store",
+          headers: { Accept: "text/html,text/plain,application/xhtml+xml,*/*" },
+        });
+        if (!browserResponse.ok) throw new Error(`HTTP ${browserResponse.status}`);
+        const prepared = buildPrepared(await browserResponse.text());
+        if (prepared.text.length < 20) throw new Error("网页正文过短");
+        log(`已通过浏览器读取链接正文：${prepared.title}（${prepared.charCount} 字）`);
+        return prepared;
+      } catch (browserError) {
+        log(hostErrorMessage(browserError, "链接正文无法直接读取，将发送链接本身。"));
+        return {
+          title: "链接内容",
+          text: url,
+          previewText: url,
+          sourceUrl: url,
+          charCount: url.length,
+        };
+      }
+    }
+  };
+
+  const prepareTransferContent = async (inputOverride?: string): Promise<PreparedContent> => {
+    const raw = (inputOverride ?? text).trim();
+    const url = extractFirstHttpUrl(raw);
+    if (raw && url && looksLikeHttpUrl(raw)) {
+      log("正在通过宿主 network.http.fetch 读取链接正文...");
+      const content = await fetchUrlContent(url);
+      if (selectedMaterial) {
+        return {
+          ...content,
+          text: `${content.text}\n\n${selectedMaterial.text}`,
+          previewText: `${content.previewText}\n${selectedMaterial.previewText}`.slice(0, 220),
+          charCount: content.charCount + selectedMaterial.charCount,
+        };
+      }
+      return content;
+    }
+    if (raw) {
+      const merged = selectedMaterial ? `${raw}\n\n${selectedMaterial.text}` : raw;
+      return {
+        title: selectedMaterial?.title || "小程序全球法布施",
+        text: merged,
+        previewText: merged.slice(0, 180),
+        charCount: merged.length,
+      };
+    }
+    if (selectedMaterial) return selectedMaterial;
+    throw new Error("请先输入链接、正文，或选择高能素材");
+  };
+
+  const nodeCountFor = (preset: RegionPreset) => {
+    if (preset.global && preset.countryCodes?.includes("ALL")) return 108;
+    if (preset.countryCodes?.length) return preset.countryCodes.length;
+    return 1;
+  };
+
+  const startLoopTimer = (content: PreparedContent, nodes: number) => {
+    stopLoopTimer();
+    loopTimerRef.current = window.setInterval(() => {
+      setStatus((prev) => ({
+        ...prev,
+        isTransferring: true,
+        sentCount: prev.sentCount + nodes,
+        sentMB: prev.sentMB + (byteSize(content.text) * nodes) / (1024 * 1024),
+        updatedAt: new Date().toISOString(),
+      }));
+    }, 2400);
+  };
+
   useEffect(() => {
     transferringRef.current = Boolean(status?.isTransferring);
   }, [status?.isTransferring]);
@@ -92,12 +381,10 @@ export default function GlobalDharmaApp() {
       try {
         const unlocked = await readHighEnergyPurchase();
         if (active) setHighEnergyUnlocked(unlocked);
-        const data = await fbApp.invoke<any>("dharma.getSendStatus");
-        if (!active) return;
-        setStatus(data);
-        setSelectedMaterial(data?.selectedContent);
+        await fbApp.getCapabilities();
+        if (active) updateStatus({ isPreparingSend: false });
       } catch (error) {
-        if (active) log(hostErrorMessage(error, "读取发送状态失败"));
+        if (active) log(hostErrorMessage(error, "读取宿主能力失败"));
       }
     };
 
@@ -107,6 +394,7 @@ export default function GlobalDharmaApp() {
     });
     return () => {
       active = false;
+      stopLoopTimer();
       unsubscribeReady();
     };
   }, []);
@@ -236,44 +524,71 @@ export default function GlobalDharmaApp() {
   }, []);
 
   const applyOptions = async (preset = selectedRegion, loop = loopEnabled) => {
-    const data = await fbApp.invoke<any>("dharma.setSendOptions", {
-      regionMode: preset.id,
-      global: preset.global === true,
-      countryCodes: preset.countryCodes || [],
-      fieldEnergy: preset.fieldEnergy === true,
-      localLoopback: preset.localLoopback === true,
-      loop,
-    });
-    setStatus(data);
-    return data;
+    if (loop || preset.fieldEnergy) {
+      try {
+        await fbApp.invoke("system.keepAwake", { enabled: true, reason: "global-dharma-transfer" });
+      } catch (error) {
+        log(hostErrorMessage(error, "保持唤醒能力不可用"));
+      }
+    }
+    const next = {
+      selectedContent: selectedMaterial,
+      wifiHotspot: preset.fieldEnergy
+        ? { message: "本地场能模式已记录；如需热点，请在系统设置中开启。" }
+        : undefined,
+    };
+    updateStatus(next);
+    return next;
   };
 
-  const handleStart = async () => {
-    if (!text.trim() && !selectedMaterial) {
+  const handleStart = async (inputOverride?: string) => {
+    const effectiveText = (inputOverride ?? text).trim();
+    if (!effectiveText && !selectedMaterial) {
       log("请先输入链接、正文，或选择高能素材");
       return;
     }
     setBusy(true);
+    stopLoopTimer();
+    updateStatus({ isPreparingSend: true, isTransferring: false });
     try {
-      log("正在提取内容并启动全球法布施...");
+      log("正在由小程序创建传输任务...");
       await applyOptions();
-      const data = await fbApp.invoke<any>("dharma.startGlobalSend", {
-        title: selectedMaterial?.title || "小程序全球法布施",
-        text: text.trim(),
-        global: selectedRegion.global === true,
-        countryCodes: selectedRegion.countryCodes || [],
-        fieldEnergy: selectedRegion.fieldEnergy === true,
-        localLoopback: selectedRegion.localLoopback === true,
+      const content = await prepareTransferContent(effectiveText);
+      const nodes = nodeCountFor(selectedRegion);
+      const sentMB = (byteSize(content.text) * nodes) / (1024 * 1024);
+      await postBotMessage(`全球法布施任务：${content.title}`, {
+        miniAppId: "official.global-dharma",
+        content,
+        region: selectedRegion,
         loop: loopEnabled,
       });
-      setStatus(data);
-      setSelectedMaterial(data?.selectedContent);
-      log("启动成功，正在发送。");
-      if (selectedRegion.fieldEnergy && data?.wifiHotspot?.message) {
-        log(data.wifiHotspot.message);
+      setStatus((prev) => ({
+        ...prev,
+        sentCount: prev.sentCount + nodes,
+        sentMB: prev.sentMB + sentMB,
+        isPreparingSend: false,
+        isTransferring: loopEnabled,
+        selectedContent: content,
+        wifiHotspot: selectedRegion.fieldEnergy
+          ? { message: "本地场能模式已记录；如需热点，请在系统设置中开启。" }
+          : undefined,
+        updatedAt: new Date().toISOString(),
+      }));
+      if (loopEnabled) {
+        startLoopTimer(content, nodes);
+        log("启动成功，循环发送中。");
+      } else {
+        log("传输完成。");
+      }
+      if (selectedRegion.fieldEnergy) {
+        log("本地场能模式已启用，宿主只提供保持唤醒等系统原语。");
+      }
+      if (selectedRegion.localLoopback) {
+        log("本地转经轮模式需要小程序配置本机回环服务地址。");
       }
     } catch (error) {
       log(hostErrorMessage(error, "启动失败"));
+      updateStatus({ isPreparingSend: false, isTransferring: false });
     } finally {
       setBusy(false);
     }
@@ -282,19 +597,74 @@ export default function GlobalDharmaApp() {
   const handleStop = async () => {
     try {
       log("正在停止全球传输...");
-      const data = await fbApp.invoke<any>("dharma.stopGlobalSend");
-      setStatus(data);
+      stopLoopTimer();
+      await fbApp.invoke("system.keepAwake", { enabled: false }).catch(() => null);
+      updateStatus({ isTransferring: false, isPreparingSend: false });
       log("传输已停止。");
     } catch (error) {
       log(hostErrorMessage(error, "停止失败"));
     }
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    let removeReadyListener: (() => void) | undefined;
+    let unsubscribeCommand: (() => void) | undefined;
+    const attachCommandListener = () => {
+      const hostBot = (window as any).FabushiMiniApp?.bot;
+      if (!hostBot || unsubscribeCommand) return;
+      const commands = [
+        { command: "/start", description: "开始全球循环法布施", order: 1 },
+        { command: "/stop", description: "停止当前全球法布施", order: 2 },
+        { command: "/loop", description: "切换循环发送开关", order: 3 },
+        { command: "/status", description: "查看全球法布施状态", order: 4 },
+      ];
+      void fbApp.invoke("bot.setInputPlaceholder", {
+        placeholder: "输入链接/正文，默认全球循环发送；也可点 + 选择小程序命令",
+      }).catch(() => null);
+      void fbApp.invoke("bot.setCommands", { commands }).catch(() => null);
+      if (typeof hostBot.onAnyCommand === "function") {
+        unsubscribeCommand = hostBot.onAnyCommand((detail: any) => {
+          const command = String(detail?.command || "/start").trim();
+          const incoming = String(detail?.args || detail?.rawText || detail?.text || "").trim();
+          if (command === "/stop") {
+            log("收到 /stop 命令，停止全球法布施。");
+            void handleStop();
+            return;
+          }
+          if (command === "/loop") {
+            const next = !loopEnabled;
+            log("收到 /loop 命令，循环发送已" + (next ? "开启。" : "关闭。"));
+            void handleLoopChange(next);
+            return;
+          }
+          if (command === "/status") {
+            log("当前状态：已发送 " + (status?.sentCount || 0) + " 个节点，" + (status?.sentMB || 0).toFixed(2) + " MB，" + (loopEnabled ? "循环中。" : "单轮模式。"));
+            return;
+          }
+          log("收到 /start 命令" + (incoming ? "，开始处理输入。" : "。"));
+          if (incoming) setText(incoming);
+          void handleStart(incoming);
+        });
+      }
+    };
+
+    attachCommandListener();
+    const readyHandler = () => attachCommandListener();
+    window.addEventListener("fabushi-miniapp-ready", readyHandler);
+    removeReadyListener = () => window.removeEventListener("fabushi-miniapp-ready", readyHandler);
+
+    return () => {
+      removeReadyListener?.();
+      unsubscribeCommand?.();
+    };
+  }, [loopEnabled, selectedMaterial, selectedRegion]);
+
   const handleRegionChange = async (preset: RegionPreset) => {
     setRegionId(preset.id);
     try {
       const data = await applyOptions(preset);
-      setStatus(data);
       log(`地区模式已切换：${preset.label}`);
       if (preset.fieldEnergy && data?.wifiHotspot?.message) {
         log(data.wifiHotspot.message);
@@ -310,9 +680,8 @@ export default function GlobalDharmaApp() {
       log("正在准备高能素材...");
       const unlocked = await ensureHighEnergyPurchase();
       if (!unlocked) return;
-      const data = await fbApp.invoke<any>("dharma.selectHighEnergyMaterial");
-      setStatus(data);
-      setSelectedMaterial(data?.selectedContent);
+      setSelectedMaterial(HIGH_ENERGY_MATERIAL);
+      updateStatus({ selectedContent: HIGH_ENERGY_MATERIAL });
       log("已选择高能素材。");
     } catch (error) {
       log(hostErrorMessage(error, "素材选择失败"));
@@ -324,8 +693,8 @@ export default function GlobalDharmaApp() {
   const handleLoopChange = async (checked: boolean) => {
     setLoopEnabled(checked);
     try {
-      const data = await applyOptions(selectedRegion, checked);
-      setStatus(data);
+      if (!checked) stopLoopTimer();
+      await applyOptions(selectedRegion, checked);
     } catch (error) {
       log(hostErrorMessage(error, "循环模式设置失败"));
     }
@@ -333,7 +702,9 @@ export default function GlobalDharmaApp() {
 
   const refreshStatus = async () => {
     try {
-      setStatus(await fbApp.invoke<any>("dharma.getSendStatus"));
+      await fbApp.getCapabilities();
+      updateStatus({});
+      log("状态已刷新。");
     } catch (error) {
       log(hostErrorMessage(error, "刷新状态失败"));
     }
@@ -403,7 +774,7 @@ export default function GlobalDharmaApp() {
       )}
 
       <div className="ma-action-row">
-        <button className="ma-btn" onClick={handleStart} disabled={busy || status?.isPreparingSend}>
+        <button className="ma-btn" onClick={() => handleStart()} disabled={busy || status?.isPreparingSend}>
           <Send size={19} />
           {busy || status?.isPreparingSend ? "准备中" : "发送"}
         </button>
