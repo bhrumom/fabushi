@@ -1125,7 +1125,7 @@ fn method_description(method: &str) -> &'static str {
         "payments.queryInvoice" => "查询发票支付状态。",
         "payments.checkEntitlement" | "payments.alipay.checkEntitlement" => {
             "查询宿主后端是否已解锁一次性付费商品。"
-        }
+        },
         "payments.alipay.createOrder" => "创建支付宝订单；开放平台应优先使用统一 invoice。",
         "payments.alipay.pay" => "拉起支付宝 App 或网页支付。",
         "payments.alipay.queryOrder" => "查询支付宝订单状态。",
