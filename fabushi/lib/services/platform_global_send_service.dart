@@ -1,13 +1,32 @@
-import 'package:flutter/foundation.dart'
-    show kIsWeb, ValueChanged, VoidCallback;
+import 'package:flutter/foundation.dart' show ValueChanged, VoidCallback;
 import 'package:file_picker/file_picker.dart';
-import 'real_global_send_service.dart';
-import 'udp_global_send_service.dart';
 
-/// 平台自适应全球发送服务
-/// - Web 平台：使用 HTTP 发送
-/// - 其他平台（iOS/Android/macOS）：使用 UDP 基于 GeoLite2 IP 发送
+/// Deprecated compatibility shim.
+///
+/// Global Dharma delivery orchestration has moved out of the Flutter host and
+/// into the official Global Dharma mini app. The host should expose only system
+/// capability primitives such as `network.http.fetch`, `network.udp.open`,
+/// `network.udp.send`, `network.udp.broadcast`, `network.udp.close`, files, and
+/// keep-awake. Mini apps decide how to schedule real delivery.
+///
+/// This shim intentionally does not perform HTTP/UDP global delivery from the
+/// host. It keeps older call sites from crashing while they are migrated to open
+/// the mini app command surface.
+@Deprecated('Global Dharma sending is owned by the mini app. Use host capability primitives instead.')
 class PlatformGlobalSendService {
+  PlatformGlobalSendService({
+    required this.onProgress,
+    required this.onDataSent,
+    this.onCountryProgress,
+    required this.onStopped,
+    required this.onLog,
+    this.onTransferBeam,
+    this.onCountrySent,
+    this.onLoopStart,
+    double? userLatitude,
+    double? userLongitude,
+  });
+
   final ValueChanged<int> onProgress;
   final ValueChanged<double> onDataSent;
   final ValueChanged<double>? onCountryProgress;
@@ -24,125 +43,40 @@ class PlatformGlobalSendService {
   })?
   onTransferBeam;
   final Function(int)? onCountrySent;
-  final Function(int)? onLoopStart; // 每轮循环开始时的回调，参数为轮次
+  final Function(int)? onLoopStart;
 
-  double? _userLatitude;
-  double? _userLongitude;
+  bool _isRunning = false;
 
-  // 内部服务实例
-  RealGlobalSendService? _httpService;
-  UDPGlobalSendService? _udpService;
+  String get sendMode => 'mini_app_capability_bridge';
 
-  bool _isInitialized = false;
-
-  PlatformGlobalSendService({
-    required this.onProgress,
-    required this.onDataSent,
-    this.onCountryProgress,
-    required this.onStopped,
-    required this.onLog,
-    this.onTransferBeam,
-    this.onCountrySent,
-    this.onLoopStart,
-    double? userLatitude,
-    double? userLongitude,
-  }) {
-    _userLatitude = userLatitude;
-    _userLongitude = userLongitude;
-  }
-
-  /// 获取当前使用的发送模式
-  String get sendMode => kIsWeb ? 'HTTP' : 'UDP';
-
-  /// 初始化服务
   Future<bool> initialize() async {
-    if (_isInitialized) return true;
-
-    try {
-      if (kIsWeb) {
-        // Web 平台使用 HTTP
-        onLog('🌐 Web 平台 - 使用 HTTP 全球发送');
-        _httpService = RealGlobalSendService(
-          onProgress: onProgress,
-          onDataSent: onDataSent,
-          onCountryProgress: onCountryProgress,
-          onStopped: onStopped,
-          onLog: onLog,
-          onTransferBeam: onTransferBeam,
-          onCountrySent: onCountrySent,
-          onLoopStart: onLoopStart,
-          userLatitude: _userLatitude,
-          userLongitude: _userLongitude,
-        );
-        final success = await _httpService!.initialize();
-        _isInitialized = success;
-        return success;
-      } else {
-        // 其他平台使用 UDP
-        onLog('📱 原生平台 - 使用 UDP 全球发送 (GeoLite2 IP)');
-        _udpService = UDPGlobalSendService(
-          onProgress: onProgress,
-          onDataSent: onDataSent,
-          onCountryProgress: onCountryProgress,
-          onStopped: onStopped,
-          onLog: onLog,
-          onTransferBeam: onTransferBeam,
-          onCountrySent: onCountrySent,
-          onLoopStart: onLoopStart,
-          userLatitude: _userLatitude,
-          userLongitude: _userLongitude,
-        );
-        final success = await _udpService!.initialize();
-        _isInitialized = success;
-        return success;
-      }
-    } catch (e) {
-      onLog('❌ 平台发送服务初始化失败: $e');
-      return false;
-    }
+    onLog('全球法布施调度已迁移到小程序；宿主仅提供系统能力原语。');
+    return true;
   }
 
-  /// 开始发送
   Future<void> startSending({
     required List<PlatformFile> files,
     required bool isLoop,
     List<String>? countryCodes,
   }) async {
-    if (!_isInitialized) {
-      onLog('⚠️ 服务未初始化，正在初始化...');
-      await initialize();
-    }
-
-    if (kIsWeb) {
-      await _httpService?.startSending(
-        files: files,
-        isLoop: isLoop,
-        countryCodes: countryCodes,
-      );
-    } else {
-      await _udpService?.startSending(
-        files: files,
-        isLoop: isLoop,
-        countryCodes: countryCodes,
-      );
-    }
+    _isRunning = true;
+    onLoopStart?.call(1);
+    onProgress(0);
+    onDataSent(0);
+    onCountryProgress?.call(0);
+    onLog(
+      '已阻止宿主侧全球发送：请通过全球法布施小程序调用 network.http.fetch / network.udp.* 系统能力执行真实发送。',
+    );
+    _isRunning = false;
+    onStopped();
   }
 
-  /// 停止发送
   void stopSending() {
-    if (kIsWeb) {
-      _httpService?.stopSending();
-    } else {
-      _udpService?.stopSending();
-    }
+    if (!_isRunning) return;
+    _isRunning = false;
+    onLog('宿主侧兼容发送器已停止。');
+    onStopped();
   }
 
-  /// 是否正在运行
-  bool get isRunning {
-    if (kIsWeb) {
-      return _httpService?.isRunning ?? false;
-    } else {
-      return _udpService?.isRunning ?? false;
-    }
-  }
+  bool get isRunning => _isRunning;
 }
