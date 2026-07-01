@@ -1177,7 +1177,7 @@ fn method_description(method: &str) -> &'static str {
         "bot.setInputPlaceholder" => "设置宿主聊天输入框占位提示。",
         "bot.setComposerText" => "请求宿主把文字同步到聊天输入框。",
         "bot.getComposerState" => "读取宿主聊天输入框当前文字、占位提示和命令状态。",
-        "bot.close" => "请求关闭小程序。"
+        "bot.close" => "请求关闭小程序。",
         "flashcards.createDeck" => "复用宿主背诵闪卡流水线生成卡组。",
         "flashcards.openDeck" => "打开宿主闪卡学习界面。",
         "platformPublish.createDraft" => "复用宿主发布草稿生成能力。",
