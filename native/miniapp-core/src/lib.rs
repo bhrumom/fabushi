@@ -1,4 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
+use std::process::Command;
+use std::time::Duration;
 
 pub const HOST_API_VERSION: &str = "2.0";
 pub const HOST_SDK_VERSION: &str = "2.0.0";
@@ -219,6 +222,105 @@ pub struct PolicyDecision {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniAppRuntimeError {
+    pub code: String,
+    pub message: String,
+}
+
+impl MiniAppRuntimeError {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for MiniAppRuntimeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for MiniAppRuntimeError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpFetchRequest {
+    pub url: String,
+    pub method: String,
+    pub headers: BTreeMap<String, String>,
+    pub body: Option<Vec<u8>>,
+    pub timeout_ms: u64,
+    pub max_body_bytes: usize,
+}
+
+impl HttpFetchRequest {
+    pub fn get(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            method: "GET".to_string(),
+            headers: BTreeMap::new(),
+            body: None,
+            timeout_ms: 15_000,
+            max_body_bytes: 2 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpFetchResponse {
+    pub status_code: u16,
+    pub headers: BTreeMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+impl HttpFetchResponse {
+    pub fn body_text_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.body).to_string()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessExecuteRequest {
+    pub command: String,
+    pub arguments: Vec<String>,
+    pub working_directory: Option<String>,
+    pub env: BTreeMap<String, String>,
+}
+
+impl ProcessExecuteRequest {
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            arguments: Vec::new(),
+            working_directory: None,
+            env: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessExecuteOutput {
+    pub exit_code: i32,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+impl ProcessExecuteOutput {
+    pub fn ok(&self) -> bool {
+        self.exit_code == 0
+    }
+
+    pub fn stdout_text_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.stdout).to_string()
+    }
+
+    pub fn stderr_text_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.stderr).to_string()
+    }
+}
+
 pub fn capabilities() -> Vec<Capability> {
     use Availability::*;
     use CapabilityLayer::*;
@@ -373,6 +475,17 @@ pub fn capabilities() -> Vec<Capability> {
             High,
             &["network.interfaces.list"],
             Some("暴露本机网卡与地址，默认只给受信官方小程序。"),
+        ),
+        capability(
+            "network.http",
+            NativeNetwork,
+            true,
+            "RustHttpClientAdapter",
+            NativeIo,
+            Declared,
+            High,
+            &["network.http.fetch"],
+            Some("宿主提供 HTTP(S) fetch 原语，带超时、响应大小限制和权限审计；小程序自行解释内容。"),
         ),
         capability(
             "system.keepAwake",
@@ -662,6 +775,17 @@ pub fn capabilities() -> Vec<Capability> {
             Some("本地命令执行必须受信、可审计，并由宿主流式回传日志。"),
         ),
         capability(
+            "runtime.process",
+            LocalAutomation,
+            true,
+            "RustProcessAdapter",
+            DesktopNative,
+            TrustedOfficial,
+            Critical,
+            &["runtime.process.execute"],
+            Some("宿主提供本地进程执行原语；命令、参数、工作目录与环境由小程序声明和审计。"),
+        ),
+        capability(
             "browser.external",
             ExternalNavigation,
             true,
@@ -808,6 +932,107 @@ pub fn evaluate_method(method: &str, context: &PolicyContext) -> PolicyDecision 
     }
 }
 
+pub fn network_http_fetch(
+    request: &HttpFetchRequest,
+) -> Result<HttpFetchResponse, MiniAppRuntimeError> {
+    let url = request.url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(MiniAppRuntimeError::new(
+            "invalid_url",
+            "network.http.fetch only supports http:// and https:// URLs",
+        ));
+    }
+
+    let method = request.method.trim().to_ascii_uppercase();
+    if !matches!(
+        method.as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD"
+    ) {
+        return Err(MiniAppRuntimeError::new(
+            "invalid_method",
+            format!("unsupported HTTP method: {method}"),
+        ));
+    }
+
+    let timeout_ms = request.timeout_ms.clamp(1_000, 120_000);
+    let max_body_bytes = request.max_body_bytes.clamp(1, 16 * 1024 * 1024);
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_millis(timeout_ms))
+        .build();
+    let mut outbound = agent.request(&method, url);
+    for (key, value) in &request.headers {
+        outbound = outbound.set(key, value);
+    }
+
+    let response = match request.body.as_deref() {
+        Some(body) => outbound.send_bytes(body),
+        None => outbound.call(),
+    };
+    let response = match response {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(error)) => {
+            return Err(MiniAppRuntimeError::new("network_error", error.to_string()));
+        }
+    };
+
+    let status_code = response.status();
+    let mut headers = BTreeMap::new();
+    for name in response.headers_names() {
+        if let Some(value) = response.header(&name) {
+            headers.insert(name, value.to_string());
+        }
+    }
+
+    let mut body = Vec::new();
+    let mut reader = response.into_reader().take((max_body_bytes + 1) as u64);
+    reader
+        .read_to_end(&mut body)
+        .map_err(|error| MiniAppRuntimeError::new("read_failed", error.to_string()))?;
+    if body.len() > max_body_bytes {
+        return Err(MiniAppRuntimeError::new(
+            "response_too_large",
+            format!("response exceeded {max_body_bytes} bytes"),
+        ));
+    }
+
+    Ok(HttpFetchResponse {
+        status_code,
+        headers,
+        body,
+    })
+}
+
+pub fn runtime_process_execute(
+    request: &ProcessExecuteRequest,
+) -> Result<ProcessExecuteOutput, MiniAppRuntimeError> {
+    let command = request.command.trim();
+    if command.is_empty() {
+        return Err(MiniAppRuntimeError::new(
+            "invalid_command",
+            "process command cannot be empty",
+        ));
+    }
+
+    let mut process = Command::new(command);
+    process.args(&request.arguments);
+    if let Some(working_directory) = request.working_directory.as_deref() {
+        if !working_directory.trim().is_empty() {
+            process.current_dir(working_directory);
+        }
+    }
+    process.envs(&request.env);
+
+    let output = process
+        .output()
+        .map_err(|error| MiniAppRuntimeError::new("spawn_failed", error.to_string()))?;
+    Ok(ProcessExecuteOutput {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: output.stdout,
+        stderr: output.stderr,
+    })
+}
+
 pub fn sign_init_data(secret: &[u8], fields: &BTreeMap<String, String>) -> String {
     hmac_sha256_hex(secret, init_data_payload(fields).as_bytes())
 }
@@ -896,7 +1121,7 @@ fn method_description(method: &str) -> &'static str {
         "payments.queryInvoice" => "查询发票支付状态。",
         "payments.checkEntitlement" | "payments.alipay.checkEntitlement" => {
             "查询宿主后端是否已解锁一次性付费商品。"
-        },
+        }
         "payments.alipay.createOrder" => "创建支付宝订单；开放平台应优先使用统一 invoice。",
         "payments.alipay.pay" => "拉起支付宝 App 或网页支付。",
         "payments.alipay.queryOrder" => "查询支付宝订单状态。",
@@ -906,6 +1131,9 @@ fn method_description(method: &str) -> &'static str {
         "network.udp.broadcast" => "向广播地址发送 base64 UDP 数据包。",
         "network.udp.close" => "关闭指定 UDP socket。",
         "network.interfaces.list" => "列出宿主网络接口和 IP 地址。",
+        "network.http.fetch" => {
+            "通过宿主 Rust HTTP 客户端请求 HTTP(S) 资源，返回状态、响应头和受限大小的正文。"
+        }
         "system.keepAwake" => "请求宿主在任务期间尽量保持唤醒。",
         "hotspot.openSettings" => "打开或引导系统热点设置。",
         "game.runtime.getInfo" => "读取小游戏运行时、渲染后端、输入、帧预算和宿主能力建议。",
@@ -957,6 +1185,9 @@ fn method_description(method: &str) -> &'static str {
         "fs.writeFile" => "写入小程序私有目录或授权路径。",
         "fs.readFile" => "读取小程序私有目录或授权路径。",
         "shell.execute" => "启动本地命令并将日志流回宿主聊天。",
+        "runtime.process.execute" => {
+            "通过宿主 Rust runtime 启动本地进程并收集退出码、stdout 和 stderr。"
+        }
         "browser.open" => "使用系统浏览器打开 URL。",
         _ => "Fabushi mini app host method.",
     }
@@ -1277,6 +1508,30 @@ mod tests {
     }
 
     #[test]
+    fn network_http_fetch_is_declared_native_io_primitive() {
+        let context = PolicyContext {
+            declared_permissions: permissions(&["app.context", "bot.chat", "network.http"]),
+            platform: HostPlatform::Macos,
+            trusted_official: false,
+        };
+        let decision = evaluate_method("network.http.fetch", &context);
+        assert!(decision.allowed);
+        assert_eq!(decision.status, PolicyStatus::Granted);
+    }
+
+    #[test]
+    fn runtime_process_execute_requires_trusted_official_desktop() {
+        let context = PolicyContext {
+            declared_permissions: permissions(&["app.context", "bot.chat", "runtime.process"]),
+            platform: HostPlatform::Macos,
+            trusted_official: false,
+        };
+        let decision = evaluate_method("runtime.process.execute", &context);
+        assert!(!decision.allowed);
+        assert_eq!(decision.status, PolicyStatus::TrustRequired);
+    }
+
+    #[test]
     fn desktop_capability_is_unsupported_on_web() {
         let context = PolicyContext {
             declared_permissions: permissions(&["app.context", "bot.chat", "fs.readWrite"]),
@@ -1330,6 +1585,68 @@ mod tests {
         assert!(spec.contains("\"game.nativeSurface\""));
         assert!(spec.contains("\"game.runtime.getInfo\""));
         assert!(spec.contains("\"window.fullscreen.request\""));
+    }
+
+    #[test]
+    fn generated_spec_contains_runtime_primitives() {
+        let spec = host_api_spec_json();
+        assert!(spec.contains("\"network.http\""));
+        assert!(spec.contains("\"network.http.fetch\""));
+        assert!(spec.contains("\"runtime.process\""));
+        assert!(spec.contains("\"runtime.process.execute\""));
+    }
+
+    #[test]
+    fn rust_http_fetch_reads_local_response() {
+        use std::io::{Read as _, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test http server");
+        let address = listener.local_addr().expect("read listener address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept http request");
+            let mut buffer = [0u8; 1024];
+            let _ = stream.read(&mut buffer);
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\nX-Test: rust\r\n\r\nhello runtime",
+                )
+                .expect("write http response");
+        });
+
+        let response =
+            network_http_fetch(&HttpFetchRequest::get(format!("http://{address}/hello")))
+                .expect("fetch local response");
+        server.join().expect("join test http server");
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body_text_lossy(), "hello runtime");
+        assert!(response
+            .headers
+            .iter()
+            .any(|(key, value)| key.eq_ignore_ascii_case("x-test") && value == "rust"));
+    }
+
+    #[test]
+    fn rust_process_execute_collects_output() {
+        #[cfg(windows)]
+        let request = {
+            let mut request = ProcessExecuteRequest::new("cmd");
+            request.arguments = vec!["/C".to_string(), "echo".to_string(), "hello".to_string()];
+            request
+        };
+
+        #[cfg(not(windows))]
+        let request = {
+            let mut request = ProcessExecuteRequest::new("/bin/echo");
+            request.arguments = vec!["hello".to_string()];
+            request
+        };
+
+        let output = runtime_process_execute(&request).expect("execute echo");
+        assert!(output.ok());
+        assert!(output.stdout_text_lossy().contains("hello"));
     }
 
     #[test]

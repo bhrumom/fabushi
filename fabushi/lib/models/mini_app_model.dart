@@ -163,7 +163,7 @@ class MiniAppRegistry {
   factory MiniAppRegistry.fromJson(Map<String, dynamic> json) {
     return MiniAppRegistry(
       schemaVersion: _readInt(json['schemaVersion']) ?? 1,
-      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '1.6'),
+      hostApiVersion: _readString(json, 'hostApiVersion', fallback: '2.0'),
       bots: (json['bots'] as List? ?? const [])
           .whereType<Map>()
           .map((item) => MiniAppBot.fromJson(Map<String, dynamic>.from(item)))
@@ -281,6 +281,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
     'payments.entitlement',
     'payments.fudeGold',
     'payments.alipay',
+    'network.http',
     'network.udp',
     'network.interfaces',
     'system.keepAwake',
@@ -296,6 +297,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
     'local.loopback',
     'desktop.control',
     'fs.readWrite',
+    'runtime.process',
     'shell.execute',
     'browser.external',
   ];
@@ -359,7 +361,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
   ];
   return MiniAppRegistry(
     schemaVersion: 1,
-    hostApiVersion: '1.6',
+    hostApiVersion: '2.0',
     bots: bots,
     miniApps: [
       for (final bot in bots)
@@ -370,7 +372,7 @@ MiniAppRegistry defaultMiniAppRegistry() {
           subtitle: bot.subtitle,
           entryUrl:
               'https://fabushi-miniapps.pages.dev/miniapps/${bot.miniAppId}',
-          version: '1.6.0',
+          version: '2.0.0',
           permissions: bot.permissions,
           surfaces: const ['homePinned', 'chatPanel'],
           theme: 'telegramDark',

@@ -746,6 +746,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       exposeCommand: exposeCommand
     },
     network: {
+      http: {
+        fetch: function(params) { return invoke('network.http.fetch', params || {}); }
+      },
       udp: {
         open: function(params) { return invoke('network.udp.open', params || {}); },
         send: function(params) { return invoke('network.udp.send', params || {}); },
@@ -880,6 +883,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _closeUdpSocket(params);
       case 'network.interfaces.list':
         return _listNetworkInterfaces(params);
+      case 'network.http.fetch':
+        return _networkHttpFetch(params);
       case 'system.keepAwake':
         return _setKeepAwake(params);
       case 'hotspot.openSettings':
@@ -931,8 +936,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _fsWriteFile(params);
       case 'fs.readFile':
         return _fsReadFile(params);
+      case 'runtime.process.execute':
+        return _runtimeProcessExecute(params);
       case 'shell.execute':
-        return _shellExecute(params);
+        return _runtimeProcessExecute(params, legacyShellPermission: true);
       case 'browser.open':
         return _browserOpen(params);
       case 'flashcards.createDeck':
@@ -2308,22 +2315,141 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         'localLoopback.fetch 仅允许 localhost / 127.0.0.1 / ::1',
       );
     }
-    final method = (params['method']?.toString().toUpperCase() ?? 'GET');
-    final body = params['body']?.toString();
-    final request = http.Request(method, uri)
-      ..headers.addAll(
-        Map<String, String>.from(params['headers'] as Map? ?? const {}),
+    return _hostHttpFetch(params, uri);
+  }
+
+  Future<Map<String, dynamic>> _networkHttpFetch(
+    Map<String, dynamic> params,
+  ) async {
+    _requirePermission('network.http');
+    if (kIsWeb) {
+      throw const MiniAppHostException('unsupported_platform', '当前平台不支持宿主 HTTP 客户端');
+    }
+    final rawUrl = params['url']?.toString().trim() ?? '';
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      throw const MiniAppHostException(
+        'invalid_url',
+        'network.http.fetch 仅支持 http:// 或 https:// URL',
       );
-    if (body != null && body.isNotEmpty) request.body = body;
+    }
+    return _hostHttpFetch(params, uri);
+  }
+
+  Future<Map<String, dynamic>> _hostHttpFetch(
+    Map<String, dynamic> params,
+    Uri uri,
+  ) async {
+    final method = (params['method']?.toString().toUpperCase() ?? 'GET');
+    const allowedMethods = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'};
+    if (!allowedMethods.contains(method)) {
+      throw MiniAppHostException('invalid_request', '不支持的 HTTP method: $method');
+    }
+
+    final timeoutMs = _readPositiveInt(
+      params['timeoutMs'],
+      fallback: 15000,
+    ).clamp(1000, 120000).toInt();
+    final maxBodyBytes = _readPositiveInt(
+      params['maxBodyBytes'] ?? params['maxBytes'],
+      fallback: 2 * 1024 * 1024,
+    ).clamp(1, 16 * 1024 * 1024).toInt();
+    final request = http.Request(method, uri)
+      ..headers.addAll({
+        'Accept': 'text/html,text/plain,application/xhtml+xml,*/*',
+        'User-Agent': 'FabushiMiniAppHost/$miniAppHostSdkVersion',
+        ...Map<String, String>.from(params['headers'] as Map? ?? const {}),
+      });
+    final body = params['body'];
+    if (body != null) request.body = body.toString();
+
     final response = await _httpClient
         .send(request)
-        .timeout(const Duration(seconds: 15));
-    final text = await response.stream.bytesToString();
+        .timeout(Duration(milliseconds: timeoutMs));
+    final bytes = <int>[];
+    await for (final chunk in response.stream.timeout(
+      Duration(milliseconds: timeoutMs),
+    )) {
+      bytes.addAll(chunk);
+      if (bytes.length > maxBodyBytes) {
+        throw MiniAppHostException(
+          'response_too_large',
+          'HTTP 响应超过 ${maxBodyBytes}B 限制',
+        );
+      }
+    }
+    final bodyTextEncoding = _detectHttpBodyEncoding(
+      bytes,
+      response.headers,
+    );
     return {
       'statusCode': response.statusCode,
       'headers': response.headers,
-      'body': text,
+      'body': _decodeHttpBodyBestEffort(bytes, bodyTextEncoding),
+      'bodyBase64': base64Encode(bytes),
+      'bodyBytes': bytes.length,
+      'bodyTextEncoding': bodyTextEncoding,
+      'url': uri.toString(),
     };
+  }
+
+  String _detectHttpBodyEncoding(
+    List<int> bytes,
+    Map<String, String> headers,
+  ) {
+    final contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
+    final headerMatch = RegExp(
+      "charset\\s*=\\s*[\"']?([^\\s;\"']+)",
+      caseSensitive: false,
+    ).firstMatch(contentType);
+    final headerEncoding = headerMatch?.group(1)?.trim();
+    if (headerEncoding != null && headerEncoding.isNotEmpty) {
+      return _normalizeHttpEncodingLabel(headerEncoding);
+    }
+
+    final preview = latin1.decode(
+      bytes.take(4096).toList(growable: false),
+      allowInvalid: true,
+    );
+    final metaMatch = RegExp(
+      "charset\\s*=\\s*[\"']?([^\\s;\"'>]+)",
+      caseSensitive: false,
+    ).firstMatch(preview);
+    final metaEncoding = metaMatch?.group(1)?.trim();
+    if (metaEncoding != null && metaEncoding.isNotEmpty) {
+      return _normalizeHttpEncodingLabel(metaEncoding);
+    }
+    return 'utf-8';
+  }
+
+  String _normalizeHttpEncodingLabel(String label) {
+    final normalized = label.trim().toLowerCase().replaceAll('_', '-');
+    switch (normalized) {
+      case 'utf8':
+      case 'unicode-1-1-utf-8':
+        return 'utf-8';
+      case 'gb2312':
+      case 'gbk':
+      case 'gb18030':
+      case 'cp936':
+        return 'gb18030';
+      case 'big-5':
+      case 'big5-hkscs':
+      case 'x-x-big5':
+        return 'big5';
+      default:
+        return normalized.isEmpty ? 'utf-8' : normalized;
+    }
+  }
+
+  String _decodeHttpBodyBestEffort(List<int> bytes, String encoding) {
+    final normalized = _normalizeHttpEncodingLabel(encoding);
+    if (normalized == 'latin1' || normalized == 'iso-8859-1') {
+      return latin1.decode(bytes, allowInvalid: true);
+    }
+    // Flutter/Dart does not ship every legacy web codec such as Big5.
+    // Keep bodyBase64 so the WebView can decode with TextDecoder('big5') in JS.
+    return utf8.decode(bytes, allowMalformed: true);
   }
 
   bool _isLoopbackHost(String host) {
@@ -2368,10 +2494,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return {'ok': true, 'content': content, 'path': resolvedPath};
   }
 
-  Future<Map<String, dynamic>> _shellExecute(
-    Map<String, dynamic> params,
-  ) async {
-    _requirePermission('shell.execute');
+  Future<Map<String, dynamic>> _runtimeProcessExecute(
+    Map<String, dynamic> params, {
+    bool legacyShellPermission = false,
+  }) async {
+    _requirePermission(
+      legacyShellPermission ? 'shell.execute' : 'runtime.process',
+    );
     if (!AiBackendPolicy.isDesktopNative) {
       throw const MiniAppHostException('unsupported_platform', '当前平台不支持执行终端命令');
     }
@@ -2389,25 +2518,35 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     try {
       final taskId = DateTime.now().millisecondsSinceEpoch.toString();
       widget.onCliStart?.call(title, taskId);
+      final stdoutBuffer = StringBuffer();
+      final stderrBuffer = StringBuffer();
 
       final process = await Process.start(
         command,
         arguments,
         workingDirectory: workingDirectory,
-        runInShell: true,
+        runInShell: legacyShellPermission || params['runInShell'] == true,
       );
 
-      process.stdout.transform(utf8.decoder).listen((data) {
+      final stdoutDone = process.stdout.transform(utf8.decoder).forEach((data) {
+        stdoutBuffer.write(data);
         widget.onCliLog?.call(taskId, data);
       });
-      process.stderr.transform(utf8.decoder).listen((data) {
+      final stderrDone = process.stderr.transform(utf8.decoder).forEach((data) {
+        stderrBuffer.write(data);
         widget.onCliLog?.call(taskId, data);
       });
 
       final exitCode = await process.exitCode;
+      await Future.wait([stdoutDone, stderrDone]);
       widget.onCliLog?.call(taskId, '\\n[进程已结束，退出码: $exitCode]');
 
-      return {'ok': exitCode == 0, 'exitCode': exitCode};
+      return {
+        'ok': exitCode == 0,
+        'exitCode': exitCode,
+        'stdout': stdoutBuffer.toString(),
+        'stderr': stderrBuffer.toString(),
+      };
     } catch (e) {
       throw MiniAppHostException('execution_failed', '执行失败: $e');
     }
