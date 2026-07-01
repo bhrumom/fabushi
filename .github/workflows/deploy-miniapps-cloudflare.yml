@@ -3,9 +3,14 @@ name: Deploy Mini Apps to Cloudflare Pages
 on:
   push:
     branches:
-      - main
+      - '**'
     paths:
       - 'frontend/apps/web/**'
+      - 'frontend/packages/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/pnpm-workspace.yaml'
+      - 'frontend/tsconfig.base.json'
       - '.github/workflows/deploy-miniapps-cloudflare.yml'
   workflow_dispatch:
 
@@ -47,11 +52,12 @@ jobs:
         working-directory: frontend
         run: pnpm --filter @fabushi/web build
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages Production
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
           projectName: 'fabushi-miniapps'
           directory: 'frontend/apps/web/out'
+          branch: main
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}

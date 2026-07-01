@@ -130,6 +130,18 @@ class MiniAppHostController {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getCommands() async {
+    final state = await _waitForAttached();
+    await state._waitForHostReady();
+    return state._getExposedBotCommands();
+  }
+
+  Future<Map<String, dynamic>> getComposerState() async {
+    final state = await _waitForAttached();
+    await state._waitForHostReady();
+    return state._botGetComposerState(const {});
+  }
+
   Future<_MiniAppHostScreenState> _waitForAttached() async {
     final state = _state;
     if (state != null) return state;
@@ -156,6 +168,7 @@ class MiniAppHostScreen extends StatefulWidget {
     this.onCliStart,
     this.onCliLog,
     this.reloadToken,
+    this.onComposerStateRequest,
   });
 
   final SocialFeatureBot bot;
@@ -169,6 +182,7 @@ class MiniAppHostScreen extends StatefulWidget {
   final void Function(String title, String taskId)? onCliStart;
   final void Function(String taskId, String data)? onCliLog;
   final String? reloadToken;
+  final Map<String, dynamic> Function()? onComposerStateRequest;
 
   @override
   State<MiniAppHostScreen> createState() => _MiniAppHostScreenState();
@@ -740,6 +754,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       openPanel: function(params) { return invoke('bot.openPanel', params || {}); },
       setPanelState: function(params) { return invoke('bot.setPanelState', params || {}); },
       setCommands: function(params) { return invoke('bot.setCommands', params || {}); },
+      getCommands: function(params) { return invoke('bot.getCommands', params || {}); },
+      setInputPlaceholder: function(params) { return invoke('bot.setInputPlaceholder', typeof params === 'string' ? { placeholder: params } : (params || {})); },
+      setComposerText: function(params) { return invoke('bot.setComposerText', typeof params === 'string' ? { text: params } : (params || {})); },
+      getComposerState: function(params) { return invoke('bot.getComposerState', params || {}); },
       close: function(params) { return invoke('bot.close', params || {}); },
       onAnyCommand: onAnyCommand,
       onCommand: onCommand,
@@ -902,6 +920,14 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return {'accepted': true};
       case 'bot.setCommands':
         return _botSetCommands(params);
+      case 'bot.getCommands':
+        return _botGetCommands(params);
+      case 'bot.setInputPlaceholder':
+        return _botSetInputPlaceholder(params);
+      case 'bot.setComposerText':
+        return _botSetComposerText(params);
+      case 'bot.getComposerState':
+        return _botGetComposerState(params);
       case 'bot.close':
         if (widget.onClose != null) {
           widget.onClose!();
@@ -1887,6 +1913,21 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     return '${parts[0]}.${parts[1]}.${parts[2]}.255';
   }
 
+  List<Map<String, dynamic>> _getExposedBotCommands() {
+    final commands = _exposedBotCommands.values
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+    commands.sort((a, b) {
+      final ai = a['order'] is num ? (a['order'] as num).toInt() : 9999;
+      final bi = b['order'] is num ? (b['order'] as num).toInt() : 9999;
+      if (ai != bi) return ai.compareTo(bi);
+      return (a['command']?.toString() ?? '').compareTo(
+        b['command']?.toString() ?? '',
+      );
+    });
+    return commands;
+  }
+
   Map<String, dynamic> _botSetCommands(Map<String, dynamic> params) {
     _requirePermission('bot.chat');
     final commands = params['commands'];
@@ -1911,10 +1952,67 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       registered.add(normalizedSpec);
     }
 
+    widget.onMiniAppEvent?.call({
+      'type': 'bot.commandsChanged',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'commands': _getExposedBotCommands(),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+
     return {
       'accepted': true,
       'commands': registered,
       'exposedCommands': _exposedBotCommands.keys.toList()..sort(),
+    };
+  }
+
+  Map<String, dynamic> _botGetCommands(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    return {'commands': _getExposedBotCommands()};
+  }
+
+  Map<String, dynamic> _botSetInputPlaceholder(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final placeholder = (params['placeholder'] ?? params['text'] ?? '')
+        .toString()
+        .trim();
+    widget.onMiniAppEvent?.call({
+      'type': 'bot.composer.placeholder',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'placeholder': placeholder,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return {'accepted': true, 'placeholder': placeholder};
+  }
+
+  Map<String, dynamic> _botSetComposerText(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final text = (params['text'] ?? params['value'] ?? '').toString();
+    final append = params['append'] == true;
+    widget.onMiniAppEvent?.call({
+      'type': 'bot.composer.text',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'text': text,
+      'append': append,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return {'accepted': true, 'text': text, 'append': append};
+  }
+
+  Map<String, dynamic> _botGetComposerState(Map<String, dynamic> params) {
+    _requirePermission('bot.chat');
+    final state = Map<String, dynamic>.from(
+      widget.onComposerStateRequest?.call() ?? const {},
+    );
+    return {
+      'text': state['text']?.toString() ?? '',
+      'placeholder': state['placeholder']?.toString() ?? widget.bot.inputHint,
+      'botId': widget.bot.stableBotId,
+      'miniAppId': widget.bot.stableMiniAppId,
+      'commands': _getExposedBotCommands(),
     };
   }
 

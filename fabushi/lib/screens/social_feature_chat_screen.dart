@@ -28,6 +28,7 @@ class SocialFeatureChatScreen extends StatefulWidget {
 
 class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final TextEditingController _composer = TextEditingController();
+  final FocusNode _composerFocus = FocusNode();
   final ScrollController _scroll = ScrollController();
   static final Map<String, List<_ChatMessage>> _sharedMessages = {};
   static final Map<String, _MiniAppSession> _sharedMiniAppSessions = {};
@@ -35,6 +36,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final Map<String, List<_ChatMessage>> _messages = _sharedMessages;
   final Map<String, _MiniAppSession> _miniAppSessions = _sharedMiniAppSessions;
   final Map<String, String> _cliTaskBotIds = {};
+  final Map<String, List<Map<String, dynamic>>> _miniAppCommandCache = {};
+  final Map<String, String> _miniAppInputHints = {};
   final http.Client _httpClient = http.Client();
   final Set<DharmaPublishPlatform> _platforms = {
     DharmaPublishPlatform.xiaohongshu,
@@ -53,6 +56,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   @override
   void initState() {
     super.initState();
+    _composerFocus.addListener(_handleComposerFocusChanged);
     _ensureGreeting(widget.bot);
   }
 
@@ -71,9 +75,16 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   @override
   void dispose() {
     _httpClient.close();
+    _composerFocus
+      ..removeListener(_handleComposerFocusChanged)
+      ..dispose();
     _composer.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _handleComposerFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   void _ensureGreeting(SocialFeatureBot bot) {
@@ -183,6 +194,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                   : session.startParamVersion.toString(),
               controller: session.controller,
               onMiniAppEvent: _handleMiniAppEvent,
+              onComposerStateRequest: () => _composerStateFor(session.bot),
               onCliStart: (title, taskId) =>
                   _handleMiniAppCliStart(session.bot.stableBotId, title, taskId),
               onCliLog: _handleMiniAppCliLog,
@@ -194,79 +206,130 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   Widget _buildHeader(FileTransferModel model) {
-    return Container(
-      height: 74,
-      padding: const EdgeInsets.symmetric(horizontal: 22),
-      decoration: const BoxDecoration(
-        color: Color(0xFF17212B),
-        border: Border(bottom: BorderSide(color: Color(0xFF223040))),
-      ),
-      child: Row(
-        children: [
-          if (Navigator.of(context).canPop())
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-              padding: const EdgeInsets.only(right: 14),
-              constraints: const BoxConstraints(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 460;
+        final buttonSize = compact ? 40.0 : 48.0;
+        final horizontalPadding = compact ? 10.0 : 22.0;
+        final avatarRadius = compact ? 20.0 : 24.0;
+
+        Widget headerIcon({
+          required String tooltip,
+          required IconData icon,
+          required VoidCallback? onPressed,
+        }) {
+          return IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            icon: Icon(icon, color: const Color(0xFF91A3B7)),
+            iconSize: compact ? 22 : 24,
+            splashRadius: compact ? 20 : 24,
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints.tightFor(
+              width: buttonSize,
+              height: buttonSize,
             ),
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: _bot.avatarColor,
-            child: Icon(_bot.icon, color: Colors.white),
+          );
+        }
+
+        return Container(
+          height: compact ? 64 : 74,
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          decoration: const BoxDecoration(
+            color: Color(0xFF17212B),
+            border: Border(bottom: BorderSide(color: Color(0xFF223040))),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _bot.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
+          child: Row(
+            children: [
+              if (Navigator.of(context).canPop())
+                headerIcon(
+                  tooltip: '返回',
+                  icon: Icons.arrow_back,
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  _statusText(model),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF91A3B7),
-                    fontSize: 13,
-                  ),
+              CircleAvatar(
+                radius: avatarRadius,
+                backgroundColor: _bot.avatarColor,
+                child: Icon(_bot.icon, color: Colors.white, size: compact ? 22 : 24),
+              ),
+              SizedBox(width: compact ? 10 : 14),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _bot.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: compact ? 17 : 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _statusText(model),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: Color(0xFF91A3B7),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              if (!compact) ...[
+                headerIcon(tooltip: '搜索', icon: Icons.search, onPressed: () {}),
+                headerIcon(tooltip: '拨打电话', icon: Icons.call_outlined, onPressed: () {}),
               ],
-            ),
+              headerIcon(
+                tooltip: _miniAppPanelOpen ? '关闭侧栏' : '打开侧栏',
+                icon: _miniAppPanelOpen ? Icons.web_asset_off : Icons.web_asset,
+                onPressed: _toggleMiniAppPanel,
+              ),
+              if (compact)
+                SizedBox(
+                  width: buttonSize,
+                  height: buttonSize,
+                  child: PopupMenuButton<String>(
+                    tooltip: '更多选项',
+                    color: const Color(0xFF17212B),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.more_vert, color: Color(0xFF91A3B7)),
+                    onSelected: (value) {
+                      if (value == 'settings') _openCurrentSettings(model);
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'search',
+                        child: Text('搜索', style: TextStyle(color: Colors.white)),
+                      ),
+                      PopupMenuItem(
+                        value: 'call',
+                        child: Text('拨打电话', style: TextStyle(color: Colors.white)),
+                      ),
+                      PopupMenuItem(
+                        value: 'settings',
+                        child: Text('更多选项', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                headerIcon(
+                  tooltip: '更多选项',
+                  icon: Icons.more_vert,
+                  onPressed: () => _openCurrentSettings(model),
+                ),
+            ],
           ),
-          IconButton(
-            tooltip: '搜索',
-            onPressed: () {},
-            icon: const Icon(Icons.search, color: Color(0xFF91A3B7)),
-          ),
-          IconButton(
-            tooltip: '拨打电话',
-            onPressed: () {},
-            icon: const Icon(Icons.call_outlined, color: Color(0xFF91A3B7)),
-          ),
-          IconButton(
-            tooltip: _miniAppPanelOpen ? '关闭侧栏' : '打开侧栏',
-            onPressed: _toggleMiniAppPanel,
-            icon: Icon(
-              _miniAppPanelOpen ? Icons.web_asset_off : Icons.web_asset,
-              color: const Color(0xFF91A3B7),
-            ),
-          ),
-          IconButton(
-            tooltip: '更多选项',
-            onPressed: () => _openCurrentSettings(model),
-            icon: const Icon(Icons.more_vert, color: Color(0xFF91A3B7)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -356,107 +419,326 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   Widget _buildComposer(FileTransferModel model, bool canSend) {
     final hasMiniApp = _bot.miniAppId != null && _bot.miniAppId!.isNotEmpty;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-      decoration: const BoxDecoration(
-        color: Color(0xFF17212B),
-        border: Border(top: BorderSide(color: Color(0xFF223040))),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 520;
+        final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
+        final inputActive = _composerFocus.hasFocus || keyboardVisible;
+        final collapseMiniAppButton = compact && hasMiniApp && inputActive;
+        final splitControls = compact && hasMiniApp && !inputActive && constraints.maxWidth < 380;
+        final horizontalPadding = compact ? 12.0 : 20.0;
+        final bottomPadding = inputActive ? 8.0 : (compact ? 12.0 : 18.0);
+
+        return Container(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            compact ? 8 : 10,
+            horizontalPadding,
+            bottomPadding,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF17212B),
+            border: Border(top: BorderSide(color: Color(0xFF223040))),
+          ),
+          child: splitControls
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildOpenMiniAppButton(
+                            compact: true,
+                            collapsed: false,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildComposerIconButton(
+                          tooltip: '命令与附件',
+                          icon: Icons.add,
+                          onPressed: () => _openPlusMenu(model),
+                          compact: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: _buildComposerTextField(
+                            model,
+                            canSend,
+                            compact: true,
+                            inputActive: inputActive,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _buildSubmitOrVoiceButton(
+                          model,
+                          canSend,
+                          compact: true,
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (hasMiniApp)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0, bottom: 2),
+                        child: _buildOpenMiniAppButton(
+                          compact: compact,
+                          collapsed: collapseMiniAppButton,
+                        ),
+                      ),
+                    _buildComposerIconButton(
+                      tooltip: '命令与附件',
+                      icon: Icons.add,
+                      onPressed: () => _openPlusMenu(model),
+                      compact: compact,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildComposerTextField(
+                        model,
+                        canSend,
+                        compact: compact,
+                        inputActive: inputActive,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _buildSubmitOrVoiceButton(model, canSend, compact: compact),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOpenMiniAppButton({
+    required bool compact,
+    required bool collapsed,
+  }) {
+    final height = compact ? 44.0 : 46.0;
+    final borderRadius = BorderRadius.circular(compact ? 14 : 16);
+    final style = ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xFF40A7E3),
+      foregroundColor: Colors.white,
+      minimumSize: Size(0, height),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(borderRadius: borderRadius),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 14,
+        vertical: compact ? 8 : 10,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (hasMiniApp)
-            Padding(
-              padding: const EdgeInsets.only(right: 4.0, bottom: 4),
-              child: ElevatedButton.icon(
-                onPressed: () => _openMiniAppPanel(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF40A7E3),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  elevation: 0,
-                ),
-                icon: const Icon(Icons.web_asset, size: 20),
-                label: const Text(
-                  '打开应用',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
+      elevation: 0,
+    );
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      width: collapsed ? height : null,
+      height: height,
+      child: collapsed
+          ? ElevatedButton(
+              onPressed: () => _openMiniAppPanel(),
+              style: style.copyWith(
+                padding: const WidgetStatePropertyAll(EdgeInsets.zero),
               ),
-            ),
-          IconButton(
-            tooltip: '附件',
-            onPressed: () {},
-            icon: const Icon(Icons.attach_file, color: Color(0xFF91A3B7)),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _composer,
-              enabled: !_busy,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: TextInputAction.send,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                height: 1.4,
-              ),
-              decoration: InputDecoration(
-                hintText: _bot.inputHint,
-                hintStyle: const TextStyle(color: Color(0xFF6E7F92)),
-                filled: true,
-                fillColor: const Color(0xFF17212B), // Match bg to hide border
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                suffixIcon: IconButton(
-                  icon: const Icon(
-                    Icons.sentiment_satisfied_alt,
-                    color: Color(0xFF91A3B7),
-                  ),
-                  onPressed: () {},
-                ),
-              ),
-              onChanged: (_) => setState(() {}),
-              onSubmitted: (_) {
-                if (canSend) _submit(model);
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (canSend)
-            IconButton(
-              tooltip: '发送',
-              onPressed: () => _submit(model),
-              icon: Icon(
-                _busy ? Icons.more_horiz : Icons.send,
-                color: const Color(0xFF40A7E3),
-                size: 28,
-              ),
+              child: Icon(Icons.web_asset, size: compact ? 22 : 24),
             )
-          else
-            IconButton(
-              tooltip: '语音留言',
-              onPressed: () {},
-              icon: const Icon(
-                Icons.mic_none,
-                color: Color(0xFF91A3B7),
-                size: 28,
+          : ElevatedButton.icon(
+              onPressed: () => _openMiniAppPanel(),
+              style: style,
+              icon: Icon(Icons.web_asset, size: compact ? 18 : 20),
+              label: Text(
+                '打开应用',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: compact ? 14 : 15,
+                ),
               ),
             ),
-        ],
+    );
+  }
+
+  Widget _buildComposerIconButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    required bool compact,
+    Color color = const Color(0xFF91A3B7),
+  }) {
+    final size = compact ? 42.0 : 48.0;
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: size, height: size),
+      splashRadius: compact ? 20 : 24,
+      icon: Icon(icon, color: color, size: compact ? 26 : 28),
+    );
+  }
+
+  Widget _buildSubmitOrVoiceButton(
+    FileTransferModel model,
+    bool canSend, {
+    required bool compact,
+  }) {
+    if (canSend) {
+      return _buildComposerIconButton(
+        tooltip: '发送',
+        icon: _busy ? Icons.more_horiz : Icons.send,
+        onPressed: () => _submit(model),
+        compact: compact,
+        color: const Color(0xFF40A7E3),
+      );
+    }
+    return _buildComposerIconButton(
+      tooltip: '语音留言',
+      icon: Icons.mic_none,
+      onPressed: () {},
+      compact: compact,
+    );
+  }
+
+  Widget _buildComposerTextField(
+    FileTransferModel model,
+    bool canSend, {
+    required bool compact,
+    required bool inputActive,
+  }) {
+    return TextField(
+      controller: _composer,
+      focusNode: _composerFocus,
+      enabled: !_busy,
+      minLines: 1,
+      maxLines: compact ? 4 : 5,
+      textInputAction: TextInputAction.send,
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: compact ? 15 : 16,
+        height: 1.35,
+      ),
+      decoration: InputDecoration(
+        hintText: _composerHint(compact, inputActive: inputActive),
+        hintMaxLines: 1,
+        hintStyle: TextStyle(
+          color: const Color(0xFF6E7F92),
+          fontSize: compact ? 15 : 16,
+          overflow: TextOverflow.ellipsis,
+        ),
+        isDense: compact,
+        filled: true,
+        fillColor: const Color(0xFF17212B),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(compact ? 20 : 22),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: compact ? 14 : 16,
+          vertical: compact ? 9 : 10,
+        ),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 44,
+          minHeight: 44,
+        ),
+        suffixIcon: compact
+            ? null
+            : IconButton(
+                icon: const Icon(
+                  Icons.sentiment_satisfied_alt,
+                  color: Color(0xFF91A3B7),
+                ),
+                onPressed: () {},
+              ),
+      ),
+      onChanged: (_) => setState(() {}),
+      onSubmitted: (_) {
+        if (canSend) _submit(model);
+      },
+    );
+  }
+
+  String _composerHint(bool compact, {required bool inputActive}) {
+    final inputHint =
+        _miniAppInputHints[_bot.stableBotId]?.trim().isNotEmpty == true
+            ? _miniAppInputHints[_bot.stableBotId]!.trim()
+            : _bot.inputHint;
+    if (compact && inputActive) return '输入消息';
+    if (!compact || inputHint.length <= 14) return inputHint;
+    return switch (_kind) {
+      MiniAppBotKind.globalDharma => '输入文字/链接，或点 + 添加素材',
+      MiniAppBotKind.flashcards => '粘贴正文或链接',
+      MiniAppBotKind.platformPublish => '输入发布正文/链接',
+      MiniAppBotKind.botFather => '描述想创建的小程序',
+      MiniAppBotKind.assistant || MiniAppBotKind.thirdParty => inputHint,
+    };
+  }
+
+  Map<String, dynamic> _composerStateFor(SocialFeatureBot bot) {
+    final hint = _miniAppInputHints[bot.stableBotId]?.trim().isNotEmpty == true
+        ? _miniAppInputHints[bot.stableBotId]!.trim()
+        : bot.inputHint;
+    return {
+      'text': bot.stableBotId == _bot.stableBotId ? _composer.text : '',
+      'placeholder': hint,
+      'commands': _miniAppCommandCache[bot.stableBotId] ?? const [],
+    };
+  }
+
+  Future<void> _openPlusMenu(FileTransferModel model) async {
+    final commands = await _loadMiniAppCommands();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF17212B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => _MiniAppCommandSheet(
+        bot: _bot,
+        commands: commands,
+        onOpenApp: () {
+          Navigator.pop(sheetContext);
+          _openMiniAppPanel();
+        },
+        onSelectCommand: (command) {
+          Navigator.pop(sheetContext);
+          _insertCommandIntoComposer(command);
+        },
       ),
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMiniAppCommands() async {
+    final cached = _miniAppCommandCache[_bot.stableBotId];
+    if (cached != null && cached.isNotEmpty) return cached;
+    if (_bot.miniAppId?.trim().isNotEmpty != true) return const [];
+    try {
+      final session = await _ensureMiniAppSession(_bot);
+      final commands = await session.controller.getCommands();
+      if (mounted) {
+        setState(() => _miniAppCommandCache[_bot.stableBotId] = commands);
+      }
+      return commands;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _insertCommandIntoComposer(Map<String, dynamic> command) {
+    final rawCommand = command['command']?.toString().trim() ?? '';
+    if (rawCommand.isEmpty) return;
+    final text = rawCommand.startsWith('/') ? rawCommand : '/$rawCommand';
+    _composer.text = '$text ';
+    _composer.selection = TextSelection.collapsed(offset: _composer.text.length);
+    setState(() {});
   }
 
   bool _canSubmit(FileTransferModel model) {
@@ -586,10 +868,40 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   void _handleMiniAppEvent(Map<String, dynamic> event) {
     if (!mounted) return;
+    final type = event['type']?.toString() ?? '';
+    final botId = event['botId']?.toString().trim() ?? _bot.stableBotId;
+
+    if (type == 'bot.commandsChanged') {
+      final rawCommands = event['commands'];
+      final commands = rawCommands is List
+          ? rawCommands
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList(growable: false)
+          : <Map<String, dynamic>>[];
+      setState(() => _miniAppCommandCache[botId] = commands);
+      return;
+    }
+
+    if (type == 'bot.composer.placeholder') {
+      final placeholder = event['placeholder']?.toString().trim() ?? '';
+      setState(() => _miniAppInputHints[botId] = placeholder);
+      return;
+    }
+
+    if (type == 'bot.composer.text') {
+      if (botId == _bot.stableBotId) {
+        final value = event['text']?.toString() ?? '';
+        _composer.text = event['append'] == true ? _composer.text + value : value;
+        _composer.selection = TextSelection.collapsed(offset: _composer.text.length);
+        setState(() {});
+      }
+      return;
+    }
+
     final text = event['text']?.toString().trim() ?? '';
     if (text.isEmpty) return;
     final isError = event['isError'] == true || event['level'] == 'error';
-    final botId = event['botId']?.toString().trim() ?? _bot.stableBotId;
     setState(() {
       final messages = _messages.putIfAbsent(botId, () => []);
       messages.add(isError ? _ChatMessage.error(text) : _ChatMessage.bot(text));
@@ -1219,6 +1531,139 @@ class _ThinkingBubble extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _MiniAppCommandSheet extends StatefulWidget {
+  const _MiniAppCommandSheet({
+    required this.bot,
+    required this.commands,
+    required this.onOpenApp,
+    required this.onSelectCommand,
+  });
+
+  final SocialFeatureBot bot;
+  final List<Map<String, dynamic>> commands;
+  final VoidCallback onOpenApp;
+  final ValueChanged<Map<String, dynamic>> onSelectCommand;
+
+  @override
+  State<_MiniAppCommandSheet> createState() => _MiniAppCommandSheetState();
+}
+
+class _MiniAppCommandSheetState extends State<_MiniAppCommandSheet> {
+  final TextEditingController _filter = TextEditingController();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyword = _filter.text.trim().toLowerCase();
+    final commands = widget.commands.where((command) {
+      if (keyword.isEmpty) return true;
+      return [
+        command['command'],
+        command['description'],
+        command['title'],
+      ].whereType<Object>().any(
+            (value) => value.toString().toLowerCase().contains(keyword),
+          );
+    }).toList(growable: false);
+
+    return _BottomPanel(
+      maxHeightFactor: 0.72,
+      children: [
+        Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: widget.bot.avatarColor,
+              child: Icon(widget.bot.icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.bot.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Text(
+                    '小程序命令由小程序声明，宿主只负责展示与转发。',
+                    style: TextStyle(color: Color(0xFF91A3B7), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _filter,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: '搜索命令或附件动作',
+            hintStyle: const TextStyle(color: Color(0xFF6E7F92)),
+            prefixIcon: const Icon(Icons.search, color: Color(0xFF91A3B7)),
+            filled: true,
+            fillColor: const Color(0xFF0F1722),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          onTap: widget.onOpenApp,
+          leading: const Icon(Icons.web_asset, color: Color(0xFF40A7E3)),
+          title: const Text('打开应用', style: TextStyle(color: Colors.white)),
+          subtitle: const Text(
+            '回到同一个小程序实例',
+            style: TextStyle(color: Color(0xFF91A3B7)),
+          ),
+        ),
+        if (commands.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(14),
+            child: Text(
+              '还没有读取到小程序命令，可先打开应用让小程序注册命令。',
+              style: TextStyle(color: Color(0xFF91A3B7)),
+            ),
+          )
+        else
+          SizedBox(
+            height: 280,
+            child: ListView.builder(
+              itemCount: commands.length,
+              itemBuilder: (context, index) {
+                final command = commands[index];
+                final name = command['command']?.toString() ?? '';
+                final description = command['description']?.toString() ?? '';
+                return ListTile(
+                  onTap: () => widget.onSelectCommand(command),
+                  leading: const Icon(Icons.bolt, color: Color(0xFF4DDE7A)),
+                  title: Text(name, style: const TextStyle(color: Colors.white)),
+                  subtitle: Text(
+                    description.isEmpty ? '插入到输入框后可继续补充参数' : description,
+                    style: const TextStyle(color: Color(0xFF91A3B7)),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class _MiniAppHostFrame extends StatelessWidget {

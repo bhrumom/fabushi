@@ -199,7 +199,7 @@ export default function GlobalDharmaApp() {
   const [text, setText] = useState("");
   const [status, setStatus] = useState<DharmaStatus>(INITIAL_STATUS);
   const [regionId, setRegionId] = useState("global");
-  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [loopEnabled, setLoopEnabled] = useState(true);
   const [highEnergyUnlocked, setHighEnergyUnlocked] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<PreparedContent | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -614,21 +614,39 @@ export default function GlobalDharmaApp() {
     const attachCommandListener = () => {
       const hostBot = (window as any).FabushiMiniApp?.bot;
       if (!hostBot || unsubscribeCommand) return;
-      if (typeof hostBot.exposeCommand === "function") {
-        unsubscribeCommand = hostBot.exposeCommand(
-          "/start",
-          (args: string, detail: any) => {
-            const incoming = String(args || detail?.args || detail?.rawText || detail?.text || "").trim();
-            log(`收到 /start 命令${incoming ? "，开始处理输入。" : "。"}`);
-            if (incoming) setText(incoming);
-            void handleStart(incoming);
-          },
-          { description: "启动全球法布施" },
-        );
-      } else {
-        void fbApp.invoke("bot.setCommands", {
-          commands: [{ command: "/start", description: "启动全球法布施" }],
-        }).catch(() => null);
+      const commands = [
+        { command: "/start", description: "开始全球循环法布施", order: 1 },
+        { command: "/stop", description: "停止当前全球法布施", order: 2 },
+        { command: "/loop", description: "切换循环发送开关", order: 3 },
+        { command: "/status", description: "查看全球法布施状态", order: 4 },
+      ];
+      void fbApp.invoke("bot.setInputPlaceholder", {
+        placeholder: "输入链接/正文，默认全球循环发送；也可点 + 选择小程序命令",
+      }).catch(() => null);
+      void fbApp.invoke("bot.setCommands", { commands }).catch(() => null);
+      if (typeof hostBot.onAnyCommand === "function") {
+        unsubscribeCommand = hostBot.onAnyCommand((detail: any) => {
+          const command = String(detail?.command || "/start").trim();
+          const incoming = String(detail?.args || detail?.rawText || detail?.text || "").trim();
+          if (command === "/stop") {
+            log("收到 /stop 命令，停止全球法布施。");
+            void handleStop();
+            return;
+          }
+          if (command === "/loop") {
+            const next = !loopEnabled;
+            log("收到 /loop 命令，循环发送已" + (next ? "开启。" : "关闭。"));
+            void handleLoopChange(next);
+            return;
+          }
+          if (command === "/status") {
+            log("当前状态：已发送 " + (status?.sentCount || 0) + " 个节点，" + (status?.sentMB || 0).toFixed(2) + " MB，" + (loopEnabled ? "循环中。" : "单轮模式。"));
+            return;
+          }
+          log("收到 /start 命令" + (incoming ? "，开始处理输入。" : "。"));
+          if (incoming) setText(incoming);
+          void handleStart(incoming);
+        });
       }
     };
 
