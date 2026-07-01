@@ -37,8 +37,8 @@ export const MINIAPP_HOST_SPEC = {
     "externalNavigation": ["browser.external"],
     "game": ["game.assets", "game.input", "game.nativeSurface", "game.runtime", "game.save"],
     "identity": ["auth.session", "auth.token"],
-    "localAutomation": ["desktop.control", "files.pick", "fs.readWrite", "local.loopback", "openclaw.chat", "openclaw.status", "projects.read", "shell.execute"],
-    "nativeNetwork": ["network.interfaces", "network.udp"],
+    "localAutomation": ["desktop.control", "files.pick", "fs.readWrite", "local.loopback", "openclaw.chat", "openclaw.status", "projects.read", "runtime.process", "shell.execute"],
+    "nativeNetwork": ["network.http", "network.interfaces", "network.udp"],
     "nativeUi": ["ui.native"],
     "payments": ["payments.alipay", "payments.entitlement", "payments.fudeGold", "payments.invoice", "wallet.balance"],
     "performance": ["game.performance"],
@@ -89,7 +89,7 @@ export const MINIAPP_HOST_SPEC = {
       "availability": "always",
       "trust": "declared",
       "risk": "low",
-      "methods": ["bot.sendMessage", "bot.postMessage", "bot.reportCommandResult", "bot.takePendingCommands", "bot.openPanel", "bot.setPanelState", "bot.setCommands", "bot.close"],
+      "methods": ["bot.sendMessage", "bot.postMessage", "bot.reportCommandResult", "bot.takePendingCommands", "bot.openPanel", "bot.setPanelState", "bot.setCommands", "bot.getCommands", "bot.setInputPlaceholder", "bot.setComposerText", "bot.getComposerState", "bot.close"],
       "note": "宿主只做聊天命令、面板和回写媒介，不承载小程序业务逻辑。"
     },
     {
@@ -188,6 +188,17 @@ export const MINIAPP_HOST_SPEC = {
       "risk": "high",
       "methods": ["network.interfaces.list"],
       "note": "暴露本机网卡与地址，默认只给受信官方小程序。"
+    },
+    {
+      "id": "network.http",
+      "layer": "nativeNetwork",
+      "native": true,
+      "adapter": "RustHttpClientAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "high",
+      "methods": ["network.http.fetch"],
+      "note": "宿主提供 HTTP(S) fetch 原语，带超时、响应大小限制和权限审计；小程序自行解释内容。"
     },
     {
       "id": "system.keepAwake",
@@ -457,6 +468,17 @@ export const MINIAPP_HOST_SPEC = {
       "note": "本地命令执行必须受信、可审计，并由宿主流式回传日志。"
     },
     {
+      "id": "runtime.process",
+      "layer": "localAutomation",
+      "native": true,
+      "adapter": "RustProcessAdapter",
+      "availability": "desktopNative",
+      "trust": "trustedOfficial",
+      "risk": "critical",
+      "methods": ["runtime.process.execute"],
+      "note": "宿主提供本地进程执行原语；命令、参数、工作目录与环境由小程序声明和审计。"
+    },
+    {
       "id": "browser.external",
       "layer": "externalNavigation",
       "native": true,
@@ -500,6 +522,17 @@ export const MINIAPP_HOST_SPEC = {
       "risk": "high",
       "methods": ["network.interfaces.list"],
       "note": "暴露本机网卡与地址，默认只给受信官方小程序。"
+    },
+    {
+      "id": "network.http",
+      "layer": "nativeNetwork",
+      "native": true,
+      "adapter": "RustHttpClientAdapter",
+      "availability": "nativeIo",
+      "trust": "declared",
+      "risk": "high",
+      "methods": ["network.http.fetch"],
+      "note": "宿主提供 HTTP(S) fetch 原语，带超时、响应大小限制和权限审计；小程序自行解释内容。"
     },
     {
       "id": "system.keepAwake",
@@ -693,6 +726,17 @@ export const MINIAPP_HOST_SPEC = {
       "note": "本地命令执行必须受信、可审计，并由宿主流式回传日志。"
     },
     {
+      "id": "runtime.process",
+      "layer": "localAutomation",
+      "native": true,
+      "adapter": "RustProcessAdapter",
+      "availability": "desktopNative",
+      "trust": "trustedOfficial",
+      "risk": "critical",
+      "methods": ["runtime.process.execute"],
+      "note": "宿主提供本地进程执行原语；命令、参数、工作目录与环境由小程序声明和审计。"
+    },
+    {
       "id": "browser.external",
       "layer": "externalNavigation",
       "native": true,
@@ -775,6 +819,30 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "bot.chat",
       "risk": "low",
       "description": "向宿主暴露可从聊天触发的命令。"
+    },
+    {
+      "method": "bot.getCommands",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "读取小程序已暴露给宿主聊天输入框的命令列表。"
+    },
+    {
+      "method": "bot.setInputPlaceholder",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "设置宿主聊天输入框占位提示。"
+    },
+    {
+      "method": "bot.setComposerText",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "请求宿主把文字同步到聊天输入框。"
+    },
+    {
+      "method": "bot.getComposerState",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "读取宿主聊天输入框当前文字、占位提示和命令状态。"
     },
     {
       "method": "bot.close",
@@ -901,6 +969,12 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "network.interfaces",
       "risk": "high",
       "description": "列出宿主网络接口和 IP 地址。"
+    },
+    {
+      "method": "network.http.fetch",
+      "permission": "network.http",
+      "risk": "high",
+      "description": "通过宿主 Rust HTTP 客户端请求 HTTP(S) 资源，返回状态、响应头和受限大小的正文。"
     },
     {
       "method": "system.keepAwake",
@@ -1159,6 +1233,12 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "shell.execute",
       "risk": "critical",
       "description": "启动本地命令并将日志流回宿主聊天。"
+    },
+    {
+      "method": "runtime.process.execute",
+      "permission": "runtime.process",
+      "risk": "critical",
+      "description": "通过宿主 Rust runtime 启动本地进程并收集退出码、stdout 和 stderr。"
     },
     {
       "method": "browser.open",
