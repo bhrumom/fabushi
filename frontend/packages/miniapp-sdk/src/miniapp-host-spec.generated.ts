@@ -89,7 +89,7 @@ export const MINIAPP_HOST_SPEC = {
       "availability": "always",
       "trust": "declared",
       "risk": "low",
-      "methods": ["bot.sendMessage", "bot.postMessage", "bot.reportCommandResult", "bot.takePendingCommands", "bot.openPanel", "bot.setPanelState", "bot.setCommands", "bot.close"],
+      "methods": ["bot.sendMessage", "bot.postMessage", "bot.reportCommandResult", "bot.takePendingCommands", "bot.openPanel", "bot.setPanelState", "bot.setCommands", "bot.getCommands", "bot.setInputPlaceholder", "bot.setComposerText", "bot.getComposerState", "bot.close"],
       "note": "宿主只做聊天命令、面板和回写媒介，不承载小程序业务逻辑。"
     },
     {
@@ -819,6 +819,30 @@ export const MINIAPP_HOST_SPEC = {
       "permission": "bot.chat",
       "risk": "low",
       "description": "向宿主暴露可从聊天触发的命令。"
+    },
+    {
+      "method": "bot.getCommands",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "读取小程序已暴露给宿主聊天输入框的命令列表。"
+    },
+    {
+      "method": "bot.setInputPlaceholder",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "设置宿主聊天输入框占位提示。"
+    },
+    {
+      "method": "bot.setComposerText",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "请求宿主把文字同步到聊天输入框。"
+    },
+    {
+      "method": "bot.getComposerState",
+      "permission": "bot.chat",
+      "risk": "low",
+      "description": "读取宿主聊天输入框当前文字、占位提示和命令状态。"
     },
     {
       "method": "bot.close",
