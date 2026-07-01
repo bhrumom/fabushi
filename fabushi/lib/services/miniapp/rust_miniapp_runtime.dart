@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-
-import 'package:ffi/ffi.dart';
+import 'dart:typed_data';
 
 class RustMiniAppRuntime {
   RustMiniAppRuntime._();
@@ -10,6 +9,7 @@ class RustMiniAppRuntime {
   static final RustMiniAppRuntime instance = RustMiniAppRuntime._();
 
   DynamicLibrary? _library;
+  _NativeAllocator? _allocator;
   bool _loadAttempted = false;
   String? _loadError;
 
@@ -56,6 +56,7 @@ class RustMiniAppRuntime {
     for (final candidate in candidates) {
       try {
         _library = DynamicLibrary.open(candidate);
+        _allocator = _NativeAllocator.load();
         return _library;
       } catch (error) {
         errors.add('$candidate: $error');
@@ -68,7 +69,8 @@ class RustMiniAppRuntime {
 
   Map<String, dynamic> _invoke(String symbol, Map<String, dynamic> params) {
     final library = _loadLibrary();
-    if (library == null) {
+    final allocator = _allocator;
+    if (library == null || allocator == null) {
       throw RustMiniAppRuntimeException(
         'rust_runtime_unavailable',
         'Rust mini app runtime is not bundled for this platform yet.',
@@ -85,8 +87,8 @@ class RustMiniAppRuntime {
         )
         .asFunction<_RustFreeStringDart>();
 
-    final requestPtr = jsonEncode(params).toNativeUtf8();
-    Pointer<Utf8> responsePtr = nullptr;
+    final requestPtr = allocator.toNativeUtf8(jsonEncode(params));
+    Pointer<Char> responsePtr = nullptr;
     try {
       responsePtr = invoke(requestPtr);
       if (responsePtr == nullptr) {
@@ -95,7 +97,7 @@ class RustMiniAppRuntime {
           '$symbol returned a null response pointer.',
         );
       }
-      final decoded = jsonDecode(responsePtr.toDartString());
+      final decoded = jsonDecode(_NativeAllocator.fromNativeUtf8(responsePtr));
       if (decoded is! Map) {
         throw RustMiniAppRuntimeException(
           'rust_runtime_invalid_response',
@@ -112,7 +114,7 @@ class RustMiniAppRuntime {
         details: response,
       );
     } finally {
-      malloc.free(requestPtr);
+      allocator.free(requestPtr.cast<Void>());
       if (responsePtr != nullptr) freeString(responsePtr);
     }
   }
@@ -129,7 +131,57 @@ class RustMiniAppRuntimeException implements Exception {
   String toString() => '$code: $message';
 }
 
-typedef _RustJsonFnNative = Pointer<Utf8> Function(Pointer<Utf8> requestJson);
-typedef _RustJsonFnDart = Pointer<Utf8> Function(Pointer<Utf8> requestJson);
-typedef _RustFreeStringNative = Void Function(Pointer<Utf8> value);
-typedef _RustFreeStringDart = void Function(Pointer<Utf8> value);
+class _NativeAllocator {
+  _NativeAllocator._(this._malloc, this._free);
+
+  final Pointer<Void> Function(int size) _malloc;
+  final void Function(Pointer<Void> pointer) _free;
+
+  static _NativeAllocator load() {
+    final library = Platform.isWindows
+        ? DynamicLibrary.open('msvcrt.dll')
+        : DynamicLibrary.process();
+    return _NativeAllocator._(
+      library
+          .lookup<NativeFunction<_MallocNative>>('malloc')
+          .asFunction<_MallocDart>(),
+      library
+          .lookup<NativeFunction<_FreeNative>>('free')
+          .asFunction<_FreeDart>(),
+    );
+  }
+
+  Pointer<Char> toNativeUtf8(String value) {
+    final bytes = Uint8List.fromList(utf8.encode(value));
+    final pointer = _malloc(bytes.length + 1).cast<Uint8>();
+    for (var i = 0; i < bytes.length; i += 1) {
+      pointer.elementAt(i).value = bytes[i];
+    }
+    pointer.elementAt(bytes.length).value = 0;
+    return pointer.cast<Char>();
+  }
+
+  void free(Pointer<Void> pointer) => _free(pointer);
+
+  static String fromNativeUtf8(Pointer<Char> pointer) {
+    final bytes = <int>[];
+    final bytePointer = pointer.cast<Uint8>();
+    var offset = 0;
+    while (true) {
+      final byte = bytePointer.elementAt(offset).value;
+      if (byte == 0) break;
+      bytes.add(byte);
+      offset += 1;
+    }
+    return utf8.decode(bytes);
+  }
+}
+
+typedef _RustJsonFnNative = Pointer<Char> Function(Pointer<Char> requestJson);
+typedef _RustJsonFnDart = Pointer<Char> Function(Pointer<Char> requestJson);
+typedef _RustFreeStringNative = Void Function(Pointer<Char> value);
+typedef _RustFreeStringDart = void Function(Pointer<Char> value);
+typedef _MallocNative = Pointer<Void> Function(IntPtr size);
+typedef _MallocDart = Pointer<Void> Function(int size);
+typedef _FreeNative = Void Function(Pointer<Void> pointer);
+typedef _FreeDart = void Function(Pointer<Void> pointer);
