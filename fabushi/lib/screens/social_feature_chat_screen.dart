@@ -32,12 +32,16 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final ScrollController _scroll = ScrollController();
   static final Map<String, List<_ChatMessage>> _sharedMessages = {};
   static final Map<String, _MiniAppSession> _sharedMiniAppSessions = {};
+  static final Map<String, _RuntimeDeliverySummary> _sharedDeliverySummaries =
+      {};
 
   final Map<String, List<_ChatMessage>> _messages = _sharedMessages;
   final Map<String, _MiniAppSession> _miniAppSessions = _sharedMiniAppSessions;
   final Map<String, String> _cliTaskBotIds = {};
   final Map<String, List<Map<String, dynamic>>> _miniAppCommandCache = {};
   final Map<String, String> _miniAppInputHints = {};
+  final Map<String, _RuntimeDeliverySummary> _deliverySummaries =
+      _sharedDeliverySummaries;
   final http.Client _httpClient = http.Client();
   final Set<DharmaPublishPlatform> _platforms = {
     DharmaPublishPlatform.xiaohongshu,
@@ -195,8 +199,11 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
               controller: session.controller,
               onMiniAppEvent: _handleMiniAppEvent,
               onComposerStateRequest: () => _composerStateFor(session.bot),
-              onCliStart: (title, taskId) =>
-                  _handleMiniAppCliStart(session.bot.stableBotId, title, taskId),
+              onCliStart: (title, taskId) => _handleMiniAppCliStart(
+                session.bot.stableBotId,
+                title,
+                taskId,
+              ),
               onCliLog: _handleMiniAppCliLog,
             ),
           ),
@@ -250,7 +257,11 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
               CircleAvatar(
                 radius: avatarRadius,
                 backgroundColor: _bot.avatarColor,
-                child: Icon(_bot.icon, color: Colors.white, size: compact ? 22 : 24),
+                child: Icon(
+                  _bot.icon,
+                  color: Colors.white,
+                  size: compact ? 22 : 24,
+                ),
               ),
               SizedBox(width: compact ? 10 : 14),
               Expanded(
@@ -285,7 +296,11 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
               ),
               if (!compact) ...[
                 headerIcon(tooltip: '搜索', icon: Icons.search, onPressed: () {}),
-                headerIcon(tooltip: '拨打电话', icon: Icons.call_outlined, onPressed: () {}),
+                headerIcon(
+                  tooltip: '拨打电话',
+                  icon: Icons.call_outlined,
+                  onPressed: () {},
+                ),
               ],
               headerIcon(
                 tooltip: _miniAppPanelOpen ? '关闭侧栏' : '打开侧栏',
@@ -307,15 +322,24 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                     itemBuilder: (context) => const [
                       PopupMenuItem(
                         value: 'search',
-                        child: Text('搜索', style: TextStyle(color: Colors.white)),
+                        child: Text(
+                          '搜索',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'call',
-                        child: Text('拨打电话', style: TextStyle(color: Colors.white)),
+                        child: Text(
+                          '拨打电话',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                       PopupMenuItem(
                         value: 'settings',
-                        child: Text('更多选项', style: TextStyle(color: Colors.white)),
+                        child: Text(
+                          '更多选项',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ],
                   ),
@@ -336,6 +360,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   String _statusText(FileTransferModel model) {
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
+        final summary = _deliverySummaries[_bot.stableBotId];
+        if (summary != null && summary.hasActivity) return summary.statusLine;
         if (model.isPreparingSend) return model.preparingSendMessage;
         return model.isTransferring
             ? '正在发送'
@@ -425,7 +451,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
         final inputActive = _composerFocus.hasFocus || keyboardVisible;
         final collapseMiniAppButton = compact && hasMiniApp && inputActive;
-        final splitControls = compact && hasMiniApp && !inputActive && constraints.maxWidth < 380;
+        final splitControls =
+            compact && hasMiniApp && !inputActive && constraints.maxWidth < 380;
         final horizontalPadding = compact ? 12.0 : 20.0;
         final bottomPadding = inputActive ? 8.0 : (compact ? 12.0 : 18.0);
 
@@ -668,8 +695,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   String _composerHint(bool compact, {required bool inputActive}) {
     final inputHint =
         _miniAppInputHints[_bot.stableBotId]?.trim().isNotEmpty == true
-            ? _miniAppInputHints[_bot.stableBotId]!.trim()
-            : _bot.inputHint;
+        ? _miniAppInputHints[_bot.stableBotId]!.trim()
+        : _bot.inputHint;
     if (compact && inputActive) return '输入消息';
     if (!compact || inputHint.length <= 14) return inputHint;
     return switch (_kind) {
@@ -737,7 +764,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     if (rawCommand.isEmpty) return;
     final text = rawCommand.startsWith('/') ? rawCommand : '/$rawCommand';
     _composer.text = '$text ';
-    _composer.selection = TextSelection.collapsed(offset: _composer.text.length);
+    _composer.selection = TextSelection.collapsed(
+      offset: _composer.text.length,
+    );
     setState(() {});
   }
 
@@ -892,10 +921,19 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     if (type == 'bot.composer.text') {
       if (botId == _bot.stableBotId) {
         final value = event['text']?.toString() ?? '';
-        _composer.text = event['append'] == true ? _composer.text + value : value;
-        _composer.selection = TextSelection.collapsed(offset: _composer.text.length);
+        _composer.text = event['append'] == true
+            ? _composer.text + value
+            : value;
+        _composer.selection = TextSelection.collapsed(
+          offset: _composer.text.length,
+        );
         setState(() {});
       }
+      return;
+    }
+
+    if (type == 'runtime.update') {
+      _handleRuntimeUpdate(botId, event);
       return;
     }
 
@@ -907,6 +945,24 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       messages.add(isError ? _ChatMessage.error(text) : _ChatMessage.bot(text));
     });
     if (botId == _bot.stableBotId) _scrollBottom();
+  }
+
+  void _handleRuntimeUpdate(String botId, Map<String, dynamic> event) {
+    final raw = event['event'];
+    if (raw is! Map) return;
+    final runtimeEvent = Map<String, dynamic>.from(raw);
+    final runtimeType = runtimeEvent['@type']?.toString() ?? '';
+    if (!runtimeType.startsWith('updateGlobalDharma') &&
+        runtimeType != 'updateFile' &&
+        !runtimeType.startsWith('updateLocalStore')) {
+      return;
+    }
+    final summary = _deliverySummaries.putIfAbsent(
+      botId,
+      () => _RuntimeDeliverySummary(),
+    );
+    summary.apply(runtimeType, runtimeEvent);
+    setState(() {});
   }
 
   void _handleMiniAppCliStart(String botId, String title, String taskId) {
@@ -1562,16 +1618,14 @@ class _MiniAppCommandSheetState extends State<_MiniAppCommandSheet> {
   @override
   Widget build(BuildContext context) {
     final keyword = _filter.text.trim().toLowerCase();
-    final commands = widget.commands.where((command) {
-      if (keyword.isEmpty) return true;
-      return [
-        command['command'],
-        command['description'],
-        command['title'],
-      ].whereType<Object>().any(
-            (value) => value.toString().toLowerCase().contains(keyword),
-          );
-    }).toList(growable: false);
+    final commands = widget.commands
+        .where((command) {
+          if (keyword.isEmpty) return true;
+          return [command['command'], command['description'], command['title']]
+              .whereType<Object>()
+              .any((value) => value.toString().toLowerCase().contains(keyword));
+        })
+        .toList(growable: false);
 
     return _BottomPanel(
       maxHeightFactor: 0.72,
@@ -1652,7 +1706,10 @@ class _MiniAppCommandSheetState extends State<_MiniAppCommandSheet> {
                 return ListTile(
                   onTap: () => widget.onSelectCommand(command),
                   leading: const Icon(Icons.bolt, color: Color(0xFF4DDE7A)),
-                  title: Text(name, style: const TextStyle(color: Colors.white)),
+                  title: Text(
+                    name,
+                    style: const TextStyle(color: Colors.white),
+                  ),
                   subtitle: Text(
                     description.isEmpty ? '插入到输入框后可继续补充参数' : description,
                     style: const TextStyle(color: Color(0xFF91A3B7)),
@@ -1689,6 +1746,89 @@ class _MiniAppHostFrame extends StatelessWidget {
       ),
       child: child,
     );
+  }
+}
+
+class _RuntimeDeliverySummary {
+  int jobs = 0;
+  int inFlight = 0;
+  int retrying = 0;
+  int receipts = 0;
+  int files = 0;
+  String? lastFailure;
+
+  bool get hasActivity =>
+      jobs > 0 ||
+      inFlight > 0 ||
+      retrying > 0 ||
+      receipts > 0 ||
+      files > 0 ||
+      lastFailure != null;
+
+  String get statusLine {
+    final parts = <String>[];
+    if (jobs > 0) parts.add('job $jobs');
+    if (inFlight > 0) parts.add('投递中 $inFlight');
+    if (retrying > 0) parts.add('重试中 $retrying');
+    if (receipts > 0) parts.add('回执 $receipts');
+    if (files > 0) parts.add('文件 $files');
+    if (lastFailure != null) parts.add('最近失败：$lastFailure');
+    if (parts.isEmpty) return 'bot · 全球法布施内核待命';
+    return 'bot · ${parts.join(' · ')}';
+  }
+
+  void apply(String runtimeType, Map<String, dynamic> event) {
+    if (runtimeType == 'updateGlobalDharmaDeliveryQueued') {
+      jobs += 1;
+      return;
+    }
+    if (runtimeType == 'updateGlobalDharmaDeliveryStarted' ||
+        runtimeType == 'updateGlobalDharmaDeliveryWorkerAttempting') {
+      inFlight += 1;
+      return;
+    }
+    if (runtimeType == 'updateGlobalDharmaReceiptReceived') {
+      receipts += 1;
+      if (inFlight > 0) inFlight -= 1;
+      return;
+    }
+    if (runtimeType == 'updateGlobalDharmaDeliveryAttempt') {
+      final status = event['status']?.toString() ?? '';
+      if (inFlight > 0) inFlight -= 1;
+      if (status == 'retry_scheduled') {
+        retrying += 1;
+      } else if (status == 'failed') {
+        lastFailure = _readFailure(event);
+      }
+      return;
+    }
+    if (runtimeType == 'updateFile') {
+      files += 1;
+      if (event['state']?.toString() == 'failed') {
+        lastFailure = _readFailure(event);
+      }
+      return;
+    }
+    if (runtimeType == 'updateGlobalDharmaDeliveryWorkerError') {
+      lastFailure = event['message']?.toString();
+    }
+  }
+
+  static String? _readFailure(Map<String, dynamic> event) {
+    final direct = event['message']?.toString().trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final job = event['job'];
+    if (job is Map) {
+      final error = job['lastError'];
+      if (error is Map) {
+        final message = error['message']?.toString().trim();
+        if (message != null && message.isNotEmpty) return message;
+        final code = error['code']?.toString().trim();
+        if (code != null && code.isNotEmpty) return code;
+      }
+      if (error != null) return error.toString();
+    }
+    return null;
   }
 }
 

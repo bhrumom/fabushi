@@ -38,13 +38,13 @@ const String miniAppHostSpecJson = r'''
     "externalNavigation": ["browser.external"],
     "game": ["game.assets", "game.input", "game.nativeSurface", "game.runtime", "game.save"],
     "identity": ["auth.session", "auth.token"],
-    "localAutomation": ["desktop.control", "files.pick", "fs.readWrite", "local.loopback", "openclaw.chat", "openclaw.status", "projects.read", "runtime.process", "shell.execute"],
-    "nativeNetwork": ["network.http", "network.interfaces", "network.udp"],
+    "localAutomation": ["desktop.control", "files.pick", "fs.readWrite", "local.loopback", "openclaw.chat", "openclaw.status", "projects.read", "runtime.file", "runtime.process", "shell.execute"],
+    "nativeNetwork": ["globalDharma.delivery", "network.http", "network.interfaces", "network.udp"],
     "nativeUi": ["ui.native"],
     "payments": ["payments.alipay", "payments.entitlement", "payments.fudeGold", "payments.invoice", "wallet.balance"],
     "performance": ["game.performance"],
     "share": ["share.chat"],
-    "storage": ["cloud.kv"],
+    "storage": ["cloud.kv", "runtime.storage"],
     "system": ["hotspot.settings", "system.keepAwake"],
     "window": ["window.lifecycle"]
   },
@@ -350,6 +350,39 @@ const String miniAppHostSpecJson = r'''
       "risk": "medium",
       "methods": ["cloud.kv.get", "cloud.kv.set", "cloud.kv.delete"],
       "note": "每个小程序隔离的轻量云端 Key-Value。"
+    },
+    {
+      "id": "runtime.storage",
+      "layer": "storage",
+      "native": true,
+      "adapter": "RustLocalConsistencyStoreAdapter",
+      "availability": "nativeIo",
+      "trust": "trustedOfficial",
+      "risk": "high",
+      "methods": ["runtime.storage.configure", "runtime.storage.getStatus", "runtime.storage.put", "runtime.storage.get", "runtime.storage.delete", "runtime.storage.list", "runtime.storage.snapshot"],
+      "note": "TDLib 风格本地一致性存储：支持 revision 乐观并发、快照持久化和 update 流。"
+    },
+    {
+      "id": "runtime.file",
+      "layer": "localAutomation",
+      "native": true,
+      "adapter": "RustFileStateRegistryAdapter",
+      "availability": "nativeIo",
+      "trust": "trustedOfficial",
+      "risk": "high",
+      "methods": ["runtime.file.register", "runtime.file.updateState", "runtime.file.get", "runtime.file.list"],
+      "note": "将文件注册为一等对象，通过 updateFile 推送本地、上传、下载、失败等状态变化。"
+    },
+    {
+      "id": "globalDharma.delivery",
+      "layer": "nativeNetwork",
+      "native": true,
+      "adapter": "GlobalDharmaDeliveryKernelAdapter",
+      "availability": "nativeIo",
+      "trust": "trustedOfficial",
+      "risk": "high",
+      "methods": ["globalDharma.delivery.enqueue", "globalDharma.delivery.getJob", "globalDharma.delivery.listJobs", "globalDharma.delivery.nextRetry", "globalDharma.delivery.markAttempt", "globalDharma.delivery.recordReceipt", "globalDharma.delivery.listReceipts"],
+      "note": "全球法布施投递内核：统一管理 jobs、receipts、retry 队列和 delivery updates。"
     },
     {
       "id": "share.chat",
@@ -1138,6 +1171,114 @@ const String miniAppHostSpecJson = r'''
       "permission": "cloud.kv",
       "risk": "medium",
       "description": "删除小程序隔离云端 Key-Value。"
+    },
+    {
+      "method": "runtime.storage.configure",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "配置 Rust 本地一致性存储快照路径。"
+    },
+    {
+      "method": "runtime.storage.getStatus",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "读取本地一致性存储 generation、collection 和 record 统计。"
+    },
+    {
+      "method": "runtime.storage.put",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "写入本地一致性记录，支持 expectedRevision 乐观并发。"
+    },
+    {
+      "method": "runtime.storage.get",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "读取本地一致性记录。"
+    },
+    {
+      "method": "runtime.storage.delete",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "写入 tombstone 删除记录并推进 generation。"
+    },
+    {
+      "method": "runtime.storage.list",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "列出指定 collection 的本地一致性记录。"
+    },
+    {
+      "method": "runtime.storage.snapshot",
+      "permission": "runtime.storage",
+      "risk": "high",
+      "description": "导出本地一致性存储快照。"
+    },
+    {
+      "method": "runtime.file.register",
+      "permission": "runtime.file",
+      "risk": "high",
+      "description": "注册 runtime 文件对象并推送 updateFile。"
+    },
+    {
+      "method": "runtime.file.updateState",
+      "permission": "runtime.file",
+      "risk": "high",
+      "description": "更新 runtime 文件状态并推送 updateFile。"
+    },
+    {
+      "method": "runtime.file.get",
+      "permission": "runtime.file",
+      "risk": "high",
+      "description": "读取 runtime 文件对象。"
+    },
+    {
+      "method": "runtime.file.list",
+      "permission": "runtime.file",
+      "risk": "high",
+      "description": "列出 runtime 文件对象。"
+    },
+    {
+      "method": "globalDharma.delivery.enqueue",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "创建全球法布施投递 job 并进入 retry 队列。"
+    },
+    {
+      "method": "globalDharma.delivery.getJob",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "读取全球法布施投递 job。"
+    },
+    {
+      "method": "globalDharma.delivery.listJobs",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "按状态列出全球法布施投递 jobs。"
+    },
+    {
+      "method": "globalDharma.delivery.nextRetry",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "取出到期的全球法布施 retry job 并标记 in_flight。"
+    },
+    {
+      "method": "globalDharma.delivery.markAttempt",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "记录一次投递尝试并决定 sent、failed 或 retry_scheduled。"
+    },
+    {
+      "method": "globalDharma.delivery.recordReceipt",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "记录全球法布施投递回执并推送 receipt update。"
+    },
+    {
+      "method": "globalDharma.delivery.listReceipts",
+      "permission": "globalDharma.delivery",
+      "risk": "high",
+      "description": "列出全球法布施投递回执。"
     },
     {
       "method": "share.chat.send",
