@@ -427,3 +427,83 @@ vNext 统一策略：
 也就是说，**接下来不是“先把所有 CI/CD 修绿，再谈架构”，而是“先确定架构，再让 CI/CD 逐步对齐这个架构”。**
 
 这才是当前阶段最值得做、也最不容易以后返工的路线。
+
+## 14. 小程序 Runtime 内核边界
+
+Fabushi 小程序宿主能力不要继续演化成一组零散 FFI 函数。目标形态应学习 TDLib 的边界设计：
+
+```text
+Flutter / MiniApp UI
+  ↓
+FabushiMiniApp.invoke(json)
+  ↓
+Dart Host Bridge
+  ↓
+Rust FabushiRuntime
+  ↓
+Capability Dispatcher
+  ↓
+HTTP / UDP / File / Policy / Audit / Queue
+  ↓
+Runtime Updates
+  ↓
+Flutter / MiniApp UI render
+```
+
+Rust runtime 是客户端能力内核，不是 UI 库。UI 层只负责展示、收集用户输入和订阅 updates；网络、文件、权限、重试、回执、审计和本地一致性应逐步进入 runtime。
+
+当前 runtime ABI 应保留旧函数以兼容已存在调用：
+
+- `fabushi_runtime_http_fetch_json`
+- `fabushi_runtime_udp_open_json`
+- `fabushi_runtime_udp_send_json`
+- `fabushi_runtime_udp_broadcast_json`
+- `fabushi_runtime_udp_close_json`
+
+新能力必须优先走统一 JSON ABI：
+
+- `fabushi_runtime_create_client()`
+- `fabushi_runtime_send(client_id, request_json)`
+- `fabushi_runtime_receive(client_id, timeout_seconds)`
+- `fabushi_runtime_execute(request_json)`
+- `fabushi_runtime_close(client_id)`
+
+统一 request 使用 `@type` 标识能力，`@extra` 用于请求和响应关联：
+
+```json
+{
+  "@type": "network.http.fetch",
+  "@extra": "req_001",
+  "url": "https://api.ombhrum.com/api/global-dharma/send",
+  "method": "POST",
+  "body": "..."
+}
+```
+
+runtime 返回 typed response 或主动 update：
+
+```json
+{
+  "@type": "network.http.response",
+  "@extra": "req_001",
+  "statusCode": 200,
+  "bodyBytes": 1234
+}
+```
+
+```json
+{
+  "@type": "updateRuntimeRequestAccepted",
+  "clientId": 1,
+  "requestId": 42,
+  "@extra": "req_001"
+}
+```
+
+后续迁移原则：
+
+- 新 runtime 能力只加 dispatcher method，不新增一组专用 FFI symbol。
+- UI 不直接维护发送成功、回执、重试和队列状态，改为订阅 runtime updates。
+- Global Dharma 发送链路最终应由 runtime 产出 `updateGlobalDharmaDeliveryStarted`、`updateGlobalDharmaPacketSent`、`updateGlobalDharmaReceiptReceived`、`updateGlobalDharmaDeliveryFailed`。
+- 文件、素材包、离线包和回执文件应进入统一 file state/update 模型，不由页面单独管理。
+- 授权和能力协商应收敛为状态机，例如 `authorizationStateWaitCapabilities`、`authorizationStateWaitUserConsent`、`authorizationStateReady`、`authorizationStateDenied`。
