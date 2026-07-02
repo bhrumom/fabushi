@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { CircleStop, Globe, Link2, RefreshCw, Send, Sparkles } from "lucide-react";
+import {
+  CircleStop,
+  Globe,
+  Link2,
+  RefreshCw,
+  Send,
+  Sparkles,
+} from "lucide-react";
 import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import {
   GlobalDharmaSendService,
@@ -12,12 +19,32 @@ import {
 import "./miniapps.css";
 
 const regionPresets: RegionPreset[] = [
-  { id: "global", label: "全球 HTTP 分发", global: true, countryCodes: ["ALL"] },
-  { id: "eastAsia", label: "东亚", global: true, countryCodes: ["CN", "JP", "KR", "MN", "TW", "HK", "MO"] },
-  { id: "americas", label: "美洲", global: true, countryCodes: ["US", "CA", "MX", "BR", "AR", "CL", "PE"] },
-  { id: "europe", label: "欧洲", global: true, countryCodes: ["GB", "FR", "DE", "IT", "ES", "NL", "SE"] },
+  { id: "global", label: "全球", global: true, countryCodes: ["ALL"] },
+  {
+    id: "eastAsia",
+    label: "东亚",
+    global: true,
+    countryCodes: ["CN", "JP", "KR", "MN", "TW", "HK", "MO"],
+  },
+  {
+    id: "americas",
+    label: "美洲",
+    global: true,
+    countryCodes: ["US", "CA", "MX", "BR", "AR", "CL", "PE"],
+  },
+  {
+    id: "europe",
+    label: "欧洲",
+    global: true,
+    countryCodes: ["GB", "FR", "DE", "IT", "ES", "NL", "SE"],
+  },
   { id: "field", label: "本地场能 UDP", global: false, fieldEnergy: true },
-  { id: "loopback", label: "本地转经轮 UDP", global: false, localLoopback: true },
+  {
+    id: "loopback",
+    label: "本地转经轮 UDP",
+    global: false,
+    localLoopback: true,
+  },
 ];
 
 const HIGH_ENERGY_MATERIAL: PreparedContent = {
@@ -66,7 +93,9 @@ function decodeHtmlEntities(value: string) {
 
 function extractHtmlTitle(html: string, fallback: string) {
   const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  return decodeHtmlEntities(match?.[1] || fallback).replace(/\s+/g, " ").trim();
+  return decodeHtmlEntities(match?.[1] || fallback)
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function htmlToText(html: string) {
@@ -88,14 +117,21 @@ function byteSize(textValue: string) {
 }
 
 function bodyTextFromHostResponse(response: any) {
-  if (typeof response?.body === "string" && response.body.length > 0) return response.body;
-  if (typeof response?.bodyBase64 === "string" && response.bodyBase64.length > 0) {
+  if (typeof response?.body === "string" && response.body.length > 0)
+    return response.body;
+  if (
+    typeof response?.bodyBase64 === "string" &&
+    response.bodyBase64.length > 0
+  ) {
     return window.atob(response.bodyBase64);
   }
   return "";
 }
 
-function contentFromPlainText(raw: string, selectedMaterial: PreparedContent | null): PreparedContent {
+function contentFromPlainText(
+  raw: string,
+  selectedMaterial: PreparedContent | null,
+): PreparedContent {
   const merged = selectedMaterial ? `${raw}\n\n${selectedMaterial.text}` : raw;
   return {
     title: selectedMaterial?.title || "小程序全球法布施",
@@ -110,23 +146,32 @@ export default function GlobalDharmaApp() {
   const [status, setStatus] = useState<DharmaStatus>(INITIAL_STATUS);
   const [regionId, setRegionId] = useState("global");
   const [loopEnabled, setLoopEnabled] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState<PreparedContent | null>(null);
+  const [selectedMaterial, setSelectedMaterial] =
+    useState<PreparedContent | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const sendServiceRef = useRef(new GlobalDharmaSendService());
   const loopTimerRef = useRef<number | null>(null);
   const latestRunRef = useRef(0);
   const selectedRegion = useMemo(
-    () => regionPresets.find((item) => item.id === regionId) || regionPresets[0],
+    () =>
+      regionPresets.find((item) => item.id === regionId) || regionPresets[0],
     [regionId],
   );
 
   const log = (message: string) => {
-    setLogs((prev) => [...prev.slice(-80), `[${new Date().toLocaleTimeString()}] ${message}`]);
+    setLogs((prev) => [
+      ...prev.slice(-80),
+      `[${new Date().toLocaleTimeString()}] ${message}`,
+    ]);
   };
 
   const updateStatus = (next: Partial<DharmaStatus>) => {
-    setStatus((prev) => ({ ...prev, ...next, updatedAt: new Date().toISOString() }));
+    setStatus((prev) => ({
+      ...prev,
+      ...next,
+      updatedAt: new Date().toISOString(),
+    }));
   };
 
   const stopLoopTimer = () => {
@@ -175,7 +220,8 @@ export default function GlobalDharmaApp() {
           responseEncoding: "base64+text",
         });
         const statusCode = Number(response?.statusCode || 0);
-        if (statusCode && (statusCode < 200 || statusCode >= 300)) throw new Error(`HTTP ${statusCode}`);
+        if (statusCode && (statusCode < 200 || statusCode >= 300))
+          throw new Error(`HTTP ${statusCode}`);
         const prepared = buildPrepared(bodyTextFromHostResponse(response));
         if (prepared.text.length < 20) throw new Error("网页正文过短");
         log(`已通过宿主 network.http.fetch 读取链接正文：${prepared.title}`);
@@ -196,7 +242,9 @@ export default function GlobalDharmaApp() {
     return prepared;
   };
 
-  const prepareTransferContent = async (inputOverride?: string): Promise<PreparedContent> => {
+  const prepareTransferContent = async (
+    inputOverride?: string,
+  ): Promise<PreparedContent> => {
     const raw = (inputOverride ?? text).trim();
     const url = extractFirstHttpUrl(raw);
     if (raw && url && looksLikeHttpUrl(raw)) {
@@ -205,7 +253,11 @@ export default function GlobalDharmaApp() {
       return {
         ...content,
         text: `${content.text}\n\n${selectedMaterial.text}`,
-        previewText: `${content.previewText}\n${selectedMaterial.previewText}`.slice(0, 220),
+        previewText:
+          `${content.previewText}\n${selectedMaterial.previewText}`.slice(
+            0,
+            220,
+          ),
         charCount: content.charCount + selectedMaterial.charCount,
       };
     }
@@ -222,25 +274,35 @@ export default function GlobalDharmaApp() {
       commandId,
     });
     const sentMB = result.bytesSent / (1024 * 1024);
-    updateStatus({
-      sentCount: status.sentCount + result.receipts.length,
-      sentMB: status.sentMB + sentMB,
+    setStatus((prev) => ({
+      ...prev,
+      sentCount: prev.sentCount + result.receipts.length,
+      sentMB: prev.sentMB + sentMB,
       selectedContent: content,
       lastResult: result,
       isPreparingSend: false,
       isTransferring: loopEnabled,
-    });
-    log(
-      `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${sentMB.toFixed(4)} MB${result.jobId ? `，任务 ${result.jobId}` : ""}`,
+      updatedAt: new Date().toISOString(),
+    }));
+    const receiptText =
+      result.receipts.length > 0
+        ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${sentMB.toFixed(4)} MB`
+        : `发送已提交但暂无真实回执，未计入已发送数量`;
+    log(`${receiptText}${result.jobId ? `，任务 ${result.jobId}` : ""}`);
+    await postBotMessage(
+      result.receipts.length > 0
+        ? `全球法布施已发送：${content.title}`
+        : `全球法布施已提交，等待真实回执：${content.title}`,
+      {
+        miniAppId: "official.global-dharma",
+        contentHash: result.contentHash,
+        jobId: result.jobId,
+        jobIds: result.jobIds,
+        receipts: result.receipts,
+        region: selectedRegion,
+        loop: loopEnabled,
+      },
     );
-    await postBotMessage(`全球法布施已提交：${content.title}`, {
-      miniAppId: "official.global-dharma",
-      contentHash: result.contentHash,
-      jobId: result.jobId,
-      receipts: result.receipts,
-      region: selectedRegion,
-      loop: loopEnabled,
-    });
     return result;
   };
 
@@ -256,9 +318,18 @@ export default function GlobalDharmaApp() {
     stopLoopTimer();
     updateStatus({ isPreparingSend: true, isTransferring: false });
     try {
-      log(fbApp.isHostEnv() ? "正在通过宿主系统能力执行真实发送..." : "正在通过 Web HTTP 执行真实发送...");
+      log(
+        fbApp.isHostEnv()
+          ? "正在通过 Rust 系统级 delivery/UDP 执行真实发送..."
+          : "正在通过 Web HTTP 执行真实发送...",
+      );
       if (loopEnabled || selectedRegion.fieldEnergy) {
-        await fbApp.invoke("system.keepAwake", { enabled: true, reason: "global-dharma-transfer" }).catch(() => null);
+        await fbApp
+          .invoke("system.keepAwake", {
+            enabled: true,
+            reason: "global-dharma-transfer",
+          })
+          .catch(() => null);
       }
       const content = await prepareTransferContent(effectiveText);
       await runRealSend(content, commandId);
@@ -284,7 +355,9 @@ export default function GlobalDharmaApp() {
   const handleStop = async () => {
     latestRunRef.current = Date.now();
     stopLoopTimer();
-    await fbApp.invoke("system.keepAwake", { enabled: false }).catch(() => null);
+    await fbApp
+      .invoke("system.keepAwake", { enabled: false })
+      .catch(() => null);
     updateStatus({ isTransferring: false, isPreparingSend: false });
     log("真实发送已停止。 ");
   };
@@ -292,7 +365,9 @@ export default function GlobalDharmaApp() {
   const handleLoopChange = async (enabled: boolean) => {
     setLoopEnabled(enabled);
     if (!enabled) stopLoopTimer();
-    await fbApp.invoke("system.keepAwake", { enabled, reason: "global-dharma-transfer" }).catch(() => null);
+    await fbApp
+      .invoke("system.keepAwake", { enabled, reason: "global-dharma-transfer" })
+      .catch(() => null);
     log(enabled ? "循环真实发送已开启。" : "循环真实发送已关闭。");
   };
 
@@ -303,10 +378,13 @@ export default function GlobalDharmaApp() {
         await fbApp.getCapabilities();
         if (active) updateStatus({ isPreparingSend: false });
       } catch (error) {
-        if (active && fbApp.isHostEnv()) log(hostErrorMessage(error, "读取宿主能力失败"));
+        if (active && fbApp.isHostEnv())
+          log(hostErrorMessage(error, "读取宿主能力失败"));
       }
     };
-    void bootMiniApp("official.global-dharma", "全球法布施").then(() => refresh());
+    void bootMiniApp("official.global-dharma", "全球法布施").then(() =>
+      refresh(),
+    );
     const unsubscribeReady = fbApp.on("ready", () => void refresh());
     return () => {
       active = false;
@@ -321,21 +399,27 @@ export default function GlobalDharmaApp() {
     const attachCommandListener = () => {
       const hostBot = (window as any).FabushiMiniApp?.bot;
       if (!hostBot || unsubscribeCommand) return;
-      void fbApp.invoke("bot.setInputPlaceholder", {
-        placeholder: "输入链接/正文；小程序会通过真实 HTTP/UDP 能力发送",
-      }).catch(() => null);
-      void fbApp.invoke("bot.setCommands", {
-        commands: [
-          { command: "/start", description: "开始真实全球法布施", order: 1 },
-          { command: "/stop", description: "停止当前全球法布施", order: 2 },
-          { command: "/loop", description: "切换循环真实发送", order: 3 },
-          { command: "/status", description: "查看真实发送状态", order: 4 },
-        ],
-      }).catch(() => null);
+      void fbApp
+        .invoke("bot.setInputPlaceholder", {
+          placeholder: "输入链接/正文；Web 走 HTTP，App 走 Rust/UDP",
+        })
+        .catch(() => null);
+      void fbApp
+        .invoke("bot.setCommands", {
+          commands: [
+            { command: "/start", description: "开始真实全球法布施", order: 1 },
+            { command: "/stop", description: "停止当前全球法布施", order: 2 },
+            { command: "/loop", description: "切换循环真实发送", order: 3 },
+            { command: "/status", description: "查看真实发送状态", order: 4 },
+          ],
+        })
+        .catch(() => null);
       if (typeof hostBot.onAnyCommand === "function") {
         unsubscribeCommand = hostBot.onAnyCommand((detail: any) => {
           const command = String(detail?.command || "/start").trim();
-          const incoming = String(detail?.args || detail?.rawText || detail?.text || "").trim();
+          const incoming = String(
+            detail?.args || detail?.rawText || detail?.text || "",
+          ).trim();
           if (command === "/stop") {
             void handleStop();
             return;
@@ -345,7 +429,9 @@ export default function GlobalDharmaApp() {
             return;
           }
           if (command === "/status") {
-            log(`状态：回执 ${status.sentCount} 个，${status.sentMB.toFixed(4)} MB，${status.isTransferring ? "循环中" : "未循环"}`);
+            log(
+              `状态：回执 ${status.sentCount} 个，${status.sentMB.toFixed(4)} MB，${status.isTransferring ? "循环中" : "未循环"}`,
+            );
             return;
           }
           void handleStart(incoming || undefined, detail?.commandId);
@@ -355,10 +441,21 @@ export default function GlobalDharmaApp() {
     attachCommandListener();
     window.addEventListener("fabushi-miniapp-ready", attachCommandListener);
     return () => {
-      window.removeEventListener("fabushi-miniapp-ready", attachCommandListener);
+      window.removeEventListener(
+        "fabushi-miniapp-ready",
+        attachCommandListener,
+      );
       unsubscribeCommand?.();
     };
-  }, [loopEnabled, selectedRegion, selectedMaterial, text, status.sentCount, status.sentMB, status.isTransferring]);
+  }, [
+    loopEnabled,
+    selectedRegion,
+    selectedMaterial,
+    text,
+    status.sentCount,
+    status.sentMB,
+    status.isTransferring,
+  ]);
 
   const selectedReceiptText = status.lastResult?.receipts?.length
     ? `${status.lastResult.receipts.length} 个真实回执`
@@ -367,11 +464,16 @@ export default function GlobalDharmaApp() {
   return (
     <main className="miniapp-page global-dharma-app">
       <section className="miniapp-hero">
-        <div className="miniapp-hero-icon"><Globe size={28} /></div>
+        <div className="miniapp-hero-icon">
+          <Globe size={28} />
+        </div>
         <div>
           <p className="miniapp-kicker">Official Mini App</p>
           <h1>全球法布施</h1>
-          <p>发送调度已在小程序内执行；宿主只提供 HTTP/UDP/保持唤醒等系统能力原语。</p>
+          <p>
+            Web 使用真实 HTTP 回执计数；桌面端与移动端通过 Rust 系统级
+            delivery/UDP 发送。
+          </p>
         </div>
       </section>
 
@@ -383,18 +485,34 @@ export default function GlobalDharmaApp() {
           id="global-dharma-input"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="粘贴佛法链接、经文摘录或发愿文。普通 Web 使用真实 HTTP；App 内优先通过宿主系统能力调用。"
+          placeholder="粘贴佛法链接、经文摘录或发愿文。普通 Web 使用真实 HTTP；App 内使用 Rust/UDP 系统发送。"
           rows={5}
         />
         <div className="miniapp-actions">
-          <button type="button" onClick={() => void handleStart()} disabled={busy || status.isPreparingSend}>
+          <button
+            type="button"
+            onClick={() => void handleStart()}
+            disabled={busy || status.isPreparingSend}
+          >
             <Send size={16} /> 开始真实发送
           </button>
-          <button type="button" onClick={() => void handleStop()} disabled={!status.isTransferring && !status.isPreparingSend}>
+          <button
+            type="button"
+            onClick={() => void handleStop()}
+            disabled={!status.isTransferring && !status.isPreparingSend}
+          >
             <CircleStop size={16} /> 停止
           </button>
-          <button type="button" onClick={() => setSelectedMaterial((prev) => (prev ? null : HIGH_ENERGY_MATERIAL))}>
-            <Sparkles size={16} /> {selectedMaterial ? "取消素材" : "加入3D佛像素材"}
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedMaterial((prev) =>
+                prev ? null : HIGH_ENERGY_MATERIAL,
+              )
+            }
+          >
+            <Sparkles size={16} />{" "}
+            {selectedMaterial ? "取消素材" : "加入3D佛像素材"}
           </button>
         </div>
       </section>
@@ -403,15 +521,24 @@ export default function GlobalDharmaApp() {
         <div className="miniapp-grid">
           <label className="miniapp-label">
             发送区域
-            <select value={regionId} onChange={(event) => setRegionId(event.target.value)}>
+            <select
+              value={regionId}
+              onChange={(event) => setRegionId(event.target.value)}
+            >
               {regionPresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
               ))}
             </select>
           </label>
           <label className="miniapp-check">
-            <input type="checkbox" checked={loopEnabled} onChange={(event) => void handleLoopChange(event.target.checked)} />
-            循环真实发送，每轮都会重新调用 HTTP/UDP，不使用模拟计数
+            <input
+              type="checkbox"
+              checked={loopEnabled}
+              onChange={(event) => void handleLoopChange(event.target.checked)}
+            />
+            循环真实发送，每轮都必须获得真实回执后才计数
           </label>
         </div>
       </section>
@@ -427,23 +554,43 @@ export default function GlobalDharmaApp() {
         </div>
         <div className="miniapp-status-item">
           <span>最新状态</span>
-          <strong>{status.isPreparingSend ? "准备中" : status.isTransferring ? "循环中" : selectedReceiptText}</strong>
+          <strong>
+            {status.isPreparingSend
+              ? "准备中"
+              : status.isTransferring
+                ? "循环中"
+                : selectedReceiptText}
+          </strong>
         </div>
       </section>
 
       {status.selectedContent && (
         <section className="miniapp-card">
-          <h2><Link2 size={18} /> 当前内容</h2>
+          <h2>
+            <Link2 size={18} /> 当前内容
+          </h2>
           <p>{status.selectedContent.previewText}</p>
-          {status.lastResult?.contentHash && <p className="miniapp-muted">Hash: {status.lastResult.contentHash}</p>}
-          {status.lastResult?.jobId && <p className="miniapp-muted">Job: {status.lastResult.jobId}</p>}
+          {status.lastResult?.contentHash && (
+            <p className="miniapp-muted">
+              Hash: {status.lastResult.contentHash}
+            </p>
+          )}
+          {status.lastResult?.jobId && (
+            <p className="miniapp-muted">Job: {status.lastResult.jobId}</p>
+          )}
         </section>
       )}
 
       <section className="miniapp-card">
-        <h2><RefreshCw size={18} /> 运行日志</h2>
+        <h2>
+          <RefreshCw size={18} /> 运行日志
+        </h2>
         <div className="miniapp-log">
-          {logs.length === 0 ? <p>等待开始真实发送...</p> : logs.map((item, index) => <p key={`${item}-${index}`}>{item}</p>)}
+          {logs.length === 0 ? (
+            <p>等待开始真实发送...</p>
+          ) : (
+            logs.map((item, index) => <p key={`${item}-${index}`}>{item}</p>)
+          )}
         </div>
       </section>
     </main>
