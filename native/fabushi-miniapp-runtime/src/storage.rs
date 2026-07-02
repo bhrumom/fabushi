@@ -40,7 +40,7 @@ pub(crate) fn configure(params: Value) -> Result<(Value, Vec<Value>), RuntimeErr
         "source": "rust",
     });
     Ok((
-        response,
+        response.clone(),
         vec![storage_update("updateLocalStoreConfigured", &response)],
     ))
 }
@@ -111,7 +111,7 @@ pub(crate) fn put(params: Value) -> Result<(Value, Vec<Value>), RuntimeError> {
         "source": "rust",
     });
     Ok((
-        response,
+        response.clone(),
         vec![storage_update("updateLocalStoreRecord", &response)],
     ))
 }
@@ -200,7 +200,7 @@ pub(crate) fn delete(params: Value) -> Result<(Value, Vec<Value>), RuntimeError>
         "source": "rust",
     });
     Ok((
-        response,
+        response.clone(),
         vec![storage_update("updateLocalStoreRecord", &response)],
     ))
 }
