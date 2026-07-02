@@ -34,6 +34,7 @@ import '../services/desktop_control/desktop_control_bridge.dart';
 import '../services/dharma_publish_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/miniapp/miniapp_host_policy.dart';
+import '../services/miniapp/rust_miniapp_runtime.dart';
 import '../services/membership_service.dart';
 import '../services/openclaw/openclaw_runtime.dart';
 import '../services/project_service.dart';
@@ -195,10 +196,15 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   final AlipayService _alipayService = AlipayService();
   final HotspotManagerService _hotspotManager = HotspotManagerService();
   final http.Client _httpClient = http.Client();
+  final RustMiniAppRuntime _rustRuntime = RustMiniAppRuntime.instance;
   final Map<String, RawDatagramSocket> _udpSockets = {};
   late final FlashcardRepository _flashcardRepository;
   late final ContentPipeline _contentPipeline;
   late final FlashcardService _flashcardService;
+  int? _rustRuntimeClientId;
+  var _rustRuntimeRequestSequence = 0;
+  bool _rustRuntimeStorageConfigured = false;
+  Future<void>? _rustRuntimeStorageConfigureFuture;
   var _udpSocketSequence = 0;
   var _keepAwakeEnabled = false;
   bool _loading = true;
@@ -257,6 +263,15 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       socket.close();
     }
     _udpSockets.clear();
+    final runtimeClientId = _rustRuntimeClientId;
+    if (runtimeClientId != null) {
+      unawaited(
+        _rustRuntime
+            .closeClient(runtimeClientId)
+            .catchError((_) => <String, dynamic>{'closed': false}),
+      );
+      _rustRuntimeClientId = null;
+    }
     _httpClient.close();
     super.dispose();
   }
@@ -860,6 +875,25 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         return _cloudKvSet(params);
       case 'cloud.kv.delete':
         return _cloudKvDelete(params);
+      case 'runtime.storage.configure':
+      case 'runtime.storage.getStatus':
+      case 'runtime.storage.put':
+      case 'runtime.storage.get':
+      case 'runtime.storage.delete':
+      case 'runtime.storage.list':
+      case 'runtime.storage.snapshot':
+      case 'runtime.file.register':
+      case 'runtime.file.updateState':
+      case 'runtime.file.get':
+      case 'runtime.file.list':
+      case 'globalDharma.delivery.enqueue':
+      case 'globalDharma.delivery.getJob':
+      case 'globalDharma.delivery.listJobs':
+      case 'globalDharma.delivery.nextRetry':
+      case 'globalDharma.delivery.markAttempt':
+      case 'globalDharma.delivery.recordReceipt':
+      case 'globalDharma.delivery.listReceipts':
+        return _invokeRustRuntimeOnly(method, params);
       case 'share.chat.send':
         return _shareChat(params);
       case 'auth.getSession':
@@ -1671,6 +1705,130 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
   }
 
+  Future<Map<String, dynamic>> _invokeRustRuntimeOnly(
+    String method,
+    Map<String, dynamic> params,
+  ) async {
+    final result = await _invokeRustRuntimeCapability(method, params);
+    if (result != null) return result;
+    throw const MiniAppHostException(
+      'rust_runtime_unavailable',
+      'Rust mini app runtime is not available on this platform.',
+    );
+  }
+
+  Future<Map<String, dynamic>?> _invokeRustRuntimeCapability(
+    String method,
+    Map<String, dynamic> params,
+  ) async {
+    if (kIsWeb || !_rustRuntime.isAvailable) return null;
+
+    final extra =
+        'miniapp_${DateTime.now().microsecondsSinceEpoch}_${_rustRuntimeRequestSequence++}';
+    final request = <String, dynamic>{
+      ...params,
+      '@type': method,
+      '@extra': extra,
+    };
+
+    final int clientId;
+    try {
+      clientId = _rustRuntimeClientId ??= _rustRuntime.createClient();
+      if (method != 'runtime.storage.configure') {
+        await _ensureRustRuntimeStorageConfigured();
+      }
+      await _rustRuntime.send(clientId, request);
+    } on RustMiniAppRuntimeException catch (error) {
+      if (_isRustRuntimeUnavailable(error)) return null;
+      rethrow;
+    } on ArgumentError {
+      return null;
+    }
+
+    final deadline = DateTime.now().add(
+      Duration(milliseconds: _runtimeReceiveTimeoutMs(method, params)),
+    );
+    while (DateTime.now().isBefore(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      final event = await _rustRuntime.receive(
+        clientId,
+        timeout: remaining > const Duration(milliseconds: 100)
+            ? const Duration(milliseconds: 100)
+            : remaining,
+      );
+      if (event == null) continue;
+
+      _emitRustRuntimeUpdate(event);
+      if (event['@extra']?.toString() != extra) continue;
+
+      final eventType = event['@type']?.toString() ?? '';
+      if (eventType == 'updateRuntimeRequestAccepted') continue;
+      if (eventType == 'error') {
+        throw MiniAppHostException(
+          event['code']?.toString() ?? 'rust_runtime_error',
+          event['message']?.toString() ?? 'Rust runtime request failed.',
+          data: event,
+        );
+      }
+      return event;
+    }
+
+    throw MiniAppHostException(
+      'rust_runtime_timeout',
+      'Rust runtime did not return a response for $method in time.',
+    );
+  }
+
+  int _runtimeReceiveTimeoutMs(String method, Map<String, dynamic> params) {
+    final fallback = method == 'network.http.fetch' ? 15000 : 5000;
+    final timeoutMs = _readPositiveInt(params['timeoutMs'], fallback: fallback);
+    return timeoutMs.clamp(1000, 120000).toInt() + 500;
+  }
+
+  bool _isRustRuntimeUnavailable(RustMiniAppRuntimeException error) {
+    return error.code == 'rust_runtime_unavailable' ||
+        error.code == 'rust_runtime_null_response';
+  }
+
+  Future<void> _ensureRustRuntimeStorageConfigured() async {
+    if (kIsWeb || _rustRuntimeStorageConfigured) return;
+    final pending = _rustRuntimeStorageConfigureFuture;
+    if (pending != null) return pending;
+    _rustRuntimeStorageConfigureFuture = _configureDefaultRustRuntimeStorage();
+    await _rustRuntimeStorageConfigureFuture;
+  }
+
+  Future<void> _configureDefaultRustRuntimeStorage() async {
+    try {
+      final directory = await getApplicationSupportDirectory();
+      final snapshotFile = p.join(
+        directory.path,
+        'fabushi-runtime',
+        'local-store.json',
+      );
+      await _rustRuntime.execute({
+        'method': 'runtime.storage.configure',
+        'path': snapshotFile,
+        'loadExisting': true,
+      });
+      _rustRuntimeStorageConfigured = true;
+    } finally {
+      _rustRuntimeStorageConfigureFuture = null;
+    }
+  }
+
+  void _emitRustRuntimeUpdate(Map<String, dynamic> event) {
+    widget.onMiniAppEvent?.call({
+      'type': 'runtime.update',
+      'miniAppId': widget.bot.stableMiniAppId,
+      'botId': widget.bot.stableBotId,
+      'runtimeType': event['@type'],
+      'event': event,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<Map<String, dynamic>> _openUdpSocket(
     Map<String, dynamic> params,
   ) async {
@@ -1678,6 +1836,12 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (kIsWeb) {
       throw const MiniAppHostException('unsupported_platform', 'Web 宿主不支持 UDP');
     }
+    final runtimeResult = await _invokeRustRuntimeCapability(
+      'network.udp.open',
+      params,
+    );
+    if (runtimeResult != null) return runtimeResult;
+
     final port = _readUdpPort(params['port'], allowZero: true);
     final bindAddress = params['bindAddress']?.toString().trim() ?? '';
     final socket = await RawDatagramSocket.bind(
@@ -1704,6 +1868,12 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     Map<String, dynamic> params,
   ) async {
     _requirePermission('network.udp');
+    final runtimeResult = await _invokeRustRuntimeCapability(
+      'network.udp.send',
+      params,
+    );
+    if (runtimeResult != null) return runtimeResult;
+
     final socketId = _requiredString(params['socketId'], 'socketId');
     final socket = _udpSocketById(socketId);
     final host = _requiredString(params['host'], 'host');
@@ -1723,6 +1893,12 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     Map<String, dynamic> params,
   ) async {
     _requirePermission('network.udp');
+    final runtimeResult = await _invokeRustRuntimeCapability(
+      'network.udp.broadcast',
+      params,
+    );
+    if (runtimeResult != null) return runtimeResult;
+
     final host = (params['host']?.toString().trim() ?? '').isEmpty
         ? '255.255.255.255'
         : params['host'].toString().trim();
@@ -1757,8 +1933,16 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     }
   }
 
-  Map<String, dynamic> _closeUdpSocket(Map<String, dynamic> params) {
+  Future<Map<String, dynamic>> _closeUdpSocket(
+    Map<String, dynamic> params,
+  ) async {
     _requirePermission('network.udp');
+    final runtimeResult = await _invokeRustRuntimeCapability(
+      'network.udp.close',
+      params,
+    );
+    if (runtimeResult != null) return runtimeResult;
+
     final socketId = _requiredString(params['socketId'], 'socketId');
     final socket = _udpSockets.remove(socketId);
     if (socket == null) {
@@ -2421,7 +2605,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   ) async {
     _requirePermission('network.http');
     if (kIsWeb) {
-      throw const MiniAppHostException('unsupported_platform', '当前平台不支持宿主 HTTP 客户端');
+      throw const MiniAppHostException(
+        'unsupported_platform',
+        '当前平台不支持宿主 HTTP 客户端',
+      );
     }
     final rawUrl = params['url']?.toString().trim() ?? '';
     final uri = Uri.tryParse(rawUrl);
@@ -2431,6 +2618,12 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         'network.http.fetch 仅支持 http:// 或 https:// URL',
       );
     }
+    final runtimeResult = await _invokeRustRuntimeCapability(
+      'network.http.fetch',
+      params,
+    );
+    if (runtimeResult != null) return runtimeResult;
+
     return _hostHttpFetch(params, uri);
   }
 
@@ -2441,7 +2634,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final method = (params['method']?.toString().toUpperCase() ?? 'GET');
     const allowedMethods = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'};
     if (!allowedMethods.contains(method)) {
-      throw MiniAppHostException('invalid_request', '不支持的 HTTP method: $method');
+      throw MiniAppHostException(
+        'invalid_request',
+        '不支持的 HTTP method: $method',
+      );
     }
 
     final timeoutMs = _readPositiveInt(
@@ -2476,10 +2672,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         );
       }
     }
-    final bodyTextEncoding = _detectHttpBodyEncoding(
-      bytes,
-      response.headers,
-    );
+    final bodyTextEncoding = _detectHttpBodyEncoding(bytes, response.headers);
     return {
       'statusCode': response.statusCode,
       'headers': response.headers,
@@ -2491,11 +2684,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     };
   }
 
-  String _detectHttpBodyEncoding(
-    List<int> bytes,
-    Map<String, String> headers,
-  ) {
-    final contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
+  String _detectHttpBodyEncoding(List<int> bytes, Map<String, String> headers) {
+    final contentType =
+        headers['content-type'] ?? headers['Content-Type'] ?? '';
     final headerMatch = RegExp(
       "charset\\s*=\\s*[\"']?([^\\s;\"']+)",
       caseSensitive: false,

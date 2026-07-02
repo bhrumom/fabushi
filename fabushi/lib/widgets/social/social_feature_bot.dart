@@ -124,6 +124,9 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
             'system.keepAwake',
             'hotspot.settings',
             'cloud.kv',
+            'runtime.storage',
+            'runtime.file',
+            'globalDharma.delivery',
             'share.chat',
           ],
         );
