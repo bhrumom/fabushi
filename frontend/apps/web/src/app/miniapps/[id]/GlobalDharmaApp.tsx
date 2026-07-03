@@ -187,6 +187,7 @@ export default function GlobalDharmaApp() {
         message,
         text: message,
         payload,
+        updateKey: payload.updateKey || "gd_live_status",
       });
     } catch (error) {
       log(hostErrorMessage(error, "聊天回写失败"));
@@ -291,7 +292,7 @@ export default function GlobalDharmaApp() {
     log(`${receiptText}${result.jobId ? `，任务 ${result.jobId}` : ""}`);
     await postBotMessage(
       result.receipts.length > 0
-        ? `全球法布施已发送：${content.title}`
+        ? `✅ 全球法布施已完成：通过真实底层网络成功覆盖 global/区域 目标，回执 ${result.receipts.length} 个！`
         : `全球法布施已提交，等待真实回执：${content.title}`,
       {
         miniAppId: "official.global-dharma",
@@ -301,6 +302,7 @@ export default function GlobalDharmaApp() {
         receipts: result.receipts,
         region: selectedRegion,
         loop: loopEnabled,
+        updateKey: "gd_live_status",
       },
     );
     return result;
@@ -320,8 +322,14 @@ export default function GlobalDharmaApp() {
     try {
       log(
         fbApp.isHostEnv()
-          ? "正在启动小程序 Rust worker；移动端将调用系统网络能力真实发送..."
+          ? "正在启动小程序 Rust worker；将调用底层网络能力向全球真实 IP 投递..."
           : "正在通过 Web HTTP 执行真实发送...",
+      );
+      await postBotMessage(
+        fbApp.isHostEnv()
+          ? "🌍 全球法布施启动中：正在加载全球各个国家与区域 IP 队列并初始化 Rust 引擎..."
+          : "🌍 全球法布施启动中：正在连接 Web HTTP 节点进行投递...",
+        { updateKey: "gd_live_status" },
       );
       if (loopEnabled || selectedRegion.fieldEnergy) {
         await fbApp
