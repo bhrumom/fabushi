@@ -107,6 +107,7 @@ export * from "./faliu-merit-benefits-t0278-juan8-butui-verses";
 export * from "./faliu-merit-benefits-t0278-juan9";
 export * from "./faliu-merit-benefits-t0278-juan9-pure-dharmakaya";
 export * from "./faliu-merit-benefits-t0278-juan9-final-exhortation";
+export * from "./faliu-merit-benefits-t0278-juan10";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -217,6 +218,7 @@ import * as t0278Juan8ButuiVerses from "./faliu-merit-benefits-t0278-juan8-butui
 import * as t0278Juan9 from "./faliu-merit-benefits-t0278-juan9";
 import * as t0278Juan9PureDharmakaya from "./faliu-merit-benefits-t0278-juan9-pure-dharmakaya";
 import * as t0278Juan9FinalExhortation from "./faliu-merit-benefits-t0278-juan9-final-exhortation";
+import * as t0278Juan10 from "./faliu-merit-benefits-t0278-juan10";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -375,6 +377,7 @@ const overrideMeritBenefits = {
     ...t0278Juan9PureDharmakaya.T0278_JUAN_9_PURE_DHARMAKAYA_MERIT_BENEFITS,
     ...t0278Juan9FinalExhortation.T0278_JUAN_9_FINAL_EXHORTATION_MERIT_BENEFITS,
   ],
+  "T0278:10": t0278Juan10.T0278_JUAN_10_MERIT_BENEFITS,
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {
