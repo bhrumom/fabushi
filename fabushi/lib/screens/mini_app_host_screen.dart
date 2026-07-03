@@ -2181,6 +2181,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       'botId': widget.bot.stableBotId,
       'text': text,
       'append': append,
+      'level': params['status'] == 'failed' ? 'error' : 'info',
+      if (params['updateKey'] != null) 'updateKey': params['updateKey'],
+      if (params['replaceLast'] != null) 'replaceLast': params['replaceLast'],
       'createdAt': DateTime.now().toIso8601String(),
     });
     return {'accepted': true, 'text': text, 'append': append};
@@ -2228,6 +2231,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       'isError': level == 'error',
       if (params['commandId'] != null) 'commandId': params['commandId'],
       if (params['data'] != null) 'data': params['data'],
+      if (params['updateKey'] != null) 'updateKey': params['updateKey'],
+      if (params['replaceLast'] != null) 'replaceLast': params['replaceLast'],
       'createdAt': DateTime.now().toIso8601String(),
     };
     widget.onMiniAppEvent?.call(event);
@@ -2251,6 +2256,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       'isError': status == 'failed',
       if (params['commandId'] != null) 'commandId': params['commandId'],
       if (params['data'] != null) 'data': params['data'],
+      if (params['updateKey'] != null) 'updateKey': params['updateKey'],
+      if (params['replaceLast'] != null) 'replaceLast': params['replaceLast'],
       'createdAt': DateTime.now().toIso8601String(),
     };
     widget.onMiniAppEvent?.call(event);

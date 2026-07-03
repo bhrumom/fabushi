@@ -38,6 +38,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final Map<String, List<_ChatMessage>> _messages = _sharedMessages;
   final Map<String, _MiniAppSession> _miniAppSessions = _sharedMiniAppSessions;
   final Map<String, String> _cliTaskBotIds = {};
+  final Set<String> _gdLiveTaskIds = {};
   final Map<String, List<Map<String, dynamic>>> _miniAppCommandCache = {};
   final Map<String, String> _miniAppInputHints = {};
   final Map<String, _RuntimeDeliverySummary> _deliverySummaries =
@@ -940,9 +941,36 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     final text = event['text']?.toString().trim() ?? '';
     if (text.isEmpty) return;
     final isError = event['isError'] == true || event['level'] == 'error';
+    final updateKey = event['updateKey']?.toString().trim();
+    final replaceLast = event['replaceLast'] == true;
     setState(() {
       final messages = _messages.putIfAbsent(botId, () => []);
-      messages.add(isError ? _ChatMessage.error(text) : _ChatMessage.bot(text));
+      _ChatMessage? existing;
+      if (updateKey != null && updateKey.isNotEmpty) {
+        for (final msg in messages.reversed) {
+          if (msg.updateKey == updateKey) {
+            existing = msg;
+            break;
+          }
+        }
+      } else if (replaceLast && messages.isNotEmpty) {
+        for (final msg in messages.reversed) {
+          if (!msg.isUser && msg.cliTaskId == null) {
+            existing = msg;
+            break;
+          }
+        }
+      }
+      if (existing != null) {
+        existing.text = text;
+        existing.isError = isError;
+      } else {
+        messages.add(
+          isError
+              ? _ChatMessage.error(text, updateKey: updateKey)
+              : _ChatMessage.bot(text, updateKey: updateKey),
+        );
+      }
     });
     if (botId == _bot.stableBotId) _scrollBottom();
   }
@@ -968,6 +996,12 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   void _handleMiniAppCliStart(String botId, String title, String taskId) {
     if (!mounted) return;
     _cliTaskBotIds[taskId] = botId;
+    if (title.contains('全球法布施') ||
+        title.contains('Global Dharma') ||
+        taskId.startsWith('gd_worker_')) {
+      _gdLiveTaskIds.add(taskId);
+      return;
+    }
     setState(() {
       final messages = _messages.putIfAbsent(botId, () => []);
       messages.add(_ChatMessage.cliTask(title, taskId));
@@ -977,9 +1011,33 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   void _handleMiniAppCliLog(String taskId, String data) {
     if (!mounted) return;
+    final botId = _cliTaskBotIds[taskId];
+    if (_gdLiveTaskIds.contains(taskId)) {
+      if (botId != null &&
+          (data.contains('endpointId') || data.contains('nodeId'))) {
+        final match = RegExp(
+          r'"(?:endpointId|nodeId)"\s*:\s*"([^"]+)"',
+        ).firstMatch(data);
+        if (match != null) {
+          final endpoint = match.group(1);
+          setState(() {
+            final messages = _messages[botId];
+            if (messages != null) {
+              for (final msg in messages.reversed) {
+                if (msg.updateKey == 'gd_live_status' ||
+                    (!msg.isUser && msg.cliTaskId == null)) {
+                  msg.text = '🌍 全球法布施实时投递中：正在向 $endpoint 发送 UDP 数据报文...';
+                  break;
+                }
+              }
+            }
+          });
+        }
+      }
+      return;
+    }
     setState(() {
       _ChatMessage? message;
-      final botId = _cliTaskBotIds[taskId];
       final candidateLists = botId == null
           ? _messages.values
           : [_messages.putIfAbsent(botId, () => [])];
@@ -1373,17 +1431,20 @@ class _ChatMessage {
     this.isError = false,
     this.cliTaskId,
     this.cliLogs,
+    this.updateKey,
   });
   String text;
   final bool isUser;
-  final bool isError;
+  bool isError;
   final String? cliTaskId;
   List<String>? cliLogs;
+  String? updateKey;
 
   factory _ChatMessage.user(String text) => _ChatMessage(text, isUser: true);
-  factory _ChatMessage.bot(String text) => _ChatMessage(text, isUser: false);
-  factory _ChatMessage.error(String text) =>
-      _ChatMessage(text, isUser: false, isError: true);
+  factory _ChatMessage.bot(String text, {String? updateKey}) =>
+      _ChatMessage(text, isUser: false, updateKey: updateKey);
+  factory _ChatMessage.error(String text, {String? updateKey}) =>
+      _ChatMessage(text, isUser: false, isError: true, updateKey: updateKey);
   factory _ChatMessage.cliTask(String text, String taskId) =>
       _ChatMessage(text, isUser: false, cliTaskId: taskId, cliLogs: []);
 }

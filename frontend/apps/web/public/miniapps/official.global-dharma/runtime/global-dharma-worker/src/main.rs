@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SUCCESS_STATUS_MIN: u16 = 200;
 const SUCCESS_STATUS_MAX: u16 = 299;
 
+static GEOIP_CSV_DATA: &str = include_str!("../data/geoip_targets.csv");
+
+
 #[derive(Clone, Debug)]
 struct Endpoint {
     transport: String,
@@ -184,10 +187,60 @@ fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
     })
 }
 
+fn resolve_geoip_endpoints(region: &str, port: u16) -> Vec<Endpoint> {
+    let mut endpoints = Vec::new();
+    let reg = region.to_ascii_uppercase();
+    for line in GEOIP_CSV_DATA.lines().skip(1) {
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() >= 3 {
+            let code = parts[0].trim().to_ascii_uppercase();
+            let name = parts[1].trim();
+            let ip = parts[2].trim();
+            
+            let include = match reg.as_str() {
+                "ALL" | "GLOBAL" => true,
+                "EASTASIA" => ["CN", "JP", "KR", "KP", "MN", "TW", "HK", "MO"].contains(&code.as_str()),
+                "SOUTHEASTASIA" => ["SG", "MY", "TH", "VN", "ID", "PH", "MM", "KH", "LA", "BN", "TL"].contains(&code.as_str()),
+                "EUROPEAMERICA" => ["US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "CH", "SE", "NO", "FI", "DK", "BE", "AT", "IE", "PL", "PT", "GR", "RU", "UA", "BR", "MX", "AR", "CL", "CO", "PE"].contains(&code.as_str()),
+                other => code == other,
+            };
+            if include {
+                let endpoint_id = format!("{} ({})", name, code);
+                endpoints.push(Endpoint {
+                    transport: "udp".into(),
+                    endpoint_id,
+                    url: String::new(),
+                    method: "POST".into(),
+                    host: ip.to_string(),
+                    port,
+                    timeout_ms: 30_000,
+                    max_body_bytes: 2 * 1024 * 1024,
+                });
+            }
+        }
+    }
+    endpoints
+}
+
 fn parse_endpoints(raw_job: &str) -> Result<Vec<Endpoint>, String> {
-    let raw_endpoints =
-        extract_json_value(raw_job, "endpoints").ok_or_else(|| "job has no endpoints".to_string())?;
-    let objects = split_endpoint_objects(raw_endpoints)?;
+    let use_geoip = json_bool(raw_job, "useGeoIp").unwrap_or(false);
+    let region = json_string(raw_job, "region").unwrap_or_else(|| "all".into());
+    let port = json_number(raw_job, "port").unwrap_or(9_999).min(65_535) as u16;
+
+    let mut objects = Vec::new();
+    if let Some(raw_endpoints) = extract_json_value(raw_job, "endpoints") {
+        if let Ok(objs) = split_endpoint_objects(raw_endpoints) {
+            objects = objs;
+        }
+    }
+
+    if use_geoip || objects.is_empty() {
+        let geo_endpoints = resolve_geoip_endpoints(&region, port);
+        if !geo_endpoints.is_empty() {
+            return Ok(geo_endpoints);
+        }
+    }
+
     if objects.is_empty() {
         return Err("job endpoints array is empty".into());
     }
@@ -220,6 +273,7 @@ fn parse_endpoints(raw_job: &str) -> Result<Vec<Endpoint>, String> {
         })
         .collect())
 }
+
 
 fn split_endpoint_objects(raw: &str) -> Result<Vec<&str>, String> {
     let trimmed = raw.trim();
@@ -326,6 +380,18 @@ fn json_string(raw: &str, key: &str) -> Option<String> {
 fn json_number(raw: &str, key: &str) -> Option<u64> {
     extract_json_value(raw, key)?.trim().parse::<u64>().ok()
 }
+
+fn json_bool(raw: &str, key: &str) -> Option<bool> {
+    let val = extract_json_value(raw, key)?.trim();
+    if val == "true" {
+        Some(true)
+    } else if val == "false" {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 
 fn unquote_json_string(value: &str) -> String {
     let inner = &value[1..value.len().saturating_sub(1)];
