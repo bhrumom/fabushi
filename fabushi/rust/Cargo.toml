@@ -1,0 +1,12 @@
+[package]
+name = "global_dharma_native"
+version = "0.1.0"
+edition = "2021"
+description = "Native FFI library for Global Dharma GeoIP UDP delivery on mobile and desktop."
+publish = false
+
+[lib]
+name = "global_dharma_native"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
