@@ -1,4 +1,5 @@
 import { fbApp } from "./miniapp-runtime";
+import { GeoIPDataService } from "./geoip-data-service";
 
 export type RegionPreset = {
   id: string;
@@ -90,7 +91,9 @@ const RUST_WORKER_PUBLIC_DIR =
 const RUST_WORKER_FILES = [
   "Cargo.toml",
   "src/main.rs",
+  "data/geoip_targets.csv",
 ] as const;
+
 
 let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
 
@@ -255,9 +258,21 @@ function udpTargetsForRegion(region: RegionPreset): UdpTarget[] {
       { host: "127.0.0.1", port: DEFAULT_UDP_PORT, nodeId: "local-loopback" },
     ];
   }
-  return readUdpTargets().filter((target) =>
+  const customTargets = readUdpTargets().filter((target) =>
     regionMatchesTarget(region, target),
   );
+  if (customTargets.length > 0) return customTargets;
+
+  const geoTargets = GeoIPDataService.getInstance().getUdpTargetsForRegion(
+    region.countryCodes || ["ALL"],
+    DEFAULT_UDP_PORT,
+  );
+  return geoTargets.map((item) => ({
+    host: item.host,
+    port: item.port,
+    nodeId: item.nodeId,
+    countryCode: item.countryCode,
+  }));
 }
 
 function deliveryTargetsForRegion(region: RegionPreset): DeliveryTarget[] {
@@ -500,6 +515,12 @@ export class GlobalDharmaSendService {
     );
   }
 
+  async resolveDeliveryTargets(
+    region: RegionPreset,
+  ): Promise<DeliveryTarget[]> {
+    return deliveryTargetsForRegion(region);
+  }
+
   async sendViaMiniAppRustWorker({
     content,
     region,
@@ -509,7 +530,7 @@ export class GlobalDharmaSendService {
     if (!fbApp.isHostEnv()) {
       throw new Error("当前 Web 浏览器不能启动小程序 Rust worker。");
     }
-    const targets = deliveryTargetsForRegion(region);
+    const targets = await this.resolveDeliveryTargets(region);
     if (targets.length === 0) {
       throw new Error("未配置真实发送节点：请设置 HTTP 或 UDP 目标。");
     }
@@ -531,6 +552,9 @@ export class GlobalDharmaSendService {
     const job = {
       jobId,
       miniAppId: MINIAPP_ID,
+      useGeoIp: true,
+      region: region.id,
+      port: DEFAULT_UDP_PORT,
       packet,
       endpoints: targets.map((target) => endpointForTarget(target, packetBody)),
       metadata: {
@@ -551,6 +575,7 @@ export class GlobalDharmaSendService {
         title: "全球法布施 Rust worker",
         command: prepared.binaryPath,
         arguments: ["--job-file", jobPath],
+        silentCli: true,
       });
     } catch {
       processResult = await fbApp.invoke<any>("runtime.process.execute", {
@@ -566,6 +591,7 @@ export class GlobalDharmaSendService {
           "--job-file",
           jobPath,
         ],
+        silentCli: true,
       });
     }
     const exitCode = Number(processResult?.exitCode ?? -1);
@@ -586,7 +612,7 @@ export class GlobalDharmaSendService {
     if (!fbApp.isHostEnv()) {
       throw new Error("当前浏览器不能调用宿主系统网络能力。");
     }
-    const targets = deliveryTargetsForRegion(region);
+    const targets = await this.resolveDeliveryTargets(region);
     if (targets.length === 0) {
       throw new Error("未配置真实发送节点：请设置 HTTP 或 UDP 目标。");
     }
@@ -669,7 +695,7 @@ export class GlobalDharmaSendService {
     if (!fbApp.isHostEnv()) {
       throw new Error("当前 Web 浏览器不会使用 Rust delivery。");
     }
-    const targets = deliveryTargetsForRegion(region);
+    const targets = await this.resolveDeliveryTargets(region);
     if (targets.length === 0) {
       throw new Error("未配置真实 Rust delivery 节点。");
     }
