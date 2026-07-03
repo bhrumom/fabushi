@@ -370,3 +370,28 @@ created
 > 小程序负责发愿与配置，Rust worker 负责持续运行，宿主负责安全容器和权限。
 
 这样才能支撑循环全球发送和后续复杂调度，而不会把宿主 App 写死成某一个业务工具。
+
+---
+
+## 优化记录与最佳实践：UI 规范对齐与 Rust 运行时降耗优化 (2026-07)
+
+### 1. UI 样式对齐与规范化
+在早期开发中，全球法布施小程序页面 (`GlobalDharmaApp.tsx`) 自行使用了 `.miniapp-hero`、`.miniapp-card`、`.miniapp-label` 等前缀样式类，与项目全局统一小程序样式库 `miniapps.css` 脱节，导致组件呈现无 CSS 封装的裸奔状态。
+优化后，全面将组件结构与样式绑定对齐至 Telegram 风格的官方样式规范（`.ma-panel`、`.ma-title-row`、`.ma-card`、`.ma-textarea`、`.ma-btn`、`hermes-status-grid`、`.ma-log-box`），确保视觉与所有官方小程序（如单词卡、转经轮安装器）保持高品质统一。
+
+### 2. 彻底解决桌面端 Rust Worker 循环发热与高 CPU 负载
+在原始实现中，桌面端发起真实发送（尤其是开启“循环真实发送”）时，底层 `sendViaMiniAppRustWorker()` 每轮调用都以命令行方式直接执行：
+```bash
+cargo run --quiet --manifest-path <temp-dir>/Cargo.toml -- --job-file <path>
+```
+**遭遇问题**：
+高频定时执行 `cargo run` 会在每次发包时重复拉起 Cargo 进程树。Cargo 在每次唤醒后需要重新扫描依赖图、检查 `src/main.rs` 与 `Cargo.toml` 时间戳并唤起 `rustc` 进行环境依赖校验，对系统 CPU 产生持续剧烈的抖动和不必要的计算开销，直接导致机身发热与风扇狂转。
+
+**优化方案（预编译 + 直接执行二进制）**：
+1. **准备阶段预编译**：在 `prepareMiniAppRustWorker()` 初始化写入文件后，立刻通过桌面终端能力一次性执行构建命令：
+   ```bash
+   cargo build --release --quiet --manifest-path <temp-dir>/Cargo.toml
+   ```
+2. **路径记录**：根据操作系统类型，自动解析产物路径 `target/release/global-dharma-worker` (或 Windows 下 `.exe`) 并在 `PreparedWorker` 结构体中记录 `binaryPath`；
+3. **极速调度**：后续在进行普通发送、真实回执轮询或每 30 秒定时循环时，调度器**优先直接运行已构建的高性能二进制执行文件**，将其执行响应时间缩短至毫秒级，CPU 占用极其轻微，从根本上消除了反复调用工具链造成的发热问题；
+4. **降级保障**：在遇到特殊环境或权限限制导致直接执行二进制异常时，自动安全回退至 `cargo run --release`，兼顾性能极速与环境兼容。

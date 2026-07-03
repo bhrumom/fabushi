@@ -489,6 +489,141 @@ input:checked + .ma-slider:before {
   color: #c6b6ff;
 }
 
+.hermes-panel {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.hermes-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 16px;
+}
+
+.hermes-status-grid div {
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.hermes-status-grid span {
+  color: #91A3B7;
+  font-size: 12px;
+}
+
+.hermes-status-grid strong {
+  color: #fff;
+  font-size: 15px;
+}
+
+.hermes-chat-log {
+  display: grid;
+  gap: 10px;
+  min-height: 360px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.hermes-message {
+  width: min(88%, 680px);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.065);
+  color: #eaf2f8;
+}
+
+.hermes-message.user {
+  justify-self: end;
+  background: rgba(47, 158, 131, 0.88);
+  color: #fff;
+}
+
+.hermes-message.terminal {
+  width: 100%;
+  background: #050807;
+  color: #9df7b4;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+.hermes-message.hermes {
+  background: rgba(71, 124, 163, 0.24);
+  border: 1px solid rgba(126, 190, 224, 0.18);
+}
+
+.hermes-message span {
+  display: block;
+  margin-bottom: 5px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.hermes-message.user span {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.hermes-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hermes-composer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.hermes-composer svg {
+  color: #8ee2ca;
+}
+
+.hermes-composer input {
+  min-height: 42px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+}
+
+.hermes-composer button {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-start, #3390EC);
+  color: #fff;
+  cursor: pointer;
+}
+
+.hermes-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 @media (max-width: 360px) {
   .ma-container {
     padding: 14px;
@@ -508,5 +643,9 @@ input:checked + .ma-slider:before {
 
   .ma-action-row .ma-btn-secondary {
     width: 100%;
+  }
+
+  .hermes-status-grid {
+    grid-template-columns: 1fr;
   }
 }

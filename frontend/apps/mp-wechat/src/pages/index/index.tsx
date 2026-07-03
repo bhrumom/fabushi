@@ -21,6 +21,7 @@ type ChatMessage = {
 const suggestions = [
   { icon: "✦", label: "大乘能做什么", prompt: aiQuickPrompts[0] },
   { icon: "◉", label: "开始全球法布施", prompt: "", route: "/pages/globe/index" },
+  { icon: "⌁", label: "安装 Hermes", prompt: "", route: "/pages/hermes/index" },
   { icon: "⌕", label: "AI找资源", prompt: "请帮我找适合初学者阅读的佛经资源。" },
   { icon: "▣", label: "加入功课本", prompt: "帮我整理一份今天可以完成的简短功课。" },
   { icon: "♡", label: "发愿文案", prompt: "请帮我润色一段慈悲、简洁的发愿文案。" },

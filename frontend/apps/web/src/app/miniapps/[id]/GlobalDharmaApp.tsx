@@ -320,7 +320,7 @@ export default function GlobalDharmaApp() {
     try {
       log(
         fbApp.isHostEnv()
-          ? "正在通过 Rust 系统级 delivery/UDP 执行真实发送..."
+          ? "正在启动小程序 Rust worker；移动端将调用系统网络能力真实发送..."
           : "正在通过 Web HTTP 执行真实发送...",
       );
       if (loopEnabled || selectedRegion.fieldEnergy) {
@@ -401,7 +401,7 @@ export default function GlobalDharmaApp() {
       if (!hostBot || unsubscribeCommand) return;
       void fbApp
         .invoke("bot.setInputPlaceholder", {
-          placeholder: "输入链接/正文；Web 走 HTTP，App 走 Rust/UDP",
+          placeholder: "输入链接/正文；桌面跑小程序 Rust，移动端走系统发送",
         })
         .catch(() => null);
       void fbApp
@@ -462,35 +462,33 @@ export default function GlobalDharmaApp() {
     : "暂无回执";
 
   return (
-    <main className="miniapp-page global-dharma-app">
-      <section className="miniapp-hero">
-        <div className="miniapp-hero-icon">
-          <Globe size={28} />
-        </div>
+    <div className="ma-panel global-dharma-app ma-fade-in" style={{ "--accent-start": "#10B981", "--accent-end": "#059669", "--accent-rgb": "16, 185, 129" } as any}>
+      <div className="ma-title-row">
         <div>
-          <p className="miniapp-kicker">Official Mini App</p>
-          <h1>全球法布施</h1>
-          <p>
-            Web 使用真实 HTTP 回执计数；桌面端与移动端通过 Rust 系统级
-            delivery/UDP 发送。
+          <h1 className="ma-header-title">全球法布施</h1>
+          <p className="ma-header-subtitle">
+            Web 使用真实 HTTP 回执计数；桌面端运行小程序提供的 Rust worker，移动端调用系统网络能力发送。
           </p>
         </div>
-      </section>
+        <Globe size={28} className="ma-title-icon" />
+      </div>
 
-      <section className="miniapp-card">
-        <label className="miniapp-label" htmlFor="global-dharma-input">
+      <div className="ma-card">
+        <label className="ma-label" htmlFor="global-dharma-input">
           链接或正文
         </label>
         <textarea
           id="global-dharma-input"
+          className="ma-textarea ma-textarea-tall"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="粘贴佛法链接、经文摘录或发愿文。普通 Web 使用真实 HTTP；App 内使用 Rust/UDP 系统发送。"
+          placeholder="粘贴佛法链接、经文摘录或发愿文。普通 Web 使用真实 HTTP；App 内桌面跑小程序 Rust，移动端走系统发送。"
           rows={5}
         />
-        <div className="miniapp-actions">
+        <div className="ma-action-row ma-action-row-wrap" style={{ marginTop: 12 }}>
           <button
             type="button"
+            className="ma-btn"
             onClick={() => void handleStart()}
             disabled={busy || status.isPreparingSend}
           >
@@ -498,6 +496,7 @@ export default function GlobalDharmaApp() {
           </button>
           <button
             type="button"
+            className="ma-btn ma-btn-secondary"
             onClick={() => void handleStop()}
             disabled={!status.isTransferring && !status.isPreparingSend}
           >
@@ -505,6 +504,7 @@ export default function GlobalDharmaApp() {
           </button>
           <button
             type="button"
+            className="ma-btn ma-btn-secondary"
             onClick={() =>
               setSelectedMaterial((prev) =>
                 prev ? null : HIGH_ENERGY_MATERIAL,
@@ -515,13 +515,15 @@ export default function GlobalDharmaApp() {
             {selectedMaterial ? "取消素材" : "加入3D佛像素材"}
           </button>
         </div>
-      </section>
+      </div>
 
-      <section className="miniapp-card">
-        <div className="miniapp-grid">
-          <label className="miniapp-label">
+      <div className="ma-card" style={{ marginTop: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "12px" }}>
+          <label className="ma-label">
             发送区域
             <select
+              className="ma-input"
+              style={{ marginTop: 8, marginBottom: 0 }}
               value={regionId}
               onChange={(event) => setRegionId(event.target.value)}
             >
@@ -532,29 +534,30 @@ export default function GlobalDharmaApp() {
               ))}
             </select>
           </label>
-          <label className="miniapp-check">
+          <label style={{ display: "flex", alignItems: "center", gap: "10px", color: "#fff", fontSize: "14px", cursor: "pointer", marginTop: "4px" }}>
             <input
               type="checkbox"
+              style={{ width: "18px", height: "18px", accentColor: "#10B981" }}
               checked={loopEnabled}
               onChange={(event) => void handleLoopChange(event.target.checked)}
             />
-            循环真实发送，每轮都必须获得真实回执后才计数
+            <span>循环真实发送，每轮都必须获得真实回执后才计数</span>
           </label>
         </div>
-      </section>
+      </div>
 
-      <section className="miniapp-card miniapp-status-card">
-        <div className="miniapp-status-item">
+      <div className="hermes-status-grid" style={{ margin: "20px 0" }}>
+        <div>
           <span>回执</span>
           <strong>{status.sentCount}</strong>
         </div>
-        <div className="miniapp-status-item">
+        <div>
           <span>真实发送数据</span>
           <strong>{status.sentMB.toFixed(4)} MB</strong>
         </div>
-        <div className="miniapp-status-item">
+        <div>
           <span>最新状态</span>
-          <strong>
+          <strong style={{ fontSize: "14px" }}>
             {status.isPreparingSend
               ? "准备中"
               : status.isTransferring
@@ -562,37 +565,41 @@ export default function GlobalDharmaApp() {
                 : selectedReceiptText}
           </strong>
         </div>
-      </section>
+      </div>
 
       {status.selectedContent && (
-        <section className="miniapp-card">
-          <h2>
-            <Link2 size={18} /> 当前内容
-          </h2>
-          <p>{status.selectedContent.previewText}</p>
+        <div className="ma-card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 600, marginBottom: 8 }}>
+            <Link2 size={18} /> <span>当前内容</span>
+          </div>
+          <p style={{ color: "rgba(255, 255, 255, 0.85)", fontSize: "14px", lineHeight: 1.5, margin: "8px 0" }}>
+            {status.selectedContent.previewText}
+          </p>
           {status.lastResult?.contentHash && (
-            <p className="miniapp-muted">
+            <p style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: "12px", margin: "4px 0 0 0", wordBreak: "break-all" }}>
               Hash: {status.lastResult.contentHash}
             </p>
           )}
           {status.lastResult?.jobId && (
-            <p className="miniapp-muted">Job: {status.lastResult.jobId}</p>
-          )}
-        </section>
-      )}
-
-      <section className="miniapp-card">
-        <h2>
-          <RefreshCw size={18} /> 运行日志
-        </h2>
-        <div className="miniapp-log">
-          {logs.length === 0 ? (
-            <p>等待开始真实发送...</p>
-          ) : (
-            logs.map((item, index) => <p key={`${item}-${index}`}>{item}</p>)
+            <p style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: "12px", margin: "4px 0 0 0", wordBreak: "break-all" }}>
+              Job: {status.lastResult.jobId}
+            </p>
           )}
         </div>
-      </section>
-    </main>
+      )}
+
+      <div className="ma-card">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 600, marginBottom: 12 }}>
+          <RefreshCw size={18} /> <span>运行日志</span>
+        </div>
+        <div className="ma-log-box">
+          {logs.length === 0 ? (
+            <div>等待开始真实发送...</div>
+          ) : (
+            logs.map((item, index) => <div key={`${item}-${index}`}>{item}</div>)
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

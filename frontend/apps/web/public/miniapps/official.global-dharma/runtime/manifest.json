@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "miniAppId": "official.global-dharma",
+  "runtime": {
+    "type": "rust-program",
+    "programId": "global-dharma-worker",
+    "version": "0.1.0",
+    "entry": "global-dharma-worker",
+    "packageRoot": "/miniapps/official.global-dharma/runtime/global-dharma-worker",
+    "launch": {
+      "desktop": {
+        "command": "cargo",
+        "arguments": [
+          "run",
+          "--quiet",
+          "--manifest-path",
+          "{{manifestPath}}",
+          "--",
+          "--job-file",
+          "{{jobPath}}"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "runtime.process",
+    "fs.readWrite",
+    "network.http",
+    "network.udp",
+    "system.keepAwake"
+  ],
+  "policy": {
+    "execution": "local-first",
+    "cloudFallback": false,
+    "countsOnlyReceipts": true
+  }
+}
