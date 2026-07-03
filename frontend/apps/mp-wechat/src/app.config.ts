@@ -1,5 +1,5 @@
 export default defineAppConfig({
-  pages: ["pages/index/index", "pages/globe/index"],
+  pages: ["pages/index/index", "pages/globe/index", "pages/hermes/index"],
   window: {
     backgroundTextStyle: "light",
     navigationStyle: "custom",

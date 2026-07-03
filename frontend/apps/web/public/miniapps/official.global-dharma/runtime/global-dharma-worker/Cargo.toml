@@ -1,0 +1,8 @@
+[package]
+name = "global-dharma-worker"
+version = "0.1.0"
+edition = "2021"
+description = "Mini app supplied Rust worker for real Global Dharma delivery receipts."
+publish = false
+
+[dependencies]

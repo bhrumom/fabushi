@@ -1,5 +1,6 @@
 import GlobalDharmaApp from "./GlobalDharmaApp";
 import FlashcardsApp from "./FlashcardsApp";
+import HermesInstallerApp from "./HermesInstallerApp";
 import PlatformPublishApp from "./PlatformPublishApp";
 
 type MiniAppPageProps = {
@@ -10,6 +11,7 @@ export async function generateStaticParams() {
   return [
     { id: "official.global-dharma" },
     { id: "official.flashcards" },
+    { id: "official.hermes-installer" },
     { id: "official.platform-publish" },
     { id: "official.bot-father" },
   ];
@@ -25,6 +27,9 @@ export default async function MiniAppPage({ params }: MiniAppPageProps) {
       break;
     case "official.flashcards":
       AppContent = <FlashcardsApp />;
+      break;
+    case "official.hermes-installer":
+      AppContent = <HermesInstallerApp />;
       break;
     case "official.platform-publish":
       AppContent = <PlatformPublishApp />;

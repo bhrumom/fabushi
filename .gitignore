@@ -13,6 +13,7 @@ node_modules/
 # Next.js frontend build artifacts
 frontend/apps/web/.next/
 frontend/apps/web/out/
+frontend/apps/web/public/miniapps/**/runtime/**/target/
 
 # Flutter/Dart 相关
 .dart_tool/
