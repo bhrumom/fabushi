@@ -84,6 +84,8 @@ const DEFAULT_HTTP_TARGETS: HttpTarget[] = [
   },
 ];
 const DEFAULT_UDP_PORT = 9999;
+const UDP_SAFE_DATAGRAM_BYTES = 8 * 1024;
+const UDP_CHUNK_PAYLOAD_BYTES = 6 * 1024;
 const RUST_DELIVERY_RECEIPT_TIMEOUT_MS = 45000;
 const RUST_DELIVERY_RECEIPT_POLL_MS = 650;
 const RUST_WORKER_LOCAL_DIR = "runtime/global-dharma-worker";
@@ -125,6 +127,45 @@ function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return window.btoa(binary);
+}
+
+function splitUtf8Chunks(value: string, maxBytes: number) {
+  const chunks: string[] = [];
+  let current = "";
+  let currentBytes = 0;
+  const limit = Math.max(1, maxBytes);
+
+  for (const char of value) {
+    const charBytes = textBytes(char).byteLength;
+    if (current && currentBytes + charBytes > limit) {
+      chunks.push(current);
+      current = "";
+      currentBytes = 0;
+    }
+    current += char;
+    currentBytes += charBytes;
+  }
+
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [""];
+}
+
+function udpDatagramBodies(packetBody: string, contentHash: string) {
+  const packetBytes = textBytes(packetBody).byteLength;
+  if (packetBytes <= UDP_SAFE_DATAGRAM_BYTES) return [packetBody];
+
+  const payloads = splitUtf8Chunks(packetBody, UDP_CHUNK_PAYLOAD_BYTES);
+  return payloads.map((payload, index) =>
+    JSON.stringify({
+      type: "global_dharma_delivery_chunk",
+      contentHash,
+      chunkIndex: index,
+      chunkCount: payloads.length,
+      totalBytes: packetBytes,
+      encoding: "utf8-json",
+      payload,
+    }),
+  );
 }
 
 async function sha256Hex(value: string) {
@@ -908,6 +949,7 @@ export class GlobalDharmaSendService {
     );
     const packetBody = JSON.stringify(packet);
     const packetBytes = textBytes(packetBody).byteLength;
+    const udpDatagrams = udpDatagramBodies(packetBody, contentHash);
     const receipts: DharmaDeliveryReceipt[] = [];
     const batchSize = 25;
     const udpTargets = targets.filter(isUdpTarget);
@@ -951,13 +993,20 @@ export class GlobalDharmaSendService {
             raw: response,
           });
         } else {
-          const response = await this.invokeUdpSendWithRetry("network.udp.send", {
-            socketId: udpSocketId,
-            host: endpoint.host,
-            port: endpoint.port,
-            data: endpoint.data,
-          });
-          const reportedBytes = readNumber(response?.sentBytes, 0);
+          let reportedBytes = 0;
+          const responses: unknown[] = [];
+          for (const datagramBody of udpDatagrams) {
+            const datagramBytes = textBytes(datagramBody);
+            const response = await this.invokeUdpSendWithRetry("network.udp.send", {
+              socketId: udpSocketId,
+              host: endpoint.host,
+              port: endpoint.port,
+              data: bytesToBase64(datagramBytes),
+            });
+            reportedBytes += readNumber(response?.sentBytes, datagramBytes.byteLength);
+            responses.push(response);
+            if (udpDatagrams.length > 1) await sleep(2);
+          }
           receipts.push({
             countryCode: target.countryCode,
             nodeId: endpointIdForTarget(target),
@@ -965,7 +1014,10 @@ export class GlobalDharmaSendService {
             status: "sent",
             bytesSent: reportedBytes,
             deliveredAt: new Date().toISOString(),
-            raw: response,
+            raw:
+              udpDatagrams.length > 1
+                ? { chunked: true, chunkCount: udpDatagrams.length, responses }
+                : responses[0],
           });
         }
         if ((i + 1) % batchSize === 0 && i + 1 < targets.length) {
