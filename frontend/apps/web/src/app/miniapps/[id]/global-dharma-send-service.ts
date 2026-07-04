@@ -947,13 +947,12 @@ export class GlobalDharmaSendService {
       // 根据第一性原理与用户明确要求：
       // Web 端不使用 UDP，也不经过服务端网关中转，
       // 直接使用 Wasm 解析出的全球各国家节点 HTTP 地址，从用户浏览器/手机设备物理网卡发起跨域点对点发送！
-      const directDeliveryPromises = rawReceipts.map(async (item: any) => {
+      // 遵照绝对第一性原理：不并行发送，逐个顺序平稳投递至全球目标节点
+      for (const item of rawReceipts) {
         const targetHost = item?.host || "1.1.1.1";
         const targetPort = item?.port || 80;
         const targetUrl = item?.url || `http://${targetHost}:${targetPort}/dharma`;
         try {
-          // 使用 mode: 'no-cors'，浏览器安全沙盒不会阻断底层物理 HTTP 数据包发送至目标外网服务器。
-          // 数据报文会直接由用户的电脑或手机设备直接跨越公网发往日本、美国、德国等目标 IP！
           await fetch(targetUrl, {
             method: "POST",
             mode: "no-cors",
@@ -962,11 +961,12 @@ export class GlobalDharmaSendService {
             },
             body: packetBody,
           });
+          // 逐个发送间隔平稳让出 8 毫秒，避免瞬时连接突发打满浏览器与系统内核连接池
+          await new Promise((resolve) => setTimeout(resolve, 8));
         } catch {
-          // 忽略个别目标公网地址超时或网络层波动，确保高并发完成所有国家节点投递
+          // 忽略个别目标公网地址超时或网络层波动
         }
-      });
-      Promise.all(directDeliveryPromises).catch(() => {});
+      }
 
       return {
         contentHash: resultMap?.contentHash || contentHash,
@@ -1135,7 +1135,6 @@ export class GlobalDharmaSendService {
     const packetBytes = textBytes(packetBody).byteLength;
     const udpDatagrams = udpDatagramBodies(packetBody, contentHash);
     const receipts: DharmaDeliveryReceipt[] = [];
-    const batchSize = 25;
     const udpTargets = targets.filter(isUdpTarget);
     let udpSocketId = "";
 
@@ -1204,9 +1203,8 @@ export class GlobalDharmaSendService {
                 : responses[0],
           });
         }
-        if ((i + 1) % batchSize === 0 && i + 1 < targets.length) {
-          await sleep(10);
-        }
+        // 遵照绝对第一性原理：不并行发送，逐个顺序平稳发包
+        await sleep(6);
       }
     } finally {
       if (udpSocketId) {
