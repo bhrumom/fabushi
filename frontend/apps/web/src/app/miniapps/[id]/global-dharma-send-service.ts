@@ -42,6 +42,7 @@ type SendOptions = {
   region: RegionPreset;
   loop: boolean;
   commandId?: string;
+  onLog?: (message: string) => void;
 };
 
 type UdpTarget = {
@@ -97,6 +98,7 @@ const RUST_WORKER_FILES = [
 
 let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
 let preparedWasmModulePromise: Promise<WebAssembly.Module> | null = null;
+let cargoToolchainPromise: Promise<void> | null = null;
 
 function endpointUrl() {
   const configured =
@@ -302,6 +304,15 @@ function endpointLabel(target: DeliveryTarget) {
   return target.nodeId || target.url;
 }
 
+function isUdpTarget(target: DeliveryTarget): target is { transport: "udp" } & UdpTarget {
+  return target.transport === "udp";
+}
+
+function needsUdpBroadcast(target: UdpTarget) {
+  const host = target.host.trim();
+  return host === "255.255.255.255" || host.endsWith(".255");
+}
+
 function endpointForTarget(target: DeliveryTarget, packetBody: string) {
   const endpointId = endpointIdForTarget(target);
   if (target.transport === "udp") {
@@ -367,7 +378,115 @@ async function fetchTextAsset(path: string) {
   return response.text();
 }
 
-async function prepareMiniAppRustWorker(): Promise<PreparedWorker> {
+function inferDesktopPlatform() {
+  const ua = typeof window !== "undefined" ? window.navigator?.userAgent || "" : "";
+  const platform =
+    typeof window !== "undefined" ? window.navigator?.platform || "" : "";
+  const marker = `${ua} ${platform}`;
+  if (/Windows/i.test(marker)) return "windows";
+  if (/Macintosh|Mac OS|MacIntel|Darwin/i.test(marker)) return "macos";
+  return "linux";
+}
+
+function processExitCode(result: any) {
+  return Number(result?.exitCode ?? -1);
+}
+
+function processOutput(result: any) {
+  const stderr = String(result?.stderr || "").trim();
+  const stdout = String(result?.stdout || "").trim();
+  return stderr || stdout || `exit ${processExitCode(result)}`;
+}
+
+async function runHostProcess(
+  title: string,
+  command: string,
+  argumentsList: string[],
+  options: { silentCli?: boolean; runInShell?: boolean } = {},
+) {
+  return fbApp.invoke<any>("runtime.process.execute", {
+    title,
+    command,
+    arguments: argumentsList,
+    silentCli: options.silentCli ?? true,
+    runInShell: options.runInShell,
+  });
+}
+
+function rustupInstallProcess() {
+  const platform = inferDesktopPlatform();
+  if (platform === "windows") {
+    return {
+      command: "powershell.exe",
+      arguments: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$ErrorActionPreference='Stop'; " +
+          "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; " +
+          "$installer=Join-Path $env:TEMP 'rustup-init.exe'; " +
+          "Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile $installer; " +
+          "& $installer -y --profile minimal; " +
+          "exit $LASTEXITCODE",
+      ],
+    };
+  }
+  return {
+    command: "sh",
+    arguments: [
+      "-lc",
+      "set -e; " +
+        "if command -v curl >/dev/null 2>&1; then " +
+        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal; " +
+        "elif command -v wget >/dev/null 2>&1; then " +
+        "wget -qO- https://sh.rustup.rs | sh -s -- -y --profile minimal; " +
+        "else echo '缺少 curl 或 wget，无法自动安装 Rust 工具链' >&2; exit 127; fi",
+    ],
+  };
+}
+
+async function ensureCargoToolchain(onLog?: (message: string) => void) {
+  if (cargoToolchainPromise) return cargoToolchainPromise;
+  cargoToolchainPromise = (async () => {
+    try {
+      const version = await runHostProcess("检测 Cargo", "cargo", ["--version"]);
+      if (processExitCode(version) === 0) {
+        onLog?.(`Cargo 已就绪：${String(version?.stdout || "").trim()}`);
+        return;
+      }
+      onLog?.(`Cargo 检测失败：${processOutput(version)}`);
+    } catch (error) {
+      onLog?.(`Cargo 未安装或不可用：${errorMessage(error)}`);
+    }
+
+    const install = rustupInstallProcess();
+    onLog?.("未检测到 Cargo，开始通过 rustup 安装 Rust/Cargo 工具链。首次安装可能需要一些时间。");
+    const installResult = await runHostProcess(
+      "安装 Rust/Cargo 工具链",
+      install.command,
+      install.arguments,
+      { silentCli: false },
+    );
+    if (processExitCode(installResult) !== 0) {
+      throw new Error(`Rust/Cargo 自动安装失败: ${processOutput(installResult)}`);
+    }
+
+    const verify = await runHostProcess("验证 Cargo", "cargo", ["--version"]);
+    if (processExitCode(verify) !== 0) {
+      throw new Error(`Rust/Cargo 安装后仍不可用: ${processOutput(verify)}`);
+    }
+    onLog?.(`Cargo 安装完成：${String(verify?.stdout || "").trim()}`);
+  })().catch((error) => {
+    cargoToolchainPromise = null;
+    throw error;
+  });
+  return cargoToolchainPromise;
+}
+
+async function prepareMiniAppRustWorker(
+  onLog?: (message: string) => void,
+): Promise<PreparedWorker> {
   if (preparedWorkerPromise) return preparedWorkerPromise;
   preparedWorkerPromise = (async () => {
     let manifestPath = "";
@@ -396,17 +515,20 @@ async function prepareMiniAppRustWorker(): Promise<PreparedWorker> {
       `target/release/${binaryName}`,
     );
 
-    const buildResult = await fbApp.invoke<any>("runtime.process.execute", {
-      title: "构建全球法布施 Rust worker (一次性)",
-      command: "cargo",
-      arguments: [
+    await ensureCargoToolchain(onLog);
+
+    const buildResult = await runHostProcess(
+      "构建全球法布施 Rust worker (一次性)",
+      "cargo",
+      [
         "build",
         "--release",
         "--quiet",
         "--manifest-path",
         manifestPath,
       ],
-    });
+      { silentCli: false },
+    );
     const buildExitCode = Number(buildResult?.exitCode ?? -1);
     if (buildExitCode !== 0) {
       const stderr = String(buildResult?.stderr || "");
@@ -465,19 +587,25 @@ export class GlobalDharmaSendService {
     try {
       return await this.sendViaMiniAppRustWorker(options);
     } catch (error) {
-      failures.push(`小程序 Rust worker: ${errorMessage(error)}`);
+      const message = `小程序 Rust worker: ${errorMessage(error)}`;
+      failures.push(message);
+      options.onLog?.(`Rust worker 未启用，准备降级到宿主系统网络：${message}`);
     }
 
     try {
       return await this.sendViaSystemNetwork(options);
     } catch (error) {
-      failures.push(`宿主系统网络: ${errorMessage(error)}`);
+      const message = `宿主系统网络: ${errorMessage(error)}`;
+      failures.push(message);
+      options.onLog?.(`宿主系统网络发送失败，准备尝试兼容 delivery 队列：${message}`);
     }
 
     try {
       return await this.sendViaLegacyRustDelivery(options);
     } catch (error) {
-      failures.push(`兼容 delivery 队列: ${errorMessage(error)}`);
+      const message = `兼容 delivery 队列: ${errorMessage(error)}`;
+      failures.push(message);
+      options.onLog?.(`兼容 Rust delivery 队列失败：${message}`);
     }
 
     throw new Error(`真实发送失败：${failures.join("；")}`);
@@ -628,7 +756,7 @@ export class GlobalDharmaSendService {
           nodeId: item?.nodeId || item?.endpointId || "Unknown",
           channel: item?.channel === "udp" ? "udp" : "rust-http",
           status: item?.status === "delivered" ? "delivered" : "sent",
-          bytesSent: reported,
+          bytesSent: reported > 0 ? reported : packetBytes,
           deliveredAt: item?.deliveredAt || item?.at || new Date().toISOString(),
           raw: item,
         };
@@ -681,6 +809,7 @@ export class GlobalDharmaSendService {
     region,
     loop,
     commandId,
+    onLog,
   }: SendOptions): Promise<DharmaSendResult> {
     if (!fbApp.isHostEnv()) {
       throw new Error("当前 Web 浏览器不能启动小程序 Rust worker。");
@@ -720,23 +849,20 @@ export class GlobalDharmaSendService {
       },
     };
 
-    const [prepared, jobPath] = await Promise.all([
-      prepareMiniAppRustWorker(),
-      writeWorkerJob(job),
-    ]);
+    const jobPath = await writeWorkerJob(job);
     let processResult: any;
+    const prepared = await prepareMiniAppRustWorker(onLog);
     try {
-      processResult = await fbApp.invoke<any>("runtime.process.execute", {
-        title: "全球法布施 Rust worker",
-        command: prepared.binaryPath,
-        arguments: ["--job-file", jobPath],
-        silentCli: true,
-      });
+      processResult = await runHostProcess(
+        "全球法布施 Rust worker",
+        prepared.binaryPath,
+        ["--job-file", jobPath],
+      );
     } catch {
-      processResult = await fbApp.invoke<any>("runtime.process.execute", {
-        title: "全球法布施 Rust worker (cargo)",
-        command: "cargo",
-        arguments: [
+      processResult = await runHostProcess(
+        "全球法布施 Rust worker (cargo)",
+        "cargo",
+        [
           "run",
           "--release",
           "--quiet",
@@ -746,8 +872,7 @@ export class GlobalDharmaSendService {
           "--job-file",
           jobPath,
         ],
-        silentCli: true,
-      });
+      );
     }
     const exitCode = Number(processResult?.exitCode ?? -1);
     const stdout = String(processResult?.stdout || "");
@@ -785,53 +910,73 @@ export class GlobalDharmaSendService {
     const packetBytes = textBytes(packetBody).byteLength;
     const receipts: DharmaDeliveryReceipt[] = [];
     const batchSize = 25;
+    const udpTargets = targets.filter(isUdpTarget);
+    let udpSocketId = "";
 
-    for (let i = 0; i < targets.length; i++) {
-      const target = targets[i];
-      const endpoint = endpointForTarget(target, packetBody);
-      if (target.transport === "http") {
-        const response = await fbApp.invoke<any>("network.http.fetch", {
-          url: endpoint.url,
-          method: endpoint.method,
-          headers: endpoint.headers,
-          body: packetBody,
-          timeoutMs: endpoint.timeoutMs,
-          maxBodyBytes: endpoint.maxBodyBytes,
-        });
-        const statusCode = readNumber(response?.statusCode);
-        if (statusCode < 200 || statusCode >= 300) {
-          throw new Error(
-            `系统 HTTP 发送失败：${endpointLabel(target)} HTTP ${statusCode}`,
-          );
+    if (udpTargets.length > 0) {
+      const openResult = await fbApp.invoke<any>("network.udp.open", {
+        port: 0,
+        broadcast: udpTargets.some(needsUdpBroadcast),
+      });
+      udpSocketId = String(openResult?.socketId || "");
+      if (!udpSocketId) throw new Error("系统 UDP socket 打开失败：没有返回 socketId");
+    }
+
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        const endpoint = endpointForTarget(target, packetBody);
+        if (target.transport === "http") {
+          const response = await fbApp.invoke<any>("network.http.fetch", {
+            url: endpoint.url,
+            method: endpoint.method,
+            headers: endpoint.headers,
+            body: packetBody,
+            timeoutMs: endpoint.timeoutMs,
+            maxBodyBytes: endpoint.maxBodyBytes,
+          });
+          const statusCode = readNumber(response?.statusCode);
+          if (statusCode < 200 || statusCode >= 300) {
+            throw new Error(
+              `系统 HTTP 发送失败：${endpointLabel(target)} HTTP ${statusCode}`,
+            );
+          }
+          receipts.push({
+            countryCode: target.countryCode,
+            nodeId: endpointIdForTarget(target),
+            channel: "system-http",
+            status: "delivered",
+            bytesSent: packetBytes,
+            deliveredAt: new Date().toISOString(),
+            raw: response,
+          });
+        } else {
+          const response = await this.invokeUdpSendWithRetry("network.udp.send", {
+            socketId: udpSocketId,
+            host: endpoint.host,
+            port: endpoint.port,
+            data: endpoint.data,
+          });
+          const reportedBytes = readNumber(response?.sentBytes, 0);
+          receipts.push({
+            countryCode: target.countryCode,
+            nodeId: endpointIdForTarget(target),
+            channel: "udp",
+            status: "sent",
+            bytesSent: reportedBytes,
+            deliveredAt: new Date().toISOString(),
+            raw: response,
+          });
         }
-        receipts.push({
-          countryCode: target.countryCode,
-          nodeId: endpointIdForTarget(target),
-          channel: "system-http",
-          status: "delivered",
-          bytesSent: packetBytes,
-          deliveredAt: new Date().toISOString(),
-          raw: response,
-        });
-      } else {
-        const response = await fbApp.invoke<any>("network.udp.broadcast", {
-          host: endpoint.host,
-          port: endpoint.port,
-          data: endpoint.data,
-        });
-        const reportedBytes = readNumber(response?.sentBytes, 0);
-        receipts.push({
-          countryCode: target.countryCode,
-          nodeId: endpointIdForTarget(target),
-          channel: "udp",
-          status: "sent",
-          bytesSent: reportedBytes,
-          deliveredAt: new Date().toISOString(),
-          raw: response,
-        });
+        if ((i + 1) % batchSize === 0 && i + 1 < targets.length) {
+          await sleep(10);
+        }
       }
-      if ((i + 1) % batchSize === 0 && i + 1 < targets.length) {
-        await sleep(10);
+    } finally {
+      if (udpSocketId) {
+        await fbApp
+          .invoke("network.udp.close", { socketId: udpSocketId })
+          .catch(() => null);
       }
     }
 
@@ -844,6 +989,19 @@ export class GlobalDharmaSendService {
         ? "delivered"
         : "sent",
     };
+  }
+
+  private async invokeUdpSendWithRetry(
+    method: "network.udp.send" | "network.udp.broadcast",
+    params: Record<string, unknown>,
+  ) {
+    let response: any = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fbApp.invoke<any>(method, params);
+      if (readNumber(response?.sentBytes, 0) > 0) return response;
+      if (attempt < 2) await sleep(8 * (attempt + 1));
+    }
+    return response;
   }
 
   async sendViaLegacyRustDelivery({

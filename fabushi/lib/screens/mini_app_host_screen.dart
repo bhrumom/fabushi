@@ -32,7 +32,6 @@ import '../services/alipay_service.dart'
 import '../services/dacheng_ai_service.dart';
 import '../services/desktop_control/desktop_control_bridge.dart';
 import '../services/dharma_publish_service.dart';
-import '../services/global_dharma_native_service.dart';
 import '../services/hotspot_manager_service.dart';
 import '../services/miniapp/miniapp_host_policy.dart';
 import '../services/miniapp/rust_miniapp_runtime.dart';
@@ -1881,12 +1880,18 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final port = _readUdpPort(params['port']);
     final payload = _decodeUdpPayload(params['data']);
     final address = await _resolveUdpAddress(host);
-    final sentBytes = socket.send(payload, address, port);
+    final sentBytes = await _sendUdpPayloadWithRetry(
+      socket,
+      payload,
+      address,
+      port,
+    );
     return {
       'socketId': socketId,
       'host': address.address,
       'port': port,
       'sentBytes': sentBytes,
+      'payloadBytes': payload.length,
     };
   }
 
@@ -1921,12 +1926,18 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     socket.broadcastEnabled = true;
     final address = await _resolveUdpAddress(host);
     try {
-      final sentBytes = socket.send(payload, address, port);
+      final sentBytes = await _sendUdpPayloadWithRetry(
+        socket,
+        payload,
+        address,
+        port,
+      );
       return {
         if (socketId.isNotEmpty) 'socketId': socketId,
         'host': address.address,
         'port': port,
         'sentBytes': sentBytes,
+        'payloadBytes': payload.length,
         'temporarySocket': socketId.isEmpty,
       };
     } finally {
@@ -2040,6 +2051,23 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     } catch (error) {
       throw MiniAppHostException('invalid_host', '无法解析 UDP 目标地址：$host');
     }
+  }
+
+  Future<int> _sendUdpPayloadWithRetry(
+    RawDatagramSocket socket,
+    Uint8List payload,
+    InternetAddress address,
+    int port,
+  ) async {
+    var sentBytes = 0;
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      sentBytes = socket.send(payload, address, port);
+      if (sentBytes > 0) return sentBytes;
+      if (attempt < 2) {
+        await Future<void>.delayed(Duration(milliseconds: 4 * (attempt + 1)));
+      }
+    }
+    return sentBytes;
   }
 
   Uint8List _decodeUdpPayload(Object? value) {
@@ -2810,11 +2838,6 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     }
 
     if (!AiBackendPolicy.isDesktopNative) {
-      final isGlobalDharmaJob = command.contains('global-dharma-worker') ||
-          arguments.any((arg) => arg.toString().contains('--job-file'));
-      if (isGlobalDharmaJob && GlobalDharmaNativeService.instance.isAvailable) {
-        return _executeGlobalDharmaNativeFromJob(title, arguments);
-      }
       throw const MiniAppHostException('unsupported_platform', '当前平台不支持执行终端命令');
     }
 
@@ -2823,9 +2846,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       widget.onCliStart?.call(title, taskId);
       final stdoutBuffer = StringBuffer();
       final stderrBuffer = StringBuffer();
+      final resolvedCommand = await _resolveRuntimeCommand(command);
 
       final process = await Process.start(
-        command,
+        resolvedCommand,
         arguments,
         workingDirectory: workingDirectory,
         runInShell: legacyShellPermission || params['runInShell'] == true,
@@ -2855,56 +2879,35 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _executeGlobalDharmaNativeFromJob(
-    String title,
-    List<String> arguments,
-  ) async {
-    try {
-      final jobFileIndex = arguments.indexOf('--job-file');
-      if (jobFileIndex == -1 || jobFileIndex + 1 >= arguments.length) {
-        throw const MiniAppHostException('invalid_request', '缺少 --job-file 参数');
-      }
-      final jobPath = arguments[jobFileIndex + 1];
-      final jobFile = File(jobPath);
-      if (!await jobFile.exists()) {
-        throw MiniAppHostException('file_not_found', '任务文件不存在: $jobPath');
-      }
-      final jobContent = await jobFile.readAsString();
-      final jobMap = jsonDecode(jobContent) as Map<String, dynamic>;
+  Future<String> _resolveRuntimeCommand(String command) async {
+    if (command.contains('/') || command.contains('\\')) return command;
+    if (command != 'cargo') return command;
 
-      final jobId = jobMap['jobId']?.toString() ?? 'gd_mobile_native';
-      final region = jobMap['region']?.toString() ?? 'all';
-      final port = (jobMap['port'] as num?)?.toInt() ?? 9999;
-      final packet = jobMap['packet'] as Map<String, dynamic>? ?? {};
+    final executable = Platform.isWindows ? 'cargo.exe' : 'cargo';
+    final home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    final configured = Platform.environment['CARGO'] ?? '';
+    final candidates = <String>[
+      if (configured.isNotEmpty) configured,
+      if (home.isNotEmpty) p.join(home, '.cargo', 'bin', executable),
+      if (Platform.isMacOS) '/opt/homebrew/bin/cargo',
+      if (Platform.isMacOS) '/usr/local/bin/cargo',
+      if (!Platform.isWindows) '/usr/bin/cargo',
+      if (Platform.isWindows)
+        p.join(
+          Platform.environment['USERPROFILE'] ?? '',
+          '.cargo',
+          'bin',
+          executable,
+        ),
+    ];
 
-      final taskId = DateTime.now().millisecondsSinceEpoch.toString();
-      widget.onCliStart?.call('$title (原生内存 FFI)', taskId);
-
-      final stdoutBuffer = StringBuffer();
-      final rawResultStr = await GlobalDharmaNativeService.instance.sendGlobalDharmaRaw(
-        jobId: jobId,
-        region: region,
-        port: port,
-        packet: packet,
-        onLog: (logLine) {
-          stdoutBuffer.writeln(logLine);
-          widget.onCliLog?.call(taskId, logLine);
-        },
-      );
-
-      stdoutBuffer.writeln(rawResultStr);
-      widget.onCliLog?.call(taskId, rawResultStr);
-      widget.onCliLog?.call(taskId, '\\n[原生进程发包结束，退出码: 0]');
-
-      return {
-        'ok': true,
-        'exitCode': 0,
-        'stdout': stdoutBuffer.toString(),
-        'stderr': '',
-      };
-    } catch (e) {
-      throw MiniAppHostException('execution_failed', '原生执行发包失败: $e');
+    for (final candidate in candidates) {
+      if (candidate.isEmpty) continue;
+      if (await File(candidate).exists()) return candidate;
     }
+    return command;
   }
 
   Future<Map<String, dynamic>> _browserOpen(Map<String, dynamic> params) async {
