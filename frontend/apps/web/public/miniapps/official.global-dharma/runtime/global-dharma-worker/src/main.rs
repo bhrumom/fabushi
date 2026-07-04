@@ -62,6 +62,7 @@ fn run() -> Result<(), String> {
         json_quote(&now_millis_string())
     ));
 
+    let mut udp_count = 0;
     for endpoint in endpoints {
         emit_raw(&format!(
             "{{\"type\":\"attempting\",\"jobId\":{},\"endpointId\":{},\"transport\":{},\"at\":{}}}",
@@ -73,6 +74,13 @@ fn run() -> Result<(), String> {
         let receipt = send_to_endpoint(&endpoint, &packet_body)?;
         emit_receipt(&job_id, &receipt);
         receipts.push(receipt);
+
+        if endpoint.transport == "udp" {
+            udp_count += 1;
+            if udp_count % 25 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
     }
 
     let bytes_sent = receipts
@@ -180,11 +188,26 @@ fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
     let datagrams = udp_datagrams(packet_body);
     let mut sent_bytes = 0usize;
     for datagram in datagrams {
-        sent_bytes = sent_bytes.saturating_add(
-            socket
-                .send_to(datagram.as_bytes(), &target)
-                .map_err(|error| format!("udp send failed: {error}"))?,
-        );
+        let mut retries = 5;
+        let mut delay = std::time::Duration::from_millis(2);
+        loop {
+            match socket.send_to(datagram.as_bytes(), &target) {
+                Ok(bytes) => {
+                    sent_bytes = sent_bytes.saturating_add(bytes);
+                    break;
+                }
+                Err(error) => {
+                    let os_err = error.raw_os_error();
+                    if (os_err == Some(55) || error.kind() == std::io::ErrorKind::WouldBlock) && retries > 0 {
+                        retries -= 1;
+                        std::thread::sleep(delay);
+                        delay *= 2;
+                        continue;
+                    }
+                    return Err(format!("udp send failed: {error}"));
+                }
+            }
+        }
     }
     Ok(Receipt {
         endpoint_id: endpoint.endpoint_id.clone(),
