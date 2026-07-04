@@ -116,6 +116,14 @@ function byteSize(textValue: string) {
   return new TextEncoder().encode(textValue).length;
 }
 
+function formatTrafficFromMB(value: number) {
+  const bytes = value * 1024 * 1024;
+  if (bytes > 0 && bytes < 1024) return `${Math.ceil(bytes)} B`;
+  if (bytes > 0 && bytes < 1024 * 1024)
+    return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${value.toFixed(4)} MB`;
+}
+
 function decodeBytesWithEncoding(bytes: Uint8Array, encodingHint?: string, sampleText?: string): string {
   const hint = (encodingHint || "utf-8").trim().toLowerCase();
   try {
@@ -329,6 +337,7 @@ export default function GlobalDharmaApp() {
       region: selectedRegion,
       loop: loopEnabled,
       commandId,
+      onLog: log,
     });
     const sentMB = result.bytesSent / (1024 * 1024);
     setStatus((prev) => ({
@@ -343,7 +352,7 @@ export default function GlobalDharmaApp() {
     }));
     const receiptText =
       result.receipts.length > 0
-        ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${sentMB.toFixed(4)} MB`
+        ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${formatTrafficFromMB(sentMB)}`
         : `发送已提交但暂无真实回执，未计入已发送数量`;
     log(`${receiptText}${result.jobId ? `，任务 ${result.jobId}` : ""}`);
     await postBotMessage(
@@ -494,7 +503,7 @@ export default function GlobalDharmaApp() {
           }
           if (command === "/status") {
             log(
-              `状态：回执 ${status.sentCount} 个，${status.sentMB.toFixed(4)} MB，${status.isTransferring ? "循环中" : "未循环"}`,
+              `状态：回执 ${status.sentCount} 个，${formatTrafficFromMB(status.sentMB)}，${status.isTransferring ? "循环中" : "未循环"}`,
             );
             return;
           }
@@ -617,7 +626,7 @@ export default function GlobalDharmaApp() {
         </div>
         <div>
           <span>真实发送数据</span>
-          <strong>{status.sentMB.toFixed(4)} MB</strong>
+          <strong>{formatTrafficFromMB(status.sentMB)}</strong>
         </div>
         <div>
           <span>最新状态</span>
