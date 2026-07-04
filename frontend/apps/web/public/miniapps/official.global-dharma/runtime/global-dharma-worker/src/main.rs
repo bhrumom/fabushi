@@ -7,9 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const SUCCESS_STATUS_MIN: u16 = 200;
 const SUCCESS_STATUS_MAX: u16 = 299;
+const UDP_SAFE_DATAGRAM_BYTES: usize = 8 * 1024;
+const UDP_CHUNK_PAYLOAD_BYTES: usize = 6 * 1024;
 
 static GEOIP_CSV_DATA: &str = include_str!("../data/geoip_targets.csv");
-
 
 #[derive(Clone, Debug)]
 struct Endpoint {
@@ -45,7 +46,8 @@ fn run() -> Result<(), String> {
     let job_path = read_arg_value("--job-file")?;
     let raw_job =
         fs::read_to_string(&job_path).map_err(|error| format!("read job file failed: {error}"))?;
-    let job_id = json_string(&raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
+    let job_id =
+        json_string(&raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
     let packet_body = extract_json_value(&raw_job, "packet")
         .map(str::to_string)
         .unwrap_or_else(|| "null".into());
@@ -167,16 +169,23 @@ fn send_http(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> 
 }
 
 fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
-    let socket = UdpSocket::bind(("0.0.0.0", 0))
-        .map_err(|error| format!("udp bind failed: {error}"))?;
+    let socket =
+        UdpSocket::bind(("0.0.0.0", 0)).map_err(|error| format!("udp bind failed: {error}"))?;
     if endpoint.host == "255.255.255.255" || endpoint.host.ends_with(".255") {
         socket
             .set_broadcast(true)
             .map_err(|error| format!("udp broadcast failed: {error}"))?;
     }
-    let sent_bytes = socket
-        .send_to(packet_body.as_bytes(), format!("{}:{}", endpoint.host, endpoint.port))
-        .map_err(|error| format!("udp send failed: {error}"))?;
+    let target = format!("{}:{}", endpoint.host, endpoint.port);
+    let datagrams = udp_datagrams(packet_body);
+    let mut sent_bytes = 0usize;
+    for datagram in datagrams {
+        sent_bytes = sent_bytes.saturating_add(
+            socket
+                .send_to(datagram.as_bytes(), &target)
+                .map_err(|error| format!("udp send failed: {error}"))?,
+        );
+    }
     Ok(Receipt {
         endpoint_id: endpoint.endpoint_id.clone(),
         channel: "udp".into(),
@@ -185,6 +194,56 @@ fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
         status_code: None,
         response_bytes: None,
     })
+}
+
+fn udp_datagrams(packet_body: &str) -> Vec<String> {
+    let packet_bytes = packet_body.as_bytes().len();
+    if packet_bytes <= UDP_SAFE_DATAGRAM_BYTES {
+        return vec![packet_body.to_string()];
+    }
+
+    let content_hash = json_string(packet_body, "contentHash").unwrap_or_default();
+    let chunks = split_utf8_chunks(packet_body, UDP_CHUNK_PAYLOAD_BYTES);
+    let chunk_count = chunks.len();
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, payload)| {
+            format!(
+                "{{\"type\":\"global_dharma_delivery_chunk\",\"contentHash\":{},\"chunkIndex\":{},\"chunkCount\":{},\"totalBytes\":{},\"encoding\":\"utf8-json\",\"payload\":{}}}",
+                json_quote(&content_hash),
+                index,
+                chunk_count,
+                packet_bytes,
+                json_quote(&payload)
+            )
+        })
+        .collect()
+}
+
+fn split_utf8_chunks(value: &str, max_bytes: usize) -> Vec<String> {
+    let max_bytes = max_bytes.max(1);
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    let mut current_bytes = 0usize;
+
+    for (index, ch) in value.char_indices() {
+        let char_bytes = ch.len_utf8();
+        if index > start && current_bytes + char_bytes > max_bytes {
+            chunks.push(value[start..index].to_string());
+            start = index;
+            current_bytes = 0;
+        }
+        current_bytes += char_bytes;
+    }
+
+    if start < value.len() {
+        chunks.push(value[start..].to_string());
+    }
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+    chunks
 }
 
 fn resolve_geoip_endpoints(region: &str, port: u16) -> Vec<Endpoint> {
@@ -196,12 +255,22 @@ fn resolve_geoip_endpoints(region: &str, port: u16) -> Vec<Endpoint> {
             let code = parts[0].trim().to_ascii_uppercase();
             let name = parts[1].trim();
             let ip = parts[2].trim();
-            
+
             let include = match reg.as_str() {
                 "ALL" | "GLOBAL" => true,
-                "EASTASIA" => ["CN", "JP", "KR", "KP", "MN", "TW", "HK", "MO"].contains(&code.as_str()),
-                "SOUTHEASTASIA" => ["SG", "MY", "TH", "VN", "ID", "PH", "MM", "KH", "LA", "BN", "TL"].contains(&code.as_str()),
-                "EUROPEAMERICA" => ["US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "CH", "SE", "NO", "FI", "DK", "BE", "AT", "IE", "PL", "PT", "GR", "RU", "UA", "BR", "MX", "AR", "CL", "CO", "PE"].contains(&code.as_str()),
+                "EASTASIA" => {
+                    ["CN", "JP", "KR", "KP", "MN", "TW", "HK", "MO"].contains(&code.as_str())
+                }
+                "SOUTHEASTASIA" => [
+                    "SG", "MY", "TH", "VN", "ID", "PH", "MM", "KH", "LA", "BN", "TL",
+                ]
+                .contains(&code.as_str()),
+                "EUROPEAMERICA" => [
+                    "US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "CH", "SE", "NO", "FI", "DK",
+                    "BE", "AT", "IE", "PL", "PT", "GR", "RU", "UA", "BR", "MX", "AR", "CL", "CO",
+                    "PE",
+                ]
+                .contains(&code.as_str()),
                 other => code == other,
             };
             if include {
@@ -248,7 +317,14 @@ fn parse_endpoints(raw_job: &str) -> Result<Vec<Endpoint>, String> {
         .into_iter()
         .map(|raw| {
             let transport = json_string(raw, "transport")
-                .unwrap_or_else(|| if json_string(raw, "url").is_some() { "http" } else { "udp" }.into())
+                .unwrap_or_else(|| {
+                    if json_string(raw, "url").is_some() {
+                        "http"
+                    } else {
+                        "udp"
+                    }
+                    .into()
+                })
                 .to_ascii_lowercase();
             let url = json_string(raw, "url").unwrap_or_default();
             let host = json_string(raw, "host").unwrap_or_else(|| "255.255.255.255".into());
@@ -264,16 +340,18 @@ fn parse_endpoints(raw_job: &str) -> Result<Vec<Endpoint>, String> {
                 transport,
                 endpoint_id,
                 url,
-                method: json_string(raw, "method").unwrap_or_else(|| "POST".into()).to_ascii_uppercase(),
+                method: json_string(raw, "method")
+                    .unwrap_or_else(|| "POST".into())
+                    .to_ascii_uppercase(),
                 host,
                 port,
                 timeout_ms: json_number(raw, "timeoutMs").unwrap_or(30_000),
-                max_body_bytes: json_number(raw, "maxBodyBytes").unwrap_or(2 * 1024 * 1024) as usize,
+                max_body_bytes: json_number(raw, "maxBodyBytes").unwrap_or(2 * 1024 * 1024)
+                    as usize,
             }
         })
         .collect())
 }
-
 
 fn split_endpoint_objects(raw: &str) -> Result<Vec<&str>, String> {
     let trimmed = raw.trim();
@@ -293,7 +371,8 @@ fn split_endpoint_objects(raw: &str) -> Result<Vec<&str>, String> {
         if trimmed.as_bytes()[index] != b'{' {
             return Err("endpoint array contains a non-object value".into());
         }
-        let end = balanced_end(trimmed, index).ok_or_else(|| "unclosed endpoint object".to_string())?;
+        let end =
+            balanced_end(trimmed, index).ok_or_else(|| "unclosed endpoint object".to_string())?;
         objects.push(&trimmed[index..end]);
         index = end;
     }
@@ -391,7 +470,6 @@ fn json_bool(raw: &str, key: &str) -> Option<bool> {
         None
     }
 }
-
 
 fn unquote_json_string(value: &str) -> String {
     let inner = &value[1..value.len().saturating_sub(1)];

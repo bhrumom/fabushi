@@ -14,6 +14,8 @@ static RUNNING_WORKERS: Lazy<Mutex<HashSet<u64>>> = Lazy::new(|| Mutex::new(Hash
 const IDLE_POLL_DELAY: Duration = Duration::from_millis(750);
 const SUCCESS_STATUS_MIN: u64 = 200;
 const SUCCESS_STATUS_MAX: u64 = 299;
+const UDP_SAFE_DATAGRAM_BYTES: usize = 8 * 1024;
+const UDP_CHUNK_PAYLOAD_BYTES: usize = 6 * 1024;
 
 pub(crate) fn ensure_running(client_id: u64, client: Arc<RuntimeClient>) {
     let should_spawn = RUNNING_WORKERS
@@ -199,38 +201,56 @@ fn send_http(job: &Value, endpoint: &Value) -> Result<Value, RuntimeError> {
 
 fn send_udp(job: &Value, endpoint: &Value) -> Result<Value, RuntimeError> {
     let packet = job.get("packet").cloned().unwrap_or(Value::Null);
-    let data_base64 = endpoint
-        .get("dataBase64")
-        .or_else(|| endpoint.get("data"))
+    let packet_body = endpoint_payload_body(endpoint).unwrap_or_else(|| packet_body(&packet));
+    let datagrams = udp_datagrams(&packet_body);
+    let socket_id = endpoint.get("socketId").and_then(Value::as_str);
+    let host = endpoint
+        .get("host")
         .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| general_purpose::STANDARD.encode(packet_body(&packet).as_bytes()));
-    let params = if let Some(socket_id) = endpoint.get("socketId").and_then(Value::as_str) {
-        json!({
-            "socketId": socket_id,
-            "host": required_endpoint_string(endpoint, "host")?,
-            "port": endpoint.get("port").cloned().unwrap_or(Value::Null),
-            "data": data_base64,
-        })
-    } else {
-        json!({
-            "host": endpoint
-                .get("host")
-                .and_then(Value::as_str)
-                .unwrap_or("255.255.255.255"),
-            "port": endpoint.get("port").cloned().unwrap_or(Value::Null),
-            "data": data_base64,
-        })
-    };
+        .unwrap_or("255.255.255.255");
+    let mut sent_bytes = 0u64;
+    let mut responses = Vec::new();
 
-    let response = if endpoint.get("socketId").and_then(Value::as_str).is_some() {
-        dispatcher::dispatch_call("network.udp.send", params)?.response
-    } else {
-        dispatcher::dispatch_call("network.udp.broadcast", params)?.response
-    };
+    for datagram in &datagrams {
+        let data_base64 = general_purpose::STANDARD.encode(datagram.as_bytes());
+        let params = if let Some(socket_id) = socket_id {
+            json!({
+                "socketId": socket_id,
+                "host": required_endpoint_string(endpoint, "host")?,
+                "port": endpoint.get("port").cloned().unwrap_or(Value::Null),
+                "data": data_base64,
+            })
+        } else {
+            json!({
+                "host": host,
+                "port": endpoint.get("port").cloned().unwrap_or(Value::Null),
+                "data": data_base64,
+            })
+        };
+
+        let response = if socket_id.is_some() {
+            dispatcher::dispatch_call("network.udp.send", params)?.response
+        } else {
+            dispatcher::dispatch_call("network.udp.broadcast", params)?.response
+        };
+        sent_bytes = sent_bytes.saturating_add(
+            response
+                .get("sentBytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(datagram.as_bytes().len() as u64),
+        );
+        responses.push(response);
+    }
+
+    let chunk_count = datagrams.len();
     Ok(json!({
         "transport": "udp",
-        "response": response,
+        "response": {
+            "sentBytes": sent_bytes,
+            "chunked": chunk_count > 1,
+            "chunkCount": chunk_count,
+            "responses": responses,
+        },
     }))
 }
 
@@ -321,6 +341,75 @@ fn packet_body(packet: &Value) -> String {
         .as_str()
         .map(str::to_string)
         .unwrap_or_else(|| packet.to_string())
+}
+
+fn endpoint_payload_body(endpoint: &Value) -> Option<String> {
+    let encoded = endpoint
+        .get("dataBase64")
+        .or_else(|| endpoint.get("data"))
+        .and_then(Value::as_str)?;
+    let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+fn udp_datagrams(packet_body: &str) -> Vec<String> {
+    let packet_bytes = packet_body.as_bytes().len();
+    if packet_bytes <= UDP_SAFE_DATAGRAM_BYTES {
+        return vec![packet_body.to_string()];
+    }
+
+    let content_hash = json_string(packet_body, "contentHash").unwrap_or_default();
+    let chunks = split_utf8_chunks(packet_body, UDP_CHUNK_PAYLOAD_BYTES);
+    let chunk_count = chunks.len();
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, payload)| {
+            json!({
+                "type": "global_dharma_delivery_chunk",
+                "contentHash": content_hash,
+                "chunkIndex": index,
+                "chunkCount": chunk_count,
+                "totalBytes": packet_bytes,
+                "encoding": "utf8-json",
+                "payload": payload,
+            })
+            .to_string()
+        })
+        .collect()
+}
+
+fn split_utf8_chunks(value: &str, max_bytes: usize) -> Vec<String> {
+    let max_bytes = max_bytes.max(1);
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    let mut current_bytes = 0usize;
+
+    for (index, ch) in value.char_indices() {
+        let char_bytes = ch.len_utf8();
+        if index > start && current_bytes + char_bytes > max_bytes {
+            chunks.push(value[start..index].to_string());
+            start = index;
+            current_bytes = 0;
+        }
+        current_bytes += char_bytes;
+    }
+
+    if start < value.len() {
+        chunks.push(value[start..].to_string());
+    }
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+    chunks
+}
+
+fn json_string(raw: &str, key: &str) -> Option<String> {
+    serde_json::from_str::<Value>(raw)
+        .ok()?
+        .get(key)?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn required_endpoint_string(endpoint: &Value, key: &str) -> Result<String, RuntimeError> {

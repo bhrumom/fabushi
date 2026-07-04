@@ -116,15 +116,73 @@ function byteSize(textValue: string) {
   return new TextEncoder().encode(textValue).length;
 }
 
+function formatTrafficFromMB(value: number) {
+  const bytes = value * 1024 * 1024;
+  if (bytes > 0 && bytes < 1024) return `${Math.ceil(bytes)} B`;
+  if (bytes > 0 && bytes < 1024 * 1024)
+    return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${value.toFixed(4)} MB`;
+}
+
+function decodeBytesWithEncoding(bytes: Uint8Array, encodingHint?: string, sampleText?: string): string {
+  const hint = (encodingHint || "utf-8").trim().toLowerCase();
+  try {
+    let text = new TextDecoder(hint, { fatal: false }).decode(bytes);
+    if (text.includes("") || hint === "utf-8" || hint === "utf8") {
+      const metaMatch = /charset\s*=\s*["']?([^\s;"'>]+)/i.exec(text || sampleText || "");
+      const metaEnc = metaMatch?.[1]?.trim().toLowerCase();
+      if (metaEnc && metaEnc !== hint && metaEnc !== "utf-8" && metaEnc !== "utf8") {
+        try {
+          const altText = new TextDecoder(metaEnc, { fatal: false }).decode(bytes);
+          if (!altText.includes("") || altText.length >= text.length) {
+            text = altText;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    return text;
+  } catch {
+    try {
+      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    } catch {
+      return "";
+    }
+  }
+}
+
+function decodeBase64ToText(base64: string, encodingHint?: string): string {
+  try {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const text = decodeBytesWithEncoding(bytes, encodingHint, binary);
+    if (text) return text;
+    return binary;
+  } catch {
+    try {
+      return window.atob(base64);
+    } catch {
+      return "";
+    }
+  }
+}
+
 function bodyTextFromHostResponse(response: any) {
-  if (typeof response?.body === "string" && response.body.length > 0)
-    return response.body;
   if (
     typeof response?.bodyBase64 === "string" &&
     response.bodyBase64.length > 0
   ) {
-    return window.atob(response.bodyBase64);
+    const text = decodeBase64ToText(
+      response.bodyBase64,
+      response?.bodyTextEncoding,
+    );
+    if (text && !text.includes("")) return text;
+    if (text && text.length > 0) return text;
   }
+  if (typeof response?.body === "string" && response.body.length > 0)
+    return response.body;
   return "";
 }
 
@@ -237,7 +295,13 @@ export default function GlobalDharmaApp() {
       headers: { Accept: "text/html,text/plain,application/xhtml+xml,*/*" },
     });
     if (!response.ok) throw new Error(`链接读取失败: HTTP ${response.status}`);
-    const prepared = buildPrepared(await response.text());
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    const contentType = response.headers.get("content-type") || "";
+    const headerMatch = /charset\s*=\s*["']?([^\s;"']+)/i.exec(contentType);
+    const headerEnc = headerMatch?.[1]?.trim().toLowerCase();
+    const rawText = decodeBytesWithEncoding(bytes, headerEnc);
+    const prepared = buildPrepared(rawText);
     if (prepared.text.length < 20) throw new Error("网页正文过短");
     log(`已通过浏览器 fetch 读取链接正文：${prepared.title}`);
     return prepared;
@@ -273,6 +337,7 @@ export default function GlobalDharmaApp() {
       region: selectedRegion,
       loop: loopEnabled,
       commandId,
+      onLog: log,
     });
     const sentMB = result.bytesSent / (1024 * 1024);
     setStatus((prev) => ({
@@ -287,7 +352,7 @@ export default function GlobalDharmaApp() {
     }));
     const receiptText =
       result.receipts.length > 0
-        ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${sentMB.toFixed(4)} MB`
+        ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${formatTrafficFromMB(sentMB)}`
         : `发送已提交但暂无真实回执，未计入已发送数量`;
     log(`${receiptText}${result.jobId ? `，任务 ${result.jobId}` : ""}`);
     await postBotMessage(
@@ -322,12 +387,12 @@ export default function GlobalDharmaApp() {
     try {
       log(
         fbApp.isHostEnv()
-          ? "正在启动小程序 Rust worker；将调用底层网络能力向全球真实 IP 投递..."
+          ? "正在准备全球目标 IP 队列并调用底层网络能力向真实 IP 投递..."
           : "正在通过 Web HTTP 执行真实发送...",
       );
       await postBotMessage(
         fbApp.isHostEnv()
-          ? "🌍 全球法布施启动中：正在加载全球各个国家与区域 IP 队列并初始化 Rust 引擎..."
+          ? "🌍 全球法布施启动中：正在准备全球目标 IP 队列并调用底层发包引擎..."
           : "🌍 全球法布施启动中：正在连接 Web HTTP 节点进行投递...",
         { updateKey: "gd_live_status" },
       );
@@ -438,7 +503,7 @@ export default function GlobalDharmaApp() {
           }
           if (command === "/status") {
             log(
-              `状态：回执 ${status.sentCount} 个，${status.sentMB.toFixed(4)} MB，${status.isTransferring ? "循环中" : "未循环"}`,
+              `状态：回执 ${status.sentCount} 个，${formatTrafficFromMB(status.sentMB)}，${status.isTransferring ? "循环中" : "未循环"}`,
             );
             return;
           }
@@ -561,7 +626,7 @@ export default function GlobalDharmaApp() {
         </div>
         <div>
           <span>真实发送数据</span>
-          <strong>{status.sentMB.toFixed(4)} MB</strong>
+          <strong>{formatTrafficFromMB(status.sentMB)}</strong>
         </div>
         <div>
           <span>最新状态</span>

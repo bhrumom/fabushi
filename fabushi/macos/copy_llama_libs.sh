@@ -28,4 +28,3 @@ echo "Copying Metal shader to ${RESOURCES_DIR}"
 cp -f "${LIBS_DIR}/ggml-metal.metal" "${RESOURCES_DIR}/"
 
 echo "llama.cpp libraries copied successfully"
-

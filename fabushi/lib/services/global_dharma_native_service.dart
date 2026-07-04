@@ -1,1 +1,2 @@
-export 'global_dharma_native_service_io.dart' if (dart.library.html) 'global_dharma_native_service_web.dart';
+// Native FFI delivery engine removed. Keep this placeholder temporarily so old
+// generated file lists do not break incremental tooling.
