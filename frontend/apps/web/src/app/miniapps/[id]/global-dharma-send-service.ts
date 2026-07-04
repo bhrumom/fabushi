@@ -676,10 +676,16 @@ async function buildMiniAppRustWorker(
 }
 
 async function writeWorkerJob(job: unknown) {
+  const jsonStr = JSON.stringify(job);
+  // 内存降级缓冲方案：优先使用 memory URI 传参，完全避免磁盘 IO 瓶颈与 jobs/ 目录下海量 JSON 文件堆积
+  const base64 = bytesToBase64(textBytes(jsonStr));
+  if (base64) {
+    return `memory://job:${base64}`;
+  }
   const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const result = await fbApp.invoke<any>("fs.writeFile", {
     path: `${RUST_WORKER_LOCAL_DIR}/jobs/${suffix}.json`,
-    content: JSON.stringify(job),
+    content: jsonStr,
   });
   const path = String(result?.path || "");
   if (!path) throw new Error("小程序 Rust worker job 写入失败");
