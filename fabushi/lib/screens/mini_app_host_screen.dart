@@ -2832,6 +2832,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         .toList();
     final workingDirectory = params['workingDirectory']?.toString();
     final title = params['title']?.toString() ?? '执行终端命令';
+    final silentCli = params['silentCli'] == true;
 
     if (command.isEmpty) {
       throw const MiniAppHostException('invalid_request', '命令不能为空');
@@ -2843,7 +2844,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
     try {
       final taskId = DateTime.now().millisecondsSinceEpoch.toString();
-      widget.onCliStart?.call(title, taskId);
+      if (!silentCli) {
+        widget.onCliStart?.call(title, taskId);
+      }
       final stdoutBuffer = StringBuffer();
       final stderrBuffer = StringBuffer();
       final resolvedCommand = await _resolveRuntimeCommand(command);
@@ -2857,16 +2860,22 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
       final stdoutDone = process.stdout.transform(utf8.decoder).forEach((data) {
         stdoutBuffer.write(data);
-        widget.onCliLog?.call(taskId, data);
+        if (!silentCli) {
+          widget.onCliLog?.call(taskId, data);
+        }
       });
       final stderrDone = process.stderr.transform(utf8.decoder).forEach((data) {
         stderrBuffer.write(data);
-        widget.onCliLog?.call(taskId, data);
+        if (!silentCli) {
+          widget.onCliLog?.call(taskId, data);
+        }
       });
 
       final exitCode = await process.exitCode;
       await Future.wait([stdoutDone, stderrDone]);
-      widget.onCliLog?.call(taskId, '\\n[进程已结束，退出码: $exitCode]');
+      if (!silentCli) {
+        widget.onCliLog?.call(taskId, '\\n[进程已结束，退出码: $exitCode]');
+      }
 
       return {
         'ok': exitCode == 0,
