@@ -109,6 +109,7 @@ export * from "./faliu-merit-benefits-t0278-juan9-pure-dharmakaya";
 export * from "./faliu-merit-benefits-t0278-juan9-final-exhortation";
 export * from "./faliu-merit-benefits-t0278-juan10";
 export * from "./faliu-merit-benefits-t0278-juan10-yama-palace";
+export * from "./faliu-merit-benefits-t0278-juan10-yama-zhilin";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -221,6 +222,7 @@ import * as t0278Juan9PureDharmakaya from "./faliu-merit-benefits-t0278-juan9-pu
 import * as t0278Juan9FinalExhortation from "./faliu-merit-benefits-t0278-juan9-final-exhortation";
 import * as t0278Juan10 from "./faliu-merit-benefits-t0278-juan10";
 import * as t0278Juan10YamaPalace from "./faliu-merit-benefits-t0278-juan10-yama-palace";
+import * as t0278Juan10YamaZhilin from "./faliu-merit-benefits-t0278-juan10-yama-zhilin";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -382,6 +384,7 @@ const overrideMeritBenefits = {
   "T0278:10": [
     ...t0278Juan10.T0278_JUAN_10_MERIT_BENEFITS,
     ...t0278Juan10YamaPalace.T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS,
+    ...t0278Juan10YamaZhilin.T0278_JUAN_10_YAMA_ZHILIN_MERIT_BENEFITS,
   ],
 };
 
