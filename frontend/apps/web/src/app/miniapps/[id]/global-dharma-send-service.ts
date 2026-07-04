@@ -96,6 +96,7 @@ const RUST_WORKER_FILES = [
 
 
 let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
+let preparedWasmModulePromise: Promise<WebAssembly.Module> | null = null;
 
 function endpointUrl() {
   const configured =
@@ -554,12 +555,20 @@ export class GlobalDharmaSendService {
       .toString(36)
       .slice(2, 8)}`;
 
-    const response = await fetch("/miniapps/official.global-dharma/runtime/global_dharma_native.wasm");
-    if (!response.ok) {
-      throw new Error(`无法获取 WebAssembly 模块：HTTP ${response.status}`);
+    if (!preparedWasmModulePromise) {
+      preparedWasmModulePromise = (async () => {
+        const response = await fetch("/miniapps/official.global-dharma/runtime/global_dharma_native.wasm");
+        if (!response.ok) {
+          throw new Error(`无法获取 WebAssembly 模块：HTTP ${response.status}`);
+        }
+        return await WebAssembly.compileStreaming(response);
+      })().catch((error) => {
+        preparedWasmModulePromise = null;
+        throw error;
+      });
     }
-
-    const { instance } = await WebAssembly.instantiateStreaming(response, {});
+    const module = await preparedWasmModulePromise;
+    const instance = await WebAssembly.instantiate(module, {});
     const exports = instance.exports as any;
     const memory = exports.memory as WebAssembly.Memory;
     const malloc = exports.malloc_rust_ffi as (size: number) => number;
@@ -612,15 +621,18 @@ export class GlobalDharmaSendService {
 
       const resultMap = JSON.parse(resultJsonStr);
       const rawReceipts = Array.isArray(resultMap?.receipts) ? resultMap.receipts : [];
-      const receipts: DharmaDeliveryReceipt[] = rawReceipts.map((item: any) => ({
-        countryCode: item?.countryCode,
-        nodeId: item?.nodeId || item?.endpointId || "Unknown",
-        channel: item?.channel === "udp" ? "udp" : "rust-http",
-        status: item?.status === "delivered" ? "delivered" : "sent",
-        bytesSent: Number(item?.bytesSent || item?.bytes || packetBytes),
-        deliveredAt: item?.deliveredAt || item?.at || new Date().toISOString(),
-        raw: item,
-      }));
+      const receipts: DharmaDeliveryReceipt[] = rawReceipts.map((item: any) => {
+        const reported = Number(item?.bytesSent ?? item?.bytes ?? 0);
+        return {
+          countryCode: item?.countryCode,
+          nodeId: item?.nodeId || item?.endpointId || "Unknown",
+          channel: item?.channel === "udp" ? "udp" : "rust-http",
+          status: item?.status === "delivered" ? "delivered" : "sent",
+          bytesSent: reported,
+          deliveredAt: item?.deliveredAt || item?.at || new Date().toISOString(),
+          raw: item,
+        };
+      });
 
       if (receipts.length === 0) {
         throw new Error("WebAssembly 引擎未生成有效回执");
@@ -772,8 +784,10 @@ export class GlobalDharmaSendService {
     const packetBody = JSON.stringify(packet);
     const packetBytes = textBytes(packetBody).byteLength;
     const receipts: DharmaDeliveryReceipt[] = [];
+    const batchSize = 25;
 
-    for (const target of targets) {
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
       const endpoint = endpointForTarget(target, packetBody);
       if (target.transport === "http") {
         const response = await fbApp.invoke<any>("network.http.fetch", {
@@ -799,23 +813,26 @@ export class GlobalDharmaSendService {
           deliveredAt: new Date().toISOString(),
           raw: response,
         });
-        continue;
+      } else {
+        const response = await fbApp.invoke<any>("network.udp.broadcast", {
+          host: endpoint.host,
+          port: endpoint.port,
+          data: endpoint.data,
+        });
+        const reportedBytes = readNumber(response?.sentBytes, 0);
+        receipts.push({
+          countryCode: target.countryCode,
+          nodeId: endpointIdForTarget(target),
+          channel: "udp",
+          status: "sent",
+          bytesSent: reportedBytes,
+          deliveredAt: new Date().toISOString(),
+          raw: response,
+        });
       }
-
-      const response = await fbApp.invoke<any>("network.udp.broadcast", {
-        host: endpoint.host,
-        port: endpoint.port,
-        data: endpoint.data,
-      });
-      receipts.push({
-        countryCode: target.countryCode,
-        nodeId: endpointIdForTarget(target),
-        channel: "udp",
-        status: "sent",
-        bytesSent: readNumber(response?.sentBytes, packetBytes),
-        deliveredAt: new Date().toISOString(),
-        raw: response,
-      });
+      if ((i + 1) % batchSize === 0 && i + 1 < targets.length) {
+        await sleep(10);
+      }
     }
 
     return {
@@ -963,15 +980,18 @@ export class GlobalDharmaSendService {
     const rawReceipts = Array.isArray(result?.receipts)
       ? result.receipts
       : events.filter((event: any) => event?.type === "receipt");
-    const receipts: DharmaDeliveryReceipt[] = rawReceipts.map((item: any) => ({
-      countryCode: item?.countryCode,
-      nodeId: item?.nodeId || item?.endpointId,
-      channel: item?.channel === "udp" ? "udp" : "rust-http",
-      status: item?.status === "delivered" ? "delivered" : "sent",
-      bytesSent: readNumber(item?.bytesSent || item?.bytes, fallbackBytes),
-      deliveredAt: item?.deliveredAt || item?.at || new Date().toISOString(),
-      raw: item,
-    }));
+    const receipts: DharmaDeliveryReceipt[] = rawReceipts.map((item: any) => {
+      const reported = readNumber(item?.bytesSent ?? item?.bytes, 0);
+      return {
+        countryCode: item?.countryCode,
+        nodeId: item?.nodeId || item?.endpointId,
+        channel: item?.channel === "udp" ? "udp" : "rust-http",
+        status: item?.status === "delivered" ? "delivered" : "sent",
+        bytesSent: reported,
+        deliveredAt: item?.deliveredAt || item?.at || new Date().toISOString(),
+        raw: item,
+      };
+    });
     if (receipts.length === 0) {
       throw new Error("Rust worker 没有输出真实发送回执");
     }
@@ -993,7 +1013,7 @@ export class GlobalDharmaSendService {
   ): DharmaDeliveryReceipt {
     const payload = receipt?.payload || {};
     const response = payload?.response || {};
-    const sentBytes = readNumber(response?.sentBytes, fallbackBytes);
+    const sentBytes = readNumber(response?.sentBytes, 0);
     return {
       countryCode: target.countryCode,
       nodeId:
@@ -1005,7 +1025,7 @@ export class GlobalDharmaSendService {
           ? "rust-http"
           : "udp",
       status: receipt?.status === "delivered" ? "delivered" : "sent",
-      bytesSent: sentBytes > 0 ? sentBytes : fallbackBytes,
+      bytesSent: sentBytes,
       deliveredAt: isoTimeFromMillis(receipt?.receivedAtMs),
       raw: receipt,
     };
@@ -1023,7 +1043,7 @@ export class GlobalDharmaSendService {
           nodeId: item?.node || item?.nodeId,
           channel,
           status: item?.status === "delivered" ? "delivered" : "queued",
-          bytesSent: Number(item?.bytes || bytesSent),
+          bytesSent: Number(item?.bytesSent ?? item?.bytes ?? 0),
           deliveredAt:
             item?.deliveredAt || item?.createdAt || new Date().toISOString(),
           raw: item,
