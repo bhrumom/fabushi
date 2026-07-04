@@ -154,7 +154,6 @@ export const T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "「此處無邊際，　　廣大如法界，\n一切無不至，　　湛然不遷變。\n若聞如是法，　　恭敬信樂者，\n永離三惡道，　　一切諸難苦。",
     anchorText: "此處無邊際，　　廣大如法界",
     note: "无畏林菩萨先赞此法广大如法界，并明说若闻如是法而恭敬信乐，永离三恶道与一切难苦。",
-    occurrence: 1,
   },
   {
     id: "t0278-010-066",
@@ -162,7 +161,6 @@ export const T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "往詣諸世界，　　無量不可數，\n聞此甚深法，　　憶念善受持。\n聞受大仙人，　　清淨深妙法，\n一向求菩提，　　究竟無上道。",
     anchorText: "聞此甚深法，　　憶念善受持",
     note: "此段将闻甚深法、忆念善受持，与闻受大仙人清净深妙法后一向求菩提、究竟无上道相连，适合作为闻持正法的劝修利益。",
-    occurrence: 1,
   },
   {
     id: "t0278-010-067",
@@ -170,7 +168,6 @@ export const T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "深信過去佛，　　及彼諸佛法，\n一切世間燈，　　除滅眾癡闇。\n若有得聞佛，　　無量自在力，\n決定信向者，　　具足人中雄。",
     anchorText: "深信過去佛，　　及彼諸佛法",
     note: "偈颂赞深信过去佛及诸佛法能见世间灯明除灭痴暗；得闻佛无量自在力而决定信向者，具足人中雄。",
-    occurrence: 1,
   },
   {
     id: "t0278-010-068",
@@ -178,7 +175,6 @@ export const T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "若能一心信，　　現在一切佛，\n彼成等正覺，　　開示無量義。\n無量無數劫，　　此法甚難值，\n若有得聞者，　　當知本願力。",
     anchorText: "無量無數劫，　　此法甚難值",
     note: "此段说明现前诸佛成正觉开示无量义，并赞此法无量劫甚难值遇；若得闻此法，当知是本愿力所成。",
-    occurrence: 1,
   },
   {
     id: "t0278-010-069",
@@ -186,7 +182,6 @@ export const T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     text: "如是佛深法，　　悉能善受持，\n廣為眾生說，　　是人難思議。\n是故勤精進，　　修行大莊嚴，\n聞持是正法，　　究竟得菩提。」",
     anchorText: "如是佛深法，　　悉能善受持",
     note: "结偈明说能善受持佛深法、广为众生宣说者不可思议，并劝勤精进修行大庄严，闻持正法究竟得菩提。",
-    occurrence: 1,
   },
   {
     id: "t0278-010-070",
