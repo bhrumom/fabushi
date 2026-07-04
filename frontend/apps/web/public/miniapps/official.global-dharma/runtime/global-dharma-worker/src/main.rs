@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::UdpSocket;
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -43,9 +43,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let job_path = read_arg_value("--job-file")?;
-    let raw_job =
-        fs::read_to_string(&job_path).map_err(|error| format!("read job file failed: {error}"))?;
+    let raw_job = read_job_content()?;
     let job_id =
         json_string(&raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
     let packet_body = extract_json_value(&raw_job, "packet")
@@ -540,6 +538,82 @@ fn parse_curl_status(stdout: &str) -> Result<(&str, u16), String> {
     Ok((body, status))
 }
 
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut buffer = 0u32;
+    let mut bits = 0;
+
+    for byte in input.bytes() {
+        if byte == b'=' {
+            break;
+        }
+        let val = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b' ' | b'\r' | b'\n' | b'\t' => continue,
+            _ => return Err(format!("invalid base64 char: {}", byte as char)),
+        };
+        buffer = (buffer << 6) | (val as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+fn read_job_content() -> Result<String, String> {
+    let args = env::args().collect::<Vec<_>>();
+    if let Some(pair) = args.windows(2).find(|pair| pair[0] == "--job-file") {
+        let val = &pair[1];
+        if let Some(base64_str) = val
+            .strip_prefix("memory://job:")
+            .or_else(|| val.strip_prefix("memory://"))
+        {
+            let bytes = decode_base64(base64_str)?;
+            String::from_utf8(bytes).map_err(|e| format!("decode utf8 failed: {e}"))
+        } else if val == "-" || val == "stdin" || val == "memory://stdin" {
+            let mut content = String::new();
+            std::io::stdin()
+                .read_to_string(&mut content)
+                .map_err(|error| format!("read stdin failed: {error}"))?;
+            Ok(content)
+        } else {
+            fs::read_to_string(val).map_err(|error| format!("read job file failed: {error}"))
+        }
+    } else if let Some(pair) = args.windows(2).find(|pair| pair[0] == "--job-data") {
+        let val = &pair[1];
+        if let Some(base64_str) = val
+            .strip_prefix("memory://job:")
+            .or_else(|| val.strip_prefix("memory://"))
+        {
+            let bytes = decode_base64(base64_str)?;
+            String::from_utf8(bytes).map_err(|e| format!("decode utf8 failed: {e}"))
+        } else if val.starts_with('{') {
+            Ok(val.clone())
+        } else {
+            let bytes = decode_base64(val)?;
+            String::from_utf8(bytes).map_err(|e| format!("decode utf8 failed: {e}"))
+        }
+    } else {
+        let mut content = String::new();
+        std::io::stdin()
+            .read_to_string(&mut content)
+            .map_err(|error| format!("read stdin failed: {error}"))?;
+        if content.trim().is_empty() {
+            Err("missing required argument --job-file or stdin content".into())
+        } else {
+            Ok(content)
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn read_arg_value(name: &str) -> Result<String, String> {
     let args = env::args().collect::<Vec<_>>();
     args.windows(2)
@@ -650,4 +724,15 @@ fn emit_error(error: &str) {
 
 fn emit_raw(value: &str) {
     println!("{value}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_base64() {
+        let decoded = decode_base64("eyJqb2JJZCI6InRlc3QifQ==").unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "{\"jobId\":\"test\"}");
+    }
 }
