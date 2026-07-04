@@ -585,6 +585,44 @@ async function ensureCargoToolchain(onLog?: (message: string) => void) {
   return cargoToolchainPromise;
 }
 
+async function ensureRustWorkerDaemon(
+  prepared: PreparedWorker,
+  onLog?: (message: string) => void,
+): Promise<boolean> {
+  try {
+    const check = await fbApp.invoke<any>("localLoopback.fetch", {
+      url: "http://127.0.0.1:18888/status",
+      method: "GET",
+      timeoutMs: 600,
+    });
+    if (check && check.status === 200) return true;
+  } catch {
+    // 尚未启动
+  }
+
+  onLog?.("检测到发送任务，正在自举启动后台常驻守护服务 (Loopback Daemon 18888)...");
+  try {
+    fbApp.invoke<any>("runtime.process.execute", {
+      command: prepared.binaryPath,
+      arguments: ["--daemon", "18888"],
+    }).catch(() => {});
+  } catch {
+    // 忽略异常，尝试后续探活
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  try {
+    const check = await fbApp.invoke<any>("localLoopback.fetch", {
+      url: "http://127.0.0.1:18888/status",
+      method: "GET",
+      timeoutMs: 1000,
+    });
+    return check && check.status === 200;
+  } catch {
+    return false;
+  }
+}
+
 async function prepareMiniAppRustWorker(
   onLog?: (message: string) => void,
 ): Promise<PreparedWorker> {
@@ -677,14 +715,19 @@ async function buildMiniAppRustWorker(
 
 async function writeWorkerJob(job: unknown) {
   const jsonStr = JSON.stringify(job);
-  // 内存降级缓冲方案：优先使用 memory URI 传参，完全避免磁盘 IO 瓶颈与 jobs/ 目录下海量 JSON 文件堆积
-  const base64 = bytesToBase64(textBytes(jsonStr));
-  if (base64) {
-    return `memory://job:${base64}`;
+  // 内存与文件双轨道自适应降级缓冲方案：
+  // 1. 当包体较小（<2KB，安全范围内）优先使用 memory URI 传参，极致速度，完全避免磁盘 IO；
+  // 2. 当为长篇经典（>=2KB，如《大佛顶首楞严经》）时，平滑切换为写入固定槽位缓冲池，彻底杜绝 OS 命令行超长参数卡死死锁；
+  // 3. 采用 4 槽位轮换机制（job_slot_0.json ~ job_slot_3.json），在无删除权限下从机制上保障本地最多仅保留 4 个临时文件，零垃圾堆积！
+  if (jsonStr.length < 2048) {
+    const base64 = bytesToBase64(textBytes(jsonStr));
+    if (base64) {
+      return `memory://job:${base64}`;
+    }
   }
-  const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const slot = Math.abs(Date.now() % 4);
   const result = await fbApp.invoke<any>("fs.writeFile", {
-    path: `${RUST_WORKER_LOCAL_DIR}/jobs/${suffix}.json`,
+    path: `${RUST_WORKER_LOCAL_DIR}/jobs/job_slot_${slot}.json`,
     content: jsonStr,
   });
   const path = String(result?.path || "");
@@ -984,9 +1027,37 @@ export class GlobalDharmaSendService {
       },
     };
 
+    const prepared = await prepareMiniAppRustWorker(onLog);
+    const isDaemonOnline = await ensureRustWorkerDaemon(prepared, onLog);
+    if (isDaemonOnline) {
+      onLog?.("通过后台 18888 守护服务 HTTP POST 纯内在线流式通道即时发包 (Memory Stream IPC)...");
+      try {
+        const resp = await fbApp.invoke<any>("localLoopback.fetch", {
+          url: "http://127.0.0.1:18888/send",
+          method: "POST",
+          body: JSON.stringify(job),
+          timeoutMs: 60000,
+        });
+        if (resp && resp.status === 200 && resp.data) {
+          const resData = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
+          if (resData.ok) {
+            await writeWorkerBuildCache(prepared);
+            return {
+              contentHash,
+              bytesSent: resData.bytesSent || packetBytes * targets.length,
+              receipts: [],
+              jobId,
+              status: "sent",
+            };
+          }
+        }
+      } catch (err) {
+        onLog?.(`流式通道推流异常：${errorMessage(err)}。平滑降级为离线独立命令行模式...`);
+      }
+    }
+
     const jobPath = await writeWorkerJob(job);
     let processResult: any;
-    const prepared = await prepareMiniAppRustWorker(onLog);
     try {
       processResult = await runHostProcess(
         "全球法布施 Rust worker",

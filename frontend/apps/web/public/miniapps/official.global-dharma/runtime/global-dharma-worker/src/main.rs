@@ -43,14 +43,115 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let args: Vec<String> = env::args().collect();
+    if let Some(pos) = args.iter().position(|arg| arg == "--serve" || arg == "--daemon") {
+        let port = args.get(pos + 1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(18888);
+        return run_daemon(port);
+    }
     let raw_job = read_job_content()?;
+    execute_job_payload(&raw_job).map(|_| ())
+}
+
+fn run_daemon(port: u16) -> Result<(), String> {
+    use std::net::TcpListener;
+    let address = format!("127.0.0.1:{port}");
+    let listener = TcpListener::bind(&address)
+        .map_err(|e| format!("bind daemon port {port} failed: {e}"))?;
+    emit_raw(&format!(
+        "{{\"type\":\"daemon_started\",\"port\":{},\"at\":{}}}",
+        port,
+        json_quote(&now_millis_string())
+    ));
+    for stream in listener.incoming() {
+        if let Ok(mut stream) = stream {
+            let _ = handle_daemon_connection(&mut stream);
+        }
+    }
+    Ok(())
+}
+
+fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), String> {
+    let mut buffer = [0u8; 8192];
+    let mut read_bytes = 0;
+    loop {
+        match stream.read(&mut buffer[read_bytes..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                read_bytes += n;
+                if buffer[..read_bytes].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+                if read_bytes >= buffer.len() {
+                    break;
+                }
+            }
+            Err(e) => return Err(format!("read socket error: {e}")),
+        }
+    }
+    let header_str = String::from_utf8_lossy(&buffer[..read_bytes]);
+    let mut content_length: usize = 0;
+    for line in header_str.lines() {
+        if let Some(len_str) = line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:")) {
+            content_length = len_str.trim().parse().unwrap_or(0);
+        }
+    }
+    let header_end = buffer[..read_bytes]
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 4)
+        .unwrap_or(read_bytes);
+
+    let mut body_bytes = buffer[header_end..read_bytes].to_vec();
+    while body_bytes.len() < content_length {
+        let mut chunk = [0u8; 8192];
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => body_bytes.extend_from_slice(&chunk[..n]),
+            Err(e) => return Err(format!("read body error: {e}")),
+        }
+    }
+
+    let first_line = header_str.lines().next().unwrap_or("");
+    let (response_status, response_json) = if first_line.contains(" /status") || first_line.contains(" /ping") {
+        ("200 OK", format!("{{\"status\":\"ok\",\"daemon\":true,\"version\":\"0.2.0\",\"at\":{}}}", now_millis_string()))
+    } else if first_line.contains(" /send") {
+        match String::from_utf8(body_bytes) {
+            Ok(body_str) => match execute_job_payload(&body_str) {
+                Ok((bytes_sent, receipt_count)) => (
+                    "200 OK",
+                    format!("{{\"ok\":true,\"bytesSent\":{bytes_sent},\"receiptCount\":{receipt_count}}}"),
+                ),
+                Err(err) => (
+                    "500 Internal Server Error",
+                    format!("{{\"ok\":false,\"error\":{}}}", json_quote(&err)),
+                ),
+            },
+            Err(err) => (
+                "400 Bad Request",
+                format!("{{\"ok\":false,\"error\":{}}}", json_quote(&format!("invalid utf8: {err}"))),
+            ),
+        }
+    } else {
+        ("404 Not Found", "{\"error\":\"not_found\"}".to_string())
+    };
+
+    let response = format!(
+        "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_json}",
+        response_json.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+    Ok(())
+}
+
+fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
     let job_id =
-        json_string(&raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
-    let packet_body = extract_json_value(&raw_job, "packet")
+        json_string(raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
+    let packet_body = extract_json_value(raw_job, "packet")
         .map(str::to_string)
         .unwrap_or_else(|| "null".into());
     let content_hash = json_string(&packet_body, "contentHash").unwrap_or_default();
-    let endpoints = parse_endpoints(&raw_job)?;
+    let endpoints = parse_endpoints(raw_job)?;
     let mut receipts = Vec::new();
 
     emit_raw(&format!(
@@ -86,7 +187,7 @@ fn run() -> Result<(), String> {
         .map(|receipt| receipt.bytes_sent)
         .sum::<usize>();
     emit_result(&job_id, &content_hash, bytes_sent, &receipts);
-    Ok(())
+    Ok((bytes_sent, receipts.len()))
 }
 
 fn send_to_endpoint(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
@@ -734,5 +835,34 @@ mod tests {
     fn test_decode_base64() {
         let decoded = decode_base64("eyJqb2JJZCI6InRlc3QifQ==").unwrap();
         assert_eq!(String::from_utf8(decoded).unwrap(), "{\"jobId\":\"test\"}");
+    }
+
+    #[test]
+    fn test_execute_job_payload() {
+        let dummy_job = r#"{"jobId":"test-job-1","packet":{"contentHash":"hash123"},"endpoints":[{"transport":"udp","endpointId":"ep1","host":"127.0.0.1","port":9999,"url":"udp://127.0.0.1:9999"}]}"#;
+        let res = execute_job_payload(dummy_job);
+        assert!(res.is_ok());
+        let (bytes, count) = res.unwrap();
+        assert!(bytes > 0);
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_daemon_http_server() {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+        let port = 18899;
+        std::thread::spawn(move || {
+            let _ = run_daemon(port);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect to daemon");
+        stream.write_all(b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").expect("write get status");
+        let mut resp = [0u8; 1024];
+        let n = stream.read(&mut resp).expect("read status response");
+        let resp_str = String::from_utf8_lossy(&resp[..n]);
+        assert!(resp_str.contains("200 OK"));
+        assert!(resp_str.contains("\"daemon\":true"));
     }
 }
