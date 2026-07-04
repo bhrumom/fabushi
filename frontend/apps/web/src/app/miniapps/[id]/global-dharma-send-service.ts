@@ -69,6 +69,7 @@ type DeliveryTarget =
 type PreparedWorker = {
   manifestPath: string;
   binaryPath: string;
+  sourceHash: string;
 };
 
 const MINIAPP_ID = "official.global-dharma";
@@ -93,9 +94,11 @@ const RUST_WORKER_PUBLIC_DIR =
   "/miniapps/official.global-dharma/runtime/global-dharma-worker";
 const RUST_WORKER_FILES = [
   "Cargo.toml",
+  "Cargo.lock",
   "src/main.rs",
   "data/geoip_targets.csv",
 ] as const;
+const RUST_WORKER_BUILD_CACHE = `${RUST_WORKER_LOCAL_DIR}/.fabushi-worker-build.json`;
 
 
 let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
@@ -439,6 +442,63 @@ function processOutput(result: any) {
   return stderr || stdout || `exit ${processExitCode(result)}`;
 }
 
+async function readLocalTextFile(path: string) {
+  const result = await fbApp.invoke<any>("fs.readFile", { path });
+  return {
+    content: String(result?.content || ""),
+    path: String(result?.path || ""),
+  };
+}
+
+async function writeLocalTextFile(path: string, content: string) {
+  const result = await fbApp.invoke<any>("fs.writeFile", { path, content });
+  return String(result?.path || "");
+}
+
+async function writeLocalTextFileIfChanged(path: string, content: string) {
+  try {
+    const existing = await readLocalTextFile(path);
+    if (existing.content === content && existing.path) {
+      return { path: existing.path, changed: false };
+    }
+  } catch {
+    // Missing local worker files are expected on first use.
+  }
+  return { path: await writeLocalTextFile(path, content), changed: true };
+}
+
+async function readWorkerBuildCache() {
+  try {
+    const existing = await readLocalTextFile(RUST_WORKER_BUILD_CACHE);
+    return JSON.parse(existing.content) as {
+      sourceHash?: string;
+      binaryPath?: string;
+      builtAt?: string;
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeWorkerBuildCache(worker: PreparedWorker) {
+  try {
+    await writeLocalTextFile(
+      RUST_WORKER_BUILD_CACHE,
+      JSON.stringify(
+        {
+          sourceHash: worker.sourceHash,
+          binaryPath: worker.binaryPath,
+          builtAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+    );
+  } catch {
+    // Cache metadata should never block a successful send.
+  }
+}
+
 async function runHostProcess(
   title: string,
   command: string,
@@ -531,14 +591,19 @@ async function prepareMiniAppRustWorker(
   if (preparedWorkerPromise) return preparedWorkerPromise;
   preparedWorkerPromise = (async () => {
     let manifestPath = "";
+    let sourceChanged = false;
+    const sourceParts: string[] = [];
     for (const file of RUST_WORKER_FILES) {
       const content = await fetchTextAsset(`${RUST_WORKER_PUBLIC_DIR}/${file}`);
-      const writeResult = await fbApp.invoke<any>("fs.writeFile", {
-        path: `${RUST_WORKER_LOCAL_DIR}/${file}`,
+      sourceParts.push(`${file}\0${content.length}\0${content}`);
+      const writeResult = await writeLocalTextFileIfChanged(
+        `${RUST_WORKER_LOCAL_DIR}/${file}`,
         content,
-      });
+      );
+      sourceChanged =
+        sourceChanged || (file !== "Cargo.lock" && writeResult.changed);
       if (file === "Cargo.toml") {
-        manifestPath = String(writeResult?.path || "");
+        manifestPath = writeResult.path;
       }
     }
     if (!manifestPath) {
@@ -555,36 +620,59 @@ async function prepareMiniAppRustWorker(
       /Cargo\.toml$/i,
       `target/release/${binaryName}`,
     );
+    const sourceHash = await sha256Hex(sourceParts.join("\n"));
+    const worker = { manifestPath, binaryPath, sourceHash };
+    const buildCache = await readWorkerBuildCache();
+    const hasMatchingBuildCache =
+      buildCache?.sourceHash === sourceHash &&
+      buildCache?.binaryPath === binaryPath;
 
-    await ensureCargoToolchain(onLog);
-
-    const buildResult = await runHostProcess(
-      "构建全球法布施 Rust worker (一次性)",
-      "cargo",
-      [
-        "build",
-        "--release",
-        "--quiet",
-        "--manifest-path",
-        manifestPath,
-      ],
-      { silentCli: false },
-    );
-    const buildExitCode = Number(buildResult?.exitCode ?? -1);
-    if (buildExitCode !== 0) {
-      const stderr = String(buildResult?.stderr || "");
-      const stdout = String(buildResult?.stdout || "");
-      throw new Error(
-        `Rust worker 构建失败: ${stderr.trim() || stdout.trim() || `exit ${buildExitCode}`}`,
+    if (sourceChanged || (buildCache && !hasMatchingBuildCache)) {
+      onLog?.("Rust worker 源码已更新，开始一次性离线构建本机 release 程序。");
+      await buildMiniAppRustWorker(worker, onLog);
+    } else {
+      onLog?.(
+        hasMatchingBuildCache
+          ? "Rust worker 本机 release 缓存命中，跳过 Cargo 构建。"
+          : "Rust worker 源码未变化，优先复用现有 release 程序。",
       );
     }
 
-    return { manifestPath, binaryPath };
+    return worker;
   })().catch((error) => {
     preparedWorkerPromise = null;
     throw error;
   });
   return preparedWorkerPromise;
+}
+
+async function buildMiniAppRustWorker(
+  worker: PreparedWorker,
+  onLog?: (message: string) => void,
+) {
+  await ensureCargoToolchain(onLog);
+
+  const buildResult = await runHostProcess(
+    "构建 Rust worker (一次性)",
+    "cargo",
+    [
+      "build",
+      "--release",
+      "--locked",
+      "--offline",
+      "--quiet",
+      "--manifest-path",
+      worker.manifestPath,
+    ],
+    { silentCli: false },
+  );
+  const buildExitCode = Number(buildResult?.exitCode ?? -1);
+  if (buildExitCode !== 0) {
+    const output = processOutput(buildResult);
+    throw new Error(`Rust worker 离线构建失败: ${output}`);
+  }
+  await writeWorkerBuildCache(worker);
+  onLog?.("Rust worker release 程序已就绪，后续启动不再调用 Cargo。");
 }
 
 async function writeWorkerJob(job: unknown) {
@@ -899,21 +987,39 @@ export class GlobalDharmaSendService {
         prepared.binaryPath,
         ["--job-file", jobPath],
       );
-    } catch {
-      processResult = await runHostProcess(
-        "全球法布施 Rust worker (cargo)",
-        "cargo",
-        [
-          "run",
-          "--release",
-          "--quiet",
-          "--manifest-path",
-          prepared.manifestPath,
-          "--",
-          "--job-file",
-          jobPath,
-        ],
+    } catch (error) {
+      onLog?.(
+        `直接启动 release worker 失败：${errorMessage(error)}。正在重建本机 worker 后重试。`,
       );
+      await buildMiniAppRustWorker(prepared, onLog);
+      try {
+        processResult = await runHostProcess(
+          "全球法布施 Rust worker",
+          prepared.binaryPath,
+          ["--job-file", jobPath],
+        );
+      } catch (retryError) {
+        onLog?.(
+          `release worker 重试仍失败：${errorMessage(retryError)}。改用 Cargo 兼容模式。`,
+        );
+        processResult = await runHostProcess(
+          "Rust worker Cargo 兼容模式",
+          "cargo",
+          [
+            "run",
+            "--release",
+            "--locked",
+            "--offline",
+            "--quiet",
+            "--manifest-path",
+            prepared.manifestPath,
+            "--",
+            "--job-file",
+            jobPath,
+          ],
+          { silentCli: false },
+        );
+      }
     }
     const exitCode = Number(processResult?.exitCode ?? -1);
     const stdout = String(processResult?.stdout || "");
@@ -921,6 +1027,7 @@ export class GlobalDharmaSendService {
     if (exitCode !== 0) {
       throw new Error(stderr.trim() || stdout.trim() || `exit ${exitCode}`);
     }
+    await writeWorkerBuildCache(prepared);
     return this.normalizeWorkerResult(contentHash, packetBytes, stdout, jobId);
   }
 
