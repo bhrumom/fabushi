@@ -176,8 +176,8 @@ fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
 
         if endpoint.transport == "udp" {
             udp_count += 1;
-            if udp_count % 25 == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+            if udp_count % 5 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(3));
             }
         }
     }
@@ -287,20 +287,29 @@ fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
     let datagrams = udp_datagrams(packet_body);
     let mut sent_bytes = 0usize;
     for datagram in datagrams {
-        let mut retries = 5;
+        let mut retries = 40;
         let mut delay = std::time::Duration::from_millis(2);
         loop {
             match socket.send_to(datagram.as_bytes(), &target) {
                 Ok(bytes) => {
                     sent_bytes = sent_bytes.saturating_add(bytes);
+                    // 微秒级让出 CPU，给网卡底层的套接字缓冲区腾出充裕的网口发送吞吐时间
+                    std::thread::sleep(std::time::Duration::from_micros(400));
                     break;
                 }
                 Err(error) => {
                     let os_err = error.raw_os_error();
-                    if (os_err == Some(55) || error.kind() == std::io::ErrorKind::WouldBlock) && retries > 0 {
+                    let is_buffer_busy = os_err == Some(55)
+                        || os_err == Some(105)
+                        || os_err == Some(10055)
+                        || os_err == Some(11)
+                        || error.kind() == std::io::ErrorKind::WouldBlock;
+                    if is_buffer_busy && retries > 0 {
                         retries -= 1;
                         std::thread::sleep(delay);
-                        delay *= 2;
+                        if delay < std::time::Duration::from_millis(30) {
+                            delay = delay.saturating_mul(2);
+                        }
                         continue;
                     }
                     return Err(format!("udp send failed: {error}"));

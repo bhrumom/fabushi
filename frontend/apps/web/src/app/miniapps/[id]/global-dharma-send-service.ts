@@ -767,7 +767,7 @@ export class GlobalDharmaSendService {
     } catch (error) {
       const message = `小程序 Rust worker: ${errorMessage(error)}`;
       failures.push(message);
-      options.onLog?.(`Rust worker 未启用，准备降级到宿主系统网络：${message}`);
+      options.onLog?.(`Rust 引擎发包遭遇网络层限制，准备平滑降级到宿主系统网络：${message}`);
     }
 
     try {
