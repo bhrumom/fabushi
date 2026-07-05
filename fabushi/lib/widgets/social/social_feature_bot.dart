@@ -119,6 +119,7 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
             'auth.session',
             'payments.alipay',
             'files.pick',
+            'network.http',
             'network.udp',
             'network.interfaces',
             'system.keepAwake',
@@ -127,6 +128,9 @@ extension SocialFeatureBotTypeX on SocialFeatureBotType {
             'runtime.storage',
             'runtime.file',
             'globalDharma.delivery',
+            'local.loopback',
+            'fs.readWrite',
+            'runtime.process',
             'share.chat',
           ],
         );

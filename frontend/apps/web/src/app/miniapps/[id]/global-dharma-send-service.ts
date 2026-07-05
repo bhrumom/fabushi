@@ -34,7 +34,19 @@ export type DharmaSendResult = {
   receipts: DharmaDeliveryReceipt[];
   jobId?: string;
   jobIds?: string[];
-  status: "delivered" | "queued" | "sent";
+  status: "delivered" | "queued" | "sent" | "running";
+};
+
+export type DharmaDaemonStatus = {
+  ok: boolean;
+  daemon: boolean;
+  status?: string;
+  version?: string;
+  source?: string;
+  jobs: any[];
+  job?: any;
+  events: any[];
+  cursor: number;
 };
 
 type SendOptions = {
@@ -84,11 +96,13 @@ const DEFAULT_HTTP_TARGETS: HttpTarget[] = [
     nodeId: "jsonplaceholder-global",
   },
 ];
+const RUST_DAEMON_BASE_URL = "http://127.0.0.1:18888";
 const DEFAULT_UDP_PORT = 9999;
 const UDP_SAFE_DATAGRAM_BYTES = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES = 6 * 1024;
 const RUST_DELIVERY_RECEIPT_TIMEOUT_MS = 45000;
 const RUST_DELIVERY_RECEIPT_POLL_MS = 650;
+const DAEMON_LOOP_INTERVAL_MS = 30000;
 const RUST_WORKER_LOCAL_DIR = "runtime/global-dharma-worker";
 const RUST_WORKER_PUBLIC_DIR =
   "/miniapps/official.global-dharma/runtime/global-dharma-worker";
@@ -442,6 +456,85 @@ function processOutput(result: any) {
   return stderr || stdout || `exit ${processExitCode(result)}`;
 }
 
+function loopbackStatusCode(result: any) {
+  return readNumber(result?.statusCode ?? result?.status, 0);
+}
+
+function parseLoopbackJson(result: any) {
+  const data = result?.data;
+  if (data && typeof data === "object") return data;
+  const body = typeof result?.body === "string"
+    ? result.body
+    : typeof data === "string"
+      ? data
+      : "";
+  if (!body.trim()) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    return {};
+  }
+}
+
+function encodeQuery(value: string) {
+  return encodeURIComponent(value);
+}
+
+async function fetchDaemonJson(
+  path: string,
+  options: { method?: string; body?: string; timeoutMs?: number } = {},
+) {
+  const url = `${RUST_DAEMON_BASE_URL}${path}`;
+  const method = options.method || "GET";
+  const timeoutMs = options.timeoutMs ?? 2000;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (options.body != null) headers["Content-Type"] = "application/json";
+
+  if (typeof fetch === "function") {
+    const controller =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer =
+      controller && typeof window !== "undefined"
+        ? window.setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: options.body,
+        cache: "no-store",
+        signal: controller?.signal,
+      });
+      const text = await response.text();
+      let data: any = {};
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { raw: text };
+        }
+      }
+      return { statusCode: response.status, data, via: "direct" as const };
+    } catch (error) {
+      if (!fbApp.isHostEnv()) throw error;
+    } finally {
+      if (timer !== null) window.clearTimeout(timer);
+    }
+  }
+
+  const response = await fbApp.invoke<any>("localLoopback.fetch", {
+    url,
+    method,
+    body: options.body,
+    timeoutMs,
+  });
+  return {
+    statusCode: loopbackStatusCode(response),
+    data: parseLoopbackJson(response),
+    via: "host" as const,
+  };
+}
+
 async function readLocalTextFile(path: string) {
   const result = await fbApp.invoke<any>("fs.readFile", { path });
   return {
@@ -590,12 +683,11 @@ async function ensureRustWorkerDaemon(
   onLog?: (message: string) => void,
 ): Promise<boolean> {
   try {
-    const check = await fbApp.invoke<any>("localLoopback.fetch", {
-      url: "http://127.0.0.1:18888/status",
+    const check = await fetchDaemonJson("/status", {
       method: "GET",
       timeoutMs: 600,
     });
-    if (check && check.status === 200) return true;
+    if (check.statusCode === 200) return true;
   } catch {
     // 尚未启动
   }
@@ -603,8 +695,11 @@ async function ensureRustWorkerDaemon(
   onLog?.("检测到发送任务，正在自举启动后台常驻守护服务 (Loopback Daemon 18888)...");
   try {
     fbApp.invoke<any>("runtime.process.execute", {
+      title: "启动全球法布施 Rust daemon",
       command: prepared.binaryPath,
       arguments: ["--daemon", "18888"],
+      detached: true,
+      silentCli: true,
     }).catch(() => {});
   } catch {
     // 忽略异常，尝试后续探活
@@ -612,12 +707,11 @@ async function ensureRustWorkerDaemon(
 
   await new Promise((resolve) => setTimeout(resolve, 350));
   try {
-    const check = await fbApp.invoke<any>("localLoopback.fetch", {
-      url: "http://127.0.0.1:18888/status",
+    const check = await fetchDaemonJson("/status", {
       method: "GET",
       timeoutMs: 1000,
     });
-    return check && check.status === 200;
+    return check.statusCode === 200;
   } catch {
     return false;
   }
@@ -752,6 +846,18 @@ function parseJsonLines(stdout: string) {
 
 export class GlobalDharmaSendService {
   async send(options: SendOptions): Promise<DharmaSendResult> {
+    if (options.loop) {
+      try {
+        return await this.sendViaMiniAppRustWorker(options);
+      } catch (error) {
+        const message = `小程序 Rust worker: ${errorMessage(error)}`;
+        options.onLog?.(`Rust worker daemon 接管失败：${message}`);
+        throw new Error(
+          `循环发送必须由底层 Rust daemon 接管，不能降级回 JS/UI 心跳：${message}`,
+        );
+      }
+    }
+
     if (!fbApp.isHostEnv()) {
       try {
         return await this.sendViaWebWasmRustWorker(options);
@@ -989,7 +1095,7 @@ export class GlobalDharmaSendService {
     commandId,
     onLog,
   }: SendOptions): Promise<DharmaSendResult> {
-    if (!fbApp.isHostEnv()) {
+    if (!fbApp.isHostEnv() && !loop) {
       throw new Error("当前 Web 浏览器不能启动小程序 Rust worker。");
     }
     const targets = await this.resolveDeliveryTargets(region);
@@ -1014,6 +1120,9 @@ export class GlobalDharmaSendService {
     const job = {
       jobId,
       miniAppId: MINIAPP_ID,
+      loop,
+      persistent: false,
+      loopIntervalMs: DAEMON_LOOP_INTERVAL_MS,
       useGeoIp: true,
       region: region.id,
       port: DEFAULT_UDP_PORT,
@@ -1027,19 +1136,42 @@ export class GlobalDharmaSendService {
       },
     };
 
-    const prepared = await prepareMiniAppRustWorker(onLog);
-    const isDaemonOnline = await ensureRustWorkerDaemon(prepared, onLog);
+    let prepared: PreparedWorker | null = null;
+    let isDaemonOnline = false;
+    if (fbApp.isHostEnv()) {
+      prepared = await prepareMiniAppRustWorker(onLog);
+      isDaemonOnline = await ensureRustWorkerDaemon(prepared, onLog);
+    } else {
+      try {
+        const check = await fetchDaemonJson("/status", {
+          method: "GET",
+          timeoutMs: 1000,
+        });
+        isDaemonOnline = check.statusCode === 200;
+      } catch {
+        isDaemonOnline = false;
+      }
+    }
+    if (loop) {
+      if (!isDaemonOnline) {
+        throw new Error("Rust daemon 未能启动，循环发送不能由 UI/JS 接管。");
+      }
+      return this.startDaemonManagedJob(job, contentHash, jobId, onLog);
+    }
+
+    if (!prepared) {
+      throw new Error("当前环境不能启动小程序 Rust worker。");
+    }
     if (isDaemonOnline) {
       onLog?.("通过后台 18888 守护服务 HTTP POST 纯内在线流式通道即时发包 (Memory Stream IPC)...");
       try {
-        const resp = await fbApp.invoke<any>("localLoopback.fetch", {
-          url: "http://127.0.0.1:18888/send",
+        const resp = await fetchDaemonJson("/send", {
           method: "POST",
           body: JSON.stringify(job),
           timeoutMs: 60000,
         });
-        if (resp && resp.status === 200 && resp.data) {
-          const resData = typeof resp.data === "string" ? JSON.parse(resp.data) : resp.data;
+        if (resp.statusCode === 200) {
+          const resData = resp.data;
           if (resData.ok) {
             await writeWorkerBuildCache(prepared);
             return {
@@ -1106,6 +1238,82 @@ export class GlobalDharmaSendService {
     }
     await writeWorkerBuildCache(prepared);
     return this.normalizeWorkerResult(contentHash, packetBytes, stdout, jobId);
+  }
+
+  private async startDaemonManagedJob(
+    job: unknown,
+    contentHash: string,
+    jobId: string,
+    onLog?: (message: string) => void,
+  ): Promise<DharmaSendResult> {
+    onLog?.("循环任务配置已交给 Rust daemon，底层进程将作为 Master 自主循环发包。");
+    const resp = await fetchDaemonJson("/jobs/start", {
+      method: "POST",
+      body: JSON.stringify(job),
+      timeoutMs: 10000,
+    });
+    const statusCode = resp.statusCode;
+    const data = resp.data;
+    if (statusCode < 200 || statusCode >= 300 || data?.ok !== true) {
+      throw new Error(
+        `Rust daemon 循环任务提交失败：HTTP ${statusCode || "unknown"} ${data?.error || ""}`.trim(),
+      );
+    }
+    return {
+      contentHash,
+      bytesSent: 0,
+      receipts: [],
+      jobId: String(data.jobId || jobId),
+      status: "running",
+    };
+  }
+
+  async getDaemonStatus(
+    jobId?: string,
+    cursor = 0,
+    limit = 120,
+  ): Promise<DharmaDaemonStatus> {
+    const query = [
+      jobId ? `jobId=${encodeQuery(jobId)}` : "",
+      `cursor=${Math.max(0, cursor)}`,
+      `limit=${Math.max(1, Math.min(1000, limit))}`,
+    ]
+      .filter(Boolean)
+      .join("&");
+    const resp = await fetchDaemonJson(`/jobs/status?${query}`, {
+      method: "GET",
+      timeoutMs: 2000,
+    });
+    const statusCode = resp.statusCode;
+    const data = resp.data;
+    if (statusCode < 200 || statusCode >= 300 || data?.ok !== true) {
+      throw new Error(`Rust daemon 状态读取失败：HTTP ${statusCode || "unknown"}`);
+    }
+    return {
+      ok: true,
+      daemon: data.daemon === true,
+      status: data.status,
+      version: data.version,
+      source: data.source,
+      jobs: Array.isArray(data.jobs) ? data.jobs : [],
+      job: data.job && typeof data.job === "object" ? data.job : undefined,
+      events: Array.isArray(data.events) ? data.events : [],
+      cursor: readNumber(data.cursor, cursor),
+    };
+  }
+
+  async stopDaemonJob(jobId?: string): Promise<{ stopped: number }> {
+    const resp = await fetchDaemonJson("/jobs/stop", {
+      method: "POST",
+      body: JSON.stringify(jobId ? { jobId } : {}),
+      timeoutMs: 5000,
+    });
+    const statusCode = resp.statusCode;
+    const data = resp.data;
+    if (statusCode < 200 || statusCode >= 300 || data?.ok !== true) {
+      throw new Error(`Rust daemon 停止失败：HTTP ${statusCode || "unknown"}`);
+    }
+    return { stopped: readNumber(data.stopped, 0) };
   }
 
   async sendViaSystemNetwork({
