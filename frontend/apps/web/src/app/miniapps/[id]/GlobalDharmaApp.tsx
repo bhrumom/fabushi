@@ -12,6 +12,8 @@ import {
 import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import {
   GlobalDharmaSendService,
+  type DharmaDaemonStatus,
+  type DharmaDeliveryReceipt,
   type DharmaSendResult,
   type PreparedContent,
   type RegionPreset,
@@ -209,7 +211,9 @@ export default function GlobalDharmaApp() {
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const sendServiceRef = useRef(new GlobalDharmaSendService());
-  const loopTimerRef = useRef<number | null>(null);
+  const statusPollTimerRef = useRef<number | null>(null);
+  const daemonCursorRef = useRef(0);
+  const activeDaemonJobIdRef = useRef<string | undefined>(undefined);
   const latestRunRef = useRef(0);
   const selectedRegion = useMemo(
     () =>
@@ -232,10 +236,10 @@ export default function GlobalDharmaApp() {
     }));
   };
 
-  const stopLoopTimer = () => {
-    if (loopTimerRef.current === null) return;
-    window.clearInterval(loopTimerRef.current);
-    loopTimerRef.current = null;
+  const stopStatusPolling = () => {
+    if (statusPollTimerRef.current === null) return;
+    window.clearInterval(statusPollTimerRef.current);
+    statusPollTimerRef.current = null;
   };
 
   const postBotMessage = async (message: string, payload: any = {}) => {
@@ -249,6 +253,128 @@ export default function GlobalDharmaApp() {
       });
     } catch (error) {
       log(hostErrorMessage(error, "聊天回写失败"));
+    }
+  };
+
+  const daemonReceiptFromEvent = (event: any): DharmaDeliveryReceipt => ({
+    countryCode: event?.countryCode,
+    nodeId: event?.nodeId || event?.endpointId,
+    channel: event?.channel === "udp" ? "udp" : "rust-http",
+    status: event?.status === "delivered" ? "delivered" : "sent",
+    bytesSent: Number(event?.bytesSent || 0),
+    deliveredAt: event?.deliveredAt || event?.at || new Date().toISOString(),
+    raw: event,
+  });
+
+  const applyDaemonSnapshot = (snapshot: DharmaDaemonStatus) => {
+    const job = snapshot.job || snapshot.jobs.find((item) => {
+      return String(item?.jobId || "") === activeDaemonJobIdRef.current;
+    });
+    const receipts = snapshot.events
+      .filter((event) => event?.type === "receipt")
+      .map(daemonReceiptFromEvent);
+    const resultEvent = [...snapshot.events]
+      .reverse()
+      .find((event) => event?.type === "result");
+    const isRunning = ["running", "retrying", "stopping"].includes(
+      String(job?.status || ""),
+    );
+
+    if (snapshot.events.length > 0) {
+      for (const event of snapshot.events) {
+        if (event?.type === "daemon_round_started") {
+          log(`Rust daemon 第 ${event.round || "?"} 轮开始发送。`);
+        } else if (event?.type === "daemon_round_completed") {
+          log(
+            `Rust daemon 第 ${event.round || "?"} 轮完成：回执 ${event.receiptCount || 0} 个，${formatTrafficFromMB(Number(event.bytesSent || 0) / (1024 * 1024))}。`,
+          );
+        } else if (event?.type === "daemon_round_failed") {
+          log(`Rust daemon 本轮发送失败：${event.error || "未知错误"}`);
+        } else if (event?.type === "daemon_job_stopped") {
+          log("Rust daemon 循环任务已停止。");
+        }
+      }
+    }
+
+    setStatus((prev) => {
+      const resultReceipts = Array.isArray(resultEvent?.receipts)
+        ? resultEvent.receipts.map(daemonReceiptFromEvent)
+        : receipts;
+      const bytesSent = receipts.reduce(
+        (sum, receipt) => sum + receipt.bytesSent,
+        0,
+      );
+      const lastResult: DharmaSendResult | null =
+        resultEvent || resultReceipts.length > 0 || job
+          ? {
+              contentHash:
+                resultEvent?.contentHash || prev.lastResult?.contentHash || "",
+              bytesSent: Number(resultEvent?.bytesSent || bytesSent || 0),
+              receipts: resultReceipts,
+              jobId:
+                String(job?.jobId || activeDaemonJobIdRef.current || "") ||
+                prev.lastResult?.jobId,
+              status: isRunning ? "running" : "sent",
+            }
+          : prev.lastResult || null;
+
+      return {
+        ...prev,
+        sentCount: prev.sentCount + receipts.length,
+        sentMB: prev.sentMB + bytesSent / (1024 * 1024),
+        lastResult,
+        isPreparingSend: false,
+        isTransferring: isRunning,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  };
+
+  const pollDaemonStatus = async () => {
+    const jobId = activeDaemonJobIdRef.current;
+    if (!jobId) return;
+    const snapshot = await sendServiceRef.current.getDaemonStatus(
+      jobId,
+      daemonCursorRef.current,
+    );
+    daemonCursorRef.current = snapshot.cursor;
+    applyDaemonSnapshot(snapshot);
+  };
+
+  const startDaemonStatusPolling = (jobId: string) => {
+    activeDaemonJobIdRef.current = jobId;
+    daemonCursorRef.current = 0;
+    stopStatusPolling();
+    void pollDaemonStatus().catch((error) => {
+      log(hostErrorMessage(error, "读取 Rust daemon 状态失败"));
+    });
+    statusPollTimerRef.current = window.setInterval(() => {
+      void pollDaemonStatus().catch((error) => {
+        log(hostErrorMessage(error, "读取 Rust daemon 状态失败"));
+      });
+    }, 2500);
+  };
+
+  const attachRunningDaemonIfAny = async () => {
+    try {
+      const snapshot = await sendServiceRef.current.getDaemonStatus();
+      const runningJob = snapshot.jobs.find((job) =>
+        ["running", "retrying", "stopping"].includes(String(job?.status || "")),
+      );
+      const jobId = String(runningJob?.jobId || "");
+      if (!jobId) return;
+      if (
+        activeDaemonJobIdRef.current === jobId &&
+        statusPollTimerRef.current !== null
+      ) {
+        return;
+      }
+      setLoopEnabled(Boolean(runningJob.loop));
+      updateStatus({ isTransferring: true, isPreparingSend: false });
+      log(`已作为 Viewer 附着到底层 Rust daemon 任务：${jobId}`);
+      startDaemonStatusPolling(jobId);
+    } catch {
+      // Daemon 未启动时保持普通待机状态。
     }
   };
 
@@ -347,16 +473,20 @@ export default function GlobalDharmaApp() {
       selectedContent: content,
       lastResult: result,
       isPreparingSend: false,
-      isTransferring: loopEnabled,
+      isTransferring: loopEnabled || result.status === "running",
       updatedAt: new Date().toISOString(),
     }));
     const receiptText =
-      result.receipts.length > 0
+      result.status === "running"
+        ? "循环任务已由 Rust daemon 接管，UI 正在作为 Viewer 订阅回执"
+        : result.receipts.length > 0
         ? `真实发送完成：${result.status}，回执 ${result.receipts.length} 个，${formatTrafficFromMB(sentMB)}`
         : `发送已提交但暂无真实回执，未计入已发送数量`;
     log(`${receiptText}${result.jobId ? `，任务 ${result.jobId}` : ""}`);
     await postBotMessage(
-      result.receipts.length > 0
+      result.status === "running"
+        ? `全球法布施循环已交给 Rust daemon 后台执行：${content.title}`
+        : result.receipts.length > 0
         ? `✅ 全球法布施已完成：通过真实底层网络成功覆盖 global/区域 目标，回执 ${result.receipts.length} 个！`
         : `全球法布施已提交，等待真实回执：${content.title}`,
       {
@@ -382,7 +512,7 @@ export default function GlobalDharmaApp() {
     const runId = Date.now();
     latestRunRef.current = runId;
     setBusy(true);
-    stopLoopTimer();
+    stopStatusPolling();
     updateStatus({ isPreparingSend: true, isTransferring: false });
     try {
       log(
@@ -405,17 +535,13 @@ export default function GlobalDharmaApp() {
           .catch(() => null);
       }
       const content = await prepareTransferContent(effectiveText);
-      await runRealSend(content, commandId);
+      const result = await runRealSend(content, commandId);
       if (loopEnabled) {
-        loopTimerRef.current = window.setInterval(() => {
-          if (latestRunRef.current !== runId) return;
-          void runRealSend(content, commandId).catch((error) => {
-            log(hostErrorMessage(error, "循环发送失败"));
-            updateStatus({ isTransferring: false });
-            stopLoopTimer();
-          });
-        }, 30000);
-        log("循环模式已开启：每 30 秒执行一次真实发送，不再使用模拟计数。 ");
+        if (latestRunRef.current !== runId) return;
+        if (result.jobId) {
+          startDaemonStatusPolling(result.jobId);
+        }
+        log("循环模式已开启：Rust daemon 每 30 秒自主执行真实发送，UI 仅订阅状态。");
       }
     } catch (error) {
       log(hostErrorMessage(error, "启动失败"));
@@ -427,7 +553,14 @@ export default function GlobalDharmaApp() {
 
   const handleStop = async () => {
     latestRunRef.current = Date.now();
-    stopLoopTimer();
+    const jobId = activeDaemonJobIdRef.current || status.lastResult?.jobId;
+    if (jobId) {
+      await sendServiceRef.current
+        .stopDaemonJob(jobId)
+        .catch((error) => log(hostErrorMessage(error, "Rust daemon 停止失败")));
+    }
+    stopStatusPolling();
+    activeDaemonJobIdRef.current = undefined;
     await fbApp
       .invoke("system.keepAwake", { enabled: false })
       .catch(() => null);
@@ -437,11 +570,20 @@ export default function GlobalDharmaApp() {
 
   const handleLoopChange = async (enabled: boolean) => {
     setLoopEnabled(enabled);
-    if (!enabled) stopLoopTimer();
+    if (!enabled) {
+      const jobId = activeDaemonJobIdRef.current;
+      if (jobId && status.isTransferring) {
+        await sendServiceRef.current
+          .stopDaemonJob(jobId)
+          .catch((error) => log(hostErrorMessage(error, "Rust daemon 停止失败")));
+      }
+      stopStatusPolling();
+      activeDaemonJobIdRef.current = undefined;
+    }
     await fbApp
       .invoke("system.keepAwake", { enabled, reason: "global-dharma-transfer" })
       .catch(() => null);
-    log(enabled ? "循环真实发送已开启。" : "循环真实发送已关闭。");
+    log(enabled ? "循环真实发送已开启，启动后将由 Rust daemon 接管。" : "循环真实发送已关闭。");
   };
 
   useEffect(() => {
@@ -450,6 +592,7 @@ export default function GlobalDharmaApp() {
       try {
         await fbApp.getCapabilities();
         if (active) updateStatus({ isPreparingSend: false });
+        if (active) await attachRunningDaemonIfAny();
       } catch (error) {
         if (active && fbApp.isHostEnv())
           log(hostErrorMessage(error, "读取宿主能力失败"));
@@ -461,7 +604,7 @@ export default function GlobalDharmaApp() {
     const unsubscribeReady = fbApp.on("ready", () => void refresh());
     return () => {
       active = false;
-      stopLoopTimer();
+      stopStatusPolling();
       unsubscribeReady();
     };
   }, []);

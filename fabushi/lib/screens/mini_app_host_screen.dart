@@ -2833,6 +2833,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final workingDirectory = params['workingDirectory']?.toString();
     final title = params['title']?.toString() ?? '执行终端命令';
     final silentCli = params['silentCli'] == true;
+    final detached = params['detached'] == true;
 
     if (command.isEmpty) {
       throw const MiniAppHostException('invalid_request', '命令不能为空');
@@ -2850,6 +2851,27 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       final stdoutBuffer = StringBuffer();
       final stderrBuffer = StringBuffer();
       final resolvedCommand = await _resolveRuntimeCommand(command);
+
+      if (detached) {
+        final process = await Process.start(
+          resolvedCommand,
+          arguments,
+          workingDirectory: workingDirectory,
+          runInShell: legacyShellPermission || params['runInShell'] == true,
+          mode: ProcessStartMode.detached,
+        );
+        if (!silentCli) {
+          widget.onCliLog?.call(taskId, '\\n[进程已后台启动，PID: ${process.pid}]');
+        }
+        return {
+          'ok': true,
+          'detached': true,
+          'pid': process.pid,
+          'stdout': '',
+          'stderr': '',
+          'exitCode': 0,
+        };
+      }
 
       final process = await Process.start(
         resolvedCommand,
