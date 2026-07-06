@@ -322,4 +322,52 @@ class AppSettings {
     await prefs.setString(_desktopControlBridgeTokenKey, token);
     return token;
   }
+
+  // --- Codex & 机器人之父 API 设置 ---
+  static const String _codexApiKey = 'codex_api_key_v1';
+  static const String _codexBaseUrlKey = 'codex_base_url_v1';
+  static const String _codexModelNameKey = 'codex_model_name_v1';
+  static const String _codexProviderKey = 'codex_provider_v1';
+
+  static Future<String> getCodexApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_codexApiKey)?.trim();
+    return value == null || value.isEmpty || value == 'default'
+        ? 'dacheng-openclaw-proxy'
+        : value;
+  }
+
+  static Future<void> setCodexApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_codexApiKey, key);
+  }
+
+  static Future<String> getCodexBaseUrl() async {
+    return AppConfig.openClawDeepSeekProxyBaseUrl;
+  }
+
+  static Future<void> setCodexBaseUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_codexBaseUrlKey, url);
+  }
+
+  static Future<String> getCodexModelName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_codexModelNameKey) ?? 'deepseek-chat';
+  }
+
+  static Future<void> setCodexModelName(String model) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_codexModelNameKey, model);
+  }
+
+  static Future<String> getCodexProvider() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_codexProviderKey) ?? 'deepSeek';
+  }
+
+  static Future<void> setCodexProvider(String provider) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_codexProviderKey, provider);
+  }
 }

@@ -14,6 +14,7 @@ import '../models/mini_app_model.dart';
 import '../services/dacheng_ai_service.dart';
 import '../services/dharma_publish_service.dart';
 import 'mini_app_host_screen.dart';
+import '../services/miniapp/codex_sdk_service.dart';
 import '../widgets/social/social_feature_bot.dart';
 
 class SocialFeatureChatScreen extends StatefulWidget {
@@ -1114,6 +1115,40 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       final title = miniApp['title']?.toString() ?? '个人沙箱小程序';
       final entryUrl = miniApp['entryUrl']?.toString() ?? '';
       if (!mounted) return;
+      // 同步通过 Codex SDK 绑定到虚拟 VFS 与即时预览，并从本地载入用户的自定义 API 配置
+      await CodexSdk.instance.initFromSettings();
+      if (miniApp.isNotEmpty) {
+        final html = miniApp['sourceHtml']?.toString() ?? '';
+        if (html.isNotEmpty) {
+          CodexSdk.instance.updateSandboxFile('index.html', html);
+        }
+      }
+      unawaited(
+        CodexSdk.instance
+            .sendMessage(
+              prompt: text,
+              workspaceId: 'sandbox',
+              authToken: token,
+              username: auth?.currentUser?.username,
+            )
+            .forEach((event) {
+          if (event.type == CodexEventType.error &&
+              event.errorMessage != null) {
+            // 自我修复调试触发
+            unawaited(
+              CodexSdk.instance
+                  .sendMessage(
+                    prompt: event.errorMessage!,
+                    workspaceId: 'sandbox',
+                    isSelfHealing: true,
+                    authToken: token,
+                    username: auth?.currentUser?.username,
+                  )
+                  .length,
+            );
+          }
+        }),
+      );
       setState(() {
         _botMessages.add(
           _ChatMessage.bot(

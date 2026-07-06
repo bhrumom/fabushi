@@ -1,0 +1,63 @@
+name: CI Codex Rust SDK Sync & Test
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    paths:
+      - "native/codex-wrapper/**"
+      - "fabushi/lib/services/miniapp/codex_sdk_service.dart"
+      - ".github/workflows/ci_codex_sync.yml"
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  test-codex-rust-wrapper:
+    name: Test Universal Codex Rust Wrapper (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Run Cargo fmt check
+        working-directory: native/codex-wrapper
+        run: cargo fmt -- --check
+
+      - name: Run Cargo clippy
+        working-directory: native/codex-wrapper
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run automated unit & integration tests
+        working-directory: native/codex-wrapper
+        run: cargo test --all-features --verbose
+
+  test-flutter-codex-binding:
+    name: Validate Flutter/Dart Codex Sdk Binding
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: fabushi
+        run: flutter pub get
+
+      - name: Analyze Dart syntax for Codex Sdk
+        working-directory: fabushi
+        run: dart analyze lib/services/miniapp/codex_sdk_service.dart
