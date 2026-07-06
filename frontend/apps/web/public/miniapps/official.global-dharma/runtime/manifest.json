@@ -28,6 +28,7 @@
   "permissions": [
     "runtime.process",
     "fs.readWrite",
+    "local.loopback",
     "network.http",
     "network.udp",
     "system.keepAwake"

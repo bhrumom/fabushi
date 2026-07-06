@@ -3,14 +3,24 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::UdpSocket;
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SUCCESS_STATUS_MIN: u16 = 200;
 const SUCCESS_STATUS_MAX: u16 = 299;
 const UDP_SAFE_DATAGRAM_BYTES: usize = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES: usize = 6 * 1024;
+const DEFAULT_DAEMON_LOOP_INTERVAL_MS: u64 = 30_000;
+const MIN_DAEMON_LOOP_INTERVAL_MS: u64 = 1_000;
+const MAX_DAEMON_LOOP_INTERVAL_MS: u64 = 24 * 60 * 60 * 1_000;
+const DEFAULT_EVENT_LIMIT: usize = 120;
+const MAX_EVENT_LIMIT: usize = 1_000;
 
 static GEOIP_CSV_DATA: &str = include_str!("../data/geoip_targets.csv");
+static DAEMON_JOBS: Mutex<Vec<DaemonJobRuntime>> = Mutex::new(Vec::new());
+static DAEMON_EVENTS: Mutex<Vec<DaemonEventRecord>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Debug)]
 struct Endpoint {
@@ -32,6 +42,26 @@ struct Receipt {
     bytes_sent: usize,
     status_code: Option<u16>,
     response_bytes: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct DaemonJobRuntime {
+    job_id: String,
+    status: String,
+    loop_enabled: bool,
+    started_at: String,
+    last_active_at: String,
+    round_count: u64,
+    bytes_sent: usize,
+    receipt_count: usize,
+    last_error: Option<String>,
+    stop: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Debug)]
+struct DaemonEventRecord {
+    job_id: String,
+    raw_json: String,
 }
 
 fn main() {
@@ -64,7 +94,9 @@ fn run_daemon(port: u16) -> Result<(), String> {
     ));
     for stream in listener.incoming() {
         if let Ok(mut stream) = stream {
-            let _ = handle_daemon_connection(&mut stream);
+            thread::spawn(move || {
+                let _ = handle_daemon_connection(&mut stream);
+            });
         }
     }
     Ok(())
@@ -112,9 +144,47 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
     }
 
     let first_line = header_str.lines().next().unwrap_or("");
-    let (response_status, response_json) = if first_line.contains(" /status") || first_line.contains(" /ping") {
-        ("200 OK", format!("{{\"status\":\"ok\",\"daemon\":true,\"version\":\"0.2.0\",\"at\":{}}}", now_millis_string()))
-    } else if first_line.contains(" /send") {
+    let target = first_line.split_whitespace().nth(1).unwrap_or("/");
+    let path = target.split('?').next().unwrap_or("/");
+    let query = target.split_once('?').map(|(_, value)| value).unwrap_or("");
+    let (response_status, response_json) = if first_line.starts_with("OPTIONS ") {
+        ("204 No Content", String::new())
+    } else if path == "/status" || path == "/ping" {
+        ("200 OK", daemon_status_json(None, 0, 0))
+    } else if path == "/jobs" || path == "/jobs/status" || path == "/events" {
+        let job_id = query_param(query, "jobId");
+        let cursor = query_param(query, "cursor")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        let limit = query_param(query, "limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_EVENT_LIMIT);
+        ("200 OK", daemon_status_json(job_id.as_deref(), cursor, limit))
+    } else if path == "/jobs/start" || path == "/loop/start" {
+        match String::from_utf8(body_bytes) {
+            Ok(body_str) => match start_daemon_job(&body_str) {
+                Ok(response) => ("200 OK", response),
+                Err(err) => (
+                    "500 Internal Server Error",
+                    format!("{{\"ok\":false,\"error\":{}}}", json_quote(&err)),
+                ),
+            },
+            Err(err) => (
+                "400 Bad Request",
+                format!("{{\"ok\":false,\"error\":{}}}", json_quote(&format!("invalid utf8: {err}"))),
+            ),
+        }
+    } else if path == "/jobs/stop" || path == "/loop/stop" {
+        let body_str = String::from_utf8(body_bytes).unwrap_or_default();
+        let job_id = json_string(&body_str, "jobId").or_else(|| query_param(query, "jobId"));
+        match stop_daemon_job(job_id.as_deref()) {
+            Ok(response) => ("200 OK", response),
+            Err(err) => (
+                "500 Internal Server Error",
+                format!("{{\"ok\":false,\"error\":{}}}", json_quote(&err)),
+            ),
+        }
+    } else if path == "/send" {
         match String::from_utf8(body_bytes) {
             Ok(body_str) => match execute_job_payload(&body_str) {
                 Ok((bytes_sent, receipt_count)) => (
@@ -136,12 +206,373 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
     };
 
     let response = format!(
-        "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_json}",
+        "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Accept\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_json}",
         response_json.len()
     );
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
     Ok(())
+}
+
+fn start_daemon_job(raw_job: &str) -> Result<String, String> {
+    let job_id = json_string(raw_job, "jobId").unwrap_or_else(|| {
+        format!(
+            "gd_daemon_{}",
+            now_millis_string()
+        )
+    });
+    let loop_enabled = daemon_job_loop_enabled(raw_job);
+    let interval_ms = daemon_job_interval_ms(raw_job);
+
+    stop_daemon_job_by_id(&job_id);
+    spawn_daemon_job(
+        job_id.clone(),
+        raw_job.to_string(),
+        loop_enabled,
+        interval_ms,
+    );
+
+    Ok(format!(
+        "{{\"ok\":true,\"daemon\":true,\"jobId\":{},\"status\":\"running\",\"loop\":{},\"persistent\":false,\"storage\":\"memory\",\"intervalMs\":{},\"at\":{}}}",
+        json_quote(&job_id),
+        loop_enabled,
+        interval_ms,
+        json_quote(&now_millis_string())
+    ))
+}
+
+fn spawn_daemon_job(
+    job_id: String,
+    raw_job: String,
+    loop_enabled: bool,
+    interval_ms: u64,
+) {
+    let stop = Arc::new(AtomicBool::new(false));
+    let started_at = now_millis_string();
+    if let Ok(mut jobs) = DAEMON_JOBS.lock() {
+        jobs.retain(|job| job.job_id != job_id);
+        jobs.push(DaemonJobRuntime {
+            job_id: job_id.clone(),
+            status: "running".into(),
+            loop_enabled,
+            started_at: started_at.clone(),
+            last_active_at: started_at,
+            round_count: 0,
+            bytes_sent: 0,
+            receipt_count: 0,
+            last_error: None,
+            stop: stop.clone(),
+        });
+    }
+
+    emit_job_event(
+        &job_id,
+        &format!(
+            "{{\"type\":\"daemon_job_started\",\"jobId\":{},\"loop\":{},\"intervalMs\":{},\"at\":{}}}",
+            json_quote(&job_id),
+            loop_enabled,
+            interval_ms,
+            json_quote(&now_millis_string())
+        ),
+    );
+
+    thread::spawn(move || {
+        let mut round = 0u64;
+        loop {
+            if stop.load(Ordering::Relaxed) {
+                update_daemon_job(&job_id, |job| {
+                    job.status = "stopped".into();
+                    job.last_active_at = now_millis_string();
+                });
+                emit_job_event(
+                    &job_id,
+                    &format!(
+                        "{{\"type\":\"daemon_job_stopped\",\"jobId\":{},\"round\":{},\"at\":{}}}",
+                        json_quote(&job_id),
+                        round,
+                        json_quote(&now_millis_string())
+                    ),
+                );
+                break;
+            }
+
+            round = round.saturating_add(1);
+            update_daemon_job(&job_id, |job| {
+                job.status = "running".into();
+                job.last_active_at = now_millis_string();
+            });
+            emit_job_event(
+                &job_id,
+                &format!(
+                    "{{\"type\":\"daemon_round_started\",\"jobId\":{},\"round\":{},\"at\":{}}}",
+                    json_quote(&job_id),
+                    round,
+                    json_quote(&now_millis_string())
+                ),
+            );
+
+            match execute_job_payload(&raw_job) {
+                Ok((bytes_sent, receipt_count)) => {
+                    update_daemon_job(&job_id, |job| {
+                        job.status = if loop_enabled { "running".into() } else { "sent".into() };
+                        job.round_count = round;
+                        job.bytes_sent = job.bytes_sent.saturating_add(bytes_sent);
+                        job.receipt_count = job.receipt_count.saturating_add(receipt_count);
+                        job.last_error = None;
+                        job.last_active_at = now_millis_string();
+                    });
+                    emit_job_event(
+                        &job_id,
+                        &format!(
+                            "{{\"type\":\"daemon_round_completed\",\"jobId\":{},\"round\":{},\"bytesSent\":{},\"receiptCount\":{},\"loop\":{},\"at\":{}}}",
+                            json_quote(&job_id),
+                            round,
+                            bytes_sent,
+                            receipt_count,
+                            loop_enabled,
+                            json_quote(&now_millis_string())
+                        ),
+                    );
+                }
+                Err(error) => {
+                    update_daemon_job(&job_id, |job| {
+                        job.status = if loop_enabled { "retrying".into() } else { "failed".into() };
+                        job.round_count = round;
+                        job.last_error = Some(error.clone());
+                        job.last_active_at = now_millis_string();
+                    });
+                    emit_job_event(
+                        &job_id,
+                        &format!(
+                            "{{\"type\":\"daemon_round_failed\",\"jobId\":{},\"round\":{},\"error\":{},\"loop\":{},\"at\":{}}}",
+                            json_quote(&job_id),
+                            round,
+                            json_quote(&error),
+                            loop_enabled,
+                            json_quote(&now_millis_string())
+                        ),
+                    );
+                }
+            }
+
+            if !loop_enabled {
+                break;
+            }
+            wait_for_next_daemon_round(&stop, interval_ms);
+        }
+
+    });
+}
+
+fn wait_for_next_daemon_round(stop: &AtomicBool, interval_ms: u64) {
+    let mut waited = 0u64;
+    while waited < interval_ms {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let step = (interval_ms - waited).min(500);
+        thread::sleep(Duration::from_millis(step));
+        waited = waited.saturating_add(step);
+    }
+}
+
+fn stop_daemon_job(job_id: Option<&str>) -> Result<String, String> {
+    let stopped = if let Some(job_id) = job_id {
+        stop_daemon_job_by_id(job_id)
+    } else {
+        stop_all_daemon_jobs()
+    };
+
+    Ok(format!(
+        "{{\"ok\":true,\"daemon\":true,\"stopped\":{},\"jobId\":{},\"at\":{}}}",
+        stopped,
+        job_id.map(json_quote).unwrap_or_else(|| "null".into()),
+        json_quote(&now_millis_string())
+    ))
+}
+
+fn stop_daemon_job_by_id(job_id: &str) -> usize {
+    let mut count = 0usize;
+    if let Ok(mut jobs) = DAEMON_JOBS.lock() {
+        for job in jobs.iter_mut().filter(|job| job.job_id == job_id) {
+            job.stop.store(true, Ordering::Relaxed);
+            job.status = "stopping".into();
+            job.last_active_at = now_millis_string();
+            count = count.saturating_add(1);
+        }
+    }
+    if count > 0 {
+        emit_job_event(
+            job_id,
+            &format!(
+                "{{\"type\":\"daemon_job_stop_requested\",\"jobId\":{},\"at\":{}}}",
+                json_quote(job_id),
+                json_quote(&now_millis_string())
+            ),
+        );
+    }
+    count
+}
+
+fn stop_all_daemon_jobs() -> usize {
+    let mut count = 0usize;
+    if let Ok(mut jobs) = DAEMON_JOBS.lock() {
+        for job in jobs.iter_mut() {
+            job.stop.store(true, Ordering::Relaxed);
+            job.status = "stopping".into();
+            job.last_active_at = now_millis_string();
+            count = count.saturating_add(1);
+        }
+    }
+    count
+}
+
+fn update_daemon_job(job_id: &str, update: impl FnOnce(&mut DaemonJobRuntime)) {
+    if let Ok(mut jobs) = DAEMON_JOBS.lock() {
+        if let Some(job) = jobs.iter_mut().find(|job| job.job_id == job_id) {
+            update(job);
+        }
+    }
+}
+
+fn daemon_job_loop_enabled(raw_job: &str) -> bool {
+    json_bool(raw_job, "loop")
+        .or_else(|| extract_json_value(raw_job, "packet").and_then(|packet| json_bool(packet, "loop")))
+        .unwrap_or(false)
+}
+
+fn daemon_job_interval_ms(raw_job: &str) -> u64 {
+    json_number(raw_job, "loopIntervalMs")
+        .or_else(|| json_number(raw_job, "intervalMs"))
+        .unwrap_or(DEFAULT_DAEMON_LOOP_INTERVAL_MS)
+        .clamp(MIN_DAEMON_LOOP_INTERVAL_MS, MAX_DAEMON_LOOP_INTERVAL_MS)
+}
+
+fn daemon_status_json(job_id: Option<&str>, cursor: usize, limit: usize) -> String {
+    let jobs = DAEMON_JOBS
+        .lock()
+        .map(|jobs| jobs.clone())
+        .unwrap_or_default();
+    let selected = job_id.and_then(|id| jobs.iter().find(|job| job.job_id == id).cloned());
+    let jobs_json = jobs
+        .iter()
+        .map(daemon_job_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    let (events_json, next_cursor) = if let Some(job_id) = job_id {
+        read_job_events(job_id, cursor, limit)
+    } else {
+        ("[]".into(), cursor)
+    };
+    format!(
+        "{{\"ok\":true,\"status\":\"ok\",\"daemon\":true,\"version\":\"0.3.0\",\"at\":{},\"jobs\":[{}],\"job\":{},\"events\":{},\"cursor\":{},\"source\":\"rust-daemon-master\"}}",
+        now_millis_string(),
+        jobs_json,
+        selected
+            .as_ref()
+            .map(daemon_job_json)
+            .unwrap_or_else(|| "null".into()),
+        events_json,
+        next_cursor
+    )
+}
+
+fn daemon_job_json(job: &DaemonJobRuntime) -> String {
+    format!(
+        "{{\"jobId\":{},\"status\":{},\"loop\":{},\"startedAt\":{},\"lastActiveAt\":{},\"roundCount\":{},\"bytesSent\":{},\"receiptCount\":{},\"lastError\":{}}}",
+        json_quote(&job.job_id),
+        json_quote(&job.status),
+        job.loop_enabled,
+        json_quote(&job.started_at),
+        json_quote(&job.last_active_at),
+        job.round_count,
+        job.bytes_sent,
+        job.receipt_count,
+        job.last_error
+            .as_deref()
+            .map(json_quote)
+            .unwrap_or_else(|| "null".into())
+    )
+}
+
+fn read_job_events(job_id: &str, cursor: usize, limit: usize) -> (String, usize) {
+    let events = DAEMON_EVENTS
+        .lock()
+        .map(|events| {
+            events
+                .iter()
+                .filter(|event| event.job_id == job_id)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let start = cursor.min(events.len());
+    let event_limit = limit.clamp(1, MAX_EVENT_LIMIT);
+    let end = start.saturating_add(event_limit).min(events.len());
+    let events_json = events[start..end]
+        .iter()
+        .map(|event| event.raw_json.trim())
+        .filter(|line| line.starts_with('{') && line.ends_with('}'))
+        .collect::<Vec<_>>()
+        .join(",");
+    (format!("[{}]", events_json), end)
+}
+
+fn emit_job_event(job_id: &str, raw_json: &str) {
+    emit_raw(raw_json);
+    let _ = job_id;
+}
+
+fn record_event_from_raw(raw_json: &str) {
+    let Some(job_id) = json_string(raw_json, "jobId") else {
+        return;
+    };
+    if let Ok(mut events) = DAEMON_EVENTS.lock() {
+        events.push(DaemonEventRecord {
+            job_id,
+            raw_json: raw_json.to_string(),
+        });
+        if events.len() > 20_000 {
+            let overflow = events.len().saturating_sub(20_000);
+            events.drain(0..overflow);
+        }
+    }
+}
+
+fn query_param(query: &str, key: &str) -> Option<String> {
+    for part in query.split('&') {
+        let (raw_key, raw_value) = part.split_once('=').unwrap_or((part, ""));
+        if raw_key == key {
+            return Some(url_decode(raw_value));
+        }
+    }
+    None
+}
+
+fn url_decode(value: &str) -> String {
+    let mut output = String::new();
+    let mut bytes = value.as_bytes().iter().copied();
+    while let Some(byte) = bytes.next() {
+        if byte == b'+' {
+            output.push(' ');
+        } else if byte == b'%' {
+            let hi = bytes.next();
+            let lo = bytes.next();
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                let hex = [hi, lo];
+                if let Ok(hex_str) = std::str::from_utf8(&hex) {
+                    if let Ok(decoded) = u8::from_str_radix(hex_str, 16) {
+                        output.push(decoded as char);
+                        continue;
+                    }
+                }
+            }
+            output.push('%');
+        } else {
+            output.push(byte as char);
+        }
+    }
+    output
 }
 
 fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
@@ -828,6 +1259,7 @@ fn emit_error(error: &str) {
 }
 
 fn emit_raw(value: &str) {
+    record_event_from_raw(value);
     println!("{value}");
 }
 
@@ -868,5 +1300,26 @@ mod tests {
         let resp_str = String::from_utf8_lossy(&resp[..n]);
         assert!(resp_str.contains("200 OK"));
         assert!(resp_str.contains("\"daemon\":true"));
+    }
+
+    #[test]
+    fn test_daemon_job_start_status_stop_in_memory() {
+        let job_id = format!("test_daemon_job_{}", now_millis_string());
+        let raw_job = format!(
+            r#"{{"jobId":"{}","loop":true,"loopIntervalMs":1000,"packet":{{"contentHash":"hash123","loop":true}},"endpoints":[{{"transport":"udp","endpointId":"ep1","host":"127.0.0.1","port":9999}}]}}"#,
+            job_id
+        );
+
+        let started = start_daemon_job(&raw_job).expect("start daemon job");
+        assert!(started.contains("\"storage\":\"memory\""));
+        assert!(started.contains("\"persistent\":false"));
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let status = daemon_status_json(Some(&job_id), 0, 20);
+        assert!(status.contains(&job_id));
+        assert!(status.contains("\"source\":\"rust-daemon-master\""));
+
+        let stopped = stop_daemon_job(Some(&job_id)).expect("stop daemon job");
+        assert!(stopped.contains("\"ok\":true"));
     }
 }
