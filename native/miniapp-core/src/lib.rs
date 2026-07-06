@@ -1179,7 +1179,7 @@ fn method_description(method: &str) -> &'static str {
         "payments.queryInvoice" => "查询发票支付状态。",
         "payments.checkEntitlement" | "payments.alipay.checkEntitlement" => {
             "查询宿主后端是否已解锁一次性付费商品。"
-        },
+        }
         "payments.alipay.createOrder" => "创建支付宝订单；开放平台应优先使用统一 invoice。",
         "payments.alipay.pay" => "拉起支付宝 App 或网页支付。",
         "payments.alipay.queryOrder" => "查询支付宝订单状态。",
@@ -1234,7 +1234,9 @@ fn method_description(method: &str) -> &'static str {
         "globalDharma.delivery.getJob" => "读取全球法布施投递 job。",
         "globalDharma.delivery.listJobs" => "按状态列出全球法布施投递 jobs。",
         "globalDharma.delivery.nextRetry" => "取出到期的全球法布施 retry job 并标记 in_flight。",
-        "globalDharma.delivery.markAttempt" => "记录一次投递尝试并决定 sent、failed 或 retry_scheduled。",
+        "globalDharma.delivery.markAttempt" => {
+            "记录一次投递尝试并决定 sent、failed 或 retry_scheduled。"
+        }
         "globalDharma.delivery.recordReceipt" => "记录全球法布施投递回执并推送 receipt update。",
         "globalDharma.delivery.listReceipts" => "列出全球法布施投递回执。",
         "share.chat.send" => "生成富文本卡片并分享给联系人。",

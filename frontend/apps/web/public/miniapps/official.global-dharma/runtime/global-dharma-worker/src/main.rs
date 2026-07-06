@@ -74,8 +74,14 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
-    if let Some(pos) = args.iter().position(|arg| arg == "--serve" || arg == "--daemon") {
-        let port = args.get(pos + 1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(18888);
+    if let Some(pos) = args
+        .iter()
+        .position(|arg| arg == "--serve" || arg == "--daemon")
+    {
+        let port = args
+            .get(pos + 1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(18888);
         return run_daemon(port);
     }
     let raw_job = read_job_content()?;
@@ -85,8 +91,8 @@ fn run() -> Result<(), String> {
 fn run_daemon(port: u16) -> Result<(), String> {
     use std::net::TcpListener;
     let address = format!("127.0.0.1:{port}");
-    let listener = TcpListener::bind(&address)
-        .map_err(|e| format!("bind daemon port {port} failed: {e}"))?;
+    let listener =
+        TcpListener::bind(&address).map_err(|e| format!("bind daemon port {port} failed: {e}"))?;
     emit_raw(&format!(
         "{{\"type\":\"daemon_started\",\"port\":{},\"at\":{}}}",
         port,
@@ -123,7 +129,10 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
     let header_str = String::from_utf8_lossy(&buffer[..read_bytes]);
     let mut content_length: usize = 0;
     for line in header_str.lines() {
-        if let Some(len_str) = line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:")) {
+        if let Some(len_str) = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"))
+        {
             content_length = len_str.trim().parse().unwrap_or(0);
         }
     }
@@ -159,7 +168,10 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
         let limit = query_param(query, "limit")
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(DEFAULT_EVENT_LIMIT);
-        ("200 OK", daemon_status_json(job_id.as_deref(), cursor, limit))
+        (
+            "200 OK",
+            daemon_status_json(job_id.as_deref(), cursor, limit),
+        )
     } else if path == "/jobs/start" || path == "/loop/start" {
         match String::from_utf8(body_bytes) {
             Ok(body_str) => match start_daemon_job(&body_str) {
@@ -171,7 +183,10 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
             },
             Err(err) => (
                 "400 Bad Request",
-                format!("{{\"ok\":false,\"error\":{}}}", json_quote(&format!("invalid utf8: {err}"))),
+                format!(
+                    "{{\"ok\":false,\"error\":{}}}",
+                    json_quote(&format!("invalid utf8: {err}"))
+                ),
             ),
         }
     } else if path == "/jobs/stop" || path == "/loop/stop" {
@@ -215,12 +230,8 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
 }
 
 fn start_daemon_job(raw_job: &str) -> Result<String, String> {
-    let job_id = json_string(raw_job, "jobId").unwrap_or_else(|| {
-        format!(
-            "gd_daemon_{}",
-            now_millis_string()
-        )
-    });
+    let job_id = json_string(raw_job, "jobId")
+        .unwrap_or_else(|| format!("gd_daemon_{}", now_millis_string()));
     let loop_enabled = daemon_job_loop_enabled(raw_job);
     let interval_ms = daemon_job_interval_ms(raw_job);
 
@@ -241,12 +252,7 @@ fn start_daemon_job(raw_job: &str) -> Result<String, String> {
     ))
 }
 
-fn spawn_daemon_job(
-    job_id: String,
-    raw_job: String,
-    loop_enabled: bool,
-    interval_ms: u64,
-) {
+fn spawn_daemon_job(job_id: String, raw_job: String, loop_enabled: bool, interval_ms: u64) {
     let stop = Arc::new(AtomicBool::new(false));
     let started_at = now_millis_string();
     if let Ok(mut jobs) = DAEMON_JOBS.lock() {
@@ -314,7 +320,11 @@ fn spawn_daemon_job(
             match execute_job_payload(&raw_job) {
                 Ok((bytes_sent, receipt_count)) => {
                     update_daemon_job(&job_id, |job| {
-                        job.status = if loop_enabled { "running".into() } else { "sent".into() };
+                        job.status = if loop_enabled {
+                            "running".into()
+                        } else {
+                            "sent".into()
+                        };
                         job.round_count = round;
                         job.bytes_sent = job.bytes_sent.saturating_add(bytes_sent);
                         job.receipt_count = job.receipt_count.saturating_add(receipt_count);
@@ -336,7 +346,11 @@ fn spawn_daemon_job(
                 }
                 Err(error) => {
                     update_daemon_job(&job_id, |job| {
-                        job.status = if loop_enabled { "retrying".into() } else { "failed".into() };
+                        job.status = if loop_enabled {
+                            "retrying".into()
+                        } else {
+                            "failed".into()
+                        };
                         job.round_count = round;
                         job.last_error = Some(error.clone());
                         job.last_active_at = now_millis_string();
@@ -360,7 +374,6 @@ fn spawn_daemon_job(
             }
             wait_for_next_daemon_round(&stop, interval_ms);
         }
-
     });
 }
 
@@ -437,7 +450,9 @@ fn update_daemon_job(job_id: &str, update: impl FnOnce(&mut DaemonJobRuntime)) {
 
 fn daemon_job_loop_enabled(raw_job: &str) -> bool {
     json_bool(raw_job, "loop")
-        .or_else(|| extract_json_value(raw_job, "packet").and_then(|packet| json_bool(packet, "loop")))
+        .or_else(|| {
+            extract_json_value(raw_job, "packet").and_then(|packet| json_bool(packet, "loop"))
+        })
         .unwrap_or(false)
 }
 
@@ -576,8 +591,7 @@ fn url_decode(value: &str) -> String {
 }
 
 fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
-    let job_id =
-        json_string(raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
+    let job_id = json_string(raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
     let packet_body = extract_json_value(raw_job, "packet")
         .map(str::to_string)
         .unwrap_or_else(|| "null".into());
@@ -1293,8 +1307,11 @@ mod tests {
         });
         std::thread::sleep(std::time::Duration::from_millis(100));
 
-        let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect to daemon");
-        stream.write_all(b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").expect("write get status");
+        let mut stream =
+            TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect to daemon");
+        stream
+            .write_all(b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            .expect("write get status");
         let mut resp = [0u8; 1024];
         let n = stream.read(&mut resp).expect("read status response");
         let resp_str = String::from_utf8_lossy(&resp[..n]);
