@@ -36,10 +36,7 @@ impl CodexModelConfig {
         let auth_token = auth_token.into();
         let mut custom_headers = HashMap::new();
         if !auth_token.trim().is_empty() && auth_token != "dacheng-openclaw-proxy" {
-            custom_headers.insert(
-                "x-dacheng-auth-token".to_string(),
-                auth_token,
-            );
+            custom_headers.insert("x-dacheng-auth-token".to_string(), auth_token);
         }
         Self {
             provider: ModelProviderType::DeepSeek,
@@ -74,19 +71,40 @@ pub struct ToolDefinition {
 /// Codex 标准结构化事件流
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CodexEvent {
-    ReasoningProgress { content: String },
-    ToolCallTriggered { tool_name: String, arguments: Value },
-    SandboxFileModified { file_path: String, new_content: String },
-    TurnCompleted { summary: String },
-    Error { message: String },
+    ReasoningProgress {
+        content: String,
+    },
+    ToolCallTriggered {
+        tool_name: String,
+        arguments: Value,
+    },
+    SandboxFileModified {
+        file_path: String,
+        new_content: String,
+    },
+    TurnCompleted {
+        summary: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// 模型协议转译网关：使第三方大模型融入 Codex 智能体协议
 pub trait CodexModelGateway: Send + Sync {
     /// 将系统提示词与工具 Schema 转化为目标大模型的 JSON 结构
-    fn format_request(&self, prompt: &str, tools: &[ToolDefinition], config: &CodexModelConfig) -> String;
+    fn format_request(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        config: &CodexModelConfig,
+    ) -> String;
     /// 将流式响应解析还原为 CodexEvent 事件
-    fn parse_stream_chunk(&self, raw_chunk: &str, provider: &ModelProviderType) -> Result<Vec<CodexEvent>>;
+    fn parse_stream_chunk(
+        &self,
+        raw_chunk: &str,
+        provider: &ModelProviderType,
+    ) -> Result<Vec<CodexEvent>>;
 }
 
 pub struct UniversalModelGateway;
@@ -98,7 +116,12 @@ impl UniversalModelGateway {
 }
 
 impl CodexModelGateway for UniversalModelGateway {
-    fn format_request(&self, prompt: &str, tools: &[ToolDefinition], config: &CodexModelConfig) -> String {
+    fn format_request(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        config: &CodexModelConfig,
+    ) -> String {
         match config.provider {
             ModelProviderType::OpenAI
             | ModelProviderType::DeepSeek
@@ -176,7 +199,11 @@ impl CodexModelGateway for UniversalModelGateway {
         }
     }
 
-    fn parse_stream_chunk(&self, raw_chunk: &str, provider: &ModelProviderType) -> Result<Vec<CodexEvent>> {
+    fn parse_stream_chunk(
+        &self,
+        raw_chunk: &str,
+        provider: &ModelProviderType,
+    ) -> Result<Vec<CodexEvent>> {
         let mut events = Vec::new();
         let trimmed = raw_chunk.trim();
         if trimmed.is_empty() || trimmed == "[DONE]" {
@@ -199,13 +226,17 @@ impl CodexModelGateway for UniversalModelGateway {
 
         if let Ok(val) = serde_json::from_str::<Value>(payload) {
             match provider {
-                ModelProviderType::OpenAI | ModelProviderType::DeepSeek | ModelProviderType::LocalOllama => {
+                ModelProviderType::OpenAI
+                | ModelProviderType::DeepSeek
+                | ModelProviderType::LocalOllama => {
                     // 解析 OpenAI 兼容的工具调用与思考过程
                     if let Some(choices) = val.get("choices").and_then(|c| c.as_array()) {
                         for choice in choices {
                             if let Some(delta) = choice.get("delta") {
                                 // DeepSeek 推理内容字段 reasoning_content
-                                if let Some(reasoning) = delta.get("reasoning_content").and_then(|r| r.as_str()) {
+                                if let Some(reasoning) =
+                                    delta.get("reasoning_content").and_then(|r| r.as_str())
+                                {
                                     if !reasoning.is_empty() {
                                         events.push(CodexEvent::ReasoningProgress {
                                             content: reasoning.to_string(),
@@ -213,7 +244,8 @@ impl CodexModelGateway for UniversalModelGateway {
                                     }
                                 }
                                 // 常规回复内容
-                                if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                if let Some(content) = delta.get("content").and_then(|c| c.as_str())
+                                {
                                     if !content.is_empty() {
                                         events.push(CodexEvent::ReasoningProgress {
                                             content: content.to_string(),
@@ -221,12 +253,15 @@ impl CodexModelGateway for UniversalModelGateway {
                                     }
                                 }
                                 // 工具调用 tool_calls
-                                if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
+                                if let Some(tool_calls) =
+                                    delta.get("tool_calls").and_then(|tc| tc.as_array())
+                                {
                                     for tc in tool_calls {
                                         if let Some(func) = tc.get("function") {
-                                            if let (Some(name), Some(args_str)) =
-                                                (func.get("name").and_then(|n| n.as_str()), func.get("arguments").and_then(|a| a.as_str()))
-                                            {
+                                            if let (Some(name), Some(args_str)) = (
+                                                func.get("name").and_then(|n| n.as_str()),
+                                                func.get("arguments").and_then(|a| a.as_str()),
+                                            ) {
                                                 let args_val = serde_json::from_str(args_str)
                                                     .unwrap_or_else(|_| json!({ "raw": args_str }));
                                                 events.push(CodexEvent::ToolCallTriggered {
@@ -246,7 +281,10 @@ impl CodexModelGateway for UniversalModelGateway {
                         if type_str == "content_block_start" {
                             if let Some(block) = val.get("content_block") {
                                 if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                                    let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                    let name = block
+                                        .get("name")
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("unknown");
                                     let input = block.get("input").cloned().unwrap_or(json!({}));
                                     events.push(CodexEvent::ToolCallTriggered {
                                         tool_name: name.to_string(),
@@ -260,10 +298,17 @@ impl CodexModelGateway for UniversalModelGateway {
                 ModelProviderType::GoogleGemini => {
                     if let Some(candidates) = val.get("candidates").and_then(|c| c.as_array()) {
                         for cand in candidates {
-                            if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                            if let Some(parts) = cand
+                                .get("content")
+                                .and_then(|c| c.get("parts"))
+                                .and_then(|p| p.as_array())
+                            {
                                 for part in parts {
                                     if let Some(fc) = part.get("functionCall") {
-                                        let name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                        let name = fc
+                                            .get("name")
+                                            .and_then(|n| n.as_str())
+                                            .unwrap_or("unknown");
                                         let args = fc.get("args").cloned().unwrap_or(json!({}));
                                         events.push(CodexEvent::ToolCallTriggered {
                                             tool_name: name.to_string(),
