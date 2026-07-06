@@ -22,6 +22,8 @@ import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../widgets/settings/codex_profile_dashboard.dart';
 import '../models/auth_model.dart';
+import '../services/miniapp/codex_sdk_service.dart';
+import '../core/config/app_config.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback? onClose;
@@ -56,6 +58,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 桌面 AI / OpenClaw 设置
   String _aiBackendModeName = 'auto';
   String _openClawRemoteGatewayUrl = '';
+  String _codexApiKey = 'dacheng-openclaw-proxy';
+  String _codexBaseUrl = AppConfig.openClawDeepSeekProxyBaseUrl;
+  String _codexModelName = 'deepseek-chat';
+  String _codexProvider = 'deepSeek';
   OpenClawRuntimeStatus? _openClawStatus;
   DesktopControlBridgeStatus? _desktopControlStatus;
   List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
@@ -167,6 +173,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         AppSettings.getOpenClawRemoteGatewayUrl(),
         _openClawRemoteGatewayUrl,
       ),
+      _loadSetting<String>('Codex Key', AppSettings.getCodexApiKey(), _codexApiKey),
+      _loadSetting<String>('Codex URL', AppSettings.getCodexBaseUrl(), _codexBaseUrl),
+      _loadSetting<String>('Codex Model', AppSettings.getCodexModelName(), _codexModelName),
+      _loadSetting<String>('Codex Provider', AppSettings.getCodexProvider(), _codexProvider),
     ]);
 
     if (mounted) {
@@ -177,6 +187,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _appVersionLabel = values[3] as String;
         _aiBackendModeName = values[4] as String;
         _openClawRemoteGatewayUrl = values[5] as String;
+        _codexApiKey = values[6] as String;
+        _codexBaseUrl = values[7] as String;
+        _codexModelName = values[8] as String;
+        _codexProvider = values[9] as String;
         _isLoading = false;
       });
     }
@@ -356,6 +370,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('已保存远程入口，重启本机 AI 后生效'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _editCodexApiConfig() async {
+    final keyCtrl = TextEditingController();
+    final urlCtrl = TextEditingController(
+      text: AppConfig.openClawDeepSeekProxyBaseUrl,
+    );
+    final modelCtrl = TextEditingController(
+      text: _codexModelName == 'deepseek-reasoner'
+          ? 'deepseek-reasoner'
+          : 'deepseek-chat',
+    );
+    var selectedProvider = 'deepSeek';
+
+    final value = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Codex DeepSeek 后端配置'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedProvider,
+                  decoration: const InputDecoration(labelText: '供应商 (Provider)'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'deepSeek',
+                      child: Text('大乘 DeepSeek 代理'),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() {
+                        selectedProvider = val;
+                        urlCtrl.text = AppConfig.openClawDeepSeekProxyBaseUrl;
+                        modelCtrl.text = 'deepseek-chat';
+                        keyCtrl.text = '';
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  readOnly: true,
+                  decoration: const InputDecoration(
+                    labelText: '后端代理地址 (Base URL)',
+                    helperText: '默认使用大乘后端 /api/openclaw/deepseek/v1',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: keyCtrl,
+                  obscureText: true,
+                  readOnly: true,
+                  decoration: const InputDecoration(
+                    labelText: '代理 Key',
+                    helperText: '由后端自动注入 DeepSeek Key，App 不保存第三方密钥',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: modelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '模型名称 (Model Name)',
+                    helperText: '支持 deepseek-chat 或 deepseek-reasoner',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('保存配置'),
+            ),
+          ],
+        ),
+      ),
+    );
+    keyCtrl.dispose();
+    urlCtrl.dispose();
+    modelCtrl.dispose();
+
+    if (value != true) return;
+    final finalKey = keyCtrl.text.trim().isEmpty
+        ? 'dacheng-openclaw-proxy'
+        : keyCtrl.text.trim();
+    final finalUrl = urlCtrl.text.trim().isEmpty
+        ? AppConfig.openClawDeepSeekProxyBaseUrl
+        : urlCtrl.text.trim();
+    final finalModel = modelCtrl.text.trim().isEmpty
+        ? 'deepseek-chat'
+        : modelCtrl.text.trim();
+
+    await AppSettings.setCodexApiKey(finalKey);
+    await AppSettings.setCodexBaseUrl(finalUrl);
+    await AppSettings.setCodexModelName(finalModel);
+    await AppSettings.setCodexProvider(selectedProvider);
+
+    if (!mounted) return;
+    setState(() {
+      _codexApiKey = finalKey;
+      _codexBaseUrl = finalUrl;
+      _codexModelName = finalModel;
+      _codexProvider = selectedProvider;
+    });
+
+    CodexModelProvider providerEnum = CodexModelProvider.deepSeek;
+
+    CodexSdk.instance.configure(CodexModelConfigDart(
+      provider: providerEnum,
+      baseUrl: finalUrl,
+      apiKey: finalKey,
+      modelName: finalModel,
+    ));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已更新 Codex & 机器人之父 API 配置：$finalModel'),
         backgroundColor: Colors.green,
       ),
     );
@@ -943,6 +1086,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildOpenClawSettingCard(),
             const SizedBox(height: 12),
           ],
+          _buildSettingItem(
+            context,
+            icon: Icons.api_outlined,
+            iconColor: Colors.amberAccent,
+            title: 'Codex DeepSeek 后端',
+            subtitle: '使用 OpenClaw 同款后端代理与账户 API 额度',
+            onTap: _editCodexApiConfig,
+          ),
           if (Platform.isAndroid)
             _buildSettingItem(
               context,
@@ -1239,6 +1390,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 24),
           _buildSettingsSectionTitle('智能体控制'),
           if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
+          _SettingsLightRow(
+            icon: Icons.api_outlined,
+            title: 'Codex DeepSeek 后端',
+            subtitle: '使用 OpenClaw 同款后端代理与账户 API 额度。',
+            onTap: _editCodexApiConfig,
+          ),
           _SettingsLightRow(
             icon: Icons.auto_awesome,
             title: '技能自动更新',
@@ -1546,15 +1703,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.white12),
               ),
-              child: const Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.verified_user_outlined, color: Colors.white70),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'DeepSeek API Key 由大乘后端托管；本机 OpenClaw 使用会员登录凭证请求代理并计量 token。',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                  const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.verified_user_outlined, color: Colors.white70),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Codex 默认使用 OpenClaw 同款 DeepSeek 后端代理，DeepSeek Key 留在后端，按账户 API 额度统一计费。',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.tune, size: 16),
+                      label: Text('选择 Codex 模型 ($_codexModelName)'),
+                      onPressed: _editCodexApiConfig,
                     ),
                   ),
                 ],
