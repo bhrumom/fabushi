@@ -111,6 +111,10 @@ export * from "./faliu-merit-benefits-t0278-juan10";
 export * from "./faliu-merit-benefits-t0278-juan10-yama-palace";
 export * from "./faliu-merit-benefits-t0278-juan10-yama-zhilin";
 export * from "./faliu-merit-benefits-t0278-juan11";
+export * from "./faliu-merit-benefits-t0278-juan11-zunzhong";
+export * from "./faliu-merit-benefits-t0278-juan12";
+export * from "./faliu-merit-benefits-t0278-juan13";
+export * from "./faliu-merit-benefits-t0278-juan14";
 
 import { getFaliuMeritBenefits as getBaseFaliuMeritBenefits } from "./faliu-merit-benefits-original";
 import * as t0263Juan10 from "./faliu-merit-benefits-t0263-juan10";
@@ -225,6 +229,10 @@ import * as t0278Juan10 from "./faliu-merit-benefits-t0278-juan10";
 import * as t0278Juan10YamaPalace from "./faliu-merit-benefits-t0278-juan10-yama-palace";
 import * as t0278Juan10YamaZhilin from "./faliu-merit-benefits-t0278-juan10-yama-zhilin";
 import * as t0278Juan11 from "./faliu-merit-benefits-t0278-juan11";
+import * as t0278Juan11Zunzhong from "./faliu-merit-benefits-t0278-juan11-zunzhong";
+import * as t0278Juan12 from "./faliu-merit-benefits-t0278-juan12";
+import * as t0278Juan13 from "./faliu-merit-benefits-t0278-juan13";
+import * as t0278Juan14 from "./faliu-merit-benefits-t0278-juan14";
 
 const overrideMeritBenefits = {
   "T0263:10": [
@@ -388,7 +396,13 @@ const overrideMeritBenefits = {
     ...t0278Juan10YamaPalace.T0278_JUAN_10_YAMA_PALACE_MERIT_BENEFITS,
     ...t0278Juan10YamaZhilin.T0278_JUAN_10_YAMA_ZHILIN_MERIT_BENEFITS,
   ],
-  "T0278:11": t0278Juan11.T0278_JUAN_11_MERIT_BENEFITS,
+  "T0278:11": [
+    ...t0278Juan11.T0278_JUAN_11_MERIT_BENEFITS,
+    ...t0278Juan11Zunzhong.T0278_JUAN_11_ZUNZHONG_MERIT_BENEFITS,
+  ],
+  "T0278:12": t0278Juan12.T0278_JUAN_12_MERIT_BENEFITS,
+  "T0278:13": t0278Juan13.T0278_JUAN_13_MERIT_BENEFITS,
+  "T0278:14": t0278Juan14.T0278_JUAN_14_MERIT_BENEFITS,
 };
 
 export function getFaliuMeritBenefits(work: string | null | undefined, juan: string | number | null | undefined) {

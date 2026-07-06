@@ -592,7 +592,6 @@ fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
         json_quote(&now_millis_string())
     ));
 
-    let mut udp_count = 0;
     for endpoint in endpoints {
         emit_raw(&format!(
             "{{\"type\":\"attempting\",\"jobId\":{},\"endpointId\":{},\"transport\":{},\"at\":{}}}",
@@ -605,12 +604,8 @@ fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
         emit_receipt(&job_id, &receipt);
         receipts.push(receipt);
 
-        if endpoint.transport == "udp" {
-            udp_count += 1;
-            if udp_count % 25 == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
+        // 遵照用户的绝对要求：不要并行发送，逐个顺序平稳投递
+        std::thread::sleep(std::time::Duration::from_millis(6));
     }
 
     let bytes_sent = receipts
@@ -718,20 +713,29 @@ fn send_udp(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
     let datagrams = udp_datagrams(packet_body);
     let mut sent_bytes = 0usize;
     for datagram in datagrams {
-        let mut retries = 5;
+        let mut retries = 40;
         let mut delay = std::time::Duration::from_millis(2);
         loop {
             match socket.send_to(datagram.as_bytes(), &target) {
                 Ok(bytes) => {
                     sent_bytes = sent_bytes.saturating_add(bytes);
+                    // 绝不并行与突发，逐个分包顺序发，给物理网口缓冲充足时间
+                    std::thread::sleep(std::time::Duration::from_micros(1500));
                     break;
                 }
                 Err(error) => {
                     let os_err = error.raw_os_error();
-                    if (os_err == Some(55) || error.kind() == std::io::ErrorKind::WouldBlock) && retries > 0 {
+                    let is_buffer_busy = os_err == Some(55)
+                        || os_err == Some(105)
+                        || os_err == Some(10055)
+                        || os_err == Some(11)
+                        || error.kind() == std::io::ErrorKind::WouldBlock;
+                    if is_buffer_busy && retries > 0 {
                         retries -= 1;
                         std::thread::sleep(delay);
-                        delay *= 2;
+                        if delay < std::time::Duration::from_millis(30) {
+                            delay = delay.saturating_mul(2);
+                        }
                         continue;
                     }
                     return Err(format!("udp send failed: {error}"));
