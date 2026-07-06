@@ -97,6 +97,11 @@ class AppConfig {
     return defaultDachengAiWebUrl;
   }
 
+  static String get openClawDeepSeekProxyBaseUrl {
+    final baseUrl = currentAiBackendUrl.replaceFirst(RegExp(r'/+$'), '');
+    return '$baseUrl/api/openclaw/deepseek/v1';
+  }
+
   static Uri buildDachengAiWebUri({
     String? prompt,
     String? bookTitle,
