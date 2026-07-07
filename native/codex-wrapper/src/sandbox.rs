@@ -61,7 +61,7 @@ impl VirtualVfs {
         let file = map
             .get_mut(path)
             .ok_or_else(|| anyhow!("File not found in Virtual VFS: {}", path))?;
-        
+
         if !file.content.contains(find_str) {
             return Err(anyhow!(
                 "Target string not found in file {} during patch operation",

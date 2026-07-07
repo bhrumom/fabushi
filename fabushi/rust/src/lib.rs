@@ -59,9 +59,19 @@ fn resolve_geoip_endpoints_memory(region: &str, port: u16) -> Vec<UdpEndpoint> {
 
             let include = match reg.as_str() {
                 "ALL" | "GLOBAL" => true,
-                "EASTASIA" => ["CN", "JP", "KR", "KP", "MN", "TW", "HK", "MO"].contains(&code.as_str()),
-                "SOUTHEASTASIA" => ["SG", "MY", "TH", "VN", "ID", "PH", "MM", "KH", "LA", "BN", "TL"].contains(&code.as_str()),
-                "EUROPEAMERICA" => ["US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "CH", "SE", "NO", "FI", "DK", "BE", "AT", "IE", "PL", "PT", "GR", "RU", "UA", "BR", "MX", "AR", "CL", "CO", "PE"].contains(&code.as_str()),
+                "EASTASIA" => {
+                    ["CN", "JP", "KR", "KP", "MN", "TW", "HK", "MO"].contains(&code.as_str())
+                }
+                "SOUTHEASTASIA" => [
+                    "SG", "MY", "TH", "VN", "ID", "PH", "MM", "KH", "LA", "BN", "TL",
+                ]
+                .contains(&code.as_str()),
+                "EUROPEAMERICA" => [
+                    "US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "CH", "SE", "NO", "FI", "DK",
+                    "BE", "AT", "IE", "PL", "PT", "GR", "RU", "UA", "BR", "MX", "AR", "CL", "CO",
+                    "PE",
+                ]
+                .contains(&code.as_str()),
                 other => code == other,
             };
             if include {
@@ -77,8 +87,8 @@ fn resolve_geoip_endpoints_memory(region: &str, port: u16) -> Vec<UdpEndpoint> {
 }
 
 fn send_udp_packet(host: &str, port: u16, data: &[u8]) -> Result<usize, String> {
-    let socket = UdpSocket::bind(("0.0.0.0", 0))
-        .map_err(|error| format!("udp bind failed: {error}"))?;
+    let socket =
+        UdpSocket::bind(("0.0.0.0", 0)).map_err(|error| format!("udp bind failed: {error}"))?;
     if host == "255.255.255.255" || host.ends_with(".255") {
         let _ = socket.set_broadcast(true);
     }
@@ -126,7 +136,7 @@ pub extern "C" fn execute_global_dharma_delivery_ffi(
     };
 
     let endpoints = resolve_geoip_endpoints_memory(region_str, port);
-    
+
     let started_msg = format!(
         "{{\"type\":\"started\",\"jobId\":{},\"endpointCount\":{},\"at\":{}}}",
         json_quote(job_id_str),
