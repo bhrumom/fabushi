@@ -96,7 +96,8 @@ const DEFAULT_HTTP_TARGETS: HttpTarget[] = [
     nodeId: "jsonplaceholder-global",
   },
 ];
-const RUST_DAEMON_BASE_URL = "http://127.0.0.1:18888";
+const RUST_DAEMON_DEFAULT_PORT = 18888;
+const RUST_DAEMON_PORT_CANDIDATES = [18888, 18889, 18890, 18891, 18892];
 const DEFAULT_UDP_PORT = 9999;
 const UDP_SAFE_DATAGRAM_BYTES = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES = 6 * 1024;
@@ -114,6 +115,11 @@ const RUST_WORKER_FILES = [
 ] as const;
 const RUST_WORKER_BUILD_CACHE = `${RUST_WORKER_LOCAL_DIR}/.fabushi-worker-build.json`;
 
+let activeRustDaemonBaseUrl = daemonBaseUrl(RUST_DAEMON_DEFAULT_PORT);
+
+function daemonBaseUrl(port: number) {
+  return `http://127.0.0.1:${port}`;
+}
 
 let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
 let preparedWasmModulePromise: Promise<WebAssembly.Module> | null = null;
@@ -482,9 +488,14 @@ function encodeQuery(value: string) {
 
 async function fetchDaemonJson(
   path: string,
-  options: { method?: string; body?: string; timeoutMs?: number } = {},
+  options: {
+    method?: string;
+    body?: string;
+    timeoutMs?: number;
+    baseUrl?: string;
+  } = {},
 ) {
-  const url = `${RUST_DAEMON_BASE_URL}${path}`;
+  const url = `${options.baseUrl || activeRustDaemonBaseUrl}${path}`;
   const method = options.method || "GET";
   const timeoutMs = options.timeoutMs ?? 2000;
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -678,43 +689,75 @@ async function ensureCargoToolchain(onLog?: (message: string) => void) {
   return cargoToolchainPromise;
 }
 
+async function isLoopCapableDaemon(baseUrl: string, timeoutMs = 700) {
+  try {
+    const check = await fetchDaemonJson("/jobs/status?limit=1", {
+      method: "GET",
+      timeoutMs,
+      baseUrl,
+    });
+    return (
+      check.statusCode === 200 &&
+      check.data?.ok === true &&
+      check.data?.daemon === true
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function ensureRustWorkerDaemon(
   prepared: PreparedWorker,
   onLog?: (message: string) => void,
 ): Promise<boolean> {
-  try {
-    const check = await fetchDaemonJson("/status", {
-      method: "GET",
-      timeoutMs: 600,
-    });
-    if (check.statusCode === 200) return true;
-  } catch {
-    // 尚未启动
+  for (const port of RUST_DAEMON_PORT_CANDIDATES) {
+    const baseUrl = daemonBaseUrl(port);
+    if (await isLoopCapableDaemon(baseUrl)) {
+      activeRustDaemonBaseUrl = baseUrl;
+      return true;
+    }
   }
 
-  onLog?.("检测到发送任务，正在自举启动后台常驻守护服务 (Loopback Daemon 18888)...");
-  try {
-    fbApp.invoke<any>("runtime.process.execute", {
-      title: "启动全球法布施 Rust daemon",
-      command: prepared.binaryPath,
-      arguments: ["--daemon", "18888"],
-      detached: true,
-      silentCli: true,
-    }).catch(() => {});
-  } catch {
-    // 忽略异常，尝试后续探活
+  onLog?.("检测到发送任务，正在自举启动后台常驻守护服务 (Loopback Daemon)...");
+  for (const port of RUST_DAEMON_PORT_CANDIDATES) {
+    const baseUrl = daemonBaseUrl(port);
+    try {
+      const legacyCheck = await fetchDaemonJson("/status", {
+        method: "GET",
+        timeoutMs: 400,
+        baseUrl,
+      });
+      if (legacyCheck.statusCode === 200) {
+        onLog?.(
+          `端口 ${port} 已被不支持循环 job API 的旧 daemon 占用，尝试后备端口。`,
+        );
+        continue;
+      }
+    } catch {
+      // 端口未占用，尝试在这里启动新版 daemon。
+    }
+
+    try {
+      fbApp.invoke<any>("runtime.process.execute", {
+        title: "启动全球法布施 Rust daemon",
+        command: prepared.binaryPath,
+        arguments: ["--daemon", String(port)],
+        detached: true,
+        silentCli: true,
+      }).catch(() => {});
+    } catch {
+      // 忽略异常，尝试后续探活或下一个端口。
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    if (await isLoopCapableDaemon(baseUrl, 1200)) {
+      activeRustDaemonBaseUrl = baseUrl;
+      onLog?.(`Rust daemon 已在 ${baseUrl} 接管循环发送。`);
+      return true;
+    }
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  try {
-    const check = await fetchDaemonJson("/status", {
-      method: "GET",
-      timeoutMs: 1000,
-    });
-    return check.statusCode === 200;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 async function prepareMiniAppRustWorker(
@@ -1142,15 +1185,7 @@ export class GlobalDharmaSendService {
       prepared = await prepareMiniAppRustWorker(onLog);
       isDaemonOnline = await ensureRustWorkerDaemon(prepared, onLog);
     } else {
-      try {
-        const check = await fetchDaemonJson("/status", {
-          method: "GET",
-          timeoutMs: 1000,
-        });
-        isDaemonOnline = check.statusCode === 200;
-      } catch {
-        isDaemonOnline = false;
-      }
+      isDaemonOnline = await isLoopCapableDaemon(activeRustDaemonBaseUrl, 1000);
     }
     if (loop) {
       if (!isDaemonOnline) {

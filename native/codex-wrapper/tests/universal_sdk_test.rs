@@ -1,6 +1,4 @@
-use codex_wrapper::{
-    CodexClient, CodexConfig, CodexEvent, CodexModelConfig, ModelProviderType,
-};
+use codex_wrapper::{CodexClient, CodexConfig, CodexEvent, CodexModelConfig, ModelProviderType};
 use futures::stream::StreamExt;
 use serde_json::json;
 
@@ -9,7 +7,10 @@ async fn test_universal_sdk_bot_father_closed_loop() {
     // 1. 模拟配置为大乘后端托管的 DeepSeek 大脑
     let model_cfg = CodexModelConfig::deepseek("test_key_123");
     assert_eq!(model_cfg.provider, ModelProviderType::DeepSeek);
-    assert_eq!(model_cfg.base_url, "https://api.ombhrum.com/api/openclaw/deepseek/v1");
+    assert_eq!(
+        model_cfg.base_url,
+        "https://api.ombhrum.com/api/openclaw/deepseek/v1"
+    );
     assert_eq!(model_cfg.api_key, "dacheng-openclaw-proxy");
     assert_eq!(
         model_cfg.custom_headers.get("x-dacheng-auth-token"),
@@ -119,12 +120,23 @@ async fn test_universal_sdk_bot_father_closed_loop() {
     }
 
     // 6. 自动回归验证所有核心业务步骤
-    assert!(reasoning_received, "Should receive DeepSeek reasoning content");
-    assert!(file_created, "Should receive SandboxFileModified for index.tsx creation");
-    assert!(file_patched, "Should receive SandboxFileModified for patch_code modification");
+    assert!(
+        reasoning_received,
+        "Should receive DeepSeek reasoning content"
+    );
+    assert!(
+        file_created,
+        "Should receive SandboxFileModified for index.tsx creation"
+    );
+    assert!(
+        file_patched,
+        "Should receive SandboxFileModified for patch_code modification"
+    );
 
     // 7. 自动校验虚拟文件系统 VFS 最终的内容正确性
-    let content_in_vfs = vfs.read_file("index.tsx").expect("File should exist in VFS");
+    let content_in_vfs = vfs
+        .read_file("index.tsx")
+        .expect("File should exist in VFS");
     assert!(
         content_in_vfs.contains("莫兰迪禅修日记"),
         "VFS content should match patched version"

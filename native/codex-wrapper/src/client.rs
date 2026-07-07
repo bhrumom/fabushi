@@ -58,10 +58,7 @@ impl CodexClient {
     }
 
     /// 创建一个与 Codex 智能体的会话线程
-    pub async fn create_thread(
-        &self,
-        system_prompt: impl Into<String>,
-    ) -> Result<WorkspaceThread> {
+    pub async fn create_thread(&self, system_prompt: impl Into<String>) -> Result<WorkspaceThread> {
         // 默认提供通用的文件沙盒操作工具集 Schema
         let tools = vec![
             ToolDefinition {
