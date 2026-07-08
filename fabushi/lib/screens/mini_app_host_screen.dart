@@ -295,6 +295,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             transparentBackground: false,
             mediaPlaybackRequiresUserGesture: false,
             supportZoom: false,
+            domStorageEnabled: true,
+            databaseEnabled: true,
           ),
           onWebViewCreated: (controller) {
             _webViewController = controller;
@@ -322,6 +324,29 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             await controller.evaluateJavascript(source: _hostSdkScript);
             _markHostReady();
             if (mounted) setState(() => _loading = false);
+          },
+          onProgressChanged: (controller, progress) async {
+            if (progress == 100 && !_hostReady) {
+              _webViewController = controller;
+              await controller.evaluateJavascript(source: _hostSdkScript);
+              _markHostReady();
+              if (mounted) setState(() => _loading = false);
+            }
+          },
+          onConsoleMessage: (controller, consoleMessage) {
+            debugPrint(
+              'MiniApp[${widget.bot.stableBotId}] (${consoleMessage.messageLevel}): ${consoleMessage.message}',
+            );
+          },
+          onReceivedHttpError: (controller, request, errorResponse) {
+            if (request.isForMainFrame ?? true) {
+              if (mounted) {
+                setState(() {
+                  _loading = false;
+                  _error = 'HTTP ${errorResponse.statusCode}: 加载页面失败';
+                });
+              }
+            }
           },
           onReceivedError: (controller, request, error) {
             if (mounted) {
@@ -457,7 +482,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final explicitEntryUrl = bot.stableMiniAppEntryUrl;
     var base = explicitEntryUrl.isNotEmpty
         ? explicitEntryUrl
-        : 'https://fabushi.ombhrum.com/miniapps/${Uri.encodeComponent(bot.stableMiniAppId)}';
+        : 'https://fabushi.ombhrum.com/miniapps/${Uri.encodeComponent(bot.stableMiniAppId)}/';
+    if (!base.contains('?') && !base.endsWith('/')) {
+      base = '$base/';
+    }
 
     final uri = Uri.parse(base);
     final queryParams = Map<String, String>.from(uri.queryParameters);
