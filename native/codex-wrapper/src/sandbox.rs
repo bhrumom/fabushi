@@ -18,6 +18,12 @@ pub struct VirtualVfs {
     files: Arc<Mutex<HashMap<String, VirtualFile>>>,
 }
 
+impl Default for VirtualVfs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VirtualVfs {
     pub fn new() -> Self {
         Self {

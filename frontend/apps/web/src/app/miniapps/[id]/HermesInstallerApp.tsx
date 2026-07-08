@@ -509,6 +509,11 @@ export default function HermesInstallerApp() {
     return () => stopPolling();
   }, [stopPolling]);
 
+  const latestProcessIncomingRef = useRef(processIncoming);
+  useEffect(() => {
+    latestProcessIncomingRef.current = processIncoming;
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     let unsubscribeCommand: (() => void) | undefined;
@@ -521,7 +526,7 @@ export default function HermesInstallerApp() {
           const incoming = String(
             detail?.args || detail?.rawText || detail?.text || "",
           ).trim();
-          void processIncoming(incoming || command || "/status");
+          void latestProcessIncomingRef.current(incoming || command || "/status");
         });
       }
     };
@@ -531,7 +536,7 @@ export default function HermesInstallerApp() {
       window.removeEventListener("fabushi-miniapp-ready", attachCommandListener);
       unsubscribeCommand?.();
     };
-  }, [processIncoming]);
+  }, []);
 
   return (
     <div
