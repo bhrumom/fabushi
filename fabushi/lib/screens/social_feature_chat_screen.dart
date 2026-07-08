@@ -2,10 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
-import '../core/config/app_config.dart';
 import '../features/auth/application/auth_model.dart';
 import '../features/flashcards/domain/flashcard_models.dart';
 import '../models/file_transfer_model.dart'
@@ -44,7 +42,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final Map<String, String> _miniAppInputHints = {};
   final Map<String, _RuntimeDeliverySummary> _deliverySummaries =
       _sharedDeliverySummaries;
-  final http.Client _httpClient = http.Client();
   final Set<DharmaPublishPlatform> _platforms = {
     DharmaPublishPlatform.xiaohongshu,
   };
@@ -80,7 +77,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   @override
   void dispose() {
-    _httpClient.close();
     _composerFocus
       ..removeListener(_handleComposerFocusChanged)
       ..dispose();
@@ -169,10 +165,31 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     assert(index >= 0);
     final visible = _miniAppPanelOpen && session.key == _visibleMiniAppKey;
     final compactTop = constraints.maxHeight * 0.14;
+    final host = _MiniAppHostFrame(
+      wide: wide,
+      child: MiniAppHostScreen(
+        key: ValueKey('miniapp-session:${session.key}'),
+        bot: session.bot,
+        inline: true,
+        onMinimize: _hideMiniAppPanel,
+        onClose: _closeVisibleMiniAppSession,
+        startParam: session.startParam,
+        reloadToken: session.startParamVersion == 0
+            ? null
+            : session.startParamVersion.toString(),
+        controller: session.controller,
+        onMiniAppEvent: _handleMiniAppEvent,
+        onComposerStateRequest: () => _composerStateFor(session.bot),
+        onCliStart: (title, taskId) =>
+            _handleMiniAppCliStart(session.bot.stableBotId, title, taskId),
+        onCliLog: _handleMiniAppCliLog,
+      ),
+    );
 
     // 不把后台小程序移出屏幕。macOS/桌面端 PlatformView/WebView 在被移出可见区域后，
     // 再回到前台时可能重新挂载，导致 React 内存态日志丢失，看起来像“新小程序”。
-    // 保持同一个 WebView 在原位置，只做透明和 IgnorePointer，打开时就是刚刚后台调用的实例。
+    // 同时避免把可见的 WKWebView 放进 Opacity/AnimatedOpacity：macOS 原生视图在该组合下
+    // 可能只绘制出白色表面。可见态直接渲染，隐藏态才降透明并禁用指针。
     return Positioned(
       key: ValueKey('miniapp-position:${session.key}'),
       top: wide ? 0 : compactTop,
@@ -180,37 +197,15 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       right: 0,
       left: wide ? null : 0,
       width: wide ? 430 : null,
-      child: IgnorePointer(
-        ignoring: !visible,
-        child: AnimatedOpacity(
-          opacity: visible ? 1 : 0.001,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeInOut,
-          child: _MiniAppHostFrame(
-            wide: wide,
-            child: MiniAppHostScreen(
-              key: ValueKey('miniapp-session:${session.key}'),
-              bot: session.bot,
-              inline: true,
-              onMinimize: _hideMiniAppPanel,
-              onClose: _closeVisibleMiniAppSession,
-              startParam: session.startParam,
-              reloadToken: session.startParamVersion == 0
-                  ? null
-                  : session.startParamVersion.toString(),
-              controller: session.controller,
-              onMiniAppEvent: _handleMiniAppEvent,
-              onComposerStateRequest: () => _composerStateFor(session.bot),
-              onCliStart: (title, taskId) => _handleMiniAppCliStart(
-                session.bot.stableBotId,
-                title,
-                taskId,
+      child: visible
+          ? host
+          : IgnorePointer(
+              child: Opacity(
+                opacity: 0.01,
+                alwaysIncludeSemantics: false,
+                child: host,
               ),
-              onCliLog: _handleMiniAppCliLog,
             ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -827,30 +822,14 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     setState(() {
       _botMessages.add(_ChatMessage.user(text));
       _busy = true;
-      _activity = '正在调用 ${_bot.title}...';
+      _activity = '正在等待 ${_bot.title} 回复...';
     });
     _scrollBottom();
 
     try {
-      final session = await _ensureMiniAppSession(_bot);
-      final wasForeground =
-          _miniAppPanelOpen && _visibleMiniAppKey == session.key;
-      final result = await session.controller.runCommand(text);
-      session
-        ..lastCommandAt = DateTime.now()
-        ..lastCommandText = text;
-      if (!mounted) return;
-      setState(() {
-        _botMessages.add(
-          _ChatMessage.bot(
-            wasForeground
-                ? '已发送给当前打开的「${_bot.title}」，由小程序执行。\n命令：${result['command'] ?? '/start'}'
-                : '已发送给后台运行的「${_bot.title}」，由小程序执行。\n点击「打开应用」会回到同一个小程序实例。\n命令：${result['command'] ?? '/start'}',
-          ),
-        );
-      });
+      await _deliverMiniAppCommand(text);
     } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('调用失败：$e'));
+      if (mounted) _botMessages.add(_ChatMessage.error('小程序接收失败：$e'));
     } finally {
       if (mounted) {
         setState(() {
@@ -860,6 +839,15 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       }
       _scrollBottom();
     }
+  }
+
+  Future<Map<String, dynamic>> _deliverMiniAppCommand(String text) async {
+    final session = await _ensureMiniAppSession(_bot);
+    final result = await session.controller.runCommand(text);
+    session
+      ..lastCommandAt = DateTime.now()
+      ..lastCommandText = text;
+    return result;
   }
 
   Future<_MiniAppSession> _ensureMiniAppSession(
@@ -1073,94 +1061,25 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
     try {
       final token = auth?.authToken;
-      final response = await _httpClient
-          .post(
-            AppConfig.buildBackendUri('/api/botfather/generate-miniapp'),
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-              if (token != null && token.isNotEmpty)
-                'Authorization': 'Bearer $token',
-            },
-            body: jsonEncode({
-              'prompt': text,
-              'username': auth?.currentUser?.username,
-            }),
-          )
-          .timeout(AppConfig.requestTimeout);
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      final data = decoded is Map<String, dynamic>
-          ? decoded
-          : Map<String, dynamic>.from(decoded as Map);
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300 ||
-          data['success'] == false) {
-        throw StateError((data['message'] ?? '生成失败').toString());
-      }
-      final miniApp = Map<String, dynamic>.from(
-        data['miniApp'] as Map? ?? const {},
+      final generated = await _generateMiniAppWithCodex(
+        prompt: text,
+        authToken: token,
+        username: auth?.currentUser?.username,
       );
-      final generatedBotJson = Map<String, dynamic>.from(
-        data['bot'] as Map? ?? const {},
-      );
-      final generatedBot = generatedBotJson.isEmpty
-          ? null
-          : SocialFeatureBot.fromMiniApp(
-              MiniAppBot.fromJson(generatedBotJson),
-              index: 0,
-              manifest: miniApp.isEmpty
-                  ? null
-                  : MiniAppManifest.fromJson(miniApp),
-            );
-      final title = miniApp['title']?.toString() ?? '个人沙箱小程序';
-      final entryUrl = miniApp['entryUrl']?.toString() ?? '';
       if (!mounted) return;
-      // 同步通过 Codex SDK 绑定到虚拟 VFS 与即时预览，并从本地载入用户的自定义 API 配置
-      await CodexSdk.instance.initFromSettings();
-      if (miniApp.isNotEmpty) {
-        final html = miniApp['sourceHtml']?.toString() ?? '';
-        if (html.isNotEmpty) {
-          CodexSdk.instance.updateSandboxFile('index.html', html);
-        }
-      }
-      unawaited(
-        CodexSdk.instance
-            .sendMessage(
-              prompt: text,
-              workspaceId: 'sandbox',
-              authToken: token,
-              username: auth?.currentUser?.username,
-            )
-            .forEach((event) {
-          if (event.type == CodexEventType.error &&
-              event.errorMessage != null) {
-            // 自我修复调试触发
-            unawaited(
-              CodexSdk.instance
-                  .sendMessage(
-                    prompt: event.errorMessage!,
-                    workspaceId: 'sandbox',
-                    isSelfHealing: true,
-                    authToken: token,
-                    username: auth?.currentUser?.username,
-                  )
-                  .length,
-            );
-          }
-        }),
-      );
       setState(() {
         _botMessages.add(
           _ChatMessage.bot(
             [
-              '已生成「$title」，并放入你的个人沙箱。',
-              if (entryUrl.isNotEmpty) '入口：$entryUrl',
-              '我已经为你打开小程序面板，也可以继续告诉我修改需求。',
+              '已由内置 Codex 生成「${generated.title}」，并放入你的个人沙箱。',
+              if (generated.summary != null && generated.summary!.isNotEmpty)
+                generated.summary!,
+              '我已经打开沙箱小程序，也可以继续告诉我修改需求。',
             ].join('\n'),
           ),
         );
       });
-      _openMiniAppPanel(generatedBot ?? _bot);
+      _openMiniAppPanel(generated.bot);
     } catch (e) {
       if (mounted) {
         _botMessages.add(_ChatMessage.error('生成失败：$e'));
@@ -1174,6 +1093,111 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       }
       _scrollBottom();
     }
+  }
+
+  Future<_GeneratedMiniAppPreview> _generateMiniAppWithCodex({
+    required String prompt,
+    String? authToken,
+    String? username,
+  }) async {
+    await CodexSdk.instance.initFromSettings();
+
+    String? html;
+    String? summary;
+    final errors = <String>[];
+    await for (final event in CodexSdk.instance.sendMessage(
+      prompt: prompt,
+      workspaceId: 'sandbox',
+      authToken: authToken,
+      username: username,
+    )) {
+      switch (event.type) {
+        case CodexEventType.sandboxFileModified:
+          if ((event.filePath ?? '').trim() == 'index.html' &&
+              event.newContent?.trim().isNotEmpty == true) {
+            html = event.newContent;
+          }
+          break;
+        case CodexEventType.turnCompleted:
+          summary = event.content;
+          break;
+        case CodexEventType.error:
+          final message = event.errorMessage?.trim();
+          if (message != null && message.isNotEmpty) errors.add(message);
+          break;
+        case CodexEventType.reasoningProgress:
+        case CodexEventType.toolCallTriggered:
+          break;
+      }
+    }
+
+    html ??= CodexSdk.instance.virtualVfs['index.html'];
+    if (html == null || html.trim().isEmpty) {
+      throw StateError(
+        errors.isEmpty ? '内置 Codex 没有返回可预览的小程序 HTML' : errors.last,
+      );
+    }
+
+    final title = _generatedMiniAppTitle(prompt: prompt, html: html);
+    return _GeneratedMiniAppPreview(
+      title: title,
+      summary: summary,
+      bot: _sandboxBotForGeneratedMiniApp(title: title, html: html),
+    );
+  }
+
+  String _generatedMiniAppTitle({
+    required String prompt,
+    required String html,
+  }) {
+    final titleMatch = RegExp(
+      r'<title[^>]*>([^<]+)</title>',
+      caseSensitive: false,
+    ).firstMatch(html);
+    final title = titleMatch?.group(1)?.trim();
+    if (title != null && title.isNotEmpty) return title;
+
+    final compactPrompt = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compactPrompt.isEmpty) return '个人沙箱小程序';
+    return compactPrompt.length > 18
+        ? '${compactPrompt.substring(0, 18)}...'
+        : compactPrompt;
+  }
+
+  SocialFeatureBot _sandboxBotForGeneratedMiniApp({
+    required String title,
+    required String html,
+  }) {
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final entryUrl = Uri.dataFromString(
+      html,
+      mimeType: 'text/html',
+      encoding: utf8,
+    ).toString();
+    return SocialFeatureBot(
+      type: SocialFeatureBotType.assistant,
+      botId: 'bot.sandbox.$stamp',
+      miniAppId: 'sandbox.codex.$stamp',
+      miniAppEntryUrl: entryUrl,
+      title: title,
+      subtitle: '内置 Codex 生成 · 个人沙箱',
+      initials: '沙',
+      icon: Icons.web_asset,
+      avatarColor: const Color(0xFF3D8BFF),
+      destinationIndex: _bot.destinationIndex,
+      greeting: '这是内置 Codex 生成的个人沙箱小程序。',
+      inputHint: '继续描述修改需求',
+      kind: MiniAppBotKind.thirdParty,
+      permissions: const [
+        'app.context',
+        'bot.chat',
+        'ui.native',
+        'haptics.feedback',
+        'network.http',
+        'cloud.kv',
+      ],
+      source: MiniAppSource.sandbox,
+    );
   }
 
   Future<void> _startGenericBotChat() async {
@@ -1499,6 +1523,18 @@ class _MiniAppSession {
   int startParamVersion = 0;
   DateTime? lastCommandAt;
   String? lastCommandText;
+}
+
+class _GeneratedMiniAppPreview {
+  const _GeneratedMiniAppPreview({
+    required this.title,
+    required this.bot,
+    this.summary,
+  });
+
+  final String title;
+  final SocialFeatureBot bot;
+  final String? summary;
 }
 
 class _MessageBubble extends StatelessWidget {
