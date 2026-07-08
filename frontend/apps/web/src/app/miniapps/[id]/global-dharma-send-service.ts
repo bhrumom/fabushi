@@ -103,7 +103,7 @@ const UDP_SAFE_DATAGRAM_BYTES = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES = 6 * 1024;
 const RUST_DELIVERY_RECEIPT_TIMEOUT_MS = 45000;
 const RUST_DELIVERY_RECEIPT_POLL_MS = 650;
-const DAEMON_LOOP_INTERVAL_MS = 30000;
+const DAEMON_LOOP_INTERVAL_MS = 3000;
 const RUST_WORKER_LOCAL_DIR = "runtime/global-dharma-worker";
 const RUST_WORKER_PUBLIC_DIR =
   "/miniapps/official.global-dharma/runtime/global-dharma-worker";
