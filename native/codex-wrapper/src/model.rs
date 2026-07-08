@@ -109,6 +109,12 @@ pub trait CodexModelGateway: Send + Sync {
 
 pub struct UniversalModelGateway;
 
+impl Default for UniversalModelGateway {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UniversalModelGateway {
     pub fn new() -> Self {
         Self

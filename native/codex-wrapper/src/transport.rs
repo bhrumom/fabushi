@@ -55,7 +55,7 @@ impl CodexTransport for InProcessMemoryTransport {
             .rx
             .take()
             .ok_or_else(|| anyhow!("Receive stream already taken"))?;
-        let stream = ReceiverStream::new(rx).map(|msg| Ok(msg));
+        let stream = ReceiverStream::new(rx).map(Ok);
         Ok(Box::pin(stream))
     }
 
@@ -109,7 +109,7 @@ impl CodexTransport for SubprocessTransport {
             .rx
             .take()
             .ok_or_else(|| anyhow!("Subprocess receive stream already taken"))?;
-        let stream = ReceiverStream::new(rx).map(|msg| Ok(msg));
+        let stream = ReceiverStream::new(rx).map(Ok);
         Ok(Box::pin(stream))
     }
 
