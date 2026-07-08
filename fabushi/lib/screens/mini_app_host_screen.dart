@@ -339,16 +339,28 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             );
           },
           onReceivedHttpError: (controller, request, errorResponse) {
-            if (request.isForMainFrame ?? true) {
-              if (mounted) {
-                setState(() {
-                  _loading = false;
-                  _error = 'HTTP ${errorResponse.statusCode}: 加载页面失败';
-                });
-              }
+            if (!_isMainFrameMiniAppNavigation(request)) {
+              debugPrint(
+                'MiniApp[${widget.bot.stableBotId}] ignored subresource HTTP error: '
+                '${request.url} HTTP ${errorResponse.statusCode}',
+              );
+              return;
+            }
+            if (mounted) {
+              setState(() {
+                _loading = false;
+                _error = 'HTTP ${errorResponse.statusCode}: 加载页面失败';
+              });
             }
           },
           onReceivedError: (controller, request, error) {
+            if (!_isMainFrameMiniAppNavigation(request)) {
+              debugPrint(
+                'MiniApp[${widget.bot.stableBotId}] ignored subresource load error: '
+                '${request.url} ${error.description}',
+              );
+              return;
+            }
             if (mounted) {
               setState(() {
                 _loading = false;
@@ -526,6 +538,28 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       queryParams['_cmd'] = widget.reloadToken!;
     }
     return uri.replace(queryParameters: queryParams).toString();
+  }
+
+  bool _isMainFrameMiniAppNavigation(WebResourceRequest request) {
+    final isMainFrame = request.isForMainFrame;
+    if (isMainFrame != null) return isMainFrame;
+
+    final requestUri = Uri.tryParse(request.url.toString());
+    final entryUri = Uri.tryParse(_entryUrl);
+    if (requestUri == null || entryUri == null) return true;
+
+    String normalizePath(Uri uri) {
+      final path = uri.path;
+      if (path.length > 1 && path.endsWith('/')) {
+        return path.substring(0, path.length - 1);
+      }
+      return path;
+    }
+
+    return requestUri.scheme == entryUri.scheme &&
+        requestUri.host == entryUri.host &&
+        requestUri.port == entryUri.port &&
+        normalizePath(requestUri) == normalizePath(entryUri);
   }
 
   void _markHostNotReady() {
