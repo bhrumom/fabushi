@@ -827,6 +827,17 @@ async function buildMiniAppRustWorker(
 ) {
   await ensureCargoToolchain(onLog);
 
+  for (const port of RUST_DAEMON_PORT_CANDIDATES) {
+    const baseUrl = daemonBaseUrl(port);
+    await fetchDaemonJson("/shutdown", {
+      method: "POST",
+      timeoutMs: 300,
+      baseUrl,
+    }).catch(() => null);
+  }
+  activeRustDaemonBaseUrl = daemonBaseUrl(RUST_DAEMON_DEFAULT_PORT);
+  await sleep(200);
+
   const buildResult = await runHostProcess(
     "构建 Rust worker (一次性)",
     "cargo",
@@ -1209,12 +1220,33 @@ export class GlobalDharmaSendService {
           const resData = resp.data;
           if (resData.ok) {
             await writeWorkerBuildCache(prepared);
+            const rawReceipts = Array.isArray(resData?.receipts)
+              ? resData.receipts
+              : [];
+            const receipts: DharmaDeliveryReceipt[] = rawReceipts.map(
+              (item: any) => ({
+                countryCode: item?.countryCode,
+                nodeId: item?.nodeId || item?.endpointId || "Unknown",
+                channel: item?.channel === "udp" ? "udp" : "rust-http",
+                status: item?.status === "delivered" ? "delivered" : "sent",
+                bytesSent: readNumber(item?.bytesSent ?? item?.bytes, packetBytes),
+                deliveredAt:
+                  item?.deliveredAt || item?.at || new Date().toISOString(),
+                raw: item,
+              }),
+            );
             return {
               contentHash,
-              bytesSent: resData.bytesSent || packetBytes * targets.length,
-              receipts: [],
+              bytesSent:
+                resData.bytesSent ||
+                receipts.reduce((sum, r) => sum + r.bytesSent, 0) ||
+                packetBytes * targets.length,
+              receipts,
               jobId,
-              status: "sent",
+              status:
+                receipts.some((r) => r.status === "delivered") || receipts.length > 0
+                  ? "delivered"
+                  : "sent",
             };
           }
         }
