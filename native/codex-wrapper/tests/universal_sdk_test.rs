@@ -39,10 +39,7 @@ async fn test_universal_sdk_bot_father_closed_loop() {
                     }
                 }]
             });
-            mock_tx
-                .send(format!("data: {chunk_reason}"))
-                .await
-                .unwrap();
+            mock_tx.send(format!("data: {chunk_reason}")).await.unwrap();
 
             // 模拟第二片：触发 create_file 工具调用创建 index.tsx
             let chunk_tool_create = json!({
