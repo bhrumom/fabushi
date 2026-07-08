@@ -3,7 +3,7 @@ import { fbApp, MiniAppHostError } from "@fabushi/miniapp-sdk";
 export { fbApp, MiniAppHostError };
 
 export async function bootMiniApp(miniAppId: string, title: string): Promise<boolean> {
-  const hostReady = await fbApp.ready({ timeoutMs: 800, miniAppId });
+  const hostReady = await fbApp.ready({ timeoutMs: 8000, miniAppId });
   if (!hostReady) {
     fbApp.showFallback({
       mode: "open-in-app",
