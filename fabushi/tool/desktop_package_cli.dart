@@ -833,7 +833,7 @@ class MiniAppSmokeRegistry {
           MiniAppSmokeManifest(
             miniAppId: bot.miniAppId,
             botId: bot.botId,
-            entryUrl: 'https://fabushi.ombhrum.com/miniapps/${bot.miniAppId}',
+            entryUrl: 'https://fabushi.ombhrum.com/miniapps/${bot.miniAppId}/',
             permissions: bot.permissions,
             surfaces: const ['homePinned', 'chatPanel'],
           ),
