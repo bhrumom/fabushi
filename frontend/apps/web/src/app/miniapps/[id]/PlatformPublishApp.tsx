@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, FileText, FolderOpen, Play, RefreshCw, Terminal, Upload } from "lucide-react";
 import { bootMiniApp, fbApp, hostErrorMessage } from "./miniapp-runtime";
 import "./miniapps.css";
@@ -30,15 +30,21 @@ export default function PlatformPublishApp() {
   const [running, setRunning] = useState(false);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const pendingChatTextRef = useRef("");
 
   const platform = useMemo(
     () => platforms.find((item) => item.id === platformId) || platforms[0],
     [platformId],
   );
 
-  const log = (message: string) => {
+  const log = useCallback((message: string) => {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
-  };
+  }, []);
+  const postBotMessage = useCallback(
+    (message: string, level = "info") =>
+      fbApp.invoke("bot.postMessage", { message, level }).catch(() => null),
+    [],
+  );
 
   useEffect(() => {
     const refresh = async () => {
@@ -67,41 +73,73 @@ export default function PlatformPublishApp() {
     }
   };
 
+  const createDraftFromText = useCallback(
+    async (sourceText = text, announce = true) => {
+      const body = sourceText.trim();
+      if (!body) {
+        log("请先输入正文或链接。");
+        if (announce) void postBotMessage("请先输入正文或链接。", "error");
+        return null;
+      }
+      setRunning(true);
+      try {
+        const data = await fbApp.invoke<any>("platformPublish.createDraft", {
+          title,
+          text: body,
+        });
+        setDraft(data);
+        setTitle(data?.title || title);
+        if (data?.body) setText(data.body);
+        log("草稿已生成。");
+        if (announce) void postBotMessage("草稿已生成。");
+        return data;
+      } catch (error) {
+        const message = hostErrorMessage(error, "生成草稿失败");
+        log(message);
+        if (announce) void postBotMessage(message, "error");
+        return null;
+      } finally {
+        setRunning(false);
+      }
+    },
+    [log, postBotMessage, text, title],
+  );
+
   const handleCreateDraft = async () => {
-    setRunning(true);
-    try {
-      const data = await fbApp.invoke<any>("platformPublish.createDraft", { title, text });
-      setDraft(data);
-      setTitle(data?.title || title);
-      if (data?.body) setText(data.body);
-      log("草稿已生成。");
-    } catch (error) {
-      log(hostErrorMessage(error, "生成草稿失败"));
-    } finally {
-      setRunning(false);
-    }
+    await createDraftFromText(text);
   };
+
+  const saveDraftBody = useCallback(
+    async (body: string, draftTitle = title) => {
+      if (!body.trim()) {
+        log("请先输入正文或生成草稿。");
+        void postBotMessage("请先输入正文或生成草稿。", "error");
+        return;
+      }
+      setRunning(true);
+      try {
+        const markdown = `# ${draftTitle}\n\n${body}\n`;
+        const data = await fbApp.invoke<any>("fs.writeFile", {
+          path: `platform-publish/${platform.id}-${slugTime()}.md`,
+          content: markdown,
+        });
+        setSavedPath(data?.path || "");
+        log(`草稿已写入：${data?.path || "本地小程序目录"}`);
+        void postBotMessage(`草稿已写入：${data?.path || "本地小程序目录"}`);
+      } catch (error) {
+        const message = hostErrorMessage(error, "写入本地文件失败");
+        log(message);
+        void postBotMessage(message, "error");
+      } finally {
+        setRunning(false);
+      }
+    },
+    [log, platform.id, postBotMessage, title],
+  );
 
   const handleSaveDraft = async () => {
     const body = draft?.body || text;
-    if (!body.trim()) {
-      log("请先输入正文或生成草稿。");
-      return;
-    }
-    setRunning(true);
-    try {
-      const markdown = `# ${draft?.title || title}\n\n${body}\n`;
-      const data = await fbApp.invoke<any>("fs.writeFile", {
-        path: `platform-publish/${platform.id}-${slugTime()}.md`,
-        content: markdown,
-      });
-      setSavedPath(data?.path || "");
-      log(`草稿已写入：${data?.path || "本地小程序目录"}`);
-    } catch (error) {
-      log(hostErrorMessage(error, "写入本地文件失败"));
-    } finally {
-      setRunning(false);
-    }
+    await saveDraftBody(body, draft?.title || title);
   };
 
   const handleRunPipeline = async () => {
@@ -138,14 +176,103 @@ export default function PlatformPublishApp() {
     }
   };
 
-  const handleOpenPlatform = async () => {
+  const handleOpenPlatform = useCallback(async () => {
     try {
       await fbApp.ui.openLink(platform.url);
       log(`已打开：${platform.label}`);
+      void postBotMessage(`已打开：${platform.label}`);
     } catch (error) {
-      log(hostErrorMessage(error, "打开平台失败"));
+      const message = hostErrorMessage(error, "打开平台失败");
+      log(message);
+      void postBotMessage(message, "error");
     }
-  };
+  }, [log, platform.label, platform.url, postBotMessage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let unsubscribeCommand: (() => void) | undefined;
+    const attachCommandListener = () => {
+      const hostBot = (window as any).FabushiMiniApp?.bot;
+      if (!hostBot || unsubscribeCommand) return;
+      void fbApp
+        .invoke("bot.setInputPlaceholder", {
+          placeholder: "粘贴正文/链接；收到选项后回复数字",
+        })
+        .catch(() => null);
+      void fbApp
+        .invoke("bot.setCommands", {
+          commands: [
+            { command: "/start", description: "生成发布草稿", order: 1 },
+          ],
+        })
+        .catch(() => null);
+      if (typeof hostBot.onAnyCommand === "function") {
+        unsubscribeCommand = hostBot.onAnyCommand((detail: any) => {
+          const command = String(detail?.command || "/start").trim();
+          const incoming = String(
+            detail?.args || detail?.rawText || detail?.text || "",
+          ).trim();
+          const cleanInput = (
+            incoming ||
+            (command.startsWith("/") && command !== "/start" ? command.slice(1) : "")
+          ).trim();
+          const content = pendingChatTextRef.current || text.trim();
+          if (cleanInput === "1") {
+            if (!content) {
+              void postBotMessage("当前没有待发布内容，请先发送链接或正文。", "error");
+              return;
+            }
+            void createDraftFromText(content);
+            pendingChatTextRef.current = "";
+            return;
+          }
+          if (cleanInput === "2") {
+            if (!content) {
+              void postBotMessage("当前没有待发布内容，请先发送链接或正文。", "error");
+              return;
+            }
+            void (async () => {
+              const data = await createDraftFromText(content, false);
+              await saveDraftBody(data?.body || content, data?.title || title);
+              pendingChatTextRef.current = "";
+            })();
+            return;
+          }
+          if (cleanInput === "3") {
+            void handleOpenPlatform();
+            return;
+          }
+          if (cleanInput === "4") {
+            pendingChatTextRef.current = "";
+            void postBotMessage("已取消本次发布任务。");
+            return;
+          }
+          if (!cleanInput) {
+            void postBotMessage("请发送要发布的正文或链接。");
+            return;
+          }
+          pendingChatTextRef.current = cleanInput;
+          setText(cleanInput);
+          void postBotMessage(
+            "已收到发布内容。请回复数字选择：\n1. 生成发布草稿\n2. 保存草稿到本地\n3. 打开平台入口\n4. 取消本次任务",
+          );
+        });
+      }
+    };
+    attachCommandListener();
+    window.addEventListener("fabushi-miniapp-ready", attachCommandListener);
+    return () => {
+      window.removeEventListener("fabushi-miniapp-ready", attachCommandListener);
+      unsubscribeCommand?.();
+    };
+  }, [
+    createDraftFromText,
+    handleOpenPlatform,
+    postBotMessage,
+    saveDraftBody,
+    text,
+    title,
+  ]);
 
   const handleRefreshSpec = async () => {
     try {

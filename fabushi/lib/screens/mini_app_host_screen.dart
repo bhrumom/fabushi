@@ -366,13 +366,33 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             ),
           ),
         if (_error != null)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Text(
-                '小程序加载失败：$_error',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70),
+          ColoredBox(
+            color: const Color(0xFF0F1722),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '小程序加载失败：$_error',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                          _error = null;
+                        });
+                        unawaited(_webViewController?.reload());
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重新加载'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -483,6 +503,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     var base = explicitEntryUrl.isNotEmpty
         ? explicitEntryUrl
         : 'https://fabushi.ombhrum.com/miniapps/${Uri.encodeComponent(bot.stableMiniAppId)}/';
+    final parsedBase = Uri.tryParse(base);
+    final scheme = parsedBase?.scheme.toLowerCase() ?? '';
+    final canAppendHostParams =
+        scheme.isEmpty || scheme == 'http' || scheme == 'https';
+    if (!canAppendHostParams) {
+      return base;
+    }
     if (!base.contains('?') && !base.endsWith('/')) {
       base = '$base/';
     }
@@ -2946,7 +2973,8 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (command != 'cargo') return command;
 
     final executable = Platform.isWindows ? 'cargo.exe' : 'cargo';
-    final home = Platform.environment['HOME'] ??
+    final home =
+        Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
     final configured = Platform.environment['CARGO'] ?? '';
