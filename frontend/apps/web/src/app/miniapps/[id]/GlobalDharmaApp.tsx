@@ -215,6 +215,7 @@ export default function GlobalDharmaApp() {
   const daemonCursorRef = useRef(0);
   const activeDaemonJobIdRef = useRef<string | undefined>(undefined);
   const latestRunRef = useRef(0);
+  const pendingChatContentRef = useRef<string | null>(null);
   const selectedRegion = useMemo(
     () =>
       regionPresets.find((item) => item.id === regionId) || regionPresets[0],
@@ -457,11 +458,16 @@ export default function GlobalDharmaApp() {
     throw new Error("请先输入链接、正文，或选择高能素材");
   };
 
-  const runRealSend = async (content: PreparedContent, commandId?: string) => {
+  const runRealSend = async (
+    content: PreparedContent,
+    commandId?: string,
+    overrideLoop?: boolean,
+  ) => {
+    const effectiveLoop = overrideLoop !== undefined ? overrideLoop : loopEnabled;
     const result = await sendServiceRef.current.send({
       content,
       region: selectedRegion,
-      loop: loopEnabled,
+      loop: effectiveLoop,
       commandId,
       onLog: log,
     });
@@ -473,7 +479,7 @@ export default function GlobalDharmaApp() {
       selectedContent: content,
       lastResult: result,
       isPreparingSend: false,
-      isTransferring: loopEnabled || result.status === "running",
+      isTransferring: effectiveLoop || result.status === "running",
       updatedAt: new Date().toISOString(),
     }));
     const receiptText =
@@ -496,14 +502,23 @@ export default function GlobalDharmaApp() {
         jobIds: result.jobIds,
         receipts: result.receipts,
         region: selectedRegion,
-        loop: loopEnabled,
+        loop: effectiveLoop,
         updateKey: "gd_live_status",
       },
     );
     return result;
   };
 
-  const handleStart = async (inputOverride?: string, commandId?: string) => {
+  const handleStart = async (
+    inputOverride?: string,
+    commandId?: string,
+    options?: { overrideLoop?: boolean },
+  ) => {
+    const effectiveLoop =
+      options?.overrideLoop !== undefined ? options.overrideLoop : loopEnabled;
+    if (options?.overrideLoop !== undefined && options.overrideLoop !== loopEnabled) {
+      setLoopEnabled(options.overrideLoop);
+    }
     const effectiveText = (inputOverride ?? text).trim();
     if (!effectiveText && !selectedMaterial) {
       log("请先输入链接、正文，或选择高能素材");
@@ -526,7 +541,7 @@ export default function GlobalDharmaApp() {
           : "🌍 全球法布施启动中：正在连接 Web HTTP 节点进行投递...",
         { updateKey: "gd_live_status" },
       );
-      if (loopEnabled || selectedRegion.fieldEnergy) {
+      if (effectiveLoop || selectedRegion.fieldEnergy) {
         await fbApp
           .invoke("system.keepAwake", {
             enabled: true,
@@ -535,8 +550,8 @@ export default function GlobalDharmaApp() {
           .catch(() => null);
       }
       const content = await prepareTransferContent(effectiveText);
-      const result = await runRealSend(content, commandId);
-      if (loopEnabled) {
+      const result = await runRealSend(content, commandId, effectiveLoop);
+      if (effectiveLoop) {
         if (latestRunRef.current !== runId) return;
         if (result.jobId) {
           startDaemonStatusPolling(result.jobId);
@@ -609,6 +624,26 @@ export default function GlobalDharmaApp() {
     };
   }, []);
 
+  const processedCommandIdsRef = useRef<Set<string>>(new Set());
+  const latestCmdRef = useRef({
+    loopEnabled,
+    status,
+    handleStop,
+    handleLoopChange,
+    handleStart,
+    text,
+  });
+  useEffect(() => {
+    latestCmdRef.current = {
+      loopEnabled,
+      status,
+      handleStop,
+      handleLoopChange,
+      handleStart,
+      text,
+    };
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     let unsubscribeCommand: (() => void) | undefined;
@@ -617,7 +652,7 @@ export default function GlobalDharmaApp() {
       if (!hostBot || unsubscribeCommand) return;
       void fbApp
         .invoke("bot.setInputPlaceholder", {
-          placeholder: "输入链接/正文；桌面跑小程序 Rust，移动端走系统发送",
+          placeholder: "输入链接/正文；回复数字1启动常驻后台循环发包",
         })
         .catch(() => null);
       void fbApp
@@ -636,6 +671,27 @@ export default function GlobalDharmaApp() {
           const incoming = String(
             detail?.args || detail?.rawText || detail?.text || "",
           ).trim();
+          const cmdKey = String(
+            detail?.commandId || detail?.id || `${command}:${incoming}`,
+          ).trim();
+          if (cmdKey && processedCommandIdsRef.current.has(cmdKey)) {
+            return;
+          }
+          if (cmdKey) {
+            processedCommandIdsRef.current.add(cmdKey);
+            if (processedCommandIdsRef.current.size > 100) {
+              const first = processedCommandIdsRef.current.values().next().value;
+              if (first) processedCommandIdsRef.current.delete(first);
+            }
+          }
+          const {
+            handleStop,
+            handleLoopChange,
+            handleStart,
+            loopEnabled,
+            status,
+            text: currentText,
+          } = latestCmdRef.current;
           if (command === "/stop") {
             void handleStop();
             return;
@@ -650,7 +706,45 @@ export default function GlobalDharmaApp() {
             );
             return;
           }
-          void handleStart(incoming || undefined, detail?.commandId);
+          const cleanInput = (
+            incoming ||
+            (command.startsWith("/") && command !== "/start" ? command.slice(1) : "")
+          ).trim();
+          if (cleanInput === "1" || cleanInput === "1️⃣") {
+            const contentToSend = pendingChatContentRef.current || currentText;
+            if (!contentToSend) {
+              void postBotMessage("⚠️ 当前无待发包素材，请先在聊天框发送网页链接或经文正文。");
+              return;
+            }
+            void postBotMessage("🚀 正在系统底层启动常驻循环发包模式...");
+            void handleStart(contentToSend, detail?.commandId, { overrideLoop: true });
+            return;
+          }
+          if (cleanInput === "2" || cleanInput === "2️⃣") {
+            const contentToSend = pendingChatContentRef.current || currentText;
+            if (!contentToSend) {
+              void postBotMessage("⚠️ 当前无待发包素材，请先在聊天框发送网页链接或经文正文。");
+              return;
+            }
+            void postBotMessage("⚡ 正在执行即时单次发包...");
+            void handleStart(contentToSend, detail?.commandId, { overrideLoop: false });
+            return;
+          }
+          if (cleanInput === "3" || cleanInput === "3️⃣") {
+            pendingChatContentRef.current = null;
+            void postBotMessage("❌ 已取消本次发包任务，请随时发送新的链接或正文！");
+            return;
+          }
+          const newMaterial = cleanInput || (command === "/start" ? currentText : "");
+          if (!newMaterial) {
+            void postBotMessage("🌍 欢迎使用全球法布施！请在聊天框发送网页链接或经文内容，即可开启发包～");
+            return;
+          }
+          pendingChatContentRef.current = newMaterial;
+          setText(newMaterial);
+          void postBotMessage(
+            `🌍 已成功接收待发包素材！请回复数字编号选择发包模式：\n\n1️⃣【启动循环常驻模式】每 30 秒自主执行循环真实发包，完全脱离 UI 在系统底层长久运行（推荐）\n\n2️⃣【执行单次即时发包】完成当轮发包后立刻结束任务，不进入长久循环（快速测试）\n\n3️⃣【取消当次发包】清空暂存内容，重新发送新链接或素材`,
+          );
         });
       }
     };
@@ -663,15 +757,7 @@ export default function GlobalDharmaApp() {
       );
       unsubscribeCommand?.();
     };
-  }, [
-    loopEnabled,
-    selectedRegion,
-    selectedMaterial,
-    text,
-    status.sentCount,
-    status.sentMB,
-    status.isTransferring,
-  ]);
+  }, []);
 
   const selectedReceiptText = status.lastResult?.receipts?.length
     ? `${status.lastResult.receipts.length} 个真实回执`
