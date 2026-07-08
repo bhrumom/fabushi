@@ -647,7 +647,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   }
   function queuedCommands() {
     var commands = [];
-    if (window.__fabushiLastMiniAppCommand) commands.push(window.__fabushiLastMiniAppCommand);
+    if (window.__fabushiLastMiniAppCommand) {
+      commands.push(window.__fabushiLastMiniAppCommand);
+      window.__fabushiLastMiniAppCommand = null;
+    }
     if (Array.isArray(window.__fabushiMiniAppCommandQueue)) {
       commands = commands.concat(window.__fabushiMiniAppCommandQueue);
       window.__fabushiMiniAppCommandQueue = [];
@@ -672,7 +675,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     });
   }
   function onAnyCommand(callback) {
-    var seen = new Set();
+    var seen = window.__fabushiSeenCommandKeys = window.__fabushiSeenCommandKeys || new Set();
     var handler = function(event) {
       deliverCommand(callback, seen, event && event.detail);
     };

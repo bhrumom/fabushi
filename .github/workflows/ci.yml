@@ -548,7 +548,7 @@ jobs:
             echo "No remaining Worker contract tests found."
             exit 0
           fi
-          xargs -0 node --test --test-concurrency=1 < /tmp/worker-tests
+          xargs -0 -n 1 node --test < /tmp/worker-tests
 
   worker-release-simulation:
     name: Release simulation - Worker dry-run

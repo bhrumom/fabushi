@@ -39,10 +39,7 @@ async fn test_universal_sdk_bot_father_closed_loop() {
                     }
                 }]
             });
-            mock_tx
-                .send(format!("data: {}", chunk_reason.to_string()))
-                .await
-                .unwrap();
+            mock_tx.send(format!("data: {chunk_reason}")).await.unwrap();
 
             // 模拟第二片：触发 create_file 工具调用创建 index.tsx
             let chunk_tool_create = json!({
@@ -58,7 +55,7 @@ async fn test_universal_sdk_bot_father_closed_loop() {
                 }]
             });
             mock_tx
-                .send(format!("data: {}", chunk_tool_create.to_string()))
+                .send(format!("data: {chunk_tool_create}"))
                 .await
                 .unwrap();
 
@@ -76,7 +73,7 @@ async fn test_universal_sdk_bot_father_closed_loop() {
                 }]
             });
             mock_tx
-                .send(format!("data: {}", chunk_tool_patch.to_string()))
+                .send(format!("data: {chunk_tool_patch}"))
                 .await
                 .unwrap();
 
@@ -105,16 +102,15 @@ async fn test_universal_sdk_bot_father_closed_loop() {
             CodexEvent::SandboxFileModified {
                 file_path,
                 new_content,
-            } => {
-                if file_path == "index.tsx" {
-                    if new_content.contains("早安签到") {
-                        file_created = true;
-                    }
-                    if new_content.contains("莫兰迪禅修日记") {
-                        file_patched = true;
-                    }
+            } if file_path == "index.tsx" => {
+                if new_content.contains("早安签到") {
+                    file_created = true;
+                }
+                if new_content.contains("莫兰迪禅修日记") {
+                    file_patched = true;
                 }
             }
+            CodexEvent::SandboxFileModified { .. } => {}
             _ => {}
         }
     }

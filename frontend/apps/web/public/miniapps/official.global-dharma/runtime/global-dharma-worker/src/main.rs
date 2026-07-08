@@ -199,13 +199,36 @@ fn handle_daemon_connection(stream: &mut std::net::TcpStream) -> Result<(), Stri
                 format!("{{\"ok\":false,\"error\":{}}}", json_quote(&err)),
             ),
         }
+    } else if path == "/shutdown" || path == "/exit" {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            std::process::exit(0);
+        });
+        ("200 OK", "{\"ok\":true,\"status\":\"shutting_down\"}".to_string())
     } else if path == "/send" {
         match String::from_utf8(body_bytes) {
             Ok(body_str) => match execute_job_payload(&body_str) {
-                Ok((bytes_sent, receipt_count)) => (
-                    "200 OK",
-                    format!("{{\"ok\":true,\"bytesSent\":{bytes_sent},\"receiptCount\":{receipt_count}}}"),
-                ),
+                Ok((bytes_sent, receipts)) => {
+                    let receipts_json = receipts
+                        .iter()
+                        .map(|receipt| {
+                            format!(
+                                "{{\"nodeId\":{},\"endpointId\":{},\"channel\":{},\"status\":{},\"bytesSent\":{},\"deliveredAt\":{}}}",
+                                json_quote(&receipt.endpoint_id),
+                                json_quote(&receipt.endpoint_id),
+                                json_quote(&receipt.channel),
+                                json_quote(&receipt.status),
+                                receipt.bytes_sent,
+                                json_quote(&now_millis_string())
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    (
+                        "200 OK",
+                        format!("{{\"ok\":true,\"bytesSent\":{bytes_sent},\"receiptCount\":{},\"receipts\":[{}]}}", receipts.len(), receipts_json),
+                    )
+                }
                 Err(err) => (
                     "500 Internal Server Error",
                     format!("{{\"ok\":false,\"error\":{}}}", json_quote(&err)),
@@ -318,7 +341,8 @@ fn spawn_daemon_job(job_id: String, raw_job: String, loop_enabled: bool, interva
             );
 
             match execute_job_payload(&raw_job) {
-                Ok((bytes_sent, receipt_count)) => {
+                Ok((bytes_sent, receipts)) => {
+                    let receipt_count = receipts.len();
                     update_daemon_job(&job_id, |job| {
                         job.status = if loop_enabled {
                             "running".into()
@@ -480,7 +504,7 @@ fn daemon_status_json(job_id: Option<&str>, cursor: usize, limit: usize) -> Stri
         ("[]".into(), cursor)
     };
     format!(
-        "{{\"ok\":true,\"status\":\"ok\",\"daemon\":true,\"version\":\"0.3.0\",\"at\":{},\"jobs\":[{}],\"job\":{},\"events\":{},\"cursor\":{},\"source\":\"rust-daemon-master\"}}",
+        "{{\"ok\":true,\"status\":\"ok\",\"daemon\":true,\"version\":\"0.4.0\",\"at\":{},\"jobs\":[{}],\"job\":{},\"events\":{},\"cursor\":{},\"source\":\"rust-daemon-master\"}}",
         now_millis_string(),
         jobs_json,
         selected
@@ -590,7 +614,7 @@ fn url_decode(value: &str) -> String {
     output
 }
 
-fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
+fn execute_job_payload(raw_job: &str) -> Result<(usize, Vec<Receipt>), String> {
     let job_id = json_string(raw_job, "jobId").unwrap_or_else(|| "global-dharma-worker-job".into());
     let packet_body = extract_json_value(raw_job, "packet")
         .map(str::to_string)
@@ -627,7 +651,7 @@ fn execute_job_payload(raw_job: &str) -> Result<(usize, usize), String> {
         .map(|receipt| receipt.bytes_sent)
         .sum::<usize>();
     emit_result(&job_id, &content_hash, bytes_sent, &receipts);
-    Ok((bytes_sent, receipts.len()))
+    Ok((bytes_sent, receipts))
 }
 
 fn send_to_endpoint(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> {
@@ -1292,9 +1316,9 @@ mod tests {
         let dummy_job = r#"{"jobId":"test-job-1","packet":{"contentHash":"hash123"},"endpoints":[{"transport":"udp","endpointId":"ep1","host":"127.0.0.1","port":9999,"url":"udp://127.0.0.1:9999"}]}"#;
         let res = execute_job_payload(dummy_job);
         assert!(res.is_ok());
-        let (bytes, count) = res.unwrap();
+        let (bytes, receipts) = res.unwrap();
         assert!(bytes > 0);
-        assert_eq!(count, 1);
+        assert_eq!(receipts.len(), 1);
     }
 
     #[test]
