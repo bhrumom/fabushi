@@ -8,6 +8,7 @@ export * from "./faliu-merit-benefits-t0278-juan15-endless-merit-opening";
 export * from "./faliu-merit-benefits-t0278-juan15-present-buddha-fields-bodhisattvas";
 export * from "./faliu-merit-benefits-t0278-juan15-endless-merit-dedication-result";
 export * from "./faliu-merit-benefits-t0278-juan15-ten-endless-treasures";
+export * from "./faliu-merit-benefits-t0278-juan15-endless-merit-verses";
 
 import * as t0278Juan15Base from "./faliu-merit-benefits-t0278-juan15-base";
 import * as t0278Juan15EqualBuddhasVerses from "./faliu-merit-benefits-t0278-juan15-equal-buddhas-verses";
@@ -19,6 +20,7 @@ import * as t0278Juan15EndlessMeritOpening from "./faliu-merit-benefits-t0278-ju
 import * as t0278Juan15PresentBuddhaFieldsBodhisattvas from "./faliu-merit-benefits-t0278-juan15-present-buddha-fields-bodhisattvas";
 import * as t0278Juan15EndlessMeritDedicationResult from "./faliu-merit-benefits-t0278-juan15-endless-merit-dedication-result";
 import * as t0278Juan15TenEndlessTreasures from "./faliu-merit-benefits-t0278-juan15-ten-endless-treasures";
+import * as t0278Juan15EndlessMeritVerses from "./faliu-merit-benefits-t0278-juan15-endless-merit-verses";
 
 export const T0278_JUAN_15_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...t0278Juan15Base.T0278_JUAN_15_MERIT_BENEFITS,
@@ -31,4 +33,5 @@ export const T0278_JUAN_15_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...t0278Juan15PresentBuddhaFieldsBodhisattvas.T0278_JUAN_15_PRESENT_BUDDHA_FIELDS_BODHISATTVAS_MERIT_BENEFITS,
   ...t0278Juan15EndlessMeritDedicationResult.T0278_JUAN_15_ENDLESS_MERIT_DEDICATION_RESULT_MERIT_BENEFITS,
   ...t0278Juan15TenEndlessTreasures.T0278_JUAN_15_TEN_ENDLESS_TREASURES_MERIT_BENEFITS,
+  ...t0278Juan15EndlessMeritVerses.T0278_JUAN_15_ENDLESS_MERIT_VERSES_MERIT_BENEFITS,
 ];
