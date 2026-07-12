@@ -198,7 +198,7 @@ impl TcpTransport {
 
 impl EstablishedSession {
     pub fn invoke_raw(&mut self, body: &[u8]) -> Result<RpcResult, NetworkError> {
-        if body.is_empty() || body.len() % 4 != 0 {
+        if body.is_empty() || !body.len().is_multiple_of(4) {
             return Err(NetworkError::InvalidServiceMessage);
         }
         for attempt in 0..2 {

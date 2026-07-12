@@ -16,13 +16,14 @@ pub enum CodeDeliveryType {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     rename_all = "camelCase",
     rename_all_fields = "camelCase",
     tag = "type"
 )]
 pub enum AuthorizationState {
+    #[default]
     WaitParameters,
     WaitPhoneNumber,
     WaitCode {
@@ -46,12 +47,6 @@ pub enum AuthorizationState {
     LoggingOut,
     Closing,
     Closed,
-}
-
-impl Default for AuthorizationState {
-    fn default() -> Self {
-        Self::WaitParameters
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

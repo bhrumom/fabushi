@@ -23,11 +23,11 @@ pub extern "C" fn fabushi_telegram_create_client() -> u64 {
 #[no_mangle]
 pub extern "C" fn fabushi_telegram_force_link() -> u32 {
     let symbols = [
-        fabushi_telegram_create_client as usize,
-        fabushi_telegram_create_persistent_client as usize,
-        fabushi_telegram_execute as usize,
-        fabushi_telegram_close_client as usize,
-        fabushi_telegram_free_string as usize,
+        fabushi_telegram_create_client as *const () as usize,
+        fabushi_telegram_create_persistent_client as *const () as usize,
+        fabushi_telegram_execute as *const () as usize,
+        fabushi_telegram_close_client as *const () as usize,
+        fabushi_telegram_free_string as *const () as usize,
     ];
     std::hint::black_box(symbols);
     1

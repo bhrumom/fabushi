@@ -188,7 +188,7 @@ impl TransportFrameCodec {
     }
 
     fn encode_abridged(&self, payload: &[u8], quick_ack: bool) -> Result<Vec<u8>, TransportError> {
-        if payload.len() % 4 != 0 {
+        if !payload.len().is_multiple_of(4) {
             return Err(TransportError::AbridgedPayloadAlignment(payload.len()));
         }
         let words = payload.len() / 4;
