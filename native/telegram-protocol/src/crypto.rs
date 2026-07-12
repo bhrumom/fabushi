@@ -98,7 +98,7 @@ impl EncryptedEnvelope {
     }
 
     pub fn from_bytes(value: &[u8]) -> Result<Self, CryptoError> {
-        if value.len() < 24 || (value.len() - 24) % AES_BLOCK_LENGTH != 0 {
+        if value.len() < 24 || !(value.len() - 24).is_multiple_of(AES_BLOCK_LENGTH) {
             return Err(CryptoError::InvalidEnvelope);
         }
         Ok(Self {
@@ -193,7 +193,10 @@ pub fn decrypt_message(
 ) -> Result<PlainMessage, CryptoError> {
     if envelope.auth_key_id != auth_key.id()
         || envelope.encrypted_data.is_empty()
-        || envelope.encrypted_data.len() % AES_BLOCK_LENGTH != 0
+        || !envelope
+            .encrypted_data
+            .len()
+            .is_multiple_of(AES_BLOCK_LENGTH)
     {
         return Err(CryptoError::AuthenticationFailed);
     }
@@ -270,10 +273,10 @@ fn validate_plain_message(
     expected_session_id: Option<i64>,
 ) -> Result<(), CryptoError> {
     if message.body.is_empty()
-        || message.body.len() % 4 != 0
+        || !message.body.len().is_multiple_of(4)
         || !(MIN_PADDING_LENGTH..=MAX_PADDING_LENGTH).contains(&message.padding.len())
-        || (INTERNAL_HEADER_LENGTH + message.body.len() + message.padding.len()) % AES_BLOCK_LENGTH
-            != 0
+        || !(INTERNAL_HEADER_LENGTH + message.body.len() + message.padding.len())
+            .is_multiple_of(AES_BLOCK_LENGTH)
     {
         return Err(CryptoError::InvalidPlaintext);
     }
@@ -297,7 +300,7 @@ pub fn aes_ige_encrypt(
     key: &[u8; 32],
     iv: &[u8; 32],
 ) -> Result<Vec<u8>, CryptoError> {
-    if plaintext.is_empty() || plaintext.len() % AES_BLOCK_LENGTH != 0 {
+    if plaintext.is_empty() || !plaintext.len().is_multiple_of(AES_BLOCK_LENGTH) {
         return Err(CryptoError::InvalidPlaintext);
     }
     let cipher = Aes256::new(GenericArray::from_slice(key));
@@ -325,7 +328,7 @@ pub fn aes_ige_decrypt(
     key: &[u8; 32],
     iv: &[u8; 32],
 ) -> Result<Vec<u8>, CryptoError> {
-    if ciphertext.is_empty() || ciphertext.len() % AES_BLOCK_LENGTH != 0 {
+    if ciphertext.is_empty() || !ciphertext.len().is_multiple_of(AES_BLOCK_LENGTH) {
         return Err(CryptoError::InvalidEnvelope);
     }
     let cipher = Aes256::new(GenericArray::from_slice(key));

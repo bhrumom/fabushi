@@ -698,7 +698,7 @@ pub fn decrypt_server_dh_inner_data(
     expected_nonce: &Nonce,
     expected_server_nonce: &Nonce,
 ) -> Result<ServerDhInnerData, HandshakeError> {
-    if encrypted_answer.is_empty() || encrypted_answer.len() % 16 != 0 {
+    if encrypted_answer.is_empty() || !encrypted_answer.len().is_multiple_of(16) {
         return Err(HandshakeError::InvalidServerDhCiphertext);
     }
     let (mut key, mut iv) = derive_tmp_aes_key_iv(new_nonce, expected_server_nonce);
@@ -989,7 +989,7 @@ fn is_prime(value: u64) -> bool {
         if value == prime {
             return true;
         }
-        if value % prime == 0 {
+        if value.is_multiple_of(prime) {
             return false;
         }
     }
@@ -1020,10 +1020,10 @@ fn is_prime(value: u64) -> bool {
 }
 
 fn pollard_rho_factor(value: u64) -> Option<u64> {
-    if value % 2 == 0 {
+    if value.is_multiple_of(2) {
         return Some(2);
     }
-    if value % 3 == 0 {
+    if value.is_multiple_of(3) {
         return Some(3);
     }
     for constant in 1_u64..=128 {
