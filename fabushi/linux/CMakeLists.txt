@@ -60,6 +60,21 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Build the shared Rust command/event runtime before linking the Flutter bundle.
+set(TELEGRAM_RUST_OUTPUT_DIR "${CMAKE_BINARY_DIR}/telegram_runtime")
+add_custom_target(telegram_rust_runtime ALL
+  COMMAND bash
+    "${CMAKE_CURRENT_SOURCE_DIR}/build_telegram_runtime.sh"
+    "${CMAKE_BUILD_TYPE}"
+    "${TELEGRAM_RUST_OUTPUT_DIR}"
+  BYPRODUCTS
+    "${TELEGRAM_RUST_OUTPUT_DIR}/libfabushi_telegram_runtime.so"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  COMMENT "Building Telegram Rust runtime"
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} telegram_rust_runtime)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -100,6 +115,11 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+install(FILES
+  "${TELEGRAM_RUST_OUTPUT_DIR}/libfabushi_telegram_runtime.so"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
