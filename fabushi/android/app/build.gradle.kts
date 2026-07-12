@@ -91,6 +91,17 @@ android {
     }
 }
 
+val buildTelegramRustRuntime by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the Rust Telegram runtime for all supported Android ABIs."
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine("bash", "android/build_telegram_runtime.sh")
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildTelegramRustRuntime)
+}
+
 dependencies {
     val androidxTestRunnerVersion = "1.6.2"
     val androidxTestRulesVersion = "1.6.1"

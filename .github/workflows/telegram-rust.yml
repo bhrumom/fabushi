@@ -1,0 +1,246 @@
+name: Telegram Rust Core
+
+on:
+  pull_request:
+    paths:
+      - 'native/telegram-*/**'
+      - 'fabushi/lib/services/telegram/**'
+      - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
+      - 'fabushi/lib/screens/telegram_authorization_screen.dart'
+      - 'fabushi/lib/screens/main_navigation_screen.dart'
+      - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
+      - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
+      - 'fabushi/test/telegram_chat_contract_test.dart'
+      - 'fabushi/pubspec.yaml'
+      - 'fabushi/pubspec.lock'
+      - 'fabushi/android/build_telegram_runtime.sh'
+      - 'fabushi/android/app/build.gradle.kts'
+      - 'fabushi/android/app/src/main/AndroidManifest.xml'
+      - 'fabushi/ios/build_telegram_runtime.sh'
+      - 'fabushi/ios/Runner/Runner.entitlements'
+      - 'fabushi/macos/build_telegram_runtime.sh'
+      - 'fabushi/macos/Runner/*.entitlements'
+      - 'fabushi/linux/**'
+      - 'fabushi/windows/**'
+      - 'docs/telegram-*.md'
+      - 'scripts/test-telegram-rust.sh'
+      - '.github/workflows/telegram-rust.yml'
+  push:
+    paths:
+      - 'native/telegram-*/**'
+      - 'fabushi/lib/services/telegram/**'
+      - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
+      - 'fabushi/lib/screens/telegram_authorization_screen.dart'
+      - 'fabushi/lib/screens/main_navigation_screen.dart'
+      - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
+      - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
+      - 'fabushi/test/telegram_chat_contract_test.dart'
+      - 'fabushi/pubspec.yaml'
+      - 'fabushi/pubspec.lock'
+      - 'fabushi/android/build_telegram_runtime.sh'
+      - 'fabushi/android/app/build.gradle.kts'
+      - 'fabushi/android/app/src/main/AndroidManifest.xml'
+      - 'fabushi/ios/build_telegram_runtime.sh'
+      - 'fabushi/ios/Runner/Runner.entitlements'
+      - 'fabushi/macos/build_telegram_runtime.sh'
+      - 'fabushi/macos/Runner/*.entitlements'
+      - 'fabushi/linux/**'
+      - 'fabushi/windows/**'
+      - 'docs/telegram-*.md'
+      - 'scripts/test-telegram-rust.sh'
+      - '.github/workflows/telegram-rust.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: ${{ matrix.os }} / ${{ matrix.crate }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        crate:
+          - telegram-core
+          - telegram-protocol
+          - telegram-network
+          - telegram-storage
+          - telegram-runtime
+          - telegram-media
+          - telegram-wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Test
+        run: cargo test --manifest-path native/${{ matrix.crate }}/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --manifest-path native/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
+
+  format-and-schema:
+    name: Format and pinned TDLib schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: |
+          for manifest in native/telegram-{core,protocol,network,storage,runtime,media,wasm}/Cargo.toml; do
+            cargo fmt --manifest-path "$manifest" -- --check
+          done
+      - name: Download pinned Telegram schemas
+        run: |
+          for schema in td_api.tl telegram_api.tl mtproto_api.tl; do
+            curl -fsSL \
+              "https://raw.githubusercontent.com/tdlib/td/a17f87c4cff7b90b278d12b91ba0614383aaee82/td/generate/scheme/$schema" \
+              -o "/tmp/$schema"
+          done
+      - name: Verify schema digests and surfaces
+        run: |
+          cargo run --quiet --manifest-path native/telegram-protocol/Cargo.toml --bin td-schema-audit -- td /tmp/td_api.tl
+          cargo run --quiet --manifest-path native/telegram-protocol/Cargo.toml --bin td-schema-audit -- telegram /tmp/telegram_api.tl
+          cargo run --quiet --manifest-path native/telegram-protocol/Cargo.toml --bin td-schema-audit -- mtproto /tmp/mtproto_api.tl
+      - name: Regenerate constructor catalog
+        run: >-
+          cargo run --quiet
+          --manifest-path native/telegram-protocol/Cargo.toml
+          --bin tl-schema-codegen --
+          /tmp/telegram_api.tl
+          /tmp/mtproto_api.tl
+          native/telegram-protocol/src/generated/schema_ids.rs
+      - name: Reject generated schema drift
+        run: git diff --exit-code -- native/telegram-protocol/src/generated/schema_ids.rs
+
+  wasm:
+    name: WebAssembly target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build WebAssembly bridge
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Generate browser glue
+        run: ./scripts/build-telegram-wasm.sh
+      - name: Execute WebAssembly contract
+        run: node scripts/test-telegram-wasm.mjs
+
+  flutter-contract:
+    name: Flutter Rust bridge and chat consumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve Flutter dependencies
+        working-directory: fabushi
+        run: flutter pub get
+      - name: Analyze Telegram bridge and UI
+        working-directory: fabushi
+        run: >-
+          flutter analyze
+          lib/services/telegram
+          lib/screens/telegram_friend_chat_screen.dart
+          lib/screens/telegram_authorization_screen.dart
+          lib/widgets/layout/telegram_chat_list.dart
+          lib/widgets/layout/telegram_drawer.dart
+          lib/screens/main_navigation_screen.dart
+      - name: Test Flutter-to-Rust JSON contract
+        working-directory: fabushi
+        run: flutter test test/telegram_chat_contract_test.dart
+
+  android-runtime:
+    name: Android Rust runtime ABIs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK and cargo-ndk
+        run: |
+          sdkmanager 'ndk;28.2.13676358'
+          cargo install cargo-ndk --locked
+      - name: Build three Android ABIs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+        run: ./fabushi/android/build_telegram_runtime.sh
+      - name: Verify runtime artifacts and ABI symbols
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+        run: |
+          nm_tool="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -path '*/bin/llvm-nm' -type f | head -1)"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            library="fabushi/android/app/src/main/jniLibs/$abi/libfabushi_telegram_runtime.so"
+            test -f "$library"
+            for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+              "$nm_tool" -D --defined-only "$library" | grep -q "fabushi_telegram_${symbol}$"
+            done
+          done
+
+  apple-runtime:
+    name: Apple Rust runtime archives
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build macOS dynamic library
+        env:
+          TARGET_BUILD_DIR: /tmp/fabushi-macos
+          FRAMEWORKS_FOLDER_PATH: Frameworks
+          CONFIGURATION: Release
+          ARCHS: arm64
+        run: ./fabushi/macos/build_telegram_runtime.sh
+      - name: Build iOS Simulator static library
+        env:
+          CONFIGURATION: Release
+          PLATFORM_NAME: iphonesimulator
+          ARCHS: arm64
+        run: ./fabushi/ios/build_telegram_runtime.sh
+      - name: Verify Apple symbols
+        run: |
+          for library in \
+            /tmp/fabushi-macos/Frameworks/libfabushi_telegram_runtime.dylib \
+            fabushi/ios/Runner/Libs/libfabushi_telegram_runtime.a; do
+            test -f "$library"
+            for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+              nm -gU "$library" | grep -q "_fabushi_telegram_${symbol}$"
+            done
+          done
+
+  desktop-runtime:
+    name: ${{ matrix.os }} desktop runtime
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Linux shared library
+        if: runner.os == 'Linux'
+        run: ./fabushi/linux/build_telegram_runtime.sh Release /tmp/fabushi-linux
+      - name: Verify Linux symbols
+        if: runner.os == 'Linux'
+        run: |
+          test -f /tmp/fabushi-linux/libfabushi_telegram_runtime.so
+          for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+            nm -D --defined-only /tmp/fabushi-linux/libfabushi_telegram_runtime.so | grep -q "fabushi_telegram_${symbol}$"
+          done
+      - name: Build Windows dynamic library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./fabushi/windows/build_telegram_runtime.ps1 -Configuration Release -OutputDirectory "$env:RUNNER_TEMP/fabushi-windows"
+      - name: Verify Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path "$env:RUNNER_TEMP/fabushi-windows/fabushi_telegram_runtime.dll")) {
+            throw "Windows Telegram Rust runtime was not produced."
+          }

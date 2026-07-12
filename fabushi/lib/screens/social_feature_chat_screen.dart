@@ -1068,10 +1068,19 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       );
       if (!mounted) return;
       setState(() {
+        final generator = switch (generated.provider) {
+          'offline-template' => '本地离线模板',
+          'template' => '服务端安全模板',
+          'legacy-deepseek-proxy' => 'Codex 兼容引擎',
+          _ => '内置 Codex',
+        };
+        final location = generated.persisted
+            ? '并保存到你的个人沙箱'
+            : '并建立了本地沙箱预览';
         _botMessages.add(
           _ChatMessage.bot(
             [
-              '已由内置 Codex 生成「${generated.title}」，并放入你的个人沙箱。',
+              '已由$generator生成「${generated.title}」，$location。',
               if (generated.summary != null && generated.summary!.isNotEmpty)
                 generated.summary!,
               '我已经打开沙箱小程序，也可以继续告诉我修改需求。',
@@ -1082,7 +1091,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       _openMiniAppPanel(generated.bot);
     } catch (e) {
       if (mounted) {
-        _botMessages.add(_ChatMessage.error('生成失败：$e'));
+        setState(() {
+          _botMessages.add(_ChatMessage.error('生成失败：$e'));
+        });
       }
     } finally {
       if (mounted) {
@@ -1104,6 +1115,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
     String? html;
     String? summary;
+    Map<String, dynamic> completionMetadata = <String, dynamic>{};
     final errors = <String>[];
     await for (final event in CodexSdk.instance.sendMessage(
       prompt: prompt,
@@ -1120,6 +1132,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           break;
         case CodexEventType.turnCompleted:
           summary = event.content;
+          completionMetadata = event.metadata ?? <String, dynamic>{};
           break;
         case CodexEventType.error:
           final message = event.errorMessage?.trim();
@@ -1138,11 +1151,45 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       );
     }
 
-    final title = _generatedMiniAppTitle(prompt: prompt, html: html);
+    SocialFeatureBot? persistedBot;
+    final miniAppValue = completionMetadata['miniApp'];
+    final botValue = completionMetadata['bot'];
+    if (miniAppValue is Map && botValue is Map) {
+      try {
+        final manifest = MiniAppManifest.fromJson(
+          Map<String, dynamic>.from(miniAppValue),
+        );
+        final miniAppBot = MiniAppBot.fromJson(
+          Map<String, dynamic>.from(botValue),
+        );
+        if (manifest.miniAppId.isNotEmpty &&
+            manifest.miniAppId == miniAppBot.miniAppId &&
+            manifest.entryUrl.trim().isNotEmpty) {
+          persistedBot = SocialFeatureBot.fromMiniApp(
+            miniAppBot,
+            index: _bot.destinationIndex,
+            manifest: manifest,
+          );
+        }
+      } catch (_) {
+        // A valid source preview is still usable if optional manifest metadata
+        // came from an older backend version.
+      }
+    }
+
+    final title = persistedBot?.title.trim().isNotEmpty == true
+        ? persistedBot!.title
+        : _generatedMiniAppTitle(prompt: prompt, html: html);
+    final provider = completionMetadata['provider']?.toString().trim() ?? '';
     return _GeneratedMiniAppPreview(
       title: title,
       summary: summary,
-      bot: _sandboxBotForGeneratedMiniApp(title: title, html: html),
+      bot:
+          persistedBot ??
+          _sandboxBotForGeneratedMiniApp(title: title, html: html),
+      provider: provider.isEmpty ? 'codex' : provider,
+      persisted:
+          persistedBot != null && completionMetadata['persisted'] == true,
     );
   }
 
@@ -1529,11 +1576,15 @@ class _GeneratedMiniAppPreview {
   const _GeneratedMiniAppPreview({
     required this.title,
     required this.bot,
+    required this.provider,
+    required this.persisted,
     this.summary,
   });
 
   final String title;
   final SocialFeatureBot bot;
+  final String provider;
+  final bool persisted;
   final String? summary;
 }
 

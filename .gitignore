@@ -56,6 +56,23 @@ fabushi/test_bundle.dart
 fabushi/patrol_test/test_bundle.dart
 tf_swift_cache/
 
+# Generated Telegram Rust build artifacts
+native/telegram-*/target/
+
+# Generated Telegram Rust WebAssembly glue (built in release pipelines)
+fabushi/web/telegram-wasm/fabushi_telegram.js
+fabushi/web/telegram-wasm/fabushi_telegram.d.ts
+fabushi/web/telegram-wasm/fabushi_telegram_bg.wasm
+fabushi/web/telegram-wasm/fabushi_telegram_bg.wasm.d.ts
+
+# Generated iOS Telegram Rust static library
+fabushi/ios/Runner/Libs/libfabushi_telegram_runtime.a
+
+# Generated Android Telegram Rust runtime libraries
+fabushi/android/app/src/main/jniLibs/**/libfabushi_telegram_runtime.so
+
 # 敏感信息与本地变量
 fabushi/web/.dev.vars
 **/*.p8
+fabushi/linux/telegram_runtime/
+fabushi/windows/telegram_runtime/

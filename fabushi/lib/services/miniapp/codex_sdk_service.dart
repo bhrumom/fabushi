@@ -75,6 +75,7 @@ class CodexEventDart {
   final String? filePath;
   final String? newContent;
   final String? errorMessage;
+  final Map<String, dynamic>? metadata;
 
   const CodexEventDart({
     required this.type,
@@ -84,6 +85,7 @@ class CodexEventDart {
     this.filePath,
     this.newContent,
     this.errorMessage,
+    this.metadata,
   });
 
   factory CodexEventDart.reasoning(String content) =>
@@ -95,8 +97,14 @@ class CodexEventDart {
   factory CodexEventDart.fileModified(String path, String content) =>
       CodexEventDart(type: CodexEventType.sandboxFileModified, filePath: path, newContent: content);
 
-  factory CodexEventDart.completed(String summary) =>
-      CodexEventDart(type: CodexEventType.turnCompleted, content: summary);
+  factory CodexEventDart.completed(
+    String summary, {
+    Map<String, dynamic>? metadata,
+  }) => CodexEventDart(
+    type: CodexEventType.turnCompleted,
+    content: summary,
+    metadata: metadata,
+  );
 
   factory CodexEventDart.error(String err) =>
       CodexEventDart(type: CodexEventType.error, errorMessage: err);
@@ -106,6 +114,8 @@ class CodexEventDart {
 class CodexSdk extends ChangeNotifier {
   static final CodexSdk instance = CodexSdk._();
   CodexSdk._();
+
+  static const Duration _generationTimeout = Duration(seconds: 120);
 
   CodexModelConfigDart _config =
       CodexModelConfigDart.deepSeek(apiKey: 'dacheng-openclaw-proxy');
@@ -132,6 +142,140 @@ class CodexSdk extends ChangeNotifier {
       return modelId;
     }
     return 'deepseek-chat';
+  }
+
+  Map<String, String> _firstPartyHeaders({
+    String accept = 'application/json',
+    String? authToken,
+  }) {
+    final token = authToken?.trim() ?? '';
+    return {
+      'Accept': accept,
+      'Content-Type': 'application/json',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Map<String, dynamic> _jsonMap(dynamic value) {
+    if (value is! Map) return <String, dynamic>{};
+    return Map<String, dynamic>.from(value);
+  }
+
+  String _responseFailureMessage(http.Response response) {
+    final body = utf8.decode(response.bodyBytes).trim();
+    if (body.isEmpty) return 'HTTP ${response.statusCode}';
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final message = decoded['message']?.toString().trim() ?? '';
+        if (message.isNotEmpty) return message;
+        final error = decoded['error'];
+        if (error is Map) {
+          final nested = error['message']?.toString().trim() ?? '';
+          if (nested.isNotEmpty) return nested;
+        }
+        if (error != null && error.toString().trim().isNotEmpty) {
+          return error.toString().trim();
+        }
+      }
+    } catch (_) {
+      // Preserve the upstream body below when it is not JSON.
+    }
+    return body;
+  }
+
+  Stream<CodexEventDart> _sendBackendBotFather({
+    required String prompt,
+    String? authToken,
+    String? username,
+  }) async* {
+    final backendUri = AppConfig.buildBackendUri(
+      '/api/botfather/generate-miniapp',
+    );
+    final response = await http
+        .post(
+          backendUri,
+          headers: _firstPartyHeaders(authToken: authToken),
+          body: jsonEncode({
+            'prompt': prompt,
+            if (username != null && username.trim().isNotEmpty)
+              'username': username.trim(),
+          }),
+        )
+        .timeout(_generationTimeout);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(_responseFailureMessage(response));
+    }
+
+    final decodedValue = jsonDecode(utf8.decode(response.bodyBytes));
+    final decoded = _jsonMap(decodedValue);
+    if (decoded['success'] != true) {
+      throw StateError(
+        decoded['message']?.toString().trim().isNotEmpty == true
+            ? decoded['message'].toString().trim()
+            : '机器人之父后端没有返回成功状态',
+      );
+    }
+
+    final miniApp = _jsonMap(decoded['miniApp']);
+    final bot = _jsonMap(decoded['bot']);
+    final generation = _jsonMap(decoded['generation']);
+    var html = miniApp['sourceHtml']?.toString() ?? '';
+
+    // Compatibility with an older backend contract that only returned an
+    // entry URL. The generated source remains first-party and scan-checked.
+    if (html.trim().isEmpty) {
+      final entryUrl = miniApp['entryUrl']?.toString().trim() ?? '';
+      final entryUri = Uri.tryParse(entryUrl);
+      if (entryUri != null &&
+          (entryUri.scheme == 'https' || entryUri.scheme == 'http')) {
+        final sourceResponse = await http
+            .get(
+              entryUri,
+              headers: _firstPartyHeaders(
+                accept: 'text/html',
+                authToken: authToken,
+              )..remove('Content-Type'),
+            )
+            .timeout(_generationTimeout);
+        if (sourceResponse.statusCode >= 200 &&
+            sourceResponse.statusCode < 300) {
+          html = utf8.decode(sourceResponse.bodyBytes);
+        }
+      }
+    }
+
+    if (html.trim().isEmpty || !html.toLowerCase().contains('<html')) {
+      throw StateError('机器人之父后端没有返回可预览的小程序 HTML');
+    }
+
+    yield CodexEventDart.toolCall(
+      'create_file',
+      {'path': 'index.html', 'content': html},
+    );
+    updateSandboxFile('index.html', html);
+    yield CodexEventDart.fileModified('index.html', html);
+
+    final provider = generation['provider']?.toString().trim() ?? '';
+    final model = generation['model']?.toString().trim() ?? '';
+    final generatorLabel = provider == 'template'
+        ? '安全模板'
+        : model.isNotEmpty
+        ? '$provider / $model'
+        : provider.isNotEmpty
+        ? provider
+        : 'Codex';
+    yield CodexEventDart.completed(
+      '小程序云端构建完成（$generatorLabel），已保存到个人沙箱。',
+      metadata: {
+        'provider': provider.isEmpty ? 'codex' : provider,
+        'persisted': true,
+        'miniApp': miniApp,
+        'bot': bot,
+        'generation': generation,
+      },
+    );
   }
 
   Stream<CodexEventDart> _sendBackendDeepSeekProxyStream({
@@ -161,9 +305,8 @@ class CodexSdk extends ChangeNotifier {
       ..headers.addAll({
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
-        'Authorization': 'Bearer dacheng-openclaw-proxy',
-        if (authToken != null && authToken.isNotEmpty)
-          'x-dacheng-auth-token': authToken,
+        if (authToken != null && authToken.trim().isNotEmpty)
+          'Authorization': 'Bearer ${authToken.trim()}',
       })
       ..body = body;
 
@@ -216,16 +359,21 @@ class CodexSdk extends ChangeNotifier {
       final htmlMatch = RegExp(r'```html\s*([\s\S]*?)\s*```')
           .firstMatch(fullText);
       final html = htmlMatch != null ? htmlMatch.group(1)! : fullText;
-      if (html.trim().startsWith('<')) {
-        yield CodexEventDart.toolCall(
-          'create_file',
-          {'path': 'index.html', 'content': html},
-        );
-        updateSandboxFile('index.html', html);
-        yield CodexEventDart.fileModified('index.html', html);
+      if (!html.trim().startsWith('<')) {
+        throw StateError('DeepSeek 兼容代理没有返回有效 HTML');
       }
+      yield CodexEventDart.toolCall(
+        'create_file',
+        {'path': 'index.html', 'content': html},
+      );
+      updateSandboxFile('index.html', html);
+      yield CodexEventDart.fileModified('index.html', html);
       yield CodexEventDart.completed(
-        '大乘 DeepSeek 后端 ($model) 生成完毕，已按账户 API 额度计费。',
+        'Codex 兼容代理 ($model) 生成完毕。',
+        metadata: {
+          'provider': 'legacy-deepseek-proxy',
+          'persisted': false,
+        },
       );
     } finally {
       client.close();
@@ -272,6 +420,9 @@ class CodexSdk extends ChangeNotifier {
     String? authToken,
     String? username,
   }) async* {
+    // Never let a previous turn's file mask a failed generation in this turn.
+    _virtualVfs.remove('index.html');
+
     if (isSelfHealing) {
       yield CodexEventDart.reasoning('捕捉到沙盒运行异常，正在启动 Codex 自我修复程序...');
     } else {
@@ -281,7 +432,20 @@ class CodexSdk extends ChangeNotifier {
     }
 
     try {
-      // 1. 全平台 Codex 统一走 OpenClaw 同款 DeepSeek 后端代理与账户额度。
+      // 1. The first-party Bot Father endpoint owns official Codex SDK
+      // orchestration, account quota, security scanning, and persistence.
+      yield* _sendBackendBotFather(
+        prompt: prompt,
+        authToken: authToken,
+        username: username,
+      );
+      return;
+    } catch (e) {
+      yield CodexEventDart.error('机器人之父 Codex 后端异常: $e');
+    }
+
+    try {
+      // 2. Compatibility fallback for a partially upgraded backend.
       yield* _sendBackendDeepSeekProxyStream(
         prompt: prompt,
         authToken: authToken,
@@ -289,39 +453,11 @@ class CodexSdk extends ChangeNotifier {
       );
       return;
     } catch (e) {
-      yield CodexEventDart.error('Codex DeepSeek 代理异常: $e');
+      yield CodexEventDart.error('Codex 兼容代理异常: $e');
     }
 
-    try {
-      // 2. 官方小程序生成接口兜底，同样在后端侧完成模型调用与计费。
-      final backendUri = AppConfig.buildBackendUri('/api/botfather/generate-miniapp');
-      final response = await http
-          .post(
-            backendUri,
-            headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-            body: jsonEncode({'prompt': prompt}),
-          )
-          .timeout(AppConfig.requestTimeout);
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is Map && decoded['success'] == true) {
-          final miniApp = decoded['miniApp'] as Map? ?? {};
-          final html = miniApp['sourceHtml']?.toString() ?? '';
-          if (html.isNotEmpty) {
-            yield CodexEventDart.toolCall('create_file', {'path': 'index.html', 'content': html});
-            updateSandboxFile('index.html', html);
-            yield CodexEventDart.fileModified('index.html', html);
-            yield CodexEventDart.completed('小程序云端构建完成，已同步至大乘虚拟内存文件系统及实时预览窗口。');
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      yield CodexEventDart.error('API调用异常: $e');
-    }
-
-    // 3. 兜底保障（当网络离线或接口异常时启动内联沙盒模板）
+    // 3. Keep the composer usable offline, while clearly identifying that
+    // this is not a successful Codex generation.
     const fallbackHtml = '''
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -347,6 +483,12 @@ class CodexSdk extends ChangeNotifier {
     yield CodexEventDart.toolCall('create_file', {'path': 'index.html', 'content': fallbackHtml});
     updateSandboxFile('index.html', fallbackHtml);
     yield CodexEventDart.fileModified('index.html', fallbackHtml);
-    yield CodexEventDart.completed('已加载沙盒小程序模板。');
+    yield CodexEventDart.completed(
+      '云端 Codex 暂不可用，已加载本地离线模板；恢复连接后可继续生成完整应用。',
+      metadata: {
+        'provider': 'offline-template',
+        'persisted': false,
+      },
+    );
   }
 }
