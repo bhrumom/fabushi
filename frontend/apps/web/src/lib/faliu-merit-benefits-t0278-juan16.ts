@@ -8,6 +8,7 @@ export * from "./faliu-merit-benefits-t0278-juan16-jeweled-carts-buddhas";
 export * from "./faliu-merit-benefits-t0278-juan16-good-friends-vehicles";
 export * from "./faliu-merit-benefits-t0278-juan16-rulai-vehicles";
 export * from "./faliu-merit-benefits-t0278-juan16-sravaka-pratyekabuddha-vehicles";
+export * from "./faliu-merit-benefits-t0278-juan16-all-fields-vehicles";
 
 import * as t0278Juan16Base from "./faliu-merit-benefits-t0278-juan16-base";
 import * as t0278Juan16DrinkThroughSeats from "./faliu-merit-benefits-t0278-juan16-drink-through-seats";
@@ -19,6 +20,7 @@ import * as t0278Juan16JeweledCartsBuddhas from "./faliu-merit-benefits-t0278-ju
 import * as t0278Juan16GoodFriendsVehicles from "./faliu-merit-benefits-t0278-juan16-good-friends-vehicles";
 import * as t0278Juan16RulaiVehicles from "./faliu-merit-benefits-t0278-juan16-rulai-vehicles";
 import * as t0278Juan16SravakaPratyekabuddhaVehicles from "./faliu-merit-benefits-t0278-juan16-sravaka-pratyekabuddha-vehicles";
+import * as t0278Juan16AllFieldsVehicles from "./faliu-merit-benefits-t0278-juan16-all-fields-vehicles";
 
 export const T0278_JUAN_16_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...t0278Juan16Base.T0278_JUAN_16_BASE_MERIT_BENEFITS,
@@ -31,4 +33,5 @@ export const T0278_JUAN_16_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...t0278Juan16GoodFriendsVehicles.T0278_JUAN_16_GOOD_FRIENDS_VEHICLES_MERIT_BENEFITS,
   ...t0278Juan16RulaiVehicles.T0278_JUAN_16_RULAI_VEHICLES_MERIT_BENEFITS,
   ...t0278Juan16SravakaPratyekabuddhaVehicles.T0278_JUAN_16_SRAVAKA_PRATYEKABUDDHA_VEHICLES_MERIT_BENEFITS,
+  ...t0278Juan16AllFieldsVehicles.T0278_JUAN_16_ALL_FIELDS_VEHICLES_MERIT_BENEFITS,
 ];
