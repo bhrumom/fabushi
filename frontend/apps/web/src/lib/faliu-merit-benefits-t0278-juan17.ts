@@ -1,3 +1,5 @@
+import { T0278_JUAN_17_BANNERS_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-banners";
+
 export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
     id: "t0278-017-001",
@@ -39,4 +41,5 @@ export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     note: "結尾回向眾生具足清淨大願、諸佛功德、諸法自在智、無上智蓋與十力蓋，乃至成就最大迴向，普覆攝取一切眾生。",
     occurrence: 1,
   },
+  ...T0278_JUAN_17_BANNERS_MERIT_BENEFITS,
 ];
