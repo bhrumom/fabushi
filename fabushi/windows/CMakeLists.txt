@@ -60,6 +60,29 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Build and stage the shared Rust command/event runtime for this configuration.
+set(TELEGRAM_RUST_OUTPUT_DIR "${CMAKE_BINARY_DIR}/telegram_runtime/$<CONFIG>")
+add_custom_target(telegram_rust_runtime ALL
+  COMMAND powershell.exe
+    -NoProfile
+    -ExecutionPolicy Bypass
+    -File "${CMAKE_CURRENT_SOURCE_DIR}/build_telegram_runtime.ps1"
+    -Configuration "$<CONFIG>"
+    -OutputDirectory "${TELEGRAM_RUST_OUTPUT_DIR}"
+  BYPRODUCTS
+    "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  COMMENT "Building Telegram Rust runtime"
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} telegram_rust_runtime)
+add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/fabushi_telegram_runtime.dll"
+  VERBATIM
+)
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -87,6 +110,11 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+install(FILES
+  "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 if(PLUGIN_BUNDLED_LIBRARIES)

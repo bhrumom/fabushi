@@ -278,105 +278,125 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final content = Stack(
-      children: [
-        InAppWebView(
-          key: ValueKey(_entryUrl),
-          initialUrlRequest: URLRequest(url: WebUri(_entryUrl)),
-          initialUserScripts: UnmodifiableListView<UserScript>([
-            UserScript(
-              source: _hostSdkScript,
-              injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-              contentWorld: ContentWorld.PAGE,
+    final content = ColoredBox(
+      color: const Color(0xFF0F1722),
+      child: Stack(
+        children: [
+          InAppWebView(
+            key: ValueKey(_entryUrl),
+            initialUrlRequest: URLRequest(url: WebUri(_entryUrl)),
+            initialUserScripts: UnmodifiableListView<UserScript>([
+              UserScript(
+                source: _hostSdkScript,
+                injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+                contentWorld: ContentWorld.PAGE,
+              ),
+            ]),
+            initialSettings: InAppWebViewSettings(
+              javaScriptEnabled: true,
+              transparentBackground: true,
+              mediaPlaybackRequiresUserGesture: false,
+              supportZoom: false,
+              domStorageEnabled: true,
+              databaseEnabled: true,
             ),
-          ]),
-          initialSettings: InAppWebViewSettings(
-            javaScriptEnabled: true,
-            transparentBackground: false,
-            mediaPlaybackRequiresUserGesture: false,
-            supportZoom: false,
-            domStorageEnabled: true,
-            databaseEnabled: true,
-          ),
-          onWebViewCreated: (controller) {
-            _webViewController = controller;
-            controller.addJavaScriptHandler(
-              handlerName: 'FabushiMiniAppInvoke',
-              callback: (args) async {
-                final request = args.isNotEmpty && args.first is Map
-                    ? Map<String, dynamic>.from(args.first as Map)
-                    : <String, dynamic>{};
-                return _handleInvoke(request);
-              },
-            );
-          },
-          onLoadStart: (controller, url) {
-            _markHostNotReady();
-            if (mounted) {
-              setState(() {
-                _loading = true;
-                _error = null;
-              });
-            }
-          },
-          onLoadStop: (controller, _) async {
-            _webViewController = controller;
-            await controller.evaluateJavascript(source: _hostSdkScript);
-            _markHostReady();
-            if (mounted) setState(() => _loading = false);
-          },
-          onProgressChanged: (controller, progress) async {
-            if (progress == 100 && !_hostReady) {
+            onWebViewCreated: (controller) {
+              _webViewController = controller;
+              controller.addJavaScriptHandler(
+                handlerName: 'FabushiMiniAppInvoke',
+                callback: (args) async {
+                  final request = args.isNotEmpty && args.first is Map
+                      ? Map<String, dynamic>.from(args.first as Map)
+                      : <String, dynamic>{};
+                  return _handleInvoke(request);
+                },
+              );
+            },
+            onLoadStart: (controller, url) {
+              _markHostNotReady();
+              if (mounted) {
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
+              }
+            },
+            onLoadStop: (controller, _) async {
               _webViewController = controller;
               await controller.evaluateJavascript(source: _hostSdkScript);
               _markHostReady();
-              if (mounted) setState(() => _loading = false);
-            }
-          },
-          onConsoleMessage: (controller, consoleMessage) {
-            debugPrint(
-              'MiniApp[${widget.bot.stableBotId}] (${consoleMessage.messageLevel}): ${consoleMessage.message}',
-            );
-          },
-          onReceivedHttpError: (controller, request, errorResponse) {
-            if (!_isMainFrameMiniAppNavigation(request)) {
+              if (mounted) {
+                setState(() {
+                  _loading = false;
+                  _error = null;
+                });
+              }
+            },
+            onProgressChanged: (controller, progress) async {
+              if (progress == 100) {
+                _webViewController = controller;
+                if (!_hostReady) {
+                  await controller.evaluateJavascript(source: _hostSdkScript);
+                  _markHostReady();
+                }
+                if (mounted) {
+                  setState(() {
+                    _loading = false;
+                    _error = null;
+                  });
+                }
+              }
+            },
+            onConsoleMessage: (controller, consoleMessage) {
               debugPrint(
-                'MiniApp[${widget.bot.stableBotId}] ignored subresource HTTP error: '
-                '${request.url} HTTP ${errorResponse.statusCode}',
+                'MiniApp[${widget.bot.stableBotId}] (${consoleMessage.messageLevel}): ${consoleMessage.message}',
               );
-              return;
-            }
-            if (mounted) {
-              setState(() {
-                _loading = false;
-                _error = 'HTTP ${errorResponse.statusCode}: 加载页面失败';
-              });
-            }
-          },
-          onReceivedError: (controller, request, error) {
-            if (!_isMainFrameMiniAppNavigation(request)) {
-              debugPrint(
-                'MiniApp[${widget.bot.stableBotId}] ignored subresource load error: '
-                '${request.url} ${error.description}',
-              );
-              return;
-            }
-            if (mounted) {
-              setState(() {
-                _loading = false;
-                _error = error.description;
-              });
-            }
-          },
-        ),
-        if (_loading)
-          const Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            },
+            onReceivedHttpError: (controller, request, errorResponse) {
+              if (!_isMainFrameMiniAppNavigation(request)) {
+                debugPrint(
+                  'MiniApp[${widget.bot.stableBotId}] ignored subresource HTTP error: '
+                  '${request.url} HTTP ${errorResponse.statusCode}',
+                );
+                return;
+              }
+              if (mounted) {
+                setState(() {
+                  _loading = false;
+                  _error = 'HTTP ${errorResponse.statusCode}: 加载页面失败';
+                });
+              }
+            },
+            onReceivedError: (controller, request, error) {
+              if (_shouldIgnoreMiniAppLoadError(request, error)) {
+                debugPrint(
+                  'MiniApp[${widget.bot.stableBotId}] ignored recoverable WebView error: '
+                  '${request.url} ${error.description} ${error.type}',
+                );
+                if (mounted && _hostReady) {
+                  setState(() => _loading = false);
+                }
+                return;
+              }
+              if (mounted) {
+                setState(() {
+                  _loading = false;
+                  _error = error.description;
+                });
+              }
+            },
           ),
+          if (_loading)
+            const ColoredBox(
+              color: Color(0xFF0F1722),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
         if (_error != null)
           ColoredBox(
             color: const Color(0xFF0F1722),
@@ -409,6 +429,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
             ),
           ),
       ],
+    ),
     );
 
     if (widget.headless) {
@@ -416,82 +437,89 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     }
 
     if (widget.inline) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: ColoredBox(
-          color: const Color(0xFF0F1722),
-          child: Column(
-            children: [
-              Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF17212B),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        widget.bot.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      final isDesktop = defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux;
+      final inlineBody = ColoredBox(
+        color: const Color(0xFF0F1722),
+        child: Column(
+          children: [
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFF17212B),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.bot.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.more_vert,
-                        size: 20,
-                        color: Colors.white70,
-                      ),
-                      onPressed: () {},
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.more_vert,
+                      size: 20,
+                      color: Colors.white70,
                     ),
-                    if (widget.onMinimize != null) ...[
-                      const SizedBox(width: 16),
-                      IconButton(
-                        tooltip: '收起到后台',
-                        icon: const Icon(
-                          Icons.keyboard_tab,
-                          size: 20,
-                          color: Colors.white70,
-                        ),
-                        onPressed: widget.onMinimize,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
+                    onPressed: () {},
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  if (widget.onMinimize != null) ...[
                     const SizedBox(width: 16),
                     IconButton(
-                      tooltip: '关闭并销毁',
+                      tooltip: '收起到后台',
                       icon: const Icon(
-                        Icons.close,
+                        Icons.keyboard_tab,
                         size: 20,
                         color: Colors.white70,
                       ),
-                      onPressed: () {
-                        if (widget.onClose != null) {
-                          widget.onClose!();
-                        } else if (Navigator.of(context).canPop()) {
-                          Navigator.of(context).pop();
-                        }
-                      },
+                      onPressed: widget.onMinimize,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                     ),
                   ],
-                ),
+                  const SizedBox(width: 16),
+                  IconButton(
+                    tooltip: '关闭并销毁',
+                    icon: const Icon(
+                      Icons.close,
+                      size: 20,
+                      color: Colors.white70,
+                    ),
+                    onPressed: () {
+                      if (widget.onClose != null) {
+                        widget.onClose!();
+                      } else if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
               ),
-              Expanded(child: content),
-            ],
-          ),
+            ),
+            Expanded(child: content),
+          ],
         ),
+      );
+      if (isDesktop) {
+        return inlineBody;
+      }
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: inlineBody,
       );
     }
 
@@ -516,6 +544,11 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         ? explicitEntryUrl
         : 'https://fabushi.ombhrum.com/miniapps/${Uri.encodeComponent(bot.stableMiniAppId)}/';
     final parsedBase = Uri.tryParse(base);
+    if (parsedBase?.host == 'fabushi-miniapps.pages.dev') {
+      base = parsedBase!
+          .replace(host: 'fabushi.ombhrum.com')
+          .toString();
+    }
     final scheme = parsedBase?.scheme.toLowerCase() ?? '';
     final canAppendHostParams =
         scheme.isEmpty || scheme == 'http' || scheme == 'https';
@@ -543,8 +576,11 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   bool _isMainFrameMiniAppNavigation(WebResourceRequest request) {
     final isMainFrame = request.isForMainFrame;
     if (isMainFrame != null) return isMainFrame;
+    return _isEntryDocumentUrl(request.url);
+  }
 
-    final requestUri = Uri.tryParse(request.url.toString());
+  bool _isEntryDocumentUrl(WebUri url) {
+    final requestUri = Uri.tryParse(url.toString());
     final entryUri = Uri.tryParse(_entryUrl);
     if (requestUri == null || entryUri == null) return true;
 
@@ -562,6 +598,35 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
         normalizePath(requestUri) == normalizePath(entryUri);
   }
 
+  bool _shouldIgnoreMiniAppLoadError(
+    WebResourceRequest request,
+    WebResourceError error,
+  ) {
+    final url = request.url.toString();
+    final description = error.description.toLowerCase();
+    final type = error.type.toString().toLowerCase();
+
+    if (url.startsWith('flutter-inappwebview://') ||
+        url.startsWith('about:') ||
+        url.startsWith('blob:')) {
+      return true;
+    }
+
+    if (description.contains('nsposixerrordomain') ||
+        description.contains('message too long') ||
+        description.contains('code=40') ||
+        description.contains('network connection was lost') ||
+        type.contains('cancel')) {
+      return true;
+    }
+
+    if (_hostReady && !_isEntryDocumentUrl(request.url)) {
+      return true;
+    }
+
+    return !_isMainFrameMiniAppNavigation(request);
+  }
+
   void _markHostNotReady() {
     _hostReady = false;
     if (_hostReadyCompleter.isCompleted) {
@@ -574,12 +639,13 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     if (!_hostReadyCompleter.isCompleted) {
       _hostReadyCompleter.complete();
     }
+    _flushPendingCommandsToWebView();
   }
 
   Future<void> _waitForHostReady() async {
     if (_hostReady && _webViewController != null) return;
     await _hostReadyCompleter.future.timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 45),
       onTimeout: () {
         throw const MiniAppHostException('host_not_ready', '小程序后台加载超时');
       },
@@ -620,15 +686,9 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     );
   }
 
-  Future<Map<String, dynamic>> _runCommand(MiniAppHostCommand command) async {
-    await _waitForHostReady();
+  Future<void> _deliverCommandToWebView(Map<String, dynamic> commandJson) async {
     final controller = _webViewController;
-    if (controller == null) {
-      throw const MiniAppHostException('host_not_ready', '小程序后台尚未就绪');
-    }
-    await _waitForCommandExposed(command.command);
-    final commandJson = command.toJson();
-    _enqueueBotCommand(commandJson);
+    if (controller == null) return;
     final payload = jsonEncode(commandJson);
     await controller.evaluateJavascript(
       source:
@@ -651,6 +711,25 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
 })();
 ''',
     );
+  }
+
+  void _flushPendingCommandsToWebView() {
+    if (!_hostReady || _webViewController == null) return;
+    for (final cmd in _pendingBotCommands) {
+      _deliverCommandToWebView(cmd);
+    }
+  }
+
+  Future<Map<String, dynamic>> _runCommand(MiniAppHostCommand command) async {
+    final commandJson = command.toJson();
+    _enqueueBotCommand(commandJson);
+    await _waitForHostReady();
+    final controller = _webViewController;
+    if (controller == null) {
+      throw const MiniAppHostException('host_not_ready', '小程序后台尚未就绪');
+    }
+    await _waitForCommandExposed(command.command);
+    await _deliverCommandToWebView(commandJson);
     return {
       'accepted': true,
       'delivered': true,
@@ -687,6 +766,163 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       ..clear()
       ..addAll(kept);
     return {'commands': taken};
+  }
+
+  // ignore: unused_element
+  String get _miniAppWatchdogScript {
+    return r'''
+(function () {
+  if (window.__fabushiMiniAppWatchdogInstalled) return;
+  window.__fabushiMiniAppWatchdogInstalled = true;
+
+  function report(kind, value) {
+    try {
+      console.error('[fabushi-miniapp-watchdog]', kind, value && (value.stack || value.message || value.reason || value));
+    } catch (e) {}
+  }
+
+  window.addEventListener('error', function (event) {
+    report('error', event.error || event.message);
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    report('unhandledrejection', event.reason);
+  });
+
+  function ensureBaseStyle() {
+    try {
+      document.documentElement.style.background = '#0F1722';
+      if (document.body) {
+        document.body.style.background = '#0F1722';
+        document.body.style.color = '#FFFFFF';
+      }
+      if (!document.getElementById('__fabushiMiniAppInlineStyle')) {
+        var style = document.createElement('style');
+        style.id = '__fabushiMiniAppInlineStyle';
+        style.textContent = [
+          'html,body{margin:0!important;min-height:100%!important;background:#0F1722!important;color:#fff!important;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;}',
+          '.ma-container{min-height:100vh!important;background:radial-gradient(circle at 50% 0%,#151f2b 0%,#0B111A 100%)!important;color:#fff!important;padding:18px!important;box-sizing:border-box!important;}',
+          '.ma-panel{background:rgba(15,23,34,.94)!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;padding:16px!important;color:#fff!important;}',
+          '.ma-card{background:rgba(23,33,43,.78)!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;padding:16px!important;margin:12px 0!important;color:#fff!important;}',
+          '.ma-header-title{font-size:24px!important;font-weight:800!important;margin:0 0 8px!important;color:#fff!important;-webkit-text-fill-color:initial!important;background:none!important;}',
+          '.ma-header-subtitle,.ma-label{color:#91A3B7!important;}',
+          '.ma-textarea,.ma-input{width:100%!important;background:#0B111A!important;color:#fff!important;border:1px solid rgba(255,255,255,.12)!important;border-radius:12px!important;padding:12px!important;box-sizing:border-box!important;}',
+          '.ma-btn{background:#10B981!important;color:#fff!important;border:0!important;border-radius:12px!important;padding:12px 16px!important;font-weight:700!important;}',
+          '.ma-log-box{background:#050B12!important;color:#B7C6D8!important;border-radius:12px!important;padding:12px!important;white-space:pre-wrap!important;font-size:13px!important;}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+      }
+    } catch (e) {
+      report('style', e);
+    }
+  }
+
+  function postBotMessage(text) {
+    try {
+      if (window.FabushiMiniApp && window.FabushiMiniApp.bot && window.FabushiMiniApp.bot.postMessage) {
+        return window.FabushiMiniApp.bot.postMessage({ text: text });
+      }
+    } catch (e) {
+      report('postBotMessage', e);
+    }
+    return Promise.resolve({ accepted: false });
+  }
+
+  function renderFallback(reason) {
+    if (!document.body || document.getElementById('__fabushiGlobalDharmaFallback')) return;
+    document.body.innerHTML = '<main class="ma-container" id="__fabushiGlobalDharmaFallback">' +
+      '<section class="ma-panel">' +
+      '<h1 class="ma-header-title">全球法布施</h1>' +
+      '<p class="ma-header-subtitle">小程序网页运行时未完全渲染，已自动切换到本地安全面板。你仍然可以在聊天框发送链接或正文，然后回复数字选择发包模式。</p>' +
+      '<div class="ma-card"><label class="ma-label">链接或正文</label><textarea id="__fabushiFallbackText" class="ma-textarea" rows="6" placeholder="粘贴佛法链接、经文或发愿文"></textarea><div style="height:12px"></div><button id="__fabushiFallbackSend" class="ma-btn">发送到聊天选项</button></div>' +
+      '<div class="ma-card"><div class="ma-log-box" id="__fabushiFallbackLog">已启用本地安全面板。原因：' + String(reason || '页面空白') + '</div></div>' +
+      '</section></main>';
+    var input = document.getElementById('__fabushiFallbackText');
+    var button = document.getElementById('__fabushiFallbackSend');
+    var logBox = document.getElementById('__fabushiFallbackLog');
+    function log(line) {
+      if (logBox) logBox.textContent += '\n' + line;
+    }
+    function queueMaterial(material) {
+      material = String(material || '').trim();
+      if (!material) {
+        log('请先输入链接或正文。');
+        return;
+      }
+      window.__fabushiGlobalDharmaPendingMaterial = material;
+      postBotMessage('🌍 已接收待发包素材！请回复数字选择：\n\n1️⃣ 启动循环常驻模式\n2️⃣ 执行单次即时发包\n3️⃣ 取消本次任务');
+      log('素材已发送到聊天选项，等待数字回复。');
+    }
+    if (button) {
+      button.addEventListener('click', function () {
+        queueMaterial(input && input.value);
+      });
+    }
+    function handleCommand(detail) {
+      var incoming = String((detail && (detail.args || detail.rawText || detail.text)) || '').trim();
+      var clean = incoming;
+      if (clean === '1' || clean === '1️⃣') {
+        if (!window.__fabushiGlobalDharmaPendingMaterial) {
+          postBotMessage('⚠️ 当前无待发包素材，请先发送网页链接或经文正文。');
+          return;
+        }
+        postBotMessage('🚀 已进入循环常驻发包准备流程。本地安全面板已接管命令队列。');
+        log('收到循环常驻模式指令。');
+        return;
+      }
+      if (clean === '2' || clean === '2️⃣') {
+        if (!window.__fabushiGlobalDharmaPendingMaterial) {
+          postBotMessage('⚠️ 当前无待发包素材，请先发送网页链接或经文正文。');
+          return;
+        }
+        postBotMessage('⚡ 已进入单次即时发包准备流程。本地安全面板已接管命令队列。');
+        log('收到单次即时发包指令。');
+        return;
+      }
+      if (clean === '3' || clean === '3️⃣') {
+        window.__fabushiGlobalDharmaPendingMaterial = '';
+        postBotMessage('❌ 已取消本次发包任务。');
+        log('任务已取消。');
+        return;
+      }
+      queueMaterial(clean);
+    }
+    try {
+      if (window.FabushiMiniApp && window.FabushiMiniApp.bot && typeof window.FabushiMiniApp.bot.onAnyCommand === 'function') {
+        window.FabushiMiniApp.bot.onAnyCommand(handleCommand);
+      }
+      window.addEventListener('fabushi-miniapp-command', function (event) {
+        handleCommand(event && event.detail);
+      });
+    } catch (e) {
+      report('fallbackCommandListener', e);
+    }
+  }
+
+  function inspectAndRepair() {
+    ensureBaseStyle();
+    try {
+      var text = (document.body && document.body.innerText || '').trim();
+      var hasPanel = !!document.querySelector('.ma-panel');
+      if (!hasPanel || text.length < 8) {
+        renderFallback(hasPanel ? '正文为空' : '未找到小程序面板');
+      }
+    } catch (e) {
+      report('inspect', e);
+      renderFallback(e && (e.message || e));
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      ensureBaseStyle();
+      setTimeout(inspectAndRepair, 8000);
+    }, { once: true });
+  } else {
+    ensureBaseStyle();
+    setTimeout(inspectAndRepair, 1200);
+  }
+})();
+''';
   }
 
   String get _hostSdkScript {

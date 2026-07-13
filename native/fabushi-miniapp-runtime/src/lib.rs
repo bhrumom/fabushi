@@ -10,6 +10,25 @@ mod storage;
 
 use std::os::raw::c_char;
 
+/// Executes one mini-app host request through the same Rust dispatcher that is
+/// exported through the Flutter FFI ABI.  Product shells such as Mahayana CLI
+/// use this entry point instead of carrying a second implementation of the
+/// mini-app protocol.
+pub fn execute_json(request_json: &str) -> Result<String, String> {
+    let request =
+        serde_json::from_str(request_json).map_err(|error| format!("invalid_json: {error}"))?;
+    dispatcher::execute(request)
+        .map(|response| response.to_string())
+        .map_err(|error| format!("{}: {}", error.code, error.message))
+}
+
+/// Lists the host operations implemented by this runtime.  This is deliberately
+/// shared by the CLI and FFI layers so a web mini-app sees the same contract on
+/// every product surface.
+pub fn supported_methods() -> &'static [&'static str] {
+    dispatcher::supported_methods()
+}
+
 #[no_mangle]
 pub extern "C" fn fabushi_runtime_free_string(ptr: *mut c_char) {
     ffi::free_string(ptr);
