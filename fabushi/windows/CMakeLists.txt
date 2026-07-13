@@ -76,12 +76,15 @@ add_custom_target(telegram_rust_runtime ALL
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} telegram_rust_runtime)
-add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+add_custom_target(stage_telegram_rust_runtime ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${BINARY_NAME}>"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
     "$<TARGET_FILE_DIR:${BINARY_NAME}>/fabushi_telegram_runtime.dll"
+  DEPENDS telegram_rust_runtime
   VERBATIM
 )
+add_dependencies(${BINARY_NAME} stage_telegram_rust_runtime)
 
 
 # Generated plugin build rules, which manage building the plugins and adding
