@@ -32,6 +32,11 @@ export function FastDachengHome() {
     regions,
     flashcardPrinciples,
   } = dachengHomeExperience;
+  const productApiBaseUrl = (
+    process.env.NEXT_PUBLIC_FABUSHI_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    "https://api.ombhrum.com"
+  ).replace(/\/+$/, "");
 
   return (
     <main
@@ -40,6 +45,7 @@ export function FastDachengHome() {
       data-brand-name={brand.name}
       data-default-text={brand.defaultText}
       data-input-placeholder={brand.inputPlaceholder}
+      data-product-api-base={productApiBaseUrl}
     >
       <div className="fast-bg" aria-hidden="true" />
 
@@ -73,8 +79,10 @@ export function FastDachengHome() {
         <header className="fast-topbar">
           <span className="fast-mobile-brand">{brand.name}</span>
           <div>
-            <span className="fast-speed-badge">极速 Web</span>
-            <button type="button" className="fast-login">登录</button>
+            <span className="fast-speed-badge">内置大乘 CLI</span>
+            <button type="button" className="fast-login" data-alipay-login>
+              支付宝登录
+            </button>
           </div>
         </header>
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-manifest="$project_root/native/telegram-runtime/Cargo.toml"
-output="$project_root/fabushi/ios/Runner/Libs/libfabushi_telegram_runtime.a"
+manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
+output="$project_root/fabushi/ios/Runner/Libs/libmahayana_runtime.a"
 configuration="${CONFIGURATION:-Debug}"
 profile="debug"
 release_build=0
@@ -36,6 +36,9 @@ for arch in ${ARCHS:-arm64}; do
   cargo_args=(
     build
     --manifest-path "$manifest"
+    --package mahayana-ffi
+    --no-default-features
+    --features mobile-embedded,local-only
     --target "$target"
   )
   if [[ "$release_build" -eq 1 ]]; then
@@ -43,7 +46,7 @@ for arch in ${ARCHS:-arm64}; do
   fi
   cargo "${cargo_args[@]}"
   artifacts+=(
-    "$project_root/native/telegram-runtime/target/$target/$profile/libfabushi_telegram_runtime.a"
+    "$project_root/third_party/mahayana/mahayana-rs/target/$target/$profile/libmahayana_runtime.a"
   )
 done
 

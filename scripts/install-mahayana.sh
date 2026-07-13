@@ -23,7 +23,6 @@ Usage: install-mahayana.sh [--version <tag>] [--install-dir <dir>]
 Environment overrides:
   MAHAYANA_VERSION             Release tag (default: newest release with a Mahayana archive)
   MAHAYANA_INSTALL_DIR         Destination directory (default: ~/.local/bin)
-  MAHAYANA_CODEX_BIN           Development-only override for an embedded Codex binary
 EOF
 }
 
@@ -116,17 +115,17 @@ actual_checksum="$(sha256sum "$archive_path" | awk '{ print $1 }')"
 mkdir -p "${temporary_dir}/payload"
 tar -xzf "$archive_path" -C "${temporary_dir}/payload" || die "could not unpack ${archive_name}"
 binary_path="${temporary_dir}/payload/bin/mahayana"
-bundled_codex_path="${temporary_dir}/payload/lib/mahayana/codex"
+runtime_library_path="${temporary_dir}/payload/lib/libmahayana_runtime.so"
 [ -f "$binary_path" ] || die "release archive does not contain bin/mahayana"
-[ -f "$bundled_codex_path" ] || die "release archive does not contain lib/mahayana/codex"
+[ -f "$runtime_library_path" ] || die "release archive does not contain lib/libmahayana_runtime.so"
 
 mkdir -p "$install_dir"
 install -m 0755 "$binary_path" "${install_dir}/mahayana"
 install_prefix="$(dirname "$install_dir")"
-bundled_codex_destination="${install_prefix}/lib/mahayana/codex"
-mkdir -p "$(dirname "$bundled_codex_destination")"
-install -m 0755 "$bundled_codex_path" "$bundled_codex_destination"
-printf '%s\n' "Installed Mahayana CLI to ${install_dir}/mahayana with bundled Codex at ${bundled_codex_destination}"
+runtime_library_destination="${install_prefix}/lib/libmahayana_runtime.so"
+mkdir -p "$(dirname "$runtime_library_destination")"
+install -m 0755 "$runtime_library_path" "$runtime_library_destination"
+printf '%s\n' "Installed Mahayana CLI and in-process Runtime to ${install_prefix}"
 
 case ":$PATH:" in
   *":${install_dir}:"*) ;;

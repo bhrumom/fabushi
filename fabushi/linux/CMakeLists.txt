@@ -68,7 +68,7 @@ add_custom_target(telegram_rust_runtime ALL
     "${CMAKE_BUILD_TYPE}"
     "${TELEGRAM_RUST_OUTPUT_DIR}"
   BYPRODUCTS
-    "${TELEGRAM_RUST_OUTPUT_DIR}/libfabushi_telegram_runtime.so"
+    "${TELEGRAM_RUST_OUTPUT_DIR}/libmahayana_runtime.so"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
   COMMENT "Building Telegram Rust runtime"
   VERBATIM
@@ -118,7 +118,7 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES
-  "${TELEGRAM_RUST_OUTPUT_DIR}/libfabushi_telegram_runtime.so"
+  "${TELEGRAM_RUST_OUTPUT_DIR}/libmahayana_runtime.so"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 

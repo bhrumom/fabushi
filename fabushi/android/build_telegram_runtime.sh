@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-manifest="$project_root/native/telegram-runtime/Cargo.toml"
+manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
 crate_dir="$(dirname "$manifest")"
 output="$project_root/fabushi/android/app/src/main/jniLibs"
 
@@ -34,14 +34,19 @@ cargo ndk \
   --target x86_64 \
   --output-dir "$output" \
   build \
+  --manifest-path "$manifest" \
+  --package mahayana-ffi \
+  --no-default-features \
+  --features mobile-embedded,local-only \
   --release
 
-# cargo-ndk also stages cdylib artifacts exposed by path dependencies. Only the
-# stable runtime ABI is loaded by Flutter; keeping internal layer libraries in
-# the APK would add size and expose implementation details without a consumer.
+# cargo-ndk also stages cdylib artifacts exposed by path dependencies. The
+# unified wrapper exports both the new Mahayana ABI and the legacy Telegram ABI.
 for abi in arm64-v8a armeabi-v7a x86_64; do
   rm -f \
     "$output/$abi/libfabushi_telegram_core.so" \
     "$output/$abi/libfabushi_telegram_protocol.so" \
-    "$output/$abi/libfabushi_telegram_storage.so"
+    "$output/$abi/libfabushi_telegram_storage.so" \
+    "$output/$abi/libfabushi_telegram_runtime.so" \
+    "$output/$abi/libfabushi_miniapp_runtime.so"
 done

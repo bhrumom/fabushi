@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../social_friend_service.dart';
+import '../mahayana_command_service.dart';
 import 'telegram_client_factory.dart';
 import 'telegram_rust_runtime.dart';
 
@@ -71,6 +72,7 @@ class TelegramChatSession extends ChangeNotifier {
   static final TelegramChatSession instance = TelegramChatSession._();
 
   final TelegramRustRuntime _runtime = TelegramRustRuntime.instance;
+  final MahayanaCommandService _mahayana = MahayanaCommandService();
   final Set<int> _knownChats = <int>{};
   Future<void>? _initializing;
   int? _clientId;
@@ -173,18 +175,20 @@ class TelegramChatSession extends ChangeNotifier {
     SocialFriendContact friend,
     String text, {
     int senderUserId = 1,
+    String? token,
   }) async {
     final value = text.trim();
     if (value.isEmpty) return;
     await upsertFriend(friend);
     final now = DateTime.now().millisecondsSinceEpoch;
     final localMessageId = _nextLocalMessageId--;
+    final clientRequestId = 'flutter-$now-${-localMessageId}';
     await _executeCommand(<String, dynamic>{
       'type': 'queueMessage',
       'chatId': chatIdForFriend(friend),
       'localMessageId': localMessageId,
       'senderUserId': senderUserId,
-      'clientRequestId': 'flutter-$now-${-localMessageId}',
+      'clientRequestId': clientRequestId,
       'dateUnixMs': now,
       'content': <String, dynamic>{
         'type': 'text',
@@ -193,6 +197,84 @@ class TelegramChatSession extends ChangeNotifier {
       'replyToMessageId': null,
       'messageThreadId': null,
     });
+
+    // Native shells use the Rust ABI; browser shells use the protocol-compatible
+    // cloud gateway. Both reconcile the durable id into the local Rust core.
+    try {
+      final response = await _mahayana.execute(<String, dynamic>{
+        '@type': 'mahayana.messages.send',
+        'contact': friend.id,
+        'text': value,
+        'clientRequestId': clientRequestId,
+      }, token: token);
+      final message = response['message'];
+      final serverMessageId = message is Map
+          ? (message['id'] as num?)?.toInt()
+          : null;
+      if (serverMessageId == null || serverMessageId <= 0) {
+        throw StateError('服务器没有返回有效的消息编号。');
+      }
+      await _executeCommand(<String, dynamic>{
+        'type': 'acknowledgeMessage',
+        'clientRequestId': clientRequestId,
+        'serverMessageId': serverMessageId,
+        'dateUnixMs': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (error) {
+      await _executeCommand(<String, dynamic>{
+        'type': 'failMessage',
+        'clientRequestId': clientRequestId,
+        'code': 'mahayana_delivery_failed',
+        'retryable': true,
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> syncMessages(SocialFriendContact friend, {String? token}) async {
+    await upsertFriend(friend);
+    final response = await _mahayana.execute(<String, dynamic>{
+      '@type': 'mahayana.messages.list',
+      'contact': friend.id,
+      'limit': 200,
+    }, token: token);
+    final data = response['data'];
+    final rawMessages = data is Map ? data['messages'] : response['messages'];
+    if (rawMessages is! List) return;
+    final chatId = chatIdForFriend(friend);
+    for (final raw in rawMessages.whereType<Map>()) {
+      final message = Map<String, dynamic>.from(raw);
+      final id = (message['id'] as num?)?.toInt();
+      final senderUserId = (message['senderUserId'] as num?)?.toInt();
+      final body = message['text']?.toString() ?? '';
+      final createdAt = DateTime.tryParse(
+        message['createdAt']?.toString() ?? '',
+      );
+      if (id == null || id <= 0 || senderUserId == null || body.isEmpty) {
+        continue;
+      }
+      await _executeCommand(<String, dynamic>{
+        'type': 'upsertRemoteMessage',
+        'message': <String, dynamic>{
+          'id': id,
+          'chatId': chatId,
+          'senderUserId': senderUserId,
+          'dateUnixMs': (createdAt ?? DateTime.now()).millisecondsSinceEpoch,
+          'editDateUnixMs': null,
+          'content': <String, dynamic>{
+            'type': 'text',
+            'data': <String, dynamic>{'text': body, 'entities': <dynamic>[]},
+          },
+          'replyToMessageId': null,
+          'messageThreadId': null,
+          'deliveryState': const <String, dynamic>{'state': 'sent'},
+          'reactions': const <dynamic>[],
+          'isOutgoing': message['isOutgoing'] == true,
+          'isPinned': false,
+          'isDeleted': false,
+        },
+      });
+    }
   }
 
   List<TelegramChatMessage> messagesForFriend(SocialFriendContact friend) {
