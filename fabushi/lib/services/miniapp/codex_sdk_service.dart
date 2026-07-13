@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/config/app_config.dart';
 import '../../services/app_settings.dart';
+import 'mahayana_codex_runtime.dart';
 
 /// Codex 大模型引擎提供商枚举
 enum CodexModelProvider {
@@ -121,6 +122,7 @@ class CodexSdk extends ChangeNotifier {
       CodexModelConfigDart.deepSeek(apiKey: 'dacheng-openclaw-proxy');
   final Map<String, String> _virtualVfs = {};
   final StreamController<CodexEventDart> _eventController = StreamController<CodexEventDart>.broadcast();
+  String? _mahayanaThreadId;
 
   Stream<CodexEventDart> get events => _eventController.stream;
   Map<String, String> get virtualVfs => Map.unmodifiable(_virtualVfs);
@@ -142,6 +144,31 @@ class CodexSdk extends ChangeNotifier {
       return modelId;
     }
     return 'deepseek-chat';
+  }
+
+  String? _mahayanaCodexModel() {
+    if (_config.provider != CodexModelProvider.openAI) return null;
+    final model = _config.modelName.trim();
+    return model.isEmpty ? null : model;
+  }
+
+  String? _mahayanaCodexBaseUrl() {
+    if (_config.provider != CodexModelProvider.openAI) return null;
+    final baseUrl = _config.baseUrl.trim();
+    return baseUrl.isEmpty ? null : baseUrl;
+  }
+
+  String? _mahayanaCodexApiKey() {
+    if (_config.provider != CodexModelProvider.openAI) return null;
+    final apiKey = _config.apiKey.trim();
+    return apiKey.isEmpty ? null : apiKey;
+  }
+
+  String? _htmlFromCodexResponse(String response) {
+    final fenced = RegExp(r'```html\s*([\s\S]*?)\s*```', caseSensitive: false)
+        .firstMatch(response);
+    final html = (fenced?.group(1) ?? response).trim();
+    return html.toLowerCase().contains('<html') ? html : null;
   }
 
   Map<String, String> _firstPartyHeaders({
@@ -427,13 +454,60 @@ class CodexSdk extends ChangeNotifier {
       yield CodexEventDart.reasoning('捕捉到沙盒运行异常，正在启动 Codex 自我修复程序...');
     } else {
       yield CodexEventDart.reasoning(
-        '分析用户小程序构建需求，使用大乘 DeepSeek 后端: ${_backendDeepSeekModelId()}...',
+        '分析用户小程序构建需求，正在连接大乘 CLI 内核...',
       );
     }
 
+    // When the packaged Rust kernel is present, every local agent turn uses
+    // the same Mahayana/Codex Rust SDK path as the command-line backend. Do
+    // not fall back to an HTTP model provider after a native SDK failure: that
+    // would silently bypass the product's shared backend contract.
+    final mahayana = MahayanaCodexRuntime.instance;
+    if (mahayana.isAvailable) {
+      yield CodexEventDart.reasoning('大乘 CLI 正在通过 Codex Rust SDK 调用内置 Codex CLI...');
+      try {
+        final turn = await mahayana.run({
+          'prompt': '''你是 Fabushi 机器人之父。请直接输出可运行的单文件 HTML 小程序源码，使用 ```html 和 ``` 包裹，不要附加解释。\n\n用户需求：$prompt''',
+          if (_mahayanaThreadId != null) 'threadId': _mahayanaThreadId,
+          if (_mahayanaCodexModel() != null) 'model': _mahayanaCodexModel(),
+          if (_mahayanaCodexBaseUrl() != null)
+            'baseUrl': _mahayanaCodexBaseUrl(),
+          if (_mahayanaCodexApiKey() != null) 'apiKey': _mahayanaCodexApiKey(),
+          'sandbox': 'read-only',
+          'approvalPolicy': 'never',
+          'skipGitRepoCheck': true,
+        }).timeout(_generationTimeout);
+        _mahayanaThreadId = turn['threadId']?.toString();
+        final html = _htmlFromCodexResponse(
+          turn['finalResponse']?.toString() ?? '',
+        );
+        if (html == null) {
+          throw StateError('Codex Rust SDK 没有返回可预览的小程序 HTML');
+        }
+        yield CodexEventDart.toolCall(
+          'create_file',
+          {'path': 'index.html', 'content': html},
+        );
+        updateSandboxFile('index.html', html);
+        yield CodexEventDart.fileModified('index.html', html);
+        yield CodexEventDart.completed(
+          '大乘 Codex Rust SDK 已完成小程序构建。',
+          metadata: {
+            'provider': 'codex-client-sdk',
+            'threadId': _mahayanaThreadId,
+            'workspaceId': workspaceId,
+            'persisted': false,
+          },
+        );
+      } catch (error) {
+        yield CodexEventDart.error('大乘 Codex Rust SDK 异常: $error');
+      }
+      return;
+    }
+
     try {
-      // 1. The first-party Bot Father endpoint owns official Codex SDK
-      // orchestration, account quota, security scanning, and persistence.
+      // 1. Legacy remote path for packages without an embedded Mahayana/Codex
+      // runtime, such as a browser-only shell.
       yield* _sendBackendBotFather(
         prompt: prompt,
         authToken: authToken,
@@ -445,7 +519,7 @@ class CodexSdk extends ChangeNotifier {
     }
 
     try {
-      // 2. Compatibility fallback for a partially upgraded backend.
+      // 2. Compatibility fallback for a partially upgraded remote backend.
       yield* _sendBackendDeepSeekProxyStream(
         prompt: prompt,
         authToken: authToken,
