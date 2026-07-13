@@ -42,7 +42,7 @@ fn cli_accepts_the_checked_in_global_dharma_web_manifest() {
 }
 
 #[test]
-fn mcp_server_advertises_telegram_and_web_miniapp_tools() {
+fn mcp_server_advertises_product_telegram_and_web_miniapp_tools() {
     let mut child = mahayana()
         .arg("mcp-server")
         .stdin(Stdio::piped())
@@ -65,6 +65,40 @@ fn mcp_server_advertises_telegram_and_web_miniapp_tools() {
     assert!(tools
         .iter()
         .any(|tool| tool["name"] == "mahayana.codex.run"));
+    for name in [
+        "mahayana.auth.alipay_start",
+        "mahayana.auth.alipay_poll",
+        "mahayana.auth.alipay_sdk_start",
+        "mahayana.auth.alipay_sdk_complete",
+        "mahayana.contacts.search",
+        "mahayana.contacts.add",
+        "mahayana.messages.list",
+        "mahayana.messages.send",
+        "mahayana.miniapp.chat",
+    ] {
+        assert!(
+            tools.iter().any(|tool| tool["name"] == name),
+            "missing {name}"
+        );
+    }
+}
+
+#[test]
+fn auth_status_uses_the_rust_owned_product_session() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let home = std::env::temp_dir().join(format!("mahayana-auth-home-{nonce}"));
+    let output = mahayana()
+        .env("MAHAYANA_HOME", &home)
+        .args(["auth", "status"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["@type"], "mahayana.auth.status");
+    assert_eq!(response["loggedIn"], false);
 }
 
 #[cfg(unix)]
@@ -79,7 +113,7 @@ fn agent_command_uses_the_rust_sdk_transport() {
     let script = std::env::temp_dir().join(format!("mahayana-cli-fake-codex-{nonce}.sh"));
     fs::write(
         &script,
-        "#!/bin/sh\ncase \"$*\" in\n  *\"exec --experimental-json\"*) ;;\n  *) exit 64 ;;\nesac\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"cli-sdk-thread\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"message-1\",\"text\":\"CLI SDK response\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":2}}'\n",
+        "#!/bin/sh\ncase \"$*\" in\n  *\"exec --experimental-json\"*) ;;\n  *) exit 64 ;;\nesac\ncase \"$*\" in\n  *\"mcp_servers.mahayana.command\"*) ;;\n  *) exit 65 ;;\nesac\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"cli-sdk-thread\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"message-1\",\"text\":\"CLI SDK response\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":2}}'\n",
     )
     .unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
@@ -108,7 +142,7 @@ fn mcp_codex_tool_uses_the_same_rust_sdk_transport() {
     let script = std::env::temp_dir().join(format!("mahayana-mcp-fake-codex-{nonce}.sh"));
     fs::write(
         &script,
-        "#!/bin/sh\ncase \"$*\" in\n  *\"exec --experimental-json\"*) ;;\n  *) exit 64 ;;\nesac\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"mcp-sdk-thread\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"message-1\",\"text\":\"MCP SDK response\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":2}}'\n",
+        "#!/bin/sh\ncase \"$*\" in\n  *\"exec --experimental-json\"*) ;;\n  *) exit 64 ;;\nesac\ncase \"$*\" in\n  *\"mcp_servers.mahayana.command\"*) ;;\n  *) exit 65 ;;\nesac\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"mcp-sdk-thread\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"message-1\",\"text\":\"MCP SDK response\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":2}}'\n",
     )
     .unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
@@ -160,7 +194,7 @@ fn login_uses_the_codex_binary_shipped_with_mahayana() {
     .unwrap();
     fs::set_permissions(&bundled_codex, fs::Permissions::from_mode(0o700)).unwrap();
     let output = Command::new(&bundled_mahayana)
-        .arg("login")
+        .arg("codex-login")
         .output()
         .unwrap();
     fs::remove_dir_all(root).unwrap();
@@ -169,4 +203,28 @@ fn login_uses_the_codex_binary_shipped_with_mahayana() {
         String::from_utf8(output.stdout).unwrap(),
         "bundled Codex login\n"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn bare_mahayana_opens_codex_tui_with_the_product_mcp_server() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let script = std::env::temp_dir().join(format!("mahayana-tui-fake-codex-{nonce}.sh"));
+    fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$*\"\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = mahayana()
+        .env("MAHAYANA_CODEX_BIN", &script)
+        .output()
+        .unwrap();
+    fs::remove_file(script).unwrap();
+    assert!(output.status.success());
+    let args = String::from_utf8(output.stdout).unwrap();
+    assert!(args.contains("mcp_servers.mahayana.command="));
+    assert!(args.contains("mcp_servers.mahayana.args=[\"mcp-server\"]"));
+    assert!(args.contains("developer_instructions="));
 }

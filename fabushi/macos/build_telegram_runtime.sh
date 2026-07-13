@@ -2,9 +2,9 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-manifest="$project_root/native/telegram-runtime/Cargo.toml"
+manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
 frameworks_dir="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
-output="$frameworks_dir/libfabushi_telegram_runtime.dylib"
+output="$frameworks_dir/libmahayana_runtime.dylib"
 configuration="${CONFIGURATION:-Debug}"
 profile="debug"
 release_build=0
@@ -28,6 +28,7 @@ for arch in ${ARCHS:-$(uname -m)}; do
   cargo_args=(
     build
     --manifest-path "$manifest"
+    --package mahayana-ffi
     --target "$target"
   )
   if [[ "$release_build" -eq 1 ]]; then
@@ -35,7 +36,7 @@ for arch in ${ARCHS:-$(uname -m)}; do
   fi
   cargo "${cargo_args[@]}"
   artifacts+=(
-    "$project_root/native/telegram-runtime/target/$target/$profile/libfabushi_telegram_runtime.dylib"
+    "$project_root/third_party/mahayana/mahayana-rs/target/$target/$profile/libmahayana_runtime.dylib"
   )
 done
 
@@ -45,7 +46,7 @@ else
   lipo -create "${artifacts[@]}" -output "$output"
 fi
 
-install_name_tool -id "@rpath/libfabushi_telegram_runtime.dylib" "$output"
+install_name_tool -id "@rpath/libmahayana_runtime.dylib" "$output"
 if [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]]; then
   codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" \
     --preserve-metadata=identifier,entitlements,flags "$output"

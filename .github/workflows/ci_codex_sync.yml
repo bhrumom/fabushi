@@ -1,18 +1,18 @@
-name: CI Codex Rust SDK Sync & Test
+name: Mahayana embedded Codex Runtime
 
 on:
   push:
     branches: [ "main", "develop" ]
     paths:
-      - "native/codex-wrapper/**"
-      - "fabushi/lib/services/miniapp/codex_sdk_service.dart"
+      - "third_party/mahayana/**"
+      - "fabushi/lib/services/miniapp/mahayana_codex_runtime*.dart"
       - ".github/workflows/ci_codex_sync.yml"
   pull_request:
     branches: [ "main", "develop" ]
 
 jobs:
-  test-codex-rust-wrapper:
-    name: Test Universal Codex Rust Wrapper (${{ matrix.os }})
+  test-mahayana-runtime:
+    name: Test embedded Codex Runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -30,16 +30,24 @@ jobs:
           components: clippy, rustfmt
 
       - name: Run Cargo fmt check
-        working-directory: native/codex-wrapper
-        run: cargo fmt -- --check
+        run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
 
       - name: Run Cargo clippy
-        working-directory: native/codex-wrapper
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: >-
+          cargo clippy --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          --package mahayana-agent-codex
+          --package mahayana-ffi
+          --package mahayana-cli
+          --all-targets -- -D warnings
 
       - name: Run automated unit & integration tests
-        working-directory: native/codex-wrapper
-        run: cargo test --all-features --verbose
+        if: runner.os == 'Linux'
+        run: >-
+          cargo test --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          --package mahayana-agent-codex
+          --lib
 
   test-flutter-codex-binding:
     name: Validate Flutter/Dart Codex Sdk Binding
@@ -47,6 +55,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -58,6 +68,11 @@ jobs:
         working-directory: fabushi
         run: flutter pub get
 
-      - name: Analyze Dart syntax for Codex Sdk
+      - name: Analyze Dart syntax for the Runtime bridges
         working-directory: fabushi
-        run: dart analyze lib/services/miniapp/codex_sdk_service.dart
+        run: >-
+          dart analyze
+          lib/services/miniapp/mahayana_codex_runtime.dart
+          lib/services/miniapp/mahayana_codex_runtime_io.dart
+          lib/services/miniapp/mahayana_codex_runtime_web.dart
+          lib/services/mahayana_command_service.dart

@@ -29,7 +29,7 @@
 		LLAMA001000000000000008 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000008 /* Metal.framework */; };
 		LLAMA001000000000000009 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA002000000000000009 /* MetalKit.framework */; };
 		LLAMA00100000000000000A /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LLAMA00200000000000000A /* Accelerate.framework */; };
-		A7E1E6A1C0DE202607100101 /* libfabushi_telegram_runtime.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A7E1E6A1C0DE202607100102 /* libfabushi_telegram_runtime.a */; };
+		A7E1E6A1C0DE202607100101 /* libmahayana_runtime.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A7E1E6A1C0DE202607100102 /* libmahayana_runtime.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,7 +111,7 @@
 		LLAMA002000000000000008 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		LLAMA002000000000000009 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		LLAMA00200000000000000A /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		A7E1E6A1C0DE202607100102 /* libfabushi_telegram_runtime.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfabushi_telegram_runtime.a; path = libfabushi_telegram_runtime.a; sourceTree = "<group>"; };
+		A7E1E6A1C0DE202607100102 /* libmahayana_runtime.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmahayana_runtime.a; path = libmahayana_runtime.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,7 +144,7 @@
 				LLAMA001000000000000008 /* Metal.framework in Frameworks */,
 				LLAMA001000000000000009 /* MetalKit.framework in Frameworks */,
 				LLAMA00100000000000000A /* Accelerate.framework in Frameworks */,
-				A7E1E6A1C0DE202607100101 /* libfabushi_telegram_runtime.a in Frameworks */,
+				A7E1E6A1C0DE202607100101 /* libmahayana_runtime.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,7 +202,7 @@
 				LLAMA002000000000000005 /* libggml-metal.a */,
 				LLAMA002000000000000006 /* libggml-blas.a */,
 				LLAMA002000000000000007 /* ggml-metal.metal */,
-				A7E1E6A1C0DE202607100102 /* libfabushi_telegram_runtime.a */,
+				A7E1E6A1C0DE202607100102 /* libmahayana_runtime.a */,
 			);
 			name = Libs;
 			path = Runner/Libs;
@@ -443,7 +443,7 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(PROJECT_DIR)/Runner/Libs/libfabushi_telegram_runtime.a",
+				"$(PROJECT_DIR)/Runner/Libs/libmahayana_runtime.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
