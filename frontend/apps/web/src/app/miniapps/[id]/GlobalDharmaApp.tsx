@@ -769,7 +769,7 @@ export default function GlobalDharmaApp() {
         <div>
           <h1 className="ma-header-title">全球法布施</h1>
           <p className="ma-header-subtitle">
-            Web 使用真实 HTTP 回执计数；桌面端运行小程序提供的 Rust worker，移动端调用系统网络能力发送。
+            仅通过管理员配置的 Rust daemon 向已授权节点投递；未部署时会显示部署引导，不会伪造回执。
           </p>
         </div>
         <Globe size={28} className="ma-title-icon" />
@@ -784,7 +784,7 @@ export default function GlobalDharmaApp() {
           className="ma-textarea ma-textarea-tall"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="粘贴佛法链接、经文摘录或发愿文。普通 Web 使用真实 HTTP；App 内桌面跑小程序 Rust，移动端走系统发送。"
+          placeholder="粘贴佛法链接、经文摘录或发愿文。请先由大乘 CLI 部署 Rust daemon 并配置授权节点。"
           rows={5}
         />
         <div className="ma-action-row ma-action-row-wrap" style={{ marginTop: 12 }}>
@@ -846,6 +846,17 @@ export default function GlobalDharmaApp() {
             <span>循环真实发送，每轮都必须获得真实回执后才计数</span>
           </label>
         </div>
+      </div>
+
+      <div className="ma-card" style={{ marginTop: 16 }}>
+        <div style={{ color: "#fff", fontWeight: 600, marginBottom: 8 }}>
+          由大乘 CLI 部署与管理
+        </div>
+        <p style={{ color: "rgba(255, 255, 255, 0.78)", fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+          在无界面 Linux 中使用 <code>mahayana</code> 输入
+          <code> @global-dharma 部署最新版并显示服务状态</code>；部署后以
+          <code>global-dharmactl validate-config</code> 校验管理员维护的授权节点配置。
+        </p>
       </div>
 
       <div className="hermes-status-grid" style={{ margin: "20px 0" }}>
