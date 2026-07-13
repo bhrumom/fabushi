@@ -1,5 +1,6 @@
 import { T0278_JUAN_17_ADORNMENTS_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-adornments";
 import { T0278_JUAN_17_BANNERS_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-banners";
+import { T0278_JUAN_17_CROWN_JEWEL_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-crown-jewel";
 import { T0278_JUAN_17_TREASURY_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-treasury";
 
 export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
@@ -46,4 +47,5 @@ export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...T0278_JUAN_17_BANNERS_MERIT_BENEFITS,
   ...T0278_JUAN_17_TREASURY_MERIT_BENEFITS,
   ...T0278_JUAN_17_ADORNMENTS_MERIT_BENEFITS,
+  ...T0278_JUAN_17_CROWN_JEWEL_MERIT_BENEFITS,
 ];
