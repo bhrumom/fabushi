@@ -1,5 +1,4 @@
 import { fbApp } from "./miniapp-runtime";
-import { GeoIPDataService } from "./geoip-data-service";
 
 export type RegionPreset = {
   id: string;
@@ -85,17 +84,6 @@ type PreparedWorker = {
 };
 
 const MINIAPP_ID = "official.global-dharma";
-const DEFAULT_GLOBAL_DHARMA_SEND_URL = "https://httpbin.org/post";
-const DEFAULT_HTTP_TARGETS: HttpTarget[] = [
-  {
-    url: DEFAULT_GLOBAL_DHARMA_SEND_URL,
-    nodeId: "httpbin-global",
-  },
-  {
-    url: "https://jsonplaceholder.typicode.com/posts",
-    nodeId: "jsonplaceholder-global",
-  },
-];
 const RUST_DAEMON_DEFAULT_PORT = 18888;
 const RUST_DAEMON_PORT_CANDIDATES = [18888, 18889, 18890, 18891, 18892];
 const DEFAULT_UDP_PORT = 9999;
@@ -103,7 +91,7 @@ const UDP_SAFE_DATAGRAM_BYTES = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES = 6 * 1024;
 const RUST_DELIVERY_RECEIPT_TIMEOUT_MS = 45000;
 const RUST_DELIVERY_RECEIPT_POLL_MS = 650;
-const DAEMON_LOOP_INTERVAL_MS = 30000;
+const DAEMON_LOOP_INTERVAL_MS = 3000;
 const RUST_WORKER_LOCAL_DIR = "runtime/global-dharma-worker";
 const RUST_WORKER_PUBLIC_DIR =
   "/miniapps/official.global-dharma/runtime/global-dharma-worker";
@@ -125,13 +113,6 @@ let preparedWorkerPromise: Promise<PreparedWorker> | null = null;
 let preparedWasmModulePromise: Promise<WebAssembly.Module> | null = null;
 let cargoToolchainPromise: Promise<void> | null = null;
 
-function endpointUrl() {
-  const configured =
-    process.env.NEXT_PUBLIC_GLOBAL_DHARMA_SEND_URL ||
-    process.env.NEXT_PUBLIC_FABUSHI_GLOBAL_DHARMA_SEND_URL ||
-    "";
-  return configured.trim() || DEFAULT_GLOBAL_DHARMA_SEND_URL;
-}
 
 function publicAssetPath(path: string) {
   const rawBasePath = process.env.NEXT_PUBLIC_SITE_BASE_PATH?.trim() || "";
@@ -224,44 +205,9 @@ function readUdpTargets(): UdpTarget[] {
 }
 
 function readHttpTargets(): HttpTarget[] {
-  const raw = process.env.NEXT_PUBLIC_GLOBAL_DHARMA_HTTP_TARGETS || "";
-  if (raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return DEFAULT_HTTP_TARGETS;
-      const targets = parsed
-        .map((item) => ({
-          url: String(item?.url || "").trim(),
-          method: item?.method ? String(item.method).toUpperCase() : "POST",
-          countryCode: item?.countryCode ? String(item.countryCode) : undefined,
-          nodeId: item?.nodeId ? String(item.nodeId) : undefined,
-          headers:
-            item?.headers && typeof item.headers === "object"
-              ? Object.fromEntries(
-                  Object.entries(item.headers).map(([key, value]) => [
-                    key,
-                    String(value),
-                  ]),
-                )
-              : undefined,
-          timeoutMs: readNumber(item?.timeoutMs, 30000),
-          maxBodyBytes: readNumber(item?.maxBodyBytes, 2 * 1024 * 1024),
-        }))
-        .filter((item) => item.url.startsWith("http"));
-      return targets.length > 0 ? targets : DEFAULT_HTTP_TARGETS;
-    } catch {
-      return DEFAULT_HTTP_TARGETS;
-    }
-  }
-
-  const configured =
-    process.env.NEXT_PUBLIC_GLOBAL_DHARMA_SEND_URL ||
-    process.env.NEXT_PUBLIC_FABUSHI_GLOBAL_DHARMA_SEND_URL ||
-    "";
-  if (configured.trim()) {
-    return [{ url: endpointUrl(), nodeId: "configured-http-dispatch" }];
-  }
-  return DEFAULT_HTTP_TARGETS;
+  // Node discovery never happens in browser code. The local Rust daemon owns
+  // the administrator-controlled HTTPS allowlist and identity validation.
+  return [];
 }
 
 function targetCountries(region: RegionPreset) {
@@ -311,35 +257,8 @@ function httpTargetsForRegion(region: RegionPreset): HttpTarget[] {
 }
 
 function udpTargetsForRegion(region: RegionPreset): UdpTarget[] {
-  if (region.fieldEnergy) {
-    return [
-      {
-        host: "255.255.255.255",
-        port: DEFAULT_UDP_PORT,
-        nodeId: "local-field-broadcast",
-      },
-    ];
-  }
-  if (region.localLoopback) {
-    return [
-      { host: "127.0.0.1", port: DEFAULT_UDP_PORT, nodeId: "local-loopback" },
-    ];
-  }
-  const customTargets = readUdpTargets().filter((target) =>
-    regionMatchesTarget(region, target),
-  );
-  if (customTargets.length > 0) return customTargets;
-
-  const geoTargets = GeoIPDataService.getInstance().getUdpTargetsForRegion(
-    region.countryCodes || ["ALL"],
-    DEFAULT_UDP_PORT,
-  );
-  return geoTargets.map((item) => ({
-    host: item.host,
-    port: item.port,
-    nodeId: item.nodeId,
-    countryCode: item.countryCode,
-  }));
+  void region;
+  return [];
 }
 
 function deliveryTargetsForRegion(region: RegionPreset): DeliveryTarget[] {
@@ -900,53 +819,55 @@ function parseJsonLines(stdout: string) {
 
 export class GlobalDharmaSendService {
   async send(options: SendOptions): Promise<DharmaSendResult> {
-    if (options.loop) {
-      try {
-        return await this.sendViaMiniAppRustWorker(options);
-      } catch (error) {
-        const message = `小程序 Rust worker: ${errorMessage(error)}`;
-        options.onLog?.(`Rust worker daemon 接管失败：${message}`);
-        throw new Error(
-          `循环发送必须由底层 Rust daemon 接管，不能降级回 JS/UI 心跳：${message}`,
-        );
-      }
-    }
+    return this.sendViaAuthorizedDaemon(options);
+  }
 
-    if (!fbApp.isHostEnv()) {
-      try {
-        return await this.sendViaWebWasmRustWorker(options);
-      } catch (error) {
-        console.warn("Web Wasm Rust 引擎发包降级至 HTTP:", error);
-        return this.sendViaHttp(options);
-      }
+  private async sendViaAuthorizedDaemon({
+    content,
+    region,
+    commandId,
+  }: SendOptions): Promise<DharmaSendResult> {
+    const taskId =
+      commandId || `gd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const response = await fetchDaemonJson("/send", {
+      method: "POST",
+      body: JSON.stringify({
+        task_id: taskId,
+        content: content.text,
+        region: region.id,
+      }),
+      timeoutMs: 60_000,
+    });
+    if (
+      response.statusCode < 200 ||
+      response.statusCode >= 300 ||
+      !response.data?.ok
+    ) {
+      throw new Error(
+        response.data?.error ||
+          "未连接到管理员配置的 Rust daemon；请用大乘 CLI 部署并配置授权节点。",
+      );
     }
-
-    const failures: string[] = [];
-    try {
-      return await this.sendViaMiniAppRustWorker(options);
-    } catch (error) {
-      const message = `小程序 Rust worker: ${errorMessage(error)}`;
-      failures.push(message);
-      options.onLog?.(`Rust 引擎发包遭遇网络层限制，准备平滑降级到宿主系统网络：${message}`);
-    }
-
-    try {
-      return await this.sendViaSystemNetwork(options);
-    } catch (error) {
-      const message = `宿主系统网络: ${errorMessage(error)}`;
-      failures.push(message);
-      options.onLog?.(`宿主系统网络发送失败，准备尝试兼容 delivery 队列：${message}`);
-    }
-
-    try {
-      return await this.sendViaLegacyRustDelivery(options);
-    } catch (error) {
-      const message = `兼容 delivery 队列: ${errorMessage(error)}`;
-      failures.push(message);
-      options.onLog?.(`兼容 Rust delivery 队列失败：${message}`);
-    }
-
-    throw new Error(`真实发送失败：${failures.join("；")}`);
+    const bytesSent = textBytes(content.text).byteLength;
+    const receipts: DharmaDeliveryReceipt[] = (
+      Array.isArray(response.data?.receipts) ? response.data.receipts : []
+    ).map((item: any) => ({
+      nodeId: item.node_id,
+      channel: "rust-http",
+      status: "delivered",
+      bytesSent,
+      deliveredAt: new Date(
+        Number(item.delivered_at_unix_ms) || Date.now(),
+      ).toISOString(),
+      raw: item,
+    }));
+    return {
+      contentHash: await sha256Hex(content.text),
+      bytesSent: receipts.length * bytesSent,
+      receipts,
+      jobId: taskId,
+      status: "delivered",
+    };
   }
 
   async sendViaHttp({
@@ -955,37 +876,12 @@ export class GlobalDharmaSendService {
     loop,
     commandId,
   }: SendOptions): Promise<DharmaSendResult> {
-    if (fbApp.isHostEnv()) {
-      throw new Error("App 端不会使用浏览器模拟计数；只有 Web 端使用 HTTP。");
-    }
-    const contentHash = await sha256Hex(content.text);
-    const bytesSent = textBytes(content.text).byteLength;
-    const payload = buildPacket(
-      content,
-      region,
-      loop,
-      commandId,
-      contentHash,
-      "browser-http",
-    );
-
-    const response = await fetch(endpointUrl(), {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      throw new Error(`全球法布施 Web HTTP 发送失败: HTTP ${response.status}`);
-    }
-    return this.normalizeHttpResult(
-      contentHash,
-      bytesSent,
-      await response.json().catch(() => ({})),
-      "browser-http",
+    void content;
+    void region;
+    void loop;
+    void commandId;
+    throw new Error(
+      "浏览器直连投递已禁用；请通过管理员配置的 Global Dharma Rust daemon 发送。",
     );
   }
 
@@ -1177,7 +1073,7 @@ export class GlobalDharmaSendService {
       loop,
       persistent: false,
       loopIntervalMs: DAEMON_LOOP_INTERVAL_MS,
-      useGeoIp: true,
+      useGeoIp: false,
       region: region.id,
       port: DEFAULT_UDP_PORT,
       packet,
@@ -1389,128 +1285,11 @@ export class GlobalDharmaSendService {
     loop,
     commandId,
   }: SendOptions): Promise<DharmaSendResult> {
-    if (!fbApp.isHostEnv()) {
-      throw new Error("当前浏览器不能调用宿主系统网络能力。");
-    }
-    const targets = await this.resolveDeliveryTargets(region);
-    if (targets.length === 0) {
-      throw new Error("未配置真实发送节点：请设置 HTTP 或 UDP 目标。");
-    }
-
-    const contentHash = await sha256Hex(content.text);
-    const packet = buildPacket(
-      content,
-      region,
-      loop,
-      commandId,
-      contentHash,
-      "host-system-network",
-    );
-    const packetBody = JSON.stringify(packet);
-    const packetBytes = textBytes(packetBody).byteLength;
-    const udpDatagrams = udpDatagramBodies(packetBody, contentHash);
-    const receipts: DharmaDeliveryReceipt[] = [];
-    const udpTargets = targets.filter(isUdpTarget);
-    let udpSocketId = "";
-
-    if (udpTargets.length > 0) {
-      const openResult = await fbApp.invoke<any>("network.udp.open", {
-        port: 0,
-        broadcast: udpTargets.some(needsUdpBroadcast),
-      });
-      udpSocketId = String(openResult?.socketId || "");
-      if (!udpSocketId) throw new Error("系统 UDP socket 打开失败：没有返回 socketId");
-    }
-
-    try {
-      for (let i = 0; i < targets.length; i++) {
-        const target = targets[i];
-        const endpoint = endpointForTarget(target, packetBody);
-        if (target.transport === "http") {
-          const response = await fbApp.invoke<any>("network.http.fetch", {
-            url: endpoint.url,
-            method: endpoint.method,
-            headers: endpoint.headers,
-            body: packetBody,
-            timeoutMs: endpoint.timeoutMs,
-            maxBodyBytes: endpoint.maxBodyBytes,
-          });
-          const statusCode = readNumber(response?.statusCode);
-          if (statusCode < 200 || statusCode >= 300) {
-            throw new Error(
-              `系统 HTTP 发送失败：${endpointLabel(target)} HTTP ${statusCode}`,
-            );
-          }
-          receipts.push({
-            countryCode: target.countryCode,
-            nodeId: endpointIdForTarget(target),
-            channel: "system-http",
-            status: "delivered",
-            bytesSent: packetBytes,
-            deliveredAt: new Date().toISOString(),
-            raw: response,
-          });
-        } else {
-          let reportedBytes = 0;
-          const responses: unknown[] = [];
-          for (const datagramBody of udpDatagrams) {
-            const datagramBytes = textBytes(datagramBody);
-            const response = await this.invokeUdpSendWithRetry("network.udp.send", {
-              socketId: udpSocketId,
-              host: endpoint.host,
-              port: endpoint.port,
-              data: bytesToBase64(datagramBytes),
-            });
-            reportedBytes += readNumber(response?.sentBytes, datagramBytes.byteLength);
-            responses.push(response);
-            if (udpDatagrams.length > 1) await sleep(2);
-          }
-          receipts.push({
-            countryCode: target.countryCode,
-            nodeId: endpointIdForTarget(target),
-            channel: "udp",
-            status: "sent",
-            bytesSent: reportedBytes,
-            deliveredAt: new Date().toISOString(),
-            raw:
-              udpDatagrams.length > 1
-                ? { chunked: true, chunkCount: udpDatagrams.length, responses }
-                : responses[0],
-          });
-        }
-        // 遵照绝对第一性原理：不并行发送，逐个顺序平稳发包
-        await sleep(6);
-      }
-    } finally {
-      if (udpSocketId) {
-        await fbApp
-          .invoke("network.udp.close", { socketId: udpSocketId })
-          .catch(() => null);
-      }
-    }
-
-    return {
-      contentHash,
-      bytesSent: receipts.reduce((sum, item) => sum + item.bytesSent, 0),
-      receipts,
-      jobId: `system_${Date.now()}`,
-      status: receipts.some((item) => item.status === "delivered")
-        ? "delivered"
-        : "sent",
-    };
-  }
-
-  private async invokeUdpSendWithRetry(
-    method: "network.udp.send" | "network.udp.broadcast",
-    params: Record<string, unknown>,
-  ) {
-    let response: any = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      response = await fbApp.invoke<any>(method, params);
-      if (readNumber(response?.sentBytes, 0) > 0) return response;
-      if (attempt < 2) await sleep(8 * (attempt + 1));
-    }
-    return response;
+    void content;
+    void region;
+    void loop;
+    void commandId;
+    throw new Error("宿主 UDP/任意 HTTP 发送已移除；请使用授权 Rust daemon。");
   }
 
   async sendViaLegacyRustDelivery({
@@ -1519,13 +1298,13 @@ export class GlobalDharmaSendService {
     loop,
     commandId,
   }: SendOptions): Promise<DharmaSendResult> {
-    if (!fbApp.isHostEnv()) {
-      throw new Error("当前 Web 浏览器不会使用 Rust delivery。");
-    }
-    const targets = await this.resolveDeliveryTargets(region);
-    if (targets.length === 0) {
-      throw new Error("未配置真实 Rust delivery 节点。");
-    }
+    void content;
+    void region;
+    void loop;
+    void commandId;
+    throw new Error("旧版 Rust delivery 队列已移除；请使用授权 Rust daemon。");
+
+    /* legacy implementation retained below temporarily for source-history context.
 
     const contentHash = await sha256Hex(content.text);
     const packet = buildPacket(
@@ -1574,7 +1353,7 @@ export class GlobalDharmaSendService {
       jobId: jobIds[0],
       jobIds,
       status: "sent",
-    };
+    }; */
   }
 
   private async waitForRustReceipt(

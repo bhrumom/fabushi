@@ -2,6 +2,9 @@ import Flutter
 import UIKit
 import BackgroundTasks
 
+@_silgen_name("fabushi_telegram_force_link")
+private func fabushiTelegramForceLink() -> UInt32
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     // 内存警告 MethodChannel
@@ -19,6 +22,10 @@ import BackgroundTasks
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         GeneratedPluginRegistrant.register(with: self)
+        precondition(
+            fabushiTelegramForceLink() == 1,
+            "Telegram Rust runtime failed to link"
+        )
 
         // 设置 MethodChannel
         if let controller = window?.rootViewController as? FlutterViewController {

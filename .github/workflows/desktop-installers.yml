@@ -272,6 +272,9 @@ jobs:
         working-directory: .
         run: choco install nsis -y --no-progress
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
