@@ -109,6 +109,10 @@ class RustMiniAppRuntime {
     _loadAttempted = true;
 
     final candidates = <String>[
+      if (Platform.isAndroid || Platform.isLinux) 'libmahayana_wrapper.so',
+      if (Platform.isMacOS || Platform.isIOS) 'libmahayana_wrapper.dylib',
+      if (Platform.isWindows) 'mahayana_wrapper.dll',
+      if (Platform.isWindows) 'libmahayana_wrapper.dll',
       if (Platform.isAndroid || Platform.isLinux) 'libfabushi_miniapp_runtime.so',
       if (Platform.isMacOS || Platform.isIOS) 'libfabushi_miniapp_runtime.dylib',
       if (Platform.isWindows) 'fabushi_miniapp_runtime.dll',
