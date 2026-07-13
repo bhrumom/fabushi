@@ -54,6 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cross
+      - name: Fetch verified Codex source for the Mahayana bundle
+        run: native/mahayana-cli/sync-upstream.sh "${RUNNER_TEMP}/mahayana-codex"
+      - name: Build the Codex executable embedded in Mahayana
+        run: cross build --release --target ${{ matrix.target }} --manifest-path "${RUNNER_TEMP}/mahayana-codex/codex-rs/Cargo.toml" -p codex-cli
       - run: cross build --release --target ${{ matrix.target }} --manifest-path native/global-dharma/Cargo.toml -p global-dharma-daemon -p global-dharmactl -p global-dharma-mcp
       - run: cross build --release --target ${{ matrix.target }} --manifest-path native/mahayana-cli/Cargo.toml
       - run: cross build --release --target ${{ matrix.target }} --manifest-path native/mahayana-wrapper/Cargo.toml
@@ -63,6 +67,10 @@ jobs:
           cp native/global-dharma/target/${{ matrix.target }}/release/global-dharmactl dist/${{ matrix.target }}/bin/
           cp native/global-dharma/target/${{ matrix.target }}/release/global-dharma-mcp dist/${{ matrix.target }}/bin/
           cp native/mahayana-cli/target/${{ matrix.target }}/release/mahayana dist/${{ matrix.target }}/bin/
+          mkdir -p dist/${{ matrix.target }}/lib/mahayana dist/${{ matrix.target }}/share/licenses/codex dist/${{ matrix.target }}/share/mahayana
+          cp "${RUNNER_TEMP}/mahayana-codex/codex-rs/target/${{ matrix.target }}/release/codex" dist/${{ matrix.target }}/lib/mahayana/codex
+          cp "${RUNNER_TEMP}/mahayana-codex/LICENSE" dist/${{ matrix.target }}/share/licenses/codex/LICENSE
+          printf 'Codex source: %s at %s\n' "$(awk -F= '/^CODEX_UPSTREAM_TAG/ { gsub(/\"/, "", $2); print $2 }' native/mahayana-cli/codex-upstream.env)" "$(awk -F= '/^CODEX_UPSTREAM_COMMIT/ { gsub(/\"/, "", $2); print $2 }' native/mahayana-cli/codex-upstream.env)" > dist/${{ matrix.target }}/share/mahayana/codex-upstream.txt
           cp native/mahayana-wrapper/target/${{ matrix.target }}/release/libmahayana_wrapper.so dist/${{ matrix.target }}/libmahayana_wrapper.so
           cp -R native/global-dharma/deploy native/global-dharma/config dist/${{ matrix.target }}/
           mkdir -p dist/${{ matrix.target }}/share/global-dharma

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-tag="rust-v0.144.1"
-commit="db75c19352d29ef29c17dbcf73a7244f1b1a8d10"
-target="${1:-../mahayana-cli-upstream}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=codex-upstream.env
+source "${script_dir}/codex-upstream.env"
+target="${1:-${script_dir}/../mahayana-cli-upstream}"
 
-git clone --depth 1 --branch "$tag" https://github.com/openai/codex.git "$target"
+git clone --depth 1 --branch "$CODEX_UPSTREAM_TAG" "$CODEX_UPSTREAM_REPOSITORY" "$target"
 git -C "$target" remote rename origin openai
-test "$(git -C "$target" rev-parse HEAD)" = "$commit"
+test "$(git -C "$target" rev-parse HEAD)" = "$CODEX_UPSTREAM_COMMIT"
 git -C "$target" switch -c mahayana
-echo "Pinned Mahayana source ready at $target. Apply patches/ before building."
+echo "Pinned Codex source ready at $target for the Mahayana release bundle."
