@@ -17,6 +17,7 @@ fn status_reports_the_shared_rust_kernel() {
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(status["core"], "codex-rust-sdk");
     assert_eq!(status["codexDriver"], "codex-client-sdk");
+    assert_eq!(status["codexDistribution"], "bundled");
     assert!(status["sharedRustModules"]
         .as_array()
         .unwrap()
@@ -132,4 +133,40 @@ fn mcp_codex_tool_uses_the_same_rust_sdk_transport() {
     let text = response["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("MCP SDK response"));
     assert!(text.contains("mcp-sdk-thread"));
+}
+
+#[cfg(unix)]
+#[test]
+fn login_uses_the_codex_binary_shipped_with_mahayana() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("mahayana-bundle-{nonce}"));
+    let bin_dir = root.join("bin");
+    let lib_dir = root.join("lib/mahayana");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::create_dir_all(&lib_dir).unwrap();
+    let bundled_mahayana = bin_dir.join("mahayana");
+    fs::copy(env!("CARGO_BIN_EXE_mahayana"), &bundled_mahayana).unwrap();
+    fs::set_permissions(&bundled_mahayana, fs::Permissions::from_mode(0o700)).unwrap();
+    let bundled_codex = lib_dir.join("codex");
+    fs::write(
+        &bundled_codex,
+        "#!/bin/sh\n[ \"$1\" = login ] || exit 64\nprintf '%s\\n' 'bundled Codex login'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&bundled_codex, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = Command::new(&bundled_mahayana)
+        .arg("login")
+        .output()
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "bundled Codex login\n"
+    );
 }

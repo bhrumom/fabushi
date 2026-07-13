@@ -11,20 +11,27 @@ const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Shared Rust boundary used by the desktop/mobile shells and the Mahayana
 /// command-line binary. Programmatic Codex turns always go through the Rust
-/// SDK, which drives the bundled/upgraded `codex` executable over JSONL.
+/// SDK, which drives the Codex executable bundled with Mahayana over JSONL.
 #[derive(Debug, Clone)]
 pub struct MahayanaKernel {
     upstream_codex_binary: PathBuf,
+    uses_bundled_codex: bool,
 }
 
 impl Default for MahayanaKernel {
     fn default() -> Self {
-        let upstream_codex_binary = std::env::var_os("MAHAYANA_CODEX_BIN")
+        let override_binary = std::env::var_os("MAHAYANA_CODEX_BIN")
             .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("codex"));
+            .map(PathBuf::from);
+        let uses_bundled_codex = override_binary.is_none();
+        let upstream_codex_binary = override_binary.unwrap_or_else(|| {
+            std::env::current_exe()
+                .map(|executable| Self::bundled_codex_binary_for(&executable))
+                .unwrap_or_else(|_| PathBuf::from("lib/mahayana/codex"))
+        });
         Self {
             upstream_codex_binary,
+            uses_bundled_codex,
         }
     }
 }
@@ -33,11 +40,27 @@ impl MahayanaKernel {
     pub fn new(upstream_codex_binary: impl Into<PathBuf>) -> Self {
         Self {
             upstream_codex_binary: upstream_codex_binary.into(),
+            uses_bundled_codex: false,
         }
+    }
+
+    /// Resolves the Codex executable that ships in the same Mahayana release.
+    /// A Linux archive has `bin/mahayana` and `lib/mahayana/codex`; installers
+    /// retain that layout below their selected prefix.
+    pub fn bundled_codex_binary_for(executable: &Path) -> PathBuf {
+        executable
+            .parent()
+            .and_then(Path::parent)
+            .map(|prefix| prefix.join("lib").join("mahayana").join("codex"))
+            .unwrap_or_else(|| PathBuf::from("lib/mahayana/codex"))
     }
 
     pub fn upstream_codex_binary(&self) -> &Path {
         &self.upstream_codex_binary
+    }
+
+    pub fn uses_bundled_codex(&self) -> bool {
+        self.uses_bundled_codex
     }
 
     pub fn status(&self) -> Value {
@@ -45,6 +68,7 @@ impl MahayanaKernel {
             "@type": "mahayana.status",
             "version": KERNEL_VERSION,
             "upstreamCodexBinary": self.upstream_codex_binary,
+            "codexDistribution": if self.uses_bundled_codex { "bundled" } else { "explicit-override" },
             "core": "codex-rust-sdk",
             "codexDriver": "codex-client-sdk",
             "codexTransport": "codex exec JSONL",
@@ -416,12 +440,20 @@ mod tests {
         let status = MahayanaKernel::new("codex-test").status();
         assert_eq!(status["core"], "codex-rust-sdk");
         assert_eq!(status["codexDriver"], "codex-client-sdk");
+        assert_eq!(status["codexDistribution"], "explicit-override");
         assert_eq!(status["upstreamCodexBinary"], "codex-test");
         assert!(status["sharedRustModules"]
             .as_array()
             .unwrap()
             .iter()
             .any(|value| value == "fabushi-telegram-runtime"));
+    }
+
+    #[test]
+    fn bundled_codex_path_is_sibling_to_the_mahayana_installation_prefix() {
+        let codex =
+            MahayanaKernel::bundled_codex_binary_for(Path::new("/opt/mahayana/bin/mahayana"));
+        assert_eq!(codex, PathBuf::from("/opt/mahayana/lib/mahayana/codex"));
     }
 
     #[test]

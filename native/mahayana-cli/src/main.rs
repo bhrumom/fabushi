@@ -28,11 +28,39 @@ fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         Some("agent") | Some("codex") => run_agent(&kernel, &args[1..]),
+        Some("login") | Some("logout") | Some("doctor") => {
+            run_bundled_codex_management(&kernel, args[0].as_str(), &args[1..])
+        }
         Some("mcp-server") => run_mcp_server(&kernel),
         Some("mcp") => run_mcp_command(&kernel, &args[1..]),
         Some("telegram") => run_telegram_command(&kernel, &args[1..]),
         Some("miniapp") => run_miniapp_command(&kernel, &args[1..]),
         Some(other) => Err(format!("unknown command {other}; run `mahayana help`")),
+    }
+}
+
+/// Authentication and diagnostics are product-management commands provided by
+/// the Codex executable shipped inside the Mahayana installation. Agent turns
+/// continue to use the Rust SDK path in `run_agent`.
+fn run_bundled_codex_management(
+    kernel: &MahayanaKernel,
+    command: &str,
+    args: &[String],
+) -> Result<(), String> {
+    let status = Command::new(kernel.upstream_codex_binary())
+        .arg(command)
+        .args(args)
+        .status()
+        .map_err(|error| {
+            format!(
+                "could not start bundled Codex at {}: {error}",
+                kernel.upstream_codex_binary().display()
+            )
+        })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("bundled Codex {command} exited with {status}"))
     }
 }
 
@@ -391,12 +419,13 @@ fn print_usage() {
          mahayana agent <prompt>\n\
          mahayana agent --json '<sdk request>'\n\
          mahayana codex <prompt>  (alias for `agent`)\n\
+         mahayana login|logout|doctor [CODEX_ARGS...]\n\
          mahayana mcp serve|install|install-global-dharma|print-install\n\
          mahayana telegram status|request '<json>'\n\
          mahayana miniapp inspect <manifest.json>\n\
          mahayana miniapp evaluate <method> [permission,...] [platform]\n\
          mahayana miniapp request '<json>'\n\n\
-         Set MAHAYANA_CODEX_BIN to select the bundled/upgraded upstream Codex executable.\n\
+         The release includes Codex at lib/mahayana/codex; MAHAYANA_CODEX_BIN is a development override only.\n\
          Agent turns are driven by the Codex Rust SDK, not raw argument forwarding."
     );
 }
