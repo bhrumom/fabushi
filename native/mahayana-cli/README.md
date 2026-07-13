@@ -22,7 +22,27 @@ Flutter's existing Telegram and mini-app FFI loaders prefer the unified
 libraries if a legacy package has not yet bundled it. The wrapper preserves the
 existing C symbols, so the Flutter UI contract does not need to change.
 
-## Build and run
+## Linux online installation
+
+After a `mahayana-v*` GitHub Release is published, install Mahayana and its
+Codex CLI dependency with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bhrumom/fabushi/main/scripts/install-mahayana.sh | sh -s -- --with-codex
+```
+
+The installer selects the `x86_64` or `aarch64` Linux release automatically,
+verifies its SHA-256 asset before installing `mahayana` to `~/.local/bin`, and
+uses the official Codex installer only if `codex` is missing. Complete the
+interactive account step with `codex login`, then run `mahayana status`.
+
+To install a specific release or choose another destination:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bhrumom/fabushi/main/scripts/install-mahayana.sh | sh -s -- --version mahayana-v0.1.0 --install-dir /usr/local/bin
+```
+
+## Build from source
 
 ```sh
 cargo build --release --manifest-path native/mahayana-cli/Cargo.toml
