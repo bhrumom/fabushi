@@ -1,10 +1,13 @@
 # Mahayana CLI
 
 `mahayana` is a Rust product shell around the installed upstream `codex` CLI.
-It does not copy, patch, or pin Codex source. `mahayana codex …` forwards the
-arguments and inherits whatever upstream Codex version is bundled with the app
-or selected through `MAHAYANA_CODEX_BIN`. Upgrading Codex therefore upgrades
-the agent engine without a Fabushi fork merge.
+Programmatic agent turns use the Rust `codex-client-sdk`, which starts Codex
+through its JSONL transport and decodes thread events in Rust. It does not
+copy, patch, or pin Codex source. `mahayana agent …` (and the compatibility
+alias `mahayana codex …`) both use this SDK path and inherit whichever upstream
+Codex binary is bundled with the app or selected through `MAHAYANA_CODEX_BIN`.
+Upgrading Codex therefore upgrades the agent engine without a Fabushi fork
+merge.
 
 The same `mahayana-wrapper` Rust crate is used by the CLI and native app
 backends. It dispatches these existing Rust modules rather than reimplementing
@@ -24,7 +27,15 @@ existing C symbols, so the Flutter UI contract does not need to change.
 ```sh
 cargo build --release --manifest-path native/mahayana-cli/Cargo.toml
 ./native/mahayana-cli/target/release/mahayana status
-./native/mahayana-cli/target/release/mahayana codex --version
+./native/mahayana-cli/target/release/mahayana agent "Explain this project"
+```
+
+For callers that need SDK options such as a saved thread, model, working
+directory, sandbox, or approval policy, pass the same JSON request shared by
+the native FFI boundary:
+
+```sh
+mahayana agent --json '{"prompt":"Inspect this workspace","sandbox":"read-only","approvalPolicy":"never"}'
 ```
 
 `mahayana mcp-server` is a stdio MCP server. It exposes the Rust Telegram and

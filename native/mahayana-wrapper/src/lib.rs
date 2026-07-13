@@ -4,6 +4,14 @@
 
 mod kernel;
 
+use std::{
+    ffi::{CStr, CString},
+    os::raw::c_char,
+    panic::{catch_unwind, AssertUnwindSafe},
+};
+
+use serde_json::{json, Value};
+
 pub use codex_wrapper::{CodexClient as MahayanaClient, CodexConfig as MahayanaConfig};
 pub use codex_wrapper::{
     CodexEvent as MahayanaEvent, CodexModelConfig as MahayanaModelConfig,
@@ -12,6 +20,61 @@ pub use codex_wrapper::{
     WorkspaceThread as MahayanaWorkspaceThread,
 };
 pub use kernel::{MahayanaKernel, MahayanaKernelError, MiniAppInspection};
+
+/// Runs an agent turn through the Codex Rust SDK. The request must be a JSON
+/// object containing a non-empty `prompt`; optional SDK fields are documented
+/// by `MahayanaKernel::run_codex_blocking`. The returned string is owned by
+/// Rust and must be released with [`mahayana_free_string`].
+#[no_mangle]
+pub unsafe extern "C" fn mahayana_codex_run(request_json: *const c_char) -> *mut c_char {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if request_json.is_null() {
+            return Err("request_json must not be null".to_string());
+        }
+        let source = CStr::from_ptr(request_json)
+            .to_str()
+            .map_err(|error| format!("request_json must be UTF-8: {error}"))?;
+        let request: Value = serde_json::from_str(source)
+            .map_err(|error| format!("request_json must be a JSON object: {error}"))?;
+        if !request.is_object() {
+            return Err("request_json must be a JSON object".to_string());
+        }
+        MahayanaKernel::default()
+            .run_codex_blocking(&request)
+            .map_err(|error| error.to_string())
+    }));
+    let response = match result {
+        Ok(Ok(data)) => json!({"ok": true, "data": data}),
+        Ok(Err(message)) => json!({
+            "ok": false,
+            "errorCode": "mahayana_codex_sdk_error",
+            "message": message,
+        }),
+        Err(_) => json!({
+            "ok": false,
+            "errorCode": "mahayana_codex_sdk_panic",
+            "message": "Mahayana Codex Rust SDK panicked while processing the request.",
+        }),
+    };
+    into_owned_c_string(response)
+}
+
+/// Releases a response allocated by [`mahayana_codex_run`].
+#[no_mangle]
+pub unsafe extern "C" fn mahayana_free_string(pointer: *mut c_char) {
+    if !pointer.is_null() {
+        drop(CString::from_raw(pointer));
+    }
+}
+
+fn into_owned_c_string(response: Value) -> *mut c_char {
+    let response = serde_json::to_string(&response).unwrap_or_else(|_| {
+        "{\"ok\":false,\"errorCode\":\"mahayana_response_serialization_error\",\"message\":\"Could not serialize Mahayana response.\"}".to_string()
+    });
+    CString::new(response)
+        .expect("serialized JSON does not contain NUL")
+        .into_raw()
+}
 
 /// Forces the legacy Flutter ABI entry points into the unified dynamic library.
 /// Existing Dart services can therefore load `mahayana-wrapper` first without
@@ -40,7 +103,11 @@ pub extern "C" fn mahayana_force_link() -> u32 {
         fabushi_miniapp_runtime::fabushi_runtime_udp_broadcast_json as *const () as usize,
         fabushi_miniapp_runtime::fabushi_runtime_udp_close_json as *const () as usize,
     ];
-    std::hint::black_box((telegram_symbols, miniapp_symbols));
+    let mahayana_symbols = [
+        mahayana_codex_run as *const () as usize,
+        mahayana_free_string as *const () as usize,
+    ];
+    std::hint::black_box((telegram_symbols, miniapp_symbols, mahayana_symbols));
     1
 }
 
@@ -51,8 +118,23 @@ pub const GLOBAL_DHARMA_MENTION: &str = "@global-dharma";
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::{CStr, CString};
+
     #[test]
     fn unified_library_keeps_legacy_ffi_symbols_linked() {
         assert_eq!(super::mahayana_force_link(), 1);
+    }
+
+    #[test]
+    fn codex_ffi_rejects_a_malformed_request_without_starting_a_cli() {
+        let request = CString::new("[]").unwrap();
+        let response = unsafe { super::mahayana_codex_run(request.as_ptr()) };
+        assert!(!response.is_null());
+        let response_json = unsafe { CStr::from_ptr(response) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        unsafe { super::mahayana_free_string(response) };
+        assert!(response_json.contains("mahayana_codex_sdk_error"));
     }
 }

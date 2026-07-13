@@ -1,3 +1,4 @@
+use codex_sdk::{ApprovalMode, Codex, CodexOptions, SandboxMode, ThreadOptions};
 use fabushi_miniapp_core::{capabilities, evaluate_method, HostPlatform, PolicyContext};
 use serde_json::{json, Value};
 use std::{
@@ -9,9 +10,8 @@ use std::{
 const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Shared Rust boundary used by the desktop/mobile shells and the Mahayana
-/// command-line binary.  It deliberately does not embed an upstream Codex
-/// implementation: the caller launches the installed `codex` executable, so
-/// upstream updates are inherited without maintaining a source fork.
+/// command-line binary. Programmatic Codex turns always go through the Rust
+/// SDK, which drives the bundled/upgraded `codex` executable over JSONL.
 #[derive(Debug, Clone)]
 pub struct MahayanaKernel {
     upstream_codex_binary: PathBuf,
@@ -45,7 +45,9 @@ impl MahayanaKernel {
             "@type": "mahayana.status",
             "version": KERNEL_VERSION,
             "upstreamCodexBinary": self.upstream_codex_binary,
-            "core": "upstream-codex-cli",
+            "core": "codex-rust-sdk",
+            "codexDriver": "codex-client-sdk",
+            "codexTransport": "codex exec JSONL",
             "sharedRustModules": [
                 "fabushi-telegram-runtime",
                 "fabushi-miniapp-runtime",
@@ -62,6 +64,7 @@ impl MahayanaKernel {
         let request_type = request_type(&request)?;
         match request_type.as_str() {
             "mahayana.status" => Ok(self.status()),
+            "mahayana.codex.run" => self.run_codex_blocking(&request),
             "mahayana.telegram.createClient" => Ok(json!({
                 "@type": "mahayana.telegram.clientCreated",
                 "clientId": fabushi_telegram_runtime::create_client(),
@@ -117,6 +120,66 @@ impl MahayanaKernel {
             }
             other => Err(MahayanaKernelError::UnsupportedRequest(other.to_string())),
         }
+    }
+
+    /// Runs a Codex turn with the Rust SDK instead of passing raw user
+    /// arguments to a subprocess. The SDK owns the JSONL contract, thread
+    /// resume semantics, model options, and event decoding.
+    ///
+    /// This synchronous boundary is intentionally kept at the FFI/CLI edge.
+    /// Flutter and native hosts invoke it off their UI thread.
+    pub fn run_codex_blocking(&self, request: &Value) -> Result<Value, MahayanaKernelError> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| MahayanaKernelError::CodexSdk(error.to_string()))?;
+        runtime.block_on(self.run_codex(request))
+    }
+
+    async fn run_codex(&self, request: &Value) -> Result<Value, MahayanaKernelError> {
+        let prompt = required_string(request, "prompt")?.to_string();
+        let options = CodexOptions {
+            codex_path_override: Some(self.upstream_codex_binary.to_string_lossy().into_owned()),
+            base_url: optional_string(request, "baseUrl"),
+            api_key: optional_string(request, "apiKey"),
+            ..Default::default()
+        };
+        let codex = Codex::new(Some(options))
+            .map_err(|error| MahayanaKernelError::CodexSdk(error.to_string()))?;
+        let thread_options = ThreadOptions {
+            model: optional_string(request, "model"),
+            working_directory: optional_string(request, "workingDirectory"),
+            sandbox_mode: optional_string(request, "sandbox")
+                .map(|value| parse_sandbox_mode(&value))
+                .transpose()?,
+            approval_policy: optional_string(request, "approvalPolicy")
+                .map(|value| parse_approval_mode(&value))
+                .transpose()?,
+            skip_git_repo_check: request.get("skipGitRepoCheck").and_then(Value::as_bool),
+            network_access_enabled: request.get("networkAccessEnabled").and_then(Value::as_bool),
+            web_search_enabled: request.get("webSearchEnabled").and_then(Value::as_bool),
+            ..Default::default()
+        };
+        let thread = match optional_string(request, "threadId") {
+            Some(thread_id) => codex.resume_thread(thread_id, Some(thread_options)),
+            None => codex.start_thread(Some(thread_options)),
+        };
+        let turn = thread
+            .run(prompt, None)
+            .await
+            .map_err(|error| MahayanaKernelError::CodexSdk(error.to_string()))?;
+        let items = serde_json::to_value(turn.items)
+            .map_err(|error| MahayanaKernelError::CodexSdk(error.to_string()))?;
+        let usage = serde_json::to_value(turn.usage)
+            .map_err(|error| MahayanaKernelError::CodexSdk(error.to_string()))?;
+        Ok(json!({
+            "@type": "mahayana.codex.turn",
+            "driver": "codex-client-sdk",
+            "threadId": thread.id(),
+            "finalResponse": turn.final_response,
+            "items": items,
+            "usage": usage,
+        }))
     }
 
     pub fn inspect_miniapp(
@@ -258,6 +321,7 @@ pub enum MahayanaKernelError {
     MissingRequestType,
     InvalidParameter(&'static str),
     UnsupportedRequest(String),
+    CodexSdk(String),
     Telegram(String),
     MiniAppRuntime(String),
     Manifest(String),
@@ -273,6 +337,7 @@ impl fmt::Display for MahayanaKernelError {
             Self::UnsupportedRequest(request) => {
                 write!(formatter, "unsupported Mahayana request: {request}")
             }
+            Self::CodexSdk(error) => write!(formatter, "Codex Rust SDK failed: {error}"),
             Self::Telegram(error) => write!(formatter, "telegram runtime failed: {error}"),
             Self::MiniAppRuntime(error) => write!(formatter, "mini-app runtime failed: {error}"),
             Self::Manifest(error) => write!(formatter, "mini-app manifest failed: {error}"),
@@ -313,6 +378,34 @@ fn required_u64(request: &Value, name: &'static str) -> Result<u64, MahayanaKern
         .ok_or(MahayanaKernelError::InvalidParameter(name))
 }
 
+fn optional_string(request: &Value, name: &str) -> Option<String> {
+    request
+        .get(name)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_sandbox_mode(value: &str) -> Result<SandboxMode, MahayanaKernelError> {
+    match value {
+        "read-only" => Ok(SandboxMode::ReadOnly),
+        "workspace-write" => Ok(SandboxMode::WorkspaceWrite),
+        "danger-full-access" => Ok(SandboxMode::DangerFullAccess),
+        _ => Err(MahayanaKernelError::InvalidParameter("sandbox")),
+    }
+}
+
+fn parse_approval_mode(value: &str) -> Result<ApprovalMode, MahayanaKernelError> {
+    match value {
+        "never" => Ok(ApprovalMode::Never),
+        "on-request" => Ok(ApprovalMode::OnRequest),
+        "on-failure" => Ok(ApprovalMode::OnFailure),
+        "untrusted" => Ok(ApprovalMode::Untrusted),
+        _ => Err(MahayanaKernelError::InvalidParameter("approvalPolicy")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,7 +414,8 @@ mod tests {
     #[test]
     fn status_describes_the_single_rust_core() {
         let status = MahayanaKernel::new("codex-test").status();
-        assert_eq!(status["core"], "upstream-codex-cli");
+        assert_eq!(status["core"], "codex-rust-sdk");
+        assert_eq!(status["codexDriver"], "codex-client-sdk");
         assert_eq!(status["upstreamCodexBinary"], "codex-test");
         assert!(status["sharedRustModules"]
             .as_array()
@@ -373,5 +467,35 @@ mod tests {
             .unwrap();
         assert_eq!(response["response"]["@type"], "runtime.status");
         assert!(fabushi_miniapp_runtime::supported_methods().contains(&"runtime.getStatus"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_turn_is_driven_through_the_rust_sdk_jsonl_transport() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("mahayana-fake-codex-{nonce}.sh"));
+        fs::write(
+            &path,
+            "#!/bin/sh\ncase \"$*\" in\n  *\"exec --experimental-json\"*) ;;\n  *) exit 64 ;;\nesac\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"sdk-thread\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"message-1\",\"text\":\"SDK response\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":2}}'\n",
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        let response = MahayanaKernel::new(&path)
+            .run_codex_blocking(&json!({
+                "prompt": "hello from Mahayana",
+                "sandbox": "read-only",
+                "approvalPolicy": "never",
+            }))
+            .unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(response["driver"], "codex-client-sdk");
+        assert_eq!(response["threadId"], "sdk-thread");
+        assert_eq!(response["finalResponse"], "SDK response");
+        assert_eq!(response["usage"]["output_tokens"], 2);
     }
 }

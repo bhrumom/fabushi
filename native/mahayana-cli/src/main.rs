@@ -27,7 +27,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}", kernel.status());
             Ok(())
         }
-        Some("codex") => run_upstream_codex(&kernel, &args[1..]),
+        Some("agent") | Some("codex") => run_agent(&kernel, &args[1..]),
         Some("mcp-server") => run_mcp_server(&kernel),
         Some("mcp") => run_mcp_command(&kernel, &args[1..]),
         Some("telegram") => run_telegram_command(&kernel, &args[1..]),
@@ -36,24 +36,39 @@ fn run(args: Vec<String>) -> Result<(), String> {
     }
 }
 
-/// Runs the installed upstream executable without changing its arguments or
-/// identity.  `MAHAYANA_CODEX_BIN` allows the app bundle to point at its
-/// packaged Codex binary, while developers can upgrade that binary normally.
-fn run_upstream_codex(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
-    let status = Command::new(kernel.upstream_codex_binary())
-        .args(args)
-        .status()
-        .map_err(|error| {
-            format!(
-                "could not start upstream Codex at {}: {error}",
-                kernel.upstream_codex_binary().display()
-            )
-        })?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("upstream Codex exited with {status}"))
-    }
+/// Runs an agent turn through the shared Rust SDK. `codex` remains an alias
+/// so existing product scripts use the SDK path rather than raw process
+/// argument forwarding.
+fn run_agent(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    let request = match args.first().map(String::as_str) {
+        Some("--json") => {
+            let source = args
+                .get(1)
+                .ok_or_else(|| "usage: mahayana agent --json '<request>'".to_string())?;
+            let request = parse_object(source, "Codex Rust SDK request")?;
+            if request.get("prompt").and_then(Value::as_str).is_none() {
+                return Err("Codex Rust SDK request requires a non-empty prompt".to_string());
+            }
+            request
+        }
+        _ if args.is_empty() => {
+            return Err("usage: mahayana agent <prompt> | --json '<request>'".to_string())
+        }
+        _ => json!({"prompt": args.join(" ")}),
+    };
+    let mut request = request
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "Codex Rust SDK request must be a JSON object".to_string())?;
+    request.insert(
+        "@type".to_string(),
+        Value::String("mahayana.codex.run".to_string()),
+    );
+    let response = kernel
+        .execute(Value::Object(request))
+        .map_err(|error| error.to_string())?;
+    println!("{response}");
+    Ok(())
 }
 
 fn run_mcp_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
@@ -283,6 +298,7 @@ fn call_mcp_tool(kernel: &MahayanaKernel, params: Option<&Value>) -> Result<Valu
 
     let (kernel_type, requires_confirmation) = match name {
         "mahayana.status" => ("mahayana.status", false),
+        "mahayana.codex.run" => ("mahayana.codex.run", true),
         "mahayana.telegram.create_client" => ("mahayana.telegram.createClient", false),
         "mahayana.telegram.execute" => ("mahayana.telegram.execute", true),
         "mahayana.miniapp.inspect" => ("mahayana.miniapp.inspect", false),
@@ -313,6 +329,7 @@ fn call_mcp_tool(kernel: &MahayanaKernel, params: Option<&Value>) -> Result<Valu
 fn mcp_tools() -> Vec<Value> {
     vec![
         mcp_tool("mahayana.status", "Show the active shared Rust kernel and upstream Codex path.", json!({"type":"object","properties":{}}), true),
+        mcp_tool("mahayana.codex.run", "Run a Codex turn through the shared Rust SDK. An explicit confirmation is required because the agent may use tools.", json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1},"threadId":{"type":"string"},"model":{"type":"string"},"workingDirectory":{"type":"string"},"sandbox":{"type":"string","enum":["read-only","workspace-write","danger-full-access"]},"approvalPolicy":{"type":"string","enum":["never","on-request","on-failure","untrusted"]},"confirmed":{"type":"boolean"}},"required":["prompt","confirmed"]}), false),
         mcp_tool("mahayana.telegram.create_client", "Create an in-process Rust Telegram client for subsequent tool calls.", json!({"type":"object","properties":{}}), false),
         mcp_tool("mahayana.telegram.execute", "Execute a Telegram Rust runtime request. Networked/authentication actions require confirmation.", json!({"type":"object","properties":{"clientId":{"type":"integer","minimum":1},"request":{"type":"object"},"confirmed":{"type":"boolean"}},"required":["clientId","request","confirmed"]}), false),
         mcp_tool("mahayana.miniapp.inspect", "Inspect a web mini-app manifest against the shared Rust capability registry.", json!({"type":"object","properties":{"manifestPath":{"type":"string"}},"required":["manifestPath"]}), true),
@@ -371,12 +388,15 @@ fn print_usage() {
     println!(
         "Mahayana CLI\n\n\
          mahayana status\n\
-         mahayana codex [UPSTREAM_CODEX_ARGS...]\n\
+         mahayana agent <prompt>\n\
+         mahayana agent --json '<sdk request>'\n\
+         mahayana codex <prompt>  (alias for `agent`)\n\
          mahayana mcp serve|install|install-global-dharma|print-install\n\
          mahayana telegram status|request '<json>'\n\
          mahayana miniapp inspect <manifest.json>\n\
          mahayana miniapp evaluate <method> [permission,...] [platform]\n\
          mahayana miniapp request '<json>'\n\n\
-         Set MAHAYANA_CODEX_BIN to select the bundled/upgraded upstream Codex executable."
+         Set MAHAYANA_CODEX_BIN to select the bundled/upgraded upstream Codex executable.\n\
+         Agent turns are driven by the Codex Rust SDK, not raw argument forwarding."
     );
 }
