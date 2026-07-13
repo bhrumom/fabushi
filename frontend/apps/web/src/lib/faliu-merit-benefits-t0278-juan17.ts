@@ -1,4 +1,5 @@
 import { T0278_JUAN_17_BANNERS_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-banners";
+import { T0278_JUAN_17_TREASURY_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-treasury";
 
 export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   {
@@ -42,4 +43,5 @@ export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
     occurrence: 1,
   },
   ...T0278_JUAN_17_BANNERS_MERIT_BENEFITS,
+  ...T0278_JUAN_17_TREASURY_MERIT_BENEFITS,
 ];
