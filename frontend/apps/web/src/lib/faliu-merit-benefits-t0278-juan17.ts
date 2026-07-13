@@ -4,6 +4,7 @@ import { T0278_JUAN_17_CROWN_JEWEL_MERIT_BENEFITS } from "./faliu-merit-benefits
 import { T0278_JUAN_17_DEATH_ROW_RESCUE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-death-row-rescue";
 import { T0278_JUAN_17_EARS_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-ears";
 import { T0278_JUAN_17_NOSE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-nose";
+import { T0278_JUAN_17_TEETH_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-teeth";
 import { T0278_JUAN_17_EYES_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-eyes";
 import { T0278_JUAN_17_HAIR_JEWEL_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-hair-jewel";
 import { T0278_JUAN_17_PRISON_RESCUE_MERIT_BENEFITS } from "./faliu-merit-benefits-t0278-juan17-prison-rescue";
@@ -60,4 +61,5 @@ export const T0278_JUAN_17_MERIT_BENEFITS: FaliuMeritBenefit[] = [
   ...T0278_JUAN_17_EYES_MERIT_BENEFITS,
   ...T0278_JUAN_17_EARS_MERIT_BENEFITS,
   ...T0278_JUAN_17_NOSE_MERIT_BENEFITS,
+  ...T0278_JUAN_17_TEETH_MERIT_BENEFITS,
 ];
