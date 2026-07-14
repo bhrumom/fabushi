@@ -3,6 +3,10 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
+if [[ ! -f "$manifest" ]]; then
+  echo "Submodule manifest not found at $manifest. Initializing submodules..." >&2
+  git -C "$project_root" submodule update --init --recursive
+fi
 frameworks_dir="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
 output="$frameworks_dir/libmahayana_runtime.dylib"
 

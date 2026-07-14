@@ -87,11 +87,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           lfs: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/temp_models/**

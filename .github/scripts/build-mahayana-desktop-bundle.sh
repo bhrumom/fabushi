@@ -6,7 +6,7 @@ if [ -z "$target" ]; then
   echo "usage: $0 <macos|linux|windows>" >&2
   exit 2
 fi
-if [ ! -f "pubspec.yaml" ] || [ ! -f "../third_party/mahayana/mahayana-rs/Cargo.toml" ]; then
+if [ ! -f "pubspec.yaml" ]; then
   echo "Run this script from the fabushi Flutter project directory." >&2
   exit 2
 fi
@@ -14,11 +14,24 @@ fi
 repo_root="$(cd .. && pwd)"
 runtime_root="$repo_root/third_party/mahayana"
 manifest="$runtime_root/mahayana-rs/Cargo.toml"
+if [ ! -f "$manifest" ]; then
+  echo "Submodule manifest not found at $manifest. Initializing submodules..." >&2
+  git -C "$repo_root" submodule update --init --recursive
+fi
 target_dir="$runtime_root/mahayana-rs/target/release"
 
 cargo build --release --locked --manifest-path "$manifest" \
-  --package mahayana-cli \
-  --package mahayana-ffi
+  --package mahayana-cli
+
+if [ "$target" = "linux" ]; then
+  cargo rustc --release --locked --manifest-path "$manifest" \
+    --package mahayana-ffi --no-default-features --features mobile-embedded,local-only \
+    -- --crate-type cdylib
+else
+  cargo rustc --release --locked --manifest-path "$manifest" \
+    --package mahayana-ffi \
+    -- --crate-type cdylib
+fi
 
 case "$target" in
   macos)

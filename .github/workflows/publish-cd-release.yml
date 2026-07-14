@@ -296,11 +296,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
 
@@ -523,11 +525,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
 
