@@ -7,13 +7,21 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Manifest = Join-Path $ProjectRoot "third_party\mahayana\mahayana-rs\Cargo.toml"
+if (-not (Test-Path $Manifest)) {
+  Write-Host "Submodule manifest not found at $Manifest. Initializing submodules..."
+  & git -C $ProjectRoot submodule update --init --recursive
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to initialize Git submodules."
+  }
+}
 $Profile = "debug"
-$CargoArguments = @("build", "--manifest-path", $Manifest, "--package", "mahayana-ffi")
+$CargoArguments = @("rustc", "--manifest-path", $Manifest, "--package", "mahayana-ffi")
 
 if ($Configuration -ne "Debug") {
   $Profile = "release"
   $CargoArguments += "--release"
 }
+$CargoArguments += ("--", "--crate-type", "cdylib")
 
 & cargo @CargoArguments
 if ($LASTEXITCODE -ne 0) {

@@ -255,6 +255,7 @@ jobs:
       - name: Checkout project files
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/workflows/**
@@ -264,6 +265,7 @@ jobs:
             /fabushi/lib/**
             /fabushi/test/**
             /fabushi/integration_test/**
+            /third_party/**
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
@@ -436,9 +438,11 @@ jobs:
       - name: Checkout Android build files
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
 

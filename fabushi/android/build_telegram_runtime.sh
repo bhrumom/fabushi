@@ -6,6 +6,11 @@ manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
 crate_dir="$(dirname "$manifest")"
 output="$project_root/fabushi/android/app/src/main/jniLibs"
 
+if [[ ! -f "$manifest" ]]; then
+  echo "Submodule manifest not found at $manifest. Initializing submodules..." >&2
+  git -C "$project_root" submodule update --init --recursive
+fi
+
 if ! command -v cargo-ndk >/dev/null 2>&1; then
   echo "cargo-ndk is required to build the embedded Mahayana Runtime." >&2
   echo "Install it with: cargo install cargo-ndk --locked" >&2
@@ -33,12 +38,14 @@ cargo ndk \
   --target armeabi-v7a \
   --target x86_64 \
   --output-dir "$output" \
-  build \
+  rustc \
   --manifest-path "$manifest" \
   --package mahayana-ffi \
   --no-default-features \
   --features mobile-embedded,local-only \
-  --release
+  --release \
+  -- \
+  --crate-type cdylib
 
 # Provider crates are Rust-only libraries. The unified wrapper is the sole
 # staged native artifact and exports both the Mahayana ABI and legacy bridges.

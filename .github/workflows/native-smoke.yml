@@ -66,11 +66,13 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
@@ -140,12 +142,14 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
@@ -218,12 +222,14 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
+          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
