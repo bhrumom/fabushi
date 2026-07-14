@@ -287,7 +287,7 @@
 			buildPhases = (
 				C61A04B96F25D6075EC03D92 /* [CP] Check Pods Manifest.lock */,
 				9740EEB61CF901F6004384FC /* Run Script */,
-				A7E1E6A1C0DE202607100103 /* Build Telegram Rust Runtime */,
+				A7E1E6A1C0DE202607100103 /* Build Mahayana Rust Runtime */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
@@ -429,7 +429,7 @@
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
 		};
-		A7E1E6A1C0DE202607100103 /* Build Telegram Rust Runtime */ = {
+		A7E1E6A1C0DE202607100103 /* Build Mahayana Rust Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -439,7 +439,7 @@
 			);
 			inputPaths = (
 			);
-			name = "Build Telegram Rust Runtime";
+			name = "Build Mahayana Rust Runtime";
 			outputFileListPaths = (
 			);
 			outputPaths = (

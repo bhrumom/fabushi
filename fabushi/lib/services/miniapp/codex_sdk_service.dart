@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../core/config/app_config.dart';
 import '../../services/app_settings.dart';
 import '../../services/mahayana_sdk.dart';
+import 'mahayana_workspace.dart';
 
 /// Codex 大模型引擎提供商枚举
 enum CodexModelProvider {
@@ -440,6 +441,7 @@ class CodexSdk extends ChangeNotifier {
   }) async* {
     // Never let a previous turn's file mask a failed generation in this turn.
     _virtualVfs.remove('index.html');
+    await clearMahayanaWorkspaceFile('index.html');
 
     if (isSelfHealing) {
       yield CodexEventDart.reasoning('捕捉到沙盒运行异常，正在启动 Codex 自我修复程序...');
@@ -467,9 +469,13 @@ class CodexSdk extends ChangeNotifier {
               responsesBaseUrl: AppConfig.codexDeepSeekResponsesBaseUrl,
             )
             .timeout(_generationTimeout);
-        final html = _htmlFromCodexResponse(
+        final responseHtml = _htmlFromCodexResponse(
           (turn['message'] ?? turn['finalResponse'])?.toString() ?? '',
         );
+        final workspaceHtml = _htmlFromCodexResponse(
+          await readMahayanaWorkspaceFile('index.html') ?? '',
+        );
+        final html = workspaceHtml ?? responseHtml;
         if (html == null) {
           throw StateError('Codex Rust SDK 没有返回可预览的小程序 HTML');
         }
@@ -491,6 +497,11 @@ class CodexSdk extends ChangeNotifier {
       } catch (error) {
         yield CodexEventDart.error('大乘 SDK 异常: $error');
       }
+      return;
+    }
+
+    if (!kIsWeb) {
+      yield CodexEventDart.error('当前安装包缺少内置大乘 Runtime；原生平台不会回退到云端 Agent。');
       return;
     }
 
