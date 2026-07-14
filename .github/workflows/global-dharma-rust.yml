@@ -42,6 +42,9 @@ jobs:
           cargo test --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           --package mahayana-core
+          --package mahayana-agent-codex
+          --package mahayana-agent-responses
+          --package mahayana-product
           --package mahayana-runtime
           --package mahayana-ffi
           --package mahayana-cli

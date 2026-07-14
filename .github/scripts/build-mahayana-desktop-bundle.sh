@@ -77,4 +77,9 @@ if [ "$target" != "windows" ]; then
 fi
 
 "$cli_destination" help >/dev/null
+smoke_home="$(mktemp -d)"
+trap 'rm -rf "$smoke_home"' EXIT
+MAHAYANA_HOME="$smoke_home" "$cli_destination" status >/dev/null
+MAHAYANA_HOME="$smoke_home" "$cli_destination" miniapp execute \
+  '{"@type":"runtime.getStatus"}' >/dev/null
 echo "Bundled the in-process Mahayana CLI and Runtime into $bundle"

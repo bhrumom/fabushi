@@ -34,12 +34,13 @@ for arch in ${ARCHS:-arm64}; do
   fi
   rustup target add "$target"
   cargo_args=(
-    build
+    rustc
     --manifest-path "$manifest"
     --package mahayana-ffi
     --no-default-features
     --features mobile-embedded,local-only
     --target "$target"
+    --crate-type staticlib
   )
   if [[ "$release_build" -eq 1 ]]; then
     cargo_args+=(--release)
