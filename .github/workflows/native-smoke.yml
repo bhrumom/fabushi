@@ -155,12 +155,12 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+            /.github/scripts/**
 
       - name: Initialize submodules securely
         shell: bash
         run: git submodule update --init --recursive
-            !/fabushi/native_libs/llama.cpp/**
-            /.github/scripts/**
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -238,11 +238,11 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
 
       - name: Initialize submodules securely
         shell: bash
         run: git submodule update --init --recursive
-            !/fabushi/native_libs/llama.cpp/**
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
