@@ -5,6 +5,8 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
+import 'mahayana_workspace.dart';
+
 /// Long-lived native bridge to the embedded Mahayana Runtime.
 ///
 /// Runtime creation, commands, streamed events, interrupts, and approvals use
@@ -263,8 +265,10 @@ class MahayanaCodexRuntime {
     _runtimeResponsesBaseUrl = normalizedBaseUrl;
     _runtimeTelegramClientId = telegramClientId;
     _runtimeTelegramSelfUserId = telegramSelfUserId;
+    final runtimePaths = await prepareMahayanaRuntimePaths();
     final pending = Isolate.run(
       () => _createRuntimeInWorker({
+        ...runtimePaths,
         'productSessionToken': ?normalizedToken,
         'telegramClientId': ?telegramClientId,
         'telegramSelfUserId': ?telegramSelfUserId,

@@ -7,7 +7,7 @@ crate_dir="$(dirname "$manifest")"
 output="$project_root/fabushi/android/app/src/main/jniLibs"
 
 if ! command -v cargo-ndk >/dev/null 2>&1; then
-  echo "cargo-ndk is required to build the Telegram Rust runtime." >&2
+  echo "cargo-ndk is required to build the embedded Mahayana Runtime." >&2
   echo "Install it with: cargo install cargo-ndk --locked" >&2
   exit 2
 fi
@@ -40,13 +40,5 @@ cargo ndk \
   --features mobile-embedded,local-only \
   --release
 
-# cargo-ndk also stages cdylib artifacts exposed by path dependencies. The
-# unified wrapper exports both the new Mahayana ABI and the legacy Telegram ABI.
-for abi in arm64-v8a armeabi-v7a x86_64; do
-  rm -f \
-    "$output/$abi/libfabushi_telegram_core.so" \
-    "$output/$abi/libfabushi_telegram_protocol.so" \
-    "$output/$abi/libfabushi_telegram_storage.so" \
-    "$output/$abi/libfabushi_telegram_runtime.so" \
-    "$output/$abi/libfabushi_miniapp_runtime.so"
-done
+# Provider crates are Rust-only libraries. The unified wrapper is the sole
+# staged native artifact and exports both the Mahayana ABI and legacy bridges.
