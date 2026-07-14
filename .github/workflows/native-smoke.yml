@@ -66,7 +66,6 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -77,6 +76,10 @@ jobs:
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Verify Android Buddha uses flutter_scene model
         shell: bash
@@ -142,7 +145,6 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
@@ -153,6 +155,10 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
             !/fabushi/native_libs/llama.cpp/**
             /.github/scripts/**
 
@@ -222,7 +228,6 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           ref: ${{ needs.resolve-source.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
@@ -233,6 +238,10 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
             !/fabushi/native_libs/llama.cpp/**
 
       - name: Set up Rust

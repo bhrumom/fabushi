@@ -87,7 +87,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           lfs: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -97,6 +96,10 @@ jobs:
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/temp_models/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5

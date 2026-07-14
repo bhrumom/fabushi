@@ -296,7 +296,6 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
@@ -305,6 +304,10 @@ jobs:
             /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -525,7 +528,6 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           ref: ${{ needs.resolve-cd-context.outputs.source_sha }}
           persist-credentials: false
           sparse-checkout-cone-mode: false
@@ -534,6 +536,10 @@ jobs:
             /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
