@@ -34,6 +34,8 @@ class MahayanaCodexRuntime {
   Future<void>? _initialization;
   int? _runtimeId;
   String? _runtimeToken;
+  String? _runtimeModel;
+  String? _runtimeResponsesBaseUrl;
   String? _loadError;
 
   bool get isAvailable => true;
@@ -47,11 +49,18 @@ class MahayanaCodexRuntime {
         'Codex prompt must not be empty.',
       );
     }
-    return sendAndCollect(
+    final result = await sendAndCollect(
       'codex:agent:assistant',
       prompt,
       token: _token(request),
+      model: _model(request),
+      responsesBaseUrl: _responsesBaseUrl(request),
     );
+    return {
+      ...result,
+      '@type': 'mahayana.codex.turn',
+      'finalResponse': result['message'],
+    };
   }
 
   Future<Map<String, dynamic>> execute(Map<String, dynamic> request) async {
@@ -70,10 +79,17 @@ class MahayanaCodexRuntime {
         'miniapp:$miniAppId',
         message,
         token: _token(request),
+        model: _model(request),
+        responsesBaseUrl: _responsesBaseUrl(request),
       );
     }
     if (_isRuntimeCommand(type)) {
-      return executeRuntime(request, token: _token(request));
+      return executeRuntime(
+        request,
+        token: _token(request),
+        model: _model(request),
+        responsesBaseUrl: _responsesBaseUrl(request),
+      );
     }
     return executeProduct(request);
   }
@@ -81,9 +97,16 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>> executeRuntime(
     Map<String, dynamic> command, {
     String? token,
+    String? model,
+    String? responsesBaseUrl,
   }) async {
-    final runtimeId = await _ensureRuntime(token);
-    final normalized = Map<String, dynamic>.from(command)..remove('token');
+    final runtimeId = await _ensureRuntime(token, model, responsesBaseUrl);
+    final normalized = Map<String, dynamic>.from(command)
+      ..remove('token')
+      ..remove('model')
+      ..remove('responsesBaseUrl')
+      ..remove('telegramClientId')
+      ..remove('telegramSelfUserId');
     try {
       final response = await _executeWasmRuntime(
         runtimeId.toJS,
@@ -102,6 +125,15 @@ class MahayanaCodexRuntime {
     final type = command['@type']?.toString() ?? '';
     final token = _token(command);
     switch (type) {
+      case 'mahayana.auth.session.sync':
+        await _closeExistingRuntime();
+        return {
+          '@type': 'mahayana.auth.session',
+          'loggedIn': token != null,
+          'sessionStored': false,
+          'inMemory': true,
+          'provider': command['provider']?.toString() ?? 'app',
+        };
       case 'mahayana.auth.status':
         if (token == null) {
           return const {
@@ -137,6 +169,51 @@ class MahayanaCodexRuntime {
           'loggedIn': false,
           'provider': 'alipay',
         };
+      case 'mahayana.auth.password.login':
+        return _productRequest(
+          'POST',
+          '/api/auth/login',
+          body: {
+            'username': _required(command, 'username'),
+            'password': _required(command, 'password'),
+          },
+        );
+      case 'mahayana.auth.register':
+        return _productRequest(
+          'POST',
+          '/api/auth/register',
+          body: {
+            'username': _required(command, 'username'),
+            'email': _required(command, 'email'),
+            'password': _required(command, 'password'),
+            'verificationCode': _required(command, 'verificationCode'),
+          },
+        );
+      case 'mahayana.auth.verification.send':
+        return _productRequest(
+          'POST',
+          '/api/auth/send-verification-code',
+          body: {
+            'email': _required(command, 'email'),
+            'type': _required(command, 'type'),
+          },
+        );
+      case 'mahayana.auth.password.forgot':
+        return _productRequest(
+          'POST',
+          '/api/auth/forgot-password',
+          body: {'email': _required(command, 'email')},
+        );
+      case 'mahayana.auth.password.reset':
+        return _productRequest(
+          'POST',
+          '/api/auth/reset-password',
+          body: {
+            'email': _required(command, 'email'),
+            'token': _required(command, 'resetToken'),
+            'newPassword': _required(command, 'newPassword'),
+          },
+        );
       case 'mahayana.auth.alipay.start':
         return _productRequest(
           'GET',
@@ -167,6 +244,49 @@ class MahayanaCodexRuntime {
           body: {
             'auth_code': _required(command, 'authCode'),
             'target_id': ?_optional(command, 'targetId'),
+          },
+        );
+      case 'mahayana.auth.alipay.register':
+        return _productRequest(
+          'POST',
+          '/api/auth/alipay/register',
+          body: {
+            'alipayProviderSubject': _required(
+              command,
+              'alipayProviderSubject',
+            ),
+            'alipaySubjectType': ?_optional(command, 'alipaySubjectType'),
+            'username': ?_optional(command, 'username'),
+            'password': ?_optional(command, 'password'),
+            'nickname': ?_optional(command, 'nickname'),
+            'avatar': ?_optional(command, 'avatar'),
+            'email': ?_optional(command, 'email'),
+            'alipayNickname': ?_optional(command, 'alipayNickname'),
+            'alipayAvatar': ?_optional(command, 'alipayAvatar'),
+            if (command['oneClick'] == true) 'oneClick': true,
+          },
+        );
+      case 'mahayana.auth.apple.complete':
+        return _productRequest(
+          'POST',
+          '/api/auth/apple-login',
+          body: {
+            'identityToken': _required(command, 'identityToken'),
+            'authorizationCode': _required(command, 'authorizationCode'),
+            'email': ?_optional(command, 'email'),
+            'givenName': ?_optional(command, 'givenName'),
+            'familyName': ?_optional(command, 'familyName'),
+          },
+        );
+      case 'mahayana.auth.firebase.phone.complete':
+        return _productRequest(
+          'POST',
+          '/api/auth/firebase-phone-login',
+          body: {
+            'idToken': _required(command, 'idToken'),
+            'phoneNumber': _required(command, 'phoneNumber'),
+            'firebaseUid': _required(command, 'firebaseUid'),
+            'isNewUser': command['isNewUser'] == true,
           },
         );
       case 'mahayana.contacts.list':
@@ -223,12 +343,91 @@ class MahayanaCodexRuntime {
             'clientRequestId': ?_optional(command, 'clientRequestId'),
           },
         );
+      case 'mahayana.miniapps.registry':
+        return _productRequest('GET', '/api/miniapps/registry', token: token);
+      case 'mahayana.miniapp.sandbox.publish':
+        return _publishMiniApp(command, token: token);
+      case 'mahayana.miniapp.review.submit':
+        final miniAppId = Uri.encodeComponent(_required(command, 'miniAppId'));
+        return _productRequest(
+          'POST',
+          '/api/miniapps/$miniAppId/submit-review',
+          token: token,
+          body: const {},
+        );
       default:
         throw MahayanaCodexRuntimeException(
           'mahayana_unsupported_product_command',
           'Unsupported Mahayana product command: $type',
         );
     }
+  }
+
+  Future<Map<String, dynamic>> _publishMiniApp(
+    Map<String, dynamic> command, {
+    String? token,
+  }) async {
+    final title = _required(command, 'title');
+    final sourceHtml = _required(command, 'sourceHtml');
+    final subtitle = _optional(command, 'subtitle') ?? '大乘 Web SDK 生成的个人沙箱小程序';
+    final prompt = _optional(command, 'prompt') ?? title;
+    final permissions = command['permissions'] is List
+        ? List<dynamic>.from(command['permissions'] as List)
+        : <String>['app.context', 'bot.chat'];
+    final created = await _productRequest(
+      'POST',
+      '/api/miniapps/dev/create',
+      token: token,
+      body: {
+        'title': title,
+        'subtitle': subtitle,
+        'prompt': prompt,
+        'permissions': permissions,
+      },
+    );
+    final miniApp = created['miniApp'];
+    final rawMiniAppId = miniApp is Map
+        ? miniApp['miniAppId']?.toString()
+        : null;
+    if (rawMiniAppId == null || rawMiniAppId.trim().isEmpty) {
+      throw const MahayanaCodexRuntimeException(
+        'mahayana_missing_miniapp_id',
+        'Sandbox create response has no miniAppId.',
+      );
+    }
+    final miniAppId = Uri.encodeComponent(rawMiniAppId.trim());
+    final updated = await _productRequest(
+      'POST',
+      '/api/miniapps/dev/$miniAppId/version',
+      token: token,
+      body: {
+        'title': title,
+        'subtitle': subtitle,
+        'prompt': prompt,
+        'sourceHtml': sourceHtml,
+        'permissions': permissions,
+        'version': _optional(command, 'version') ?? '0.0.1',
+      },
+    );
+    Map<String, dynamic>? review;
+    if (command['submitReview'] == true) {
+      review = await _productRequest(
+        'POST',
+        '/api/miniapps/$miniAppId/submit-review',
+        token: token,
+        body: const {},
+      );
+    }
+    return {
+      '@type': 'mahayana.miniapp.published',
+      'success': true,
+      'authenticated': token != null,
+      'miniAppId': rawMiniAppId,
+      'miniApp': updated['miniApp'],
+      'bot': updated['bot'],
+      'scan': updated['scan'],
+      'review': review,
+    };
   }
 
   Future<Map<String, dynamic>?> receive({int timeoutMs = 30000}) async {
@@ -248,24 +447,36 @@ class MahayanaCodexRuntime {
     String decision, {
     Map<String, dynamic>? payload,
   }) async {
-    await executeRuntime({
-      '@type': 'mahayana.approval.resolve',
-      'approvalId': approvalId,
-      'decision': decision,
-      'payload': ?payload,
-    }, token: _runtimeToken);
+    await executeRuntime(
+      {
+        '@type': 'mahayana.approval.resolve',
+        'approvalId': approvalId,
+        'decision': decision,
+        'payload': ?payload,
+      },
+      token: _runtimeToken,
+      model: _runtimeModel,
+      responsesBaseUrl: _runtimeResponsesBaseUrl,
+    );
   }
 
   Future<Map<String, dynamic>> sendAndCollect(
     String conversationId,
     String text, {
     String? token,
+    String? model,
+    String? responsesBaseUrl,
   }) async {
-    final accepted = await executeRuntime({
-      '@type': 'mahayana.conversation.send',
-      'conversationId': conversationId,
-      'text': text,
-    }, token: token);
+    final accepted = await executeRuntime(
+      {
+        '@type': 'mahayana.conversation.send',
+        'conversationId': conversationId,
+        'text': text,
+      },
+      token: token,
+      model: model,
+      responsesBaseUrl: responsesBaseUrl,
+    );
     final operationId = accepted['operationId']?.toString();
     if (operationId == null || operationId.isEmpty) {
       throw const MahayanaCodexRuntimeException(
@@ -311,11 +522,24 @@ class MahayanaCodexRuntime {
     }
   }
 
-  Future<int> _ensureRuntime(String? token) async {
-    final normalized = token?.trim();
-    if (_runtimeId != null && _runtimeToken == normalized) return _runtimeId!;
+  Future<int> _ensureRuntime(
+    String? token,
+    String? model,
+    String? responsesBaseUrl,
+  ) async {
+    final normalizedToken = _normalize(token);
+    final normalizedModel = _normalize(model) ?? 'deepseek-chat';
+    final normalizedBaseUrl =
+        _normalize(responsesBaseUrl) ??
+        'https://api.ombhrum.com/codex-deepseek/v1';
+    if (_runtimeId != null &&
+        _runtimeToken == normalizedToken &&
+        _runtimeModel == normalizedModel &&
+        _runtimeResponsesBaseUrl == normalizedBaseUrl) {
+      return _runtimeId!;
+    }
     await _initialize();
-    return _replaceRuntime(normalized);
+    return _replaceRuntime(normalizedToken, normalizedModel, normalizedBaseUrl);
   }
 
   Future<void> _initialize() {
@@ -330,15 +554,21 @@ class MahayanaCodexRuntime {
     }();
   }
 
-  Future<int> _replaceRuntime(String? token) async {
+  Future<int> _replaceRuntime(
+    String? token,
+    String model,
+    String responsesBaseUrl,
+  ) async {
     await _closeExistingRuntime();
     _runtimeToken = token;
+    _runtimeModel = model;
+    _runtimeResponsesBaseUrl = responsesBaseUrl;
     try {
       final runtimeId = (await _createWasmRuntime(
         jsonEncode({
           'productSessionToken': ?token,
-          'model': 'deepseek-chat',
-          'responsesBaseUrl': 'https://api.ombhrum.com/codex-deepseek/v1',
+          'model': model,
+          'responsesBaseUrl': responsesBaseUrl,
         }).toJS,
       ).toDart).toDartInt;
       _runtimeId = runtimeId;
@@ -353,6 +583,8 @@ class MahayanaCodexRuntime {
     if (existing != null) await _closeWasmRuntime(existing.toJS).toDart;
     _runtimeId = null;
     _runtimeToken = null;
+    _runtimeModel = null;
+    _runtimeResponsesBaseUrl = null;
   }
 }
 
@@ -363,8 +595,18 @@ bool _isRuntimeCommand(String type) =>
     type.startsWith('mahayana.approval.');
 
 String? _token(Map<String, dynamic> request) {
-  final token = request['token']?.toString().trim();
-  return token == null || token.isEmpty ? null : token;
+  return _normalize(request['token']?.toString());
+}
+
+String? _model(Map<String, dynamic> request) =>
+    _normalize(request['model']?.toString());
+
+String? _responsesBaseUrl(Map<String, dynamic> request) =>
+    _normalize(request['responsesBaseUrl']?.toString());
+
+String? _normalize(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
 }
 
 String _required(Map<String, dynamic> request, String key) {

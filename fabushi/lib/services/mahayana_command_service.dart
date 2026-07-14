@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import 'miniapp/mahayana_codex_runtime.dart';
+import 'mahayana_sdk.dart';
 
 class MahayanaCommandOutcome {
   const MahayanaCommandOutcome(
@@ -25,7 +25,7 @@ class MahayanaCommandOutcome {
 class MahayanaCommandService {
   MahayanaCommandService();
 
-  final MahayanaCodexRuntime _runtime = MahayanaCodexRuntime.instance;
+  final MahayanaSdk _sdk = MahayanaSdk.instance;
 
   Future<Map<String, dynamic>> execute(
     Map<String, dynamic> command, {
@@ -135,8 +135,23 @@ class MahayanaCommandService {
         }, token: token);
         return MahayanaCommandOutcome(_format(payload));
       case '/miniapp':
+        if (parts.firstOrNull?.toLowerCase() == 'registry') {
+          final payload = await _execute(const {
+            '@type': 'mahayana.miniapps.registry',
+          }, token: token);
+          return MahayanaCommandOutcome(_format(payload));
+        }
+        if (parts.firstOrNull?.toLowerCase() == 'review' && parts.length == 2) {
+          final payload = await _execute({
+            '@type': 'mahayana.miniapp.review.submit',
+            'miniAppId': parts.last,
+          }, token: token);
+          return MahayanaCommandOutcome(_format(payload));
+        }
         if (parts.length < 2) {
-          throw const FormatException('用法：/miniapp <小程序ID> <消息>');
+          throw const FormatException(
+            '用法：/miniapp <小程序ID> <消息>、/miniapp registry 或 /miniapp review <ID>',
+          );
         }
         final miniAppId = parts.removeAt(0);
         final payload = await _execute({
@@ -224,17 +239,13 @@ class MahayanaCommandService {
     Map<String, dynamic> command, {
     String? token,
   }) async {
-    if (!_runtime.isAvailable) {
+    if (!_sdk.isAvailable) {
       throw StateError(
         '此平台未内置大乘 Runtime，命令已停止；不会回退到云端 Agent。'
-        '${_runtime.loadError == null ? '' : ' ${_runtime.loadError}'}',
+        '${_sdk.loadError == null ? '' : ' ${_sdk.loadError}'}',
       );
     }
-    final normalized = <String, dynamic>{
-      ...command,
-      if (token?.trim().isNotEmpty == true) 'token': token!.trim(),
-    };
-    return _runtime.execute(normalized);
+    return _sdk.execute(command, productSessionToken: token);
   }
 
   String get _alipayLoginPlatform {
@@ -319,6 +330,8 @@ class MahayanaCommandService {
 /message <联系人> <消息>
 /messages <联系人>
 /miniapp <小程序ID> <消息>
+/miniapp registry
+/miniapp review <小程序ID>
 /logout  退出软件账号
 普通文字会进入大乘 AI 对话。''';
 }

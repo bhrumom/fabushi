@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../social_friend_service.dart';
 import '../mahayana_command_service.dart';
+import '../mahayana_sdk.dart';
 import 'telegram_client_factory.dart';
 import 'telegram_rust_runtime.dart';
 
@@ -113,6 +114,9 @@ class TelegramChatSession extends ChangeNotifier {
       _clientId = handle.clientId;
       _persistent = handle.persistent;
       _storageWarning = handle.warning;
+      await MahayanaSdk.instance.attachTelegramClient(
+        clientId: handle.clientId,
+      );
       await refresh();
       await refreshAuthorization();
       _lastError = null;

@@ -18,6 +18,11 @@ class MahayanaCodexRuntime {
   bool _loadAttempted = false;
   String? _loadError;
   Future<int>? _runtimeId;
+  String? _runtimeToken;
+  String? _runtimeModel;
+  String? _runtimeResponsesBaseUrl;
+  int? _runtimeTelegramClientId;
+  int? _runtimeTelegramSelfUserId;
 
   bool get isAvailable => _loadLibrary() != null;
 
@@ -34,7 +39,20 @@ class MahayanaCodexRuntime {
         'Codex prompt must not be empty.',
       );
     }
-    return sendAndCollect('codex:agent:assistant', prompt);
+    final result = await sendAndCollect(
+      'codex:agent:assistant',
+      prompt,
+      token: _token(request),
+      model: _model(request),
+      responsesBaseUrl: _responsesBaseUrl(request),
+      telegramClientId: _telegramClientId(request),
+      telegramSelfUserId: _telegramSelfUserId(request),
+    );
+    return {
+      ...result,
+      '@type': 'mahayana.codex.turn',
+      'finalResponse': result['message'],
+    };
   }
 
   /// Compatibility dispatcher for product commands and the stable runtime ABI.
@@ -50,24 +68,57 @@ class MahayanaCodexRuntime {
           'Mini-app id and message are required.',
         );
       }
-      return sendAndCollect('miniapp:$miniAppId', message);
+      return sendAndCollect(
+        'miniapp:$miniAppId',
+        message,
+        token: _token(request),
+        model: _model(request),
+        responsesBaseUrl: _responsesBaseUrl(request),
+        telegramClientId: _telegramClientId(request),
+        telegramSelfUserId: _telegramSelfUserId(request),
+      );
     }
-    if (_isRuntimeCommand(type)) return executeRuntime(request);
-    return executeProduct(request);
+    if (_isRuntimeCommand(type)) {
+      return executeRuntime(
+        request,
+        token: _token(request),
+        model: _model(request),
+        responsesBaseUrl: _responsesBaseUrl(request),
+        telegramClientId: _telegramClientId(request),
+        telegramSelfUserId: _telegramSelfUserId(request),
+      );
+    }
+    final result = await executeProduct(request);
+    if (type == 'mahayana.auth.session.sync' ||
+        type == 'mahayana.auth.logout') {
+      await _closeExistingRuntime();
+    }
+    return result;
   }
 
   Future<Map<String, dynamic>> executeRuntime(
     Map<String, dynamic> command, {
     String? token,
+    String? model,
+    String? responsesBaseUrl,
+    int? telegramClientId,
+    int? telegramSelfUserId,
   }) async {
     _requireLibrary();
-    final runtimeId = await _ensureRuntime();
-    return Isolate.run(
-      () => _executeRuntimeInWorker(
-        runtimeId,
-        Map<String, dynamic>.from(command),
-      ),
+    final runtimeId = await _ensureRuntime(
+      token: token,
+      model: model,
+      responsesBaseUrl: responsesBaseUrl,
+      telegramClientId: telegramClientId,
+      telegramSelfUserId: telegramSelfUserId,
     );
+    final normalized = Map<String, dynamic>.from(command)
+      ..remove('token')
+      ..remove('model')
+      ..remove('responsesBaseUrl')
+      ..remove('telegramClientId')
+      ..remove('telegramSelfUserId');
+    return Isolate.run(() => _executeRuntimeInWorker(runtimeId, normalized));
   }
 
   Future<Map<String, dynamic>> executeProduct(
@@ -81,7 +132,13 @@ class MahayanaCodexRuntime {
 
   Future<Map<String, dynamic>?> receive({int timeoutMs = 30000}) async {
     _requireLibrary();
-    final runtimeId = await _ensureRuntime();
+    final runtimeId = await _ensureRuntime(
+      token: _runtimeToken,
+      model: _runtimeModel,
+      responsesBaseUrl: _runtimeResponsesBaseUrl,
+      telegramClientId: _runtimeTelegramClientId,
+      telegramSelfUserId: _runtimeTelegramSelfUserId,
+    );
     return Isolate.run(() => _receiveInWorker(runtimeId, timeoutMs));
   }
 
@@ -91,7 +148,13 @@ class MahayanaCodexRuntime {
     Map<String, dynamic>? payload,
   }) async {
     _requireLibrary();
-    final runtimeId = await _ensureRuntime();
+    final runtimeId = await _ensureRuntime(
+      token: _runtimeToken,
+      model: _runtimeModel,
+      responsesBaseUrl: _runtimeResponsesBaseUrl,
+      telegramClientId: _runtimeTelegramClientId,
+      telegramSelfUserId: _runtimeTelegramSelfUserId,
+    );
     await Isolate.run(
       () => _resolveApprovalInWorker(runtimeId, {
         'approvalId': approvalId,
@@ -105,12 +168,23 @@ class MahayanaCodexRuntime {
     String conversationId,
     String text, {
     String? token,
+    String? model,
+    String? responsesBaseUrl,
+    int? telegramClientId,
+    int? telegramSelfUserId,
   }) async {
-    final accepted = await executeRuntime({
-      '@type': 'mahayana.conversation.send',
-      'conversationId': conversationId,
-      'text': text,
-    });
+    final accepted = await executeRuntime(
+      {
+        '@type': 'mahayana.conversation.send',
+        'conversationId': conversationId,
+        'text': text,
+      },
+      token: token,
+      model: model,
+      responsesBaseUrl: responsesBaseUrl,
+      telegramClientId: telegramClientId,
+      telegramSelfUserId: telegramSelfUserId,
+    );
     final operationId = accepted['operationId']?.toString();
     if (operationId == null || operationId.isEmpty) {
       throw const MahayanaCodexRuntimeException(
@@ -163,10 +237,69 @@ class MahayanaCodexRuntime {
     }
   }
 
-  Future<int> _ensureRuntime() {
-    return _runtimeId ??= Isolate.run(
-      () => _createRuntimeInWorker(const <String, dynamic>{}),
+  Future<int> _ensureRuntime({
+    String? token,
+    String? model,
+    String? responsesBaseUrl,
+    int? telegramClientId,
+    int? telegramSelfUserId,
+  }) async {
+    final normalizedToken = _normalize(token);
+    final normalizedModel = _normalize(model) ?? 'deepseek-chat';
+    final normalizedBaseUrl =
+        _normalize(responsesBaseUrl) ??
+        'https://api.ombhrum.com/codex-deepseek/v1';
+    if (_runtimeId != null &&
+        _runtimeToken == normalizedToken &&
+        _runtimeModel == normalizedModel &&
+        _runtimeResponsesBaseUrl == normalizedBaseUrl &&
+        _runtimeTelegramClientId == telegramClientId &&
+        _runtimeTelegramSelfUserId == telegramSelfUserId) {
+      return _runtimeId!;
+    }
+    await _closeExistingRuntime();
+    _runtimeToken = normalizedToken;
+    _runtimeModel = normalizedModel;
+    _runtimeResponsesBaseUrl = normalizedBaseUrl;
+    _runtimeTelegramClientId = telegramClientId;
+    _runtimeTelegramSelfUserId = telegramSelfUserId;
+    final pending = Isolate.run(
+      () => _createRuntimeInWorker({
+        'productSessionToken': ?normalizedToken,
+        'telegramClientId': ?telegramClientId,
+        'telegramSelfUserId': ?telegramSelfUserId,
+        'model': {
+          'provider': 'first-party-dacheng',
+          'model': normalizedModel,
+          'baseUrl': normalizedBaseUrl,
+          'credentialKey': 'mahayana.account.session',
+        },
+      }),
     );
+    _runtimeId = pending;
+    try {
+      return await pending;
+    } catch (_) {
+      if (identical(_runtimeId, pending)) _runtimeId = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _closeExistingRuntime() async {
+    final pending = _runtimeId;
+    _runtimeId = null;
+    _runtimeToken = null;
+    _runtimeModel = null;
+    _runtimeResponsesBaseUrl = null;
+    _runtimeTelegramClientId = null;
+    _runtimeTelegramSelfUserId = null;
+    if (pending == null) return;
+    try {
+      final runtimeId = await pending;
+      await Isolate.run(() => _closeRuntimeInWorker(runtimeId));
+    } catch (_) {
+      // A Runtime that failed during creation has no native handle to close.
+    }
   }
 
   DynamicLibrary? _loadLibrary() {
@@ -216,6 +349,26 @@ bool _isRuntimeCommand(String type) =>
     type.startsWith('mahayana.conversation.') ||
     type.startsWith('mahayana.operation.') ||
     type.startsWith('mahayana.approval.');
+
+String? _token(Map<String, dynamic> request) =>
+    _normalize(request['token']?.toString());
+
+String? _model(Map<String, dynamic> request) =>
+    _normalize(request['model']?.toString());
+
+String? _responsesBaseUrl(Map<String, dynamic> request) =>
+    _normalize(request['responsesBaseUrl']?.toString());
+
+int? _telegramClientId(Map<String, dynamic> request) =>
+    (request['telegramClientId'] as num?)?.toInt();
+
+int? _telegramSelfUserId(Map<String, dynamic> request) =>
+    (request['telegramSelfUserId'] as num?)?.toInt();
+
+String? _normalize(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
 
 int _createRuntimeInWorker(Map<String, dynamic> config) {
   final library = _openLibraryForWorker();
@@ -293,6 +446,15 @@ void _resolveApprovalInWorker(int runtimeId, Map<String, dynamic> approval) {
     (pointer) => resolve(runtimeId, pointer),
     _freeFunction(library),
   );
+}
+
+void _closeRuntimeInWorker(int runtimeId) {
+  final library = _openLibraryForWorker();
+  final close = library
+      .lookup<NativeFunction<_RuntimeCloseNative>>('mahayana_runtime_close')
+      .asFunction<_RuntimeCloseDart>();
+  final response = _takeResponse(close(runtimeId), _freeFunction(library));
+  _unwrapResponse(response);
 }
 
 Map<String, dynamic> _callWithJson(
@@ -398,6 +560,7 @@ void _verifySymbols(DynamicLibrary library) {
   library.lookup<NativeFunction<_RuntimeResolveNative>>(
     'mahayana_runtime_resolve_approval',
   );
+  library.lookup<NativeFunction<_RuntimeCloseNative>>('mahayana_runtime_close');
   library.lookup<NativeFunction<_ProductExecuteNative>>(
     'mahayana_product_execute',
   );
@@ -431,6 +594,8 @@ typedef _RuntimeResolveNative =
     Pointer<Utf8> Function(Uint64 runtimeId, Pointer<Utf8> request);
 typedef _RuntimeResolveDart =
     Pointer<Utf8> Function(int runtimeId, Pointer<Utf8> request);
+typedef _RuntimeCloseNative = Pointer<Utf8> Function(Uint64 runtimeId);
+typedef _RuntimeCloseDart = Pointer<Utf8> Function(int runtimeId);
 typedef _RuntimeLastErrorNative = Pointer<Utf8> Function();
 typedef _RuntimeLastErrorDart = Pointer<Utf8> Function();
 typedef _ProductExecuteNative = Pointer<Utf8> Function(Pointer<Utf8> request);

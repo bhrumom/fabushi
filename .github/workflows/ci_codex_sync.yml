@@ -47,7 +47,9 @@ jobs:
           cargo test --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           --package mahayana-agent-codex
-          --lib
+          --package mahayana-agent-responses
+          --package mahayana-product
+          --package mahayana-cli
 
   test-flutter-codex-binding:
     name: Validate Flutter/Dart Codex Sdk Binding
@@ -75,4 +77,5 @@ jobs:
           lib/services/miniapp/mahayana_codex_runtime.dart
           lib/services/miniapp/mahayana_codex_runtime_io.dart
           lib/services/miniapp/mahayana_codex_runtime_web.dart
+          lib/services/mahayana_sdk.dart
           lib/services/mahayana_command_service.dart

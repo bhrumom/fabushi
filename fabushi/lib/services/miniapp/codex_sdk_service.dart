@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/config/app_config.dart';
 import '../../services/app_settings.dart';
-import 'mahayana_codex_runtime.dart';
+import '../../services/mahayana_sdk.dart';
 
 /// Codex 大模型引擎提供商枚举
 enum CodexModelProvider {
@@ -50,12 +50,12 @@ class CodexModelConfigDart {
   }
 
   Map<String, dynamic> toJson() => {
-        'provider': provider.name,
-        'baseUrl': baseUrl,
-        'apiKey': apiKey,
-        'modelName': modelName,
-        'temperature': temperature,
-      };
+    'provider': provider.name,
+    'baseUrl': baseUrl,
+    'apiKey': apiKey,
+    'modelName': modelName,
+    'temperature': temperature,
+  };
 }
 
 /// Codex 结构化流式事件类型
@@ -93,10 +93,18 @@ class CodexEventDart {
       CodexEventDart(type: CodexEventType.reasoningProgress, content: content);
 
   factory CodexEventDart.toolCall(String name, Map<String, dynamic> args) =>
-      CodexEventDart(type: CodexEventType.toolCallTriggered, toolName: name, arguments: args);
+      CodexEventDart(
+        type: CodexEventType.toolCallTriggered,
+        toolName: name,
+        arguments: args,
+      );
 
   factory CodexEventDart.fileModified(String path, String content) =>
-      CodexEventDart(type: CodexEventType.sandboxFileModified, filePath: path, newContent: content);
+      CodexEventDart(
+        type: CodexEventType.sandboxFileModified,
+        filePath: path,
+        newContent: content,
+      );
 
   factory CodexEventDart.completed(
     String summary, {
@@ -118,11 +126,12 @@ class CodexSdk extends ChangeNotifier {
 
   static const Duration _generationTimeout = Duration(seconds: 120);
 
-  CodexModelConfigDart _config =
-      CodexModelConfigDart.deepSeek(apiKey: 'dacheng-openclaw-proxy');
+  CodexModelConfigDart _config = CodexModelConfigDart.deepSeek(
+    apiKey: 'dacheng-openclaw-proxy',
+  );
   final Map<String, String> _virtualVfs = {};
-  final StreamController<CodexEventDart> _eventController = StreamController<CodexEventDart>.broadcast();
-  String? _mahayanaThreadId;
+  final StreamController<CodexEventDart> _eventController =
+      StreamController<CodexEventDart>.broadcast();
 
   Stream<CodexEventDart> get events => _eventController.stream;
   Map<String, String> get virtualVfs => Map.unmodifiable(_virtualVfs);
@@ -146,27 +155,11 @@ class CodexSdk extends ChangeNotifier {
     return 'deepseek-chat';
   }
 
-  String? _mahayanaCodexModel() {
-    if (_config.provider != CodexModelProvider.openAI) return null;
-    final model = _config.modelName.trim();
-    return model.isEmpty ? null : model;
-  }
-
-  String? _mahayanaCodexBaseUrl() {
-    if (_config.provider != CodexModelProvider.openAI) return null;
-    final baseUrl = _config.baseUrl.trim();
-    return baseUrl.isEmpty ? null : baseUrl;
-  }
-
-  String? _mahayanaCodexApiKey() {
-    if (_config.provider != CodexModelProvider.openAI) return null;
-    final apiKey = _config.apiKey.trim();
-    return apiKey.isEmpty ? null : apiKey;
-  }
-
   String? _htmlFromCodexResponse(String response) {
-    final fenced = RegExp(r'```html\s*([\s\S]*?)\s*```', caseSensitive: false)
-        .firstMatch(response);
+    final fenced = RegExp(
+      r'```html\s*([\s\S]*?)\s*```',
+      caseSensitive: false,
+    ).firstMatch(response);
     final html = (fenced?.group(1) ?? response).trim();
     return html.toLowerCase().contains('<html') ? html : null;
   }
@@ -277,10 +270,10 @@ class CodexSdk extends ChangeNotifier {
       throw StateError('机器人之父后端没有返回可预览的小程序 HTML');
     }
 
-    yield CodexEventDart.toolCall(
-      'create_file',
-      {'path': 'index.html', 'content': html},
-    );
+    yield CodexEventDart.toolCall('create_file', {
+      'path': 'index.html',
+      'content': html,
+    });
     updateSandboxFile('index.html', html);
     yield CodexEventDart.fileModified('index.html', html);
 
@@ -319,9 +312,9 @@ class CodexSdk extends ChangeNotifier {
         {
           'role': 'system',
           'content':
-              '你是 Fabushi 机器人之父。请直接输出经过优化的 HTML 单文件小程序源码，包在 ```html 和 ``` 中。不要多余解释。'
+              '你是 Fabushi 机器人之父。请直接输出经过优化的 HTML 单文件小程序源码，包在 ```html 和 ``` 中。不要多余解释。',
         },
-        {'role': 'user', 'content': prompt}
+        {'role': 'user', 'content': prompt},
       ],
       'stream': true,
       if (username != null && username.trim().isNotEmpty)
@@ -383,24 +376,22 @@ class CodexSdk extends ChangeNotifier {
       }
 
       final fullText = buffer.toString();
-      final htmlMatch = RegExp(r'```html\s*([\s\S]*?)\s*```')
-          .firstMatch(fullText);
+      final htmlMatch = RegExp(
+        r'```html\s*([\s\S]*?)\s*```',
+      ).firstMatch(fullText);
       final html = htmlMatch != null ? htmlMatch.group(1)! : fullText;
       if (!html.trim().startsWith('<')) {
         throw StateError('DeepSeek 兼容代理没有返回有效 HTML');
       }
-      yield CodexEventDart.toolCall(
-        'create_file',
-        {'path': 'index.html', 'content': html},
-      );
+      yield CodexEventDart.toolCall('create_file', {
+        'path': 'index.html',
+        'content': html,
+      });
       updateSandboxFile('index.html', html);
       yield CodexEventDart.fileModified('index.html', html);
       yield CodexEventDart.completed(
         'Codex 兼容代理 ($model) 生成完毕。',
-        metadata: {
-          'provider': 'legacy-deepseek-proxy',
-          'persisted': false,
-        },
+        metadata: {'provider': 'legacy-deepseek-proxy', 'persisted': false},
       );
     } finally {
       client.close();
@@ -453,54 +444,52 @@ class CodexSdk extends ChangeNotifier {
     if (isSelfHealing) {
       yield CodexEventDart.reasoning('捕捉到沙盒运行异常，正在启动 Codex 自我修复程序...');
     } else {
-      yield CodexEventDart.reasoning(
-        '分析用户小程序构建需求，正在连接大乘 CLI 内核...',
-      );
+      yield CodexEventDart.reasoning('分析用户小程序构建需求，正在连接大乘 SDK...');
     }
 
     // When the packaged Rust kernel is present, every local agent turn uses
     // the same Mahayana/Codex Rust SDK path as the command-line backend. Do
     // not fall back to an HTTP model provider after a native SDK failure: that
     // would silently bypass the product's shared backend contract.
-    final mahayana = MahayanaCodexRuntime.instance;
+    final mahayana = MahayanaSdk.instance;
     if (mahayana.isAvailable) {
-      yield CodexEventDart.reasoning('大乘 CLI 正在通过 Codex Rust SDK 调用内置 Codex CLI...');
+      yield CodexEventDart.reasoning('大乘 SDK 正在通过统一命令内核进入机器人之父会话...');
       try {
-        final turn = await mahayana.run({
-          'prompt': '''你是 Fabushi 机器人之父。请直接输出可运行的单文件 HTML 小程序源码，使用 ```html 和 ``` 包裹，不要附加解释。\n\n用户需求：$prompt''',
-          if (_mahayanaThreadId != null) 'threadId': _mahayanaThreadId,
-          if (_mahayanaCodexModel() != null) 'model': _mahayanaCodexModel(),
-          if (_mahayanaCodexBaseUrl() != null)
-            'baseUrl': _mahayanaCodexBaseUrl(),
-          if (_mahayanaCodexApiKey() != null) 'apiKey': _mahayanaCodexApiKey(),
-          'sandbox': 'read-only',
-          'approvalPolicy': 'never',
-          'skipGitRepoCheck': true,
-        }).timeout(_generationTimeout);
-        _mahayanaThreadId = turn['threadId']?.toString();
+        final turn = await mahayana
+            .execute(
+              {
+                '@type': 'mahayana.miniapp.chat',
+                'miniAppId': 'official.bot-father',
+                'message': prompt,
+              },
+              productSessionToken: authToken,
+              model: _backendDeepSeekModelId(),
+              responsesBaseUrl: AppConfig.codexDeepSeekResponsesBaseUrl,
+            )
+            .timeout(_generationTimeout);
         final html = _htmlFromCodexResponse(
-          turn['finalResponse']?.toString() ?? '',
+          (turn['message'] ?? turn['finalResponse'])?.toString() ?? '',
         );
         if (html == null) {
           throw StateError('Codex Rust SDK 没有返回可预览的小程序 HTML');
         }
-        yield CodexEventDart.toolCall(
-          'create_file',
-          {'path': 'index.html', 'content': html},
-        );
+        yield CodexEventDart.toolCall('create_file', {
+          'path': 'index.html',
+          'content': html,
+        });
         updateSandboxFile('index.html', html);
         yield CodexEventDart.fileModified('index.html', html);
         yield CodexEventDart.completed(
-          '大乘 Codex Rust SDK 已完成小程序构建。',
+          '大乘 SDK 已完成小程序构建。',
           metadata: {
-            'provider': 'codex-client-sdk',
-            'threadId': _mahayanaThreadId,
+            'provider': 'mahayana-sdk',
+            'conversationId': 'miniapp:official.bot-father',
             'workspaceId': workspaceId,
             'persisted': false,
           },
         );
       } catch (error) {
-        yield CodexEventDart.error('大乘 Codex Rust SDK 异常: $error');
+        yield CodexEventDart.error('大乘 SDK 异常: $error');
       }
       return;
     }
@@ -554,15 +543,15 @@ class CodexSdk extends ChangeNotifier {
 </body>
 </html>
 ''';
-    yield CodexEventDart.toolCall('create_file', {'path': 'index.html', 'content': fallbackHtml});
+    yield CodexEventDart.toolCall('create_file', {
+      'path': 'index.html',
+      'content': fallbackHtml,
+    });
     updateSandboxFile('index.html', fallbackHtml);
     yield CodexEventDart.fileModified('index.html', fallbackHtml);
     yield CodexEventDart.completed(
       '云端 Codex 暂不可用，已加载本地离线模板；恢复连接后可继续生成完整应用。',
-      metadata: {
-        'provider': 'offline-template',
-        'persisted': false,
-      },
+      metadata: {'provider': 'offline-template', 'persisted': false},
     );
   }
 }
