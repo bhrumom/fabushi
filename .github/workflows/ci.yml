@@ -501,6 +501,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -541,6 +542,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -581,6 +583,7 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
             /frontend/**
 
