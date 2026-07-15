@@ -437,12 +437,13 @@ Examples:
       if (manifest == null) continue;
 
       final entryUri = Uri.tryParse(manifest.entryUrl);
+      final entryPath = entryUri?.path.replaceFirst(RegExp(r'/$'), '');
       _check(
         'miniapp load ${bot.miniAppId}',
         entryUri != null &&
             entryUri.scheme == 'https' &&
             entryUri.host == 'fabushi.ombhrum.com' &&
-            entryUri.path == '/miniapps/${bot.miniAppId}',
+            entryPath == '/miniapps/${bot.miniAppId}',
         manifest.entryUrl,
       );
       _check(
