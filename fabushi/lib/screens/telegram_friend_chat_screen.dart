@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/auth_model.dart';
 import '../services/social_friend_service.dart';
 import '../services/telegram/telegram_chat_session.dart';
 
@@ -38,7 +40,10 @@ class _TelegramFriendChatScreenState extends State<TelegramFriendChatScreen> {
 
   Future<void> _prepare() async {
     try {
-      await _session.upsertFriend(widget.friend);
+      await _session.syncMessages(
+        widget.friend,
+        token: context.read<AuthModel>().authToken,
+      );
     } catch (_) {}
   }
 
@@ -62,14 +67,18 @@ class _TelegramFriendChatScreenState extends State<TelegramFriendChatScreen> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      await _session.queueText(widget.friend, text);
+      await _session.queueText(
+        widget.friend,
+        text,
+        token: context.read<AuthModel>().authToken,
+      );
       _composer.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('消息未进入发送队列：$error')));
+        ).showSnackBar(SnackBar(content: Text('消息发送失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _sending = false);

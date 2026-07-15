@@ -1,3 +1,4 @@
+use crate::product::{MahayanaProductClient, ProductError};
 use codex_sdk::{ApprovalMode, Codex, CodexOptions, SandboxMode, ThreadOptions};
 use fabushi_miniapp_core::{capabilities, evaluate_method, HostPlatform, PolicyContext};
 use serde_json::{json, Value};
@@ -16,6 +17,7 @@ const KERNEL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct MahayanaKernel {
     upstream_codex_binary: PathBuf,
     uses_bundled_codex: bool,
+    product: MahayanaProductClient,
 }
 
 impl Default for MahayanaKernel {
@@ -32,6 +34,7 @@ impl Default for MahayanaKernel {
         Self {
             upstream_codex_binary,
             uses_bundled_codex,
+            product: MahayanaProductClient::default(),
         }
     }
 }
@@ -41,6 +44,18 @@ impl MahayanaKernel {
         Self {
             upstream_codex_binary: upstream_codex_binary.into(),
             uses_bundled_codex: false,
+            product: MahayanaProductClient::default(),
+        }
+    }
+
+    pub fn with_product_client(
+        upstream_codex_binary: impl Into<PathBuf>,
+        product: MahayanaProductClient,
+    ) -> Self {
+        Self {
+            upstream_codex_binary: upstream_codex_binary.into(),
+            uses_bundled_codex: false,
+            product,
         }
     }
 
@@ -48,11 +63,16 @@ impl MahayanaKernel {
     /// A Linux archive has `bin/mahayana` and `lib/mahayana/codex`; installers
     /// retain that layout below their selected prefix.
     pub fn bundled_codex_binary_for(executable: &Path) -> PathBuf {
-        executable
-            .parent()
-            .and_then(Path::parent)
-            .map(|prefix| prefix.join("lib").join("mahayana").join("codex"))
-            .unwrap_or_else(|| PathBuf::from("lib/mahayana/codex"))
+        let executable_dir = executable.parent().unwrap_or_else(|| Path::new("."));
+        let directory_name = executable_dir.file_name().and_then(|value| value.to_str());
+        let prefix = match directory_name {
+            Some("bin") | Some("MacOS") => executable_dir.parent().unwrap_or(executable_dir),
+            _ => executable_dir,
+        };
+        prefix
+            .join("lib")
+            .join("mahayana")
+            .join(platform_executable_name("codex"))
     }
 
     pub fn upstream_codex_binary(&self) -> &Path {
@@ -68,6 +88,7 @@ impl MahayanaKernel {
             "@type": "mahayana.status",
             "version": KERNEL_VERSION,
             "upstreamCodexBinary": self.upstream_codex_binary,
+            "mahayanaCliBinary": self.mahayana_cli_binary(),
             "codexDistribution": if self.uses_bundled_codex { "bundled" } else { "explicit-override" },
             "core": "codex-rust-sdk",
             "codexDriver": "codex-client-sdk",
@@ -76,7 +97,10 @@ impl MahayanaKernel {
                 "fabushi-telegram-runtime",
                 "fabushi-miniapp-runtime",
                 "fabushi-miniapp-core",
+                "mahayana-product-client",
             ],
+            "productApiBaseUrl": self.product.api_base_url(),
+            "accountSessionPath": self.product.session_path(),
             "mcpServer": "mahayana mcp-server",
             "globalDharmaMcpServer": "global-dharma-mcp",
         })
@@ -142,8 +166,38 @@ impl MahayanaKernel {
                 let path = required_string(&request, "manifestPath")?;
                 Ok(self.inspect_miniapp(path)?.into_json())
             }
+            "mahayana.miniapp.chat" => self.chat_with_miniapp(&request),
+            product_type
+                if product_type.starts_with("mahayana.auth.")
+                    || product_type.starts_with("mahayana.contacts.")
+                    || product_type.starts_with("mahayana.messages.") =>
+            {
+                self.product
+                    .execute(product_type, &request)
+                    .map_err(MahayanaKernelError::Product)
+            }
             other => Err(MahayanaKernelError::UnsupportedRequest(other.to_string())),
         }
+    }
+
+    fn chat_with_miniapp(&self, request: &Value) -> Result<Value, MahayanaKernelError> {
+        let miniapp_id = required_string(request, "miniAppId")?;
+        let message = required_string(request, "message")?;
+        let mut codex_request = json!({
+            "prompt": format!(
+                "你正在大乘软件中与小程序 `{miniapp_id}` 对话。请把用户输入理解为对该小程序的操作或问题；需要调用大乘小程序工具时就调用，并用中文简洁回复。\n\n用户：{message}"
+            ),
+            "sandbox": "read-only",
+            "approvalPolicy": "on-request",
+            "skipGitRepoCheck": true,
+        });
+        if let Some(thread_id) = optional_string(request, "threadId") {
+            codex_request["threadId"] = Value::String(thread_id);
+        }
+        let mut response = self.run_codex_blocking(&codex_request)?;
+        response["@type"] = Value::String("mahayana.miniapp.chatTurn".to_string());
+        response["miniAppId"] = Value::String(miniapp_id.to_string());
+        Ok(response)
     }
 
     /// Runs a Codex turn with the Rust SDK instead of passing raw user
@@ -162,10 +216,24 @@ impl MahayanaKernel {
 
     async fn run_codex(&self, request: &Value) -> Result<Value, MahayanaKernelError> {
         let prompt = required_string(request, "prompt")?.to_string();
+        let config = self.mahayana_cli_binary().map(|cli| {
+            json!({
+                "mcp_servers": {
+                    "mahayana": {
+                        "command": cli.to_string_lossy(),
+                        "args": ["mcp-server"],
+                    }
+                }
+            })
+            .as_object()
+            .cloned()
+            .expect("Mahayana MCP config is an object")
+        });
         let options = CodexOptions {
             codex_path_override: Some(self.upstream_codex_binary.to_string_lossy().into_owned()),
             base_url: optional_string(request, "baseUrl"),
             api_key: optional_string(request, "apiKey"),
+            config,
             ..Default::default()
         };
         let codex = Codex::new(Some(options))
@@ -204,6 +272,36 @@ impl MahayanaKernel {
             "items": items,
             "usage": usage,
         }))
+    }
+
+    fn mahayana_cli_binary(&self) -> Option<PathBuf> {
+        if let Some(explicit) = std::env::var_os("MAHAYANA_CLI_BIN")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+        {
+            return Some(explicit);
+        }
+        if let Ok(current) = std::env::current_exe() {
+            if current.file_stem().and_then(|value| value.to_str()) == Some("mahayana") {
+                return Some(current);
+            }
+        }
+        let prefix = self
+            .upstream_codex_binary
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)?;
+        [
+            prefix
+                .join("bin")
+                .join(platform_executable_name("mahayana")),
+            prefix.join(platform_executable_name("mahayana")),
+            prefix
+                .join("MacOS")
+                .join(platform_executable_name("mahayana")),
+        ]
+        .into_iter()
+        .find(|candidate| candidate.is_file())
     }
 
     pub fn inspect_miniapp(
@@ -349,6 +447,7 @@ pub enum MahayanaKernelError {
     Telegram(String),
     MiniAppRuntime(String),
     Manifest(String),
+    Product(ProductError),
 }
 
 impl fmt::Display for MahayanaKernelError {
@@ -365,6 +464,7 @@ impl fmt::Display for MahayanaKernelError {
             Self::Telegram(error) => write!(formatter, "telegram runtime failed: {error}"),
             Self::MiniAppRuntime(error) => write!(formatter, "mini-app runtime failed: {error}"),
             Self::Manifest(error) => write!(formatter, "mini-app manifest failed: {error}"),
+            Self::Product(error) => write!(formatter, "product command failed: {error}"),
         }
     }
 }
@@ -430,6 +530,14 @@ fn parse_approval_mode(value: &str) -> Result<ApprovalMode, MahayanaKernelError>
     }
 }
 
+fn platform_executable_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,6 +562,28 @@ mod tests {
         let codex =
             MahayanaKernel::bundled_codex_binary_for(Path::new("/opt/mahayana/bin/mahayana"));
         assert_eq!(codex, PathBuf::from("/opt/mahayana/lib/mahayana/codex"));
+    }
+
+    #[test]
+    fn bundled_codex_path_supports_flat_desktop_bundles() {
+        let codex = MahayanaKernel::bundled_codex_binary_for(Path::new(
+            "/opt/global-dharma/global_dharma_sharing",
+        ));
+        assert_eq!(
+            codex,
+            PathBuf::from("/opt/global-dharma/lib/mahayana/codex")
+        );
+    }
+
+    #[test]
+    fn bundled_codex_path_supports_macos_app_bundles() {
+        let codex = MahayanaKernel::bundled_codex_binary_for(Path::new(
+            "/Applications/Fabushi.app/Contents/MacOS/global_dharma_sharing",
+        ));
+        assert_eq!(
+            codex,
+            PathBuf::from("/Applications/Fabushi.app/Contents/lib/mahayana/codex")
+        );
     }
 
     #[test]

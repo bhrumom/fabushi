@@ -71,10 +71,15 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Verify Android Buddha uses flutter_scene model
         shell: bash
@@ -146,11 +151,16 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
             /.github/scripts/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -224,10 +234,15 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/native_libs/llama.cpp
             !/fabushi/native_libs/llama.cpp/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

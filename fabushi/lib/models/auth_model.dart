@@ -9,6 +9,7 @@ import '../services/alipay_auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/meditation_session_manager.dart';
 import '../services/practice_stats_service.dart';
+import '../services/mahayana_sdk.dart';
 import 'user_model.dart';
 
 class User {
@@ -344,33 +345,51 @@ class AuthModel extends ChangeNotifier {
   Future<void> loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
+      var token = prefs.getString('auth_token');
       final userJsonString = prefs.getString('user_data');
+      User? restoredUser;
 
-      if (token != null && userJsonString != null) {
+      if (token == null || userJsonString == null) {
+        try {
+          final session = await MahayanaSdk.instance.execute(const {
+            '@type': 'mahayana.auth.session.restore',
+          });
+          final restoredToken = session['token']?.toString().trim();
+          final rawUser = session['user'];
+          final userJson = rawUser is Map
+              ? Map<String, dynamic>.from(rawUser)
+              : <String, dynamic>{
+                  'username': session['username'],
+                  'email': session['email'],
+                };
+          if (restoredToken != null &&
+              restoredToken.isNotEmpty &&
+              (userJson['username']?.toString().isNotEmpty ?? false)) {
+            token = restoredToken;
+            restoredUser = _userFromServerPayload(
+              userJson,
+              isAdmin: false,
+              fallbackUsername: userJson['username']?.toString(),
+              fallbackEmail: userJson['email']?.toString(),
+            );
+          }
+        } catch (error) {
+          debugPrint('没有可从大乘 CLI 恢复的软件账号会话: $error');
+        }
+      }
+
+      if (token != null && (userJsonString != null || restoredUser != null)) {
         _token = token;
-        final userData = json.decode(userJsonString);
-        _currentUser = User.fromJson(userData);
+        _currentUser = restoredUser;
+        if (_currentUser == null && userJsonString != null) {
+          final userData = json.decode(userJsonString);
+          _currentUser = User.fromJson(userData);
+        }
 
-        final basicUserModel = UserModel(
-          username: _currentUser!.username,
-          userNo: _currentUser!.userNo,
-          email: _currentUser!.email,
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          usernameChangedAt: _currentUser!.usernameChangedAt,
-          membership: MembershipInfo(
-            type: _currentUser!.membershipType ?? 'expired',
-            isActive: _currentUser!.hasPremiumMembership,
-            expiresAt: _currentUser!.membershipExpiry?.toIso8601String(),
-          ),
-          alipayUserId: _currentUser!.alipayUserId,
-          nickname: _currentUser!.nickname,
-          avatar: _currentUser!.avatar,
-          phoneNumber: _currentUser!.phoneNumber,
-          firebaseUid: _currentUser!.firebaseUid,
-        );
+        final basicUserModel = _buildStoredUserModel(_currentUser!);
         await _authService.setAuth(token, basicUserModel);
+        if (restoredUser != null) await _storeAuth();
+        await _syncMahayanaSession();
         LikeService().setAuthToken(token);
         PracticeStatsService().setAuthToken(token);
         await LikeService().initialize(userId: _currentUser!.username);
@@ -1165,6 +1184,11 @@ class AuthModel extends ChangeNotifier {
     } catch (e) {
       debugPrint('登出请求失败: $e');
     } finally {
+      try {
+        await MahayanaSdk.instance.clearSession();
+      } catch (error) {
+        MahayanaSdk.instance.reportSessionSyncFailure(error);
+      }
       _currentUser = null;
       _token = null;
       _clearError();
@@ -1187,6 +1211,24 @@ class AuthModel extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', _token!);
       await prefs.setString('user_data', json.encode(_currentUser!.toJson()));
+      await _syncMahayanaSession();
+    }
+  }
+
+  Future<void> _syncMahayanaSession() async {
+    final token = _token;
+    final user = _currentUser;
+    if (token == null || user == null) return;
+    try {
+      await MahayanaSdk.instance.synchronizeSession(
+        token: token,
+        user: user.toJson(),
+        provider: user.alipayUserId?.isNotEmpty == true ? 'alipay' : 'app',
+      );
+    } catch (error) {
+      // App authentication remains authoritative even if a platform package
+      // has not bundled the native Mahayana Runtime yet.
+      MahayanaSdk.instance.reportSessionSyncFailure(error);
     }
   }
 

@@ -291,7 +291,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
-				A7E1E6A1C0DE202607100001 /* Build Telegram Rust Runtime */,
+				A7E1E6A1C0DE202607100001 /* Build Mahayana Rust Runtime */,
 				DACE0C1A0B0C0D0E0F001122 /* Sync OpenClaw Runtime */,
 				638C68006236E20A61BE8054 /* [CP] Embed Pods Frameworks */,
 				D4CD447FDFFC03694F05118F /* [CP] Copy Pods Resources */,
@@ -580,7 +580,7 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PROJECT_DIR}/copy_llama_libs.sh\"\n";
 		};
-		A7E1E6A1C0DE202607100001 /* Build Telegram Rust Runtime */ = {
+		A7E1E6A1C0DE202607100001 /* Build Mahayana Rust Runtime */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -590,11 +590,11 @@
 			);
 			inputPaths = (
 			);
-			name = "Build Telegram Rust Runtime";
+			name = "Build Mahayana Rust Runtime";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libfabushi_telegram_runtime.dylib",
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libmahayana_runtime.dylib",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;

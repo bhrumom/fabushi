@@ -7,6 +7,8 @@ on:
       - native/mahayana-cli/**
       - native/mahayana-wrapper/**
       - native/fabushi-miniapp-runtime/**
+      - third_party/mahayana
+      - third_party/mahayana/**
       - scripts/install-mahayana.sh
       - scripts/test-install-mahayana.sh
       - .github/workflows/global-dharma-rust.yml
@@ -31,18 +33,23 @@ jobs:
 
   mahayana-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: native/mahayana-cli
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo fmt --all --check
-      - run: cargo fmt --manifest-path ../mahayana-wrapper/Cargo.toml --check
-      - run: cargo test --manifest-path ../mahayana-wrapper/Cargo.toml
-      - run: cargo test --manifest-path ../fabushi-miniapp-runtime/Cargo.toml
-      - run: cargo test
-      - run: sh ../../scripts/test-install-mahayana.sh
+      - run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
+      - run: >-
+          cargo test --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          --package mahayana-core
+          --package mahayana-agent-codex
+          --package mahayana-agent-responses
+          --package mahayana-product
+          --package mahayana-runtime
+          --package mahayana-ffi
+          --package mahayana-cli
+      - run: sh scripts/test-install-mahayana.sh
 
   linux-release:
     if: startsWith(github.ref, 'refs/tags/global-dharma-v') || startsWith(github.ref, 'refs/tags/mahayana-v')
@@ -53,25 +60,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: taiki-e/install-action@cross
-      - name: Fetch verified Codex source for the Mahayana bundle
-        run: native/mahayana-cli/sync-upstream.sh "${RUNNER_TEMP}/mahayana-codex"
-      - name: Build the Codex executable embedded in Mahayana
-        run: cross build --release --target ${{ matrix.target }} --manifest-path "${RUNNER_TEMP}/mahayana-codex/codex-rs/Cargo.toml" -p codex-cli
       - run: cross build --release --target ${{ matrix.target }} --manifest-path native/global-dharma/Cargo.toml -p global-dharma-daemon -p global-dharmactl -p global-dharma-mcp
-      - run: cross build --release --target ${{ matrix.target }} --manifest-path native/mahayana-cli/Cargo.toml
-      - run: cross build --release --target ${{ matrix.target }} --manifest-path native/mahayana-wrapper/Cargo.toml
+      - run: >-
+          cross build --release --locked
+          --target ${{ matrix.target }}
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          --package mahayana-cli
+          --package mahayana-ffi
       - run: |
           mkdir -p dist/${{ matrix.target }}/bin
           cp native/global-dharma/target/${{ matrix.target }}/release/global-dharma-daemon dist/${{ matrix.target }}/bin/
           cp native/global-dharma/target/${{ matrix.target }}/release/global-dharmactl dist/${{ matrix.target }}/bin/
           cp native/global-dharma/target/${{ matrix.target }}/release/global-dharma-mcp dist/${{ matrix.target }}/bin/
-          cp native/mahayana-cli/target/${{ matrix.target }}/release/mahayana dist/${{ matrix.target }}/bin/
-          mkdir -p dist/${{ matrix.target }}/lib/mahayana dist/${{ matrix.target }}/share/licenses/codex dist/${{ matrix.target }}/share/mahayana
-          cp "${RUNNER_TEMP}/mahayana-codex/codex-rs/target/${{ matrix.target }}/release/codex" dist/${{ matrix.target }}/lib/mahayana/codex
-          cp "${RUNNER_TEMP}/mahayana-codex/LICENSE" dist/${{ matrix.target }}/share/licenses/codex/LICENSE
-          printf 'Codex source: %s at %s\n' "$(awk -F= '/^CODEX_UPSTREAM_TAG/ { gsub(/\"/, "", $2); print $2 }' native/mahayana-cli/codex-upstream.env)" "$(awk -F= '/^CODEX_UPSTREAM_COMMIT/ { gsub(/\"/, "", $2); print $2 }' native/mahayana-cli/codex-upstream.env)" > dist/${{ matrix.target }}/share/mahayana/codex-upstream.txt
-          cp native/mahayana-wrapper/target/${{ matrix.target }}/release/libmahayana_wrapper.so dist/${{ matrix.target }}/libmahayana_wrapper.so
+          cp third_party/mahayana/mahayana-rs/target/${{ matrix.target }}/release/mahayana dist/${{ matrix.target }}/bin/
+          mkdir -p dist/${{ matrix.target }}/lib dist/${{ matrix.target }}/share/licenses/codex dist/${{ matrix.target }}/share/mahayana
+          cp third_party/mahayana/mahayana-rs/target/${{ matrix.target }}/release/libmahayana_runtime.so dist/${{ matrix.target }}/lib/libmahayana_runtime.so
+          cp third_party/mahayana/LICENSE dist/${{ matrix.target }}/share/licenses/codex/LICENSE
+          cp third_party/mahayana/mahayana-rs/UPSTREAM.md dist/${{ matrix.target }}/share/mahayana/UPSTREAM.md
+          cp third_party/mahayana/mahayana-rs/UPSTREAM.lock dist/${{ matrix.target }}/share/mahayana/UPSTREAM.lock
           cp -R native/global-dharma/deploy native/global-dharma/config dist/${{ matrix.target }}/
           mkdir -p dist/${{ matrix.target }}/share/global-dharma
           cp native/global-dharma/deploy/install-systemd.sh dist/${{ matrix.target }}/share/global-dharma/

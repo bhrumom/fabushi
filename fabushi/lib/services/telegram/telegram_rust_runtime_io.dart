@@ -176,28 +176,16 @@ class TelegramRustRuntime {
     }
 
     final candidates = <String>[
-      if (Platform.isAndroid) 'libmahayana_wrapper.so',
+      if (Platform.isAndroid) 'libmahayana_runtime.so',
       if (Platform.isLinux)
-        '${File(Platform.resolvedExecutable).parent.path}/lib/libmahayana_wrapper.so',
-      if (Platform.isLinux) 'libmahayana_wrapper.so',
+        '${File(Platform.resolvedExecutable).parent.path}/lib/libmahayana_runtime.so',
+      if (Platform.isLinux) 'libmahayana_runtime.so',
       if (Platform.isMacOS)
-        '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libmahayana_wrapper.dylib',
-      if (Platform.isMacOS) 'libmahayana_wrapper.dylib',
+        '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libmahayana_runtime.dylib',
+      if (Platform.isMacOS) 'libmahayana_runtime.dylib',
       if (Platform.isWindows)
-        '${File(Platform.resolvedExecutable).parent.path}\\mahayana_wrapper.dll',
-      if (Platform.isWindows) 'mahayana_wrapper.dll',
-      if (Platform.isWindows) 'libmahayana_wrapper.dll',
-      if (Platform.isAndroid) 'libfabushi_telegram_runtime.so',
-      if (Platform.isLinux)
-        '${File(Platform.resolvedExecutable).parent.path}/lib/libfabushi_telegram_runtime.so',
-      if (Platform.isLinux) 'libfabushi_telegram_runtime.so',
-      if (Platform.isMacOS)
-        '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libfabushi_telegram_runtime.dylib',
-      if (Platform.isMacOS) 'libfabushi_telegram_runtime.dylib',
-      if (Platform.isWindows)
-        '${File(Platform.resolvedExecutable).parent.path}\\fabushi_telegram_runtime.dll',
-      if (Platform.isWindows) 'fabushi_telegram_runtime.dll',
-      if (Platform.isWindows) 'libfabushi_telegram_runtime.dll',
+        '${File(Platform.resolvedExecutable).parent.path}\\mahayana_runtime.dll',
+      if (Platform.isWindows) 'mahayana_runtime.dll',
     ];
     for (final candidate in candidates) {
       try {

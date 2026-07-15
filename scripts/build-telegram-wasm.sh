@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-manifest="$repo_root/native/telegram-wasm/Cargo.toml"
-wasm="$repo_root/native/telegram-wasm/target/wasm32-unknown-unknown/release/fabushi_telegram_wasm.wasm"
+manifest="$repo_root/third_party/mahayana/mahayana-rs/providers/telegram-wasm/Cargo.toml"
+wasm="$repo_root/third_party/mahayana/mahayana-rs/target/wasm32-unknown-unknown/release/fabushi_telegram_wasm.wasm"
 out_dir="$repo_root/fabushi/web/telegram-wasm"
 
 if ! command -v wasm-bindgen >/dev/null 2>&1; then

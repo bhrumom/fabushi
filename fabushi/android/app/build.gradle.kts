@@ -91,15 +91,15 @@ android {
     }
 }
 
-val buildTelegramRustRuntime by tasks.registering(Exec::class) {
+val buildMahayanaRustRuntime by tasks.registering(Exec::class) {
     group = "build"
-    description = "Builds the Rust Telegram runtime for all supported Android ABIs."
+    description = "Builds the embedded Mahayana Runtime for all supported Android ABIs."
     workingDir(rootProject.projectDir.parentFile)
     commandLine("bash", "android/build_telegram_runtime.sh")
 }
 
 tasks.named("preBuild") {
-    dependsOn(buildTelegramRustRuntime)
+    dependsOn(buildMahayanaRustRuntime)
 }
 
 dependencies {
