@@ -28,7 +28,7 @@ cargo_args=(
 if [[ "$release_build" -eq 1 ]]; then
   cargo_args+=(--release)
 fi
-cargo_args+=(-- --crate-type cdylib)
+cargo_args+=(--crate-type cdylib)
 cargo "${cargo_args[@]}"
 
 mkdir -p "$output_dir"

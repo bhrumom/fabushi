@@ -26,11 +26,11 @@ cargo build --release --locked --manifest-path "$manifest" \
 if [ "$target" = "linux" ]; then
   cargo rustc --release --locked --manifest-path "$manifest" \
     --package mahayana-ffi --no-default-features --features mobile-embedded,local-only \
-    -- --crate-type cdylib
+    --crate-type cdylib
 else
   cargo rustc --release --locked --manifest-path "$manifest" \
     --package mahayana-ffi \
-    -- --crate-type cdylib
+    --crate-type cdylib
 fi
 
 case "$target" in

@@ -44,7 +44,6 @@ cargo ndk \
   --no-default-features \
   --features mobile-embedded,local-only \
   --release \
-  -- \
   --crate-type cdylib
 
 # Provider crates are Rust-only libraries. The unified wrapper is the sole
