@@ -31,6 +31,20 @@ find_macho_candidates() {
   fi
 }
 
+is_macho() {
+  local file="$1"
+  file -b "$file" 2>/dev/null | grep -Eq 'Mach-O'
+}
+
+find_macho_files() {
+  local candidate
+  while IFS= read -r -d '' candidate; do
+    if is_macho "$candidate"; then
+      printf '%s\0' "$candidate"
+    fi
+  done < <(find_macho_candidates)
+}
+
 has_dep() {
   local needle="$1"
   local dep
@@ -114,7 +128,7 @@ while IFS= read -r -d '' file; do
   while IFS= read -r dep; do
     add_dep "$dep"
   done < <(collect_homebrew_deps "$file")
-done < <(find_macho_candidates)
+done < <(find_macho_files)
 
 if [ "${#homebrew_deps[@]}" -eq 0 ]; then
   echo "No Homebrew dynamic library references found in $app_path."
@@ -167,12 +181,12 @@ while IFS= read -r -d '' file; do
   if [ "$changed" = "true" ]; then
     echo "Rewrote Homebrew references in $file"
   fi
-done < <(find_macho_candidates)
+done < <(find_macho_files)
 
 remaining_refs="$(
   while IFS= read -r -d '' file; do
     otool -L "$file" 2>/dev/null | awk 'NR > 1 { print $1 }'
-  done < <(find_macho_candidates) |
+  done < <(find_macho_files) |
     grep -E '^(/opt/homebrew|/usr/local/(opt|Cellar))/' || true
 )"
 if [ -n "$remaining_refs" ]; then
@@ -200,11 +214,6 @@ if [ -z "$identity" ]; then
   echo "Skipping OpenClaw native runtime signing because no Developer ID identity is available."
   exit 0
 fi
-
-is_macho() {
-  local file="$1"
-  file -b "$file" 2>/dev/null | grep -Eq 'Mach-O'
-}
 
 sign_macho() {
   local file="$1"
