@@ -2,9 +2,29 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-manifest="$project_root/native/telegram-runtime/Cargo.toml"
+manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
+if [[ ! -f "$manifest" ]]; then
+  echo "Submodule manifest not found at $manifest. Initializing submodules..." >&2
+  git -C "$project_root" submodule update --init --recursive
+fi
 frameworks_dir="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
-output="$frameworks_dir/libfabushi_telegram_runtime.dylib"
+output="$frameworks_dir/libmahayana_runtime.dylib"
+
+# Xcode run-script phases do not inherit the user's interactive shell PATH.
+# rustup installs its proxies here by default, so make them available when the
+# app is built from Flutter/Xcode as well as from a terminal.
+rust_bin_dir="${CARGO_HOME:-${HOME:-}/.cargo}/bin"
+if [[ -d "$rust_bin_dir" ]]; then
+  export PATH="$rust_bin_dir:$PATH"
+fi
+
+rustup_bin="$(command -v rustup || true)"
+cargo_bin="$(command -v cargo || true)"
+if [[ -z "$rustup_bin" || -z "$cargo_bin" ]]; then
+  echo "Rust toolchain not found. Install rustup before building the macOS app." >&2
+  exit 127
+fi
+
 configuration="${CONFIGURATION:-Debug}"
 profile="debug"
 release_build=0
@@ -24,18 +44,20 @@ for arch in ${ARCHS:-$(uname -m)}; do
       exit 2
       ;;
   esac
-  rustup target add "$target"
+  "$rustup_bin" target add "$target"
   cargo_args=(
-    build
+    rustc
     --manifest-path "$manifest"
+    --package mahayana-ffi
     --target "$target"
+    --crate-type cdylib
   )
   if [[ "$release_build" -eq 1 ]]; then
     cargo_args+=(--release)
   fi
-  cargo "${cargo_args[@]}"
+  "$cargo_bin" "${cargo_args[@]}"
   artifacts+=(
-    "$project_root/native/telegram-runtime/target/$target/$profile/libfabushi_telegram_runtime.dylib"
+    "$project_root/third_party/mahayana/mahayana-rs/target/$target/$profile/libmahayana_runtime.dylib"
   )
 done
 
@@ -45,7 +67,7 @@ else
   lipo -create "${artifacts[@]}" -output "$output"
 fi
 
-install_name_tool -id "@rpath/libfabushi_telegram_runtime.dylib" "$output"
+install_name_tool -id "@rpath/libmahayana_runtime.dylib" "$output"
 if [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]]; then
   codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" \
     --preserve-metadata=identifier,entitlements,flags "$output"

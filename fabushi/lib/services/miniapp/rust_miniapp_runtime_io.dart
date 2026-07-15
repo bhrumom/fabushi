@@ -68,9 +68,7 @@ class RustMiniAppRuntime {
   Future<Map<String, dynamic>> closeClient(int clientId) async {
     final library = _requireLoadedLibrary();
     final close = library
-        .lookup<NativeFunction<_RustCloseClientNative>>(
-          'fabushi_runtime_close',
-        )
+        .lookup<NativeFunction<_RustCloseClientNative>>('fabushi_runtime_close')
         .asFunction<_RustCloseClientDart>();
     final freeString = _freeString(library);
 
@@ -108,15 +106,30 @@ class RustMiniAppRuntime {
     if (_loadAttempted) return null;
     _loadAttempted = true;
 
+    if (Platform.isIOS) {
+      try {
+        _library = DynamicLibrary.process();
+        _library!.lookup<NativeFunction<_RustCreateClientNative>>(
+          'fabushi_runtime_create_client',
+        );
+        _allocator = _NativeAllocator.load();
+        return _library;
+      } catch (error) {
+        _loadError = 'iOS process symbols: $error';
+      }
+    }
+
     final candidates = <String>[
-      if (Platform.isAndroid || Platform.isLinux) 'libmahayana_wrapper.so',
-      if (Platform.isMacOS || Platform.isIOS) 'libmahayana_wrapper.dylib',
-      if (Platform.isWindows) 'mahayana_wrapper.dll',
-      if (Platform.isWindows) 'libmahayana_wrapper.dll',
-      if (Platform.isAndroid || Platform.isLinux) 'libfabushi_miniapp_runtime.so',
-      if (Platform.isMacOS || Platform.isIOS) 'libfabushi_miniapp_runtime.dylib',
-      if (Platform.isWindows) 'fabushi_miniapp_runtime.dll',
-      if (Platform.isWindows) 'libfabushi_miniapp_runtime.dll',
+      if (Platform.isAndroid) 'libmahayana_runtime.so',
+      if (Platform.isLinux)
+        '${File(Platform.resolvedExecutable).parent.path}/lib/libmahayana_runtime.so',
+      if (Platform.isLinux) 'libmahayana_runtime.so',
+      if (Platform.isMacOS)
+        '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libmahayana_runtime.dylib',
+      if (Platform.isMacOS) 'libmahayana_runtime.dylib',
+      if (Platform.isWindows)
+        '${File(Platform.resolvedExecutable).parent.path}\\mahayana_runtime.dll',
+      if (Platform.isWindows) 'mahayana_runtime.dll',
     ];
 
     final errors = <String>[];
@@ -130,7 +143,9 @@ class RustMiniAppRuntime {
       }
     }
 
-    _loadError = errors.join('\n');
+    if (errors.isNotEmpty) {
+      _loadError = [?_loadError, ...errors].join('\n');
+    }
     return null;
   }
 
@@ -305,22 +320,14 @@ typedef _RustJsonFnNative = Pointer<Char> Function(Pointer<Char> requestJson);
 typedef _RustJsonFnDart = Pointer<Char> Function(Pointer<Char> requestJson);
 typedef _RustCreateClientNative = Uint64 Function();
 typedef _RustCreateClientDart = int Function();
-typedef _RustClientJsonFnNative = Pointer<Char> Function(
-  Uint64 clientId,
-  Pointer<Char> requestJson,
-);
-typedef _RustClientJsonFnDart = Pointer<Char> Function(
-  int clientId,
-  Pointer<Char> requestJson,
-);
-typedef _RustReceiveNative = Pointer<Char> Function(
-  Uint64 clientId,
-  Double timeoutSeconds,
-);
-typedef _RustReceiveDart = Pointer<Char> Function(
-  int clientId,
-  double timeoutSeconds,
-);
+typedef _RustClientJsonFnNative =
+    Pointer<Char> Function(Uint64 clientId, Pointer<Char> requestJson);
+typedef _RustClientJsonFnDart =
+    Pointer<Char> Function(int clientId, Pointer<Char> requestJson);
+typedef _RustReceiveNative =
+    Pointer<Char> Function(Uint64 clientId, Double timeoutSeconds);
+typedef _RustReceiveDart =
+    Pointer<Char> Function(int clientId, double timeoutSeconds);
 typedef _RustCloseClientNative = Pointer<Char> Function(Uint64 clientId);
 typedef _RustCloseClientDart = Pointer<Char> Function(int clientId);
 typedef _RustFreeStringNative = Void Function(Pointer<Char> value);

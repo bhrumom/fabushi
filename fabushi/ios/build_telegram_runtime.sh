@@ -2,8 +2,12 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-manifest="$project_root/native/telegram-runtime/Cargo.toml"
-output="$project_root/fabushi/ios/Runner/Libs/libfabushi_telegram_runtime.a"
+manifest="$project_root/third_party/mahayana/mahayana-rs/Cargo.toml"
+if [[ ! -f "$manifest" ]]; then
+  echo "Submodule manifest not found at $manifest. Initializing submodules..." >&2
+  git -C "$project_root" submodule update --init --recursive
+fi
+output="$project_root/fabushi/ios/Runner/Libs/libmahayana_runtime.a"
 configuration="${CONFIGURATION:-Debug}"
 profile="debug"
 release_build=0
@@ -34,16 +38,20 @@ for arch in ${ARCHS:-arm64}; do
   fi
   rustup target add "$target"
   cargo_args=(
-    build
+    rustc
     --manifest-path "$manifest"
+    --package mahayana-ffi
+    --no-default-features
+    --features mobile-embedded,local-only
     --target "$target"
+    --crate-type staticlib
   )
   if [[ "$release_build" -eq 1 ]]; then
     cargo_args+=(--release)
   fi
   cargo "${cargo_args[@]}"
   artifacts+=(
-    "$project_root/native/telegram-runtime/target/$target/$profile/libfabushi_telegram_runtime.a"
+    "$project_root/third_party/mahayana/mahayana-rs/target/$target/$profile/libmahayana_runtime.a"
   )
 done
 

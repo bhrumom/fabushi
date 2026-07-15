@@ -70,12 +70,12 @@ add_custom_target(telegram_rust_runtime ALL
     -Configuration "$<CONFIG>"
     -OutputDirectory "${TELEGRAM_RUST_OUTPUT_DIR}"
   BYPRODUCTS
-    "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
+    "${TELEGRAM_RUST_OUTPUT_DIR}/mahayana_runtime.dll"
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
   COMMENT "Building Telegram Rust runtime"
   VERBATIM
 )
-add_dependencies(${BINARY_NAME} telegram_rust_runtime)
+
 
 
 # Generated plugin build rules, which manage building the plugins and adding
@@ -107,7 +107,7 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES
-  "${TELEGRAM_RUST_OUTPUT_DIR}/fabushi_telegram_runtime.dll"
+  "${TELEGRAM_RUST_OUTPUT_DIR}/mahayana_runtime.dll"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 

@@ -39,6 +39,7 @@ import '../core/design_system/app_theme.dart';
 import '../services/apple_iap_service.dart'
     if (dart.library.html) '../services/apple_iap_service_web.dart';
 import '../services/membership_service.dart';
+import '../services/mahayana_command_service.dart';
 import '../services/online_counter_service.dart';
 import '../services/project_service.dart';
 import '../widgets/auto_start_guide_dialog.dart';
@@ -116,6 +117,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   int _flashcardRequestSerial = 0;
   final _onlineCounterService = OnlineCounterService();
   final _membershipService = MembershipService();
+  final _mahayanaCommandService = MahayanaCommandService();
   final _alipayService = AlipayService();
   final _appleIapService = AppleIapService();
   bool _isOpenClawPanelLoading = false;
@@ -3670,6 +3672,11 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final inputText = _chatInputController.text.trim();
     final isUrl = Uri.tryParse(inputText)?.hasAbsolutePath ?? false;
 
+    if (!_isDharmaComposerMode && inputText.startsWith('/')) {
+      unawaited(_runMahayanaCommand(inputText));
+      return;
+    }
+
     if (!_isDharmaComposerMode && _looksLikeGlobalDharmaIntent(inputText)) {
       _activateDharmaMode(model, target: DharmaComposerTarget.global);
       if (_isBareGlobalDharmaCommand(inputText) && !model.hasFiles) {
@@ -3703,6 +3710,75 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       }
     } else {
       unawaited(_sendAiChatFromComposer());
+    }
+  }
+
+  Future<void> _runMahayanaCommand(String command) async {
+    if (command.trim().isEmpty || _isAiGenerating) return;
+    final authModel = Provider.of<AuthModel?>(context, listen: false);
+    _chatInputController.clear();
+    setState(() {
+      _homeChatMessages.add(_HomeChatMessage(text: command, isUser: true));
+      _isAiGenerating = true;
+      _aiActivityText = '大乘 CLI 正在执行';
+      _streamingAiText = '';
+    });
+    _scrollHomeChatToBottom(force: true);
+    try {
+      final outcome = await _mahayanaCommandService.run(
+        command,
+        token: authModel?.authToken,
+      );
+      if (outcome.launchUri != null) {
+        final opened = await launchUrl(
+          outcome.launchUri!,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!opened) throw StateError('无法打开支付宝授权页。');
+      }
+      final session = outcome.session;
+      final sessionToken = session?['token']?.toString();
+      if (sessionToken != null &&
+          sessionToken.isNotEmpty &&
+          authModel != null) {
+        final user = session?['user'] is Map
+            ? Map<String, dynamic>.from(session!['user'] as Map)
+            : null;
+        await authModel.loginWithToken(
+          sessionToken,
+          session?['username']?.toString() ??
+              user?['username']?.toString() ??
+              'alipay_user',
+          userJson: user,
+        );
+      }
+      if (outcome.loggedOut && authModel != null) await authModel.logout();
+      if (!mounted) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(text: outcome.message, isUser: false),
+        );
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: '大乘 CLI 执行失败：${_friendlyErrorMessage(error)}',
+            isUser: false,
+            isError: true,
+          ),
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAiGenerating = false;
+          _aiActivityText = '';
+          _streamingAiText = '';
+        });
+        _scrollHomeChatToBottom(force: true);
+      }
     }
   }
 

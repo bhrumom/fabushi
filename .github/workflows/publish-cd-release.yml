@@ -301,8 +301,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -528,8 +533,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

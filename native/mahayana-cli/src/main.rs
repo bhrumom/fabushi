@@ -1,9 +1,11 @@
-use mahayana_wrapper::MahayanaKernel;
+use mahayana_wrapper::{redact_secrets, MahayanaKernel};
 use serde_json::{json, Map, Value};
 use std::{
     env,
     io::{self, BufRead, Write},
     process::{Command, ExitCode},
+    thread,
+    time::Duration,
 };
 
 fn main() -> ExitCode {
@@ -19,24 +21,255 @@ fn main() -> ExitCode {
 fn run(args: Vec<String>) -> Result<(), String> {
     let kernel = MahayanaKernel::default();
     match args.first().map(String::as_str) {
-        None | Some("help") | Some("--help") | Some("-h") => {
+        None => launch_tui(&kernel, &[]),
+        Some("help") | Some("--help") | Some("-h") => {
             print_usage();
             Ok(())
         }
+        Some("tui") | Some("chat") => launch_tui(&kernel, &args[1..]),
         Some("status") => {
             println!("{}", kernel.status());
             Ok(())
         }
         Some("agent") | Some("codex") => run_agent(&kernel, &args[1..]),
-        Some("login") | Some("logout") | Some("doctor") => {
-            run_bundled_codex_management(&kernel, args[0].as_str(), &args[1..])
+        Some("codex-login") | Some("codex-logout") | Some("doctor") => {
+            let command = match args[0].as_str() {
+                "codex-login" => "login",
+                "codex-logout" => "logout",
+                other => other,
+            };
+            run_bundled_codex_management(&kernel, command, &args[1..])
         }
+        Some("login") => run_login_command(&kernel, &args[1..]),
+        Some("logout") => print_kernel_response(&kernel, json!({"@type":"mahayana.auth.logout"})),
+        Some("auth") => run_auth_command(&kernel, &args[1..]),
+        Some("contacts") | Some("contact") | Some("friends") => {
+            run_contacts_command(&kernel, &args[1..])
+        }
+        Some("messages") | Some("message") => run_messages_command(&kernel, &args[1..]),
+        Some("request") => run_kernel_request(&kernel, &args[1..]),
         Some("mcp-server") => run_mcp_server(&kernel),
         Some("mcp") => run_mcp_command(&kernel, &args[1..]),
         Some("telegram") => run_telegram_command(&kernel, &args[1..]),
         Some("miniapp") => run_miniapp_command(&kernel, &args[1..]),
         Some(other) => Err(format!("unknown command {other}; run `mahayana help`")),
     }
+}
+
+/// Launches the Codex TUI shipped with Mahayana and injects this executable as
+/// a stdio MCP server for this process. It does not mutate the user's global
+/// Codex config, so `mahayana` is immediately useful after installation.
+fn launch_tui(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    let current = env::current_exe().map_err(|error| error.to_string())?;
+    let command = serde_json::to_string(&current.to_string_lossy().as_ref())
+        .map_err(|error| error.to_string())?;
+    let instructions = serde_json::to_string(
+        "你是大乘 CLI 的对话助手。登录、联系人、好友、私信和小程序操作必须优先使用 mahayana MCP 工具；不要要求用户手工调用底层 HTTP API。支付宝登录先调用 alipay_start 打开授权，再用返回的 state 调用 alipay_poll，直到完成。写操作先向用户确认。普通对话与软件开发能力继续使用 Codex。",
+    )
+    .map_err(|error| error.to_string())?;
+    let status = Command::new(kernel.upstream_codex_binary())
+        .args(["-c", &format!("mcp_servers.mahayana.command={command}")])
+        .args(["-c", "mcp_servers.mahayana.args=[\"mcp-server\"]"])
+        .args(["-c", &format!("developer_instructions={instructions}")])
+        .args(args)
+        .status()
+        .map_err(|error| {
+            format!(
+                "could not start bundled Codex TUI at {}: {error}",
+                kernel.upstream_codex_binary().display()
+            )
+        })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("bundled Codex TUI exited with {status}"))
+    }
+}
+
+fn print_kernel_response(kernel: &MahayanaKernel, request: Value) -> Result<(), String> {
+    let response = kernel.execute(request).map_err(|error| error.to_string())?;
+    println!("{}", redact_secrets(&response));
+    Ok(())
+}
+
+fn run_kernel_request(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    let source = args
+        .first()
+        .ok_or_else(|| "usage: mahayana request '<json>'".to_string())?;
+    print_kernel_response(kernel, parse_object(source, "Mahayana request")?)
+}
+
+fn run_login_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("complete") => {
+            let auth_code = args
+                .get(1)
+                .ok_or_else(|| "usage: mahayana login complete <auth-code> [state]".to_string())?;
+            print_kernel_response(
+                kernel,
+                json!({
+                    "@type": "mahayana.auth.alipay.complete",
+                    "authCode": auth_code,
+                    "state": args.get(2),
+                }),
+            )
+        }
+        None | Some("start") => {
+            let response = kernel
+                .execute(json!({
+                    "@type": "mahayana.auth.alipay.start",
+                    "platform": "cli",
+                }))
+                .map_err(|error| error.to_string())?;
+            if let Some(login_url) = response.get("loginUrl").and_then(Value::as_str) {
+                if open_browser(login_url).is_err() {
+                    eprintln!("请在浏览器打开支付宝授权地址：{login_url}");
+                } else {
+                    eprintln!("已打开支付宝授权页面，正在等待授权结果…");
+                }
+            }
+            let state = response
+                .get("state")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "支付宝登录接口没有返回 state".to_string())?;
+            wait_for_alipay_login(kernel, state)
+        }
+        Some(other) => Err(format!(
+            "unknown login action {other}; use `mahayana login` or `mahayana login complete <auth-code> [state]`"
+        )),
+    }
+}
+
+fn wait_for_alipay_login(kernel: &MahayanaKernel, state: &str) -> Result<(), String> {
+    for _ in 0..150 {
+        let response = kernel.execute(json!({
+            "@type": "mahayana.auth.alipay.poll",
+            "state": state,
+        }));
+        match response {
+            Ok(response) if response.get("status").and_then(Value::as_str) == Some("complete") => {
+                println!("{}", redact_secrets(&response));
+                eprintln!("大乘软件账号登录成功。");
+                return Ok(());
+            }
+            Ok(response) if response.get("status").and_then(Value::as_str) == Some("pending") => {}
+            Ok(response) => {
+                return Err(response
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("支付宝登录未完成")
+                    .to_string())
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+        thread::sleep(Duration::from_secs(2));
+    }
+    Err("等待支付宝授权超时，请重新运行 `mahayana login`".to_string())
+}
+
+fn run_auth_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        None | Some("status") => {
+            print_kernel_response(kernel, json!({"@type":"mahayana.auth.status"}))
+        }
+        Some("login") => run_login_command(kernel, &args[1..]),
+        Some("logout") => print_kernel_response(kernel, json!({"@type":"mahayana.auth.logout"})),
+        _ => Err("usage: mahayana auth status|login|logout".to_string()),
+    }
+}
+
+fn run_contacts_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        None | Some("list") => {
+            print_kernel_response(kernel, json!({"@type":"mahayana.contacts.list"}))
+        }
+        Some("search") => {
+            let query = args.get(1).ok_or_else(|| {
+                "usage: mahayana contacts search <name|username|user-no>".to_string()
+            })?;
+            print_kernel_response(
+                kernel,
+                json!({"@type":"mahayana.contacts.search", "query": query}),
+            )
+        }
+        Some("add") => {
+            let contact = args.get(1).ok_or_else(|| {
+                "usage: mahayana contacts add <user-id|username> [message]".to_string()
+            })?;
+            print_kernel_response(
+                kernel,
+                json!({
+                    "@type":"mahayana.contacts.add",
+                    "contact":contact,
+                    "message":args.get(2..).unwrap_or_default().join(" "),
+                }),
+            )
+        }
+        Some("requests") => {
+            print_kernel_response(kernel, json!({"@type":"mahayana.contacts.requests"}))
+        }
+        Some("accept") => {
+            let request_id = args
+                .get(1)
+                .ok_or_else(|| "usage: mahayana contacts accept <request-id>".to_string())?;
+            print_kernel_response(
+                kernel,
+                json!({"@type":"mahayana.contacts.accept", "requestId":request_id}),
+            )
+        }
+        _ => Err("usage: mahayana contacts list|search|add|requests|accept".to_string()),
+    }
+}
+
+fn run_messages_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("list") => {
+            let contact = args.get(1).ok_or_else(|| {
+                "usage: mahayana messages list <user-id|username> [limit]".to_string()
+            })?;
+            let limit = args
+                .get(2)
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(50);
+            print_kernel_response(
+                kernel,
+                json!({"@type":"mahayana.messages.list", "contact":contact, "limit":limit}),
+            )
+        }
+        Some("send") => {
+            let contact = args.get(1).ok_or_else(|| {
+                "usage: mahayana messages send <user-id|username> <text>".to_string()
+            })?;
+            let text = args.get(2..).unwrap_or_default().join(" ");
+            if text.trim().is_empty() {
+                return Err("usage: mahayana messages send <user-id|username> <text>".to_string());
+            }
+            print_kernel_response(
+                kernel,
+                json!({"@type":"mahayana.messages.send", "contact":contact, "text":text}),
+            )
+        }
+        _ => Err("usage: mahayana messages list|send".to_string()),
+    }
+}
+
+fn open_browser(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg(url).status();
+    #[cfg(target_os = "linux")]
+    let status = Command::new("xdg-open").arg(url).status();
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd").args(["/C", "start", "", url]).status();
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    return Err("automatic browser opening is unavailable on this platform".to_string());
+    status
+        .map_err(|error| error.to_string())
+        .and_then(|status| {
+            status
+                .success()
+                .then_some(())
+                .ok_or_else(|| status.to_string())
+        })
 }
 
 /// Authentication and diagnostics are product-management commands provided by
@@ -202,6 +435,23 @@ fn create_telegram_client(kernel: &MahayanaKernel) -> Result<u64, String> {
 
 fn run_miniapp_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
+        Some("chat") => {
+            let miniapp_id = args
+                .get(1)
+                .ok_or_else(|| "usage: mahayana miniapp chat <miniapp-id> <message>".to_string())?;
+            let message = args.get(2..).unwrap_or_default().join(" ");
+            if message.trim().is_empty() {
+                return Err("usage: mahayana miniapp chat <miniapp-id> <message>".to_string());
+            }
+            print_kernel_response(
+                kernel,
+                json!({
+                    "@type":"mahayana.miniapp.chat",
+                    "miniAppId":miniapp_id,
+                    "message":message,
+                }),
+            )
+        }
         Some("inspect") => {
             let manifest_path = args
                 .get(1)
@@ -256,7 +506,7 @@ fn run_miniapp_command(kernel: &MahayanaKernel, args: &[String]) -> Result<(), S
             println!("{response}");
             Ok(())
         }
-        _ => Err("usage: mahayana miniapp inspect|evaluate|request".to_string()),
+        _ => Err("usage: mahayana miniapp chat|inspect|evaluate|request".to_string()),
     }
 }
 
@@ -332,6 +582,21 @@ fn call_mcp_tool(kernel: &MahayanaKernel, params: Option<&Value>) -> Result<Valu
         "mahayana.miniapp.inspect" => ("mahayana.miniapp.inspect", false),
         "mahayana.miniapp.evaluate" => ("mahayana.miniapp.evaluate", false),
         "mahayana.miniapp.execute" => ("mahayana.miniapp.execute", true),
+        "mahayana.miniapp.chat" => ("mahayana.miniapp.chat", true),
+        "mahayana.auth.status" => ("mahayana.auth.status", false),
+        "mahayana.auth.alipay_start" => ("mahayana.auth.alipay.start", false),
+        "mahayana.auth.alipay_complete" => ("mahayana.auth.alipay.complete", true),
+        "mahayana.auth.alipay_poll" => ("mahayana.auth.alipay.poll", false),
+        "mahayana.auth.alipay_sdk_start" => ("mahayana.auth.alipay.sdk.start", false),
+        "mahayana.auth.alipay_sdk_complete" => ("mahayana.auth.alipay.sdk.complete", true),
+        "mahayana.auth.logout" => ("mahayana.auth.logout", true),
+        "mahayana.contacts.list" => ("mahayana.contacts.list", false),
+        "mahayana.contacts.search" => ("mahayana.contacts.search", false),
+        "mahayana.contacts.add" => ("mahayana.contacts.add", true),
+        "mahayana.contacts.requests" => ("mahayana.contacts.requests", false),
+        "mahayana.contacts.accept" => ("mahayana.contacts.accept", true),
+        "mahayana.messages.list" => ("mahayana.messages.list", false),
+        "mahayana.messages.send" => ("mahayana.messages.send", true),
         _ => return Err(format!("unknown Mahayana tool: {name}")),
     };
 
@@ -349,6 +614,7 @@ fn call_mcp_tool(kernel: &MahayanaKernel, params: Option<&Value>) -> Result<Valu
     let result = kernel
         .execute(Value::Object(request))
         .map_err(|error| error.to_string())?;
+    let result = redact_secrets(&result);
     Ok(json!({
         "content": [{"type": "text", "text": result.to_string()}],
     }))
@@ -363,6 +629,21 @@ fn mcp_tools() -> Vec<Value> {
         mcp_tool("mahayana.miniapp.inspect", "Inspect a web mini-app manifest against the shared Rust capability registry.", json!({"type":"object","properties":{"manifestPath":{"type":"string"}},"required":["manifestPath"]}), true),
         mcp_tool("mahayana.miniapp.evaluate", "Evaluate a mini-app host-method permission without invoking the method.", json!({"type":"object","properties":{"method":{"type":"string"},"declaredPermissions":{"type":"array","items":{"type":"string"}},"platform":{"type":"string"},"trustedOfficial":{"type":"boolean"}},"required":["method"]}), true),
         mcp_tool("mahayana.miniapp.execute", "Execute an approved Rust mini-app host request. Network and mutation requests require confirmation.", json!({"type":"object","properties":{"request":{"type":"object"},"confirmed":{"type":"boolean"}},"required":["request","confirmed"]}), false),
+        mcp_tool("mahayana.miniapp.chat", "Talk to or operate a Mahayana mini-app through the shared Codex Rust SDK. Confirmation is required because a mini-app turn may invoke tools.", json!({"type":"object","properties":{"miniAppId":{"type":"string","minLength":1},"message":{"type":"string","minLength":1},"threadId":{"type":"string"},"confirmed":{"type":"boolean"}},"required":["miniAppId","message","confirmed"]}), false),
+        mcp_tool("mahayana.auth.status", "Show the current Mahayana software account session (Alipay login).", json!({"type":"object","properties":{}}), true),
+        mcp_tool("mahayana.auth.alipay_start", "Create an Alipay authorization URL for the Mahayana software account.", json!({"type":"object","properties":{"platform":{"type":"string","default":"cli"}}}), true),
+        mcp_tool("mahayana.auth.alipay_complete", "Complete Mahayana Alipay login from the callback auth code and store the account session in Rust.", json!({"type":"object","properties":{"authCode":{"type":"string","minLength":1},"state":{"type":"string"},"confirmed":{"type":"boolean"}},"required":["authCode","confirmed"]}), false),
+        mcp_tool("mahayana.auth.alipay_poll", "Poll a pending CLI Alipay authorization. A successful result is stored in the Rust-owned account session.", json!({"type":"object","properties":{"state":{"type":"string","minLength":1}},"required":["state"]}), true),
+        mcp_tool("mahayana.auth.alipay_sdk_start", "Create the Alipay mobile SDK authorization string for the Mahayana software account.", json!({"type":"object","properties":{}}), true),
+        mcp_tool("mahayana.auth.alipay_sdk_complete", "Complete an Alipay mobile SDK login and store the software account session in Rust.", json!({"type":"object","properties":{"authCode":{"type":"string","minLength":1},"targetId":{"type":"string"},"confirmed":{"type":"boolean"}},"required":["authCode","confirmed"]}), false),
+        mcp_tool("mahayana.auth.logout", "Remove the locally stored Mahayana software account session.", json!({"type":"object","properties":{"confirmed":{"type":"boolean"}},"required":["confirmed"]}), false),
+        mcp_tool("mahayana.contacts.list", "List the current Mahayana account's friends.", json!({"type":"object","properties":{}}), true),
+        mcp_tool("mahayana.contacts.search", "Find Mahayana contacts by display name, username, account id, or user number.", json!({"type":"object","properties":{"query":{"type":"string","minLength":1}},"required":["query"]}), true),
+        mcp_tool("mahayana.contacts.add", "Send a friend request to a Mahayana contact.", json!({"type":"object","properties":{"contact":{"type":"string","minLength":1},"message":{"type":"string"},"confirmed":{"type":"boolean"}},"required":["contact","confirmed"]}), false),
+        mcp_tool("mahayana.contacts.requests", "List incoming Mahayana friend requests.", json!({"type":"object","properties":{}}), true),
+        mcp_tool("mahayana.contacts.accept", "Accept an incoming Mahayana friend request.", json!({"type":"object","properties":{"requestId":{"oneOf":[{"type":"string"},{"type":"integer"}]},"confirmed":{"type":"boolean"}},"required":["requestId","confirmed"]}), false),
+        mcp_tool("mahayana.messages.list", "Read direct messages exchanged with a Mahayana friend.", json!({"type":"object","properties":{"contact":{"type":"string","minLength":1},"limit":{"type":"integer","minimum":1,"maximum":200}},"required":["contact"]}), true),
+        mcp_tool("mahayana.messages.send", "Send a direct message to an existing Mahayana friend.", json!({"type":"object","properties":{"contact":{"type":"string","minLength":1},"text":{"type":"string","minLength":1,"maxLength":4000},"clientRequestId":{"type":"string"},"confirmed":{"type":"boolean"}},"required":["contact","text","confirmed"]}), false),
     ]
 }
 
@@ -415,13 +696,20 @@ fn parse_object(source: &str, label: &str) -> Result<Value, String> {
 fn print_usage() {
     println!(
         "Mahayana CLI\n\n\
+         mahayana                         # open Codex-style Mahayana TUI\n\
+         mahayana chat [PROMPT]           # open TUI with optional prompt\n\
          mahayana status\n\
          mahayana agent <prompt>\n\
          mahayana agent --json '<sdk request>'\n\
          mahayana codex <prompt>  (alias for `agent`)\n\
-         mahayana login|logout|doctor [CODEX_ARGS...]\n\
+         mahayana login [complete <auth-code> [state]]\n\
+         mahayana auth status|login|logout\n\
+         mahayana contacts list|search|add|requests|accept\n\
+         mahayana messages list|send\n\
+         mahayana codex-login|codex-logout|doctor [CODEX_ARGS...]\n\
          mahayana mcp serve|install|install-global-dharma|print-install\n\
          mahayana telegram status|request '<json>'\n\
+         mahayana miniapp chat <miniapp-id> <message>\n\
          mahayana miniapp inspect <manifest.json>\n\
          mahayana miniapp evaluate <method> [permission,...] [platform]\n\
          mahayana miniapp request '<json>'\n\n\

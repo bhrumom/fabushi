@@ -264,12 +264,17 @@ jobs:
             /fabushi/lib/**
             /fabushi/test/**
             /fabushi/integration_test/**
+            /third_party/**
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
             /fabushi/ios/Runner/Configuration.storekit
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Verify Android Buddha uses flutter_scene model
         shell: bash
@@ -439,8 +444,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -491,6 +501,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -531,6 +542,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -548,7 +560,7 @@ jobs:
             echo "No remaining Worker contract tests found."
             exit 0
           fi
-          xargs -0 -n 1 node --test < /tmp/worker-tests
+          xargs -0 -n 1 node < /tmp/worker-tests
 
   worker-release-simulation:
     name: Release simulation - Worker dry-run
@@ -571,6 +583,7 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
             /frontend/**
 
