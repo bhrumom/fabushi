@@ -75,13 +75,7 @@ add_custom_target(telegram_rust_runtime ALL
   COMMENT "Building Telegram Rust runtime"
   VERBATIM
 )
-add_dependencies(${BINARY_NAME} telegram_rust_runtime)
-add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${TELEGRAM_RUST_OUTPUT_DIR}/mahayana_runtime.dll"
-    "$<TARGET_FILE_DIR:${BINARY_NAME}>/mahayana_runtime.dll"
-  VERBATIM
-)
+
 
 
 # Generated plugin build rules, which manage building the plugins and adding
