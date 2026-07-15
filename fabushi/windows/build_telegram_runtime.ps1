@@ -21,7 +21,7 @@ if ($Configuration -ne "Debug") {
   $Profile = "release"
   $CargoArguments += "--release"
 }
-$CargoArguments += ("--", "--crate-type", "cdylib")
+$CargoArguments += ("--crate-type", "cdylib")
 
 & cargo @CargoArguments
 if ($LASTEXITCODE -ne 0) {
