@@ -23,7 +23,7 @@ cargo_args=(
   --manifest-path "$manifest"
   --package mahayana-ffi
   --no-default-features
-  --features mobile-embedded,local-only
+  --features linux-shared,local-only
 )
 if [[ "$release_build" -eq 1 ]]; then
   cargo_args+=(--release)
