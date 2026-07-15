@@ -5,6 +5,7 @@ on:
     paths:
       - 'native/telegram-*/**'
       - 'native/mahayana-wrapper/**'
+      - 'third_party/mahayana'
       - 'third_party/mahayana/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
@@ -31,6 +32,7 @@ on:
     paths:
       - 'native/telegram-*/**'
       - 'native/mahayana-wrapper/**'
+      - 'third_party/mahayana'
       - 'third_party/mahayana/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'

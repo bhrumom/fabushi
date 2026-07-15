@@ -4,6 +4,7 @@ on:
   push:
     branches: [ "main", "develop" ]
     paths:
+      - "third_party/mahayana"
       - "third_party/mahayana/**"
       - "fabushi/lib/services/miniapp/mahayana_codex_runtime*.dart"
       - ".github/workflows/ci_codex_sync.yml"

@@ -7,6 +7,7 @@ on:
       - native/mahayana-cli/**
       - native/mahayana-wrapper/**
       - native/fabushi-miniapp-runtime/**
+      - third_party/mahayana
       - third_party/mahayana/**
       - scripts/install-mahayana.sh
       - scripts/test-install-mahayana.sh
