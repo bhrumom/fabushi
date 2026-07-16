@@ -288,6 +288,13 @@ if [ "$manual_signing" = "true" ]; then
     exit 1
   fi
 
+  profile_app_groups="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$profile_plist" 2>/dev/null || true)"
+  if [ -z "$profile_app_groups" ]; then
+    echo "Provisioning profile does not support App Groups; removing com.apple.security.application-groups from macos entitlements before building archive."
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' macos/Runner/Release.entitlements 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' macos/Runner/DebugProfile.entitlements 2>/dev/null || true
+  fi
+
   ruby - \
     macos/Runner.xcodeproj/project.pbxproj \
     "$MACOS_APP_STORE_TEAM_ID" \
