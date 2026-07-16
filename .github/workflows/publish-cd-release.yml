@@ -288,7 +288,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.android_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
@@ -516,7 +516,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.ios_changed == 'true'
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
