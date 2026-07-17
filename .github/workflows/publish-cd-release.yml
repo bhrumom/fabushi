@@ -288,7 +288,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.android_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
@@ -321,6 +321,12 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
 
       - name: Build Android install packages
         shell: bash
@@ -510,7 +516,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.ios_changed == 'true'
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
@@ -547,6 +553,54 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Stabilize macOS native asset toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          developer_dir="$(xcode-select -p)"
+          if [ ! -x "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+            developer_app="$(
+              find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print |
+                while IFS= read -r app; do
+                  if [ -x "$app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+                    echo "$app"
+                  fi
+                done |
+                sort |
+                tail -n 1
+            )"
+            if [ -z "$developer_app" ]; then
+              echo "Unable to find a usable Xcode installation." >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$developer_app/Contents/Developer"
+            developer_dir="$(xcode-select -p)"
+          fi
+
+          cc="$(xcrun --find clang)"
+          cxx="$(xcrun --find clang++)"
+          {
+            echo "DEVELOPER_DIR=$developer_dir"
+            echo "CC=$cc"
+            echo "CXX=$cxx"
+          } >> "$GITHUB_ENV"
+
+          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
+            [ -d "$package_dir" ] || continue
+            find "$package_dir" -name CMakeCache.txt -delete
+            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
+          done
+
+          xcodebuild -version
+          "$cc" --version
 
       - name: Check iOS signing configuration
         id: ios-signing
