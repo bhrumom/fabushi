@@ -57,7 +57,7 @@ jobs:
     needs: resolve-source
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: fabushi

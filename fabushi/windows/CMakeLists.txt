@@ -57,11 +57,12 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+# Build and stage the shared Rust command/event runtime for this configuration.
+set(TELEGRAM_RUST_OUTPUT_DIR "${CMAKE_BINARY_DIR}/telegram_runtime/$<CONFIG>")
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
-# Build and stage the shared Rust command/event runtime for this configuration.
-set(TELEGRAM_RUST_OUTPUT_DIR "${CMAKE_BINARY_DIR}/telegram_runtime/$<CONFIG>")
 add_custom_target(telegram_rust_runtime ALL
   COMMAND powershell.exe
     -NoProfile
