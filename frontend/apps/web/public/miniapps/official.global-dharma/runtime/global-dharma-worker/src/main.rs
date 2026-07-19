@@ -12,7 +12,7 @@ const SUCCESS_STATUS_MIN: u16 = 200;
 const SUCCESS_STATUS_MAX: u16 = 299;
 const UDP_SAFE_DATAGRAM_BYTES: usize = 8 * 1024;
 const UDP_CHUNK_PAYLOAD_BYTES: usize = 6 * 1024;
-const DEFAULT_DAEMON_LOOP_INTERVAL_MS: u64 = 30_000;
+const DEFAULT_DAEMON_LOOP_INTERVAL_MS: u64 = 3_000;
 const MIN_DAEMON_LOOP_INTERVAL_MS: u64 = 1_000;
 const MAX_DAEMON_LOOP_INTERVAL_MS: u64 = 24 * 60 * 60 * 1_000;
 const DEFAULT_EVENT_LIMIT: usize = 120;
@@ -680,7 +680,7 @@ fn send_http(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> 
         .arg("-H")
         .arg("Accept: application/json")
         .arg("-H")
-        .arg("User-Agent: FabushiMiniApp/GlobalDharmaWorker")
+        .arg("User-Agent: FabushiMcpApp/GlobalDharmaWorker")
         .arg("-w")
         .arg("\n%{http_code}")
         .stdout(Stdio::piped())

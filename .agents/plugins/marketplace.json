@@ -1,0 +1,14 @@
+{
+  "name": "fabushi-official",
+  "interface": {
+    "displayName": "大乘官方插件"
+  },
+  "plugins": [
+    { "name": "global-dharma", "source": { "source": "local", "path": "./plugins/global-dharma" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Lifestyle" },
+    { "name": "faliu-flashcards", "source": { "source": "local", "path": "./plugins/faliu-flashcards" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Education" },
+    { "name": "platform-publish", "source": { "source": "local", "path": "./plugins/platform-publish" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Productivity" },
+    { "name": "hermes-installer", "source": { "source": "local", "path": "./plugins/hermes-installer" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Developer Tools" },
+    { "name": "bot-father", "source": { "source": "local", "path": "./plugins/bot-father" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Developer Tools" },
+    { "name": "mahayana-assistant", "source": { "source": "local", "path": "./plugins/mahayana-assistant" }, "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" }, "category": "Productivity" }
+  ]
+}

@@ -288,7 +288,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.android_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
@@ -301,8 +301,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -316,6 +321,12 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
 
       - name: Build Android install packages
         shell: bash
@@ -349,6 +360,19 @@ jobs:
           flutter pub get
           flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
           flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
+
+      - name: Verify Mahayana Runtime in Android install packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="build/app/outputs/flutter-apk/app-release.apk"
+          aab_path="build/app/outputs/bundle/release/app-release.aab"
+          test -f "$apk_path"
+          test -f "$aab_path"
+          unzip -Z1 "$apk_path" | grep -Fx 'lib/arm64-v8a/libmahayana_runtime.so' >/dev/null
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -Z1 "$aab_path" | grep -Fx "base/lib/$abi/libmahayana_runtime.so" >/dev/null
+          done
 
       - name: Verify packaged Android launcher icon
         shell: bash
@@ -505,7 +529,7 @@ jobs:
     needs: resolve-cd-context
     if: needs.resolve-cd-context.outputs.ios_changed == 'true'
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: fabushi
@@ -528,8 +552,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -537,6 +566,54 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Stabilize macOS native asset toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          developer_dir="$(xcode-select -p)"
+          if [ ! -x "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+            developer_app="$(
+              find /Applications -maxdepth 1 -type d -name 'Xcode*.app' -print |
+                while IFS= read -r app; do
+                  if [ -x "$app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" ]; then
+                    echo "$app"
+                  fi
+                done |
+                sort |
+                tail -n 1
+            )"
+            if [ -z "$developer_app" ]; then
+              echo "Unable to find a usable Xcode installation." >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$developer_app/Contents/Developer"
+            developer_dir="$(xcode-select -p)"
+          fi
+
+          cc="$(xcrun --find clang)"
+          cxx="$(xcrun --find clang++)"
+          {
+            echo "DEVELOPER_DIR=$developer_dir"
+            echo "CC=$cc"
+            echo "CXX=$cxx"
+          } >> "$GITHUB_ENV"
+
+          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
+            [ -d "$package_dir" ] || continue
+            find "$package_dir" -name CMakeCache.txt -delete
+            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
+          done
+
+          xcodebuild -version
+          "$cc" --version
 
       - name: Check iOS signing configuration
         id: ios-signing
@@ -816,6 +893,19 @@ jobs:
             echo "flutter build ipa completed but no IPA was found under build/ios/ipa" >&2
             exit 1
           fi
+          ipa_extract="$(mktemp -d)"
+          trap 'rm -rf "$ipa_extract"' EXIT
+          ditto -x -k "$ipa_path" "$ipa_extract"
+          app_path="$(find "$ipa_extract/Payload" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Signed IPA does not contain an app bundle." >&2
+            exit 1
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          for symbol in create execute receive interrupt resolve_approval close free_string; do
+            nm -gU "$app_path/$executable" | grep "_mahayana_runtime_${symbol}$" >/dev/null
+          done
+          nm -gU "$app_path/$executable" | grep '_mahayana_product_execute$' >/dev/null
           cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 
       - name: Upload signed iOS IPA to App Store Connect

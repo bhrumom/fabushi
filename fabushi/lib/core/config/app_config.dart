@@ -102,6 +102,12 @@ class AppConfig {
     return '$baseUrl/api/openclaw/deepseek/v1';
   }
 
+  /// OpenAI Responses-compatible endpoint consumed by the Mahayana Rust SDK.
+  static String get codexDeepSeekResponsesBaseUrl {
+    final baseUrl = currentAiBackendUrl.replaceFirst(RegExp(r'/+$'), '');
+    return '$baseUrl/codex-deepseek/v1';
+  }
+
   static Uri buildDachengAiWebUri({
     String? prompt,
     String? bookTitle,

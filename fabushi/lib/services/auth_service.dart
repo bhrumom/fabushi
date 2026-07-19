@@ -8,28 +8,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/config/app_config.dart';
 import '../models/user_model.dart';
 import 'http_service.dart';
+import 'mahayana_command_service.dart';
 
 class AuthService {
-  static const String _tokenKey = AppConfig.tokenStorageKey;
   static const String _userInfoKey = AppConfig.userInfoStorageKey;
+  static const String _sessionHandle = 'mahayana-rust-session';
 
   // 单例模式
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
   AuthService._internal();
 
+  final MahayanaCommandService _mahayana = MahayanaCommandService();
+
   // 当前用户信息
   UserModel? _currentUser;
-  String? _currentToken;
+  bool _hasSession = false;
 
   UserModel? get currentUser => _currentUser;
-  String? get currentToken => _currentToken;
-  bool get isLoggedIn => _currentToken != null && _currentUser != null;
-
-  String _safeTokenPreview(String token) {
-    final previewLength = token.length < 20 ? token.length : 20;
-    return '${token.substring(0, previewLength)}...';
-  }
+  String? get currentToken => _hasSession ? _sessionHandle : null;
+  bool get isLoggedIn => _hasSession && _currentUser != null;
 
   int? _parseOptionalInt(dynamic value) {
     if (value == null) return null;
@@ -309,13 +307,13 @@ class AuthService {
     );
   }
 
-  void _refreshUserInfoAfterLogin(String token) {
+  void _refreshUserInfoAfterLogin() {
     print('开始后台异步刷新用户信息...');
     _fetchUserInfo()
         .then((fullUserInfo) async {
           print('后台刷新成功，更新用户信息: ${fullUserInfo.membership.type}');
           _currentUser = fullUserInfo;
-          await _saveAuth(token, fullUserInfo);
+          await _saveAuth(fullUserInfo);
         })
         .catchError((e) {
           print('后台刷新用户信息失败: $e');
@@ -329,7 +327,7 @@ class AuthService {
   Future<void> _loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _currentToken = prefs.getString(_tokenKey);
+      await prefs.remove(AppConfig.tokenStorageKey);
 
       final userInfoJson = prefs.getString(_userInfoKey);
       if (userInfoJson != null) {
@@ -337,22 +335,33 @@ class AuthService {
         _currentUser = UserModel.fromJson(userInfo);
       }
 
-      if (_currentToken != null && _currentUser == null) {
-        await _fetchUserInfo();
+      final session = await _mahayana.execute(const {
+        '@type': 'mahayana.auth.session.restore',
+      });
+      _hasSession = session['loggedIn'] == true;
+      if (_hasSession) {
+        final rawUser = session['user'];
+        if (rawUser is Map) {
+          _currentUser = buildRefreshedUser(
+            Map<String, dynamic>.from(rawUser),
+            fallbackUser: _currentUser,
+          );
+        }
+        _currentUser ??= await _fetchUserInfo();
       }
     } catch (e) {
-      print('加载存储的认证信息失败: $e');
-      await _clearStoredAuth();
+      _hasSession = false;
+      _currentUser = null;
     }
   }
 
-  Future<void> _saveAuth(String token, UserModel user) async {
+  Future<void> _saveAuth(UserModel user) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, token);
+      await prefs.remove(AppConfig.tokenStorageKey);
       await prefs.setString(_userInfoKey, jsonEncode(user.toJson()));
 
-      _currentToken = token;
+      _hasSession = true;
       _currentUser = user;
     } catch (e) {
       print('保存认证信息失败: $e');
@@ -360,28 +369,17 @@ class AuthService {
     }
   }
 
-  Future<void> setAuth(String token, UserModel user) async {
-    print('🔑 AuthService.setAuth: 开始保存token: ${_safeTokenPreview(token)}');
-    _currentToken = token;
-    _currentUser = user;
-    await _saveAuth(token, user);
-
-    final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString(_tokenKey);
-    if (savedToken == token) {
-      print('✅ AuthService.setAuth: token已成功保存到SharedPreferences');
-    } else {
-      print('❌ AuthService.setAuth: token保存失败！');
-    }
+  Future<void> setAuth(String _, UserModel user) async {
+    await _saveAuth(user);
   }
 
   Future<void> _clearStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_tokenKey);
+      await prefs.remove(AppConfig.tokenStorageKey);
       await prefs.remove(_userInfoKey);
 
-      _currentToken = null;
+      _hasSession = false;
       _currentUser = null;
     } catch (e) {
       print('清除认证信息失败: $e');
@@ -390,40 +388,29 @@ class AuthService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      final response = await HttpService.post(
-        AppConfig.loginUrl,
-        body: {'username': username, 'password': password},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final token = data['token'] as String;
-        final userInfo = buildLoginUser(data, requestedIdentifier: username);
-
-        if (data.containsKey('user') && data['user'] != null) {
-          print('使用登录API返回的用户信息，并允许后续资料刷新失败时继续登录');
-        } else if (data.containsKey('username')) {
-          print('登录API返回基本信息，先用最小用户资料完成登录');
-        } else {
-          print('登录API未返回用户信息，回退到请求入参完成首屏登录');
-        }
-
-        _currentToken = token;
-        _currentUser = userInfo;
-        await _saveAuth(token, userInfo);
-        _refreshUserInfoAfterLogin(token);
-
-        return {'success': true, 'token': token, 'user': userInfo.toJson()};
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.password.login',
+        'username': username,
+        'password': password,
+      });
+      if (data['sessionStored'] != true) {
+        return {'success': false, 'error': '登录服务没有返回账号会话'};
       }
-
-      return _failureFromResponse(response, '登录失败');
+      final userInfo = buildLoginUser(data, requestedIdentifier: username);
+      await _saveAuth(userInfo);
+      _refreshUserInfoAfterLogin();
+      return {
+        'success': true,
+        'sessionHandle': _sessionHandle,
+        'user': userInfo.toJson(),
+      };
     } catch (e) {
-      print('登录请求失败: $e');
-      if (_currentToken != null && _currentUser != null) {
+      print('大乘 Rust 登录失败: $e');
+      if (_hasSession && _currentUser != null) {
         print('登录接口已成功返回，保留当前会话并跳过附加资料刷新失败');
         return {
           'success': true,
-          'token': _currentToken,
+          'sessionHandle': _sessionHandle,
           'user': _currentUser!.toJson(),
         };
       }
@@ -438,24 +425,17 @@ class AuthService {
     required String verificationCode,
   }) async {
     try {
-      final response = await HttpService.post(
-        AppConfig.registerUrl,
-        body: {
-          'username': username,
-          'email': email,
-          'password': password,
-          'verificationCode': verificationCode,
-        },
-      );
-
-      if (response.statusCode == 201) {
-        return {'success': true, 'message': '注册成功'};
-      }
-
-      return _failureFromResponse(response, '注册失败');
+      await _mahayana.execute({
+        '@type': 'mahayana.auth.register',
+        'username': username,
+        'email': email,
+        'password': password,
+        'verificationCode': verificationCode,
+      });
+      return {'success': true, 'message': '注册成功'};
     } catch (e) {
-      print('注册请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust 注册失败: $e');
+      return {'success': false, 'error': e.toString(), 'message': e.toString()};
     }
   }
 
@@ -464,19 +444,15 @@ class AuthService {
     required String type,
   }) async {
     try {
-      final response = await HttpService.post(
-        AppConfig.sendVerificationCodeUrl,
-        body: {'email': email, 'type': type},
-      );
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'message': '验证码已发送'};
-      }
-
-      return _failureFromResponse(response, '发送验证码失败');
+      await _mahayana.execute({
+        '@type': 'mahayana.auth.verification.send',
+        'email': email,
+        'type': type,
+      });
+      return {'success': true, 'message': '验证码已发送'};
     } catch (e) {
-      print('发送验证码请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust 发送验证码失败: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -503,19 +479,14 @@ class AuthService {
 
   Future<Map<String, dynamic>> forgotPassword(String email) async {
     try {
-      final response = await HttpService.post(
-        AppConfig.forgotPasswordUrl,
-        body: {'email': email},
-      );
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'message': '重置邮件已发送'};
-      }
-
-      return _failureFromResponse(response, '发送重置邮件失败');
+      await _mahayana.execute({
+        '@type': 'mahayana.auth.password.forgot',
+        'email': email,
+      });
+      return {'success': true, 'message': '重置邮件已发送'};
     } catch (e) {
-      print('忘记密码请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust 忘记密码请求失败: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -525,24 +496,21 @@ class AuthService {
     required String newPassword,
   }) async {
     try {
-      final response = await HttpService.post(
-        AppConfig.resetPasswordUrl,
-        body: {'email': email, 'token': token, 'newPassword': newPassword},
-      );
-
-      if (response.statusCode == 200) {
-        return {'success': true, 'message': '密码重置成功'};
-      }
-
-      return _failureFromResponse(response, '密码重置失败');
+      await _mahayana.execute({
+        '@type': 'mahayana.auth.password.reset',
+        'email': email,
+        'resetToken': token,
+        'newPassword': newPassword,
+      });
+      return {'success': true, 'message': '密码重置成功'};
     } catch (e) {
-      print('重置密码请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust 重置密码失败: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
   Future<UserModel> _fetchUserInfo() async {
-    if (_currentToken == null) {
+    if (!_hasSession) {
       throw Exception('未登录');
     }
 
@@ -583,8 +551,7 @@ class AuthService {
 
   Future<void> refreshUserInfo() async {
     print('🔄 refreshUserInfo: 开始刷新用户信息');
-    if (_currentToken != null) {
-      print('🔄 当前 _token: ${_safeTokenPreview(_currentToken!)}');
+    if (_hasSession) {
       try {
         final userInfo = await _fetchUserInfo();
         _currentUser = userInfo;
@@ -597,7 +564,7 @@ class AuthService {
         print('❌ refreshUserInfo: 刷新失败: $e');
       }
     } else {
-      print('⚠️ refreshUserInfo: token为空，跳过刷新');
+      print('⚠️ refreshUserInfo: Rust 会话为空，跳过刷新');
     }
   }
 
@@ -666,8 +633,8 @@ class AuthService {
 
   Future<void> logout() async {
     try {
-      if (_currentToken != null) {
-        await HttpService.post(AppConfig.logoutUrl, useAuth: true);
+      if (_hasSession) {
+        await _mahayana.execute(const {'@type': 'mahayana.auth.logout'});
       }
     } catch (e) {
       print('服务器登出失败: $e');
@@ -677,12 +644,11 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> deleteAccount() async {
-    if (_currentToken == null) {
+    if (!_hasSession) {
       await _loadStoredAuth();
     }
 
-    final activeToken = _currentToken;
-    if (activeToken == null || activeToken.isEmpty) {
+    if (!_hasSession) {
       return {'success': false, 'error': '未登录'};
     }
 
@@ -690,7 +656,6 @@ class AuthService {
       final response = await HttpService.delete(
         AppConfig.deleteAccountUrl,
         useAuth: true,
-        authToken: activeToken,
       );
       if (response.statusCode == 200 || response.statusCode == 204) {
         return {'success': true, 'message': '注销成功'};
@@ -732,63 +697,53 @@ class AuthService {
     String? familyName,
   }) async {
     try {
-      final response = await HttpService.post(
-        '${AppConfig.apiUrl}/api/auth/apple-login',
-        body: {
-          'identityToken': identityToken,
-          'authorizationCode': authorizationCode,
-          if (email != null) 'email': email,
-          if (givenName != null) 'givenName': givenName,
-          if (familyName != null) 'familyName': familyName,
-        },
-      );
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.apple.complete',
+        'identityToken': identityToken,
+        'authorizationCode': authorizationCode,
+        'email': ?email,
+        'givenName': ?givenName,
+        'familyName': ?familyName,
+      });
+      if (data['sessionStored'] == true) {
+        final userJson = data['user'];
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final userInfo = UserModel(
+          username: data['username'] ?? userJson?['username'] ?? '',
+          userNo: _parseOptionalInt(
+            userJson?['userNo'] ??
+                userJson?['user_no'] ??
+                userJson?['id'] ??
+                data['userNo'] ??
+                data['userId'],
+          ),
+          email: userJson?['email'] ?? email ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          usernameChangedAt:
+              userJson?['usernameChangedAt'] ??
+              userJson?['username_changed_at'],
+          membership: MembershipInfo(
+            type: userJson?['membership']?['type'] ?? 'trial',
+            isActive: true,
+            expiresAt: userJson?['membership']?['expiresAt'],
+          ),
+        );
 
-        if (data['success'] == true && data['token'] != null) {
-          final token = data['token'] as String;
-          final userJson = data['user'];
+        await _saveAuth(userInfo);
 
-          final userInfo = UserModel(
-            username: data['username'] ?? userJson?['username'] ?? '',
-            userNo: _parseOptionalInt(
-              userJson?['userNo'] ??
-                  userJson?['user_no'] ??
-                  userJson?['id'] ??
-                  data['userNo'] ??
-                  data['userId'],
-            ),
-            email: userJson?['email'] ?? email ?? '',
-            emailVerified: true,
-            createdAt: DateTime.now().toIso8601String(),
-            usernameChangedAt:
-                userJson?['usernameChangedAt'] ??
-                userJson?['username_changed_at'],
-            membership: MembershipInfo(
-              type: userJson?['membership']?['type'] ?? 'trial',
-              isActive: true,
-              expiresAt: userJson?['membership']?['expiresAt'],
-            ),
-          );
-
-          await _saveAuth(token, userInfo);
-
-          return {
-            'success': true,
-            'token': token,
-            'username': data['username'],
-            'user': userJson,
-            'isNewUser': data['isNewUser'] ?? false,
-          };
-        }
-        return {'success': false, 'error': data['error'] ?? 'Apple登录失败'};
+        return {
+          'success': true,
+          'sessionHandle': _sessionHandle,
+          'username': data['username'],
+          'user': userJson,
+          'isNewUser': data['isNewUser'] ?? false,
+        };
       }
-
-      return _failureFromResponse(response, 'Apple登录失败');
+      return {'success': false, 'error': data['error'] ?? 'Apple登录失败'};
     } catch (e) {
-      print('Apple登录请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust Apple登录失败: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -799,63 +754,53 @@ class AuthService {
     required bool isNewUser,
   }) async {
     try {
-      final response = await HttpService.post(
-        '${AppConfig.apiUrl}/api/auth/firebase-phone-login',
-        body: {
-          'idToken': idToken,
-          'phoneNumber': phoneNumber,
-          'firebaseUid': firebaseUid,
-          'isNewUser': isNewUser,
-        },
-      );
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.firebase.phone.complete',
+        'idToken': idToken,
+        'phoneNumber': phoneNumber,
+        'firebaseUid': firebaseUid,
+        'isNewUser': isNewUser,
+      });
+      if (data['sessionStored'] == true) {
+        final userJson = data['user'];
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final userInfo = UserModel(
+          username: data['username'] ?? userJson?['username'] ?? '',
+          userNo: _parseOptionalInt(
+            userJson?['userNo'] ??
+                userJson?['user_no'] ??
+                userJson?['id'] ??
+                data['userNo'] ??
+                data['userId'],
+          ),
+          email: userJson?['email'] ?? '',
+          emailVerified: true,
+          createdAt: DateTime.now().toIso8601String(),
+          usernameChangedAt:
+              userJson?['usernameChangedAt'] ??
+              userJson?['username_changed_at'],
+          membership: MembershipInfo(
+            type: userJson?['membership']?['type'] ?? 'trial',
+            isActive: true,
+            expiresAt: userJson?['membership']?['expiresAt'],
+          ),
+          phoneNumber: phoneNumber,
+        );
 
-        if (data['success'] == true && data['token'] != null) {
-          final token = data['token'] as String;
-          final userJson = data['user'];
+        await _saveAuth(userInfo);
 
-          final userInfo = UserModel(
-            username: data['username'] ?? userJson?['username'] ?? '',
-            userNo: _parseOptionalInt(
-              userJson?['userNo'] ??
-                  userJson?['user_no'] ??
-                  userJson?['id'] ??
-                  data['userNo'] ??
-                  data['userId'],
-            ),
-            email: userJson?['email'] ?? '',
-            emailVerified: true,
-            createdAt: DateTime.now().toIso8601String(),
-            usernameChangedAt:
-                userJson?['usernameChangedAt'] ??
-                userJson?['username_changed_at'],
-            membership: MembershipInfo(
-              type: userJson?['membership']?['type'] ?? 'trial',
-              isActive: true,
-              expiresAt: userJson?['membership']?['expiresAt'],
-            ),
-            phoneNumber: phoneNumber,
-          );
-
-          await _saveAuth(token, userInfo);
-
-          return {
-            'success': true,
-            'token': token,
-            'username': data['username'],
-            'user': userJson,
-            'isNewUser': data['isNewUser'] ?? isNewUser,
-          };
-        }
-        return {'success': false, 'error': data['error'] ?? 'Firebase手机登录失败'};
+        return {
+          'success': true,
+          'sessionHandle': _sessionHandle,
+          'username': data['username'],
+          'user': userJson,
+          'isNewUser': data['isNewUser'] ?? isNewUser,
+        };
       }
-
-      return _failureFromResponse(response, 'Firebase手机登录失败');
+      return {'success': false, 'error': data['error'] ?? 'Firebase手机登录失败'};
     } catch (e) {
-      print('Firebase手机登录请求失败: $e');
-      return {'success': false, 'error': '网络错误，请检查网络连接'};
+      print('大乘 Rust Firebase手机登录失败: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 }

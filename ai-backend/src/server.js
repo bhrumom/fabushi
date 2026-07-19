@@ -16,6 +16,15 @@ import pino from 'pino';
 import { z } from 'zod';
 
 import { registerPlatformApi } from './platform_api.js';
+import {
+  createPluginCodexPolicy,
+  pluginConversationNamespace,
+  pluginMcpTokenEnv,
+} from './plugin_codex_policy.js';
+import {
+  handleOfficialMcpRequest,
+  officialMcpApps,
+} from './official_mcp_apps.js';
 
 dotenv.config();
 
@@ -23,21 +32,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const dataDir = process.env.DATA_DIR || path.join(rootDir, 'data');
 const resourcesDir = path.join(dataDir, 'resources');
-const miniAppsDir = path.join(dataDir, 'miniapps');
-const miniAppsStorePath = path.join(miniAppsDir, 'sandbox-miniapps.json');
 const openClawRuntimeUpdatesDir =
   process.env.OPENCLAW_RUNTIME_UPDATES_DIR || path.join(dataDir, 'openclaw-runtime');
 const openClawRuntimeEnableMacosUpdates =
   process.env.OPENCLAW_RUNTIME_ENABLE_MACOS_UPDATES === 'true';
 const codexHomeDir = process.env.CODEX_HOME || path.join(dataDir, 'codex-home');
+const codexPluginSessionsDir = path.join(dataDir, 'codex-plugin-sessions');
 const codexTempDir = process.env.CODEX_TMPDIR || path.join(dataDir, 'codex-tmp');
 const codexRuntimeDir = process.env.XDG_RUNTIME_DIR || path.join(dataDir, 'codex-runtime');
 const dbPath = process.env.SQLITE_PATH || path.join(dataDir, 'dacheng-ai.sqlite');
 
 fs.mkdirSync(resourcesDir, { recursive: true });
-fs.mkdirSync(miniAppsDir, { recursive: true });
 fs.mkdirSync(openClawRuntimeUpdatesDir, { recursive: true });
 fs.mkdirSync(codexHomeDir, { recursive: true });
+fs.mkdirSync(codexPluginSessionsDir, { recursive: true });
 fs.mkdirSync(codexTempDir, { recursive: true });
 fs.mkdirSync(codexRuntimeDir, { recursive: true });
 
@@ -53,7 +61,11 @@ const corsOrigin =
   !process.env.CORS_ORIGIN || process.env.CORS_ORIGIN.trim() === '*'
     ? true
     : process.env.CORS_ORIGIN.split(',').map((item) => item.trim()).filter(Boolean);
-app.use(cors({ origin: corsOrigin }));
+app.use(cors({
+  origin: corsOrigin,
+  credentials: true,
+  exposedHeaders: ['mcp-session-id', 'mcp-protocol-version'],
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(
   rateLimit({
@@ -155,6 +167,20 @@ db.exec(`
   );
 `);
 
+const conversationColumns = new Set(
+  db.prepare('PRAGMA table_info(conversations)').all().map((column) => column.name),
+);
+if (!conversationColumns.has('namespace')) {
+  db.exec('ALTER TABLE conversations ADD COLUMN namespace TEXT');
+}
+if (!conversationColumns.has('thread_id')) {
+  db.exec('ALTER TABLE conversations ADD COLUMN thread_id TEXT');
+}
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_conversations_user_namespace_updated
+    ON conversations (user_id, namespace, updated_at DESC)
+`);
+
 const statements = {
   insertConversation: db.prepare(`
     INSERT INTO conversations (id, user_id, title, provider, model, created_at, updated_at)
@@ -171,9 +197,27 @@ const statements = {
   listConversations: db.prepare(`
     SELECT id, title, updated_at AS updatedAt
     FROM conversations
-    WHERE user_id = ?
+    WHERE user_id = ? AND (namespace IS NULL OR namespace = '')
     ORDER BY updated_at DESC
     LIMIT 30
+  `),
+  insertPluginConversation: db.prepare(`
+    INSERT INTO conversations (
+      id, user_id, title, provider, model, namespace, thread_id, created_at, updated_at
+    )
+    VALUES (
+      @id, @userId, @title, @provider, @model, @namespace, NULL, @createdAt, @updatedAt
+    )
+  `),
+  getPluginConversation: db.prepare(`
+    SELECT * FROM conversations
+    WHERE id = ? AND user_id = ? AND namespace = ?
+    LIMIT 1
+  `),
+  updatePluginConversation: db.prepare(`
+    UPDATE conversations
+    SET title = @title, thread_id = @threadId, updated_at = @updatedAt
+    WHERE id = @id AND user_id = @userId AND namespace = @namespace
   `),
   insertMessage: db.prepare(`
     INSERT INTO messages (
@@ -260,6 +304,10 @@ const memberMonthlyLimit = Number(process.env.MEMBER_MONTHLY_TOKEN_LIMIT || 1_00
 const freeMonthlyLimit = Number(process.env.FREE_MONTHLY_TOKEN_LIMIT || 1_000);
 const requireMemberForAi = process.env.REQUIRE_MEMBER_FOR_AI === 'true';
 const deepseekMaxCompletionTokens = Math.max(1, Number(process.env.DEEPSEEK_MAX_COMPLETION_TOKENS || 1400));
+const botFatherMaxCompletionTokens = Math.max(
+  deepseekMaxCompletionTokens,
+  Math.min(12_000, Number(process.env.BOT_FATHER_MAX_COMPLETION_TOKENS || 6000)),
+);
 const maxResourceTextChars = Number(process.env.MAX_RESOURCE_TEXT_CHARS || 80_000);
 const openClawRuntimeManifestPath =
   process.env.OPENCLAW_RUNTIME_MANIFEST_PATH || path.join(openClawRuntimeUpdatesDir, 'manifest.json');
@@ -396,433 +444,6 @@ function estimateTokens(text) {
 function readText(value) {
   if (value === undefined || value === null) return '';
   return String(value).replace(/\u0000/g, '').trim();
-}
-
-const miniAppHostApiVersion = '2.0';
-const miniAppHighRiskPermissions = new Set([
-  'auth.token',
-  'payments.alipay',
-  'payments.fudeGold',
-  'desktop.control',
-  'network.http',
-  'network.udp',
-  'network.interfaces',
-  'system.keepAwake',
-  'hotspot.settings',
-  'local.loopback',
-  'fs.readWrite',
-  'runtime.process',
-  'shell.execute',
-  'browser.external',
-  'files.write',
-  'projects.write',
-  'openclaw.restart',
-]);
-
-function officialMiniAppRegistry(req) {
-  const webBase = process.env.MINIAPP_WEB_BASE_URL || 'https://fabushi.ombhrum.com';
-  const official = [
-    {
-      botId: 'bot.global-dharma',
-      miniAppId: 'official.global-dharma',
-      title: '全球法布施',
-      subtitle: '地区、循环、场能都在对话框上方设置',
-      initials: '法',
-      icon: 'public',
-      avatarColor: '#4CAF7A',
-      kind: 'global_dharma',
-      entryUrl: process.env.GLOBAL_DHARMA_MINIAPP_URL,
-      greeting: '把要分享的文字、链接或素材发给我，我会按上方选择的地区与模式启动全球法布施。',
-      inputHint: '输入要法布施的文字/链接，或点 + 添加素材',
-      permissions: [
-        'app.context',
-        'bot.chat',
-        'auth.session',
-        'wallet.balance',
-        'payments.entitlement',
-        'payments.fudeGold',
-        'payments.alipay',
-        'files.pick',
-        'network.http',
-        'network.udp',
-        'network.interfaces',
-        'system.keepAwake',
-        'hotspot.settings',
-        'local.loopback',
-        'openclaw.status',
-        'openclaw.chat',
-        'desktop.control',
-        'fs.readWrite',
-        'runtime.process',
-      ],
-    },
-    {
-      botId: 'bot.flashcards',
-      miniAppId: 'official.flashcards',
-      title: '背诵闪卡制作',
-      subtitle: '随机挖空 / AI 制卡从顶部模式按钮选择',
-      initials: '卡',
-      icon: 'flashcards',
-      avatarColor: '#7E57C2',
-      kind: 'flashcards',
-      entryUrl: process.env.FLASHCARDS_MINIAPP_URL,
-      greeting: '粘贴经文、文章正文或链接即可制作背诵闪卡。制卡模式请在上方按钮切换。',
-      inputHint: '粘贴链接或正文，发送后制作闪卡',
-      permissions: ['app.context', 'bot.chat', 'flashcards.create', 'openclaw.status', 'openclaw.chat'],
-    },
-    {
-      botId: 'bot.platform-publish',
-      miniAppId: 'official.platform-publish',
-      title: '法布施到平台',
-      subtitle: '选择平台后生成发布草稿并打开入口',
-      initials: '发',
-      icon: 'publish',
-      avatarColor: '#FF9F43',
-      kind: 'platform_publish',
-      entryUrl: process.env.PLATFORM_PUBLISH_MINIAPP_URL,
-      greeting: '把要发布的正文或链接发给我，上方选择平台后，我会生成发布草稿并打开对应平台入口。',
-      inputHint: '输入要发布到平台的正文/链接',
-      permissions: [
-        'app.context',
-        'bot.chat',
-        'platform.publish',
-        'files.pick',
-        'fs.readWrite',
-        'runtime.process',
-        'shell.execute',
-        'browser.external',
-      ],
-    },
-    {
-      botId: 'bot.father',
-      miniAppId: 'official.bot-father',
-      title: '机器人之父',
-      subtitle: '用对话生成个人沙箱小程序',
-      initials: '父',
-      icon: 'bot_father',
-      avatarColor: '#3D8BFF',
-      kind: 'bot_father',
-      entryUrl: process.env.BOT_FATHER_MINIAPP_URL,
-      greeting: '告诉我你想要的小程序，我会生成 manifest、界面和权限声明，并放进你的个人沙箱。',
-      inputHint: '描述你想创建的小程序',
-      permissions: ['app.context', 'bot.chat', 'miniapps.dev'],
-    },
-  ];
-  return {
-    bots: official.map((bot, index) => ({
-      ...bot,
-      destinationIndex: index,
-      source: 'official',
-    })),
-    miniApps: official.map((bot) => ({
-      miniAppId: bot.miniAppId,
-      botId: bot.botId,
-      title: bot.title,
-      subtitle: bot.subtitle,
-      entryUrl:
-        bot.entryUrl ||
-        `${webBase.replace(/\/+$/, '')}/miniapps/${encodeURIComponent(bot.miniAppId)}`,
-      version: '2.0.0',
-      permissions: bot.permissions,
-      surfaces: ['homePinned', 'chatPanel'],
-      theme: 'telegramDark',
-      signature: 'official',
-      reviewStatus: 'trusted',
-      source: 'official',
-    })),
-  };
-}
-
-async function readMiniAppStore() {
-  try {
-    const raw = await fs.promises.readFile(miniAppsStorePath, 'utf8');
-    const decoded = JSON.parse(raw);
-    return {
-      apps: Array.isArray(decoded.apps) ? decoded.apps : [],
-    };
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { apps: [] };
-    throw error;
-  }
-}
-
-async function writeMiniAppStore(store) {
-  await fs.promises.mkdir(miniAppsDir, { recursive: true });
-  await fs.promises.writeFile(
-    miniAppsStorePath,
-    JSON.stringify({ apps: store.apps || [] }, null, 2),
-  );
-}
-
-function miniAppEntryUrl(req, miniAppId) {
-  const origin = requestOrigin(req) || '';
-  const pathName = `/api/miniapps/dev/${encodeURIComponent(miniAppId)}/index.html`;
-  return origin ? new URL(pathName, `${origin}/`).toString() : pathName;
-}
-
-function sanitizeMiniAppPermissions(value, { allowHighRisk = false } = {}) {
-  const raw = Array.isArray(value) ? value : [];
-  const normalized = raw
-    .map((item) => readText(item).toLowerCase())
-    .filter((item) => /^[a-z][a-z0-9_.:-]{0,64}$/.test(item));
-  const deduped = [...new Set(['app.context', 'bot.chat', ...normalized])];
-  return deduped.filter((permission) => allowHighRisk || !miniAppHighRiskPermissions.has(permission));
-}
-
-function miniAppScan(permissions, sourceHtml = '') {
-  const highRisk = permissions.filter((permission) => miniAppHighRiskPermissions.has(permission));
-  const blockedPatterns = [
-    /authorization\s*:\s*['"`]bearer/i,
-    /desktop_control_bridge_token/i,
-    /openclaw_gateway_token/i,
-    /eval\s*\(/i,
-  ];
-  const blocked = blockedPatterns
-    .filter((pattern) => pattern.test(sourceHtml))
-    .map((pattern) => pattern.toString());
-  return {
-    passed: blocked.length === 0,
-    highRiskPermissions: highRisk,
-    blockedPatterns: blocked,
-  };
-}
-
-function inferMiniAppPermissionsFromText(...values) {
-  const text = values.map((value) => readText(value)).join('\n').toLowerCase();
-  const rules = [
-    ['auth.session', [/auth\.(getsession|requirelogin)/, /登录|用户信息|宿主账号/]],
-    ['auth.token', [/auth\.getaccesstoken/, /access token|访问 token/]],
-    ['payments.alipay', [/payments\.alipay/, /支付宝|支付|购买|订单/]],
-    ['payments.entitlement', [/payments\.checkentitlement|权益|解锁状态|购买状态/]],
-    ['payments.fudeGold', [/payments\.requestpayment|福德金|代币|钱包|余额/]],
-    ['wallet.balance', [/wallet\.getbalance|福德金|代币|钱包|余额/]],
-    ['network.http', [/network\.http|http\.fetch|fetch\s*\(/, /链接正文|抓取网页|http 请求|网页内容/]],
-    ['network.udp', [/network\.udp|udp|datagram/, /全球法布施|法布施发送|数据报/]],
-    ['network.interfaces', [/network\.interfaces|网卡|网络接口|广播地址/]],
-    ['system.keepAwake', [/system\.keepawake|保持唤醒|后台任务|keep awake/]],
-    ['hotspot.settings', [/hotspot\.opensettings|热点|本地场能/]],
-    ['local.loopback', [/localloopback\./, /localhost|127\.0\.0\.1|本地回环|本地转经轮/]],
-    ['flashcards.create', [/flashcards\./, /闪卡|背诵卡|挖空/]],
-    ['platform.publish', [/platformpublish\./, /发布草稿|发布到平台|公众号|小红书|知乎/]],
-    ['files.pick', [/files\.pick/, /选择文件|上传文件|本地素材/]],
-    ['fs.readWrite', [/fs\.(writefile|readfile)/, /本地文件|写文件|读文件|文件处理/]],
-    ['runtime.process', [/runtime\.process|process\.execute/, /本地进程|执行程序|命令行|cli|playwright/]],
-    ['shell.execute', [/shell\.execute/, /shell/]],
-    ['browser.external', [/browser\.open/, /浏览器|打开网页|打开平台/]],
-    ['desktop.control', [/desktopcontrol\./, /桌面控制|点击|键盘|鼠标/]],
-    ['openclaw.chat', [/openclaw\.chat/, /openclaw/]],
-  ];
-  return rules
-    .filter(([, patterns]) => patterns.some((pattern) => pattern.test(text)))
-    .map(([permission]) => permission);
-}
-
-function miniAppRecordToBot(record) {
-  return {
-    botId: record.botId,
-    miniAppId: record.miniAppId,
-    title: record.title,
-    subtitle: record.subtitle,
-    initials: record.initials || '小',
-    icon: record.icon || 'code',
-    avatarColor: record.avatarColor || '#3D8BFF',
-    kind: 'third_party',
-    greeting: record.greeting || '你好，我是这个小程序的机器人。',
-    inputHint: record.inputHint || '输入消息，或打开小程序面板',
-    permissions: record.permissions || ['app.context', 'bot.chat'],
-    source: record.source || 'sandbox',
-  };
-}
-
-function miniAppRecordToManifest(req, record) {
-  return {
-    miniAppId: record.miniAppId,
-    botId: record.botId,
-    title: record.title,
-    subtitle: record.subtitle,
-    entryUrl: miniAppEntryUrl(req, record.miniAppId),
-    version: record.version || '0.0.1',
-    permissions: record.permissions || ['app.context', 'bot.chat'],
-    surfaces: record.surfaces || ['chatPanel'],
-    theme: record.theme || 'telegramDark',
-    signature: record.signature || `sandbox:${record.ownerId}`,
-    reviewStatus: record.reviewStatus || 'sandbox',
-    source: record.source || 'sandbox',
-  };
-}
-
-function safeMiniAppId(value) {
-  return readText(value).replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 80);
-}
-
-function titleFromPromptForMiniApp(prompt) {
-  const text = readText(prompt).replace(/\s+/g, ' ');
-  if (!text) return '个人小程序';
-  return text.length <= 18 ? text : text.slice(0, 18);
-}
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function generatedMiniAppHtml({ title, prompt }) {
-  const safeTitle = escapeHtml(title);
-  const safePrompt = escapeHtml(prompt);
-  const promptJson = JSON.stringify(readText(prompt));
-  return `<!doctype html>
-<html lang="zh-Hans">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${safeTitle}</title>
-  <style>
-    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0f1722; color:#fff; }
-    main { padding:20px; display:grid; gap:14px; }
-    .card { border:1px solid #263445; background:#17212b; border-radius:16px; padding:16px; }
-    button { border:0; border-radius:999px; padding:10px 14px; background:#3390ec; color:white; font-weight:800; }
-    pre { white-space:pre-wrap; color:#9ec7ff; }
-  </style>
-</head>
-<body>
-  <main>
-    <section class="card">
-      <h1>${safeTitle}</h1>
-      <p>这是机器人之父根据你的描述生成的个人沙箱小程序。</p>
-      <pre>${safePrompt}</pre>
-    </section>
-    <section class="card">
-      <button id="context">读取宿主上下文</button>
-      <button id="spec">读取宿主能力</button>
-      <button id="chat">让机器人解释这个小程序</button>
-      <pre id="output">等待操作...</pre>
-    </section>
-  </main>
-  <script>
-    const out = document.getElementById('output');
-    async function invoke(method, params) {
-      if (!window.FabushiMiniApp) throw new Error('FabushiMiniApp host SDK not ready');
-      const result = await window.FabushiMiniApp.invoke(method, params || {});
-      out.textContent = JSON.stringify(result, null, 2);
-    }
-    document.getElementById('context').onclick = () => invoke('app.getContext');
-    document.getElementById('spec').onclick = () => invoke('app.getHostApiSpec');
-    const prompt = ${promptJson};
-    document.getElementById('chat').onclick = () => invoke('bot.sendMessage', {
-      message: '请简要说明这个小程序能做什么：' + prompt
-    });
-    const seenCommands = new Set();
-    function deliverMiniAppCommand(detail) {
-      if (!detail || typeof detail !== 'object') return;
-      const commandKey = detail.commandId || detail.id || [detail.createdAt, detail.command, detail.rawText || detail.text].filter(Boolean).join(':');
-      if (commandKey) {
-        if (seenCommands.has(commandKey)) return;
-        seenCommands.add(commandKey);
-      }
-      handleMiniAppCommand(detail);
-    }
-    async function handleMiniAppCommand(detail) {
-      out.textContent = '收到后台命令：' + JSON.stringify(detail, null, 2);
-      try {
-        await invoke('bot.postMessage', {
-          commandId: detail.commandId || detail.id,
-          message: '「${safeTitle}」已收到后台命令：' + (detail.args || detail.text || '')
-        });
-        await invoke('bot.reportCommandResult', {
-          commandId: detail.commandId || detail.id,
-          status: 'completed',
-          message: '「${safeTitle}」后台命令已处理。'
-        });
-      } catch (error) {
-        out.textContent = String(error && error.message || error);
-      }
-    }
-    window.addEventListener('fabushi-miniapp-command', (event) => {
-      deliverMiniAppCommand(event.detail || {});
-    });
-    if (window.__fabushiLastMiniAppCommand) {
-      const cmd = window.__fabushiLastMiniAppCommand;
-      window.__fabushiLastMiniAppCommand = null;
-      (window.queueMicrotask || ((fn) => setTimeout(fn, 0)))(() => {
-        deliverMiniAppCommand(cmd);
-      });
-    }
-  </script>
-</body>
-</html>`;
-}
-
-function extractMiniAppHtml(value) {
-  const text = readText(value);
-  if (!text) return '';
-  const fenced = text.match(/```(?:html)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced ? fenced[1] : text).trim();
-  if (!/<html[\s>]/i.test(candidate) || !/<script[\s>]/i.test(candidate)) return '';
-  return candidate.startsWith('<!doctype') || candidate.startsWith('<html')
-    ? candidate
-    : `<!doctype html>\n${candidate}`;
-}
-
-async function generateBotFatherMiniAppHtml({ title, prompt, user }) {
-  const fallback = generatedMiniAppHtml({ title, prompt });
-  try {
-    const result = await runAgentModel({
-      user,
-      mode: 'miniapp_generation',
-      maxCompletionTokens: deepseekMaxCompletionTokens,
-      messages: [
-        {
-          role: 'system',
-          content: [
-            '你是 Fabushi App 的小程序生成器。',
-            '只输出一个完整静态 HTML 文件，不要 Markdown，不要解释。',
-            '小程序只能通过 window.FabushiMiniApp.invoke(method, params) 调用宿主能力。',
-            '先调用 app.getHostApiSpec 或 app.getCapabilities 判断宿主版本和已授权权限，再显示对应 UI。',
-            '聊天后台调用协议：优先使用 window.FabushiMiniApp.bot.onCommand("/start", handler) 或 bot.onAnyCommand(handler)；如果手写监听 window 的 fabushi-miniapp-command 事件，注册后也要读取 window.__fabushiLastMiniAppCommand 并按 commandId 去重补处理。detail.command 默认为 /start，detail.args 是用户文本；处理完成后调用 bot.postMessage 或 bot.reportCommandResult 把进度/结果写回聊天框。',
-            '标准能力：auth.getSession/auth.requireLogin 复用宿主登录；payments.requestPayment 使用福德金支付并由宿主登记权益；payments.checkEntitlement 查询商品是否已解锁；payments.alipay.pay/createOrder 仅作为宿主官方现金支付兜底；network.http.fetch/network.udp/network.interfaces 提供 HTTP、UDP 和网卡原语；system.keepAwake/hotspot.openSettings 提供系统级辅助；flashcards.createDeck 接入背诵闪卡；platformPublish.createDraft 接入发布草稿；fs.writeFile/fs.readFile、runtime.process.execute、browser.open 用于本地文件、进程和浏览器。',
-            '高危权限包括 auth.token、payments.alipay、payments.fudeGold、network.http、network.udp、network.interfaces、system.keepAwake、hotspot.settings、local.loopback、fs.readWrite、runtime.process、shell.execute、browser.external、desktop.control；只有用户需求明确需要时才使用。',
-            '禁止外链脚本、eval、Authorization token、桌面桥 token、OpenClaw token。',
-            '不要调用 auth.getAccessToken，除非用户明确要求对接需要 token 的受信服务。',
-            '优先实现一个可点击、可立即使用的小面板，包含 app.getContext 或 bot.sendMessage 示例。',
-          ].join('\n'),
-        },
-        {
-          role: 'user',
-          content: [
-            `小程序标题：${title}`,
-            `用户需求：${prompt}`,
-            '请生成 HTML/CSS/JS 单文件。',
-          ].join('\n'),
-        },
-      ],
-    });
-    const sourceHtml = extractMiniAppHtml(result.message);
-    if (!sourceHtml) {
-      return {
-        sourceHtml: fallback,
-        generation: { provider: 'template', fallbackReason: 'ai_output_not_html' },
-      };
-    }
-    return {
-      sourceHtml,
-      generation: {
-        provider: result.provider || 'ai',
-        model: result.model || '',
-      },
-    };
-  } catch (error) {
-    return {
-      sourceHtml: fallback,
-      generation: {
-        provider: 'template',
-        fallbackReason: readText(error?.message || error),
-      },
-    };
-  }
 }
 
 function clientContextMessage(client) {
@@ -982,8 +603,16 @@ async function resolveUser(req, body = {}) {
   const token = bearerToken(req);
   const usernameHint = safeUserText(body.username || req.query.username);
 
-  const testToken = process.env.TEST_ACCOUNT_TOKEN || 'dacheng-test-token-bypass-limits';
-  if (token && token === testToken) {
+  const internalMcpAccount = resolveCodexAdapterToken(token);
+  if (
+    internalMcpAccount?.audience === 'mcp-plugin' &&
+    req.path.startsWith('/api/mcp/apps/')
+  ) {
+    return internalMcpAccount.user;
+  }
+
+  const testToken = readText(process.env.TEST_ACCOUNT_TOKEN);
+  if (testToken && token && token === testToken) {
     return {
       userId: 'user:test_account',
       username: 'TestAccount',
@@ -1036,6 +665,7 @@ function signCodexAdapterPayload(encodedPayload) {
 }
 
 function createCodexAdapterToken(user, options = {}) {
+  const requestedMaxCompletionTokens = Number(options.maxCompletionTokens || 0);
   const payload = {
     sub: user.userId,
     username: user.username || '',
@@ -1044,7 +674,12 @@ function createCodexAdapterToken(user, options = {}) {
     isMember: Boolean(user.isMember),
     isTestAccount: Boolean(user.isTestAccount),
     membership: user.membership || {},
+    aud: safeUserText(options.audience) || 'codex-responses',
     recordUsage: options.recordUsage !== false,
+    maxCompletionTokens:
+      Number.isFinite(requestedMaxCompletionTokens) && requestedMaxCompletionTokens > 0
+        ? Math.floor(requestedMaxCompletionTokens)
+        : null,
     exp: Date.now() + codexAdapterTokenTtlMs,
   };
   const encodedPayload = base64UrlJson(payload);
@@ -1090,7 +725,12 @@ function resolveCodexAdapterToken(token) {
           ? payload.membership
           : {},
     },
+    audience: safeUserText(payload.aud) || 'codex-responses',
     recordUsage: payload.recordUsage !== false,
+    maxCompletionTokens:
+      Number.isFinite(Number(payload.maxCompletionTokens)) && Number(payload.maxCompletionTokens) > 0
+        ? Math.floor(Number(payload.maxCompletionTokens))
+        : null,
   };
 }
 
@@ -1152,9 +792,13 @@ function enforceTokenBudget(user, estimatedTokensForRequest) {
   return { limit, usage };
 }
 
-function completionBudgetFor(budget, estimatedPromptTokens) {
+function completionBudgetFor(
+  budget,
+  estimatedPromptTokens,
+  maximumCompletionTokens = deepseekMaxCompletionTokens,
+) {
   const remainingAfterPrompt = budget.limit - budget.usage.used - estimatedPromptTokens;
-  return Math.max(1, Math.min(deepseekMaxCompletionTokens, Math.floor(remainingAfterPrompt)));
+  return Math.max(1, Math.min(maximumCompletionTokens, Math.floor(remainingAfterPrompt)));
 }
 
 function recordUsage(userId, totalTokens) {
@@ -1180,10 +824,13 @@ function normalizeMessages(rows) {
   }));
 }
 
-function normalizeMaxCompletionTokens(value) {
-  const numeric = Number(value || deepseekMaxCompletionTokens);
-  if (!Number.isFinite(numeric) || numeric < 1) return deepseekMaxCompletionTokens;
-  return Math.max(1, Math.min(deepseekMaxCompletionTokens, Math.floor(numeric)));
+function normalizeMaxCompletionTokens(
+  value,
+  maximumCompletionTokens = deepseekMaxCompletionTokens,
+) {
+  const numeric = Number(value || maximumCompletionTokens);
+  if (!Number.isFinite(numeric) || numeric < 1) return maximumCompletionTokens;
+  return Math.max(1, Math.min(maximumCompletionTokens, Math.floor(numeric)));
 }
 
 function normalizeDeepSeekModelName(value) {
@@ -1212,7 +859,10 @@ async function callDeepSeek(messages, options = {}) {
       model,
       messages,
       temperature: 0.4,
-      max_tokens: normalizeMaxCompletionTokens(options.maxCompletionTokens),
+      max_tokens: normalizeMaxCompletionTokens(
+        options.maxCompletionTokens,
+        options.maximumCompletionTokens || deepseekMaxCompletionTokens,
+      ),
       stream: false,
     }),
     signal: AbortSignal.timeout(60_000),
@@ -1277,7 +927,10 @@ async function callDeepSeekStream(messages, callbacks = {}) {
       model,
       messages,
       temperature: 0.4,
-      max_tokens: normalizeMaxCompletionTokens(callbacks.maxCompletionTokens),
+      max_tokens: normalizeMaxCompletionTokens(
+        callbacks.maxCompletionTokens,
+        callbacks.maximumCompletionTokens || deepseekMaxCompletionTokens,
+      ),
       stream: true,
       stream_options: { include_usage: true },
     }),
@@ -1358,7 +1011,7 @@ async function callDeepSeekStream(messages, callbacks = {}) {
   return { message, model, usage };
 }
 
-function createCodexDeepSeekRuntime(user = null) {
+function createCodexDeepSeekRuntime(user = null, runtimeOptions = {}) {
   if (!enableCodexSdkChat || !deepseekApiKey) {
     return {
       enabled: false,
@@ -1367,7 +1020,11 @@ function createCodexDeepSeekRuntime(user = null) {
     };
   }
 
-  const adapterToken = user ? createCodexAdapterToken(user) : '';
+  const adapterToken = user
+    ? createCodexAdapterToken(user, {
+        maxCompletionTokens: runtimeOptions.maxCompletionTokens,
+      })
+    : '';
   return {
     enabled: true,
     provider: codexDeepSeekProviderId,
@@ -1377,14 +1034,15 @@ function createCodexDeepSeekRuntime(user = null) {
       env: {
         ...process.env,
         DEEPSEEK_API_KEY: adapterToken,
-        HOME: codexHomeDir,
-        CODEX_HOME: codexHomeDir,
+        HOME: runtimeOptions.codexHomeDir || codexHomeDir,
+        CODEX_HOME: runtimeOptions.codexHomeDir || codexHomeDir,
         TMPDIR: codexTempDir,
         XDG_RUNTIME_DIR: codexRuntimeDir,
         XDG_CACHE_HOME: path.join(codexHomeDir, '.cache'),
         XDG_CONFIG_HOME: path.join(codexHomeDir, '.config'),
         XDG_DATA_HOME: path.join(codexHomeDir, '.local', 'share'),
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        ...(runtimeOptions.env || {}),
       },
       config: {
         model_provider: codexDeepSeekProviderId,
@@ -1397,14 +1055,19 @@ function createCodexDeepSeekRuntime(user = null) {
             query_params: {},
           },
         },
+        ...(runtimeOptions.config || {}),
       },
     },
     threadOptions: {
       model: deepseekModel,
-      approvalPolicy: 'never',
-      sandboxMode: 'read-only',
+      approvalPolicy: runtimeOptions.approvalPolicy || 'never',
+      sandboxMode: runtimeOptions.sandboxMode || 'read-only',
+      ...(runtimeOptions.workingDirectory
+        ? { workingDirectory: runtimeOptions.workingDirectory }
+        : {}),
       skipGitRepoCheck: true,
-      networkAccessEnabled: true,
+      networkAccessEnabled: runtimeOptions.networkAccessEnabled ?? true,
+      webSearchMode: runtimeOptions.webSearchMode || 'disabled',
     },
   };
 }
@@ -1673,7 +1336,17 @@ function responsesPayload({
 }
 
 async function callCodexSdkDeepSeek(messages, callbacks = {}) {
-  const codexRuntime = createCodexDeepSeekRuntime(callbacks.user);
+  const codexRuntime = createCodexDeepSeekRuntime(callbacks.user, {
+    maxCompletionTokens: callbacks.maxCompletionTokens,
+    workingDirectory: callbacks.workingDirectory,
+    sandboxMode: callbacks.sandboxMode,
+    approvalPolicy: callbacks.approvalPolicy,
+    networkAccessEnabled: callbacks.networkAccessEnabled,
+    webSearchMode: callbacks.webSearchMode,
+    codexHomeDir: callbacks.codexHomeDir,
+    env: callbacks.env,
+    config: callbacks.config,
+  });
   if (!codexRuntime.enabled) {
     const error = new Error(codexRuntime.reason || 'Codex SDK chat is not enabled');
     error.statusCode = 503;
@@ -1687,16 +1360,25 @@ async function callCodexSdkDeepSeek(messages, callbacks = {}) {
 
   const { Codex } = await import('@openai/codex-sdk');
   const codex = new Codex(codexRuntime.options);
-  const thread = codex.startThread(codexRuntime.threadOptions);
+  const thread = callbacks.threadId
+    ? codex.resumeThread(callbacks.threadId, codexRuntime.threadOptions)
+    : codex.startThread(codexRuntime.threadOptions);
   const prompt = codexPromptFromMessages(messages);
+  const turnOptions = {
+    ...(callbacks.outputSchema ? { outputSchema: callbacks.outputSchema } : {}),
+    ...(callbacks.signal ? { signal: callbacks.signal } : {}),
+  };
 
   if (callbacks.onToken || callbacks.onStep) {
-    const { events } = await thread.runStreamed(prompt, { signal: callbacks.signal });
+    const { events } = await thread.runStreamed(prompt, turnOptions);
     let finalResponse = '';
     let usage = null;
+    let threadId = callbacks.threadId || null;
 
     for await (const event of events) {
-      if (event.type === 'item.completed') {
+      if (event.type === 'thread.started') {
+        threadId = event.thread_id || threadId;
+      } else if (event.type === 'item.completed') {
         const item = event.item;
         if (item.type === 'agent_message') {
           finalResponse = item.text || finalResponse;
@@ -1710,6 +1392,11 @@ async function callCodexSdkDeepSeek(messages, callbacks = {}) {
           callbacks.onStep?.({
             title: 'Codex SDK 执行命令',
             message: item.command,
+          });
+        } else if (item.type === 'file_change') {
+          callbacks.onStep?.({
+            title: 'Codex SDK 修改文件',
+            message: item.changes.map((change) => `${change.kind}: ${change.path}`).join('\n'),
           });
         } else if (item.type === 'mcp_tool_call') {
           callbacks.onStep?.({
@@ -1740,10 +1427,11 @@ async function callCodexSdkDeepSeek(messages, callbacks = {}) {
         totalTokens: Number((usage?.input_tokens || 0) + (usage?.output_tokens || 0)),
       },
       usageAlreadyRecorded: true,
+      threadId: thread.id || threadId,
     };
   }
 
-  const turn = await thread.run(prompt);
+  const turn = await thread.run(prompt, turnOptions);
   if (!turn.finalResponse?.trim()) {
     const error = new Error('Codex SDK returned an empty response');
     error.statusCode = 502;
@@ -1758,6 +1446,7 @@ async function callCodexSdkDeepSeek(messages, callbacks = {}) {
       totalTokens: Number((turn.usage?.input_tokens || 0) + (turn.usage?.output_tokens || 0)),
     },
     usageAlreadyRecorded: true,
+    threadId: thread.id || callbacks.threadId || null,
   };
 }
 
@@ -1886,17 +1575,69 @@ async function callOpenClawAgent({ messages, user, conversationId, mode, signal 
   };
 }
 
-async function runAgentModel({ messages, user, conversationId, mode, callbacks = {}, signal, maxCompletionTokens }) {
+async function runAgentModel({
+  messages,
+  user,
+  conversationId,
+  mode,
+  callbacks = {},
+  signal,
+  maxCompletionTokens,
+  preferCodex = false,
+  requireCodex = false,
+  workingDirectory,
+  sandboxMode,
+  outputSchema,
+  threadId,
+}) {
+  const codexRuntime = createCodexDeepSeekRuntime(user, {
+    workingDirectory,
+    sandboxMode,
+    maxCompletionTokens,
+  });
+  if (requireCodex && !codexRuntime.enabled) {
+    const error = new Error(codexRuntime.reason || 'Codex SDK chat is not enabled');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  let preferredCodexFailed = false;
+  if ((preferCodex || requireCodex) && codexRuntime.enabled) {
+    try {
+      const result = await callCodexSdkDeepSeek(messages, {
+        ...callbacks,
+        user,
+        signal,
+        maxCompletionTokens,
+        workingDirectory,
+        sandboxMode,
+        outputSchema,
+        threadId,
+      });
+      return {
+        ...result,
+        provider: codexRuntime.provider,
+        model: deepseekModel,
+      };
+    } catch (error) {
+      if (requireCodex || isDeepSeekQuotaError(error)) throw error;
+      logger.warn(
+        { error: String(error), mode },
+        'Preferred Codex SDK model failed, continuing through agent fallbacks',
+      );
+      preferredCodexFailed = true;
+    }
+  }
+
   const openClawRuntime = createOpenClawRuntime();
   if (openClawRuntime.enabled && !callbacks.onToken) {
     return await callOpenClawAgent({ messages, user, conversationId, mode, signal });
   }
 
-  const codexRuntime = createCodexDeepSeekRuntime(user);
   const libreChatRuntime = createLibreChatAgentRuntime();
   let provider = libreChatRuntime.enabled
     ? libreChatRuntime.provider
-    : codexRuntime.enabled
+    : codexRuntime.enabled && !preferredCodexFailed
       ? codexRuntime.provider
       : 'deepseek';
   let model = libreChatRuntime.enabled ? libreChatRuntime.model : deepseekModel;
@@ -1908,8 +1649,17 @@ async function runAgentModel({ messages, user, conversationId, mode, callbacks =
         : await callLibreChatAgent(messages);
       return { ...result, provider, model };
     }
-    if (codexRuntime.enabled) {
-      const result = await callCodexSdkDeepSeek(messages, { ...callbacks, user, signal });
+    if (codexRuntime.enabled && !preferredCodexFailed) {
+      const result = await callCodexSdkDeepSeek(messages, {
+        ...callbacks,
+        user,
+        signal,
+        maxCompletionTokens,
+        workingDirectory,
+        sandboxMode,
+        outputSchema,
+        threadId,
+      });
       return { ...result, provider, model };
     }
     const result = callbacks.onToken
@@ -1917,7 +1667,7 @@ async function runAgentModel({ messages, user, conversationId, mode, callbacks =
       : await callDeepSeek(messages, { maxCompletionTokens });
     return { ...result, provider, model };
   } catch (error) {
-    if (!codexRuntime.enabled || isDeepSeekQuotaError(error)) throw error;
+    if (!codexRuntime.enabled || preferredCodexFailed || isDeepSeekQuotaError(error)) throw error;
     logger.warn({ error: String(error) }, 'Agent model failed, falling back to DeepSeek direct');
     const result = callbacks.onToken
       ? await callDeepSeekStream(messages, { ...callbacks, signal, maxCompletionTokens })
@@ -2151,9 +1901,10 @@ app.post(
     const promptEstimate = estimateTokens(JSON.stringify(messages));
     const estimated = promptEstimate + 600;
     const budget = enforceTokenBudget(user, estimated);
+    const requestCompletionLimit = deepseekMaxCompletionTokens;
     const maxCompletionTokens = Math.min(
-      completionBudgetFor(budget, promptEstimate),
-      normalizeMaxCompletionTokens(req.body?.max_tokens),
+      completionBudgetFor(budget, promptEstimate, requestCompletionLimit),
+      normalizeMaxCompletionTokens(req.body?.max_tokens, requestCompletionLimit),
     );
     const model = normalizeDeepSeekModelName(req.body?.model);
     const wantsStream =
@@ -2167,7 +1918,11 @@ app.post(
       let result;
       let usageMessages = messages;
       try {
-        result = await callDeepSeek(messages, { model, maxCompletionTokens });
+        result = await callDeepSeek(messages, {
+          model,
+          maxCompletionTokens,
+          maximumCompletionTokens: requestCompletionLimit,
+        });
       } catch (error) {
         if (!shouldRetryWithCompactedOpenClawMessages(error, messages, compactedMessages)) {
           throw error;
@@ -2181,7 +1936,11 @@ app.post(
           'OpenClaw DeepSeek proxy retrying with compacted messages',
         );
         usageMessages = compactedMessages;
-        result = await callDeepSeek(compactedMessages, { model, maxCompletionTokens });
+        result = await callDeepSeek(compactedMessages, {
+          model,
+          maxCompletionTokens,
+          maximumCompletionTokens: requestCompletionLimit,
+        });
       }
       const usage = usageWithFallback(result.usage, usageMessages, result.message);
       recordUsage(user.userId, usage.totalTokens);
@@ -2234,6 +1993,7 @@ app.post(
         result = await callDeepSeekStream(messages, {
           model,
           maxCompletionTokens,
+          maximumCompletionTokens: requestCompletionLimit,
           signal: abortController.signal,
           onToken: (delta) => {
             text += delta;
@@ -2260,6 +2020,7 @@ app.post(
         result = await callDeepSeekStream(compactedMessages, {
           model,
           maxCompletionTokens,
+          maximumCompletionTokens: requestCompletionLimit,
           signal: abortController.signal,
           onToken: (delta) => {
             text += delta;
@@ -2345,13 +2106,21 @@ app.post(
       return;
     }
 
-    const { user, recordUsage: shouldRecordUsage } = await resolveCodexResponsesBilling(req);
+    const {
+      user,
+      recordUsage: shouldRecordUsage,
+      maxCompletionTokens: adapterMaxCompletionTokens,
+    } = await resolveCodexResponsesBilling(req);
     const messages = [{ role: 'user', content: prompt }];
     const promptEstimate = estimateTokens(JSON.stringify(messages));
     const budget = enforceTokenBudget(user, promptEstimate + 600);
+    const responseCompletionLimit = adapterMaxCompletionTokens || deepseekMaxCompletionTokens;
     const maxCompletionTokens = Math.min(
-      completionBudgetFor(budget, promptEstimate),
-      normalizeMaxCompletionTokens(req.body?.max_output_tokens || req.body?.max_tokens),
+      completionBudgetFor(budget, promptEstimate, responseCompletionLimit),
+      normalizeMaxCompletionTokens(
+        req.body?.max_output_tokens || req.body?.max_tokens,
+        responseCompletionLimit,
+      ),
     );
     const model = normalizeDeepSeekModelName(req.body?.model);
     const responseId = `resp_${crypto.randomUUID().replaceAll('-', '')}`;
@@ -2361,7 +2130,11 @@ app.post(
       String(req.get('accept') || '').includes('text/event-stream');
 
     if (!wantsStream) {
-      const result = await callDeepSeek(messages, { model, maxCompletionTokens });
+      const result = await callDeepSeek(messages, {
+        model,
+        maxCompletionTokens,
+        maximumCompletionTokens: responseCompletionLimit,
+      });
       const usage = usageWithFallback(result.usage, messages, result.message);
       if (shouldRecordUsage) recordUsage(user.userId, usage.totalTokens);
       res.json(
@@ -2419,6 +2192,7 @@ app.post(
       const result = await callDeepSeekStream(messages, {
         model,
         maxCompletionTokens,
+        maximumCompletionTokens: responseCompletionLimit,
         onToken: (delta) => {
           text += delta;
           writeResponsesEvent(res, 'response.output_text.delta', {
@@ -2625,6 +2399,7 @@ app.get('/health', (_req, res) => {
     memberMonthlyLimit,
     freeMonthlyLimit,
     deepseekMaxCompletionTokens,
+    botFatherMaxCompletionTokens,
     openClawRuntimeUpdatesDir,
     openClawRuntimeManifestConfigured: fs.existsSync(openClawRuntimeManifestPath),
     cbetaApiRoot,
@@ -2632,245 +2407,177 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.get(
-  '/api/miniapps/registry',
-  asyncHandler(async (req, res) => {
-    const user = await resolveUser(req, { username: req.query.username });
-    const official = officialMiniAppRegistry(req);
-    const store = await readMiniAppStore();
-    const visibleSandbox = store.apps.filter((appRecord) => {
-      if (appRecord.reviewStatus === 'approved' && appRecord.source === 'marketplace') {
-        return true;
-      }
-      return appRecord.ownerId === user.userId;
-    });
-    const bots = [
-      ...official.bots,
-      ...visibleSandbox.map((record) => miniAppRecordToBot(record)),
-    ];
-    const miniApps = [
-      ...official.miniApps,
-      ...visibleSandbox.map((record) => miniAppRecordToManifest(req, record)),
-    ];
-    const registry = {
-      schemaVersion: 1,
-      hostApiVersion: miniAppHostApiVersion,
-      bots,
-      miniApps,
-      updatedAt: nowIso(),
-    };
-    registry.signature = sha256(JSON.stringify({ bots, miniApps }));
-    jsonResponse(res, 200, { success: true, registry });
-  }),
-);
+app.get('/api/plugins/registry', (_req, res) => {
+  jsonResponse(res, 200, {
+    success: true,
+    schemaVersion: 1,
+    protocol: 'mcp',
+    plugins: officialMcpApps,
+    updatedAt: nowIso(),
+  });
+});
 
-app.get(
-  '/api/miniapps/dev/:miniAppId/index.html',
-  asyncHandler(async (req, res) => {
-    const miniAppId = safeMiniAppId(req.params.miniAppId);
-    const store = await readMiniAppStore();
-    const record = store.apps.find((appRecord) => appRecord.miniAppId === miniAppId);
-    if (!record) {
-      res.status(404).type('text/html').send('<h1>Mini app not found</h1>');
-      return;
+app.all('/api/mcp/apps/:pluginId', async (req, res) => {
+  try {
+    const user = await resolveUser(req, req.body || {});
+    await handleOfficialMcpRequest(req.params.pluginId, req, res, user.userId);
+  } catch (error) {
+    logger.error({ error: error.stack || String(error) }, 'official MCP app request failed');
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'MCP request failed', message: publicAiErrorMessage(error) });
     }
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-store');
-    res.send(record.sourceHtml || generatedMiniAppHtml(record));
-  }),
-);
+  }
+});
 
 app.post(
-  '/api/miniapps/dev/create',
+  '/api/codex/apps/:pluginId/turns',
   asyncHandler(async (req, res) => {
-    const user = await resolveUser(req, req.body || {});
-    const title = safeUserText(req.body?.title, '个人小程序').slice(0, 80);
-    const subtitle = safeUserText(req.body?.subtitle, '个人沙箱小程序').slice(0, 120);
-    const permissions = sanitizeMiniAppPermissions(req.body?.permissions);
-    const prompt = safeUserText(req.body?.prompt || title);
-    const idSeed = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
-    const miniAppId = `sandbox.${idSeed}`;
-    const botId = `bot.${miniAppId}`;
-    const sourceHtml = generatedMiniAppHtml({ title, prompt });
-    const scan = miniAppScan(permissions, sourceHtml);
-    const createdAt = nowIso();
-    const record = {
-      ownerId: user.userId,
-      miniAppId,
-      botId,
-      title,
-      subtitle,
-      initials: title.slice(0, 1) || '小',
-      icon: 'code',
-      avatarColor: '#3D8BFF',
-      greeting: '你好，我是这个个人沙箱小程序的机器人。',
-      inputHint: '输入消息，或打开小程序面板',
-      version: '0.0.1',
-      permissions,
-      surfaces: ['chatPanel'],
-      theme: 'telegramDark',
-      source: 'sandbox',
-      reviewStatus: 'sandbox',
-      sourceHtml,
-      scan,
-      createdAt,
-      updatedAt: createdAt,
-    };
-    const store = await readMiniAppStore();
-    store.apps.push(record);
-    await writeMiniAppStore(store);
-    jsonResponse(res, 200, {
-      success: true,
-      miniApp: miniAppRecordToManifest(req, record),
-      bot: miniAppRecordToBot(record),
-      scan,
-    });
-  }),
-);
+    const pluginId = safeUserText(req.params.pluginId).replace(/^official\./, '');
+    const plugin = officialMcpApps.find((candidate) => candidate.id === pluginId);
+    if (!plugin) {
+      return jsonResponse(res, 404, { success: false, message: 'plugin not found' });
+    }
 
-app.post(
-  '/api/miniapps/dev/:miniAppId/version',
-  asyncHandler(async (req, res) => {
-    const user = await resolveUser(req, req.body || {});
-    const miniAppId = safeMiniAppId(req.params.miniAppId);
-    const store = await readMiniAppStore();
-    const index = store.apps.findIndex((appRecord) => appRecord.miniAppId === miniAppId);
-    if (index < 0) {
-      return jsonResponse(res, 404, { success: false, message: 'mini app not found' });
+    const message = safeUserText(req.body?.message);
+    if (!message) {
+      return jsonResponse(res, 400, { success: false, message: 'message is required' });
     }
-    const record = store.apps[index];
-    if (record.ownerId !== user.userId) {
-      return jsonResponse(res, 403, { success: false, message: 'not your mini app' });
-    }
-    const title = safeUserText(req.body?.title, record.title).slice(0, 80);
-    const subtitle = safeUserText(req.body?.subtitle, record.subtitle).slice(0, 120);
-    const sourceHtml =
-      safeUserText(req.body?.sourceHtml) ||
-      generatedMiniAppHtml({ title, prompt: safeUserText(req.body?.prompt || title) });
-    const permissions = sanitizeMiniAppPermissions(req.body?.permissions || record.permissions);
-    const scan = miniAppScan(permissions, sourceHtml);
-    store.apps[index] = {
-      ...record,
-      title,
-      subtitle,
-      sourceHtml,
-      permissions,
-      scan,
-      reviewStatus: 'sandbox',
-      version: safeUserText(req.body?.version, record.version || '0.0.1'),
-      updatedAt: nowIso(),
-    };
-    await writeMiniAppStore(store);
-    jsonResponse(res, 200, {
-      success: true,
-      miniApp: miniAppRecordToManifest(req, store.apps[index]),
-      bot: miniAppRecordToBot(store.apps[index]),
-      scan,
-    });
-  }),
-);
 
-app.post(
-  '/api/miniapps/:miniAppId/submit-review',
-  asyncHandler(async (req, res) => {
     const user = await resolveUser(req, req.body || {});
-    const miniAppId = safeMiniAppId(req.params.miniAppId);
-    const store = await readMiniAppStore();
-    const index = store.apps.findIndex((appRecord) => appRecord.miniAppId === miniAppId);
-    if (index < 0) {
-      return jsonResponse(res, 404, { success: false, message: 'mini app not found' });
-    }
-    const record = store.apps[index];
-    if (record.ownerId !== user.userId) {
-      return jsonResponse(res, 403, { success: false, message: 'not your mini app' });
-    }
-    const scan = miniAppScan(record.permissions || [], record.sourceHtml || '');
-    if (!scan.passed) {
+    const promptEstimate = estimateTokens(message);
+    const budget = enforceTokenBudget(user, promptEstimate + 600);
+    const maxCompletionTokens = completionBudgetFor(budget, promptEstimate);
+    const namespace = pluginConversationNamespace(pluginId);
+    const requestedConversationId = safeUserText(req.body?.conversationId);
+    if (requestedConversationId && !requestedConversationId.startsWith(`${namespace}:`)) {
       return jsonResponse(res, 400, {
         success: false,
-        message: 'security scan failed',
-        scan,
+        message: 'conversation does not belong to the selected plugin namespace',
       });
     }
-    store.apps[index] = {
-      ...record,
-      scan,
-      reviewStatus: 'pending_review',
-      updatedAt: nowIso(),
-    };
-    await writeMiniAppStore(store);
-    jsonResponse(res, 200, {
-      success: true,
-      miniApp: miniAppRecordToManifest(req, store.apps[index]),
-      scan,
-    });
-  }),
-);
 
-app.post(
-  '/api/botfather/generate-miniapp',
-  asyncHandler(async (req, res) => {
-    const user = await resolveUser(req, req.body || {});
-    const prompt = safeUserText(req.body?.prompt);
-    if (!prompt) {
-      return jsonResponse(res, 400, { success: false, message: 'prompt is required' });
-    }
-    const title = titleFromPromptForMiniApp(prompt);
-    const subtitle = '机器人之父生成的个人沙箱小程序';
-    const requestedPermissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
-    const generated = await generateBotFatherMiniAppHtml({ title, prompt, user });
-    let sourceHtml = generated.sourceHtml;
-    let generation = generated.generation;
-    const permissions = sanitizeMiniAppPermissions([
-      ...requestedPermissions,
-      ...inferMiniAppPermissionsFromText(prompt, sourceHtml),
-    ]);
-    let scan = miniAppScan(permissions, sourceHtml);
-    if (!scan.passed) {
-      sourceHtml = generatedMiniAppHtml({ title, prompt });
-      generation = {
-        provider: 'template',
-        fallbackReason: 'ai_output_failed_security_scan',
-      };
-      scan = miniAppScan(permissions, sourceHtml);
-    }
-    const idSeed = crypto.randomUUID().replaceAll('-', '').slice(0, 12);
-    const miniAppId = `sandbox.${idSeed}`;
+    const conversationId = requestedConversationId || `${namespace}:${crypto.randomUUID()}`;
     const createdAt = nowIso();
-    const record = {
-      ownerId: user.userId,
-      miniAppId,
-      botId: `bot.${miniAppId}`,
-      title,
-      subtitle,
-      initials: title.slice(0, 1) || '小',
-      icon: 'code',
-      avatarColor: '#3D8BFF',
-      greeting: `我是「${title}」的机器人。`,
-      inputHint: '继续描述修改需求，或打开小程序面板',
-      version: '0.0.1',
-      permissions,
-      surfaces: ['chatPanel'],
-      theme: 'telegramDark',
-      source: 'sandbox',
-      reviewStatus: 'sandbox',
-      sourceHtml,
-      scan,
-      generation,
-      prompt,
-      createdAt,
-      updatedAt: createdAt,
+    let conversation = statements.getPluginConversation.get(
+      conversationId,
+      user.userId,
+      namespace,
+    );
+    if (requestedConversationId && !conversation) {
+      return jsonResponse(res, 404, {
+        success: false,
+        message: 'plugin conversation not found for this account',
+      });
+    }
+    const isNewConversation = !conversation;
+    if (isNewConversation) {
+      conversation = {
+        id: conversationId,
+        user_id: user.userId,
+        title: titleFromMessage(message),
+        namespace,
+        thread_id: null,
+      };
+    }
+
+    const accountKey = sha256(user.userId).slice(0, 24);
+    const pluginCodexHome = path.join(codexPluginSessionsDir, accountKey, pluginId);
+    fs.mkdirSync(pluginCodexHome, { recursive: true });
+    const mcpAccountToken = createCodexAdapterToken(user, {
+      audience: 'mcp-plugin',
+      recordUsage: false,
+    });
+    const mcpOrigin = (
+      process.env.MCP_INTERNAL_BASE_URL || `http://127.0.0.1:${process.env.PORT || 8788}`
+    ).replace(/\/+$/, '');
+    const isolationPolicy = createPluginCodexPolicy(pluginId, mcpOrigin);
+    const firstTurnMessages = [
+      {
+        role: 'system',
+        content:
+          `你正在 ${plugin.title} 插件的隔离 Codex 会话中。` +
+          '只能使用 current_plugin MCP Server 暴露的 Tools；禁止 shell、文件系统、Web 搜索和其他插件。' +
+          '只读 Tool 可以按需调用。需要写入、外部操作或破坏性操作时，不要自行执行，明确告诉用户改用对应的 /Tool 命令，让宿主显示审批。',
+      },
+      { role: 'user', content: message },
+    ];
+    const aiResult = await callCodexSdkDeepSeek(
+      conversation?.thread_id ? [{ role: 'user', content: message }] : firstTurnMessages,
+      {
+        user,
+        threadId: conversation?.thread_id || undefined,
+        maxCompletionTokens,
+        sandboxMode: isolationPolicy.sandboxMode,
+        approvalPolicy: isolationPolicy.approvalPolicy,
+        networkAccessEnabled: isolationPolicy.networkAccessEnabled,
+        webSearchMode: isolationPolicy.webSearchMode,
+        codexHomeDir: pluginCodexHome,
+        env: { [pluginMcpTokenEnv]: mcpAccountToken },
+        config: isolationPolicy.config,
+      },
+    );
+    const usage = {
+      promptTokens: aiResult.usage.promptTokens || promptEstimate,
+      completionTokens: aiResult.usage.completionTokens || estimateTokens(aiResult.message),
+      totalTokens:
+        aiResult.usage.totalTokens || promptEstimate + estimateTokens(aiResult.message),
     };
-    const store = await readMiniAppStore();
-    store.apps.push(record);
-    await writeMiniAppStore(store);
+    if (!aiResult.usageAlreadyRecorded) recordUsage(user.userId, usage.totalTokens);
+
+    const answeredAt = nowIso();
+    if (isNewConversation) {
+      statements.insertPluginConversation.run({
+        id: conversationId,
+        userId: user.userId,
+        title: conversation.title,
+        provider: codexDeepSeekProviderId,
+        model: deepseekModel,
+        namespace,
+        createdAt,
+        updatedAt: answeredAt,
+      });
+    }
+    statements.insertMessage.run({
+      id: crypto.randomUUID(),
+      conversationId,
+      role: 'user',
+      content: message,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      createdAt,
+    });
+    statements.insertMessage.run({
+      id: crypto.randomUUID(),
+      conversationId,
+      role: 'assistant',
+      content: aiResult.message,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+      createdAt: answeredAt,
+    });
+    statements.updatePluginConversation.run({
+      id: conversationId,
+      userId: user.userId,
+      namespace,
+      title: conversation.title,
+      threadId: aiResult.threadId || conversation?.thread_id || null,
+      updatedAt: answeredAt,
+    });
+
     jsonResponse(res, 200, {
       success: true,
-      miniApp: miniAppRecordToManifest(req, record),
-      bot: miniAppRecordToBot(record),
-      scan,
-      generation,
-      actions: ['openMiniApp', 'continueEditing', 'submitReview'],
+      pluginId,
+      conversationId,
+      message: aiResult.message,
+      provider: codexDeepSeekProviderId,
+      model: deepseekModel,
+      usage: {
+        ...usage,
+        monthlyLimit: budget.limit,
+        remainingTokens: Math.max(0, budget.limit - usageFor(user.userId).used),
+      },
     });
   }),
 );

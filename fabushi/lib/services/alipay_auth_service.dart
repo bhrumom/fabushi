@@ -1,23 +1,19 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
-import 'app_settings.dart';
+import 'mahayana_command_service.dart';
 
 /// 支付宝认证服务
 /// 处理支付宝登录授权相关功能
 class AlipayAuthService {
-  // 获取后端URL
-  Future<String> get baseUrl async {
-    return await AppSettings.getBackendUrl();
-  }
+  static const String _sessionHandle = 'mahayana-rust-session';
+  final MahayanaCommandService _mahayana = MahayanaCommandService();
 
   Map<String, dynamic> _successAuthPayload(
     Map<String, dynamic> data, {
     bool defaultOneClick = false,
   }) {
     return {
-      'success': true,
-      'token': data['token'],
+      'success': data['sessionStored'] == true,
+      'sessionHandle': data['sessionStored'] == true ? _sessionHandle : null,
       'username': data['username'] ?? data['user']?['username'],
       'email': data['email'] ?? data['user']?['email'],
       'user': data['user'],
@@ -32,39 +28,20 @@ class AlipayAuthService {
   /// 获取支付宝登录授权URL
   Future<Map<String, dynamic>> getAlipayLoginUrl({String? platform}) async {
     try {
-      final url = await baseUrl;
-
-      // 构建请求URL，添加平台参数
-      String requestUrl = '$url/api/auth/alipay/login-url';
-      if (platform != null) {
-        requestUrl += '?platform=$platform';
-      }
-
-      final response = await http.get(
-        Uri.parse(requestUrl),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.body.isEmpty) {
-        return {'success': false, 'message': '服务器返回空响应'};
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'loginUrl': data['authUrl'],
-          'state': data['state'],
-          'appId': data['appId'],
-          'platform': data['platform'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取支付宝登录URL失败'};
-      }
-    } catch (e) {
-      debugPrint('获取支付宝登录URL失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.alipay.start',
+        if (platform?.trim().isNotEmpty == true) 'platform': platform!.trim(),
+      });
+      return {
+        'success': true,
+        'loginUrl': data['loginUrl'] ?? data['authUrl'],
+        'state': data['state'],
+        'appId': data['appId'],
+        'platform': data['platform'],
+      };
+    } catch (error) {
+      debugPrint('大乘命令层获取支付宝登录URL失败: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
@@ -72,35 +49,17 @@ class AlipayAuthService {
   /// 用于移动端SDK直接调用支付宝APP
   Future<Map<String, dynamic>> getAlipayAuthString() async {
     try {
-      final url = await baseUrl;
-
-      final response = await http.get(
-        Uri.parse('$url/api/auth/alipay/auth-string'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.body.isEmpty) {
-        return {'success': false, 'message': '服务器返回空响应'};
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['authString'] != null) {
-          return {
-            'success': true,
-            'authString': data['authString'],
-            'targetId': data['targetId'],
-          };
-        } else {
-          return {'success': false, 'message': data['error'] ?? '获取授权字符串失败'};
-        }
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取授权字符串失败'};
-      }
-    } catch (e) {
-      debugPrint('获取支付宝授权字符串失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      final data = await _mahayana.execute(const {
+        '@type': 'mahayana.auth.alipay.sdk.start',
+      });
+      return {
+        'success': data['success'] ?? data['authString'] != null,
+        'authString': data['authString'],
+        'targetId': data['targetId'],
+      };
+    } catch (error) {
+      debugPrint('大乘命令层获取支付宝授权字符串失败: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
@@ -110,33 +69,23 @@ class AlipayAuthService {
     String? targetId,
   }) async {
     try {
-      final url = await baseUrl;
-      debugPrint(
-        'SDK登录API调用: $url/api/auth/alipay/sdk-login, authCode: $authCode',
-      );
-
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/sdk-login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'auth_code': authCode, 'target_id': targetId}),
-      );
-
-      debugPrint('SDK登录API响应: ${response.statusCode} - ${response.body}');
-
-      if (response.body.isEmpty) {
-        return {'success': false, 'message': '服务器返回空响应'};
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.alipay.sdk.complete',
+        'authCode': authCode,
+        if (targetId?.trim().isNotEmpty == true) 'targetId': targetId!.trim(),
+      });
+      if (data['needsRegistration'] == true && data['sessionStored'] != true) {
+        return {
+          'success': false,
+          'needsRegistration': true,
+          'alipayUser': data['alipayUser'],
+          'message': data['message'] ?? '新用户需要注册',
+        };
       }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return _successAuthPayload(data);
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? 'SDK登录失败'};
-      }
-    } catch (e) {
-      debugPrint('SDK登录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      return _successAuthPayload(data);
+    } catch (error) {
+      debugPrint('大乘命令层 SDK 登录失败: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
@@ -146,40 +95,23 @@ class AlipayAuthService {
     String? state,
   ) async {
     try {
-      final url = await baseUrl;
-      debugPrint('支付宝登录API调用: $url/api/auth/alipay/login, authCode: $authCode');
-
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'auth_code': authCode, 'state': state}),
-      );
-
-      debugPrint('支付宝登录API响应: ${response.statusCode} - ${response.body}');
-
-      if (response.body.isEmpty) {
-        return {'success': false, 'message': '服务器返回空响应'};
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return _successAuthPayload(data);
-      } else if (response.statusCode == 202) {
-        // 新用户需要注册
-        final data = jsonDecode(response.body);
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.alipay.complete',
+        'authCode': authCode,
+        if (state?.trim().isNotEmpty == true) 'state': state!.trim(),
+      });
+      if (data['needsRegistration'] == true && data['sessionStored'] != true) {
         return {
           'success': false,
           'needsRegistration': true,
           'alipayUser': data['alipayUser'],
           'message': data['message'] ?? '新用户需要注册',
         };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '支付宝登录失败'};
       }
-    } catch (e) {
-      debugPrint('支付宝登录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      return _successAuthPayload(data);
+    } catch (error) {
+      debugPrint('大乘命令层支付宝登录失败: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
@@ -194,32 +126,21 @@ class AlipayAuthService {
     String? email,
   }) async {
     try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'alipayProviderSubject': alipayProviderSubject,
-          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
-            'alipaySubjectType': alipaySubjectType,
-          'username': username,
-          'password': password,
-          'nickname': nickname,
-          'avatar': avatar,
-          'email': email,
-        }),
-      );
-
-      if (response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return _successAuthPayload(data);
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '支付宝注册失败'};
-      }
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.alipay.register',
+        'alipayProviderSubject': alipayProviderSubject,
+        if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+          'alipaySubjectType': alipaySubjectType,
+        'username': username,
+        'password': password,
+        'nickname': nickname,
+        'avatar': avatar,
+        'email': email,
+      });
+      return _successAuthPayload(data);
     } catch (e) {
-      debugPrint('支付宝注册失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      debugPrint('大乘 Rust 支付宝注册失败: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 
@@ -231,30 +152,19 @@ class AlipayAuthService {
     String? avatar,
   }) async {
     try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/alipay/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'alipayProviderSubject': alipayProviderSubject,
-          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
-            'alipaySubjectType': alipaySubjectType,
-          'alipayNickname': nickname,
-          'alipayAvatar': avatar,
-          'oneClick': true,
-        }),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return _successAuthPayload(data, defaultOneClick: true);
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '支付宝一键注册失败'};
-      }
+      final data = await _mahayana.execute({
+        '@type': 'mahayana.auth.alipay.register',
+        'alipayProviderSubject': alipayProviderSubject,
+        if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
+          'alipaySubjectType': alipaySubjectType,
+        'alipayNickname': nickname,
+        'alipayAvatar': avatar,
+        'oneClick': true,
+      });
+      return _successAuthPayload(data, defaultOneClick: true);
     } catch (e) {
-      debugPrint('支付宝一键注册失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
+      debugPrint('大乘 Rust 支付宝一键注册失败: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 }

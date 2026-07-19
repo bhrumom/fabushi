@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/config/app_config.dart';
 import 'ai_backend_policy.dart';
 import 'diagnostic_log_service.dart';
+import 'mahayana_sdk.dart';
 import 'openclaw/openclaw_ai_bridge.dart';
 
 const String _dachengAiUnavailableMessage = '大乘 AI 后端暂时不可用，请稍后重试。';
@@ -216,11 +217,13 @@ class DachengAiService {
     OpenClawAiBridge? openClawBridge,
   }) : _httpClient = httpClient ?? http.Client(),
        _baseUrl = baseUrl ?? (() async => AppConfig.currentAiBackendUrl),
-       _openClawBridge = openClawBridge ?? OpenClawAiBridge();
+       _openClawBridge = openClawBridge ?? OpenClawAiBridge(),
+       _useRustRuntime = httpClient == null && baseUrl == null;
 
   final http.Client _httpClient;
   final Future<String> Function() _baseUrl;
   final OpenClawAiBridge _openClawBridge;
+  final bool _useRustRuntime;
 
   Future<DachengAiChatResult> sendChat({
     required String message,
@@ -231,6 +234,23 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.execute({
+        '@type': 'mahayana.codex.run',
+        'prompt': message,
+        if (model != null && model.isNotEmpty) 'model': model,
+      });
+      return DachengAiChatResult(
+        conversationId:
+            response['conversationId']?.toString() ??
+            conversationId ??
+            'codex:agent:assistant',
+        message: response['message']?.toString() ?? '',
+        provider: 'mahayana-rust',
+        model: model ?? response['model']?.toString() ?? 'deepseek-chat',
+        usage: DachengAiUsage.fromJson(_readMap(response['usage'])),
+      );
+    }
     if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.sendChat(
         message: message,
@@ -268,6 +288,23 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async* {
+    if (_useRustRuntime) {
+      final result = await sendChat(
+        message: message,
+        conversationId: conversationId,
+        model: model,
+        client: client,
+        username: username,
+        isMember: isMember,
+      );
+      yield DachengAiStreamEvent(
+        type: 'done',
+        text: result.message,
+        conversationId: result.conversationId,
+        usage: result.usage,
+      );
+      return;
+    }
     final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw(
       isMember: isMember,
     );
@@ -415,6 +452,28 @@ class DachengAiService {
     String? username,
     bool isMember = false,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.execute(const {
+        '@type': 'mahayana.conversation.list',
+      });
+      final items = response['data'] is List
+          ? response['data'] as List
+          : const [];
+      return items
+          .whereType<Map>()
+          .map((item) {
+            final value = Map<String, dynamic>.from(item);
+            final updatedAtMs = value['updatedAtMs'];
+            return DachengConversationSummary.fromJson({
+              ...value,
+              if (updatedAtMs is num)
+                'updatedAt': DateTime.fromMillisecondsSinceEpoch(
+                  updatedAtMs.toInt(),
+                ).toIso8601String(),
+            });
+          })
+          .toList(growable: false);
+    }
     if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.listConversations();
     }
@@ -440,6 +499,26 @@ class DachengAiService {
     String? token,
     bool isMember = false,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.execute({
+        '@type': 'mahayana.conversation.history',
+        'conversationId': conversationId,
+        'limit': 100,
+      });
+      final items = response['data'] is List
+          ? response['data'] as List
+          : const [];
+      return items
+          .whereType<Map>()
+          .map((item) {
+            final value = Map<String, dynamic>.from(item);
+            return DachengConversationMessage.fromJson({
+              ...value,
+              'content': value['text'] ?? value['content'],
+            });
+          })
+          .toList(growable: false);
+    }
     if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
       return _openClawBridge.getConversationMessages(
         conversationId: conversationId,
@@ -511,6 +590,18 @@ class DachengAiService {
     String? token,
     Map<String, String>? query,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: 'GET',
+        path: endpoint,
+        query: query,
+        authenticated: token?.isNotEmpty == true,
+      );
+      if (response['ok'] != true || response['data'] is! Map) {
+        throw StateError('大乘 Rust 平台请求失败');
+      }
+      return Map<String, dynamic>.from(response['data'] as Map);
+    }
     final uri = await _buildUri(endpoint, query: query);
     final response = await _httpClient
         .get(uri, headers: _headers(token))
@@ -523,6 +614,18 @@ class DachengAiService {
     required Map<String, dynamic> body,
     String? token,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: endpoint,
+        body: body,
+        authenticated: token?.isNotEmpty == true,
+      );
+      if (response['ok'] != true || response['data'] is! Map) {
+        throw StateError('大乘 Rust 平台请求失败');
+      }
+      return Map<String, dynamic>.from(response['data'] as Map);
+    }
     final uri = await _buildUri(endpoint);
     final response = await _httpClient
         .post(uri, headers: _headers(token), body: jsonEncode(body))
@@ -538,11 +641,7 @@ class DachengAiService {
   }
 
   Map<String, String> _headers(String? token) {
-    return {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-    };
+    return {'Accept': 'application/json', 'Content-Type': 'application/json'};
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
@@ -563,9 +662,6 @@ class DachengAiService {
           contentType: response.headers['content-type'],
         ),
       );
-    }
-    if (decoded is! Map<String, dynamic>) {
-      throw StateError('后端返回格式异常');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = decoded['message'] ?? decoded['error'] ?? '请求失败';

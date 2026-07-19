@@ -9,6 +9,7 @@ import '../services/alipay_auth_service.dart';
 import '../services/sync_service.dart';
 import '../services/meditation_session_manager.dart';
 import '../services/practice_stats_service.dart';
+import '../services/mahayana_sdk.dart';
 import 'user_model.dart';
 
 class User {
@@ -154,6 +155,8 @@ class User {
 }
 
 class AuthModel extends ChangeNotifier {
+  static const String _rustSessionHandle = 'mahayana-rust-session';
+
   final AuthService _authService = AuthService();
   final MembershipService _membershipService = MembershipService();
   final AlipayAuthService _alipayAuthService = AlipayAuthService();
@@ -186,33 +189,7 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  int? _parseTokenUserNo(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) {
-        return null;
-      }
-      final normalizedPayload = base64.normalize(
-        parts[1].replaceAll('-', '+').replaceAll('_', '/'),
-      );
-      final payload = jsonDecode(utf8.decode(base64.decode(normalizedPayload)));
-      if (payload is Map) {
-        return User._parseOptionalInt(
-          payload['userNo'] ??
-              payload['user_no'] ??
-              payload['userId'] ??
-              payload['user_id'] ??
-              payload['id'],
-        );
-      }
-    } catch (_) {
-      // Ignore token parsing failures and fall back to server or cached state.
-    }
-    return null;
-  }
-
   User _buildBootstrapUser(
-    String token,
     String username, {
     Map<String, dynamic>? userJson,
     User? fallbackUser,
@@ -241,7 +218,7 @@ class AuthModel extends ChangeNotifier {
 
     return User(
       username: username,
-      userNo: _parseTokenUserNo(token) ?? fallbackUser?.userNo,
+      userNo: fallbackUser?.userNo,
       email: fallbackEmail ?? fallbackUser?.email ?? '',
       membershipType: fallbackMembershipType ?? fallbackUser?.membershipType,
       membershipExpiry:
@@ -344,35 +321,48 @@ class AuthModel extends ChangeNotifier {
   Future<void> loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
+      // Hard cut-over: bearer tokens are owned exclusively by the Rust runtime.
+      await prefs.remove('auth_token');
       final userJsonString = prefs.getString('user_data');
+      User? restoredUser;
 
-      if (token != null && userJsonString != null) {
-        _token = token;
-        final userData = json.decode(userJsonString);
-        _currentUser = User.fromJson(userData);
+      try {
+        final session = await MahayanaSdk.instance.execute(const {
+          '@type': 'mahayana.auth.session.restore',
+        });
+        final rawUser = session['user'];
+        final userJson = rawUser is Map
+            ? Map<String, dynamic>.from(rawUser)
+            : <String, dynamic>{
+                'username': session['username'],
+                'email': session['email'],
+              };
+        if (session['loggedIn'] == true &&
+            (userJson['username']?.toString().isNotEmpty ?? false)) {
+          restoredUser = _userFromServerPayload(
+            userJson,
+            isAdmin: false,
+            fallbackUsername: userJson['username']?.toString(),
+            fallbackEmail: userJson['email']?.toString(),
+          );
+        }
+      } catch (error) {
+        debugPrint('没有可从大乘 CLI 恢复的软件账号会话: $error');
+      }
 
-        final basicUserModel = UserModel(
+      if (restoredUser != null) {
+        _token = _rustSessionHandle;
+        _currentUser = restoredUser;
+
+        final basicUserModel = _buildStoredUserModel(_currentUser!);
+        await _authService.setAuth(_rustSessionHandle, basicUserModel);
+        await _storeAuth();
+        LikeService().setAuthToken(_rustSessionHandle);
+        PracticeStatsService().setAuthToken(
+          _rustSessionHandle,
           username: _currentUser!.username,
-          userNo: _currentUser!.userNo,
-          email: _currentUser!.email,
-          emailVerified: true,
-          createdAt: DateTime.now().toIso8601String(),
-          usernameChangedAt: _currentUser!.usernameChangedAt,
-          membership: MembershipInfo(
-            type: _currentUser!.membershipType ?? 'expired',
-            isActive: _currentUser!.hasPremiumMembership,
-            expiresAt: _currentUser!.membershipExpiry?.toIso8601String(),
-          ),
-          alipayUserId: _currentUser!.alipayUserId,
-          nickname: _currentUser!.nickname,
-          avatar: _currentUser!.avatar,
-          phoneNumber: _currentUser!.phoneNumber,
-          firebaseUid: _currentUser!.firebaseUid,
+          userId: _currentUser!.userNo?.toString(),
         );
-        await _authService.setAuth(token, basicUserModel);
-        LikeService().setAuthToken(token);
-        PracticeStatsService().setAuthToken(token);
         await LikeService().initialize(userId: _currentUser!.username);
         await _syncMeditationPracticeForCurrentUser();
         unawaited(PracticeStatsService().flushPendingRecords());
@@ -382,6 +372,9 @@ class AuthModel extends ChangeNotifier {
 
         notifyListeners();
         refreshUserInfo();
+      } else if (userJsonString != null) {
+        // Cached profile data is not proof of authentication.
+        await prefs.remove('user_data');
       }
     } catch (e) {
       debugPrint('加载存储的认证信息失败: $e');
@@ -399,7 +392,7 @@ class AuthModel extends ChangeNotifier {
       final result = await _authService.login(username, password);
 
       if (result['success'] == true) {
-        _token = result['token'];
+        _token = _rustSessionHandle;
         final userJson = result['user'];
 
         final adminStatusResult = await _membershipService.getAdminStats(
@@ -427,7 +420,11 @@ class AuthModel extends ChangeNotifier {
         }
 
         await _storeAuth();
-        PracticeStatsService().setAuthToken(_token);
+        PracticeStatsService().setAuthToken(
+          _token,
+          username: _currentUser!.username,
+          userId: _currentUser!.userNo?.toString(),
+        );
         await LikeService().initialize(userId: _currentUser!.username);
         await _syncMeditationPracticeForCurrentUser();
         unawaited(PracticeStatsService().flushPendingRecords());
@@ -635,22 +632,21 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<bool> alipayLogin(String authCode) async {
+  Future<bool> alipayLogin(String authCode, [String? state]) async {
     _setLoading(true);
     _clearError();
 
     try {
-      final result = await _alipayAuthService.alipayLogin(authCode, null);
+      final result = await _alipayAuthService.alipayLogin(authCode, state);
 
       if (result['success'] == true) {
-        _token = result['token'];
+        _token = _rustSessionHandle;
         final username = result['username'] ?? '';
         final email = result['email'] ?? '';
         final userJson = result['user'];
         final trialExpiry = DateTime.now().add(const Duration(days: 3));
         final bootstrapUser = userJson is Map
             ? _buildBootstrapUser(
-                _token!,
                 username,
                 userJson: Map<String, dynamic>.from(userJson),
                 fallbackEmail: email,
@@ -658,7 +654,6 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               )
             : _buildBootstrapUser(
-                _token!,
                 username,
                 fallbackEmail: email,
                 fallbackMembershipType: 'trial',
@@ -719,7 +714,7 @@ class AuthModel extends ChangeNotifier {
       );
 
       if (result['success'] == true) {
-        _token = result['token'];
+        _token = _rustSessionHandle;
         final username = result['username'];
         final email = result['email'];
         final userJson = result['user'];
@@ -729,7 +724,6 @@ class AuthModel extends ChangeNotifier {
             : null;
         final bootstrapUser = userJson is Map
             ? _buildBootstrapUser(
-                _token!,
                 username,
                 userJson: Map<String, dynamic>.from(userJson),
                 fallbackEmail: email ?? '',
@@ -737,7 +731,6 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               )
             : _buildBootstrapUser(
-                _token!,
                 username,
                 fallbackEmail: email ?? '',
                 fallbackMembershipType: isNewUser ? 'trial' : null,
@@ -796,13 +789,12 @@ class AuthModel extends ChangeNotifier {
       debugPrint('🍎 Apple登录结果: success=${result['success']}');
 
       if (result['success'] == true) {
-        _token = result['token'];
+        _token = _rustSessionHandle;
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
         final trialExpiry = DateTime.now().add(const Duration(days: 3));
         final bootstrapUser = userJson is Map<String, dynamic>
             ? _buildBootstrapUser(
-                _token!,
                 username,
                 userJson: userJson,
                 fallbackEmail: email ?? '',
@@ -810,7 +802,6 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               )
             : _buildBootstrapUser(
-                _token!,
                 username,
                 fallbackEmail: email ?? '',
                 fallbackMembershipType: 'trial',
@@ -872,13 +863,12 @@ class AuthModel extends ChangeNotifier {
       debugPrint('📱 Firebase手机登录结果: success=${result['success']}');
 
       if (result['success'] == true) {
-        _token = result['token'];
+        _token = _rustSessionHandle;
         final userJson = result['user'];
         final username = result['username'] ?? userJson?['username'] ?? '';
         final trialExpiry = DateTime.now().add(const Duration(days: 3));
         final bootstrapUser = userJson is Map<String, dynamic>
             ? _buildBootstrapUser(
-                _token!,
                 username,
                 userJson: userJson,
                 fallbackPhoneNumber: phoneNumber,
@@ -887,7 +877,6 @@ class AuthModel extends ChangeNotifier {
                 fallbackMembershipExpiry: trialExpiry,
               )
             : _buildBootstrapUser(
-                _token!,
                 username,
                 fallbackPhoneNumber: phoneNumber,
                 fallbackFirebaseUid: firebaseUid,
@@ -943,7 +932,7 @@ class AuthModel extends ChangeNotifier {
       debugPrint('支付宝登录结果: $loginResult');
 
       if (loginResult['success'] == true) {
-        _token = loginResult['token'];
+        _token = _rustSessionHandle;
         final userJson = loginResult['user'];
 
         final adminStatusResult = await _membershipService.getAdminStats(
@@ -1012,7 +1001,7 @@ class AuthModel extends ChangeNotifier {
         debugPrint('支付宝注册结果: $result');
 
         if (result['success'] == true) {
-          _token = result['token'];
+          _token = _rustSessionHandle;
           final userJson = result['user'];
 
           final adminStatusResult = await _membershipService.getAdminStats(
@@ -1078,65 +1067,6 @@ class AuthModel extends ChangeNotifier {
     }
   }
 
-  Future<void> setTokenDirectly(
-    String token,
-    String username, {
-    Map<String, dynamic>? userJson,
-  }) async {
-    final bootstrapUser = _buildBootstrapUser(
-      token,
-      username,
-      userJson: userJson,
-      fallbackUser: _currentUser,
-    );
-
-    await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
-
-    _token = token;
-    _currentUser = bootstrapUser;
-
-    await _storeAuth();
-    await _syncMeditationPracticeForCurrentUser();
-    notifyListeners();
-
-    await refreshUserInfo();
-  }
-
-  Future<void> loginWithToken(
-    String token,
-    String username, {
-    Map<String, dynamic>? userJson,
-  }) async {
-    try {
-      debugPrint('使用token登录: username=$username');
-
-      _token = token;
-      final bootstrapUser = _buildBootstrapUser(
-        token,
-        username,
-        userJson: userJson,
-        fallbackUser: _currentUser,
-        fallbackMembershipType: _currentUser?.membershipType,
-        fallbackMembershipExpiry: _currentUser?.membershipExpiry,
-      );
-
-      await _authService.setAuth(token, _buildStoredUserModel(bootstrapUser));
-
-      _currentUser = bootstrapUser;
-
-      await _storeAuth();
-      await LikeService().initialize(userId: _currentUser!.username);
-      await _syncMeditationPracticeForCurrentUser();
-      notifyListeners();
-
-      debugPrint('✅ Token已设置，登录完成');
-
-      await refreshUserInfo();
-    } catch (e) {
-      debugPrint('使用token登录失败: $e');
-    }
-  }
-
   Future<Map<String, dynamic>> deleteAccount() async {
     _setLoading(true);
     _clearError();
@@ -1165,6 +1095,11 @@ class AuthModel extends ChangeNotifier {
     } catch (e) {
       debugPrint('登出请求失败: $e');
     } finally {
+      try {
+        await MahayanaSdk.instance.clearSession();
+      } catch (error) {
+        MahayanaSdk.instance.reportSessionSyncFailure(error);
+      }
       _currentUser = null;
       _token = null;
       _clearError();
@@ -1185,7 +1120,7 @@ class AuthModel extends ChangeNotifier {
   Future<void> _storeAuth() async {
     if (_token != null && _currentUser != null) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', _token!);
+      await prefs.remove('auth_token');
       await prefs.setString('user_data', json.encode(_currentUser!.toJson()));
     }
   }

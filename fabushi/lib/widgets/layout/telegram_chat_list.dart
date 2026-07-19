@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../features/auth/application/auth_model.dart';
 import '../../services/mini_app_registry_service.dart';
 import '../../services/social_friend_service.dart';
+import '../../services/telegram/telegram_chat_session.dart';
 import '../social/social_feature_bot.dart';
 import 'telegram_folder_tabs.dart';
 
@@ -13,11 +14,15 @@ class TelegramChatList extends StatefulWidget {
     super.key,
     required this.selectedBot,
     required this.onBotSelected,
+    required this.onFriendSelected,
+    this.selectedFriendId,
     this.isMobile = false,
   });
 
   final String selectedBot;
   final ValueChanged<SocialFeatureBot> onBotSelected;
+  final ValueChanged<SocialFriendContact> onFriendSelected;
+  final String? selectedFriendId;
   final bool isMobile;
 
   @override
@@ -33,6 +38,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
   bool _isLoadingBots = false;
   String _filter = '';
   int _selectedTabIndex = 0;
+  final TelegramChatSession _telegramSession = TelegramChatSession.instance;
 
   final List<String> _tabs = ['全部', '个人', '机器人', '法布施'];
 
@@ -42,14 +48,21 @@ class _TelegramChatListState extends State<TelegramChatList> {
     _filterController.addListener(() {
       setState(() => _filter = _filterController.text.trim());
     });
+    _telegramSession.addListener(_handleTelegramStateChanged);
+    unawaited(_telegramSession.initialize().catchError((_) {}));
     unawaited(_loadBots());
     unawaited(_loadFriends());
   }
 
   @override
   void dispose() {
+    _telegramSession.removeListener(_handleTelegramStateChanged);
     _filterController.dispose();
     super.dispose();
+  }
+
+  void _handleTelegramStateChanged() {
+    if (mounted) setState(() {});
   }
 
   String? get _authToken {
@@ -63,6 +76,13 @@ class _TelegramChatListState extends State<TelegramChatList> {
   Future<void> _loadFriends() async {
     setState(() => _isLoadingFriends = true);
     final friends = await _friendService.listFriends(token: _authToken);
+    for (final friend in friends) {
+      try {
+        await _telegramSession.upsertFriend(friend);
+      } catch (_) {
+        break;
+      }
+    }
     if (!mounted) return;
     setState(() {
       _friends = friends;
@@ -72,9 +92,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
 
   Future<void> _loadBots() async {
     setState(() => _isLoadingBots = true);
-    final service = MiniAppRegistryService(
-      tokenProvider: () async => _authToken,
-    );
+    final service = MiniAppRegistryService();
     final registry = await service.loadRegistry(forceRefresh: true);
     if (!mounted) return;
     setState(() {
@@ -119,9 +137,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
 
     return Container(
       width: width,
-      decoration: const BoxDecoration(
-        color: Color(0xFF17212B),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFF17212B)),
       child: SafeArea(
         right: false,
         child: Column(
@@ -144,7 +160,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    if (_selectedTabIndex == 0 || _selectedTabIndex == 2 || _selectedTabIndex == 3) ...[
+                    if (_selectedTabIndex == 0 ||
+                        _selectedTabIndex == 2 ||
+                        _selectedTabIndex == 3) ...[
                       _SectionLabel(
                         label: '小程序机器人',
                         trailing: _isLoadingBots ? '同步中' : 'PINNED',
@@ -156,7 +174,6 @@ class _TelegramChatListState extends State<TelegramChatList> {
                           avatarColor: bot.avatarColor,
                           icon: bot.icon,
                           selected: widget.selectedBot == bot.stableBotId,
-                          timeString: '10:42', // Placeholder to match Telegram
                           onTap: () => widget.onBotSelected(bot),
                         ),
                       const SizedBox(height: 8),
@@ -164,7 +181,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
                     if (_selectedTabIndex == 0 || _selectedTabIndex == 1) ...[
                       _SectionLabel(
                         label: '好友',
-                        trailing: _isLoadingFriends ? '同步中' : '${friends.length}',
+                        trailing: _isLoadingFriends
+                            ? '同步中'
+                            : '${friends.length}',
                       ),
                       if (_isLoadingFriends)
                         const Padding(
@@ -193,27 +212,28 @@ class _TelegramChatListState extends State<TelegramChatList> {
                         )
                       else
                         for (final friend in friends)
-                          _ChatTile(
-                            title: friend.displayName,
-                            subtitle: friend.status == 'pending'
-                                ? '等待通过'
-                                : (friend.username.isEmpty
-                                      ? '已添加好友'
-                                      : '@${friend.username}'),
-                            avatarUrl: friend.avatarUrl.isNotEmpty
-                                ? friend.avatarUrl
-                                : null,
-                            avatarColor: const Color(0xFF3D8BFF),
-                            selected: false,
-                            timeString: '昨天', // Placeholder to match Telegram
-                            unreadCount: friend.status == 'pending' ? 1 : 0,
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '${friend.displayName} 的私聊会在下一步接入',
-                                  ),
+                          Builder(
+                            builder: (context) {
+                              final summary = _telegramSession.summaryForFriend(
+                                friend,
+                              );
+                              return _ChatTile(
+                                title: friend.displayName,
+                                subtitle: friend.status == 'pending'
+                                    ? '等待通过'
+                                    : summary.subtitle,
+                                avatarUrl: friend.avatarUrl.isNotEmpty
+                                    ? friend.avatarUrl
+                                    : null,
+                                avatarColor: const Color(0xFF3D8BFF),
+                                selected: widget.selectedFriendId == friend.id,
+                                timeString: _formatActivity(
+                                  summary.lastActivity,
                                 ),
+                                unreadCount: friend.status == 'pending'
+                                    ? 1
+                                    : summary.unreadCount,
+                                onTap: () => widget.onFriendSelected(friend),
                               );
                             },
                           ),
@@ -267,6 +287,18 @@ class _TelegramChatListState extends State<TelegramChatList> {
         ],
       ),
     );
+  }
+
+  String? _formatActivity(DateTime? value) {
+    if (value == null) return null;
+    final local = value.toLocal();
+    final now = DateTime.now();
+    if (local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    return '${local.month}/${local.day}';
   }
 }
 
@@ -377,7 +409,10 @@ class _ChatTile extends StatelessWidget {
                       ),
                       if (unreadCount > 0)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF40A7E3),
                             borderRadius: BorderRadius.circular(10),

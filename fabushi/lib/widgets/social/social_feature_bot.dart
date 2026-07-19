@@ -7,6 +7,8 @@ enum SocialFeatureBotType {
   globalDharma,
   flashcards,
   platformPublish,
+  hermesInstaller,
+  botFather,
   assistant,
 }
 
@@ -58,6 +60,10 @@ class SocialFeatureBot {
         return MiniAppBotKind.flashcards;
       case SocialFeatureBotType.platformPublish:
         return MiniAppBotKind.platformPublish;
+      case SocialFeatureBotType.hermesInstaller:
+        return MiniAppBotKind.thirdParty;
+      case SocialFeatureBotType.botFather:
+        return MiniAppBotKind.botFather;
       case SocialFeatureBotType.assistant:
         return MiniAppBotKind.assistant;
     }
@@ -72,6 +78,9 @@ class SocialFeatureBot {
       MiniAppBotKind.globalDharma => SocialFeatureBotType.globalDharma,
       MiniAppBotKind.flashcards => SocialFeatureBotType.flashcards,
       MiniAppBotKind.platformPublish => SocialFeatureBotType.platformPublish,
+      MiniAppBotKind.botFather => SocialFeatureBotType.botFather,
+      MiniAppBotKind.thirdParty when bot.miniAppId == 'hermes-installer' =>
+        SocialFeatureBotType.hermesInstaller,
       _ => SocialFeatureBotType.assistant,
     };
     return SocialFeatureBot(
@@ -96,112 +105,19 @@ class SocialFeatureBot {
 
 extension SocialFeatureBotTypeX on SocialFeatureBotType {
   SocialFeatureBot get bot {
-    switch (this) {
-      case SocialFeatureBotType.globalDharma:
-        return const SocialFeatureBot(
-          type: SocialFeatureBotType.globalDharma,
-          title: '全球法布施',
-          subtitle: '地区、循环、场能都在对话框上方设置',
-          initials: '法',
-          icon: Icons.public,
-          avatarColor: Color(0xFF4CAF7A),
-          destinationIndex: 0,
-          greeting: '把要分享的文字、链接或素材发给我，我会按上方选择的地区与模式启动全球法布施。',
-          inputHint: '输入要法布施的文字/链接，或点 + 添加素材',
-          botId: 'bot.global-dharma',
-          miniAppId: 'official.global-dharma',
-          kind: MiniAppBotKind.globalDharma,
-          permissions: [
-            'app.context',
-            'bot.chat',
-            'ui.native',
-            'haptics.feedback',
-            'auth.session',
-            'payments.alipay',
-            'files.pick',
-            'network.http',
-            'network.udp',
-            'network.interfaces',
-            'system.keepAwake',
-            'hotspot.settings',
-            'cloud.kv',
-            'runtime.storage',
-            'runtime.file',
-            'globalDharma.delivery',
-            'local.loopback',
-            'fs.readWrite',
-            'runtime.process',
-            'share.chat',
-          ],
-        );
-      case SocialFeatureBotType.flashcards:
-        return const SocialFeatureBot(
-          type: SocialFeatureBotType.flashcards,
-          title: '背诵闪卡制作',
-          subtitle: '随机挖空 / AI 制卡从顶部模式按钮选择',
-          initials: '卡',
-          icon: Icons.style_outlined,
-          avatarColor: Color(0xFF7E57C2),
-          destinationIndex: 1,
-          greeting: '粘贴经文、文章正文或链接即可制作背诵闪卡。制卡模式请在上方按钮切换，不会再插入聊天选择消息。',
-          inputHint: '粘贴链接或正文，发送后制作闪卡',
-          botId: 'bot.flashcards',
-          miniAppId: 'official.flashcards',
-          kind: MiniAppBotKind.flashcards,
-          permissions: [
-            'app.context',
-            'bot.chat',
-            'ui.native',
-            'haptics.feedback',
-            'flashcards.create',
-            'cloud.kv',
-            'share.chat',
-          ],
-        );
-      case SocialFeatureBotType.platformPublish:
-        return const SocialFeatureBot(
-          type: SocialFeatureBotType.platformPublish,
-          title: '法布施到平台',
-          subtitle: '选择平台后生成发布草稿并打开入口',
-          initials: '发',
-          icon: Icons.campaign_outlined,
-          avatarColor: Color(0xFFFF9F43),
-          destinationIndex: 2,
-          greeting: '把要发布的正文或链接发给我，上方选择平台后，我会生成发布草稿、复制到剪贴板并打开对应平台入口。',
-          inputHint: '输入要发布到平台的正文/链接',
-          botId: 'bot.platform-publish',
-          miniAppId: 'official.platform-publish',
-          kind: MiniAppBotKind.platformPublish,
-          permissions: [
-            'app.context',
-            'bot.chat',
-            'ui.native',
-            'haptics.feedback',
-            'platform.publish',
-            'files.pick',
-            'fs.readWrite',
-            'shell.execute',
-            'browser.external',
-            'cloud.kv',
-            'share.chat',
-          ],
-        );
-      case SocialFeatureBotType.assistant:
-        return const SocialFeatureBot(
-          type: SocialFeatureBotType.assistant,
-          title: '大乘助理',
-          subtitle: '原有 OpenClaw / AI / 桌面控制入口',
-          initials: 'AI',
-          icon: Icons.smart_toy_outlined,
-          avatarColor: Color(0xFF3D8BFF),
-          destinationIndex: 3,
-          greeting: '继续使用原有大乘助理。',
-          inputHint: '问问大乘',
-          botId: 'bot.assistant',
-          miniAppId: 'official.assistant',
-          kind: MiniAppBotKind.assistant,
-        );
-    }
+    final pluginId = switch (this) {
+      SocialFeatureBotType.globalDharma => 'global-dharma',
+      SocialFeatureBotType.flashcards => 'faliu-flashcards',
+      SocialFeatureBotType.platformPublish => 'platform-publish',
+      SocialFeatureBotType.hermesInstaller => 'hermes-installer',
+      SocialFeatureBotType.botFather => 'bot-father',
+      SocialFeatureBotType.assistant => 'mahayana-assistant',
+    };
+    final bots = defaultSocialMiniAppBots();
+    return bots.firstWhere(
+      (bot) => bot.stableMiniAppId == pluginId,
+      orElse: () => bots.first,
+    );
   }
 }
 

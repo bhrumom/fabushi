@@ -38,6 +38,7 @@ jobs:
       android_changed: ${{ steps.classify.outputs.android_changed }}
       worker_changed: ${{ steps.classify.outputs.worker_changed }}
       frontend_changed: ${{ steps.classify.outputs.frontend_changed }}
+      mcp_changed: ${{ steps.classify.outputs.mcp_changed }}
       workflow_guard_changed: ${{ steps.classify.outputs.workflow_guard_changed }}
     steps:
       - name: Checkout diff inputs
@@ -132,12 +133,14 @@ jobs:
           android_changed=false
           worker_changed=false
           frontend_changed=false
+          mcp_changed=false
           workflow_guard_changed=false
 
           app_reasons=()
           android_reasons=()
           worker_reasons=()
           frontend_reasons=()
+          mcp_reasons=()
           guard_reasons=()
 
           mark_app() {
@@ -158,6 +161,11 @@ jobs:
           mark_frontend() {
             frontend_changed=true
             frontend_reasons+=("$1")
+          }
+
+          mark_mcp() {
+            mcp_changed=true
+            mcp_reasons+=("$1")
           }
 
           mark_guard() {
@@ -197,6 +205,11 @@ jobs:
                 mark_guard "workflow guardrail input changed: $path"
                 ;;
             esac
+            case "$path" in
+              .agents/plugins/*|ai-backend/*|native/global-dharma/*|third_party/mahayana|third_party/mahayana/*|fabushi/lib/screens/mini_app_host_screen.dart|fabushi/lib/widgets/mcp_schema_form_dialog.dart|fabushi/lib/widgets/social/social_feature_bot.dart|fabushi/lib/services/mini_app_registry_service.dart|fabushi/tool/desktop_package_cli.dart|frontend/apps/web/src/app/miniapps/*|frontend/packages/mcp-app-sdk/*|.github/workflows/ci.yml)
+                mark_mcp "MCP plugin contract input changed: $path"
+                ;;
+            esac
           done < "$changed_files"
 
           {
@@ -204,6 +217,7 @@ jobs:
             echo "android_changed=$android_changed"
             echo "worker_changed=$worker_changed"
             echo "frontend_changed=$frontend_changed"
+            echo "mcp_changed=$mcp_changed"
             echo "workflow_guard_changed=$workflow_guard_changed"
           } >> "$GITHUB_OUTPUT"
 
@@ -214,6 +228,7 @@ jobs:
             echo "- Android build changed: $android_changed"
             echo "- Worker or deploy runtime changed: $worker_changed"
             echo "- Frontend changed: $frontend_changed"
+            echo "- MCP plugin contract changed: $mcp_changed"
             echo "- Workflow guardrails changed: $workflow_guard_changed"
             echo ""
             echo "### Reasons"
@@ -229,6 +244,9 @@ jobs:
             fi
             if [ "${#frontend_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${frontend_reasons[@]}" | awk '!seen[$0]++ { printf "- Frontend: `%s`\n", $0 }'
+            fi
+            if [ "${#mcp_reasons[@]}" -gt 0 ]; then
+              printf '%s\n' "${mcp_reasons[@]}" | awk '!seen[$0]++ { printf "- MCP: `%s`\n", $0 }'
             fi
             if [ "${#guard_reasons[@]}" -gt 0 ]; then
               printf '%s\n' "${guard_reasons[@]}" | awk '!seen[$0]++ { printf "- Guardrail: `%s`\n", $0 }'
@@ -264,12 +282,17 @@ jobs:
             /fabushi/lib/**
             /fabushi/test/**
             /fabushi/integration_test/**
+            /third_party/**
             /fabushi/assets/**
             !/fabushi/assets/built_in/**
             /fabushi/fonts/**
             /fabushi/ios/Runner/Configuration.storekit
             /fabushi/web/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Verify Android Buddha uses flutter_scene model
         shell: bash
@@ -439,8 +462,13 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -491,6 +519,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -531,6 +560,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
 
       - name: Set up Node.js
@@ -548,7 +578,7 @@ jobs:
             echo "No remaining Worker contract tests found."
             exit 0
           fi
-          xargs -0 -n 1 node --test < /tmp/worker-tests
+          xargs -0 -n 1 node < /tmp/worker-tests
 
   worker-release-simulation:
     name: Release simulation - Worker dry-run
@@ -571,6 +601,7 @@ jobs:
             /.github/workflows/**
             /.github/scripts/**
             /fabushi/web/**
+            /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
             /frontend/**
 
@@ -657,6 +688,42 @@ jobs:
       - name: Build Next.js site
         run: pnpm build:web
 
+  mcp-plugin-contract-checks:
+    name: Contract checks - MCP plugins
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mcp_changed == 'true'
+    defaults:
+      run:
+        working-directory: ai-backend
+    steps:
+      - name: Checkout MCP contract inputs
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.agents/plugins/**
+            /ai-backend/**
+            /frontend/packages/mcp-app-sdk/**
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+
+      - name: Install MCP contract dependencies
+        run: npm ci
+
+      - name: Validate official MCP plugin contracts
+        run: npm test
+
+      - name: Validate shared MCP command and Schema rules
+        working-directory: frontend/packages/mcp-app-sdk
+        run: npm test
+
   workflow-contract-checks:
     name: Contract checks - Workflow guardrails
     runs-on: ubuntu-latest
@@ -728,6 +795,7 @@ jobs:
     needs:
       - detect-changes
       - worker-contract-checks
+      - mcp-plugin-contract-checks
       - workflow-contract-checks
     if: always()
     steps:
@@ -738,6 +806,7 @@ jobs:
           for pair in \
             "Detect changes:${{ needs.detect-changes.result }}" \
             "Worker contract checks:${{ needs.worker-contract-checks.result }}" \
+            "MCP plugin contract checks:${{ needs.mcp-plugin-contract-checks.result }}" \
             "Workflow contract checks:${{ needs.workflow-contract-checks.result }}"
           do
             name="${pair%%:*}"
@@ -822,6 +891,7 @@ jobs:
       - android-gradle-bootstrap
       - worker-module-checks
       - worker-contract-checks
+      - mcp-plugin-contract-checks
       - worker-release-simulation
       - e2e-release-simulation
       - frontend-module-checks

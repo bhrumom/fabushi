@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "mahayana-assistant"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "help", "tool": "help" },
+    { "name": "list", "tool": "list_plugins" },
+    { "name": "status", "tool": "plugin_status" },
+    { "name": "diagnose", "tool": "diagnose_plugin" }
+  ]
+}

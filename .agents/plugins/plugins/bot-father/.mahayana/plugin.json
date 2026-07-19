@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "bot-father"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "create", "tool": "create_plugin" },
+    { "name": "validate", "tool": "validate_plugin" },
+    { "name": "status", "tool": "deployment_status" }
+  ]
+}

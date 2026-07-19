@@ -11,6 +11,7 @@ on:
       - 'fabushi/lib/**'
       - 'fabushi/pubspec.yaml'
       - 'fabushi/pubspec.lock'
+      - 'native/telegram-*/**'
   push:
     tags:
       - 'v*'
@@ -78,7 +79,7 @@ jobs:
     name: Firebase Test Lab physical Android E2E
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: fabushi
@@ -90,15 +91,27 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
+            /native/telegram-*/**
+            /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
             !/fabushi/temp_models/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

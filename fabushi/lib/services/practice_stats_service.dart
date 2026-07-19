@@ -4,8 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/config/app_config.dart';
-import 'app_settings.dart';
+import 'http_service.dart';
 
 int _asInt(dynamic value) {
   if (value is int) return value;
@@ -311,9 +310,10 @@ class PracticeStatsService extends ChangeNotifier {
   bool get lastWriteQueued => _lastWriteQueued;
   String? get lastError => _lastError;
 
-  void setAuthToken(String? token) {
+  void setAuthToken(String? token, {String? username, String? userId}) {
     _authToken = token;
-    _setIdentityFromToken(token);
+    if (username != null) _authUsername = username;
+    if (userId != null) _authUserId = userId;
 
     if (token == null || token.isEmpty) {
       _clearCloudData();
@@ -323,13 +323,6 @@ class PracticeStatsService extends ChangeNotifier {
 
     _refreshPendingCount();
   }
-
-  Future<String> get _baseUrl async => await AppSettings.getBackendUrl();
-
-  Map<String, String> get _headers => {
-    'Authorization': 'Bearer $_authToken',
-    'Content-Type': 'application/json',
-  };
 
   String get _pendingRecordsKey {
     final userId = _authUserId;
@@ -363,34 +356,7 @@ class PracticeStatsService extends ChangeNotifier {
   }
 
   Future<bool> _ensureAuthToken() async {
-    if (_authToken != null && _authToken!.isNotEmpty) return true;
-
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(AppConfig.tokenStorageKey);
-    if (token == null || token.isEmpty) return false;
-
-    _authToken = token;
-    _setIdentityFromToken(token);
-    await _refreshPendingCount();
-    return true;
-  }
-
-  void _setIdentityFromToken(String? token) {
-    _authUsername = null;
-    _authUserId = null;
-    if (token == null || token.isEmpty) return;
-
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return;
-      final normalized = base64Url.normalize(parts[1]);
-      final payload = jsonDecode(utf8.decode(base64Url.decode(normalized)));
-      _authUsername = (payload['username'] ?? payload['sub'])?.toString();
-      _authUserId = (payload['userId'] ?? payload['user_id'] ?? payload['id'])
-          ?.toString();
-    } catch (_) {
-      return;
-    }
+    return _authToken != null && _authToken!.isNotEmpty;
   }
 
   Future<List<Map<String, dynamic>>> _readPendingRecords(
@@ -452,11 +418,10 @@ class PracticeStatsService extends ChangeNotifier {
   }
 
   Future<bool> _postRecordBody(Map<String, dynamic> body) async {
-    final url = await _baseUrl;
-    final response = await http.post(
-      Uri.parse('$url/api/meditation/record'),
-      headers: _headers,
-      body: jsonEncode(body),
+    final response = await HttpService.post(
+      '/api/meditation/record',
+      body: body,
+      useAuth: true,
     );
 
     if (response.statusCode != 200) {
@@ -486,20 +451,19 @@ class PracticeStatsService extends ChangeNotifier {
     required int recordId,
     Map<String, dynamic>? body,
   }) async {
-    final url = await _baseUrl;
     final uri = Uri.parse(
-      '$url/api/meditation/records',
+      '/api/meditation/records',
     ).replace(queryParameters: {'id': recordId.toString()});
 
     late final http.Response response;
     if (method == 'PUT') {
-      response = await http.put(
-        uri,
-        headers: _headers,
-        body: jsonEncode(body ?? const <String, dynamic>{}),
+      response = await HttpService.put(
+        uri.toString(),
+        body: body ?? const <String, dynamic>{},
+        useAuth: true,
       );
     } else if (method == 'DELETE') {
-      response = await http.delete(uri, headers: _headers);
+      response = await HttpService.delete(uri.toString(), useAuth: true);
     } else {
       throw ArgumentError('Unsupported record mutation method: $method');
     }
@@ -564,10 +528,9 @@ class PracticeStatsService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final url = await _baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/meditation/stats'),
-        headers: _headers,
+      final response = await HttpService.get(
+        '/api/meditation/stats',
+        useAuth: true,
       );
 
       if (response.statusCode == 200) {
@@ -597,10 +560,9 @@ class PracticeStatsService extends ChangeNotifier {
     if (!await _ensureAuthToken()) return false;
 
     try {
-      final url = await _baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/meditation/weekly'),
-        headers: _headers,
+      final response = await HttpService.get(
+        '/api/meditation/weekly',
+        useAuth: true,
       );
 
       if (response.statusCode == 200) {
@@ -631,10 +593,9 @@ class PracticeStatsService extends ChangeNotifier {
     if (!await _ensureAuthToken()) return false;
 
     try {
-      final url = await _baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/meditation/monthly'),
-        headers: _headers,
+      final response = await HttpService.get(
+        '/api/meditation/monthly',
+        useAuth: true,
       );
 
       if (response.statusCode == 200) {
@@ -669,7 +630,6 @@ class PracticeStatsService extends ChangeNotifier {
     if (!await _ensureAuthToken()) return false;
 
     try {
-      final url = await _baseUrl;
       final query = <String, String>{
         'limit': limit.toString(),
         'offset': offset.toString(),
@@ -677,9 +637,9 @@ class PracticeStatsService extends ChangeNotifier {
       if (sutra != null && sutra.isNotEmpty) query['sutra'] = sutra;
 
       final uri = Uri.parse(
-        '$url/api/meditation/records',
+        '/api/meditation/records',
       ).replace(queryParameters: query);
-      final response = await http.get(uri, headers: _headers);
+      final response = await HttpService.get(uri.toString(), useAuth: true);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -710,10 +670,9 @@ class PracticeStatsService extends ChangeNotifier {
     if (!await _ensureAuthToken()) return false;
 
     try {
-      final url = await _baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/meditation/goal'),
-        headers: _headers,
+      final response = await HttpService.get(
+        '/api/meditation/goal',
+        useAuth: true,
       );
 
       if (response.statusCode == 200) {
@@ -748,15 +707,14 @@ class PracticeStatsService extends ChangeNotifier {
     if (!await _ensureAuthToken()) return false;
 
     try {
-      final url = await _baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/meditation/goal'),
-        headers: _headers,
-        body: jsonEncode({
+      final response = await HttpService.post(
+        '/api/meditation/goal',
+        useAuth: true,
+        body: {
           'sutra': sutra,
           'targetCount': targetCount,
           'dedication': dedication ?? '',
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
