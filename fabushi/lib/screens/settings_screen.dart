@@ -22,7 +22,6 @@ import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../widgets/settings/codex_profile_dashboard.dart';
 import '../models/auth_model.dart';
-import '../services/miniapp/codex_sdk_service.dart';
 import '../core/config/app_config.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -487,18 +486,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _codexProvider = selectedProvider;
     });
 
-    CodexModelProvider providerEnum = CodexModelProvider.deepSeek;
-
-    CodexSdk.instance.configure(CodexModelConfigDart(
-      provider: providerEnum,
-      baseUrl: finalUrl,
-      apiKey: finalKey,
-      modelName: finalModel,
-    ));
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已更新 Codex & 机器人之父 API 配置：$finalModel'),
+        content: Text('已更新 Codex API 配置：$finalModel'),
         backgroundColor: Colors.green,
       ),
     );

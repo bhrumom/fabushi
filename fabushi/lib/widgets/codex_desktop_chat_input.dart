@@ -2,8 +2,140 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../models/mini_app_model.dart';
 import '../services/project_service.dart';
+
+enum CodexComposerMentionKind { bot, plugin, skill, mcp }
+
+class CodexComposerMention {
+  const CodexComposerMention({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.insertText,
+    required this.pluginId,
+    required this.kind,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+  final String insertText;
+  final String pluginId;
+  final CodexComposerMentionKind kind;
+
+  String get kindLabel => switch (kind) {
+    CodexComposerMentionKind.bot => '机器人',
+    CodexComposerMentionKind.plugin => '插件',
+    CodexComposerMentionKind.skill => 'Skill',
+    CodexComposerMentionKind.mcp => 'MCP',
+  };
+
+  IconData get icon => switch (kind) {
+    CodexComposerMentionKind.bot => Icons.smart_toy_outlined,
+    CodexComposerMentionKind.plugin => Icons.extension_outlined,
+    CodexComposerMentionKind.skill => Icons.auto_awesome_outlined,
+    CodexComposerMentionKind.mcp => Icons.hub_outlined,
+  };
+}
+
+List<CodexComposerMention> buildCodexComposerMentions(
+  MiniAppRegistry registry,
+) {
+  final mentions = <CodexComposerMention>[];
+  final seen = <String>{};
+  void add(CodexComposerMention mention) {
+    final key = '${mention.kind.name}:${mention.insertText.toLowerCase()}';
+    if (seen.add(key)) mentions.add(mention);
+  }
+
+  for (final bot in registry.bots) {
+    final pluginId = bot.miniAppId;
+    final slug = codexMentionSlug(pluginId);
+    add(
+      CodexComposerMention(
+        id: 'bot:${bot.botId}',
+        label: bot.title,
+        description: bot.subtitle.trim().isEmpty
+            ? '绑定 $pluginId 插件'
+            : '${bot.subtitle} · $pluginId',
+        insertText: '@$slug',
+        pluginId: pluginId,
+        kind: CodexComposerMentionKind.bot,
+      ),
+    );
+  }
+
+  for (final manifest in registry.miniApps) {
+    final pluginId = manifest.miniAppId;
+    final slug = codexMentionSlug(pluginId);
+    add(
+      CodexComposerMention(
+        id: 'plugin:$pluginId',
+        label: manifest.title,
+        description: manifest.pluginPath.isEmpty
+            ? pluginId
+            : '$pluginId · ${manifest.pluginPath}',
+        insertText: '@plugin:$slug',
+        pluginId: pluginId,
+        kind: CodexComposerMentionKind.plugin,
+      ),
+    );
+    for (final skill in manifest.skills) {
+      add(
+        CodexComposerMention(
+          id: 'skill:$pluginId:$skill',
+          label: skill,
+          description: '${manifest.title} · Skill',
+          insertText: r'$' + skill,
+          pluginId: pluginId,
+          kind: CodexComposerMentionKind.skill,
+        ),
+      );
+    }
+    for (final server in manifest.mcpServers) {
+      add(
+        CodexComposerMention(
+          id: 'mcp:$pluginId:$server',
+          label: server,
+          description: '${manifest.title} · MCP Server',
+          insertText: '@mcp:${codexMentionSlug(server)}',
+          pluginId: pluginId,
+          kind: CodexComposerMentionKind.mcp,
+        ),
+      );
+    }
+  }
+  return mentions;
+}
+
+String codexMentionSlug(String value) {
+  final normalized = value
+      .trim()
+      .replaceFirst(RegExp(r'^official\.'), '')
+      .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '-');
+  return normalized.replaceAll(RegExp(r'^-+|-+$'), '');
+}
+
+List<CodexComposerMention> filterCodexComposerMentions(
+  List<CodexComposerMention> mentions,
+  String query, {
+  int limit = 8,
+}) {
+  final needle = query.trim().toLowerCase();
+  final filtered = mentions
+      .where((mention) {
+        if (needle.isEmpty) return true;
+        return mention.label.toLowerCase().contains(needle) ||
+            mention.description.toLowerCase().contains(needle) ||
+            mention.insertText.toLowerCase().contains(needle) ||
+            mention.kindLabel.toLowerCase().contains(needle);
+      })
+      .toList(growable: false);
+  return filtered.take(limit).toList(growable: false);
+}
 
 class CodexDesktopModelOption {
   final String id;
@@ -52,6 +184,8 @@ class CodexDesktopChatInput extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
   final LocalProject? selectedProject;
   final ValueChanged<LocalProject?>? onProjectChanged;
+  final List<CodexComposerMention> mentions;
+  final ValueChanged<CodexComposerMention>? onMentionSelected;
 
   const CodexDesktopChatInput({
     super.key,
@@ -68,6 +202,8 @@ class CodexDesktopChatInput extends StatefulWidget {
     this.onModelChanged,
     this.selectedProject,
     this.onProjectChanged,
+    this.mentions = const [],
+    this.onMentionSelected,
   });
 
   @override
@@ -81,11 +217,18 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
   bool _isFullAccess = true;
   List<LocalProject> _projects = const [];
   bool _isLoadingProjects = false;
+  final FocusNode _inputFocus = FocusNode();
+  int? _mentionStart;
+  int? _mentionEnd;
+  String _mentionQuery = '';
+  int _selectedMentionIndex = 0;
+  bool _mentionsDismissed = false;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_handleControllerChanged);
+    _inputFocus.addListener(_handleFocusChanged);
     unawaited(_loadProjects());
   }
 
@@ -96,16 +239,116 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
       oldWidget.controller.removeListener(_handleControllerChanged);
       widget.controller.addListener(_handleControllerChanged);
     }
+    if (oldWidget.mentions != widget.mentions) {
+      _syncMentionQuery(notify: false);
+    }
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChanged);
+    _inputFocus
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     super.dispose();
   }
 
   void _handleControllerChanged() {
+    _mentionsDismissed = false;
+    _syncMentionQuery();
+  }
+
+  void _handleFocusChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _syncMentionQuery({bool notify = true}) {
+    final selection = widget.controller.selection;
+    int? start;
+    int? end;
+    var query = '';
+    if (selection.isValid && selection.isCollapsed) {
+      final cursor = selection.baseOffset;
+      final text = widget.controller.text;
+      if (cursor >= 0 && cursor <= text.length) {
+        final beforeCursor = text.substring(0, cursor);
+        final at = beforeCursor.lastIndexOf('@');
+        if (at >= 0 &&
+            (at == 0 || RegExp(r'\s').hasMatch(text[at - 1])) &&
+            !RegExp(r'\s').hasMatch(beforeCursor.substring(at + 1))) {
+          start = at;
+          end = cursor;
+          query = beforeCursor.substring(at + 1);
+        }
+      }
+    }
+    _mentionStart = start;
+    _mentionEnd = end;
+    _mentionQuery = query;
+    final matches = _visibleMentions;
+    if (_selectedMentionIndex >= matches.length) {
+      _selectedMentionIndex = matches.isEmpty ? 0 : matches.length - 1;
+    }
+    if (notify && mounted) setState(() {});
+  }
+
+  List<CodexComposerMention> get _visibleMentions {
+    if (_mentionsDismissed ||
+        !_inputFocus.hasFocus ||
+        _mentionStart == null ||
+        widget.mentions.isEmpty) {
+      return const [];
+    }
+    return filterCodexComposerMentions(widget.mentions, _mentionQuery);
+  }
+
+  void _insertMention(CodexComposerMention mention) {
+    final start = _mentionStart;
+    final end = _mentionEnd;
+    if (start == null || end == null) return;
+    final text = widget.controller.text;
+    final insertion = '${mention.insertText} ';
+    final nextText = text.replaceRange(start, end, insertion);
+    final cursor = start + insertion.length;
+    widget.controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: cursor),
+    );
+    _mentionStart = null;
+    _mentionEnd = null;
+    _mentionQuery = '';
+    _selectedMentionIndex = 0;
+    widget.onMentionSelected?.call(mention);
+    _inputFocus.requestFocus();
+  }
+
+  KeyEventResult _handleInputKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final mentions = _visibleMentions;
+    if (mentions.isEmpty) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _selectedMentionIndex = (_selectedMentionIndex + 1) % mentions.length;
+      });
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _selectedMentionIndex =
+            (_selectedMentionIndex - 1 + mentions.length) % mentions.length;
+      });
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.tab) {
+      _insertMention(mentions[_selectedMentionIndex]);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _mentionsDismissed = true);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   CodexDesktopModelOption get _selectedModel {
@@ -142,36 +385,43 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (widget.topContent != null) widget.topContent!,
-              TextField(
-                controller: widget.controller,
-                minLines: 2,
-                maxLines: 6,
-                enabled: !widget.isBusy,
-                textInputAction: TextInputAction.send,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  height: 1.36,
-                ),
-                cursorColor: Colors.white,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  hintText: widget.hintText,
-                  hintStyle: const TextStyle(
-                    color: Color(0xFF747478),
+              if (_visibleMentions.isNotEmpty) _buildMentionMenu(),
+              Focus(
+                onKeyEvent: _handleInputKey,
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _inputFocus,
+                  minLines: 2,
+                  maxLines: 6,
+                  enabled: !widget.isBusy,
+                  textInputAction: TextInputAction.send,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 16,
+                    height: 1.36,
                   ),
-                  contentPadding: EdgeInsets.fromLTRB(
-                    16,
-                    widget.topContent == null ? 16 : 10,
-                    16,
-                    8,
+                  cursorColor: Colors.white,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: widget.hintText,
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF747478),
+                      fontSize: 16,
+                    ),
+                    contentPadding: EdgeInsets.fromLTRB(
+                      16,
+                      widget.topContent == null ? 16 : 10,
+                      16,
+                      8,
+                    ),
                   ),
+                  onChanged: (_) => widget.onTextChanged?.call(),
+                  onSubmitted: (_) {
+                    if (_visibleMentions.isEmpty && _canSubmit) {
+                      widget.onSubmit();
+                    }
+                  },
                 ),
-                onChanged: (_) => widget.onTextChanged?.call(),
-                onSubmitted: (_) {
-                  if (_canSubmit) widget.onSubmit();
-                },
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -262,6 +512,113 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMentionMenu() {
+    final mentions = _visibleMentions;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 330),
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      decoration: BoxDecoration(
+        color: const Color(0xFF202022),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        itemCount: mentions.length,
+        itemBuilder: (context, index) {
+          final mention = mentions[index];
+          final selected = index == _selectedMentionIndex;
+          return InkWell(
+            onTap: () => _insertMention(mention),
+            child: Container(
+              color: selected
+                  ? Colors.white.withValues(alpha: 0.09)
+                  : Colors.transparent,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: _accentColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(mention.icon, color: _accentColor, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                mention.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                mention.kindLabel,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.58),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          mention.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.46),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    mention.insertText,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.48),
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 

@@ -11,8 +11,8 @@ import 'http_service.dart';
 import 'mahayana_command_service.dart';
 
 class AuthService {
-  static const String _tokenKey = AppConfig.tokenStorageKey;
   static const String _userInfoKey = AppConfig.userInfoStorageKey;
+  static const String _sessionHandle = 'mahayana-rust-session';
 
   // 单例模式
   static final AuthService _instance = AuthService._internal();
@@ -23,16 +23,11 @@ class AuthService {
 
   // 当前用户信息
   UserModel? _currentUser;
-  String? _currentToken;
+  bool _hasSession = false;
 
   UserModel? get currentUser => _currentUser;
-  String? get currentToken => _currentToken;
-  bool get isLoggedIn => _currentToken != null && _currentUser != null;
-
-  String _safeTokenPreview(String token) {
-    final previewLength = token.length < 20 ? token.length : 20;
-    return '${token.substring(0, previewLength)}...';
-  }
+  String? get currentToken => _hasSession ? _sessionHandle : null;
+  bool get isLoggedIn => _hasSession && _currentUser != null;
 
   int? _parseOptionalInt(dynamic value) {
     if (value == null) return null;
@@ -312,13 +307,13 @@ class AuthService {
     );
   }
 
-  void _refreshUserInfoAfterLogin(String token) {
+  void _refreshUserInfoAfterLogin() {
     print('开始后台异步刷新用户信息...');
     _fetchUserInfo()
         .then((fullUserInfo) async {
           print('后台刷新成功，更新用户信息: ${fullUserInfo.membership.type}');
           _currentUser = fullUserInfo;
-          await _saveAuth(token, fullUserInfo);
+          await _saveAuth(fullUserInfo);
         })
         .catchError((e) {
           print('后台刷新用户信息失败: $e');
@@ -332,7 +327,7 @@ class AuthService {
   Future<void> _loadStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _currentToken = prefs.getString(_tokenKey);
+      await prefs.remove(AppConfig.tokenStorageKey);
 
       final userInfoJson = prefs.getString(_userInfoKey);
       if (userInfoJson != null) {
@@ -340,22 +335,33 @@ class AuthService {
         _currentUser = UserModel.fromJson(userInfo);
       }
 
-      if (_currentToken != null && _currentUser == null) {
-        await _fetchUserInfo();
+      final session = await _mahayana.execute(const {
+        '@type': 'mahayana.auth.session.restore',
+      });
+      _hasSession = session['loggedIn'] == true;
+      if (_hasSession) {
+        final rawUser = session['user'];
+        if (rawUser is Map) {
+          _currentUser = buildRefreshedUser(
+            Map<String, dynamic>.from(rawUser),
+            fallbackUser: _currentUser,
+          );
+        }
+        _currentUser ??= await _fetchUserInfo();
       }
     } catch (e) {
-      print('加载存储的认证信息失败: $e');
-      await _clearStoredAuth();
+      _hasSession = false;
+      _currentUser = null;
     }
   }
 
-  Future<void> _saveAuth(String token, UserModel user) async {
+  Future<void> _saveAuth(UserModel user) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, token);
+      await prefs.remove(AppConfig.tokenStorageKey);
       await prefs.setString(_userInfoKey, jsonEncode(user.toJson()));
 
-      _currentToken = token;
+      _hasSession = true;
       _currentUser = user;
     } catch (e) {
       print('保存认证信息失败: $e');
@@ -363,28 +369,17 @@ class AuthService {
     }
   }
 
-  Future<void> setAuth(String token, UserModel user) async {
-    print('🔑 AuthService.setAuth: 开始保存token: ${_safeTokenPreview(token)}');
-    _currentToken = token;
-    _currentUser = user;
-    await _saveAuth(token, user);
-
-    final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString(_tokenKey);
-    if (savedToken == token) {
-      print('✅ AuthService.setAuth: token已成功保存到SharedPreferences');
-    } else {
-      print('❌ AuthService.setAuth: token保存失败！');
-    }
+  Future<void> setAuth(String _, UserModel user) async {
+    await _saveAuth(user);
   }
 
   Future<void> _clearStoredAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_tokenKey);
+      await prefs.remove(AppConfig.tokenStorageKey);
       await prefs.remove(_userInfoKey);
 
-      _currentToken = null;
+      _hasSession = false;
       _currentUser = null;
     } catch (e) {
       print('清除认证信息失败: $e');
@@ -398,23 +393,24 @@ class AuthService {
         'username': username,
         'password': password,
       });
-      final token = data['token']?.toString();
-      if (token == null || token.isEmpty) {
+      if (data['sessionStored'] != true) {
         return {'success': false, 'error': '登录服务没有返回账号会话'};
       }
       final userInfo = buildLoginUser(data, requestedIdentifier: username);
-      _currentToken = token;
-      _currentUser = userInfo;
-      await _saveAuth(token, userInfo);
-      _refreshUserInfoAfterLogin(token);
-      return {'success': true, 'token': token, 'user': userInfo.toJson()};
+      await _saveAuth(userInfo);
+      _refreshUserInfoAfterLogin();
+      return {
+        'success': true,
+        'sessionHandle': _sessionHandle,
+        'user': userInfo.toJson(),
+      };
     } catch (e) {
       print('大乘 Rust 登录失败: $e');
-      if (_currentToken != null && _currentUser != null) {
+      if (_hasSession && _currentUser != null) {
         print('登录接口已成功返回，保留当前会话并跳过附加资料刷新失败');
         return {
           'success': true,
-          'token': _currentToken,
+          'sessionHandle': _sessionHandle,
           'user': _currentUser!.toJson(),
         };
       }
@@ -514,7 +510,7 @@ class AuthService {
   }
 
   Future<UserModel> _fetchUserInfo() async {
-    if (_currentToken == null) {
+    if (!_hasSession) {
       throw Exception('未登录');
     }
 
@@ -555,8 +551,7 @@ class AuthService {
 
   Future<void> refreshUserInfo() async {
     print('🔄 refreshUserInfo: 开始刷新用户信息');
-    if (_currentToken != null) {
-      print('🔄 当前 _token: ${_safeTokenPreview(_currentToken!)}');
+    if (_hasSession) {
       try {
         final userInfo = await _fetchUserInfo();
         _currentUser = userInfo;
@@ -569,7 +564,7 @@ class AuthService {
         print('❌ refreshUserInfo: 刷新失败: $e');
       }
     } else {
-      print('⚠️ refreshUserInfo: token为空，跳过刷新');
+      print('⚠️ refreshUserInfo: Rust 会话为空，跳过刷新');
     }
   }
 
@@ -638,8 +633,8 @@ class AuthService {
 
   Future<void> logout() async {
     try {
-      if (_currentToken != null) {
-        await HttpService.post(AppConfig.logoutUrl, useAuth: true);
+      if (_hasSession) {
+        await _mahayana.execute(const {'@type': 'mahayana.auth.logout'});
       }
     } catch (e) {
       print('服务器登出失败: $e');
@@ -649,12 +644,11 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> deleteAccount() async {
-    if (_currentToken == null) {
+    if (!_hasSession) {
       await _loadStoredAuth();
     }
 
-    final activeToken = _currentToken;
-    if (activeToken == null || activeToken.isEmpty) {
+    if (!_hasSession) {
       return {'success': false, 'error': '未登录'};
     }
 
@@ -662,7 +656,6 @@ class AuthService {
       final response = await HttpService.delete(
         AppConfig.deleteAccountUrl,
         useAuth: true,
-        authToken: activeToken,
       );
       if (response.statusCode == 200 || response.statusCode == 204) {
         return {'success': true, 'message': '注销成功'};
@@ -712,8 +705,7 @@ class AuthService {
         'givenName': ?givenName,
         'familyName': ?familyName,
       });
-      if (data['token'] != null) {
-        final token = data['token'] as String;
+      if (data['sessionStored'] == true) {
         final userJson = data['user'];
 
         final userInfo = UserModel(
@@ -738,11 +730,11 @@ class AuthService {
           ),
         );
 
-        await _saveAuth(token, userInfo);
+        await _saveAuth(userInfo);
 
         return {
           'success': true,
-          'token': token,
+          'sessionHandle': _sessionHandle,
           'username': data['username'],
           'user': userJson,
           'isNewUser': data['isNewUser'] ?? false,
@@ -769,8 +761,7 @@ class AuthService {
         'firebaseUid': firebaseUid,
         'isNewUser': isNewUser,
       });
-      if (data['token'] != null) {
-        final token = data['token'] as String;
+      if (data['sessionStored'] == true) {
         final userJson = data['user'];
 
         final userInfo = UserModel(
@@ -796,11 +787,11 @@ class AuthService {
           phoneNumber: phoneNumber,
         );
 
-        await _saveAuth(token, userInfo);
+        await _saveAuth(userInfo);
 
         return {
           'success': true,
-          'token': token,
+          'sessionHandle': _sessionHandle,
           'username': data['username'],
           'user': userJson,
           'isNewUser': data['isNewUser'] ?? isNewUser,

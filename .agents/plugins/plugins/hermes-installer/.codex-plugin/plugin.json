@@ -1,0 +1,24 @@
+{
+  "name": "hermes-installer",
+  "version": "1.0.0",
+  "description": "Hermes 安装器 MCP 应用",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/hermes-installer",
+  "license": "Proprietary",
+  "keywords": ["mcp", "hermes", "installer"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "hermes-installer-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "hermes-installer", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "Hermes 安装器",
+    "shortDescription": "安全安装和运行 Hermes",
+    "longDescription": "通过 MCP 安装、启动、聊天、停止和重置 Hermes；密钥保留在 Secret Store。",
+    "developerName": "Fabushi",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["查看 Hermes 状态", "安装并启动 Hermes"]
+  }
+}

@@ -32,6 +32,7 @@ mkdir -p \
 cp -a "$BUNDLE_DIR/." "$DEB_ROOT/opt/$PACKAGE_NAME/"
 ln -s "/opt/$PACKAGE_NAME/$APP_NAME" "$DEB_ROOT/usr/bin/$PACKAGE_NAME"
 ln -s "/opt/$PACKAGE_NAME/$CLI_NAME" "$DEB_ROOT/usr/bin/global-dharma-sharing-cli"
+ln -s "/opt/$PACKAGE_NAME/mahayana" "$DEB_ROOT/usr/bin/mahayana"
 
 installed_size="$(du -sk "$DEB_ROOT/opt/$PACKAGE_NAME" | awk '{print $1}')"
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF

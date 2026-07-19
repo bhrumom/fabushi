@@ -1,0 +1,24 @@
+{
+  "name": "bot-father",
+  "version": "1.0.0",
+  "description": "Bot Father MCP 插件构建器",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father",
+  "license": "Proprietary",
+  "keywords": ["mcp", "plugin", "builder"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "bot-father-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "bot-father", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "Bot Father",
+    "shortDescription": "创建完整可移植 Codex 插件",
+    "longDescription": "生成插件清单、MCP Server、MCP UI、测试、部署配置和市场元数据。",
+    "developerName": "Fabushi",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["创建一个新的 MCP 插件", "验证我的插件包"]
+  }
+}

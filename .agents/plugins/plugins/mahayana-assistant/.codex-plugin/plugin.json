@@ -1,0 +1,24 @@
+{
+  "name": "mahayana-assistant",
+  "version": "1.0.0",
+  "description": "大乘助手 MCP 应用",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/mahayana-assistant",
+  "license": "Proprietary",
+  "keywords": ["mcp", "assistant", "diagnostics"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "mahayana-assistant-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "mahayana-assistant", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "大乘助手",
+    "shortDescription": "插件帮助和诊断",
+    "longDescription": "列出插件、读取状态并诊断 MCP 生命周期、Tools 与 UI Resource。",
+    "developerName": "Fabushi",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["列出可用插件", "诊断一个插件"]
+  }
+}

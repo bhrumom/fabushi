@@ -5,9 +5,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/app_config.dart';
+import 'mahayana_sdk.dart';
 
 class HttpService {
   // 单例模式
@@ -18,68 +18,47 @@ class HttpService {
   // HTTP客户端
   static final http.Client _client = http.Client();
 
-  static String _safeTokenPreview(String token) {
-    final previewLength = token.length < 20 ? token.length : 20;
-    return '${token.substring(0, previewLength)}...';
-  }
-
   // 获取认证头
-  static Future<Map<String, String>> _getHeaders({
-    bool useAuth = false,
-    String? authToken,
-  }) async {
-    final headers = <String, String>{
+  static Future<Map<String, String>> _getHeaders({bool useAuth = false}) async {
+    return <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-
-    if (useAuth) {
-      final token = authToken ?? await _getStoredToken();
-      if (token != null) {
-        headers['Authorization'] = 'Bearer $token';
-        print(
-          '🔐 HttpService: 添加认证头 Authorization: Bearer ${_safeTokenPreview(token)}',
-        );
-      } else {
-        print('⚠️ HttpService: useAuth=true 但没有token');
-      }
-    }
-
-    return headers;
   }
 
-  // 获取存储的token
-  static Future<String?> _getStoredToken() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString(AppConfig.tokenStorageKey);
-      if (token != null) {
-        print('🔑 HttpService: 成功获取token: ${_safeTokenPreview(token)}');
-      } else {
-        print('⚠️ HttpService: SharedPreferences中没有token');
-      }
-      return token;
-    } catch (e) {
-      print('❌ HttpService: 获取存储的token失败: $e');
-      return null;
+  static bool _isPlatformUrl(String source) {
+    final uri = Uri.tryParse(source);
+    if (uri == null) return false;
+    if (!uri.hasScheme) {
+      return uri.path.startsWith('/api/') || uri.path.startsWith('/v1/');
     }
+    return uri.host == Uri.parse(AppConfig.apiUrl).host;
   }
 
-  // 处理HTTP响应
-  static Map<String, dynamic> _handleResponse(http.Response response) {
-    if (AppConfig.enableApiLogging) {
-      print('HTTP ${response.request?.method} ${response.request?.url}');
-      print('Status: ${response.statusCode}');
-      print(
-        'Response: ${response.body.length > 500 ? response.body.substring(0, 500) + '...' : response.body}',
-      );
-    }
-
-    return {
-      'statusCode': response.statusCode,
-      'body': response.body,
-      'headers': response.headers,
-    };
+  static Future<http.Response> _platformRequest(
+    String method,
+    String source, {
+    Map<String, String>? queryParams,
+    Map<String, dynamic>? body,
+    required bool authenticated,
+  }) async {
+    final uri = Uri.parse(source);
+    final query = <String, String>{...uri.queryParameters, ...?queryParams};
+    final payload = await MahayanaSdk.instance.platformRequest(
+      method: method,
+      path: uri.path,
+      query: query.isEmpty ? null : query,
+      body: body,
+      authenticated: authenticated,
+    );
+    return http.Response(
+      payload['bodyText']?.toString() ?? '',
+      (payload['statusCode'] as num?)?.toInt() ?? 500,
+      headers: {
+        if (payload['contentType'] != null)
+          'content-type': payload['contentType'].toString(),
+      },
+    );
   }
 
   // 处理HTTP错误
@@ -142,6 +121,19 @@ class HttpService {
     bool useAuth = false,
   }) async {
     try {
+      if (_isPlatformUrl(url)) {
+        return await _platformRequest(
+          'GET',
+          url,
+          queryParams: queryParams,
+          authenticated: useAuth,
+        );
+      }
+      if (useAuth) {
+        throw UnsupportedError(
+          'Authenticated requests must use the Mahayana Rust transport.',
+        );
+      }
       final uri = Uri.parse(url);
       final finalUri = queryParams != null
           ? uri.replace(
@@ -170,6 +162,19 @@ class HttpService {
     bool useAuth = false,
   }) async {
     try {
+      if (_isPlatformUrl(url)) {
+        return await _platformRequest(
+          'POST',
+          url,
+          body: body,
+          authenticated: useAuth,
+        );
+      }
+      if (useAuth) {
+        throw UnsupportedError(
+          'Authenticated requests must use the Mahayana Rust transport.',
+        );
+      }
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
 
@@ -192,6 +197,19 @@ class HttpService {
     bool useAuth = false,
   }) async {
     try {
+      if (_isPlatformUrl(url)) {
+        return await _platformRequest(
+          'PUT',
+          url,
+          body: body,
+          authenticated: useAuth,
+        );
+      }
+      if (useAuth) {
+        throw UnsupportedError(
+          'Authenticated requests must use the Mahayana Rust transport.',
+        );
+      }
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
 
@@ -214,7 +232,19 @@ class HttpService {
     String? authToken,
   }) async {
     try {
-      final headers = await _getHeaders(useAuth: useAuth, authToken: authToken);
+      if (_isPlatformUrl(url)) {
+        return await _platformRequest(
+          'DELETE',
+          url,
+          authenticated: useAuth || authToken?.isNotEmpty == true,
+        );
+      }
+      if (useAuth || authToken?.isNotEmpty == true) {
+        throw UnsupportedError(
+          'Authenticated requests must use the Mahayana Rust transport.',
+        );
+      }
+      final headers = await _getHeaders(useAuth: useAuth);
 
       return await _retryRequest(
         () => _client
@@ -235,6 +265,19 @@ class HttpService {
     bool useAuth = false,
   }) async {
     try {
+      if (_isPlatformUrl(url)) {
+        return await _platformRequest(
+          'PATCH',
+          url,
+          body: body,
+          authenticated: useAuth,
+        );
+      }
+      if (useAuth) {
+        throw UnsupportedError(
+          'Authenticated requests must use the Mahayana Rust transport.',
+        );
+      }
       final headers = await _getHeaders(useAuth: useAuth);
       final jsonBody = body != null ? jsonEncode(body) : null;
 
@@ -261,12 +304,10 @@ class HttpService {
     try {
       final request = http.MultipartRequest('POST', Uri.parse(url));
 
-      // 添加认证头
       if (useAuth) {
-        final token = await _getStoredToken();
-        if (token != null) {
-          request.headers['Authorization'] = 'Bearer $token';
-        }
+        throw UnsupportedError(
+          'Authenticated uploads require a dedicated Mahayana Rust command.',
+        );
       }
 
       // 添加文件
@@ -294,6 +335,11 @@ class HttpService {
     bool useAuth = false,
   }) async {
     try {
+      if (useAuth) {
+        throw UnsupportedError(
+          'Authenticated downloads require a dedicated Mahayana Rust command.',
+        );
+      }
       final headers = await _getHeaders(useAuth: useAuth);
 
       final response = await _client

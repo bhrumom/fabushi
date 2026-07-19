@@ -4,6 +4,7 @@ import 'mahayana_command_service.dart';
 /// 支付宝认证服务
 /// 处理支付宝登录授权相关功能
 class AlipayAuthService {
+  static const String _sessionHandle = 'mahayana-rust-session';
   final MahayanaCommandService _mahayana = MahayanaCommandService();
 
   Map<String, dynamic> _successAuthPayload(
@@ -11,8 +12,8 @@ class AlipayAuthService {
     bool defaultOneClick = false,
   }) {
     return {
-      'success': true,
-      'token': data['token'],
+      'success': data['sessionStored'] == true,
+      'sessionHandle': data['sessionStored'] == true ? _sessionHandle : null,
       'username': data['username'] ?? data['user']?['username'],
       'email': data['email'] ?? data['user']?['email'],
       'user': data['user'],
@@ -73,7 +74,7 @@ class AlipayAuthService {
         'authCode': authCode,
         if (targetId?.trim().isNotEmpty == true) 'targetId': targetId!.trim(),
       });
-      if (data['needsRegistration'] == true && data['token'] == null) {
+      if (data['needsRegistration'] == true && data['sessionStored'] != true) {
         return {
           'success': false,
           'needsRegistration': true,
@@ -99,7 +100,7 @@ class AlipayAuthService {
         'authCode': authCode,
         if (state?.trim().isNotEmpty == true) 'state': state!.trim(),
       });
-      if (data['needsRegistration'] == true && data['token'] == null) {
+      if (data['needsRegistration'] == true && data['sessionStored'] != true) {
         return {
           'success': false,
           'needsRegistration': true,

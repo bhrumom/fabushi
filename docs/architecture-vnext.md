@@ -78,7 +78,7 @@ Browser ───────WASM────┘              └── 大乘 R
   provider；`/api/mahayana/execute` 云端 Agent 命令网关不存在。
 - macOS、Linux、Windows 安装包携带 `mahayana` 和
   `libmahayana_runtime`，Codex core 直接链接进 Runtime，没有单独的 Codex
-  可执行文件或旧 `mahayana-wrapper` 代理。
+  可执行文件，也不经过额外的兼容代理层。
 - 写操作在 MCP 层要求显式确认；任何 CLI/MCP 输出不得回显 token、授权码等
   凭据。
 
