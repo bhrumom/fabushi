@@ -1,0 +1,24 @@
+{
+  "name": "faliu-flashcards",
+  "version": "1.0.0",
+  "description": "法流记忆卡 MCP 应用",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/faliu-flashcards",
+  "license": "Proprietary",
+  "keywords": ["mcp", "flashcards", "faliu"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "faliu-flashcards-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "faliu-flashcards", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "法流记忆卡",
+    "shortDescription": "创建和复习法流记忆卡",
+    "longDescription": "通过 MCP 创建牌组、打开牌组并完成逐卡复习。",
+    "developerName": "Fabushi",
+    "category": "Education",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["列出我的牌组", "开始下一张复习卡"]
+  }
+}

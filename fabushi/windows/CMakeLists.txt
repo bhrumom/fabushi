@@ -57,8 +57,26 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+# Build and stage the shared Rust command/event runtime for this configuration.
+set(TELEGRAM_RUST_OUTPUT_DIR "${CMAKE_BINARY_DIR}/telegram_runtime/$<CONFIG>")
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+
+add_custom_target(telegram_rust_runtime ALL
+  COMMAND powershell.exe
+    -NoProfile
+    -ExecutionPolicy Bypass
+    -File "${CMAKE_CURRENT_SOURCE_DIR}/build_telegram_runtime.ps1"
+    -Configuration "$<CONFIG>"
+    -OutputDirectory "${TELEGRAM_RUST_OUTPUT_DIR}"
+  BYPRODUCTS
+    "${TELEGRAM_RUST_OUTPUT_DIR}/mahayana_runtime.dll"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  COMMENT "Building Telegram Rust runtime"
+  VERBATIM
+)
+
 
 
 # Generated plugin build rules, which manage building the plugins and adding
@@ -87,6 +105,11 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+install(FILES
+  "${TELEGRAM_RUST_OUTPUT_DIR}/mahayana_runtime.dll"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 if(PLUGIN_BUNDLED_LIBRARIES)

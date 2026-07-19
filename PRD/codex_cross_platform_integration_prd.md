@@ -1,5 +1,10 @@
 # 大乘全平台集成并使用 Codex 方案：以 Codex 为目标引擎，以 Codex Rust SDK 为统一调用工具 (PRD & Technical Blueprint)
 
+> 历史归档：本文记录已移除的早期 Wrapper 原型，不再作为构建或实现依据。
+> 当前唯一实现位于 `third_party/mahayana/mahayana-rs`，发布链路以
+> `.github/scripts/build-mahayana-desktop-bundle.sh` 和各移动端 Runtime
+> 构建脚本为准。
+
 ## 1. 文档概述与核心架构逻辑：目标与工具的辩证统一
 
 ### 1.1 核心战略定位

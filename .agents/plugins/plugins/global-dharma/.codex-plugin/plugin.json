@@ -1,0 +1,24 @@
+{
+  "name": "global-dharma",
+  "version": "1.0.0",
+  "description": "全球法布施 MCP 应用",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/global-dharma",
+  "license": "Proprietary",
+  "keywords": ["mcp", "dharma", "fabushi"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "global-dharma-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "global-dharma", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "全球法布施",
+    "shortDescription": "通过 MCP 管理全球法布施",
+    "longDescription": "启动、停止、循环、发送、查看日志、验证配置和部署全球法布施。",
+    "developerName": "Fabushi",
+    "category": "Lifestyle",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["查看全球法布施状态", "执行一次法布施循环"]
+  }
+}

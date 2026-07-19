@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'unified_api_service.dart';
+import 'mahayana_command_service.dart';
 
 class SocialFriendContact {
   const SocialFriendContact({
@@ -25,12 +25,13 @@ class SocialFriendContact {
     final username = (json['username'] ?? json['userNo'] ?? '').toString();
     return SocialFriendContact(
       id: id.isEmpty ? username : id,
-      displayName: (json['displayName'] ??
-              json['nickname'] ??
-              json['name'] ??
-              username ??
-              '大乘好友')
-          .toString(),
+      displayName:
+          (json['displayName'] ??
+                  json['nickname'] ??
+                  json['name'] ??
+                  username ??
+                  '大乘好友')
+              .toString(),
       username: username,
       avatarUrl: (json['avatarUrl'] ?? json['avatar'] ?? '').toString(),
       status: (json['status'] ?? 'friend').toString(),
@@ -38,12 +39,12 @@ class SocialFriendContact {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'displayName': displayName,
-        'username': username,
-        'avatarUrl': avatarUrl,
-        'status': status,
-      };
+    'id': id,
+    'displayName': displayName,
+    'username': username,
+    'avatarUrl': avatarUrl,
+    'status': status,
+  };
 }
 
 class SocialFriendRequest {
@@ -63,12 +64,13 @@ class SocialFriendRequest {
     final userJson = json['fromUser'] is Map<String, dynamic>
         ? json['fromUser'] as Map<String, dynamic>
         : json['user'] is Map<String, dynamic>
-            ? json['user'] as Map<String, dynamic>
-            : json;
+        ? json['user'] as Map<String, dynamic>
+        : json;
     return SocialFriendRequest(
       id: (json['id'] ?? json['requestId'] ?? '').toString(),
       fromUser: SocialFriendContact.fromJson(userJson),
-      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()) ??
+      createdAt:
+          DateTime.tryParse((json['createdAt'] ?? '').toString()) ??
           DateTime.now(),
       message: (json['message'] ?? '').toString(),
     );
@@ -76,21 +78,20 @@ class SocialFriendRequest {
 }
 
 class SocialFriendService {
-  SocialFriendService({UnifiedApiService? api}) : _api = api ?? UnifiedApiService();
+  SocialFriendService() {
+    _commands = MahayanaCommandService();
+  }
 
   static const String _localFriendsKey = 'social_friends_cache_v1';
   static const String _pendingSentKey = 'social_friend_pending_sent_v1';
 
-  final UnifiedApiService _api;
+  late final MahayanaCommandService _commands;
 
   Future<List<SocialFriendContact>> listFriends({String? token}) async {
-    _api.initialize();
     try {
-      final response = await _api.get(
-        '/api/social/friends',
-        headers: _authHeaders(token),
-      );
-      final payload = jsonDecode(response.body);
+      final payload = await _commands.execute({
+        '@type': 'mahayana.contacts.list',
+      }, token: token);
       final friends = _readList(payload)
           .whereType<Map<String, dynamic>>()
           .map(SocialFriendContact.fromJson)
@@ -110,14 +111,11 @@ class SocialFriendService {
   }) async {
     final query = keyword.trim();
     if (query.isEmpty) return const [];
-    _api.initialize();
     try {
-      final response = await _api.get(
-        '/api/social/users/search',
-        queryParams: {'q': query},
-        headers: _authHeaders(token),
-      );
-      final payload = jsonDecode(response.body);
+      final payload = await _commands.execute({
+        '@type': 'mahayana.contacts.search',
+        'query': query,
+      }, token: token);
       return _readList(payload)
           .whereType<Map<String, dynamic>>()
           .map(SocialFriendContact.fromJson)
@@ -143,30 +141,26 @@ class SocialFriendService {
     String message = '',
   }) async {
     if (user.id.isEmpty) return;
-    _api.initialize();
     try {
-      await _api.post(
-        '/api/social/friend-requests',
-        headers: _authHeaders(token),
-        body: {
-          'targetUserId': user.id,
-          if (message.trim().isNotEmpty) 'message': message.trim(),
-        },
-      );
+      await _commands.execute({
+        '@type': 'mahayana.contacts.add',
+        'contact': user.id,
+        if (message.trim().isNotEmpty) 'message': message.trim(),
+      }, token: token);
     } catch (error) {
       debugPrint('发送好友申请接口暂不可用，已保存为本地待发送: $error');
       await _appendContact(_pendingSentKey, user.copyWith(status: 'pending'));
+      rethrow;
     }
   }
 
-  Future<List<SocialFriendRequest>> listIncomingRequests({String? token}) async {
-    _api.initialize();
+  Future<List<SocialFriendRequest>> listIncomingRequests({
+    String? token,
+  }) async {
     try {
-      final response = await _api.get(
-        '/api/social/friend-requests/incoming',
-        headers: _authHeaders(token),
-      );
-      final payload = jsonDecode(response.body);
+      final payload = await _commands.execute({
+        '@type': 'mahayana.contacts.requests',
+      }, token: token);
       return _readList(payload)
           .whereType<Map<String, dynamic>>()
           .map(SocialFriendRequest.fromJson)
@@ -180,17 +174,10 @@ class SocialFriendService {
 
   Future<void> acceptFriendRequest(String requestId, {String? token}) async {
     if (requestId.trim().isEmpty) return;
-    _api.initialize();
-    await _api.post(
-      '/api/social/friend-requests/$requestId/accept',
-      headers: _authHeaders(token),
-    );
-  }
-
-  Map<String, String>? _authHeaders(String? token) {
-    final value = token?.trim();
-    if (value == null || value.isEmpty) return null;
-    return {'Authorization': 'Bearer $value'};
+    await _commands.execute({
+      '@type': 'mahayana.contacts.accept',
+      'requestId': requestId.trim(),
+    }, token: token);
   }
 
   List<dynamic> _readList(dynamic payload) {
@@ -238,10 +225,7 @@ class SocialFriendService {
 
   Future<void> _appendContact(String key, SocialFriendContact contact) async {
     final contacts = await _loadContacts(key);
-    final next = [
-      contact,
-      ...contacts.where((item) => item.id != contact.id),
-    ];
+    final next = [contact, ...contacts.where((item) => item.id != contact.id)];
     await _saveContacts(key, next);
   }
 }

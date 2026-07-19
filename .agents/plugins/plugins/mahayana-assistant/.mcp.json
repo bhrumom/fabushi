@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "mahayana-assistant-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "mahayana-assistant", "mcp-serve"], "cwd": "." },
+    "mahayana-assistant": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/mahayana-assistant" }
+  }
+}

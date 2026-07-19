@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../features/auth/application/auth_model.dart';
 import '../auth/unified_login_dialog.dart';
 import '../../screens/settings_screen.dart';
+import '../../screens/telegram_authorization_screen.dart';
 
 class TelegramDrawer extends StatelessWidget {
   const TelegramDrawer({super.key});
@@ -15,14 +15,6 @@ class TelegramDrawer extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('登录成功'), backgroundColor: Colors.green),
       );
-    }
-  }
-
-  Future<void> _logout(BuildContext context, AuthModel auth) async {
-    try {
-      await auth.logout();
-    } catch (e) {
-      debugPrint('Logout error: $e');
     }
   }
 
@@ -60,7 +52,10 @@ class TelegramDrawer extends StatelessWidget {
                   label: '全球法布施主页 (3D Earth)',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/'); // Or whatever the route is
+                    Navigator.pushNamed(
+                      context,
+                      '/',
+                    ); // Or whatever the route is
                   },
                 ),
                 _DrawerItem(
@@ -68,8 +63,21 @@ class TelegramDrawer extends StatelessWidget {
                   label: '联系人',
                   onTap: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('侧边栏已整合联系人')),
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('侧边栏已整合联系人')));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.send_rounded,
+                  label: 'Telegram 账号',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TelegramAuthorizationScreen(),
+                      ),
                     );
                   },
                 ),
@@ -120,13 +128,13 @@ class TelegramDrawer extends StatelessWidget {
                       Navigator.pop(context);
                       if (authModel != null) {
                         authModel.logout();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已退出登录')),
-                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(const SnackBar(content: Text('已退出登录')));
                       }
                     },
                   ),
-                ]
+                ],
               ],
             ),
           ),
@@ -161,7 +169,8 @@ class TelegramDrawer extends StatelessWidget {
               CircleAvatar(
                 radius: 32,
                 backgroundColor: const Color(0xFF40A7E3),
-                backgroundImage: (avatarUrl != null && avatarUrl.startsWith('http'))
+                backgroundImage:
+                    (avatarUrl != null && avatarUrl.startsWith('http'))
                     ? NetworkImage(avatarUrl)
                     : null,
                 child: (avatarUrl == null || !avatarUrl.startsWith('http'))
@@ -176,11 +185,14 @@ class TelegramDrawer extends StatelessWidget {
                     : null,
               ),
               IconButton(
-                icon: const Icon(Icons.brightness_4_outlined, color: Colors.white),
+                icon: const Icon(
+                  Icons.brightness_4_outlined,
+                  color: Colors.white,
+                ),
                 onPressed: () {
                   // Toggle dark mode (placeholder)
                 },
-              )
+              ),
             ],
           ),
           const SizedBox(height: 16),

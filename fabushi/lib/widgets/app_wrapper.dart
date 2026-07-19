@@ -604,57 +604,24 @@ class _AppWrapperState extends State<AppWrapper> {
             return false;
           }
 
-          final token = params['token'];
-          final username = params['username'];
-          final loginMethod = params['login_method'] ?? 'traditional';
-
-          if (token != null && username != null) {
-            final userNo = params['user_no'];
-            final alipayNickname = params['alipay_nickname'];
-            final alipayAvatar = params['alipay_avatar'];
-            final alipayProviderSubject =
-                params['alipay_provider_subject'] ?? params['alipay_user_id'];
-            final alipaySubjectType = params['alipay_subject_type'];
-            await authModel.setTokenDirectly(
-              token,
-              username,
-              userJson: {
-                'username': username,
-                if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
-                if (alipayProviderSubject != null &&
-                    alipayProviderSubject.isNotEmpty) ...{
-                  'alipayProviderSubject': alipayProviderSubject,
-                  'alipayUserId': alipayProviderSubject,
-                },
-                if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
-                  'alipaySubjectType': alipaySubjectType,
-                if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
-                  'nickname': alipayNickname,
-                  'alipayNickname': alipayNickname,
-                },
-                if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
-                  'avatar': alipayAvatar,
-                  'alipayAvatar': alipayAvatar,
-                },
-              },
+          final authCode = params['alipay_auth_code'] ?? params['auth_code'];
+          if (authCode != null && authCode.isNotEmpty) {
+            final loggedIn = await authModel.alipayLogin(
+              authCode,
+              params['state'],
             );
             _platformService.replaceHistoryState('/');
-
-            String welcomeMessage = '登录成功！欢迎 $username';
-            if (loginMethod == 'alipay') {
-              welcomeMessage = '支付宝登录成功！欢迎 $username';
-            }
-
-            if (mounted) {
+            if (mounted && loggedIn) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(welcomeMessage),
+                  content: Text(
+                    '支付宝登录成功！欢迎 ${authModel.currentUser!.displayName}',
+                  ),
                   backgroundColor: Colors.green,
                 ),
               );
             }
-
-            return true;
+            return loggedIn;
           }
         }
       } catch (e) {

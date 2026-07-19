@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/config/app_config.dart';
+import 'mahayana_sdk.dart';
 
 class AgentChatResult {
   final String runId;
@@ -65,14 +66,15 @@ class AgentStreamEvent {
 }
 
 class AgentService {
-  AgentService({
-    http.Client? httpClient,
-    Future<String> Function()? baseUrl,
-  }) : _httpClient = httpClient ?? http.Client(),
-       _baseUrl = baseUrl ?? (() async => AppConfig.currentBackendUrl);
+  AgentService({http.Client? httpClient, Future<String> Function()? baseUrl})
+    : _httpClient = httpClient ?? http.Client(),
+      _baseUrl = baseUrl ?? (() async => AppConfig.currentBackendUrl),
+      _useRustRuntime = httpClient == null && baseUrl == null;
 
   final http.Client _httpClient;
   final Future<String> Function() _baseUrl;
+  final bool _useRustRuntime;
+  final Map<String, AgentChatResult> _completedRuns = {};
 
   Future<AgentChatResult> sendMessage({
     required String message,
@@ -83,6 +85,27 @@ class AgentService {
     String? token,
     Map<String, dynamic>? client,
   }) async {
+    if (_useRustRuntime) {
+      final response = await MahayanaSdk.instance.execute({
+        '@type': 'mahayana.codex.run',
+        'prompt': message,
+      });
+      final runId =
+          response['operationId']?.toString() ??
+          'rust-${DateTime.now().microsecondsSinceEpoch}';
+      final result = AgentChatResult(
+        runId: runId,
+        conversationId:
+            response['conversationId']?.toString() ??
+            conversationId ??
+            'codex:agent:assistant',
+        message: response['message']?.toString() ?? '',
+        provider: 'mahayana-rust',
+        model: response['model']?.toString() ?? '',
+      );
+      _completedRuns[runId] = result;
+      return result;
+    }
     final data = await _postJson(
       '/api/agent/chat',
       token: token,
@@ -103,6 +126,24 @@ class AgentService {
     required String runId,
     String? token,
   }) async* {
+    if (_useRustRuntime) {
+      final completed = _completedRuns.remove(runId);
+      if (completed != null) {
+        yield AgentStreamEvent(
+          type: 'assistant.message',
+          text: completed.message,
+          runId: completed.runId,
+          conversationId: completed.conversationId,
+        );
+        yield AgentStreamEvent(
+          type: 'run.completed',
+          text: completed.message,
+          runId: completed.runId,
+          conversationId: completed.conversationId,
+        );
+      }
+      return;
+    }
     final uri = await _buildUri('/api/agent/runs/$runId/events');
     final request = http.Request('GET', uri)..headers.addAll(_headers(token));
     final response = await _httpClient
@@ -136,7 +177,11 @@ class AgentService {
       return AgentStreamEvent(
         type: currentEvent,
         text:
-            (data['text'] ?? data['content'] ?? data['message'] ?? data['summary'] ?? '')
+            (data['text'] ??
+                    data['content'] ??
+                    data['message'] ??
+                    data['summary'] ??
+                    '')
                 .toString(),
         runId: data['runId']?.toString(),
         conversationId: data['conversationId']?.toString(),
@@ -165,7 +210,19 @@ class AgentService {
   }
 
   Future<void> cancelRun({required String runId, String? token}) async {
-    await _postJson('/api/agent/runs/$runId/cancel', token: token, body: const {});
+    if (_useRustRuntime) {
+      _completedRuns.remove(runId);
+      await MahayanaSdk.instance.execute({
+        '@type': 'mahayana.operation.interrupt',
+        'operationId': runId,
+      });
+      return;
+    }
+    await _postJson(
+      '/api/agent/runs/$runId/cancel',
+      token: token,
+      body: const {},
+    );
   }
 
   Future<void> submitFeedback({
@@ -175,6 +232,18 @@ class AgentService {
     String? comment,
     String? token,
   }) async {
+    if (_useRustRuntime) {
+      await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/agent/messages/$messageId/feedback',
+        body: {
+          'rating': rating,
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+          if (comment != null && comment.isNotEmpty) 'comment': comment,
+        },
+      );
+      return;
+    }
     await _postJson(
       '/api/agent/messages/$messageId/feedback',
       token: token,
@@ -208,16 +277,14 @@ class AgentService {
   }
 
   Map<String, String> _headers(String? token) {
-    return {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-    };
+    return {'Accept': 'application/json', 'Content-Type': 'application/json'};
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
     final body = utf8.decode(response.bodyBytes, allowMalformed: true);
-    final decoded = body.trim().isEmpty ? <String, dynamic>{} : jsonDecode(body);
+    final decoded = body.trim().isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(body);
     if (decoded is! Map<String, dynamic>) {
       throw StateError('后端返回格式异常');
     }

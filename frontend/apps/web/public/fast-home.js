@@ -16,6 +16,10 @@
   const brandName = root.getAttribute('data-brand-name') || '大乘';
   const brandLetter = brandName.slice(0, 1);
   const inputPlaceholder = root.getAttribute('data-input-placeholder') || '';
+  const productApiBase = (root.getAttribute('data-product-api-base') || 'https://api.ombhrum.com').replace(/\/+$/, '');
+  const aiApiBase = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
+    ? 'https://ai.ombhrum.com'
+    : window.location.origin + '/api/dacheng-ai';
   const regions = Array.from(root.querySelectorAll('[data-region]')).map((node) => node.getAttribute('data-region') || '').filter(Boolean);
 
   let activeTool = null;
@@ -23,6 +27,7 @@
   let cards = [];
   let cardIndex = 0;
   let answerVisible = false;
+  let busy = false;
 
   function makeId(prefix) {
     return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -116,6 +121,204 @@
     article.append(avatar, bubble);
     messagesEl.appendChild(article);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function readAuthToken() {
+    return window.localStorage.getItem('auth_token') || window.localStorage.getItem('authToken') || '';
+  }
+
+  function importCallbackToken() {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const token = hash.get('token');
+    if (!token) return;
+    window.localStorage.setItem('auth_token', token);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  function commandHelp() {
+    return [
+      '大乘 CLI 命令：',
+      '/login  使用支付宝登录',
+      '/login complete <授权码> [state]',
+      '/status  查看登录状态',
+      '/contacts  查看好友',
+      '/contacts search <关键词>',
+      '/contacts add <用户编号或用户名> [验证消息]',
+      '/requests  查看好友申请',
+      '/requests accept <申请编号>',
+      '/message <联系人> <消息>',
+      '/messages <联系人>',
+      '/miniapp <小程序ID> <消息>',
+      '/logout  退出软件账号',
+      '普通文字会进入大乘 AI 对话。',
+    ].join('\n');
+  }
+
+  function formatCommandResult(payload) {
+    const data = payload && payload.data ? payload.data : payload;
+    if (data && Array.isArray(data.friends)) {
+      return data.friends.length
+        ? data.friends.map((item) => item.displayName + (item.username ? ' (@' + item.username + ')' : '') + ' · ' + item.id).join('\n')
+        : '好友列表为空。';
+    }
+    if (data && Array.isArray(data.users)) {
+      return data.users.length
+        ? data.users.map((item) => item.displayName + (item.username ? ' (@' + item.username + ')' : '') + ' · ' + item.id + ' · ' + item.status).join('\n')
+        : '没有找到联系人。';
+    }
+    if (data && Array.isArray(data.requests)) {
+      return data.requests.length
+        ? data.requests.map((item) => '#' + item.id + ' · ' + (item.fromUser && item.fromUser.displayName || '未知用户') + (item.message ? ' · ' + item.message : '')).join('\n')
+        : '没有待处理的好友申请。';
+    }
+    if (data && Array.isArray(data.messages)) {
+      return data.messages.length
+        ? data.messages.map((item) => (item.isOutgoing ? '我' : item.senderUsername || '对方') + '：' + item.text).join('\n')
+        : '还没有消息。';
+    }
+    if (payload && payload.message && typeof payload.message === 'object') {
+      return '消息已发送，编号 #' + (payload.message.id || '待同步') + '。';
+    }
+    if (payload && payload.status === 'accepted') return '好友申请已接受。';
+    if (payload && payload.status === 'pending') return '好友申请已发送。';
+    return JSON.stringify(payload, null, 2);
+  }
+
+  async function executeMahayana(command, options) {
+    const token = readAuthToken();
+    if ((!options || options.auth !== false) && !token) {
+      throw new Error('尚未登录。请输入 /login 使用支付宝登录。');
+    }
+    const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const response = await fetch(productApiBase + '/api/mahayana/execute', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(command),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false || payload.error) {
+      throw new Error(payload.error || payload.message || '命令执行失败 (' + response.status + ')');
+    }
+    return payload;
+  }
+
+  async function startAlipayLogin() {
+    const payload = await executeMahayana({ '@type': 'mahayana.auth.alipay.start', platform: 'cli' }, { auth: false });
+    const loginUrl = payload.authUrl || payload.loginUrl;
+    if (!loginUrl) throw new Error('支付宝登录接口没有返回授权地址。');
+    if (!payload.state) throw new Error('支付宝登录接口没有返回登录状态。');
+    if (payload.state) window.sessionStorage.setItem('mahayana_alipay_state', payload.state);
+    window.open(loginUrl, '_blank', 'noopener,noreferrer');
+    addMessage('assistant', '支付宝授权页已打开，正在安全等待授权结果…', '大乘 CLI');
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const result = await executeMahayana({
+        '@type': 'mahayana.auth.alipay.poll',
+        state: payload.state,
+      }, { auth: false });
+      if (result.status === 'pending') continue;
+      if (result.status === 'complete' && result.token) {
+        window.localStorage.setItem('auth_token', result.token);
+        window.sessionStorage.removeItem('mahayana_alipay_state');
+        return '支付宝账号登录成功。';
+      }
+      throw new Error(result.error || '支付宝登录未完成。');
+    }
+    throw new Error('等待支付宝授权超时，请重新输入 /login。');
+  }
+
+  async function runAiChat(text, miniAppId) {
+    const message = miniAppId
+      ? '你正在通过大乘 CLI 与小程序 ' + miniAppId + ' 对话。请以该小程序能力回答：\n' + text
+      : text;
+    const response = await fetch(aiApiBase + '/api/ai/chat', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, clientMembershipHint: false }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.message || payload.error || '大乘 AI 暂时不可用。');
+    }
+    return payload.message || payload.text || JSON.stringify(payload, null, 2);
+  }
+
+  async function runCommand(line) {
+    const parts = line.trim().split(/\s+/);
+    const name = (parts.shift() || '').toLowerCase();
+    if (name === '/help') return commandHelp();
+    if (name === '/login') {
+      if ((parts[0] || '').toLowerCase() !== 'complete') return startAlipayLogin();
+      parts.shift();
+      const authCode = parts.shift();
+      if (!authCode) throw new Error('用法：/login complete <授权码> [state]');
+      const payload = await executeMahayana({
+        '@type': 'mahayana.auth.alipay.complete',
+        authCode,
+        state: parts.shift() || window.sessionStorage.getItem('mahayana_alipay_state') || undefined,
+      }, { auth: false });
+      if (payload.needsRegistration && !payload.token) {
+        throw new Error('该支付宝账号需要先完成大乘账号注册。');
+      }
+      if (payload.token) window.localStorage.setItem('auth_token', payload.token);
+      return '支付宝账号登录成功。';
+    }
+    if (name === '/logout') {
+      if (readAuthToken()) {
+        await executeMahayana({ '@type': 'mahayana.auth.logout' });
+      }
+      window.localStorage.removeItem('auth_token');
+      window.localStorage.removeItem('authToken');
+      return '已退出大乘软件账号。';
+    }
+    if (name === '/status') {
+      if (!readAuthToken()) return '尚未登录。输入 /login 使用支付宝登录。';
+      const payload = await executeMahayana({ '@type': 'mahayana.auth.status' });
+      const user = payload.user || payload.data && payload.data.user || payload;
+      return '已登录大乘软件账号' + (user.username ? '：@' + user.username : '') + '。';
+    }
+    if (name === '/contacts') {
+      const action = (parts.shift() || '').toLowerCase();
+      if (!action) return formatCommandResult(await executeMahayana({ '@type': 'mahayana.contacts.list' }));
+      if (action === 'search') {
+        const query = parts.join(' ').trim();
+        if (!query) throw new Error('用法：/contacts search <关键词>');
+        return formatCommandResult(await executeMahayana({ '@type': 'mahayana.contacts.search', query }));
+      }
+      if (action === 'add') {
+        const contact = parts.shift();
+        if (!contact) throw new Error('用法：/contacts add <用户编号或用户名> [验证消息]');
+        return formatCommandResult(await executeMahayana({ '@type': 'mahayana.contacts.add', contact, message: parts.join(' ') }));
+      }
+      throw new Error('联系人子命令仅支持 search 或 add。');
+    }
+    if (name === '/requests') {
+      const action = (parts.shift() || '').toLowerCase();
+      if (!action) return formatCommandResult(await executeMahayana({ '@type': 'mahayana.contacts.requests' }));
+      if (action === 'accept' && parts[0]) {
+        return formatCommandResult(await executeMahayana({ '@type': 'mahayana.contacts.accept', requestId: parts[0] }));
+      }
+      throw new Error('用法：/requests accept <申请编号>');
+    }
+    if (name === '/message') {
+      const contact = parts.shift();
+      const text = parts.join(' ').trim();
+      if (!contact || !text) throw new Error('用法：/message <联系人> <消息>');
+      return formatCommandResult(await executeMahayana({ '@type': 'mahayana.messages.send', contact, text, clientRequestId: makeId('web') }));
+    }
+    if (name === '/messages') {
+      const contact = parts.shift();
+      if (!contact) throw new Error('用法：/messages <联系人>');
+      return formatCommandResult(await executeMahayana({ '@type': 'mahayana.messages.list', contact }));
+    }
+    if (name === '/miniapp') {
+      const miniAppId = parts.shift();
+      const text = parts.join(' ').trim();
+      if (!miniAppId || !text) throw new Error('用法：/miniapp <小程序ID> <消息>');
+      return runAiChat(text, miniAppId);
+    }
+    throw new Error('未知命令。输入 /help 查看大乘 CLI 命令。');
   }
 
   function clearMessages() {
@@ -238,8 +441,9 @@
     addMessage('assistant', made.length ? '已按' + cardMode.title + '模式制作 ' + made.length + ' 张背诵闪卡。' : '内容太短，请补充正文后再制卡。', '背诵闪卡');
   }
 
-  function submit() {
+  async function submit() {
     if (!input) return;
+    if (busy) return;
     const tool = activeTool ? findTool(activeTool) : null;
     const text = (input.value || '').trim() || defaultText;
     input.value = '';
@@ -250,7 +454,15 @@
     } else if (activeTool === 'flashcards') {
       buildDeck(text);
     } else {
-      addMessage('assistant', '已收到。可以继续输入，或点击 + 进入全球法布施和背诵闪卡。');
+      busy = true;
+      try {
+        const result = text.startsWith('/') ? await runCommand(text) : await runAiChat(text);
+        addMessage('assistant', result, text.startsWith('/') ? '大乘 CLI' : '大乘 AI');
+      } catch (error) {
+        addMessage('assistant', error && error.message ? error.message : '执行失败，请稍后再试。', '错误');
+      } finally {
+        busy = false;
+      }
     }
   }
 
@@ -296,23 +508,32 @@
   if (form) {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
-      submit();
+      void submit();
     });
   }
 
   if (mode) mode.addEventListener('click', () => setTool(null));
   const newChat = root.querySelector('[data-new-chat]');
   if (newChat) newChat.addEventListener('click', clearMessages);
+  const login = root.querySelector('[data-alipay-login]');
+  if (login) login.addEventListener('click', async () => {
+    try {
+      addMessage('assistant', await startAlipayLogin(), '大乘 CLI');
+    } catch (error) {
+      addMessage('assistant', error && error.message ? error.message : '支付宝登录启动失败。', '错误');
+    }
+  });
   if (input) {
     input.addEventListener('input', autoSizeInput);
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        submit();
+        void submit();
       }
     });
   }
 
   renderCard();
   updateMode();
+  importCallbackToken();
 })();

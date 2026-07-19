@@ -26,6 +26,10 @@ class MiniAppManifest {
   final String signature;
   final MiniAppReviewStatus reviewStatus;
   final MiniAppSource source;
+  final String pluginPath;
+  final String uiEntryPath;
+  final List<String> skills;
+  final List<String> mcpServers;
 
   const MiniAppManifest({
     required this.miniAppId,
@@ -40,6 +44,10 @@ class MiniAppManifest {
     required this.signature,
     required this.reviewStatus,
     required this.source,
+    this.pluginPath = '',
+    this.uiEntryPath = '',
+    this.skills = const [],
+    this.mcpServers = const [],
   });
 
   factory MiniAppManifest.fromJson(Map<String, dynamic> json) {
@@ -56,6 +64,10 @@ class MiniAppManifest {
       signature: _readString(json, 'signature'),
       reviewStatus: _reviewStatusFromString(json['reviewStatus']),
       source: _sourceFromString(json['source']),
+      pluginPath: _readString(json, 'pluginPath'),
+      uiEntryPath: _readString(json, 'uiEntryPath'),
+      skills: _readStringList(json['skills']),
+      mcpServers: _readStringList(json['mcpServers']),
     );
   }
 
@@ -72,6 +84,10 @@ class MiniAppManifest {
     'signature': signature,
     'reviewStatus': reviewStatus.storageValue,
     'source': source.storageValue,
+    if (pluginPath.isNotEmpty) 'pluginPath': pluginPath,
+    if (uiEntryPath.isNotEmpty) 'uiEntryPath': uiEntryPath,
+    if (skills.isNotEmpty) 'skills': skills,
+    if (mcpServers.isNotEmpty) 'mcpServers': mcpServers,
   };
 
   bool get isTrustedOfficial =>
@@ -116,7 +132,7 @@ class MiniAppBot {
       initials: _readString(json, 'initials', fallback: '小'),
       iconKey: _readString(json, 'icon', fallback: 'apps'),
       avatarColor: _colorFromHex(_readString(json, 'avatarColor')),
-      greeting: _readString(json, 'greeting', fallback: '你好，我是小程序机器人。'),
+      greeting: _readString(json, 'greeting'),
       inputHint: _readString(json, 'inputHint', fallback: '输入消息'),
       miniAppId: _readString(json, 'miniAppId'),
       kind: _botKindFromString(json['kind']),
@@ -271,100 +287,41 @@ IconData iconForMiniApp(String key) {
 
 MiniAppRegistry defaultMiniAppRegistry() {
   final now = DateTime.now();
-  final permissions = <String>[
-    'app.context',
-    'bot.chat',
-    'ui.native',
-    'haptics.feedback',
-    'auth.session',
-    'wallet.balance',
-    'payments.entitlement',
-    'payments.fudeGold',
-    'payments.alipay',
-    'network.http',
-    'network.udp',
-    'network.interfaces',
-    'system.keepAwake',
-    'hotspot.settings',
-    'flashcards.create',
-    'platform.publish',
-    'cloud.kv',
-    'runtime.storage',
-    'runtime.file',
-    'globalDharma.delivery',
-    'share.chat',
-    'files.pick',
-    'projects.read',
-    'openclaw.status',
-    'openclaw.chat',
-    'local.loopback',
-    'desktop.control',
-    'fs.readWrite',
-    'runtime.process',
-    'shell.execute',
-    'browser.external',
+  final definitions = <(String, String, String, String, MiniAppBotKind)>[
+    ('global-dharma', '全球法布施', '法', 'public', MiniAppBotKind.globalDharma),
+    ('faliu-flashcards', '法流记忆卡', '卡', 'flashcards', MiniAppBotKind.flashcards),
+    (
+      'platform-publish',
+      '平台发布',
+      '发',
+      'publish',
+      MiniAppBotKind.platformPublish,
+    ),
+    ('hermes-installer', 'Hermes 安装器', 'H', 'apps', MiniAppBotKind.thirdParty),
+    ('bot-father', 'Bot Father', '父', 'bot_father', MiniAppBotKind.botFather),
+    ('mahayana-assistant', '大乘助手', '助', 'assistant', MiniAppBotKind.assistant),
   ];
-  final bots = <MiniAppBot>[
-    MiniAppBot(
-      botId: 'bot.global-dharma',
-      title: '全球法布施',
-      subtitle: '地区、循环、场能都在对话框上方设置',
-      initials: '法',
-      iconKey: 'public',
-      avatarColor: const Color(0xFF4CAF7A),
-      greeting: '把要分享的文字、链接或素材发给我，我会按上方选择的地区与模式启动全球法布施。',
-      inputHint: '输入要法布施的文字/链接，或点 + 添加素材',
-      miniAppId: 'official.global-dharma',
-      kind: MiniAppBotKind.globalDharma,
-      permissions: permissions,
-      source: MiniAppSource.official,
-    ),
-    MiniAppBot(
-      botId: 'bot.flashcards',
-      title: '背诵闪卡制作',
-      subtitle: '随机挖空 / AI 制卡从顶部模式按钮选择',
-      initials: '卡',
-      iconKey: 'flashcards',
-      avatarColor: const Color(0xFF7E57C2),
-      greeting: '粘贴经文、文章正文或链接即可制作背诵闪卡。制卡模式请在上方按钮切换。',
-      inputHint: '粘贴链接或正文，发送后制作闪卡',
-      miniAppId: 'official.flashcards',
-      kind: MiniAppBotKind.flashcards,
-      permissions: permissions,
-      source: MiniAppSource.official,
-    ),
-    MiniAppBot(
-      botId: 'bot.platform-publish',
-      title: '法布施到平台',
-      subtitle: '选择平台后生成发布草稿并打开入口',
-      initials: '发',
-      iconKey: 'publish',
-      avatarColor: const Color(0xFFFF9F43),
-      greeting: '把要发布的正文或链接发给我，上方选择平台后，我会生成发布草稿并打开对应平台入口。',
-      inputHint: '输入要发布到平台的正文/链接',
-      miniAppId: 'official.platform-publish',
-      kind: MiniAppBotKind.platformPublish,
-      permissions: permissions,
-      source: MiniAppSource.official,
-    ),
-    MiniAppBot(
-      botId: 'bot.father',
-      title: '机器人之父',
-      subtitle: '用对话生成个人沙箱小程序',
-      initials: '父',
-      iconKey: 'bot_father',
-      avatarColor: const Color(0xFF3D8BFF),
-      greeting: '告诉我你想要的小程序，我会生成 manifest、界面和权限声明，并放进你的个人沙箱。',
-      inputHint: '描述你想创建的小程序',
-      miniAppId: 'official.bot-father',
-      kind: MiniAppBotKind.botFather,
-      permissions: const ['app.context', 'bot.chat', 'miniapps.dev'],
-      source: MiniAppSource.official,
-    ),
-  ];
+  final bots = definitions
+      .map(
+        (definition) => MiniAppBot(
+          botId: 'plugin.${definition.$1}',
+          title: definition.$2,
+          subtitle: 'MCP 插件',
+          initials: definition.$3,
+          iconKey: definition.$4,
+          avatarColor: const Color(0xFF3D8BFF),
+          greeting: '',
+          inputHint: '输入 / 查看 MCP Tools',
+          miniAppId: definition.$1,
+          kind: definition.$5,
+          permissions: const [],
+          source: MiniAppSource.official,
+        ),
+      )
+      .toList(growable: false);
   return MiniAppRegistry(
     schemaVersion: 1,
-    hostApiVersion: '2.0',
+    hostApiVersion: 'mcp-2025-06-18',
     bots: bots,
     miniApps: [
       for (final bot in bots)
@@ -373,18 +330,17 @@ MiniAppRegistry defaultMiniAppRegistry() {
           botId: bot.botId,
           title: bot.title,
           subtitle: bot.subtitle,
-          entryUrl:
-              'https://fabushi-miniapps.pages.dev/miniapps/${bot.miniAppId}',
-          version: '2.0.0',
-          permissions: bot.permissions,
+          entryUrl: '',
+          version: '1.0.0',
+          permissions: const [],
           surfaces: const ['homePinned', 'chatPanel'],
-          theme: 'telegramDark',
-          signature: 'builtin',
+          theme: 'mcpApp',
+          signature: 'fabushi-official:${bot.miniAppId}',
           reviewStatus: MiniAppReviewStatus.trusted,
           source: MiniAppSource.official,
         ),
     ],
-    signature: 'builtin',
+    signature: 'fabushi-official-mcp-v1',
     updatedAt: now,
   );
 }

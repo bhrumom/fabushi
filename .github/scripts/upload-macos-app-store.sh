@@ -159,6 +159,46 @@ prepare_openclaw_for_macos_app_store() {
   echo "Prepared OpenClaw App Store payload at $openclaw_assets (signed Mach-O files=$signed_count, executable entitlements=$executable_count)."
 }
 
+prepare_mahayana_for_macos_app_store() {
+  local app_path="$1"
+  local cli="$app_path/Contents/MacOS/mahayana"
+  local runtime="$app_path/Contents/Frameworks/libmahayana_runtime.dylib"
+  local entitlements="$PWD/macos/Runner/OpenClawChild.entitlements"
+  local identity
+  local signing_report="$status_dir/MACOS_APP_STORE_MAHAYANA_SIGNING.txt"
+
+  if [ ! -x "$cli" ]; then
+    echo "Missing bundled Mahayana CLI: $cli" >&2
+    return 1
+  fi
+  if [ ! -f "$runtime" ]; then
+    echo "Missing bundled Mahayana Runtime: $runtime" >&2
+    return 1
+  fi
+  if [ ! -f "$entitlements" ]; then
+    echo "Missing Mahayana child process entitlements: $entitlements" >&2
+    return 1
+  fi
+
+  identity="$(resolve_macos_app_store_signing_identity)"
+  if [ -z "$identity" ]; then
+    echo "Unable to resolve a macOS App Store signing identity for Mahayana." >&2
+    return 1
+  fi
+
+  codesign --force --sign "$identity" "$runtime"
+  codesign --verify --strict --verbose=2 "$runtime"
+  codesign --force --sign "$identity" --entitlements "$entitlements" "$cli"
+  codesign --verify --strict --verbose=2 "$cli"
+  {
+    echo "cli=$cli"
+    echo "runtime=$runtime"
+    echo "entitlements=$entitlements"
+    echo "signing_identity=$identity"
+    codesign -dv --verbose=2 "$cli" 2>&1 || true
+  } > "$signing_report"
+}
+
 trap 'exit_code=$?; if [ "$exit_code" -ne 0 ]; then write_status "failed" "macos_app_store_upload_failed_exit_${exit_code}"; fi' EXIT
 
 require_config() {
@@ -286,6 +326,13 @@ if [ "$manual_signing" = "true" ]; then
   if [ -n "$profile_app_identifier" ] && [ "$profile_app_identifier" != "$expected_profile_app_identifier" ]; then
     echo "Provisioning profile app identifier '$profile_app_identifier' does not match '$expected_profile_app_identifier'." >&2
     exit 1
+  fi
+
+  profile_app_groups="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$profile_plist" 2>/dev/null || true)"
+  if [ -z "$profile_app_groups" ]; then
+    echo "Provisioning profile does not support App Groups; removing com.apple.security.application-groups from macos entitlements before building archive."
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' macos/Runner/Release.entitlements 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Delete :com.apple.security.application-groups' macos/Runner/DebugProfile.entitlements 2>/dev/null || true
   fi
 
   ruby - \
@@ -436,10 +483,27 @@ while true; do
 done
 
 archived_app_path="$archive_path/Products/Applications/global_dharma_sharing.app"
+mahayana_bundle_script="$PWD/../.github/scripts/build-mahayana-desktop-bundle.sh"
+assert_mahayana_script="$PWD/../.github/scripts/assert-mahayana-bundle.sh"
+if [ ! -x "$mahayana_bundle_script" ]; then
+  echo "Missing executable Mahayana bundle script: $mahayana_bundle_script" >&2
+  exit 1
+fi
+if [ ! -x "$assert_mahayana_script" ]; then
+  echo "Missing executable Mahayana assertion script: $assert_mahayana_script" >&2
+  exit 1
+fi
+
+# The Xcode archive build phase already produced the architecture-correct
+# Runtime dylib. Add the canonical CLI without replacing that dylib.
+"$mahayana_bundle_script" macos "$archived_app_path/Contents" cli-only
+"$assert_mahayana_script" "$archived_app_path" macos
+
 fix_bundled_dylibs_script="$PWD/../.github/scripts/fix-macos-bundled-dylibs.sh"
 if [ -x "$fix_bundled_dylibs_script" ]; then
   "$fix_bundled_dylibs_script" "$archived_app_path"
 fi
+prepare_mahayana_for_macos_app_store "$archived_app_path"
 
 case "$(uname -m)" in
   arm64) openclaw_platform="macos-arm64" ;;

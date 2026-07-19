@@ -87,3 +87,27 @@
 ### 5.3 自动化验证与边界说明
 - 执行 `cargo test` 测试通过，套接字 HTTP 服务、内存 Job Start/Stop 接口用例 100% 成功。
 - 边界说明：本次演进恪守“不做磁盘持久化”要求，任务状态和回执完全托管在内存。若 UI 关闭，循环发包不受影响；但若机器重启或操作系统主动杀掉 Rust 守护进程，循环任务不会从磁盘恢复。
+
+## 6. macOS/桌面端 WKWebView 路由重定向与生命周期容错深度演进 (PR #1546)
+
+在实际桌面端平台（macOS/Windows）与实际移动端加载在线小程序过程中，发现并解决了点击打开应用白屏及发送链接提示“小程序后台加载超时”的关键问题：
+
+### 6.1 根因分析：307 重定向对 WebKit 桥接脚本的破坏
+1. **重定向引发的桥接丢失**：
+   - 小程序前端 Web 工程在 `next.config.ts` 中开启了 `trailingSlash: true`（尾随斜杠强约束）。此前客户端 `_entryUrlFor` 构造的 URL 默认形式为 `https://fabushi.ombhrum.com/miniapps/official.global-dharma`（结尾无斜杠）。
+   - 当 macOS/iOS 底层 WKWebView 发起请求时，服务器端返回 HTTP 307 Temporary Redirect 至带 `/` 的地址。
+   - 在 WebKit 底层机制中，重定向会导致在 `atDocumentStart` 时机注入的宿主 SDK 桥接脚本 `_hostSdkScript` 丢失或被跳过，同时干扰 WebKit 内部 navigation delegate 的 `onLoadStop` 事件同步。
+2. **生命周期超时与加载停滞**：
+   - 由于 `onLoadStop` 未及时触发或被重定向吃掉，客户端未执行 `_markHostReady()`，导致聊天界面静默发送内容时触发 20 秒超时抛错；
+   - 在小程序 Web 端内部，React 启动并调用 `bootMiniApp` 时，因找不到 `window.FabushiMiniApp` 桥接对象，SDK 在默认 800ms 内快速超时并渲染兜底界面或陷入加载白屏。
+
+### 6.2 工业级容错与兼容性改进
+1. **URL 规范化零重定向**：在客户端 `_entryUrlFor` 及 `desktop_package_cli` 生成器中强约束：若目标 URL 既无查询参数又无尾随斜杠，必须自动追加 `/`，彻底杜绝 Next.js/Cloudflare 产生任何 307 重定向。
+2. **容器双层生命周期保底 (`onProgressChanged`)**：为防范复杂网络或 SPA 路由机制对 `onLoadStop` 吞没，新增 Web 容器加载进度回调。当 `progress == 100` 且尚未标记 Ready 时，立即主动执行 `evaluateJavascript` 注入桥接脚本并激活宿主状态。
+3. **环境权限与容错窗口调整**：
+   - 在 `InAppWebViewSettings` 中显式开启 `domStorageEnabled: true` 与 `databaseEnabled: true`，消除 macOS WebKit 对 Next.js LocalStorage/SessionStorage 访问的 DOMException 防火墙；
+   - 将 Web 端 SDK 宿主准备超时阈值 (`timeoutMs`) 由 800ms 延长至 8000ms，为桌面端内核初始化与网络请求让出充足时间容忍度。
+
+### 6.3 宿主与小程序核心权责声明
+- **宿主（Flutter 客户端/App）的角色**：纯粹提供底层操作系统原生能力（Rust 原生网络推流程序调起、设备硬件标号、keepAwake 系统后台保活、数字回执管道），并在聊天窗口或侧边栏提供展示容器。
+- **小程序（Next.js Web 工程）的角色**：**主导全部业务逻辑、聊天框交互数字菜单生成、参数解析验证、发送频率控制与状态机展示。** 宿主只是小程序的画布与驱动底层硬件的工具链，所有业务闭环全部在小程序内优雅流转。

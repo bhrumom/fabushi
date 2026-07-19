@@ -28,8 +28,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'password': password,
     });
 
-    if (response['token'] != null) {
-      apiClient.setToken(response['token']);
+    if (response['sessionStored'] == true) {
+      apiClient.setToken('mahayana-rust-session');
     }
 
     return UserModel.fromJson(response['user']);
@@ -49,8 +49,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'verificationCode': verificationCode,
     });
 
-    if (response['token'] != null) {
-      apiClient.setToken(response['token']);
+    if (response['sessionStored'] == true) {
+      apiClient.setToken('mahayana-rust-session');
     }
 
     return UserModel.fromJson(response['user']);

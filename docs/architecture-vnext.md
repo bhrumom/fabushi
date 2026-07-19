@@ -55,6 +55,33 @@ Fabushi 不适合现在就拆成微服务。
 - CD 只做环境部署与环境验收，不再替代结构性测试
 - 发布链只放行已经在 PR 阶段通过结构化验证的代码
 
+### 3.5 大乘 CLI 统一能力层
+
+App、桌面端、CLI 和 Web 使用同一组 `mahayana.*` JSON 命令：
+
+```text
+mahayana CLI ──────────┐
+Flutter native ──C ABI─┼── 内置 Mahayana Runtime ── Codex core / mini-app / Telegram
+                       │              │
+Browser ───────WASM────┘              └── 大乘 Responses 模型接口 / 产品 API
+```
+
+- 原生长期 ABI 是 `mahayana_runtime_create/execute/receive/interrupt/
+  resolve_approval/close`；命令与流式事件保持稳定 JSON 契约。
+- 桌面端通过 Codex app-server client 在同一进程内运行上游 Codex core，
+  不启动 `codex` 子进程，也不连接云端 Agent。
+- 软件只使用支付宝/大乘软件账号。产品会话作为大乘 Responses provider 的
+  内存凭据，不写入 Codex `auth.json`，也不出现 OpenAI 登录入口。
+- iOS/Android 在应用进程内运行受限 Agent 与 Responses 模型适配器；它们不
+  暴露 shell、任意进程、原生 Git 或沙箱外文件系统。
+- 浏览器加载 `mahayana-web` WebAssembly，使用 Browser Fetch 直接请求模型
+  provider；`/api/mahayana/execute` 云端 Agent 命令网关不存在。
+- macOS、Linux、Windows 安装包携带 `mahayana` 和
+  `libmahayana_runtime`，Codex core 直接链接进 Runtime，没有单独的 Codex
+  可执行文件，也不经过额外的兼容代理层。
+- 写操作在 MCP 层要求显式确认；任何 CLI/MCP 输出不得回显 token、授权码等
+  凭据。
+
 ## 4. 目标仓库结构
 
 建议逐步重构为：

@@ -741,9 +741,9 @@ class OpenClawRuntime {
           if (desktopTools.token != null)
             'DACHENG_DESKTOP_TOOLS_TOKEN': desktopTools.token!,
           'DACHENG_APP_RUNTIME': '1',
-          'DACHENG_AUTH_TOKEN': (authToken != null && authToken.isNotEmpty)
-              ? authToken
-              : token,
+          // This is a process-local OpenClaw capability, never a Mahayana
+          // account credential. Account HTTP stays inside the Rust runtime.
+          'DACHENG_AUTH_TOKEN': token,
           if (username != null && username.isNotEmpty)
             'DACHENG_USERNAME': username,
           'DACHENG_IS_MEMBER': isMember ? '1' : '0',
@@ -1017,6 +1017,7 @@ class OpenClawRuntime {
         .map((match) => int.tryParse(match.group(0) ?? '') ?? 0)
         .toList(growable: false);
   }
+
   _OpenClawBundleSpec? _specFromJson(
     Map<String, dynamic> json, {
     required bool downloaded,

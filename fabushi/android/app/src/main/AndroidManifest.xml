@@ -40,7 +40,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        tools:replace="android:label">
+        android:allowBackup="false"
+        tools:replace="android:label,android:allowBackup">
         
         <!-- 开机自启动接收器 -->
         <receiver 
