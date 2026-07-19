@@ -261,9 +261,7 @@ class ApiClient implements ApiRequester {
     };
 
     if (token != null && token.isNotEmpty) {
-      throw UnsupportedError(
-        'Authenticated requests must use the Mahayana Rust transport.',
-      );
+      requestHeaders['Authorization'] = 'Bearer $token';
     }
 
     return requestHeaders;

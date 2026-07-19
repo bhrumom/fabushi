@@ -13,18 +13,21 @@ class ApiClient {
   final http.Client _client;
   final bool _useRustTransport;
   bool _hasSession = false;
+  String? _token;
 
   ApiClient({http.Client? client})
     : _client = client ?? http.Client(),
       _useRustTransport = client == null;
 
   void setToken(String? token) {
+    _token = token;
     _hasSession = token?.isNotEmpty == true;
   }
 
   Map<String, String> get _headers => {
     ApiConstants.headerContentType: ApiConstants.contentTypeJson,
     ApiConstants.headerAccept: ApiConstants.contentTypeJson,
+    if (_token?.isNotEmpty == true) 'Authorization': 'Bearer $_token',
   };
 
   Future<Map<String, dynamic>> get(String endpoint) {
