@@ -221,6 +221,7 @@ class LikeService extends ChangeNotifier {
       } else {
         final response = await _httpClient.get(
           Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
+          headers: _authenticatedHeaders,
         );
         if (response.statusCode != 200) return;
         data = _tryParseBodyAsMap(response.body);
@@ -287,7 +288,7 @@ class LikeService extends ChangeNotifier {
       } else {
         final response = await _httpClient.post(
           Uri.parse('${AppConfig.apiUrl}/api/likes/toggle'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _authenticatedHeaders,
           body: jsonEncode(body),
         );
         if (response.statusCode != 200) return;
@@ -302,6 +303,11 @@ class LikeService extends ChangeNotifier {
       debugPrint('同步点赞失败: $e');
     }
   }
+
+  Map<String, String> get _authenticatedHeaders => {
+    'Content-Type': 'application/json',
+    if (_authToken?.isNotEmpty == true) 'Authorization': 'Bearer $_authToken',
+  };
 
   Future<void> fetchLikeCounts(List<String> contentIds) async {
     if (contentIds.isEmpty) return;

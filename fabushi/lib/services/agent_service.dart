@@ -277,7 +277,11 @@ class AgentService {
   }
 
   Map<String, String> _headers(String? token) {
-    return {'Accept': 'application/json', 'Content-Type': 'application/json'};
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      if (token?.isNotEmpty == true) 'Authorization': 'Bearer $token',
+    };
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
