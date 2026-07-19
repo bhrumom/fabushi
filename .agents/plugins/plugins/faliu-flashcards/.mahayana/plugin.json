@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "faliu-flashcards"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "create", "tool": "create_deck" },
+    { "name": "list", "tool": "list_decks" },
+    { "name": "open", "tool": "open_deck" },
+    { "name": "next", "tool": "review_next" },
+    { "name": "review", "tool": "submit_review" }
+  ]
+}

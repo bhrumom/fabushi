@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "hermes-installer-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "hermes-installer", "mcp-serve"], "cwd": "." },
+    "hermes-installer": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/hermes-installer" }
+  }
+}

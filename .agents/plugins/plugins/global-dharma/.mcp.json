@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "global-dharma-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "global-dharma", "mcp-serve"], "cwd": "." },
+    "global-dharma": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/global-dharma" }
+  }
+}

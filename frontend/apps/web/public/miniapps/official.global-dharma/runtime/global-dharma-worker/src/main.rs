@@ -680,7 +680,7 @@ fn send_http(endpoint: &Endpoint, packet_body: &str) -> Result<Receipt, String> 
         .arg("-H")
         .arg("Accept: application/json")
         .arg("-H")
-        .arg("User-Agent: FabushiMiniApp/GlobalDharmaWorker")
+        .arg("User-Agent: FabushiMcpApp/GlobalDharmaWorker")
         .arg("-w")
         .arg("\n%{http_code}")
         .stdout(Stdio::piped())

@@ -55,7 +55,7 @@ class MahayanaCommandService {
             );
           }
           if (payload['needsRegistration'] == true &&
-              payload['token'] == null) {
+              payload['sessionStored'] != true) {
             throw StateError('该支付宝账号需要先完成大乘账号注册。');
           }
           return MahayanaCommandOutcome('支付宝账号登录成功。', session: payload);
@@ -71,7 +71,7 @@ class MahayanaCommandService {
             if (parts.isNotEmpty) 'state': parts.removeAt(0),
           });
           if (payload['needsRegistration'] == true &&
-              payload['token'] == null) {
+              payload['sessionStored'] != true) {
             throw StateError('该支付宝账号需要先完成大乘账号注册。');
           }
           return MahayanaCommandOutcome('支付宝账号登录成功。', session: payload);
@@ -96,9 +96,6 @@ class MahayanaCommandService {
         await _execute(const {'@type': 'mahayana.auth.logout'}, token: token);
         return const MahayanaCommandOutcome('已退出大乘软件账号。', loggedOut: true);
       case '/status':
-        if (kIsWeb && token?.trim().isNotEmpty != true) {
-          return const MahayanaCommandOutcome('尚未登录。输入 /login 使用支付宝登录。');
-        }
         final payload = await _execute(const {
           '@type': 'mahayana.auth.status',
         }, token: token);
@@ -141,16 +138,9 @@ class MahayanaCommandService {
           }, token: token);
           return MahayanaCommandOutcome(_format(payload));
         }
-        if (parts.firstOrNull?.toLowerCase() == 'review' && parts.length == 2) {
-          final payload = await _execute({
-            '@type': 'mahayana.miniapp.review.submit',
-            'miniAppId': parts.last,
-          }, token: token);
-          return MahayanaCommandOutcome(_format(payload));
-        }
         if (parts.length < 2) {
           throw const FormatException(
-            '用法：/miniapp <小程序ID> <消息>、/miniapp registry 或 /miniapp review <ID>',
+            '用法：/miniapp <插件ID> <消息> 或 /miniapp registry',
           );
         }
         final miniAppId = parts.removeAt(0);
@@ -245,7 +235,7 @@ class MahayanaCommandService {
         '${_sdk.loadError == null ? '' : ' ${_sdk.loadError}'}',
       );
     }
-    return _sdk.execute(command, productSessionToken: token);
+    return _sdk.execute(command);
   }
 
   String get _alipayLoginPlatform {
@@ -329,9 +319,8 @@ class MahayanaCommandService {
 /requests accept <申请编号>
 /message <联系人> <消息>
 /messages <联系人>
-/miniapp <小程序ID> <消息>
+/miniapp <插件ID> <消息>
 /miniapp registry
-/miniapp review <小程序ID>
 /logout  退出软件账号
 普通文字会进入大乘 AI 对话。''';
 }

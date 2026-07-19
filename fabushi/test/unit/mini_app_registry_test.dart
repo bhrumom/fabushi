@@ -10,11 +10,14 @@ void main() {
       expect(registry.schemaVersion, 1);
       expect(
         registry.bots.map((bot) => bot.botId),
-        contains('bot.global-dharma'),
+        contains('plugin.global-dharma'),
       );
-      expect(registry.bots.map((bot) => bot.botId), contains('bot.father'));
       expect(
-        registry.manifestFor('official.global-dharma')?.reviewStatus,
+        registry.bots.map((bot) => bot.botId),
+        contains('plugin.bot-father'),
+      );
+      expect(
+        registry.manifestFor('global-dharma')?.reviewStatus,
         MiniAppReviewStatus.trusted,
       );
     });

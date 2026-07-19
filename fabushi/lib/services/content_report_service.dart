@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../core/config/app_config.dart';
+import 'mahayana_sdk.dart';
 
 /// 举报原因类型
 enum ReportReason {
@@ -78,24 +76,25 @@ class ContentReportService {
     String? reporterUserId,
   }) async {
     try {
-      final url = Uri.parse('${AppConfig.apiUrl}/api/report');
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/report',
+        body: {
           'content_id': contentId,
           'reason': reason.value,
           'description': description ?? '',
           'reporter_user_id': reporterUserId ?? 'anonymous',
           'timestamp': DateTime.now().toIso8601String(),
-        }),
+        },
+        authenticated: reporterUserId?.isNotEmpty == true,
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      final statusCode = (response['statusCode'] as num?)?.toInt() ?? 0;
+      if (statusCode == 200 || statusCode == 201) {
         debugPrint('✅ 举报已提交到服务器: $contentId');
         return true;
       } else {
-        debugPrint('⚠️ 举报提交失败: ${response.statusCode}');
+        debugPrint('⚠️ 举报提交失败: $statusCode');
         return false;
       }
     } catch (e) {

@@ -6,7 +6,7 @@
 
 ## 2. 变更范围与详细模块
 1. **大乘原生核心与命令行工具 (Rust & CLI)**
-   - `native/mahayana-cli` / `native/mahayana-wrapper`: 增加 `product.rs` 模块，集成 Codex 安装包及运行逻辑，并完善所有通过命令测试的集成用例。
+   - `third_party/mahayana/mahayana-rs`: 作为唯一的大乘 CLI、Runtime ABI 与内置 Codex 核心实现；旧的多层 Wrapper 已移除。
 2. **多终端原生构建与运行时集成**
    - `fabushi/lib/services/`: 增加 `mahayana_command_service.dart`、支付宝鉴权服务、好友私信及 Telegram 运行时适配。
    - `fabushi/macos` / `fabushi/linux` / `fabushi/windows` / `fabushi/ios` / `fabushi/android`: 完整对接构建与动态链接配置。
@@ -19,7 +19,7 @@
 
 ## 3. 验证与测试标准
 - **本地自动化测试通过率**：
-  - Rust CLI 集成测试：`cargo test --manifest-path native/mahayana-cli/Cargo.toml` 8 个用例全部通过。
+  - Rust CLI 集成测试：`cargo nextest run --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-core --package mahayana-cli`。
   - Web 契约与单元测试：`node --test fabushi/web/tests/alipay-cli-session.test.js fabushi/web/tests/friends-and-messages-contract.test.js` 9 个用例全部通过。
 - **发布构建确认**：
   - 代码推送到 GitHub 后，确认是否有待处理的 PR 或直接并入 main 分支触发 GitHub Actions。

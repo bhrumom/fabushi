@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/config/app_config.dart';
 import 'app_settings.dart';
+import 'mahayana_sdk.dart';
 import 'worker_config.dart';
 
 abstract class ApiRequester {
@@ -47,6 +48,7 @@ class ApiClient implements ApiRequester {
   final http.Client _httpClient;
   final Future<String> Function() _baseUrlResolver;
   final Duration _timeout;
+  final bool _useRustTransport;
 
   ApiClient._({
     http.Client? httpClient,
@@ -54,7 +56,8 @@ class ApiClient implements ApiRequester {
     Duration? timeout,
   }) : _httpClient = httpClient ?? http.Client(),
        _baseUrlResolver = baseUrlResolver ?? AppSettings.getBackendUrl,
-       _timeout = timeout ?? AppConfig.requestTimeout;
+       _timeout = timeout ?? AppConfig.requestTimeout,
+       _useRustTransport = httpClient == null && baseUrlResolver == null;
 
   // 公共构造函数，用于直接实例化
   factory ApiClient({
@@ -82,6 +85,14 @@ class ApiClient implements ApiRequester {
     String? token,
   }) async {
     try {
+      if (_useRustTransport) {
+        return _rustRequest(
+          'GET',
+          endpoint,
+          queryParams: queryParams,
+          authenticated: token?.isNotEmpty == true,
+        );
+      }
       final uri = await _buildUri(endpoint, queryParams: queryParams);
       final requestHeaders = _buildHeaders(headers: headers, token: token);
 
@@ -105,6 +116,14 @@ class ApiClient implements ApiRequester {
     String? token,
   }) async {
     try {
+      if (_useRustTransport) {
+        return _rustRequest(
+          'POST',
+          endpoint,
+          body: body,
+          authenticated: token?.isNotEmpty == true,
+        );
+      }
       final uri = await _buildUri(endpoint);
       final requestHeaders = _buildHeaders(headers: headers, token: token);
 
@@ -135,6 +154,14 @@ class ApiClient implements ApiRequester {
     String? token,
   }) async {
     try {
+      if (_useRustTransport) {
+        return _rustRequest(
+          'PUT',
+          endpoint,
+          body: body,
+          authenticated: token?.isNotEmpty == true,
+        );
+      }
       final uri = await _buildUri(endpoint);
       final requestHeaders = _buildHeaders(headers: headers, token: token);
 
@@ -162,6 +189,14 @@ class ApiClient implements ApiRequester {
     String? token,
   }) async {
     try {
+      if (_useRustTransport) {
+        return _rustRequest(
+          'DELETE',
+          endpoint,
+          body: body,
+          authenticated: token?.isNotEmpty == true,
+        );
+      }
       final uri = await _buildUri(endpoint);
       final requestHeaders = _buildHeaders(headers: headers, token: token);
 
@@ -193,6 +228,29 @@ class ApiClient implements ApiRequester {
     return uri;
   }
 
+  Future<Map<String, dynamic>> _rustRequest(
+    String method,
+    String endpoint, {
+    Map<String, String>? queryParams,
+    Map<String, dynamic>? body,
+    required bool authenticated,
+  }) async {
+    final endpointUri = Uri.parse(endpoint);
+    final payload = await MahayanaSdk.instance.platformRequest(
+      method: method,
+      path: endpointUri.path,
+      query: {...endpointUri.queryParameters, ...?queryParams},
+      body: body,
+      authenticated: authenticated,
+    );
+    return _handleResponse(
+      http.Response(
+        payload['bodyText']?.toString() ?? '',
+        (payload['statusCode'] as num?)?.toInt() ?? 500,
+      ),
+    );
+  }
+
   Map<String, String> _buildHeaders({
     Map<String, String>? headers,
     String? token,
@@ -204,19 +262,9 @@ class ApiClient implements ApiRequester {
 
     if (token != null && token.isNotEmpty) {
       requestHeaders['Authorization'] = 'Bearer $token';
-      debugPrint(
-        '🔐 ApiClient: 添加认证头 Authorization: Bearer ${_safeTokenPreview(token)}',
-      );
-    } else {
-      debugPrint('⚠️ ApiClient: 没有token');
     }
 
     return requestHeaders;
-  }
-
-  String _safeTokenPreview(String token) {
-    final previewLength = token.length < 20 ? token.length : 20;
-    return '${token.substring(0, previewLength)}...';
   }
 
   Map<String, dynamic> _handleTransportError(String method, Object error) {
@@ -254,15 +302,12 @@ class ApiClient implements ApiRequester {
       if (data is Map<String, dynamic>) {
         return {
           ...data,
-          if (!data.containsKey('statusCode')) 'statusCode': response.statusCode,
+          if (!data.containsKey('statusCode'))
+            'statusCode': response.statusCode,
         };
       }
 
-      return {
-        'success': true,
-        'statusCode': response.statusCode,
-        'data': data,
-      };
+      return {'success': true, 'statusCode': response.statusCode, 'data': data};
     }
 
     final error = _extractErrorMessage(data);
@@ -377,7 +422,7 @@ class ApiClient implements ApiRequester {
 
   Future<Map<String, dynamic>> getAiQuota(String token) {
     // Note: This endpoint is defined in AppConfig.aiQuotaUrl
-    // ApiClient already prepends base URL if it's not absolute, 
+    // ApiClient already prepends base URL if it's not absolute,
     // but we can just pass the path. We will pass the parsed path.
     return get(Uri.parse(AppConfig.aiQuotaUrl).path, token: token);
   }

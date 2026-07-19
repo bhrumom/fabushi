@@ -20,7 +20,6 @@ class MahayanaCodexRuntime {
   bool _loadAttempted = false;
   String? _loadError;
   Future<int>? _runtimeId;
-  String? _runtimeToken;
   String? _runtimeModel;
   String? _runtimeResponsesBaseUrl;
   int? _runtimeTelegramClientId;
@@ -44,7 +43,6 @@ class MahayanaCodexRuntime {
     final result = await sendAndCollect(
       'codex:agent:assistant',
       prompt,
-      token: _token(request),
       model: _model(request),
       responsesBaseUrl: _responsesBaseUrl(request),
       telegramClientId: _telegramClientId(request),
@@ -73,7 +71,6 @@ class MahayanaCodexRuntime {
       return sendAndCollect(
         'miniapp:$miniAppId',
         message,
-        token: _token(request),
         model: _model(request),
         responsesBaseUrl: _responsesBaseUrl(request),
         telegramClientId: _telegramClientId(request),
@@ -83,7 +80,6 @@ class MahayanaCodexRuntime {
     if (_isRuntimeCommand(type)) {
       return executeRuntime(
         request,
-        token: _token(request),
         model: _model(request),
         responsesBaseUrl: _responsesBaseUrl(request),
         telegramClientId: _telegramClientId(request),
@@ -91,8 +87,7 @@ class MahayanaCodexRuntime {
       );
     }
     final result = await executeProduct(request);
-    if (type == 'mahayana.auth.session.sync' ||
-        type == 'mahayana.auth.logout') {
+    if (type == 'mahayana.auth.logout' || result['sessionStored'] == true) {
       await _closeExistingRuntime();
     }
     return result;
@@ -100,7 +95,6 @@ class MahayanaCodexRuntime {
 
   Future<Map<String, dynamic>> executeRuntime(
     Map<String, dynamic> command, {
-    String? token,
     String? model,
     String? responsesBaseUrl,
     int? telegramClientId,
@@ -108,7 +102,6 @@ class MahayanaCodexRuntime {
   }) async {
     _requireLibrary();
     final runtimeId = await _ensureRuntime(
-      token: token,
       model: model,
       responsesBaseUrl: responsesBaseUrl,
       telegramClientId: telegramClientId,
@@ -135,7 +128,6 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>?> receive({int timeoutMs = 30000}) async {
     _requireLibrary();
     final runtimeId = await _ensureRuntime(
-      token: _runtimeToken,
       model: _runtimeModel,
       responsesBaseUrl: _runtimeResponsesBaseUrl,
       telegramClientId: _runtimeTelegramClientId,
@@ -151,7 +143,6 @@ class MahayanaCodexRuntime {
   }) async {
     _requireLibrary();
     final runtimeId = await _ensureRuntime(
-      token: _runtimeToken,
       model: _runtimeModel,
       responsesBaseUrl: _runtimeResponsesBaseUrl,
       telegramClientId: _runtimeTelegramClientId,
@@ -169,7 +160,6 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>> sendAndCollect(
     String conversationId,
     String text, {
-    String? token,
     String? model,
     String? responsesBaseUrl,
     int? telegramClientId,
@@ -181,7 +171,6 @@ class MahayanaCodexRuntime {
         'conversationId': conversationId,
         'text': text,
       },
-      token: token,
       model: model,
       responsesBaseUrl: responsesBaseUrl,
       telegramClientId: telegramClientId,
@@ -240,19 +229,16 @@ class MahayanaCodexRuntime {
   }
 
   Future<int> _ensureRuntime({
-    String? token,
     String? model,
     String? responsesBaseUrl,
     int? telegramClientId,
     int? telegramSelfUserId,
   }) async {
-    final normalizedToken = _normalize(token);
     final normalizedModel = _normalize(model) ?? 'deepseek-chat';
     final normalizedBaseUrl =
         _normalize(responsesBaseUrl) ??
         'https://api.ombhrum.com/codex-deepseek/v1';
     if (_runtimeId != null &&
-        _runtimeToken == normalizedToken &&
         _runtimeModel == normalizedModel &&
         _runtimeResponsesBaseUrl == normalizedBaseUrl &&
         _runtimeTelegramClientId == telegramClientId &&
@@ -260,7 +246,6 @@ class MahayanaCodexRuntime {
       return _runtimeId!;
     }
     await _closeExistingRuntime();
-    _runtimeToken = normalizedToken;
     _runtimeModel = normalizedModel;
     _runtimeResponsesBaseUrl = normalizedBaseUrl;
     _runtimeTelegramClientId = telegramClientId;
@@ -269,7 +254,6 @@ class MahayanaCodexRuntime {
     final pending = Isolate.run(
       () => _createRuntimeInWorker({
         ...runtimePaths,
-        'productSessionToken': ?normalizedToken,
         'telegramClientId': ?telegramClientId,
         'telegramSelfUserId': ?telegramSelfUserId,
         'model': {
@@ -292,7 +276,6 @@ class MahayanaCodexRuntime {
   Future<void> _closeExistingRuntime() async {
     final pending = _runtimeId;
     _runtimeId = null;
-    _runtimeToken = null;
     _runtimeModel = null;
     _runtimeResponsesBaseUrl = null;
     _runtimeTelegramClientId = null;
@@ -351,11 +334,9 @@ class MahayanaCodexRuntime {
 bool _isRuntimeCommand(String type) =>
     type.startsWith('mahayana.runtime.') ||
     type.startsWith('mahayana.conversation.') ||
+    type.startsWith('mahayana.plugin.') ||
     type.startsWith('mahayana.operation.') ||
     type.startsWith('mahayana.approval.');
-
-String? _token(Map<String, dynamic> request) =>
-    _normalize(request['token']?.toString());
 
 String? _model(Map<String, dynamic> request) =>
     _normalize(request['model']?.toString());

@@ -76,6 +76,25 @@ class DesktopSmokeCli {
       return 0;
     }
 
+    if (command == 'miniapp-smoke') {
+      _runMiniAppSmoke();
+      final result = <String, dynamic>{
+        'ok': true,
+        'command': command,
+        'protocol': 'mcp',
+        'checks': checks.map((item) => item.toJson()).toList(),
+      };
+      if (jsonOutput) {
+        writeJson(result);
+      } else {
+        stdout.writeln('MCP plugin smoke passed');
+        for (final check in checks) {
+          stdout.writeln('  ok ${check.name}: ${check.message}');
+        }
+      }
+      return 0;
+    }
+
     final context = await DesktopPackageContext.resolve(
       bundleRootOverride: bundleRootArg,
       platformOverride: platformArg,
@@ -197,7 +216,7 @@ Usage: $cliExecutableName <command> [options]
 Commands:
   doctor          Validate the installed desktop package layout and embedded OpenClaw files.
   gateway-smoke   Start the bundled OpenClaw Gateway and verify health and models routes.
-  miniapp-smoke   Verify the built-in mini-app registry, host contract, recovery, and return-state wiring.
+  miniapp-smoke   Verify the official MCP plugin registry, Tool contracts, runtime variants, and UI resources.
   all             Run gateway-smoke and miniapp-smoke.
   version         Print this CLI version.
 
@@ -408,92 +427,67 @@ Examples:
     }
   }
 
-
   void _runMiniAppSmoke() {
-    final registry = MiniAppSmokeRegistry.defaults();
+    final registry = McpPluginSmokeRegistry.defaults();
     _check(
-      'miniapp registry schema',
-      registry.schemaVersion == 1 && registry.hostApiVersion == '1.2',
-      'schema=${registry.schemaVersion} hostApi=${registry.hostApiVersion}',
+      'MCP plugin registry schema',
+      registry.schemaVersion == 1 && registry.protocol == 'mcp',
+      'schema=${registry.schemaVersion} protocol=${registry.protocol}',
     );
     _check(
-      'miniapp official bot inventory',
-      registry.bots.length >= 4 &&
-          registry.bots.any((bot) => bot.botId == 'bot.global-dharma') &&
-          registry.bots.any((bot) => bot.botId == 'bot.father'),
-      'bots=${registry.bots.map((bot) => bot.botId).join(',')}',
+      'official MCP plugin inventory',
+      registry.plugins.length == 6 &&
+          registry.plugins.any((plugin) => plugin.id == 'global-dharma') &&
+          registry.plugins.any((plugin) => plugin.id == 'bot-father') &&
+          registry.plugins.any((plugin) => plugin.id == 'mahayana-assistant'),
+      'plugins=${registry.plugins.map((plugin) => plugin.id).join(',')}',
     );
 
-    for (final bot in registry.bots) {
-      final manifest = registry.manifestFor(bot.miniAppId);
+    for (final plugin in registry.plugins) {
+      final endpoint = Uri.tryParse(plugin.endpoint);
       _check(
-        'miniapp enter ${bot.miniAppId}',
-        manifest != null &&
-            manifest.botId == bot.botId &&
-            manifest.source == 'official' &&
-            manifest.reviewStatus == 'trusted',
-        'bot=${bot.botId} manifest=${manifest?.miniAppId ?? 'missing'}',
-      );
-      if (manifest == null) continue;
-
-      final entryUri = Uri.tryParse(manifest.entryUrl);
-      final entryPath = entryUri?.path.replaceFirst(RegExp(r'/$'), '');
-      _check(
-        'miniapp load ${bot.miniAppId}',
-        entryUri != null &&
-            entryUri.scheme == 'https' &&
-            entryUri.host == 'fabushi.ombhrum.com' &&
-            entryPath == '/miniapps/${bot.miniAppId}',
-        manifest.entryUrl,
+        'MCP endpoint ${plugin.id}',
+        endpoint != null &&
+            endpoint.scheme == 'https' &&
+            endpoint.path == '/api/mcp/apps/${plugin.id}',
+        plugin.endpoint,
       );
       _check(
-        'miniapp surfaces ${bot.miniAppId}',
-        manifest.surfaces.contains('homePinned') &&
-            manifest.surfaces.contains('chatPanel'),
-        manifest.surfaces.join(','),
+        'MCP Tool contract ${plugin.id}',
+        plugin.tools.isNotEmpty &&
+            plugin.tools.first == 'home' &&
+            plugin.tools.toSet().length == plugin.tools.length,
+        plugin.tools.map((tool) => '/$tool').join(','),
       );
       _check(
-        'miniapp permissions ${bot.miniAppId}',
-        bot.permissions.contains('app.context') &&
-            bot.permissions.contains('bot.chat') &&
-            manifest.permissions.toSet().containsAll(bot.permissions),
-        bot.permissions.join(','),
+        'MCP runtime variants ${plugin.id}',
+        plugin.variants.length == 2 &&
+            plugin.variants.first.server == '${plugin.id}-local' &&
+            plugin.variants.first.platforms.toSet().containsAll(const {
+              'cli',
+              'desktop',
+            }) &&
+            plugin.variants.first.priority > plugin.variants.last.priority &&
+            plugin.variants.last.server == plugin.id &&
+            plugin.variants.last.platforms.toSet().containsAll(const {
+              'cli',
+              'desktop',
+              'mobile',
+              'web',
+            }),
+        plugin.variants
+            .map(
+              (variant) => '${variant.server}:${variant.platforms.join("+")}',
+            )
+            .join(','),
+      );
+      _check(
+        'MCP UI resource ${plugin.id}',
+        plugin.uiResource.startsWith('ui://fabushi/${plugin.id}/') &&
+            plugin.mimeType == 'text/html;profile=mcp-app',
+        '${plugin.uiResource} ${plugin.mimeType}',
       );
     }
-
-    final bridge = MiniAppHostBridgeSmoke();
-    final context = bridge.invoke('app.getContext');
-    _check(
-      'miniapp core interaction app.getContext',
-      context['ok'] == true &&
-          _asMap(context['data'])['hostApiVersion'] == registry.hostApiVersion,
-      jsonEncode(context),
-    );
-    final capabilities = bridge.invoke('app.getCapabilities');
-    _check(
-      'miniapp core interaction app.getCapabilities',
-      capabilities['ok'] == true &&
-          (_asMap(capabilities['data'])['capabilities'] as List?)
-                  ?.contains('bot.chat') ==
-              true,
-      jsonEncode(capabilities),
-    );
-    final unsupported = bridge.invoke('unsupported.method');
-    _check(
-      'miniapp exception recovery',
-      unsupported['ok'] == false &&
-          unsupported['errorCode'] == 'unsupported_method' &&
-          bridge.ready,
-      jsonEncode(unsupported),
-    );
-    final state = bridge.returnToDesktop('official.global-dharma');
-    _check(
-      'miniapp return state consistency',
-      state['desktopRoute'] == 'home' &&
-          state['lastMiniAppId'] == 'official.global-dharma' &&
-          state['hostReady'] == true,
-      jsonEncode(state),
-    );
   }
 
   Future<bool> _waitForGateway(
@@ -767,170 +761,128 @@ class DesktopPackageContext {
   }
 }
 
-
-class MiniAppSmokeRegistry {
-  const MiniAppSmokeRegistry({
+class McpPluginSmokeRegistry {
+  const McpPluginSmokeRegistry({
     required this.schemaVersion,
-    required this.hostApiVersion,
-    required this.bots,
-    required this.miniApps,
+    required this.protocol,
+    required this.plugins,
   });
 
   final int schemaVersion;
-  final String hostApiVersion;
-  final List<MiniAppSmokeBot> bots;
-  final List<MiniAppSmokeManifest> miniApps;
+  final String protocol;
+  final List<McpPluginSmoke> plugins;
 
-  static MiniAppSmokeRegistry defaults() {
-    final permissions = <String>[
-      'app.context',
-      'bot.chat',
-      'auth.session',
-      'payments.alipay',
-      'network.udp',
-      'network.interfaces',
-      'system.keepAwake',
-      'hotspot.settings',
-      'flashcards.create',
-      'platform.publish',
-      'files.pick',
-      'projects.read',
-      'openclaw.status',
-      'openclaw.chat',
-      'local.loopback',
-      'desktop.control',
-      'fs.readWrite',
-      'shell.execute',
-      'browser.external',
-    ];
-    final bots = <MiniAppSmokeBot>[
-      MiniAppSmokeBot(
-        botId: 'bot.global-dharma',
-        miniAppId: 'official.global-dharma',
-        permissions: permissions,
-      ),
-      MiniAppSmokeBot(
-        botId: 'bot.flashcards',
-        miniAppId: 'official.flashcards',
-        permissions: permissions,
-      ),
-      MiniAppSmokeBot(
-        botId: 'bot.platform-publish',
-        miniAppId: 'official.platform-publish',
-        permissions: permissions,
-      ),
-      MiniAppSmokeBot(
-        botId: 'bot.father',
-        miniAppId: 'official.bot-father',
-        permissions: const ['app.context', 'bot.chat', 'miniapps.dev'],
-      ),
-    ];
-    return MiniAppSmokeRegistry(
+  static McpPluginSmokeRegistry defaults() {
+    const tools = <String, List<String>>{
+      'global-dharma': [
+        'home',
+        'start',
+        'stop',
+        'loop',
+        'status',
+        'send',
+        'logs',
+        'validate_config',
+        'deploy_latest',
+      ],
+      'faliu-flashcards': [
+        'home',
+        'create_deck',
+        'list_decks',
+        'open_deck',
+        'review_next',
+        'submit_review',
+      ],
+      'platform-publish': [
+        'home',
+        'create_draft',
+        'save_draft',
+        'open_draft',
+        'publish',
+        'status',
+      ],
+      'hermes-installer': [
+        'home',
+        'install',
+        'start',
+        'status',
+        'chat',
+        'stop',
+        'reset',
+      ],
+      'bot-father': [
+        'home',
+        'create_plugin',
+        'validate_plugin',
+        'build_plugin',
+        'install_plugin',
+        'publish_plugin',
+        'deployment_status',
+      ],
+      'mahayana-assistant': [
+        'home',
+        'help',
+        'list_plugins',
+        'plugin_status',
+        'diagnose_plugin',
+      ],
+    };
+    return McpPluginSmokeRegistry(
       schemaVersion: 1,
-      hostApiVersion: '1.2',
-      bots: bots,
-      miniApps: [
-        for (final bot in bots)
-          MiniAppSmokeManifest(
-            miniAppId: bot.miniAppId,
-            botId: bot.botId,
-            entryUrl: 'https://fabushi.ombhrum.com/miniapps/${bot.miniAppId}/',
-            permissions: bot.permissions,
-            surfaces: const ['homePinned', 'chatPanel'],
+      protocol: 'mcp',
+      plugins: [
+        for (final entry in tools.entries)
+          McpPluginSmoke(
+            id: entry.key,
+            endpoint: 'https://api.ombhrum.com/api/mcp/apps/${entry.key}',
+            tools: entry.value,
+            uiResource: 'ui://fabushi/${entry.key}/home-v1.html',
+            variants: [
+              McpRuntimeVariantSmoke(
+                server: '${entry.key}-local',
+                platforms: const ['cli', 'desktop'],
+                priority: 300,
+              ),
+              McpRuntimeVariantSmoke(
+                server: entry.key,
+                platforms: const ['cli', 'desktop', 'mobile', 'web'],
+                priority: 100,
+              ),
+            ],
           ),
       ],
     );
   }
-
-  MiniAppSmokeManifest? manifestFor(String miniAppId) {
-    for (final app in miniApps) {
-      if (app.miniAppId == miniAppId) return app;
-    }
-    return null;
-  }
 }
 
-class MiniAppSmokeBot {
-  const MiniAppSmokeBot({
-    required this.botId,
-    required this.miniAppId,
-    required this.permissions,
+class McpPluginSmoke {
+  const McpPluginSmoke({
+    required this.id,
+    required this.endpoint,
+    required this.tools,
+    required this.uiResource,
+    required this.variants,
+    this.mimeType = 'text/html;profile=mcp-app',
   });
 
-  final String botId;
-  final String miniAppId;
-  final List<String> permissions;
+  final String id;
+  final String endpoint;
+  final List<String> tools;
+  final String uiResource;
+  final String mimeType;
+  final List<McpRuntimeVariantSmoke> variants;
 }
 
-class MiniAppSmokeManifest {
-  const MiniAppSmokeManifest({
-    required this.miniAppId,
-    required this.botId,
-    required this.entryUrl,
-    required this.permissions,
-    required this.surfaces,
-    this.source = 'official',
-    this.reviewStatus = 'trusted',
+class McpRuntimeVariantSmoke {
+  const McpRuntimeVariantSmoke({
+    required this.server,
+    required this.platforms,
+    required this.priority,
   });
 
-  final String miniAppId;
-  final String botId;
-  final String entryUrl;
-  final List<String> permissions;
-  final List<String> surfaces;
-  final String source;
-  final String reviewStatus;
-}
-
-class MiniAppHostBridgeSmoke {
-  bool ready = true;
-  String desktopRoute = 'home';
-  String? lastMiniAppId;
-
-  Map<String, dynamic> invoke(String method) {
-    switch (method) {
-      case 'app.getContext':
-        return <String, dynamic>{
-          'ok': true,
-          'data': <String, dynamic>{
-            'hostApiVersion': '1.2',
-            'platform': Platform.operatingSystem,
-            'surface': 'desktop',
-          },
-        };
-      case 'app.getCapabilities':
-        return <String, dynamic>{
-          'ok': true,
-          'data': <String, dynamic>{
-            'capabilities': <String>[
-              'app.context',
-              'bot.chat',
-              'openclaw.status',
-              'openclaw.chat',
-              'desktop.control',
-              'local.loopback',
-            ],
-          },
-        };
-      default:
-        return <String, dynamic>{
-          'ok': false,
-          'errorCode': 'unsupported_method',
-          'message': 'Unsupported mini-app method: $method',
-        };
-    }
-  }
-
-  Map<String, dynamic> returnToDesktop(String miniAppId) {
-    lastMiniAppId = miniAppId;
-    desktopRoute = 'home';
-    ready = true;
-    return <String, dynamic>{
-      'desktopRoute': desktopRoute,
-      'lastMiniAppId': lastMiniAppId,
-      'hostReady': ready,
-    };
-  }
+  final String server;
+  final List<String> platforms;
+  final int priority;
 }
 
 class SmokeCheck {

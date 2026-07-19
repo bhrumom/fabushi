@@ -14,10 +14,8 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>> execute(Map<String, dynamic> request) =>
       _unavailable();
 
-  Future<Map<String, dynamic>> executeRuntime(
-    Map<String, dynamic> command, {
-    String? token,
-  }) => _unavailable();
+  Future<Map<String, dynamic>> executeRuntime(Map<String, dynamic> command) =>
+      _unavailable();
 
   Future<Map<String, dynamic>> executeProduct(Map<String, dynamic> command) =>
       _unavailable();
@@ -37,9 +35,8 @@ class MahayanaCodexRuntime {
 
   Future<Map<String, dynamic>> sendAndCollect(
     String conversationId,
-    String text, {
-    String? token,
-  }) => _unavailable();
+    String text,
+  ) => _unavailable();
 }
 
 Future<Map<String, dynamic>> _unavailable() {

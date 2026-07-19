@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "bot-father-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "bot-father", "mcp-serve"], "cwd": "." },
+    "bot-father": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/bot-father" }
+  }
+}

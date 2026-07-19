@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../core/config/app_config.dart';
+import 'mahayana_sdk.dart';
 
 /// 用户屏蔽服务
 ///
@@ -97,16 +95,16 @@ class UserBlockService {
     String? reason,
   }) async {
     try {
-      final url = Uri.parse('${AppConfig.apiUrl}/api/block-user');
-      await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/block-user',
+        body: {
           'blocked_user_id': userId,
           'action': blocked ? 'block' : 'unblock',
           'reason': reason ?? '',
           'timestamp': DateTime.now().toIso8601String(),
-        }),
+        },
+        authenticated: true,
       );
     } catch (e) {
       debugPrint('后端通知失败: $e');

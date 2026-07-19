@@ -25,3 +25,4 @@ wasm-bindgen \
   --out-name mahayana_runtime \
   "$wasm"
 
+"$repo_root/scripts/build-official-miniapp-wasm.sh"

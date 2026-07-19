@@ -92,9 +92,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
 
   Future<void> _loadBots() async {
     setState(() => _isLoadingBots = true);
-    final service = MiniAppRegistryService(
-      tokenProvider: () async => _authToken,
-    );
+    final service = MiniAppRegistryService();
     final registry = await service.loadRegistry(forceRefresh: true);
     if (!mounted) return;
     setState(() {

@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../features/auth/application/auth_model.dart';
 import '../features/flashcards/domain/flashcard_models.dart';
 import '../models/file_transfer_model.dart'
     if (dart.library.html) '../models/file_transfer_model_web.dart';
+import '../models/auth_model.dart';
 import '../models/mini_app_model.dart';
-import '../services/dacheng_ai_service.dart';
 import '../services/dharma_publish_service.dart';
+import '../services/mahayana_sdk.dart';
 import 'mini_app_host_screen.dart';
-import '../services/miniapp/codex_sdk_service.dart';
 import '../widgets/social/social_feature_bot.dart';
 
 class SocialFeatureChatScreen extends StatefulWidget {
@@ -39,7 +39,9 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   final Map<String, String> _cliTaskBotIds = {};
   final Set<String> _gdLiveTaskIds = {};
   final Map<String, List<Map<String, dynamic>>> _miniAppCommandCache = {};
-  final Map<String, String> _miniAppInputHints = {};
+  final Map<String, Map<String, dynamic>> _miniAppHomes = {};
+  final Map<String, String> _miniAppInstanceIds = {};
+  final Set<String> _resettingOnboarding = {};
   final Map<String, _RuntimeDeliverySummary> _deliverySummaries =
       _sharedDeliverySummaries;
   final Set<DharmaPublishPlatform> _platforms = {
@@ -60,7 +62,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   void initState() {
     super.initState();
     _composerFocus.addListener(_handleComposerFocusChanged);
-    _ensureGreeting(widget.bot);
+    unawaited(_ensureGreeting(widget.bot));
   }
 
   @override
@@ -70,7 +72,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       _composer.clear();
       _miniAppPanelOpen = false;
       _visibleMiniAppKey = null;
-      _ensureGreeting(widget.bot);
+      unawaited(_ensureGreeting(widget.bot));
       _scrollBottom();
     }
   }
@@ -89,9 +91,342 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     if (mounted) setState(() {});
   }
 
-  void _ensureGreeting(SocialFeatureBot bot) {
-    final list = _messages.putIfAbsent(bot.stableBotId, () => []);
-    if (list.isEmpty) list.add(_ChatMessage.bot(bot.greeting));
+  Future<void> _ensureGreeting(SocialFeatureBot bot) async {
+    final botId = bot.stableBotId;
+    final pluginId = _normalizedPluginId(bot);
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString('miniapp_messages_v1:$botId');
+    if (stored != null && stored.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(stored);
+        if (decoded is List) {
+          final restored = decoded
+              .whereType<Map>()
+              .map(
+                (value) => _ChatMessage.fromJson(
+                  Map<String, dynamic>.from(value),
+                ),
+              )
+              .toList(growable: false);
+          if (mounted && _messages.putIfAbsent(botId, () => []).isEmpty) {
+            setState(() => _messages[botId]!.addAll(restored));
+          }
+        }
+      } catch (_) {
+        // Ignore corrupt offline history and rebuild it from MCP Home.
+      }
+    }
+    try {
+      final response = await MahayanaSdk.instance.execute({
+        '@type': 'mahayana.conversation.history',
+        'conversationId': 'miniapp:$pluginId',
+        'limit': 100,
+      });
+      final raw = response['data'];
+      if (raw is! List || !mounted) return;
+      final candidates = <(Map<String, dynamic>, Map<String, dynamic>)>[];
+      for (final value in raw.whereType<Map>()) {
+        final message = Map<String, dynamic>.from(value);
+        final metadata = message['metadata'];
+        if (metadata is! Map || metadata['miniAppHome'] != true) continue;
+        final meta = Map<String, dynamic>.from(metadata);
+        final payload = meta['payload'];
+        if (payload is Map && payload['home'] is Map) {
+          _miniAppHomes[botId] = Map<String, dynamic>.from(
+            payload['home'] as Map,
+          );
+        }
+        candidates.add((message, meta));
+      }
+      final home = _miniAppHomes[botId];
+      final instanceId = _pluginInstanceId(bot, home);
+      _miniAppInstanceIds[botId] = instanceId;
+      final state = await _mergeRemoteMessages(botId, instanceId);
+      final welcomeShown = state['welcomeShown'] == true;
+      final receiptKeys = (state['receipts'] is List)
+          ? (state['receipts'] as List)
+                .whereType<Map>()
+                .map((item) => '${item['itemId']}:${item['revision']}')
+                .toSet()
+          : <String>{};
+      final additions = <_ChatMessage>[];
+      final newReceipts = <Map<String, dynamic>>[];
+      for (final candidate in candidates) {
+        final message = candidate.$1;
+        final meta = candidate.$2;
+        final homeKey = _homeMessageKey(meta);
+        final list = _messages.putIfAbsent(botId, () => []);
+        if (list.any((existing) => existing.homeKey == homeKey)) continue;
+        final kind = meta['kind']?.toString();
+        final feedItem = _feedItem(meta);
+        if (kind == 'welcome' && welcomeShown) continue;
+        if (kind == 'feed' && welcomeShown) continue;
+        if (kind == 'announcement' && feedItem != null) {
+          final receiptKey = '${feedItem['id']}:${feedItem['revision']}';
+          if (receiptKeys.contains(receiptKey)) continue;
+          newReceipts.add({
+            'itemId': feedItem['id'],
+            'revision': feedItem['revision'],
+            'readAt': DateTime.now().toUtc().toIso8601String(),
+          });
+        }
+        additions.add(
+          _ChatMessage.bot(
+            message['text']?.toString() ?? '',
+            homeKey: homeKey,
+            feedItem: _feedItem(meta),
+            feedItems: _feedItems(meta),
+          ),
+        );
+      }
+      if (additions.isNotEmpty) {
+        setState(() => _messages[botId]!.addAll(additions));
+        await _persistMessages(botId);
+        await _mergeContentState(instanceId, {
+          'welcomeShown': additions.any(
+            (message) => message.homeKey?.startsWith('welcome:') == true,
+          ),
+          'welcomeShownAt': DateTime.now().toUtc().toIso8601String(),
+          'receipts': newReceipts,
+        });
+        if (botId == _bot.stableBotId) _scrollBottom();
+      } else if (_miniAppHomes.containsKey(botId)) {
+        setState(() {});
+        await _persistMessages(botId);
+        final existing = _messages[botId] ?? const <_ChatMessage>[];
+        await _mergeContentState(instanceId, {
+          'welcomeShown': existing.any(
+            (message) => message.homeKey?.startsWith('welcome:') == true,
+          ),
+          'welcomeShownAt': DateTime.now().toUtc().toIso8601String(),
+          'receipts': existing
+              .where((message) => message.feedItem?['kind'] == 'announcement')
+              .map(
+                (message) => {
+                  'itemId': message.feedItem?['id'],
+                  'revision': message.feedItem?['revision'],
+                  'readAt': DateTime.now().toUtc().toIso8601String(),
+                },
+              )
+              .toList(growable: false),
+        });
+      }
+    } catch (_) {
+      // Missing/empty home intentionally keeps the ordinary robot experience.
+    }
+  }
+
+  String _homeMessageKey(Map<String, dynamic> metadata) {
+    final kind = metadata['kind']?.toString() ?? 'home';
+    final payload = metadata['payload'];
+    if (payload is Map) {
+      final welcome = payload['welcomeId']?.toString();
+      if (welcome?.isNotEmpty == true) return '$kind:$welcome';
+      final item = payload['feedItem'];
+      if (item is Map) {
+        return '$kind:${item['id']}:${item['revision']}';
+      }
+      final feed = payload['feed'];
+      if (feed is Map && feed['items'] is List) {
+        final ids = (feed['items'] as List)
+            .whereType<Map>()
+            .map((item) => '${item['id']}:${item['revision']}')
+            .join(',');
+        return '$kind:$ids';
+      }
+    }
+    return '$kind:${metadata.hashCode}';
+  }
+
+  Map<String, dynamic>? _feedItem(Map<String, dynamic> metadata) {
+    final payload = metadata['payload'];
+    if (payload is! Map || payload['feedItem'] is! Map) return null;
+    return Map<String, dynamic>.from(payload['feedItem'] as Map);
+  }
+
+  List<Map<String, dynamic>> _feedItems(Map<String, dynamic> metadata) {
+    final payload = metadata['payload'];
+    if (payload is! Map || payload['feed'] is! Map) return const [];
+    final feed = Map<String, dynamic>.from(payload['feed'] as Map);
+    final items = feed['items'];
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where((item) => item['kind'] == 'article')
+        .toList(growable: false);
+  }
+
+  Future<void> _persistMessages(String botId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = (_messages[botId] ?? const <_ChatMessage>[])
+        .map((message) => message.toJson())
+        .toList(growable: false);
+    await prefs.setString('miniapp_messages_v1:$botId', jsonEncode(items));
+    final instanceId = _miniAppInstanceIds[botId];
+    if (instanceId == null) return;
+    try {
+      await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/messages',
+        body: {
+          'messages': items.reversed.take(100).map((item) {
+            final isUser = item['isUser'] == true;
+            final isError = item['isError'] == true;
+            return {
+              'messageId': item['id'],
+              'role': isUser ? 'user' : (isError ? 'error' : 'miniapp'),
+              'text': item['text'],
+              'payload': item,
+              'createdAt': item['createdAt'],
+              'updatedAt': DateTime.now().toUtc().toIso8601String(),
+            };
+          }).toList(growable: false),
+        },
+      );
+    } catch (_) {
+      // Offline/anonymous history remains in SharedPreferences and merges later.
+    }
+  }
+
+  String _normalizedPluginId(SocialFeatureBot bot) {
+    final id = bot.stableMiniAppId.replaceFirst(RegExp(r'^official\.'), '');
+    return switch (id) {
+      'flashcards' => 'faliu-flashcards',
+      'assistant' => 'mahayana-assistant',
+      _ => id,
+    };
+  }
+
+  String _pluginInstanceId(
+    SocialFeatureBot bot,
+    Map<String, dynamic>? home,
+  ) {
+    final app = home?['app'];
+    final source = app is Map ? app['source']?.toString() : null;
+    final manifestName = app is Map && app['id']?.toString().isNotEmpty == true
+        ? app['id'].toString().toLowerCase()
+        : _normalizedPluginId(bot).toLowerCase();
+    final canonical = _canonicalRepositorySource(source);
+    if (canonical == null) return 'fabushi-official:$manifestName';
+    final digest = sha256.convert(utf8.encode('$canonical\u0000$manifestName'));
+    final prefix = digest.bytes
+        .take(16)
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '$manifestName@$prefix';
+  }
+
+  String? _canonicalRepositorySource(String? value) {
+    var source = value?.trim() ?? '';
+    if (source.startsWith('git+')) source = source.substring(4);
+    if (source.startsWith('git@')) {
+      final separator = source.indexOf(':');
+      if (separator <= 4) return null;
+      source = 'ssh://${source.substring(0, separator)}/${source.substring(separator + 1)}';
+    }
+    final uri = Uri.tryParse(source);
+    if (uri == null || !{'https', 'ssh', 'git'}.contains(uri.scheme)) {
+      return null;
+    }
+    final host = uri.host.toLowerCase();
+    var path = uri.path.replaceAll(RegExp(r'^/+|/+$'), '');
+    if (path.endsWith('.git')) path = path.substring(0, path.length - 4);
+    if (host.isEmpty || path.isEmpty || path.split('/').contains('..')) {
+      return null;
+    }
+    if (host == 'github.com') path = path.toLowerCase();
+    return '$host/$path';
+  }
+
+  Map<String, dynamic> _platformBody(Map<String, dynamic> response) {
+    final envelope = response['data'];
+    if (envelope is Map && envelope['data'] is Map) {
+      return Map<String, dynamic>.from(envelope['data'] as Map);
+    }
+    if (envelope is Map) return Map<String, dynamic>.from(envelope);
+    return const {};
+  }
+
+  Future<Map<String, dynamic>> _mergeRemoteMessages(
+    String botId,
+    String instanceId,
+  ) async {
+    var state = <String, dynamic>{};
+    try {
+      final historyResponse = await MahayanaSdk.instance.platformRequest(
+        method: 'GET',
+        path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/messages',
+      );
+      final history = _platformBody(historyResponse)['messages'];
+      if (history is List && !_resettingOnboarding.contains(botId)) {
+        final target = _messages.putIfAbsent(botId, () => []);
+        final known = target.map((message) => message.id).toSet();
+        for (final row in history.whereType<Map>()) {
+          final payload = row['payload'];
+          final message = payload is Map
+              ? _ChatMessage.fromJson(Map<String, dynamic>.from(payload))
+              : _ChatMessage(
+                  row['text']?.toString() ?? '',
+                  id: row['messageId']?.toString(),
+                  createdAt: row['createdAt']?.toString(),
+                  isUser: row['role'] == 'user',
+                  isError: row['role'] == 'error',
+                );
+          if (known.add(message.id)) target.add(message);
+        }
+        target.sort((left, right) => left.createdAt.compareTo(right.createdAt));
+      }
+      final stateResponse = await MahayanaSdk.instance.platformRequest(
+        method: 'GET',
+        path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/content-state',
+      );
+      final value = _platformBody(stateResponse)['state'];
+      if (value is Map) state = Map<String, dynamic>.from(value);
+    } catch (_) {
+      // Authentication/network failures leave the offline state authoritative.
+    }
+    return state;
+  }
+
+  Future<void> _mergeContentState(
+    String instanceId,
+    Map<String, dynamic> state,
+  ) async {
+    try {
+      await MahayanaSdk.instance.platformRequest(
+        method: 'PUT',
+        path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/content-state',
+        body: {'state': state},
+      );
+    } catch (_) {
+      // The welcome/message itself remains persisted locally while offline.
+    }
+  }
+
+  Future<void> _resetOnboarding() async {
+    final botId = _bot.stableBotId;
+    final instanceId = _miniAppInstanceIds[botId] ??
+        _pluginInstanceId(_bot, _miniAppHomes[botId]);
+    _resettingOnboarding.add(botId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('miniapp_messages_v1:$botId');
+      try {
+        await MahayanaSdk.instance.platformRequest(
+          method: 'PUT',
+          path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/content-state',
+          body: {'resetOnboarding': true},
+        );
+      } catch (_) {
+        // Local reset remains useful while offline and syncs on the next login.
+      }
+      if (!mounted) return;
+      setState(() => _messages[botId] = []);
+      await _ensureGreeting(_bot);
+    } finally {
+      _resettingOnboarding.remove(botId);
+    }
   }
 
   @override
@@ -170,6 +505,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       child: MiniAppHostScreen(
         key: ValueKey('miniapp-session:${session.key}'),
         bot: session.bot,
+        authToken: context.watch<AuthModel>().authToken,
         inline: true,
         onMinimize: _hideMiniAppPanel,
         onClose: _closeVisibleMiniAppSession,
@@ -179,7 +515,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
             : session.startParamVersion.toString(),
         controller: session.controller,
         onMiniAppEvent: _handleMiniAppEvent,
-        onComposerStateRequest: () => _composerStateFor(session.bot),
         onCliStart: (title, taskId) =>
             _handleMiniAppCliStart(session.bot.stableBotId, title, taskId),
         onCliLog: _handleMiniAppCliLog,
@@ -376,7 +711,30 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   Widget _buildModeBar(FileTransferModel model) {
-    final chips = switch (_kind) {
+    final home = _miniAppHomes[_bot.stableBotId];
+    final quickReplies = home?['quickReplies'] is List
+        ? (home!['quickReplies'] as List).whereType<Map>().toList()
+        : const <Map>[];
+    final chips = <Widget>[
+      for (final raw in quickReplies)
+        _ControlPill(
+          icon: Icons.chat_bubble_outline,
+          label: raw['label']?.toString() ?? '',
+          active: false,
+          onTap: () => _sendQuickReply(Map<String, dynamic>.from(raw)),
+        ),
+    ];
+    if (home != null) {
+      chips.add(
+        _ControlPill(
+          icon: Icons.restart_alt,
+          label: '重置引导',
+          active: false,
+          onTap: () => unawaited(_resetOnboarding()),
+        ),
+      );
+    }
+    chips.addAll(switch (_kind) {
       MiniAppBotKind.globalDharma => <Widget>[],
       MiniAppBotKind.flashcards => <Widget>[],
       MiniAppBotKind.platformPublish => <Widget>[],
@@ -402,7 +760,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           onTap: _toggleMiniAppPanel,
         ),
       ],
-    };
+    });
 
     if (chips.isEmpty) return const SizedBox.shrink();
 
@@ -417,6 +775,16 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     );
   }
 
+  void _sendQuickReply(Map<String, dynamic> reply) {
+    final aliases = reply['aliases'];
+    final text = aliases is List && aliases.isNotEmpty
+        ? aliases.first.toString()
+        : reply['label']?.toString() ?? '';
+    if (text.isEmpty || _busy) return;
+    _composer.text = text;
+    unawaited(_startMiniAppCommand());
+  }
+
   Widget _buildMessages(FileTransferModel model) {
     final showProgress =
         _kind == MiniAppBotKind.globalDharma &&
@@ -429,7 +797,15 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       itemCount: count,
       itemBuilder: (context, index) {
         if (index < _botMessages.length) {
-          return _MessageBubble(message: _botMessages[index], bot: _bot);
+          return _MessageBubble(
+            message: _botMessages[index],
+            bot: _bot,
+            onOpenArticle: (articleIndex) {
+              if (_busy) return;
+              _composer.text = 'A${articleIndex + 1}';
+              unawaited(_startMiniAppCommand());
+            },
+          );
         }
         if (_busy && index == _botMessages.length) {
           return _ThinkingBubble(label: _activity.isEmpty ? '正在处理' : _activity);
@@ -690,10 +1066,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   String _composerHint(bool compact, {required bool inputActive}) {
-    final inputHint =
-        _miniAppInputHints[_bot.stableBotId]?.trim().isNotEmpty == true
-        ? _miniAppInputHints[_bot.stableBotId]!.trim()
-        : _bot.inputHint;
+    final inputHint = _bot.inputHint;
     if (compact && inputActive) return '输入消息';
     if (!compact || inputHint.length <= 14) return inputHint;
     return switch (_kind) {
@@ -702,17 +1075,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       MiniAppBotKind.platformPublish => '输入发布正文/链接',
       MiniAppBotKind.botFather => '描述想创建的小程序',
       MiniAppBotKind.assistant || MiniAppBotKind.thirdParty => inputHint,
-    };
-  }
-
-  Map<String, dynamic> _composerStateFor(SocialFeatureBot bot) {
-    final hint = _miniAppInputHints[bot.stableBotId]?.trim().isNotEmpty == true
-        ? _miniAppInputHints[bot.stableBotId]!.trim()
-        : bot.inputHint;
-    return {
-      'text': bot.stableBotId == _bot.stableBotId ? _composer.text : '',
-      'placeholder': hint,
-      'commands': _miniAppCommandCache[bot.stableBotId] ?? const [],
     };
   }
 
@@ -782,37 +1144,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   void _submit(FileTransferModel model) {
-    if (_shouldRouteMessageToMiniApp) {
-      unawaited(_startMiniAppCommand());
-      return;
-    }
-
-    switch (_kind) {
-      case MiniAppBotKind.botFather:
-        unawaited(_startBotFather());
-        return;
-      case MiniAppBotKind.assistant:
-        unawaited(_startGenericBotChat());
-        return;
-      case MiniAppBotKind.globalDharma:
-      case MiniAppBotKind.flashcards:
-      case MiniAppBotKind.platformPublish:
-      case MiniAppBotKind.thirdParty:
-        unawaited(_startMiniAppCommand());
-        return;
-    }
-  }
-
-  bool get _shouldRouteMessageToMiniApp {
-    final hasMiniApp = _bot.miniAppId?.trim().isNotEmpty == true;
-    if (!hasMiniApp) return false;
-    return switch (_kind) {
-      MiniAppBotKind.globalDharma ||
-      MiniAppBotKind.flashcards ||
-      MiniAppBotKind.platformPublish ||
-      MiniAppBotKind.thirdParty => true,
-      MiniAppBotKind.botFather || MiniAppBotKind.assistant => false,
-    };
+    unawaited(_startMiniAppCommand());
   }
 
   Future<void> _startMiniAppCommand() async {
@@ -824,12 +1156,20 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       _busy = true;
       _activity = '正在等待 ${_bot.title} 回复...';
     });
+    unawaited(_persistMessages(_bot.stableBotId));
     _scrollBottom();
 
     try {
-      await _deliverMiniAppCommand(text);
+      if (text == '@codex' || text.startsWith('@codex ')) {
+        await _requestCodexRepair(text);
+      } else {
+        await _deliverMiniAppCommand(text);
+      }
     } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('小程序接收失败：$e'));
+      if (mounted) {
+        _botMessages.add(_ChatMessage.error('小程序接收失败：$e'));
+        unawaited(_persistMessages(_bot.stableBotId));
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -839,6 +1179,66 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       }
       _scrollBottom();
     }
+  }
+
+  Future<void> _requestCodexRepair(String text) async {
+    final pluginId = _normalizedPluginId(_bot);
+    final instanceId = _miniAppInstanceIds[_bot.stableBotId] ??
+        _pluginInstanceId(_bot, _miniAppHomes[_bot.stableBotId]);
+    final source = _miniAppHomes[_bot.stableBotId]?['app'] is Map
+        ? (_miniAppHomes[_bot.stableBotId]!['app'] as Map)['source']
+              ?.toString()
+        : null;
+    final body = <String, dynamic>{
+      'pluginId': pluginId,
+      'source': source,
+      'request': text.substring('@codex'.length).trim(),
+    };
+    var response = await MahayanaSdk.instance.platformRequest(
+      method: 'POST',
+      path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/repair',
+      body: body,
+    );
+    final preview = _platformBody(response);
+    if (preview is Map && preview['requiresConfirmation'] == true) {
+      if (!mounted) return;
+      final confirmed =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('交给 Codex 修复？'),
+              content: Text(preview['message']?.toString() ?? ''),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('确认交接'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed) {
+        _botMessages.add(_ChatMessage.bot('已取消修复交接。'));
+        return;
+      }
+      response = await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/repair',
+        body: {...body, 'confirmed': true},
+      );
+    }
+    final data = _platformBody(response);
+    final message = data is Map
+        ? data['message']?.toString()
+        : null;
+    _botMessages.add(
+      _ChatMessage.bot(message?.isNotEmpty == true ? message! : '修复任务已提交。'),
+    );
+    await _persistMessages(_bot.stableBotId);
   }
 
   Future<Map<String, dynamic>> _deliverMiniAppCommand(String text) async {
@@ -890,7 +1290,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     final type = event['type']?.toString() ?? '';
     final botId = event['botId']?.toString().trim() ?? _bot.stableBotId;
 
-    if (type == 'bot.commandsChanged') {
+    if (type == 'mcp.toolsChanged') {
       final rawCommands = event['commands'];
       final commands = rawCommands is List
           ? rawCommands
@@ -902,26 +1302,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       return;
     }
 
-    if (type == 'bot.composer.placeholder') {
-      final placeholder = event['placeholder']?.toString().trim() ?? '';
-      setState(() => _miniAppInputHints[botId] = placeholder);
-      return;
-    }
-
-    if (type == 'bot.composer.text') {
-      if (botId == _bot.stableBotId) {
-        final value = event['text']?.toString() ?? '';
-        _composer.text = event['append'] == true
-            ? _composer.text + value
-            : value;
-        _composer.selection = TextSelection.collapsed(
-          offset: _composer.text.length,
-        );
-        setState(() {});
-      }
-      return;
-    }
-
     if (type == 'runtime.update') {
       _handleRuntimeUpdate(botId, event);
       return;
@@ -929,6 +1309,26 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
     final text = event['text']?.toString().trim() ?? '';
     if (text.isEmpty) return;
+    final metadata = event['metadata'];
+    if (metadata is Map && metadata['contentReceipt'] is Map) {
+      final receipt = Map<String, dynamic>.from(
+        metadata['contentReceipt'] as Map,
+      );
+      final instanceId = _miniAppInstanceIds[botId];
+      if (instanceId != null) {
+        unawaited(
+          _mergeContentState(instanceId, {
+            'receipts': [
+              {
+                'itemId': receipt['itemId'],
+                'revision': receipt['revision'],
+                'readAt': DateTime.now().toUtc().toIso8601String(),
+              },
+            ],
+          }),
+        );
+      }
+    }
     final isError = event['isError'] == true || event['level'] == 'error';
     final updateKey = event['updateKey']?.toString().trim();
     final replaceLast = event['replaceLast'] == true;
@@ -961,6 +1361,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         );
       }
     });
+    unawaited(_persistMessages(botId));
     if (botId == _bot.stableBotId) _scrollBottom();
   }
 
@@ -1045,244 +1446,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       }
     });
     if (_cliTaskBotIds[taskId] == _bot.stableBotId) _scrollBottom();
-  }
-
-  Future<void> _startBotFather() async {
-    final text = _composer.text.trim();
-    if (text.isEmpty) return;
-    _composer.clear();
-    final auth = Provider.of<AuthModel?>(context, listen: false);
-    setState(() {
-      _botMessages.add(_ChatMessage.user(text));
-      _busy = true;
-      _activity = '正在生成个人沙箱小程序...';
-    });
-    _scrollBottom();
-
-    try {
-      final token = auth?.authToken;
-      final generated = await _generateMiniAppWithCodex(
-        prompt: text,
-        authToken: token,
-        username: auth?.currentUser?.username,
-      );
-      if (!mounted) return;
-      setState(() {
-        final generator = switch (generated.provider) {
-          'offline-template' => '本地离线模板',
-          'template' => '服务端安全模板',
-          'legacy-deepseek-proxy' => 'Codex 兼容引擎',
-          _ => '内置 Codex',
-        };
-        final location = generated.persisted
-            ? '并保存到你的个人沙箱'
-            : '并建立了本地沙箱预览';
-        _botMessages.add(
-          _ChatMessage.bot(
-            [
-              '已由$generator生成「${generated.title}」，$location。',
-              if (generated.summary != null && generated.summary!.isNotEmpty)
-                generated.summary!,
-              '我已经打开沙箱小程序，也可以继续告诉我修改需求。',
-            ].join('\n'),
-          ),
-        );
-      });
-      _openMiniAppPanel(generated.bot);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _botMessages.add(_ChatMessage.error('生成失败：$e'));
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = '';
-        });
-      }
-      _scrollBottom();
-    }
-  }
-
-  Future<_GeneratedMiniAppPreview> _generateMiniAppWithCodex({
-    required String prompt,
-    String? authToken,
-    String? username,
-  }) async {
-    await CodexSdk.instance.initFromSettings();
-
-    String? html;
-    String? summary;
-    Map<String, dynamic> completionMetadata = <String, dynamic>{};
-    final errors = <String>[];
-    await for (final event in CodexSdk.instance.sendMessage(
-      prompt: prompt,
-      workspaceId: 'sandbox',
-      authToken: authToken,
-      username: username,
-    )) {
-      switch (event.type) {
-        case CodexEventType.sandboxFileModified:
-          if ((event.filePath ?? '').trim() == 'index.html' &&
-              event.newContent?.trim().isNotEmpty == true) {
-            html = event.newContent;
-          }
-          break;
-        case CodexEventType.turnCompleted:
-          summary = event.content;
-          completionMetadata = event.metadata ?? <String, dynamic>{};
-          break;
-        case CodexEventType.error:
-          final message = event.errorMessage?.trim();
-          if (message != null && message.isNotEmpty) errors.add(message);
-          break;
-        case CodexEventType.reasoningProgress:
-        case CodexEventType.toolCallTriggered:
-          break;
-      }
-    }
-
-    html ??= CodexSdk.instance.virtualVfs['index.html'];
-    if (html == null || html.trim().isEmpty) {
-      throw StateError(
-        errors.isEmpty ? '内置 Codex 没有返回可预览的小程序 HTML' : errors.last,
-      );
-    }
-
-    SocialFeatureBot? persistedBot;
-    final miniAppValue = completionMetadata['miniApp'];
-    final botValue = completionMetadata['bot'];
-    if (miniAppValue is Map && botValue is Map) {
-      try {
-        final manifest = MiniAppManifest.fromJson(
-          Map<String, dynamic>.from(miniAppValue),
-        );
-        final miniAppBot = MiniAppBot.fromJson(
-          Map<String, dynamic>.from(botValue),
-        );
-        if (manifest.miniAppId.isNotEmpty &&
-            manifest.miniAppId == miniAppBot.miniAppId &&
-            manifest.entryUrl.trim().isNotEmpty) {
-          persistedBot = SocialFeatureBot.fromMiniApp(
-            miniAppBot,
-            index: _bot.destinationIndex,
-            manifest: manifest,
-          );
-        }
-      } catch (_) {
-        // A valid source preview is still usable if optional manifest metadata
-        // came from an older backend version.
-      }
-    }
-
-    final title = persistedBot?.title.trim().isNotEmpty == true
-        ? persistedBot!.title
-        : _generatedMiniAppTitle(prompt: prompt, html: html);
-    final provider = completionMetadata['provider']?.toString().trim() ?? '';
-    return _GeneratedMiniAppPreview(
-      title: title,
-      summary: summary,
-      bot:
-          persistedBot ??
-          _sandboxBotForGeneratedMiniApp(title: title, html: html),
-      provider: provider.isEmpty ? 'codex' : provider,
-      persisted:
-          persistedBot != null && completionMetadata['persisted'] == true,
-    );
-  }
-
-  String _generatedMiniAppTitle({
-    required String prompt,
-    required String html,
-  }) {
-    final titleMatch = RegExp(
-      r'<title[^>]*>([^<]+)</title>',
-      caseSensitive: false,
-    ).firstMatch(html);
-    final title = titleMatch?.group(1)?.trim();
-    if (title != null && title.isNotEmpty) return title;
-
-    final compactPrompt = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (compactPrompt.isEmpty) return '个人沙箱小程序';
-    return compactPrompt.length > 18
-        ? '${compactPrompt.substring(0, 18)}...'
-        : compactPrompt;
-  }
-
-  SocialFeatureBot _sandboxBotForGeneratedMiniApp({
-    required String title,
-    required String html,
-  }) {
-    final stamp = DateTime.now().microsecondsSinceEpoch;
-    final entryUrl = Uri.dataFromString(
-      html,
-      mimeType: 'text/html',
-      encoding: utf8,
-    ).toString();
-    return SocialFeatureBot(
-      type: SocialFeatureBotType.assistant,
-      botId: 'bot.sandbox.$stamp',
-      miniAppId: 'sandbox.codex.$stamp',
-      miniAppEntryUrl: entryUrl,
-      title: title,
-      subtitle: '内置 Codex 生成 · 个人沙箱',
-      initials: '沙',
-      icon: Icons.web_asset,
-      avatarColor: const Color(0xFF3D8BFF),
-      destinationIndex: _bot.destinationIndex,
-      greeting: '这是内置 Codex 生成的个人沙箱小程序。',
-      inputHint: '继续描述修改需求',
-      kind: MiniAppBotKind.thirdParty,
-      permissions: const [
-        'app.context',
-        'bot.chat',
-        'ui.native',
-        'haptics.feedback',
-        'network.http',
-        'cloud.kv',
-      ],
-      source: MiniAppSource.sandbox,
-    );
-  }
-
-  Future<void> _startGenericBotChat() async {
-    final text = _composer.text.trim();
-    if (text.isEmpty) return;
-    _composer.clear();
-    final auth = Provider.of<AuthModel?>(context, listen: false);
-    setState(() {
-      _botMessages.add(_ChatMessage.user(text));
-      _busy = true;
-      _activity = '正在对话...';
-    });
-    _scrollBottom();
-    try {
-      final result = await DachengAiService().sendChat(
-        message: text,
-        token: auth?.authToken,
-        username: auth?.currentUser?.username,
-        isMember: auth?.hasPermission('premium') ?? false,
-        client: {
-          'surface': 'miniapp_bot_chat',
-          'botId': _bot.stableBotId,
-          'miniAppId': _bot.stableMiniAppId,
-        },
-      );
-      if (!mounted) return;
-      _botMessages.add(_ChatMessage.bot(result.message));
-    } catch (e) {
-      if (mounted) _botMessages.add(_ChatMessage.error('回复失败：$e'));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = '';
-        });
-      }
-      _scrollBottom();
-    }
   }
 
   void _toggleMiniAppPanel() {
@@ -1533,26 +1696,85 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 class _ChatMessage {
   _ChatMessage(
     this.text, {
+    String? id,
+    String? createdAt,
     required this.isUser,
     this.isError = false,
     this.cliTaskId,
     this.cliLogs,
     this.updateKey,
-  });
+    this.homeKey,
+    this.feedItem,
+    this.feedItems = const [],
+  }) : id = id ?? _nextId(),
+       createdAt = createdAt ?? DateTime.now().toUtc().toIso8601String();
+  static int _sequence = 0;
+  static String _nextId() =>
+      'msg-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
+
+  final String id;
+  final String createdAt;
   String text;
   final bool isUser;
   bool isError;
   final String? cliTaskId;
   List<String>? cliLogs;
   String? updateKey;
+  final String? homeKey;
+  final Map<String, dynamic>? feedItem;
+  final List<Map<String, dynamic>> feedItems;
 
   factory _ChatMessage.user(String text) => _ChatMessage(text, isUser: true);
-  factory _ChatMessage.bot(String text, {String? updateKey}) =>
-      _ChatMessage(text, isUser: false, updateKey: updateKey);
+  factory _ChatMessage.bot(
+    String text, {
+    String? updateKey,
+    String? homeKey,
+    Map<String, dynamic>? feedItem,
+    List<Map<String, dynamic>> feedItems = const [],
+  }) => _ChatMessage(
+    text,
+    isUser: false,
+    updateKey: updateKey,
+    homeKey: homeKey,
+    feedItem: feedItem,
+    feedItems: feedItems,
+  );
   factory _ChatMessage.error(String text, {String? updateKey}) =>
       _ChatMessage(text, isUser: false, isError: true, updateKey: updateKey);
   factory _ChatMessage.cliTask(String text, String taskId) =>
       _ChatMessage(text, isUser: false, cliTaskId: taskId, cliLogs: []);
+
+  factory _ChatMessage.fromJson(Map<String, dynamic> value) => _ChatMessage(
+    value['text']?.toString() ?? '',
+    id: value['id']?.toString(),
+    createdAt:
+        value['createdAt']?.toString() ?? value['timestamp']?.toString(),
+    isUser: value['isUser'] == true || value['role'] == 'user',
+    isError: value['isError'] == true || value['role'] == 'error',
+    updateKey: value['updateKey']?.toString(),
+    homeKey: value['homeKey']?.toString(),
+    feedItem: value['feedItem'] is Map
+        ? Map<String, dynamic>.from(value['feedItem'] as Map)
+        : null,
+    feedItems: value['feedItems'] is List
+        ? (value['feedItems'] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false)
+        : const [],
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'createdAt': createdAt,
+    'text': text,
+    'isUser': isUser,
+    'isError': isError,
+    if (updateKey != null) 'updateKey': updateKey,
+    if (homeKey != null) 'homeKey': homeKey,
+    if (feedItem != null) 'feedItem': feedItem,
+    if (feedItems.isNotEmpty) 'feedItems': feedItems,
+  };
 }
 
 class _MiniAppSession {
@@ -1572,26 +1794,15 @@ class _MiniAppSession {
   String? lastCommandText;
 }
 
-class _GeneratedMiniAppPreview {
-  const _GeneratedMiniAppPreview({
-    required this.title,
-    required this.bot,
-    required this.provider,
-    required this.persisted,
-    this.summary,
-  });
-
-  final String title;
-  final SocialFeatureBot bot;
-  final String provider;
-  final bool persisted;
-  final String? summary;
-}
-
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.bot});
+  const _MessageBubble({
+    required this.message,
+    required this.bot,
+    required this.onOpenArticle,
+  });
   final _ChatMessage message;
   final SocialFeatureBot bot;
+  final ValueChanged<int> onOpenArticle;
 
   @override
   Widget build(BuildContext context) {
@@ -1673,6 +1884,56 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ],
             ),
+            if (message.feedItem != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                message.feedItem!['title']?.toString() ?? '',
+                style: const TextStyle(
+                  color: Color(0xFFB9DCFF),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+            if (message.feedItems.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              for (var index = 0; index < message.feedItems.length; index++)
+                InkWell(
+                  onTap: () => onOpenArticle(index),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111B26),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A4056)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          message.feedItems[index]['title']?.toString() ?? '',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          message.feedItems[index]['summary']?.toString() ??
+                              '点击阅读原文',
+                          style: const TextStyle(
+                            color: Color(0xFF91A3B7),
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
             if (message.cliTaskId != null && message.cliLogs != null)
               Container(
                 margin: const EdgeInsets.only(top: 8),

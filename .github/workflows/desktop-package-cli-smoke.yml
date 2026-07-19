@@ -49,6 +49,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/scripts/assert-openclaw-bundle.sh
+            .github/scripts/assert-mahayana-bundle.sh
 
       - name: Download release package
         shell: bash
@@ -84,6 +85,7 @@ jobs:
             exit 1
           fi
           ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed" linux-x64
+          ./.github/scripts/assert-mahayana-bundle.sh "$RUNNER_TEMP/installed" linux
           doctor_json="$($cli doctor --json)"
           echo "$doctor_json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
@@ -124,6 +126,7 @@ jobs:
             exit 1
           fi
           ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" "$openclaw_platform"
+          ./.github/scripts/assert-mahayana-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" macos
           doctor_json="$($cli doctor --json)"
           echo "$doctor_json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
@@ -146,6 +149,18 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $installDir -Force
           $cli = Join-Path $installDir "${{ matrix.cli }}"
           if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
+          $mahayana = Join-Path $installDir "mahayana.exe"
+          $mahayanaRuntime = Join-Path $installDir "mahayana_runtime.dll"
+          if (-not (Test-Path $mahayana)) { throw "Bundled Mahayana CLI not found: $mahayana" }
+          if (-not (Test-Path $mahayanaRuntime)) { throw "Bundled Mahayana Runtime not found: $mahayanaRuntime" }
+          & $mahayana help | Out-Null
+          $mahayanaHome = Join-Path $env:RUNNER_TEMP "mahayana-home"
+          New-Item -ItemType Directory -Force -Path $mahayanaHome | Out-Null
+          $env:MAHAYANA_HOME = $mahayanaHome
+          $mahayanaStatus = (& $mahayana status | Out-String) | ConvertFrom-Json
+          if ($mahayanaStatus.model -ne "deepseek-chat") { throw "Unexpected Mahayana model" }
+          if ($mahayanaStatus.modelProvider -ne "first-party-dacheng") { throw "Unexpected Mahayana provider" }
+          if ($mahayanaStatus.remoteAgentEnabled -ne $false) { throw "Remote Mahayana agent must stay disabled" }
           $doctorJson = & $cli doctor --json | Out-String
           Write-Output $doctorJson
           $doctorResult = $doctorJson | ConvertFrom-Json

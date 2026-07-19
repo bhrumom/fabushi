@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../core/config/app_config.dart';
 import '../models/favorite_item.dart';
+import 'mahayana_sdk.dart';
 
 class FavoriteService extends ChangeNotifier {
   static final FavoriteService _instance = FavoriteService._internal();
@@ -105,13 +104,13 @@ class FavoriteService extends ChangeNotifier {
     if (_authToken == null) return;
 
     try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiUrl}/api/favorites/my-favorites'),
-        headers: {'Authorization': 'Bearer $_authToken'},
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: 'GET',
+        path: '/api/favorites/my-favorites',
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      if (response['ok'] == true) {
+        final data = response['data'];
         if (data['success'] == true && data['favorites'] != null) {
           final List<dynamic> favorites = data['favorites'];
           for (var fav in favorites) {
@@ -150,13 +149,10 @@ class FavoriteService extends ChangeNotifier {
         if (description != null) body['description'] = description;
       }
 
-      await http.post(
-        Uri.parse('${AppConfig.apiUrl}/api/favorites/toggle'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_authToken',
-        },
-        body: jsonEncode(body),
+      await MahayanaSdk.instance.platformRequest(
+        method: 'POST',
+        path: '/api/favorites/toggle',
+        body: body,
       );
     } catch (e) {
       debugPrint('同步收藏失败: $e');

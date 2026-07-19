@@ -257,30 +257,16 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
             }
           }
         } else {
-          // 已有用户，直接使用token登录
-          final token = loginResult['token'] as String?;
-          final username = loginResult['username'] as String?;
-          final userJson = loginResult['user'];
-
-          if (token != null && username != null) {
-            await authModel.loginWithToken(
-              token,
-              username,
-              userJson: userJson is Map<String, dynamic>
-                  ? userJson
-                  : userJson is Map
-                  ? Map<String, dynamic>.from(userJson)
-                  : null,
+          // Rust 已保存并持有登录凭据，Flutter 只恢复公开会话资料。
+          await authModel.loadStoredAuth();
+          if (mounted && authModel.isLoggedIn) {
+            Navigator.of(context).pop(true);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('欢迎回来，${authModel.currentUser!.displayName}！'),
+                backgroundColor: Colors.green,
+              ),
             );
-            if (mounted) {
-              Navigator.of(context).pop(true);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('欢迎回来，$username！'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
           }
         }
       } else {
@@ -484,8 +470,6 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
     Map<String, String> params,
   ) async {
     final authModel = Provider.of<AuthModel>(context, listen: false);
-    final token = params['token'];
-    final username = params['username'];
     final authCode = params['alipay_auth_code'] ?? params['auth_code'];
     final alipayProviderSubject =
         params['alipay_provider_subject'] ??
@@ -496,41 +480,9 @@ class _DouyinLoginScreenState extends State<DouyinLoginScreen>
         params['alipay_subject_type'] ?? params['subject_type'];
     final alipayNickname = params['alipay_nickname'] ?? params['nick_name'];
     final alipayAvatar = params['alipay_avatar'] ?? params['avatar'];
-    final userNo = params['user_no'] ?? params['userNo'];
-
-    if (token != null && token.isNotEmpty) {
-      await authModel.loginWithToken(
-        token,
-        username?.isNotEmpty == true
-            ? username!
-            : alipayProviderSubject?.isNotEmpty == true
-            ? alipayProviderSubject!
-            : 'alipay_user',
-        userJson: {
-          if (username != null && username.isNotEmpty) 'username': username,
-          if (userNo != null && userNo.isNotEmpty) 'userNo': userNo,
-          if (alipayProviderSubject != null &&
-              alipayProviderSubject.isNotEmpty) ...{
-            'alipayProviderSubject': alipayProviderSubject,
-            'alipayUserId': alipayProviderSubject,
-          },
-          if (alipaySubjectType != null && alipaySubjectType.isNotEmpty)
-            'alipaySubjectType': alipaySubjectType,
-          if (alipayNickname != null && alipayNickname.isNotEmpty) ...{
-            'nickname': alipayNickname,
-            'alipayNickname': alipayNickname,
-          },
-          if (alipayAvatar != null && alipayAvatar.isNotEmpty) ...{
-            'avatar': alipayAvatar,
-            'alipayAvatar': alipayAvatar,
-          },
-        },
-      );
-      return authModel.isLoggedIn;
-    }
 
     if (authCode != null && authCode.isNotEmpty) {
-      final success = await authModel.alipayLogin(authCode);
+      final success = await authModel.alipayLogin(authCode, params['state']);
       if (success) return true;
     }
 

@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "platform-publish-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "platform-publish", "mcp-serve"], "cwd": "." },
+    "platform-publish": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/platform-publish" }
+  }
+}

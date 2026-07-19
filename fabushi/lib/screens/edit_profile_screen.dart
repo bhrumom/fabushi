@@ -110,9 +110,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final prepared = _prepareAvatarUpload(file);
     if (prepared == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('头像图片处理失败，请换一张图片重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('头像图片处理失败，请换一张图片重试')));
       return;
     }
 
@@ -123,9 +123,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     if (prepared.wasCompressed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('头像图片过大，已自动压缩到可上传大小')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('头像图片过大，已自动压缩到可上传大小')));
     }
   }
 
@@ -199,7 +199,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   String _compressedAvatarFileName(String originalName) {
     final dotIndex = originalName.lastIndexOf('.');
-    final baseName = dotIndex > 0 ? originalName.substring(0, dotIndex) : originalName;
+    final baseName = dotIndex > 0
+        ? originalName.substring(0, dotIndex)
+        : originalName;
     final safeBaseName = baseName.trim().isEmpty ? 'avatar' : baseName.trim();
     return '${safeBaseName}_compressed.jpg';
   }
@@ -243,14 +245,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'attemptedUsername': _usernameController.text.trim(),
       'attemptedEmail': _maskEmail(_emailController.text.trim()),
       'attemptedPhone': _maskPhone(_phoneController.text.trim()),
-      'changedDisplayName': currentUser?.nickname != _displayNameController.text.trim(),
-      'changedUsername': currentUser?.username != _usernameController.text.trim(),
+      'changedDisplayName':
+          currentUser?.nickname != _displayNameController.text.trim(),
+      'changedUsername':
+          currentUser?.username != _usernameController.text.trim(),
       'changedEmail': currentUser?.email != _emailController.text.trim(),
       'changedPhone': currentUser?.phoneNumber != _phoneController.text.trim(),
       'hasPendingAvatarUpload': _pendingAvatarBase64 != null,
-      'hasPasswordSetupAttempt': !_hasPassword && _passwordController.text.isNotEmpty,
+      'hasPasswordSetupAttempt':
+          !_hasPassword && _passwordController.text.isNotEmpty,
       if (statusCode != null) 'statusCode': statusCode,
-      if (serverError != null && serverError.isNotEmpty) 'serverError': serverError,
+      if (serverError != null && serverError.isNotEmpty)
+        'serverError': serverError,
       if (responseBodyPreview != null && responseBodyPreview.isNotEmpty)
         'responseBodyPreview': _trimPreview(responseBodyPreview),
     };
@@ -311,7 +317,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'avatar': _avatarController.text.trim(),
     };
 
-    if (trimmedDisplayName.isNotEmpty || currentUser?.nickname?.isNotEmpty == true) {
+    if (trimmedDisplayName.isNotEmpty ||
+        currentUser?.nickname?.isNotEmpty == true) {
       body['displayName'] = trimmedDisplayName;
     }
 
@@ -341,23 +348,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setState(() => _isLoading = false);
 
       if (response.statusCode == 200 && data['success'] == true) {
-        final token = data['token'] as String?;
-        final userJson = data['user'];
-        final updatedUserJson = userJson is Map
-            ? Map<String, dynamic>.from(userJson)
-            : null;
-        final updatedUsername = updatedUserJson?['username'] as String? ??
-            _usernameController.text.trim();
-
-        if (token != null) {
-          await authModel.loginWithToken(
-            token,
-            updatedUsername,
-            userJson: updatedUserJson,
-          );
-        } else {
-          await authModel.refreshUserInfo();
-        }
+        // Rust owns any rotated credentials returned by the platform. Flutter
+        // only refreshes the public profile through the Rust session.
+        await authModel.refreshUserInfo();
         await LeaderboardModel.clearCache();
 
         if (mounted) {
