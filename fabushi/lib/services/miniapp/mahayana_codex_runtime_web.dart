@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:js_interop';
 
-import 'package:http/http.dart' as http;
-
 @JS('mahayanaWasm.initialize')
 external JSPromise<JSAny?> _initializeWasm();
 
@@ -11,6 +9,12 @@ external JSPromise<JSNumber> _createWasmRuntime(JSString configJson);
 
 @JS('mahayanaWasm.execute')
 external JSPromise<JSString> _executeWasmRuntime(
+  JSNumber runtimeId,
+  JSString commandJson,
+);
+
+@JS('mahayanaWasm.executeProduct')
+external JSPromise<JSString> _executeWasmProduct(
   JSNumber runtimeId,
   JSString commandJson,
 );
@@ -33,7 +37,6 @@ class MahayanaCodexRuntime {
 
   Future<void>? _initialization;
   int? _runtimeId;
-  String? _runtimeToken;
   String? _runtimeModel;
   String? _runtimeResponsesBaseUrl;
   String? _loadError;
@@ -52,7 +55,6 @@ class MahayanaCodexRuntime {
     final result = await sendAndCollect(
       'codex:agent:assistant',
       prompt,
-      token: _token(request),
       model: _model(request),
       responsesBaseUrl: _responsesBaseUrl(request),
     );
@@ -78,7 +80,6 @@ class MahayanaCodexRuntime {
       return sendAndCollect(
         'miniapp:$miniAppId',
         message,
-        token: _token(request),
         model: _model(request),
         responsesBaseUrl: _responsesBaseUrl(request),
       );
@@ -86,7 +87,6 @@ class MahayanaCodexRuntime {
     if (_isRuntimeCommand(type)) {
       return executeRuntime(
         request,
-        token: _token(request),
         model: _model(request),
         responsesBaseUrl: _responsesBaseUrl(request),
       );
@@ -96,11 +96,10 @@ class MahayanaCodexRuntime {
 
   Future<Map<String, dynamic>> executeRuntime(
     Map<String, dynamic> command, {
-    String? token,
     String? model,
     String? responsesBaseUrl,
   }) async {
-    final runtimeId = await _ensureRuntime(token, model, responsesBaseUrl);
+    final runtimeId = await _ensureRuntime(model, responsesBaseUrl);
     final normalized = Map<String, dynamic>.from(command)
       ..remove('token')
       ..remove('model')
@@ -122,312 +121,20 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>> executeProduct(
     Map<String, dynamic> command,
   ) async {
-    final type = command['@type']?.toString() ?? '';
-    final token = _token(command);
-    switch (type) {
-      case 'mahayana.auth.session.sync':
-        await _closeExistingRuntime();
-        return {
-          '@type': 'mahayana.auth.session',
-          'loggedIn': token != null,
-          'sessionStored': false,
-          'inMemory': true,
-          'provider': command['provider']?.toString() ?? 'app',
-        };
-      case 'mahayana.auth.status':
-        if (token == null) {
-          return const {
-            '@type': 'mahayana.auth.status',
-            'loggedIn': false,
-            'provider': 'alipay',
-          };
-        }
-        try {
-          final user = await _productRequest(
-            'GET',
-            '/api/auth/user-info',
-            token: token,
-          );
-          return {
-            '@type': 'mahayana.auth.status',
-            'loggedIn': true,
-            'provider': 'alipay',
-            'user': user['user'] ?? user['data'] ?? user,
-          };
-        } catch (_) {
-          return const {
-            '@type': 'mahayana.auth.status',
-            'loggedIn': false,
-            'provider': 'alipay',
-            'expired': true,
-          };
-        }
-      case 'mahayana.auth.logout':
-        await _closeExistingRuntime();
-        return const {
-          '@type': 'mahayana.auth.loggedOut',
-          'loggedIn': false,
-          'provider': 'alipay',
-        };
-      case 'mahayana.auth.password.login':
-        return _productRequest(
-          'POST',
-          '/api/auth/login',
-          body: {
-            'username': _required(command, 'username'),
-            'password': _required(command, 'password'),
-          },
-        );
-      case 'mahayana.auth.register':
-        return _productRequest(
-          'POST',
-          '/api/auth/register',
-          body: {
-            'username': _required(command, 'username'),
-            'email': _required(command, 'email'),
-            'password': _required(command, 'password'),
-            'verificationCode': _required(command, 'verificationCode'),
-          },
-        );
-      case 'mahayana.auth.verification.send':
-        return _productRequest(
-          'POST',
-          '/api/auth/send-verification-code',
-          body: {
-            'email': _required(command, 'email'),
-            'type': _required(command, 'type'),
-          },
-        );
-      case 'mahayana.auth.password.forgot':
-        return _productRequest(
-          'POST',
-          '/api/auth/forgot-password',
-          body: {'email': _required(command, 'email')},
-        );
-      case 'mahayana.auth.password.reset':
-        return _productRequest(
-          'POST',
-          '/api/auth/reset-password',
-          body: {
-            'email': _required(command, 'email'),
-            'token': _required(command, 'resetToken'),
-            'newPassword': _required(command, 'newPassword'),
-          },
-        );
-      case 'mahayana.auth.alipay.start':
-        return _productRequest(
-          'GET',
-          '/api/auth/alipay/login-url',
-          query: {'platform': command['platform']?.toString() ?? 'web'},
-        );
-      case 'mahayana.auth.alipay.complete':
-        return _productRequest(
-          'POST',
-          '/api/auth/alipay/login',
-          body: {
-            'auth_code': _required(command, 'authCode'),
-            'state': ?_optional(command, 'state'),
-          },
-        );
-      case 'mahayana.auth.alipay.poll':
-        return _productRequest(
-          'GET',
-          '/api/auth/alipay/cli-session',
-          query: {'state': _required(command, 'state')},
-        );
-      case 'mahayana.auth.alipay.sdk.start':
-        return _productRequest('GET', '/api/auth/alipay/auth-string');
-      case 'mahayana.auth.alipay.sdk.complete':
-        return _productRequest(
-          'POST',
-          '/api/auth/alipay/sdk-login',
-          body: {
-            'auth_code': _required(command, 'authCode'),
-            'target_id': ?_optional(command, 'targetId'),
-          },
-        );
-      case 'mahayana.auth.alipay.register':
-        return _productRequest(
-          'POST',
-          '/api/auth/alipay/register',
-          body: {
-            'alipayProviderSubject': _required(
-              command,
-              'alipayProviderSubject',
-            ),
-            'alipaySubjectType': ?_optional(command, 'alipaySubjectType'),
-            'username': ?_optional(command, 'username'),
-            'password': ?_optional(command, 'password'),
-            'nickname': ?_optional(command, 'nickname'),
-            'avatar': ?_optional(command, 'avatar'),
-            'email': ?_optional(command, 'email'),
-            'alipayNickname': ?_optional(command, 'alipayNickname'),
-            'alipayAvatar': ?_optional(command, 'alipayAvatar'),
-            if (command['oneClick'] == true) 'oneClick': true,
-          },
-        );
-      case 'mahayana.auth.apple.complete':
-        return _productRequest(
-          'POST',
-          '/api/auth/apple-login',
-          body: {
-            'identityToken': _required(command, 'identityToken'),
-            'authorizationCode': _required(command, 'authorizationCode'),
-            'email': ?_optional(command, 'email'),
-            'givenName': ?_optional(command, 'givenName'),
-            'familyName': ?_optional(command, 'familyName'),
-          },
-        );
-      case 'mahayana.auth.firebase.phone.complete':
-        return _productRequest(
-          'POST',
-          '/api/auth/firebase-phone-login',
-          body: {
-            'idToken': _required(command, 'idToken'),
-            'phoneNumber': _required(command, 'phoneNumber'),
-            'firebaseUid': _required(command, 'firebaseUid'),
-            'isNewUser': command['isNewUser'] == true,
-          },
-        );
-      case 'mahayana.contacts.list':
-        return _productRequest('GET', '/api/social/friends', token: token);
-      case 'mahayana.contacts.search':
-        return _productRequest(
-          'GET',
-          '/api/social/users/search',
-          token: token,
-          query: {'q': _required(command, 'query')},
-        );
-      case 'mahayana.contacts.add':
-        return _productRequest(
-          'POST',
-          '/api/social/friend-requests',
-          token: token,
-          body: {
-            'targetUserId': _required(command, 'contact'),
-            'message': ?_optional(command, 'message'),
-          },
-        );
-      case 'mahayana.contacts.requests':
-        return _productRequest(
-          'GET',
-          '/api/social/friend-requests/incoming',
-          token: token,
-        );
-      case 'mahayana.contacts.accept':
-        final requestId = Uri.encodeComponent(_required(command, 'requestId'));
-        return _productRequest(
-          'POST',
-          '/api/social/friend-requests/$requestId/accept',
-          token: token,
-          body: const {},
-        );
-      case 'mahayana.messages.list':
-        return _productRequest(
-          'GET',
-          '/api/social/messages',
-          token: token,
-          query: {
-            'contactId': _required(command, 'contact'),
-            if (command['limit'] != null) 'limit': command['limit'].toString(),
-          },
-        );
-      case 'mahayana.messages.send':
-        return _productRequest(
-          'POST',
-          '/api/social/messages',
-          token: token,
-          body: {
-            'contactId': _required(command, 'contact'),
-            'text': _required(command, 'text'),
-            'clientRequestId': ?_optional(command, 'clientRequestId'),
-          },
-        );
-      case 'mahayana.miniapps.registry':
-        return _productRequest('GET', '/api/miniapps/registry', token: token);
-      case 'mahayana.miniapp.sandbox.publish':
-        return _publishMiniApp(command, token: token);
-      case 'mahayana.miniapp.review.submit':
-        final miniAppId = Uri.encodeComponent(_required(command, 'miniAppId'));
-        return _productRequest(
-          'POST',
-          '/api/miniapps/$miniAppId/submit-review',
-          token: token,
-          body: const {},
-        );
-      default:
-        throw MahayanaCodexRuntimeException(
-          'mahayana_unsupported_product_command',
-          'Unsupported Mahayana product command: $type',
-        );
-    }
-  }
-
-  Future<Map<String, dynamic>> _publishMiniApp(
-    Map<String, dynamic> command, {
-    String? token,
-  }) async {
-    final title = _required(command, 'title');
-    final sourceHtml = _required(command, 'sourceHtml');
-    final subtitle = _optional(command, 'subtitle') ?? '大乘 Web SDK 生成的个人沙箱小程序';
-    final prompt = _optional(command, 'prompt') ?? title;
-    final permissions = command['permissions'] is List
-        ? List<dynamic>.from(command['permissions'] as List)
-        : <String>['app.context', 'bot.chat'];
-    final created = await _productRequest(
-      'POST',
-      '/api/miniapps/dev/create',
-      token: token,
-      body: {
-        'title': title,
-        'subtitle': subtitle,
-        'prompt': prompt,
-        'permissions': permissions,
-      },
+    final runtimeId = await _ensureRuntime(
+      _runtimeModel,
+      _runtimeResponsesBaseUrl,
     );
-    final miniApp = created['miniApp'];
-    final rawMiniAppId = miniApp is Map
-        ? miniApp['miniAppId']?.toString()
-        : null;
-    if (rawMiniAppId == null || rawMiniAppId.trim().isEmpty) {
-      throw const MahayanaCodexRuntimeException(
-        'mahayana_missing_miniapp_id',
-        'Sandbox create response has no miniAppId.',
-      );
+    try {
+      final response = await _executeWasmProduct(
+        runtimeId.toJS,
+        jsonEncode(command).toJS,
+      ).toDart;
+      return _unwrapWasm(response.toDart);
+    } catch (error) {
+      if (error is MahayanaCodexRuntimeException) rethrow;
+      throw _wasmError('mahayana_web_product_failed', error);
     }
-    final miniAppId = Uri.encodeComponent(rawMiniAppId.trim());
-    final updated = await _productRequest(
-      'POST',
-      '/api/miniapps/dev/$miniAppId/version',
-      token: token,
-      body: {
-        'title': title,
-        'subtitle': subtitle,
-        'prompt': prompt,
-        'sourceHtml': sourceHtml,
-        'permissions': permissions,
-        'version': _optional(command, 'version') ?? '0.0.1',
-      },
-    );
-    Map<String, dynamic>? review;
-    if (command['submitReview'] == true) {
-      review = await _productRequest(
-        'POST',
-        '/api/miniapps/$miniAppId/submit-review',
-        token: token,
-        body: const {},
-      );
-    }
-    return {
-      '@type': 'mahayana.miniapp.published',
-      'success': true,
-      'authenticated': token != null,
-      'miniAppId': rawMiniAppId,
-      'miniApp': updated['miniApp'],
-      'bot': updated['bot'],
-      'scan': updated['scan'],
-      'review': review,
-    };
   }
 
   Future<Map<String, dynamic>?> receive({int timeoutMs = 30000}) async {
@@ -454,7 +161,6 @@ class MahayanaCodexRuntime {
         'decision': decision,
         'payload': ?payload,
       },
-      token: _runtimeToken,
       model: _runtimeModel,
       responsesBaseUrl: _runtimeResponsesBaseUrl,
     );
@@ -463,7 +169,6 @@ class MahayanaCodexRuntime {
   Future<Map<String, dynamic>> sendAndCollect(
     String conversationId,
     String text, {
-    String? token,
     String? model,
     String? responsesBaseUrl,
   }) async {
@@ -473,7 +178,6 @@ class MahayanaCodexRuntime {
         'conversationId': conversationId,
         'text': text,
       },
-      token: token,
       model: model,
       responsesBaseUrl: responsesBaseUrl,
     );
@@ -522,24 +226,14 @@ class MahayanaCodexRuntime {
     }
   }
 
-  Future<int> _ensureRuntime(
-    String? token,
-    String? model,
-    String? responsesBaseUrl,
-  ) async {
-    final normalizedToken = _normalize(token);
+  Future<int> _ensureRuntime(String? model, String? responsesBaseUrl) async {
     final normalizedModel = _normalize(model) ?? 'deepseek-chat';
     final normalizedBaseUrl =
         _normalize(responsesBaseUrl) ??
         'https://api.ombhrum.com/codex-deepseek/v1';
-    if (_runtimeId != null &&
-        _runtimeToken == normalizedToken &&
-        _runtimeModel == normalizedModel &&
-        _runtimeResponsesBaseUrl == normalizedBaseUrl) {
-      return _runtimeId!;
-    }
+    if (_runtimeId != null) return _runtimeId!;
     await _initialize();
-    return _replaceRuntime(normalizedToken, normalizedModel, normalizedBaseUrl);
+    return _replaceRuntime(normalizedModel, normalizedBaseUrl);
   }
 
   Future<void> _initialize() {
@@ -554,22 +248,13 @@ class MahayanaCodexRuntime {
     }();
   }
 
-  Future<int> _replaceRuntime(
-    String? token,
-    String model,
-    String responsesBaseUrl,
-  ) async {
+  Future<int> _replaceRuntime(String model, String responsesBaseUrl) async {
     await _closeExistingRuntime();
-    _runtimeToken = token;
     _runtimeModel = model;
     _runtimeResponsesBaseUrl = responsesBaseUrl;
     try {
       final runtimeId = (await _createWasmRuntime(
-        jsonEncode({
-          'productSessionToken': ?token,
-          'model': model,
-          'responsesBaseUrl': responsesBaseUrl,
-        }).toJS,
+        jsonEncode({'model': model, 'responsesBaseUrl': responsesBaseUrl}).toJS,
       ).toDart).toDartInt;
       _runtimeId = runtimeId;
       return runtimeId;
@@ -582,7 +267,6 @@ class MahayanaCodexRuntime {
     final existing = _runtimeId;
     if (existing != null) await _closeWasmRuntime(existing.toJS).toDart;
     _runtimeId = null;
-    _runtimeToken = null;
     _runtimeModel = null;
     _runtimeResponsesBaseUrl = null;
   }
@@ -591,12 +275,9 @@ class MahayanaCodexRuntime {
 bool _isRuntimeCommand(String type) =>
     type.startsWith('mahayana.runtime.') ||
     type.startsWith('mahayana.conversation.') ||
+    type.startsWith('mahayana.plugin.') ||
     type.startsWith('mahayana.operation.') ||
     type.startsWith('mahayana.approval.');
-
-String? _token(Map<String, dynamic> request) {
-  return _normalize(request['token']?.toString());
-}
 
 String? _model(Map<String, dynamic> request) =>
     _normalize(request['model']?.toString());
@@ -607,67 +288,6 @@ String? _responsesBaseUrl(Map<String, dynamic> request) =>
 String? _normalize(String? value) {
   final normalized = value?.trim();
   return normalized == null || normalized.isEmpty ? null : normalized;
-}
-
-String _required(Map<String, dynamic> request, String key) {
-  final value = _optional(request, key);
-  if (value == null) {
-    throw MahayanaCodexRuntimeException(
-      'mahayana_invalid_product_command',
-      'Mahayana product command requires $key.',
-    );
-  }
-  return value;
-}
-
-String? _optional(Map<String, dynamic> request, String key) {
-  final value = request[key]?.toString().trim();
-  return value == null || value.isEmpty ? null : value;
-}
-
-Future<Map<String, dynamic>> _productRequest(
-  String method,
-  String path, {
-  String? token,
-  Map<String, String>? query,
-  Map<String, dynamic>? body,
-}) async {
-  final uri = Uri.base.resolve(path).replace(queryParameters: query);
-  final headers = <String, String>{
-    'Accept': 'application/json',
-    if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-    if (body != null) 'Content-Type': 'application/json',
-  };
-  final response = method == 'GET'
-      ? await http.get(uri, headers: headers)
-      : await http.post(
-          uri,
-          headers: headers,
-          body: jsonEncode(body ?? const {}),
-        );
-  Object? decoded;
-  try {
-    decoded = jsonDecode(response.body);
-  } catch (_) {
-    decoded = null;
-  }
-  final payload = decoded is Map
-      ? Map<String, dynamic>.from(decoded)
-      : <String, dynamic>{};
-  if (response.statusCode < 200 ||
-      response.statusCode >= 300 ||
-      payload['success'] == false ||
-      payload['error'] != null) {
-    throw MahayanaCodexRuntimeException(
-      'mahayana_product_http_error',
-      (payload['error'] ??
-              payload['message'] ??
-              'Product API returned HTTP ${response.statusCode}')
-          .toString(),
-      details: {'status': response.statusCode},
-    );
-  }
-  return payload;
 }
 
 Map<String, dynamic> _unwrapWasm(String source) {

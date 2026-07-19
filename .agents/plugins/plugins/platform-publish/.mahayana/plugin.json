@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "platform-publish"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "create", "tool": "create_draft" },
+    { "name": "save", "tool": "save_draft" },
+    { "name": "open", "tool": "open_draft" },
+    { "name": "publish", "tool": "publish" },
+    { "name": "status", "tool": "status" }
+  ]
+}

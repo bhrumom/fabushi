@@ -1,11 +1,10 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/config/app_config.dart';
 import '../models/co_practice_group_model.dart';
 import 'app_settings.dart';
+import 'mahayana_sdk.dart';
 
 class CoPracticeGroupCreationResult {
   final int? groupId;
@@ -52,8 +51,7 @@ class CoPracticeGroupSearchResult {
          statusCode: statusCode,
        );
 
-  bool get hasError =>
-      errorMessage != null && errorMessage!.trim().isNotEmpty;
+  bool get hasError => errorMessage != null && errorMessage!.trim().isNotEmpty;
 }
 
 class CoPracticeService {
@@ -81,25 +79,55 @@ class CoPracticeService {
     Future<Map<String, String>> Function()? headersResolver,
   }) : _httpClient = httpClient ?? http.Client(),
        _baseUrlResolver = baseUrlResolver ?? AppSettings.getBackendUrl,
-       _headersResolver = headersResolver;
+       _headersResolver = headersResolver,
+       _useRustTransport =
+           httpClient == null &&
+           baseUrlResolver == null &&
+           headersResolver == null;
 
   final http.Client _httpClient;
   final Future<String> Function() _baseUrlResolver;
   final Future<Map<String, String>> Function()? _headersResolver;
+  final bool _useRustTransport;
 
   Future<String> get _baseUrl async => _baseUrlResolver();
 
   Future<Map<String, String>> _headers() async {
     if (_headersResolver != null) {
-      return _headersResolver!();
+      return _headersResolver();
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(AppConfig.tokenStorageKey);
-    return {
-      'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-    };
+    return const {'Content-Type': 'application/json'};
+  }
+
+  Future<http.Response> _request(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, dynamic>? body,
+  }) async {
+    if (_useRustTransport) {
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: method,
+        path: path,
+        query: query,
+        body: body,
+      );
+      return http.Response(
+        response['bodyText']?.toString() ?? '',
+        (response['statusCode'] as num?)?.toInt() ?? 500,
+      );
+    }
+    final baseUrl = await _baseUrl;
+    final uri = Uri.parse('$baseUrl$path').replace(queryParameters: query);
+    if (method == 'GET') {
+      return _httpClient.get(uri, headers: await _headers());
+    }
+    return _httpClient.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode(body ?? const <String, dynamic>{}),
+    );
   }
 
   Future<List<CoPracticeGroup>> searchGroups({
@@ -115,11 +143,11 @@ class CoPracticeService {
     int limit = 30,
   }) async {
     try {
-      final baseUrl = await _baseUrl;
-      final uri = Uri.parse(
-        '$baseUrl/api/meditation/groups',
-      ).replace(queryParameters: {'query': query, 'limit': limit.toString()});
-      final response = await _httpClient.get(uri, headers: await _headers());
+      final response = await _request(
+        'GET',
+        '/api/meditation/groups',
+        query: {'query': query, 'limit': limit.toString()},
+      );
       final data = _decodeJsonMap(response.body);
       if (response.statusCode != 200 || data['success'] != true) {
         return CoPracticeGroupSearchResult.failure(
@@ -137,9 +165,7 @@ class CoPracticeService {
           .toList();
       return CoPracticeGroupSearchResult.success(groups);
     } catch (_) {
-      return const CoPracticeGroupSearchResult.failure(
-        '获取共修小组失败，请检查网络后重试',
-      );
+      return const CoPracticeGroupSearchResult.failure('获取共修小组失败，请检查网络后重试');
     }
   }
 
@@ -152,18 +178,17 @@ class CoPracticeService {
     required int consecutiveMissLimit,
   }) async {
     try {
-      final baseUrl = await _baseUrl;
-      final response = await _httpClient.post(
-        Uri.parse('$baseUrl/api/meditation/groups'),
-        headers: await _headers(),
-        body: jsonEncode({
+      final response = await _request(
+        'POST',
+        '/api/meditation/groups',
+        body: {
           'name': name,
           'description': description,
           'requireApproval': requireApproval,
           'dailyGoalMinutes': dailyGoalMinutes,
           'cumulativeMissLimit': cumulativeMissLimit,
           'consecutiveMissLimit': consecutiveMissLimit,
-        }),
+        },
       );
 
       final data = _decodeJsonMap(response.body);
@@ -186,19 +211,16 @@ class CoPracticeService {
 
       return const CoPracticeGroupCreationResult.failure('创建成功，但未返回小组编号');
     } catch (_) {
-      return const CoPracticeGroupCreationResult.failure(
-        '创建共修小组失败，请检查网络后重试',
-      );
+      return const CoPracticeGroupCreationResult.failure('创建共修小组失败，请检查网络后重试');
     }
   }
 
   Future<String?> joinGroup(int groupId) async {
     try {
-      final baseUrl = await _baseUrl;
-      final response = await _httpClient.post(
-        Uri.parse('$baseUrl/api/meditation/groups/join'),
-        headers: await _headers(),
-        body: jsonEncode({'groupId': groupId}),
+      final response = await _request(
+        'POST',
+        '/api/meditation/groups/join',
+        body: {'groupId': groupId},
       );
 
       final data = _decodeJsonMap(response.body);
@@ -220,11 +242,11 @@ class CoPracticeService {
   }
 
   Future<CoPracticeGroupDetail?> fetchGroupDetail(int groupId) async {
-    final baseUrl = await _baseUrl;
-    final uri = Uri.parse(
-      '$baseUrl/api/meditation/groups/detail',
-    ).replace(queryParameters: {'groupId': groupId.toString()});
-    final response = await _httpClient.get(uri, headers: await _headers());
+    final response = await _request(
+      'GET',
+      '/api/meditation/groups/detail',
+      query: {'groupId': groupId.toString()},
+    );
     if (response.statusCode != 200) return null;
 
     final data = _decodeJsonMap(response.body);
@@ -239,15 +261,10 @@ class CoPracticeService {
     required String username,
     required bool approve,
   }) async {
-    final baseUrl = await _baseUrl;
-    final response = await _httpClient.post(
-      Uri.parse('$baseUrl/api/meditation/groups/review'),
-      headers: await _headers(),
-      body: jsonEncode({
-        'groupId': groupId,
-        'username': username,
-        'approve': approve,
-      }),
+    final response = await _request(
+      'POST',
+      '/api/meditation/groups/review',
+      body: {'groupId': groupId, 'username': username, 'approve': approve},
     );
 
     if (response.statusCode != 200) return false;

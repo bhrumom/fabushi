@@ -15,7 +15,6 @@ class MahayanaSdk {
   static final MahayanaSdk instance = MahayanaSdk._();
 
   final MahayanaCodexRuntime _runtime = MahayanaCodexRuntime.instance;
-  String? _lastSynchronizedToken;
   int? _telegramClientId;
   int? _telegramSelfUserId;
 
@@ -24,16 +23,13 @@ class MahayanaSdk {
 
   Future<Map<String, dynamic>> execute(
     Map<String, dynamic> command, {
-    String? productSessionToken,
     String? model,
     String? responsesBaseUrl,
   }) {
-    final token = productSessionToken?.trim();
     final modelName = model?.trim();
     final baseUrl = responsesBaseUrl?.trim();
     return _runtime.execute({
       ...command,
-      if (token?.isNotEmpty == true) 'token': token,
       if (modelName?.isNotEmpty == true) 'model': modelName,
       if (_telegramClientId != null) 'telegramClientId': _telegramClientId,
       if (_telegramSelfUserId != null)
@@ -57,34 +53,98 @@ class MahayanaSdk {
     _telegramClientId = clientId;
     _telegramSelfUserId = selfUserId;
     if (!isAvailable) return;
-    await execute(const {
-      '@type': 'mahayana.runtime.status',
-    }, productSessionToken: _lastSynchronizedToken);
+    await execute(const {'@type': 'mahayana.runtime.status'});
   }
 
-  /// Makes an App-authenticated session available to the native CLI and
-  /// invalidates any Runtime that was created under an older account.
-  Future<void> synchronizeSession({
-    required String token,
-    Map<String, dynamic>? user,
-    String provider = 'app',
-  }) async {
-    final normalized = token.trim();
-    if (normalized.isEmpty || normalized == _lastSynchronizedToken) return;
-    if (!isAvailable) return;
-    await execute({
-      '@type': 'mahayana.auth.session.sync',
-      'token': normalized,
-      'provider': provider,
-      'user': ?user,
-      'username': ?user?['username'],
-      'email': ?user?['email'],
+  /// Executes a same-origin platform request inside Rust. Flutter never sees
+  /// the bearer or refresh credential; `authenticated` only selects whether
+  /// Rust should attach its current encrypted session.
+  Future<Map<String, dynamic>> platformRequest({
+    required String method,
+    required String path,
+    Map<String, String>? query,
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+  }) {
+    return execute({
+      '@type': 'mahayana.platform.request',
+      'method': method,
+      'path': path,
+      'query': ?query,
+      'body': ?body,
+      'authenticated': authenticated,
     });
-    _lastSynchronizedToken = normalized;
+  }
+
+  /// Runs a Mini App message through the Rust Runtime while leaving only the
+  /// final human approval choice to Flutter. MCP discovery, tool routing,
+  /// entitlement checks, execution, and approval state remain in Rust/Codex.
+  Future<Map<String, dynamic>> miniAppChat({
+    required String pluginId,
+    required String message,
+    required Future<bool> Function(Map<String, dynamic> request) onApproval,
+    void Function(Map<String, dynamic> progress)? onProgress,
+  }) async {
+    final conversationId = 'miniapp:$pluginId';
+    final accepted = await _runtime.executeRuntime({
+      '@type': 'mahayana.conversation.send',
+      'conversationId': conversationId,
+      'text': message,
+    });
+    final operationId = accepted['operationId']?.toString();
+    if (operationId == null || operationId.isEmpty) {
+      throw StateError('Mahayana Runtime did not accept the Mini App message.');
+    }
+    final buffer = StringBuffer();
+    Map<String, dynamic>? completedMessage;
+    while (true) {
+      final event = await _runtime.receive();
+      if (event == null || event['operationId']?.toString() != operationId) {
+        continue;
+      }
+      switch (event['@type']?.toString()) {
+        case 'mahayana.message.delta':
+          buffer.write(event['delta']?.toString() ?? '');
+          break;
+        case 'mahayana.message.completed':
+          if (event['message'] is Map) {
+            completedMessage = Map<String, dynamic>.from(
+              event['message'] as Map,
+            );
+          }
+          break;
+        case 'mahayana.approval.requested':
+          final approvalId = event['approvalId']?.toString();
+          if (approvalId != null && approvalId.isNotEmpty) {
+            final approved = await onApproval(event);
+            await _runtime.resolveApproval(
+              approvalId,
+              approved ? 'approve_session' : 'decline',
+            );
+          }
+          break;
+        case 'mahayana.plugin.progress':
+          onProgress?.call(event);
+          break;
+        case 'mahayana.operation.completed':
+          return {
+            'operationId': operationId,
+            'conversationId': conversationId,
+            'message':
+                completedMessage?['text']?.toString() ?? buffer.toString(),
+            'data': ?completedMessage,
+            'embedded': true,
+          };
+        case 'mahayana.operation.failed':
+          throw StateError(
+            event['message']?.toString() ??
+                'Mahayana Mini App operation failed.',
+          );
+      }
+    }
   }
 
   Future<void> clearSession() async {
-    _lastSynchronizedToken = null;
     if (!isAvailable) return;
     await execute(const {'@type': 'mahayana.auth.logout'});
   }

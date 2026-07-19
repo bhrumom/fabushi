@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -40,6 +41,8 @@ import '../services/apple_iap_service.dart'
     if (dart.library.html) '../services/apple_iap_service_web.dart';
 import '../services/membership_service.dart';
 import '../services/mahayana_command_service.dart';
+import '../services/mahayana_sdk.dart';
+import '../services/mini_app_registry_service.dart';
 import '../services/online_counter_service.dart';
 import '../services/project_service.dart';
 import '../widgets/auto_start_guide_dialog.dart';
@@ -139,6 +142,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   LocalProject? _selectedDesktopProject;
   List<CodexDesktopModelOption> _desktopModelOptions =
       CodexDesktopChatInput.defaultModelOptions;
+  List<CodexComposerMention> _desktopComposerMentions = const [];
 
   void setVisible(bool visible) {
     if (_isVisible == visible) return;
@@ -247,6 +251,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     _loadGlobe();
     _fetchInitialCount();
     unawaited(_loadDesktopModelOptions());
+    unawaited(_loadDesktopComposerMentions());
     InboundShareService.instance.start();
     _incomingShareSubscription = InboundShareService.instance.incomingShares
         .listen((payload) => unawaited(_handleIncomingShare(payload)));
@@ -298,6 +303,19 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       });
     } catch (e) {
       debugPrint('加载 DeepSeek 模型列表失败，使用默认模型: $e');
+    }
+  }
+
+  Future<void> _loadDesktopComposerMentions() async {
+    try {
+      final registry = await MiniAppRegistryService().loadRegistry(
+        forceRefresh: true,
+      );
+      final mentions = buildCodexComposerMentions(registry);
+      if (!mounted) return;
+      setState(() => _desktopComposerMentions = mentions);
+    } catch (error) {
+      debugPrint('加载 Codex 插件联系人失败: $error');
     }
   }
 
@@ -3117,6 +3135,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         setState(() => _selectedDesktopModelId = modelId);
       },
       selectedProject: _selectedDesktopProject,
+      mentions: _desktopComposerMentions,
       onProjectChanged: (project) {
         setState(() => _selectedDesktopProject = project);
       },
@@ -3672,6 +3691,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final inputText = _chatInputController.text.trim();
     final isUrl = Uri.tryParse(inputText)?.hasAbsolutePath ?? false;
 
+    if (!_isDharmaComposerMode) {
+      final mentionedBot = _mentionedPluginBot(inputText);
+      if (mentionedBot != null) {
+        unawaited(_sendMentionedPluginBot(mentionedBot, inputText));
+        return;
+      }
+    }
+
     if (!_isDharmaComposerMode && inputText.startsWith('/')) {
       unawaited(_runMahayanaCommand(inputText));
       return;
@@ -3713,6 +3740,128 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
   }
 
+  CodexComposerMention? _mentionedPluginBot(String text) {
+    for (final mention in _desktopComposerMentions.where(
+      (item) => item.kind == CodexComposerMentionKind.bot,
+    )) {
+      final token = RegExp.escape(mention.insertText);
+      if (RegExp('(^|\\s)$token(?=\\s|\$)').hasMatch(text)) return mention;
+    }
+    return null;
+  }
+
+  Future<void> _sendMentionedPluginBot(
+    CodexComposerMention mention,
+    String originalText,
+  ) async {
+    if (_isAiGenerating) return;
+    final token = RegExp.escape(mention.insertText);
+    final match = RegExp('(^|\\s)$token(?=\\s|\$)').firstMatch(originalText);
+    if (match == null) return;
+    final message =
+        (originalText.substring(0, match.start) +
+                originalText.substring(match.end))
+            .trim();
+    final prompt = message.isEmpty ? '请介绍你可以做什么。' : message;
+    final requestSerial = ++_aiRequestSerial;
+
+    HapticFeedback.lightImpact();
+    _chatInputController.clear();
+    setState(() {
+      _homeChatMessages.add(_HomeChatMessage(text: originalText, isUser: true));
+      _isAiGenerating = true;
+      _streamingAiText = '';
+      _aiActivityText = '${mention.label} 正在处理';
+    });
+    _scrollHomeChatToBottom(force: true);
+
+    try {
+      final response = await MahayanaSdk.instance.miniAppChat(
+        pluginId: mention.pluginId,
+        message: prompt,
+        onApproval: (request) =>
+            _approveMentionedPluginRequest(mention, request),
+        onProgress: (progress) {
+          if (!mounted || requestSerial != _aiRequestSerial) return;
+          final detail =
+              (progress['message'] ?? progress['title'] ?? progress['tool'])
+                  ?.toString()
+                  .trim();
+          setState(() {
+            _aiActivityText = detail?.isNotEmpty == true
+                ? '${mention.label} · $detail'
+                : '${mention.label} 正在调用工具';
+          });
+        },
+      );
+      if (!mounted || requestSerial != _aiRequestSerial) return;
+      final answer = response['message']?.toString().trim() ?? '';
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: answer.isEmpty ? '${mention.label} 已完成处理。' : answer,
+            isUser: false,
+          ),
+        );
+        _isAiGenerating = false;
+        _streamingAiText = '';
+        _aiActivityText = '';
+      });
+      _scrollHomeChatToBottom(force: true);
+    } catch (error) {
+      if (!mounted || requestSerial != _aiRequestSerial) return;
+      setState(() {
+        _homeChatMessages.add(
+          _HomeChatMessage(
+            text: '${mention.label} 执行失败：${_friendlyErrorMessage(error)}',
+            isUser: false,
+            isError: true,
+          ),
+        );
+        _isAiGenerating = false;
+        _streamingAiText = '';
+        _aiActivityText = '';
+      });
+      _scrollHomeChatToBottom(force: true);
+    }
+  }
+
+  Future<bool> _approveMentionedPluginRequest(
+    CodexComposerMention mention,
+    Map<String, dynamic> request,
+  ) async {
+    if (!mounted) return false;
+    final details = request['details'] is Map
+        ? Map<String, dynamic>.from(request['details'] as Map)
+        : request;
+    String body;
+    try {
+      body = const JsonEncoder.withIndent('  ').convert(details);
+    } catch (_) {
+      body = details.toString();
+    }
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(
+              request['title']?.toString() ?? '允许 ${mention.label} 调用工具？',
+            ),
+            content: SingleChildScrollView(child: SelectableText(body)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('允许本次会话'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _runMahayanaCommand(String command) async {
     if (command.trim().isEmpty || _isAiGenerating) return;
     final authModel = Provider.of<AuthModel?>(context, listen: false);
@@ -3737,20 +3886,8 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         if (!opened) throw StateError('无法打开支付宝授权页。');
       }
       final session = outcome.session;
-      final sessionToken = session?['token']?.toString();
-      if (sessionToken != null &&
-          sessionToken.isNotEmpty &&
-          authModel != null) {
-        final user = session?['user'] is Map
-            ? Map<String, dynamic>.from(session!['user'] as Map)
-            : null;
-        await authModel.loginWithToken(
-          sessionToken,
-          session?['username']?.toString() ??
-              user?['username']?.toString() ??
-              'alipay_user',
-          userJson: user,
-        );
+      if (session?['sessionStored'] == true && authModel != null) {
+        await authModel.loadStoredAuth();
       }
       if (outcome.loggedOut && authModel != null) await authModel.logout();
       if (!mounted) return;

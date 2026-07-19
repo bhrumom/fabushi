@@ -49,7 +49,7 @@ jobs:
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           --package mahayana-agent-codex
           --package mahayana-agent-responses
-          --package mahayana-product
+          --package mahayana-platform-client
           --package mahayana-cli
 
   test-flutter-codex-binding:

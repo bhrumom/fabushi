@@ -1,0 +1,24 @@
+{
+  "name": "platform-publish",
+  "version": "1.0.0",
+  "description": "平台发布 MCP 应用",
+  "author": { "name": "Fabushi" },
+  "homepage": "https://fabushi.ombhrum.com/miniapps/platform-publish",
+  "license": "Proprietary",
+  "keywords": ["mcp", "publishing"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "platform-publish-local", "platforms": ["cli", "desktop"], "priority": 300 },
+    { "id": "account-http", "server": "platform-publish", "platforms": ["cli", "desktop", "mobile", "web"], "priority": 100 }
+  ],
+  "interface": {
+    "displayName": "平台发布",
+    "shortDescription": "草稿和跨平台发布",
+    "longDescription": "通过 MCP 创建、保存、打开和发布内容草稿。",
+    "developerName": "Fabushi",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://fabushi.ombhrum.com/",
+    "defaultPrompt": ["创建一个发布草稿", "查看发布状态"]
+  }
+}

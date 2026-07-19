@@ -4,9 +4,6 @@ on:
   pull_request:
     paths:
       - native/global-dharma/**
-      - native/mahayana-cli/**
-      - native/mahayana-wrapper/**
-      - native/fabushi-miniapp-runtime/**
       - third_party/mahayana
       - third_party/mahayana/**
       - scripts/install-mahayana.sh
@@ -45,7 +42,7 @@ jobs:
           --package mahayana-core
           --package mahayana-agent-codex
           --package mahayana-agent-responses
-          --package mahayana-product
+          --package mahayana-platform-client
           --package mahayana-runtime
           --package mahayana-ffi
           --package mahayana-cli

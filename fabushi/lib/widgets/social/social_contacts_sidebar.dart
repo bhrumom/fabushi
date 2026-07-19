@@ -30,6 +30,9 @@ class _SocialContactsSidebarState extends State<SocialContactsSidebar> {
     SocialFeatureBotType.globalDharma,
     SocialFeatureBotType.flashcards,
     SocialFeatureBotType.platformPublish,
+    SocialFeatureBotType.hermesInstaller,
+    SocialFeatureBotType.botFather,
+    SocialFeatureBotType.assistant,
   ];
 
   final SocialFriendService _friendService = SocialFriendService();

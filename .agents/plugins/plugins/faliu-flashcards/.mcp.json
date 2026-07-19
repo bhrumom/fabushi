@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "faliu-flashcards-local": { "type": "stdio", "command": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "faliu-flashcards", "mcp-serve"], "cwd": "." },
+    "faliu-flashcards": { "type": "http", "url": "https://api.ombhrum.com/api/mcp/apps/faliu-flashcards" }
+  }
+}

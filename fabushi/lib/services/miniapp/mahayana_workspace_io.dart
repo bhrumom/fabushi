@@ -19,12 +19,38 @@ Future<Map<String, dynamic>> _createRuntimePaths() async {
     workspace.create(recursive: true),
     codexHome.create(recursive: true),
   ]);
+  final bundledPluginMarketplace = _findBundledPluginMarketplace();
   return <String, dynamic>{
     'dataDir': root.path,
     'workspaceRoots': <String>[workspace.path],
     'cwd': workspace.path,
     'codexHome': codexHome.path,
+    if (bundledPluginMarketplace != null)
+      'bundledPluginMarketplace': bundledPluginMarketplace.path,
   };
+}
+
+Directory? _findBundledPluginMarketplace() {
+  final executableDirectory = File(Platform.resolvedExecutable).parent;
+  final candidates = <Directory>[
+    Directory(p.join(executableDirectory.path, 'share', 'mahayana', 'plugins')),
+    Directory(
+      p.join(
+        executableDirectory.parent.path,
+        'Resources',
+        'mahayana',
+        'share',
+        'mahayana',
+        'plugins',
+      ),
+    ),
+  ];
+  for (final candidate in candidates) {
+    if (File(p.join(candidate.path, 'marketplace.json')).existsSync()) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 Future<String?> readMahayanaWorkspaceFile(String relativePath) async {
