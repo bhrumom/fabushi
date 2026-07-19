@@ -6,13 +6,12 @@ on:
       - main
     paths:
       - fabushi/**
-      - native/mahayana-cli/**
-      - native/mahayana-wrapper/**
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
       - .github/scripts/build-desktop-cli.sh
       - .github/scripts/build-mahayana-desktop-bundle.sh
+      - .github/scripts/assert-mahayana-bundle.sh
       - .github/scripts/assert-openclaw-bundle.sh
       - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
@@ -24,13 +23,12 @@ on:
       - main
     paths:
       - fabushi/**
-      - native/mahayana-cli/**
-      - native/mahayana-wrapper/**
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
       - .github/scripts/build-desktop-cli.sh
       - .github/scripts/build-mahayana-desktop-bundle.sh
+      - .github/scripts/assert-mahayana-bundle.sh
       - .github/scripts/assert-openclaw-bundle.sh
       - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
@@ -512,6 +510,7 @@ jobs:
           cleanup
           trap - EXIT
           ../.github/scripts/assert-openclaw-bundle.sh "$install_dir/global_dharma_sharing.app" "${{ steps.openclaw.outputs.platform }}"
+          ../.github/scripts/assert-mahayana-bundle.sh "$install_dir/global_dharma_sharing.app" macos
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" doctor --json
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" gateway-smoke --timeout-seconds 120 --json
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" miniapp-smoke --json
@@ -589,6 +588,8 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install -y "$deb_path"
+          ../.github/scripts/assert-mahayana-bundle.sh /opt/global-dharma-sharing linux
+          mahayana help >/dev/null
           global-dharma-sharing-cli doctor --json
           global-dharma-sharing-cli gateway-smoke --timeout-seconds 120 --json
           global-dharma-sharing-cli miniapp-smoke --json
@@ -641,6 +642,18 @@ jobs:
           Expand-Archive -Path $zip.FullName -DestinationPath $installDir -Force
           $cli = Join-Path $installDir "global_dharma_sharing_cli.exe"
           if (-not (Test-Path $cli)) { throw "Installed package CLI not found: $cli" }
+          $mahayana = Join-Path $installDir "mahayana.exe"
+          $mahayanaRuntime = Join-Path $installDir "mahayana_runtime.dll"
+          if (-not (Test-Path $mahayana)) { throw "Bundled Mahayana CLI not found: $mahayana" }
+          if (-not (Test-Path $mahayanaRuntime)) { throw "Bundled Mahayana Runtime not found: $mahayanaRuntime" }
+          & $mahayana help | Out-Null
+          $mahayanaHome = Join-Path $env:RUNNER_TEMP "mahayana-home"
+          New-Item -ItemType Directory -Force -Path $mahayanaHome | Out-Null
+          $env:MAHAYANA_HOME = $mahayanaHome
+          $mahayanaStatus = (& $mahayana status | Out-String) | ConvertFrom-Json
+          if ($mahayanaStatus.model -ne "deepseek-chat") { throw "Unexpected Mahayana model" }
+          if ($mahayanaStatus.modelProvider -ne "first-party-dacheng") { throw "Unexpected Mahayana provider" }
+          if ($mahayanaStatus.remoteAgentEnabled -ne $false) { throw "Remote Mahayana agent must stay disabled" }
           & $cli doctor --json
           & $cli gateway-smoke --timeout-seconds 120 --json
           & $cli miniapp-smoke --json

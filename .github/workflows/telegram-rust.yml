@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'native/telegram-*/**'
-      - 'native/mahayana-wrapper/**'
       - 'third_party/mahayana'
       - 'third_party/mahayana/**'
       - 'fabushi/lib/services/telegram/**'
@@ -31,7 +30,6 @@ on:
   push:
     paths:
       - 'native/telegram-*/**'
-      - 'native/mahayana-wrapper/**'
       - 'third_party/mahayana'
       - 'third_party/mahayana/**'
       - 'fabushi/lib/services/telegram/**'

@@ -128,8 +128,11 @@ jobs:
         env:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         run: |
+          set -euo pipefail
           flutter pub get
           flutter build apk --debug --target-platform android-arm64
+          unzip -Z1 build/app/outputs/flutter-apk/app-debug.apk |
+            grep -Fx 'lib/arm64-v8a/libmahayana_runtime.so' >/dev/null
 
   android-native-install:
     name: Android native package install smoke
@@ -193,8 +196,11 @@ jobs:
         env:
           GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
         run: |
+          set -euo pipefail
           flutter pub get
           flutter build apk --debug --target-platform android-x64
+          unzip -Z1 build/app/outputs/flutter-apk/app-debug.apk |
+            grep -Fx 'lib/x86_64/libmahayana_runtime.so' >/dev/null
 
       - name: Install and launch Android APK on emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -255,5 +261,16 @@ jobs:
 
       - name: Build iOS app without code signing
         run: |
+          set -euo pipefail
           flutter pub get
           flutter build ios --debug --no-codesign
+          app_path="$(find build/ios/iphoneos -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Built iOS app bundle was not found." >&2
+            exit 1
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          for symbol in create execute receive interrupt resolve_approval close free_string; do
+            nm -gU "$app_path/$executable" | grep "_mahayana_runtime_${symbol}$" >/dev/null
+          done
+          nm -gU "$app_path/$executable" | grep '_mahayana_product_execute$' >/dev/null

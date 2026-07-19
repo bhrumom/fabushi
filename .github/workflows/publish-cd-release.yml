@@ -361,6 +361,19 @@ jobs:
           flutter build apk --release --build-number "$RELEASE_BUILD_NUMBER" --target-platform android-arm64
           flutter build appbundle --release --build-number "$RELEASE_BUILD_NUMBER"
 
+      - name: Verify Mahayana Runtime in Android install packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="build/app/outputs/flutter-apk/app-release.apk"
+          aab_path="build/app/outputs/bundle/release/app-release.aab"
+          test -f "$apk_path"
+          test -f "$aab_path"
+          unzip -Z1 "$apk_path" | grep -Fx 'lib/arm64-v8a/libmahayana_runtime.so' >/dev/null
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -Z1 "$aab_path" | grep -Fx "base/lib/$abi/libmahayana_runtime.so" >/dev/null
+          done
+
       - name: Verify packaged Android launcher icon
         shell: bash
         run: |
@@ -880,6 +893,19 @@ jobs:
             echo "flutter build ipa completed but no IPA was found under build/ios/ipa" >&2
             exit 1
           fi
+          ipa_extract="$(mktemp -d)"
+          trap 'rm -rf "$ipa_extract"' EXIT
+          ditto -x -k "$ipa_path" "$ipa_extract"
+          app_path="$(find "$ipa_extract/Payload" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Signed IPA does not contain an app bundle." >&2
+            exit 1
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          for symbol in create execute receive interrupt resolve_approval close free_string; do
+            nm -gU "$app_path/$executable" | grep "_mahayana_runtime_${symbol}$" >/dev/null
+          done
+          nm -gU "$app_path/$executable" | grep '_mahayana_product_execute$' >/dev/null
           cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 
       - name: Upload signed iOS IPA to App Store Connect

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "hermes-installer"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "install", "tool": "install" },
+    { "name": "start", "tool": "start" },
+    { "name": "status", "tool": "status" },
+    { "name": "chat", "tool": "chat" },
+    { "name": "stop", "tool": "stop" },
+    { "name": "reset", "tool": "reset" }
+  ]
+}

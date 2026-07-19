@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": { "executable": "./runtime/cli/fabushi-plugin-cli", "args": ["--plugin", "global-dharma"] },
+    "wasm": { "module": "./runtime/wasm/fabushi_official_miniapps_bg.wasm", "export": "OfficialMiniAppRuntime" }
+  },
+  "commands": [
+    { "name": "start", "tool": "start" },
+    { "name": "stop", "tool": "stop" },
+    { "name": "loop", "tool": "loop" },
+    { "name": "status", "tool": "status" },
+    { "name": "send", "tool": "send" },
+    { "name": "logs", "tool": "logs" },
+    { "name": "validate", "tool": "validate_config" },
+    { "name": "deploy", "tool": "deploy_latest" }
+  ]
+}

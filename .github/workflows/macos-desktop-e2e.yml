@@ -233,14 +233,14 @@ jobs:
           - desktop/mini-app state consistency
 
           Automated evidence in this workflow:
-          - json/08-miniapp-smoke.json validates built-in official mini-app registry entries
-          - json/08-miniapp-smoke.json validates trusted manifests, entry URLs, home/chat surfaces, and permission consistency
-          - json/08-miniapp-smoke.json validates host API core interactions: app.getContext and app.getCapabilities
-          - json/08-miniapp-smoke.json validates unsupported-method exception recovery keeps the host ready
-          - json/08-miniapp-smoke.json validates returning to the desktop home state preserves the last mini-app id
+          - json/08-miniapp-smoke.json validates the six official Codex plugin registry entries
+          - json/08-miniapp-smoke.json validates exact MCP Tool contracts and four-platform runtimeVariants
+          - json/08-miniapp-smoke.json validates versioned MCP App home resources and their MIME type
+          - json/08-miniapp-smoke.json rejects missing MCP servers, platform coverage, and non-versioned UI resources
+          - json/08-miniapp-smoke.json verifies the packaged desktop entry uses the MCP plugin contract
 
           Remaining limitation:
-          This is a packaged host-contract smoke test, not pixel/coordinate-driven WebView clicking. It now fails the workflow if the mini-app contract breaks instead of recording a passive gap.
+          This is a packaged MCP contract smoke test, not pixel/coordinate-driven WebView clicking. It fails the workflow if the plugin contract breaks instead of recording a passive gap.
           EOF
           cat "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
 

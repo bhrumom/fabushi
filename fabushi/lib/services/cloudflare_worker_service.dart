@@ -1,105 +1,58 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
-import 'app_settings.dart';
 
-/// Cloudflare Worker 专用服务
-/// 处理与 Cloudflare Worker 后端的所有交互
+import 'mahayana_sdk.dart';
+
+/// Flutter compatibility facade over the Mahayana Rust platform client.
+///
+/// The String token parameters remain temporarily for source compatibility,
+/// but are deliberately ignored: Flutter never receives or attaches account
+/// credentials. Rust owns login state, refresh rotation, and HTTP headers.
 class CloudflareWorkerService {
-  // 获取后端URL
-  Future<String> get baseUrl async {
-    return await AppSettings.getBackendUrl();
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+  }) async {
+    try {
+      final response = await MahayanaSdk.instance.platformRequest(
+        method: method,
+        path: path,
+        body: body,
+        authenticated: authenticated,
+      );
+      final data = response['data'] is Map
+          ? Map<String, dynamic>.from(response['data'] as Map)
+          : <String, dynamic>{};
+      if (response['ok'] == true) return {'success': true, ...data};
+      return {
+        'success': false,
+        'message': data['error'] ?? data['message'] ?? '请求失败',
+        'statusCode': response['statusCode'],
+      };
+    } catch (error) {
+      debugPrint('大乘 Rust 平台请求失败: $error');
+      return {'success': false, 'message': error.toString()};
+    }
   }
 
-  // 微信登录相关
   Future<Map<String, dynamic>> getWechatLoginUrl() async {
-    try {
-      final url = await baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/auth/wechat/login-url'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'authUrl': data['authUrl'],
-          'state': data['state'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取微信登录URL失败'};
-      }
-    } catch (e) {
-      debugPrint('获取微信登录URL失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
+    final data = await _request(
+      'GET',
+      '/api/auth/wechat/login-url',
+      authenticated: false,
+    );
+    return {...data, 'authUrl': data['authUrl'], 'state': data['state']};
   }
 
-  Future<Map<String, dynamic>> wechatLogin(String code, String? state) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/wechat/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code, 'state': state}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'isNewUser': data['isNewUser'] ?? false,
-          'needsRegistration': data['needsRegistration'] ?? false,
-          'wechatUser': data['wechatUser'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '微信登录失败'};
-      }
-    } catch (e) {
-      debugPrint('微信登录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
+  Future<Map<String, dynamic>> wechatLogin(String code, String? state) async =>
+      _removedWechatCredentialFlow();
 
   Future<Map<String, dynamic>> bindWechat(
     String openid,
     String email,
     String password,
-  ) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/wechat/bind'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'openid': openid,
-          'email': email,
-          'password': password,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'message': data['message'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '微信绑定失败'};
-      }
-    } catch (e) {
-      debugPrint('微信绑定失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
+  ) async => _removedWechatCredentialFlow();
 
   Future<Map<String, dynamic>> wechatRegister({
     required String openid,
@@ -108,297 +61,53 @@ class CloudflareWorkerService {
     String? nickname,
     String? headimgurl,
     String? email,
-  }) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/wechat/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'openid': openid,
-          'username': username,
-          'password': password,
-          'nickname': nickname,
-          'headimgurl': headimgurl,
-          'email': email,
-        }),
-      );
+  }) async => _removedWechatCredentialFlow();
 
-      if (response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'token': data['token'],
-          'username': data['username'],
-          'message': data['message'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '微信注册失败'};
-      }
-    } catch (e) {
-      debugPrint('微信注册失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
+  Map<String, dynamic> _removedWechatCredentialFlow() => const {
+    'success': false,
+    'message': '旧微信 token 登录已移除；请等待 Rust 微信委托登录上线',
+  };
+
+  Future<Map<String, dynamic>> unbindWechat(String ignoredToken) =>
+      _request('POST', '/api/auth/wechat/unbind', body: const {});
+
+  Future<Map<String, dynamic>> getUserInfo(String ignoredToken) async {
+    final data = await _request('GET', '/api/auth/user-info');
+    return {'success': data['success'], 'user': data};
   }
 
-  Future<Map<String, dynamic>> unbindWechat(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/wechat/unbind'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'message': data['message']};
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '微信解绑失败'};
-      }
-    } catch (e) {
-      debugPrint('微信解绑失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // 获取用户详细信息
-  Future<Map<String, dynamic>> getUserInfo(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/auth/user-info'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'user': data};
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取用户信息失败'};
-      }
-    } catch (e) {
-      debugPrint('获取用户信息失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // 绑定邮箱
   Future<Map<String, dynamic>> bindEmail(
-    String token,
+    String ignoredToken,
     String email,
     String verificationCode,
-  ) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/auth/bind-email'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'verificationCode': verificationCode,
-        }),
-      );
+  ) => _request(
+    'POST',
+    '/api/auth/bind-email',
+    body: {'email': email, 'verificationCode': verificationCode},
+  );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': data['message'],
-          'email': data['email'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '绑定邮箱失败'};
-      }
-    } catch (e) {
-      debugPrint('绑定邮箱失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
+  Future<Map<String, dynamic>> getPurchaseHistory(String ignoredToken) =>
+      _request('GET', '/api/admin/purchase-history');
 
-  // 获取购买记录
-  Future<Map<String, dynamic>> getPurchaseHistory(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/admin/purchase-history'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+  Future<Map<String, dynamic>> getRedeemHistory(String ignoredToken) =>
+      _request('GET', '/api/admin/redeem-history');
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'purchases': data['purchases'],
-          'total': data['total'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取购买记录失败'};
-      }
-    } catch (e) {
-      debugPrint('获取购买记录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // 获取兑换记录
-  Future<Map<String, dynamic>> getRedeemHistory(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.get(
-        Uri.parse('$url/api/admin/redeem-history'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'redeems': data['redeems'],
-          'total': data['total'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取兑换记录失败'};
-      }
-    } catch (e) {
-      debugPrint('获取兑换记录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // 删除兑换码（管理员功能）
   Future<Map<String, dynamic>> deleteRedeemCode(
-    String token,
+    String ignoredToken,
     String code,
-  ) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.delete(
-        Uri.parse('$url/api/admin/delete-redeem-code'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'code': code}),
-      );
+  ) =>
+      _request('DELETE', '/api/admin/delete-redeem-code', body: {'code': code});
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'message': data['message']};
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '删除兑换码失败'};
-      }
-    } catch (e) {
-      debugPrint('删除兑换码失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
+  Future<Map<String, dynamic>> getAdminPrice(
+    String ignoredToken,
+    String plan,
+  ) => _request('POST', '/api/admin/get-price', body: {'plan': plan});
 
-  // 获取管理员价格
-  Future<Map<String, dynamic>> getAdminPrice(String token, String plan) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/admin/get-price'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'plan': plan}),
-      );
+  Future<Map<String, dynamic>> cancelSubscription(String ignoredToken) =>
+      _request('POST', '/api/stripe/cancel-subscription', body: const {});
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'isAdmin': data['isAdmin'],
-          'originalPrice': data['originalPrice'],
-          'adminPrice': data['adminPrice'],
-          'price': data['price'],
-          'plan': data['plan'],
-        };
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '获取价格失败'};
-      }
-    } catch (e) {
-      debugPrint('获取价格失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // Stripe 取消订阅
-  Future<Map<String, dynamic>> cancelSubscription(String token) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/stripe/cancel-subscription'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'message': data['message']};
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '取消订阅失败'};
-      }
-    } catch (e) {
-      debugPrint('取消订阅失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
-
-  // 同步修行记录
   Future<Map<String, dynamic>> syncMeditationRecord(
-    String token,
+    String ignoredToken,
     Map<String, dynamic> recordData,
-  ) async {
-    try {
-      final url = await baseUrl;
-      final response = await http.post(
-        Uri.parse('$url/api/meditation/record'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(recordData),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'message': data['message']};
-      } else {
-        final data = jsonDecode(response.body);
-        return {'success': false, 'message': data['error'] ?? '同步修行记录失败'};
-      }
-    } catch (e) {
-      debugPrint('同步修行记录失败: $e');
-      return {'success': false, 'message': '网络连接失败'};
-    }
-  }
+  ) => _request('POST', '/api/meditation/record', body: recordData);
 }

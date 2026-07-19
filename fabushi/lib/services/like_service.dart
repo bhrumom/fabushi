@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/config/app_config.dart';
 import '../models/liked_item.dart';
+import 'mahayana_sdk.dart';
 
 abstract class LikeHttpClient {
   Future<http.Response> get(Uri url, {Map<String, String>? headers});
@@ -66,16 +67,19 @@ class LikeService extends ChangeNotifier {
 
   LikeService._internal()
     : _httpClient = DefaultLikeHttpClient(),
-      _storage = SharedPreferencesLikeStorage();
+      _storage = SharedPreferencesLikeStorage(),
+      _useRustTransport = true;
 
   LikeService.withDependencies({
     LikeHttpClient? httpClient,
     LikeStorage? storage,
   }) : _httpClient = httpClient ?? DefaultLikeHttpClient(),
-       _storage = storage ?? SharedPreferencesLikeStorage();
+       _storage = storage ?? SharedPreferencesLikeStorage(),
+       _useRustTransport = false;
 
   final LikeHttpClient _httpClient;
   final LikeStorage _storage;
+  final bool _useRustTransport;
   final Map<String, LikedItem> _likedItems = {};
   final Map<String, int> _likeCounts = {};
   bool _isInitialized = false;
@@ -204,16 +208,23 @@ class LikeService extends ChangeNotifier {
     if (_authToken == null) return;
 
     try {
-      final response = await _httpClient.get(
-        Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
-        headers: {'Authorization': 'Bearer $_authToken'},
-      );
-
-      if (response.statusCode != 200) {
-        return;
+      final Map<String, dynamic>? data;
+      if (_useRustTransport) {
+        final response = await MahayanaSdk.instance.platformRequest(
+          method: 'GET',
+          path: '/api/likes/my-likes',
+        );
+        if (response['ok'] != true) return;
+        data = response['data'] is Map
+            ? Map<String, dynamic>.from(response['data'] as Map)
+            : null;
+      } else {
+        final response = await _httpClient.get(
+          Uri.parse('${AppConfig.apiUrl}/api/likes/my-likes'),
+        );
+        if (response.statusCode != 200) return;
+        data = _tryParseBodyAsMap(response.body);
       }
-
-      final data = _tryParseBodyAsMap(response.body);
       final likes = data?['likes'];
       if (data?['success'] != true || likes is! List) {
         return;
@@ -246,11 +257,6 @@ class LikeService extends ChangeNotifier {
     String? filePath,
   }) async {
     try {
-      final headers = <String, String>{'Content-Type': 'application/json'};
-      if (_authToken != null) {
-        headers['Authorization'] = 'Bearer $_authToken';
-      }
-
       final body = <String, dynamic>{
         'contentId': contentId,
         'contentType': contentType,
@@ -266,17 +272,27 @@ class LikeService extends ChangeNotifier {
         }
       }
 
-      final response = await _httpClient.post(
-        Uri.parse('${AppConfig.apiUrl}/api/likes/toggle'),
-        headers: headers,
-        body: jsonEncode(body),
-      );
-
-      if (response.statusCode != 200) {
-        return;
+      final Map<String, dynamic>? data;
+      if (_useRustTransport) {
+        final response = await MahayanaSdk.instance.platformRequest(
+          method: 'POST',
+          path: '/api/likes/toggle',
+          body: body,
+          authenticated: _authToken != null,
+        );
+        if (response['ok'] != true) return;
+        data = response['data'] is Map
+            ? Map<String, dynamic>.from(response['data'] as Map)
+            : null;
+      } else {
+        final response = await _httpClient.post(
+          Uri.parse('${AppConfig.apiUrl}/api/likes/toggle'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        );
+        if (response.statusCode != 200) return;
+        data = _tryParseBodyAsMap(response.body);
       }
-
-      final data = _tryParseBodyAsMap(response.body);
       final likeCount = data?['likeCount'];
       if (likeCount is num) {
         _likeCounts[contentId] = likeCount.toInt();
@@ -291,17 +307,27 @@ class LikeService extends ChangeNotifier {
     if (contentIds.isEmpty) return;
 
     try {
-      final response = await _httpClient.post(
-        Uri.parse('${AppConfig.apiUrl}/api/likes/batch-counts'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'contentIds': contentIds}),
-      );
-
-      if (response.statusCode != 200) {
-        return;
+      final Map<String, dynamic>? data;
+      if (_useRustTransport) {
+        final response = await MahayanaSdk.instance.platformRequest(
+          method: 'POST',
+          path: '/api/likes/batch-counts',
+          body: {'contentIds': contentIds},
+          authenticated: false,
+        );
+        if (response['ok'] != true) return;
+        data = response['data'] is Map
+            ? Map<String, dynamic>.from(response['data'] as Map)
+            : null;
+      } else {
+        final response = await _httpClient.post(
+          Uri.parse('${AppConfig.apiUrl}/api/likes/batch-counts'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'contentIds': contentIds}),
+        );
+        if (response.statusCode != 200) return;
+        data = _tryParseBodyAsMap(response.body);
       }
-
-      final data = _tryParseBodyAsMap(response.body);
       final counts = data?['likeCounts'];
       if (counts is! Map) {
         return;
@@ -337,16 +363,23 @@ class LikeService extends ChangeNotifier {
     if (_authToken == null) return;
 
     try {
-      final response = await _httpClient.get(
-        Uri.parse('${AppConfig.apiUrl}/api/likes/received-count'),
-        headers: {'Authorization': 'Bearer $_authToken'},
-      );
-
-      if (response.statusCode != 200) {
-        return;
+      final Map<String, dynamic>? data;
+      if (_useRustTransport) {
+        final response = await MahayanaSdk.instance.platformRequest(
+          method: 'GET',
+          path: '/api/likes/received-count',
+        );
+        if (response['ok'] != true) return;
+        data = response['data'] is Map
+            ? Map<String, dynamic>.from(response['data'] as Map)
+            : null;
+      } else {
+        final response = await _httpClient.get(
+          Uri.parse('${AppConfig.apiUrl}/api/likes/received-count'),
+        );
+        if (response.statusCode != 200) return;
+        data = _tryParseBodyAsMap(response.body);
       }
-
-      final data = _tryParseBodyAsMap(response.body);
       final receivedLikeCount = data?['receivedLikeCount'];
       if (data?['success'] == true && receivedLikeCount is num) {
         _receivedLikeCount = receivedLikeCount.toInt();
