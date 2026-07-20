@@ -51,6 +51,7 @@ case "$target" in
     cli_destination="$bundle/MacOS/mahayana"
     runtime_destination="$bundle/Frameworks/libmahayana_runtime.dylib"
     share_destination="$bundle/Resources/mahayana/share"
+    plugin_cli_name="fabushi-plugin-cli"
     ;;
   linux)
     bundle="${bundle_override:-build/linux/x64/release/bundle}"
@@ -59,6 +60,7 @@ case "$target" in
     cli_destination="$bundle/mahayana"
     runtime_destination="$bundle/lib/libmahayana_runtime.so"
     share_destination="$bundle/share"
+    plugin_cli_name="fabushi-plugin-cli"
     ;;
   windows)
     bundle="${bundle_override:-build/windows/x64/runner/Release}"
@@ -67,6 +69,7 @@ case "$target" in
     cli_destination="$bundle/mahayana.exe"
     runtime_destination="$bundle/mahayana_runtime.dll"
     share_destination="$bundle/share"
+    plugin_cli_name="fabushi-plugin-cli.exe"
     ;;
   *)
     echo "unsupported Mahayana desktop target: $target" >&2
@@ -99,8 +102,9 @@ cp "$runtime_root/mahayana-rs/UPSTREAM.md" \
   "$share_destination/mahayana/UPSTREAM.md"
 cp "$runtime_root/mahayana-rs/UPSTREAM.lock" \
   "$share_destination/mahayana/UPSTREAM.lock"
+plugins_destination="$share_destination/mahayana/plugins"
 "$repo_root/scripts/package-official-plugins.sh" \
-  "$target" "$share_destination/mahayana/plugins"
+  "$target" "$plugins_destination"
 
 if [ "$target" != "windows" ]; then
   chmod 0755 "$cli_destination"
@@ -116,6 +120,20 @@ status_json="$(MAHAYANA_HOME="$smoke_home" "$cli_destination" status)"
 grep -Eq '"model"[[:space:]]*:[[:space:]]*"deepseek-chat"' <<<"$status_json"
 grep -Eq '"modelProvider"[[:space:]]*:[[:space:]]*"first-party-dacheng"' <<<"$status_json"
 grep -Eq '"remoteAgentEnabled"[[:space:]]*:[[:space:]]*false' <<<"$status_json"
-MAHAYANA_HOME="$smoke_home" "$cli_destination" miniapp execute \
-  '{"@type":"runtime.getStatus"}' >/dev/null
+
+if [ ! -f "$plugins_destination/marketplace.json" ]; then
+  echo "Bundled official plugin marketplace is missing." >&2
+  exit 1
+fi
+plugin_cli="$(find "$plugins_destination/plugins" -path "*/runtime/cli/$plugin_cli_name" -type f -print -quit)"
+if [ -z "$plugin_cli" ]; then
+  echo "Bundled official plugin CLI is missing for $target." >&2
+  exit 1
+fi
+plugin_wasm="$(find "$plugins_destination/plugins" -path '*/runtime/wasm/*.wasm' -type f -print -quit)"
+if [ -z "$plugin_wasm" ]; then
+  echo "Bundled official plugin WASM runtime is missing." >&2
+  exit 1
+fi
+
 echo "Bundled the in-process Mahayana CLI ($bundle_mode) into $bundle"
