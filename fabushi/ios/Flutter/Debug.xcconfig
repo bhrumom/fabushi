@@ -1,2 +1,6 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// Dart FFI resolves the statically linked Mahayana ABI through
+// DynamicLibrary.process(), so debug exports must retain global C symbols.
+OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic
