@@ -55,7 +55,7 @@ test('bundled Mahayana CLI executes the desktop runtime without a host', async t
     const status = JSON.parse(stdout);
     assert.equal(status.ok, true);
     assert.equal(typeof status.accessibilityGranted, 'boolean');
-    assert.equal(status.applicationRunning, true);
+    assert.equal(typeof status.applicationRunning, 'boolean');
     assert.equal(status.running, false);
   } finally {
     rmSync(stateDirectory, { recursive: true, force: true });

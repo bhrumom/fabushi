@@ -69,7 +69,7 @@ tar -xzf "$OPENCLAW_TGZ" -C "$OUT_DIR/openclaw" --strip-components=1
 
 echo "==> Installing production dependencies into bundled OpenClaw package"
 pushd "$OUT_DIR/openclaw" >/dev/null
-if [[ -f package-lock.json ]]; then
+if [[ -f npm-shrinkwrap.json || -f package-lock.json ]]; then
   "${NPM_CMD[@]}" ci --omit=dev
 else
   "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
@@ -89,7 +89,7 @@ if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
 
   echo "==> Installing production dependencies into bundled WeChat plugin"
   pushd "$OUT_DIR/plugins/openclaw-weixin" >/dev/null
-  if [[ -f package-lock.json ]]; then
+  if [[ -f npm-shrinkwrap.json || -f package-lock.json ]]; then
     "${NPM_CMD[@]}" ci --omit=dev
   else
     "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
