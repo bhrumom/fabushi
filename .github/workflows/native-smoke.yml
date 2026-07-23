@@ -30,7 +30,6 @@ permissions:
 jobs:
   resolve-source:
     name: Resolve source commit
-    needs: []
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -53,4 +52,225 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "Resolved source SHA: $source_sha"
 
-# The remaining jobs are unchanged.
+  android-native-build:
+    name: Android native package build smoke
+    needs: resolve-source
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            /native/telegram-*/**
+            /third_party/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
+
+      - name: Verify Android Buddha uses flutter_scene model
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if [ -d fabushi/web/assets/models ] && find fabushi/web/assets/models -name '*.glb' -print -quit | grep -q .; then
+            echo "Android builds must not package GLB model assets."
+            exit 1
+          fi
+          if grep -R -n -E 'AndroidThreeBuddhaView|androidThreePrimary|_shouldUseAndroidThreePrimary|_startAndroidThreePrimary|androidThreeBuddhaGlbAssetPath|legacyBuddhaGlb|minBuddhaGlbSizeBytes' fabushi/lib fabushi/test fabushi/pubspec.yaml; then
+            echo "Android Buddha renderer must stay on flutter_scene .model."
+            exit 1
+          fi
+          grep -q "models/buddha_model.model" fabushi/lib/core/config/app_config.dart
+          grep -q "AssetLoaderService.loadBuddhaModel" fabushi/lib/screens/buddha_model_screen_native.dart
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
+      - name: Build Android debug APK package
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk --debug --target-platform android-arm64
+          unzip -Z1 build/app/outputs/flutter-apk/app-debug.apk |
+            grep -Fx 'lib/arm64-v8a/libmahayana_runtime.so' >/dev/null
+
+  android-native-install:
+    name: Android native package install smoke
+    needs: resolve-source
+    if: github.event_name != 'pull_request'
+    runs-on: macos-13
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout Android source and native test helper
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            /native/telegram-*/**
+            /third_party/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+            /.github/scripts/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Increase Gradle heap for hosted runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          kotlin.daemon.jvm.options=-Xmx3g
+          EOF
+
+      - name: Build Android debug APK for emulator install test
+        env:
+          GRADLE_OPTS: -Xmx6g -Dfile.encoding=UTF-8
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk --debug --target-platform android-x64
+          unzip -Z1 build/app/outputs/flutter-apk/app-debug.apk |
+            grep -Fx 'lib/x86_64/libmahayana_runtime.so' >/dev/null
+
+      - name: Install and launch Android APK on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: cd fabushi && bash ../.github/scripts/native-install-smoke.sh android
+
+      - name: Upload Android native install diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-install-diagnostics
+          path: |
+            ${{ runner.temp }}/fabushi-android-logcat.txt
+          if-no-files-found: ignore
+
+  ios-native-build:
+    name: iOS native package build smoke
+    needs: resolve-source
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: fabushi
+    steps:
+      - name: Checkout iOS source
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fabushi/**
+            /native/telegram-*/**
+            /third_party/**
+            !/fabushi/assets/built_in/**
+            !/fabushi/web/assets/built_in/**
+            !/fabushi/native_libs/llama.cpp
+            !/fabushi/native_libs/llama.cpp/**
+
+      - name: Initialize submodules securely
+        shell: bash
+        run: git submodule update --init --recursive
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build iOS app without code signing
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ios --debug --no-codesign
+          app_path="$(find build/ios/iphoneos -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Built iOS app bundle was not found." >&2
+            exit 1
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          for symbol in create execute receive interrupt resolve_approval close free_string; do
+            nm -gU "$app_path/$executable" | grep "_mahayana_runtime_${symbol}$" >/dev/null
+          done
+          nm -gU "$app_path/$executable" | grep '_mahayana_product_execute$' >/dev/null
