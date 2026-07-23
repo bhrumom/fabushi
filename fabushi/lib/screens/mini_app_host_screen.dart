@@ -492,10 +492,28 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
     final rawRequest = structuredContent['hostRequest'];
     if (rawRequest is! Map) return;
     final request = Map<String, dynamic>.from(rawRequest);
-    final approved = await _approveRuntimeRequest({
-      'title': '允许宿主执行 ${request['capability'] ?? '系统能力'}？',
-      'details': {'pluginId': _pluginId, 'tool': tool, 'hostRequest': request},
-    });
+    final capability = request['capability']?.toString() ?? '';
+    final isKnownReadOnlyRequest =
+        request['approval'] == 'none' &&
+        const {
+          'desktop.chatgpt-approvals.status',
+          'desktop.chatgpt-approvals.audit',
+          'desktop.chatgpt-approvals.diagnose',
+          'desktop.chatgpt-approvals.get-reply',
+          'desktop.chatgpt-approvals.chat-status',
+          'desktop.chatgpt-approvals.queue-status',
+          'desktop.chatgpt-approvals.queue-wait-review',
+        }.contains(capability);
+    final approved =
+        isKnownReadOnlyRequest ||
+        await _approveRuntimeRequest({
+          'title': '允许宿主执行 ${request['capability'] ?? '系统能力'}？',
+          'details': {
+            'pluginId': _pluginId,
+            'tool': tool,
+            'hostRequest': request,
+          },
+        });
     if (!approved) {
       structuredContent['hostResult'] = {
         'handled': true,

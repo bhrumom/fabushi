@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -25,6 +26,9 @@ class MiniAppHostCapabilityBridge {
     final params = request['params'] is Map
         ? Map<String, dynamic>.from(request['params'] as Map)
         : <String, dynamic>{};
+    if (capability.startsWith('desktop.chatgpt-approvals.')) {
+      return _runChatGptApprovalCapability(capability, params, onProgress);
+    }
     return switch (capability) {
       'network.send' => _sendNetwork(params, onProgress),
       'network.udp.send' => _sendUdpDatagrams(params, onProgress),
@@ -34,6 +38,217 @@ class MiniAppHostCapabilityBridge {
         'reason': '该能力需要由对应的宿主服务适配器处理',
       }),
     };
+  }
+
+  Future<Map<String, dynamic>> _runChatGptApprovalCapability(
+    String capability,
+    Map<String, dynamic> params,
+    MiniAppCapabilityProgress onProgress,
+  ) async {
+    if (!Platform.isMacOS) {
+      return {
+        'handled': true,
+        'ok': false,
+        'capability': capability,
+        'error': 'ChatGPT 自动确认当前仅支持 macOS 桌面端',
+      };
+    }
+    final runtime = await _findChatGptApprovalRuntime();
+    if (runtime == null) {
+      return {
+        'handled': true,
+        'ok': false,
+        'capability': capability,
+        'error': '未找到 ChatGPT 自动确认原生运行时，请先安装或更新小程序',
+      };
+    }
+    final suffix = capability.substring('desktop.chatgpt-approvals.'.length);
+    final arguments = switch (suffix) {
+      'start' => ['start', jsonEncode(params)],
+      'stop' => const ['stop'],
+      'status' => const ['status'],
+      'scan-once' => ['scan', jsonEncode(params)],
+      'relaunch-and-confirm' => ['relaunch_and_confirm', jsonEncode(params)],
+      'audit' => ['audit', '${params['limit'] ?? 20}'],
+      'diagnose' => const ['diagnose'],
+      'send-and-watch' => ['send_and_watch', jsonEncode(params)],
+      'add-connector' => ['add_connector', jsonEncode(params)],
+      'get-reply' => ['get_reply', jsonEncode(params)],
+      'chat-status' => ['chat_status', jsonEncode(params)],
+      'queue-enqueue' => ['queue_enqueue', jsonEncode(params)],
+      'queue-start' => ['queue_start', jsonEncode(params)],
+      'queue-status' => const ['queue_status'],
+      'queue-wait-review' => ['queue_wait_review', jsonEncode(params)],
+      'queue-review' => ['queue_review', jsonEncode(params)],
+      'queue-pause' => const ['queue_pause'],
+      'queue-resume' => const ['queue_resume'],
+      'queue-retry' => ['queue_retry', jsonEncode(params)],
+      'queue-cancel' => ['queue_cancel', jsonEncode(params)],
+      _ => const <String>[],
+    };
+    if (arguments.isEmpty) {
+      return {
+        'handled': false,
+        'capability': capability,
+        'reason': '未知的 ChatGPT 自动确认能力',
+      };
+    }
+    if (suffix == 'send-and-watch') {
+      return _runChatGptSendAndWatch(
+        runtime,
+        arguments,
+        params,
+        capability,
+        onProgress,
+      );
+    }
+    final result = await Process.run(runtime, arguments, runInShell: false);
+    return _nativeChatGptResult(
+      capability,
+      result.exitCode,
+      result.stdout.toString(),
+      result.stderr.toString(),
+    );
+  }
+
+  Future<Map<String, dynamic>> _runChatGptSendAndWatch(
+    String runtime,
+    List<String> arguments,
+    Map<String, dynamic> params,
+    String capability,
+    MiniAppCapabilityProgress onProgress,
+  ) async {
+    final process = await Process.start(runtime, arguments, runInShell: false);
+    final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+    final stderrFuture = process.stderr.transform(utf8.decoder).join();
+    final pollIntervalMs = ((params['pollIntervalMs'] as num?)?.toInt() ?? 500)
+        .clamp(200, 5000);
+    var polling = false;
+    var finished = false;
+    var lastSignature = '';
+
+    Future<void> pollReply() async {
+      if (polling || finished) return;
+      polling = true;
+      try {
+        final polled = await Process.run(runtime, [
+          'get_reply',
+          jsonEncode({'chatUrl': params['chatUrl']}),
+        ], runInShell: false);
+        final reply = _decodeLastJson(polled.stdout.toString());
+        if (polled.exitCode != 0 || reply == null || reply['ok'] != true) {
+          return;
+        }
+        final signature = jsonEncode([
+          reply['messageCount'],
+          reply['userMessageCount'],
+          reply['charCount'],
+          reply['streaming'],
+          reply['pending'],
+          reply['done'],
+        ]);
+        if (signature == lastSignature || finished) return;
+        lastSignature = signature;
+        final done = reply['done'] == true;
+        final pending = reply['pending'] == true;
+        onProgress({
+          'progress': done ? 1 : 0,
+          'total': 1,
+          'message': done
+              ? 'ChatGPT 回复完成'
+              : pending
+              ? 'ChatGPT 正在处理，等待新回复'
+              : '正在实时接收 ChatGPT 回复（${reply['charCount'] ?? 0} 字）',
+          'reply': reply,
+        });
+      } finally {
+        polling = false;
+      }
+    }
+
+    final timer = Timer.periodic(
+      Duration(milliseconds: pollIntervalMs),
+      (_) => unawaited(pollReply()),
+    );
+    unawaited(pollReply());
+    final exitCode = await process.exitCode;
+    finished = true;
+    timer.cancel();
+    final stdout = await stdoutFuture;
+    final stderr = await stderrFuture;
+    final result = _nativeChatGptResult(capability, exitCode, stdout, stderr);
+    final finalReply = result['reply'];
+    if (finalReply is Map) {
+      onProgress({
+        'progress': finalReply['done'] == true ? 1 : 0,
+        'total': 1,
+        'message': finalReply['done'] == true
+            ? 'ChatGPT 回复完成'
+            : 'ChatGPT 回复尚未完成',
+        'reply': Map<String, dynamic>.from(finalReply),
+      });
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _nativeChatGptResult(
+    String capability,
+    int exitCode,
+    String stdout,
+    String stderr,
+  ) {
+    final decoded = _decodeLastJson(stdout);
+    if (decoded == null) {
+      return {
+        'handled': true,
+        'ok': false,
+        'capability': capability,
+        'error': stderr.trim().isNotEmpty
+            ? stderr.trim()
+            : 'ChatGPT 自动确认原生运行时没有返回有效结果',
+        'exitCode': exitCode,
+      };
+    }
+    return {
+      'handled': true,
+      'capability': capability,
+      ...decoded,
+      if (exitCode != 0) 'exitCode': exitCode,
+    };
+  }
+
+  Map<String, dynamic>? _decodeLastJson(String value) {
+    final lines = const LineSplitter()
+        .convert(value)
+        .where((line) => line.trim().isNotEmpty)
+        .toList(growable: false);
+    for (final line in lines.reversed) {
+      try {
+        final decoded = jsonDecode(line);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        // Native diagnostics can precede the final JSON line.
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _findChatGptApprovalRuntime() async {
+    final override = Platform.environment['CHATGPT_AUTO_CONFIRM_NATIVE'];
+    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
+    final userDirectory = Platform.environment['HOME'];
+    final candidates = <String>[
+      if (override != null && override.trim().isNotEmpty) override.trim(),
+      '${Directory.current.path}/.agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm',
+      '$executableDirectory/../Resources/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm',
+      '$executableDirectory/../Frameworks/App.framework/Resources/flutter_assets/.agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm',
+      if (userDirectory != null && userDirectory.isNotEmpty)
+        '$userDirectory/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm',
+    ];
+    for (final candidate in candidates) {
+      if (await File(candidate).exists()) return candidate;
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> _sendNetwork(

@@ -18,6 +18,7 @@ const TITLES: Record<string, string> = {
   "hermes-installer": "Hermes 安装器",
   "bot-father": "Bot Father",
   "mahayana-assistant": "大乘助手",
+  "chatgpt-auto-confirm": "ChatGPT 自动确认",
 };
 
 // Official installs use the same canonical repository + manifest-name SHA-256
@@ -30,6 +31,7 @@ const OFFICIAL_INSTANCE_IDS: Record<string, string> = {
   "hermes-installer": "hermes-installer@25dcb916e9c4ce5e508c5df2644c8e47",
   "bot-father": "bot-father@d738f95aa3b19cd3a73332bc9b910bda",
   "mahayana-assistant": "mahayana-assistant@a9d77fcedbb35078e1b7c882f8c18224",
+  "chatgpt-auto-confirm": "chatgpt-auto-confirm@7f5362512a619801e88b30e76e383f03",
 };
 
 type QuickAction =
