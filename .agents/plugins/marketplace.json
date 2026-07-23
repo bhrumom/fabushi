@@ -1,92 +1,68 @@
 {
+  "schemaVersion": 1,
   "name": "fabushi-official",
+  "version": "1.0.0",
+  "homepage": "https://fabushi.ombhrum.com/miniapps/",
+  "publicCatalog": "https://fabushi.ombhrum.com/.well-known/mahayana/marketplace.json",
   "interface": {
     "displayName": "大乘官方插件"
   },
   "plugins": [
     {
       "name": "global-dharma",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/global-dharma"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/global-dharma" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Lifestyle"
     },
     {
       "name": "faliu-flashcards",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/faliu-flashcards"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/faliu-flashcards" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Education"
     },
     {
       "name": "platform-publish",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/platform-publish"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/platform-publish" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Productivity"
     },
     {
       "name": "hermes-installer",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/hermes-installer"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/hermes-installer" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Developer Tools"
     },
     {
       "name": "bot-father",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/bot-father"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/bot-father" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Developer Tools"
     },
     {
       "name": "mahayana-assistant",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/mahayana-assistant"
-      },
-      "policy": {
-        "installation": "INSTALLED_BY_DEFAULT",
-        "authentication": "ON_USE"
-      },
+      "version": "1.0.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/mahayana-assistant" },
+      "policy": { "installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_USE" },
       "category": "Productivity"
     },
     {
       "name": "chatgpt-auto-confirm",
-      "source": {
-        "source": "local",
-        "path": "./.agents/plugins/plugins/chatgpt-auto-confirm"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
+      "version": "1.0.0+codex.20260723003618",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/chatgpt-auto-confirm" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
+    },
+    {
+      "name": "computer-cleaner",
+      "version": "0.1.0",
+      "source": { "source": "local", "path": "./.agents/plugins/plugins/computer-cleaner" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Developer Tools"
     }
   ]
 }
