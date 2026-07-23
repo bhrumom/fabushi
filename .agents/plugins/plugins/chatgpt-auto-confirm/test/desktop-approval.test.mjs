@@ -170,10 +170,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.equal(reviewed.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.queue-review');
   const retried = await call('retry_task', {
-    taskId: 'release', feedback: '从最新落盘进度继续',
+    taskId: 'release', feedback: '从最新落盘进度继续', connector: 'GitHub',
   });
   assert.equal(retried.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.queue-retry');
+  assert.equal(retried.result.structuredContent.hostRequest.params.connector, 'GitHub');
   assert.match(nativeSource, /case "queue_retry"/);
   assert.match(nativeSource, /operator_recovery/);
   assert.match(nativeSource, /case "queue_watch"/);
@@ -194,6 +195,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);
   assert.match(nativeSource, /single-authenticated-process-serialized/);
+  assert.match(nativeSource, /normal queue\n  \/\/ work must never multiply ChatGPT\.app instances/);
   assert.match(nativeSource, /stopQueueWorker/);
   assert.match(nativeSource, /startAutomationReview/);
   assert.match(nativeSource, /reviewConversationId/);
@@ -210,21 +212,32 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /chatOnlyInstruction/);
   assert.match(nativeSource, /app:\/\/\-\/index\.html/);
   assert.match(nativeSource, /queue_monitor_conversation_drift/);
+  assert.match(nativeSource, /fresh_chat_body_pending_timeout/);
+  assert.match(nativeSource, /Wait for the dispatch marker instead of pausing every queued/);
   assert.match(nativeSource, /selectBackgroundConversationJS\(conversationId\)/);
   assert.match(nativeSource, /Never parse that stale page/);
   assert.match(nativeSource, /任务发送轮次/);
   assert.match(nativeSource, /验收 Chat 标识/);
   assert.match(nativeSource, /dispatchMarker/);
-  assert.match(nativeSource, /opt\/homebrew\/bin\/gh auth status/);
-  assert.match(nativeSource, /opt\/homebrew\/bin\/git-lfs --version/);
+  assert.match(nativeSource, /云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器/);
+  assert.match(nativeSource, /本地 checkout、Git\/gh 元数据与安全同步必须使用 bhrum2/);
   assert.match(nativeSource, /重复卡点时不要只重复同一条失败命令/);
   assert.match(nativeSource, /具体所需权限、账号、工具/);
   assert.match(nativeSource, /项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions/);
   assert.match(nativeSource, /禁止 git add -A/);
   assert.match(nativeSource, /wait_seconds/);
   assert.match(nativeSource, /waiting_for_external_result/);
+  assert.match(nativeSource, /waiting_for_network_recovery/);
+  assert.match(nativeSource, /queueNetworkRecovery/);
+  assert.match(nativeSource, /SCNetworkReachabilityCreateWithName/);
+  assert.match(nativeSource, /next_connector/);
+  assert.match(nativeSource, /云端 GitHub 状态必须通过 GitHub 连接器核验/);
+  assert.match(nativeSource, /本地 checkout、Git\/gh 元数据与安全同步必须使用 bhrum2/);
+  assert.match(nativeSource, /the prompt can never trigger a false network outage/);
   assert.match(nativeSource, /chat_start_no_reply/);
   assert.match(nativeSource, /currentDate >= waitingUntil/);
+  assert.match(nativeSource, /Confirm it before asking the virtualized sidebar to restore a task/);
+  assert.match(nativeSource, /Do not restore a shared renderer before its current page is read/);
 });
 
 test('native runtime stays in the background and never takes over the UI', () => {
