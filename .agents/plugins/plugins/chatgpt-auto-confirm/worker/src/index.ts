@@ -38,7 +38,7 @@ const queuedTaskSchema = {
     title: { type: 'string', minLength: 1, maxLength: 160 },
     prompt: { type: 'string', minLength: 1, maxLength: 10000 },
     promptTemplate: { type: 'string', enum: taskPromptTemplates.map(item => item.id), default: 'continue-to-complete' },
-    connector: { type: 'string', minLength: 1, maxLength: 256, default: 'devspace1' },
+    connector: { type: 'string', minLength: 1, maxLength: 256, default: 'bhrum2', description: '本地工作区选 bhrum2；云端 GitHub/PR/Actions 选 GitHub' },
     dependsOn: { type: 'array', maxItems: 50, items: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }, default: [] },
     resourceLocks: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 256 }, default: [] },
     priority: { type: 'integer', minimum: -100, maximum: 100, default: 0 },
@@ -142,7 +142,7 @@ const tools = [
       waitTimeout: { type: 'integer', minimum: 1, maximum: 7200, default: 3600 },
     },
   } },
-  { name: 'queue_status', description: '读取任务队列、专用 ChatGPT worker 状态、验收 Chat 和待处理结果', annotations: annotations(true), inputSchema: {
+  { name: 'queue_status', description: '读取任务队列、专用 ChatGPT worker 状态、网络恢复等待、验收 Chat 和待处理结果', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
   { name: 'wait_for_review', description: '等待队列出现待验收、阻塞或失败任务', annotations: annotations(true), inputSchema: {
@@ -163,10 +163,11 @@ const tools = [
   { name: 'resume_queue', description: '从本地持久状态恢复队列和仍存活的 worker', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
-  { name: 'retry_task', description: '保留任务和工作区进度，立即新建 Chat 从中断处续作', annotations: annotations(), inputSchema: {
+  { name: 'retry_task', description: '保留任务和工作区进度，必要时切换 GitHub/bhrum2 connector 后立即新建 Chat 从中断处续作', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, required: ['taskId'], properties: {
       taskId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
       feedback: { type: 'string', maxLength: 4000, default: '' },
+      connector: { type: 'string', minLength: 1, maxLength: 256, description: '可选：GitHub 用于云端仓库/PR/Actions；bhrum2 用于本地工作区' },
     },
   } },
   { name: 'cancel_task', description: '取消排队中或运行中的任务', annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }, inputSchema: {
@@ -271,7 +272,7 @@ export default {
             protocol: 'mahayana.task-report.v1',
             markers: ['MAHAYANA_TASK_REPORT_V1_BEGIN', 'MAHAYANA_TASK_REPORT_V1_END'],
             statuses: ['complete', 'incomplete', 'blocked'],
-            fields: ['summary', 'completed', 'remaining', 'blockers', 'verification', 'wait_seconds', 'wait_reason', 'next_task'],
+            fields: ['summary', 'completed', 'remaining', 'blockers', 'verification', 'wait_seconds', 'wait_reason', 'next_connector', 'next_task'],
           },
         },
       });
@@ -311,6 +312,7 @@ export default {
         rpc.id, 'desktop.chatgpt-approvals.queue-retry', {
           taskId: String(args.taskId || ''),
           feedback: String(args.feedback || '').slice(0, 4000),
+          connector: args.connector ? String(args.connector).slice(0, 256) : null,
         }, 'required');
       if (name === 'cancel_task') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.queue-cancel', {

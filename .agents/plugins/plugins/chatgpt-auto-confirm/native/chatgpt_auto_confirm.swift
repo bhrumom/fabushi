@@ -2,6 +2,7 @@ import ApplicationServices
 import Cocoa
 import Darwin
 import Foundation
+import SystemConfiguration
 
 private struct ApprovalRule: Codable {
   let id: String
@@ -52,6 +53,13 @@ private struct PluginState: Codable {
   var queueWorkerTargetId: String?
   var queueWorkerProfilePath: String?
   var queueWorkerMode: String?
+  // Reachability is queue-level state: a transient DNS/network/upstream
+  // outage pauses the durable queue instead of terminating or duplicating
+  // active Chat work.
+  var queueNetworkStatus: String?
+  var queueNetworkLastError: String?
+  var queueNetworkFailureCount: Int?
+  var queueNetworkWaitUntil: String?
 }
 
 private struct AutomationTaskReport: Codable {
@@ -68,6 +76,10 @@ private struct AutomationTaskReport: Codable {
   // instead of keeping a renderer and a model response idle.
   var waitSeconds: Int?
   var waitReason: String?
+  // A finished Chat can choose the connector for the next fresh Chat. This
+  // is useful when a local bhrum2 step has pushed code and the next step must
+  // inspect GitHub Actions through the GitHub connector.
+  var nextConnector: String?
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
@@ -75,6 +87,7 @@ private struct AutomationTaskReport: Codable {
     case nextTask = "next_task"
     case waitSeconds = "wait_seconds"
     case waitReason = "wait_reason"
+    case nextConnector = "next_connector"
   }
 }
 
@@ -2469,7 +2482,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v36"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v39"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -2550,6 +2563,78 @@ private func normalizedTaskId(_ rawValue: String?) -> String? {
   return value
 }
 
+private func normalizedConnector(_ rawValue: String?) -> String? {
+  guard let value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !value.isEmpty,
+        value.count <= 256,
+        !value.contains("\n"),
+        !value.contains("\r") else { return nil }
+  return value
+}
+
+private struct QueueNetworkProbe {
+  let reachable: Bool
+  let detail: String
+}
+
+private func queueNetworkProbe() -> QueueNetworkProbe {
+  guard let reachability = SCNetworkReachabilityCreateWithName(nil, "api.github.com") else {
+    return QueueNetworkProbe(reachable: false, detail: "无法创建 GitHub 网络探测")
+  }
+  var flags = SCNetworkReachabilityFlags()
+  guard SCNetworkReachabilityGetFlags(reachability, &flags) else {
+    return QueueNetworkProbe(reachable: false, detail: "无法读取 GitHub 网络路由")
+  }
+  let isReachable = flags.contains(.reachable)
+  let needsConnection = flags.contains(.connectionRequired)
+  let canConnectAutomatically = flags.contains(.connectionOnDemand)
+    || flags.contains(.connectionOnTraffic)
+  let online = isReachable && (!needsConnection || canConnectAutomatically)
+  return QueueNetworkProbe(
+    reachable: online,
+    detail: online ? "GitHub 网络路由可达" : "GitHub 网络路由暂不可达（flags=\(flags.rawValue)）"
+  )
+}
+
+private func networkRecoverySignal(_ value: String) -> String? {
+  let text = value.lowercased()
+  let markers = [
+    "network is unreachable", "network unreachable", "err_internet_disconnected",
+    "internet disconnected", "could not resolve host", "dns lookup failed",
+    "connection reset", "connection refused", "connection timed out",
+    "upstream 502", "http 502", "http 503", "http 504",
+    "devspace_tool_timeout", "网络断开", "网络不可用", "无法解析主机",
+    "连接被重置", "连接超时", "上游 502", "上游 503", "上游 504"
+  ]
+  guard let marker = markers.first(where: { text.contains($0) }) else { return nil }
+  return marker
+}
+
+private func queueNetworkRecovery(
+  _ task: inout AutomationTask,
+  state: inout PluginState,
+  reason: String
+) {
+  // Use the regular continuation reset so the next operation is always a
+  // fresh Chat, then defer only that continuation while connectivity recovers.
+  queueContinuation(&task, report: nil, reason: "network_recovery")
+  guard task.status == "queued" else { return }
+  let failureCount = min(6, (state.queueNetworkFailureCount ?? 0) + 1)
+  let delay = min(300, 30 * (1 << min(3, failureCount - 1)))
+  let dueDate = Date().addingTimeInterval(Double(delay))
+  let compactReason = String(reason.prefix(240))
+  state.queueNetworkFailureCount = failureCount
+  state.queueNetworkStatus = "waiting_for_recovery"
+  state.queueNetworkLastError = compactReason
+  state.queueNetworkWaitUntil = isoFormatter.string(from: dueDate)
+  task.status = "waiting"
+  task.waitingUntil = state.queueNetworkWaitUntil
+  task.waitReason = "网络/上游连接恢复：\(compactReason)；将在约 \(delay) 秒后重新探测"
+  task.reviewFeedback = "小程序检测到网络、DNS 或上游连接异常（\(compactReason)）。不要重复当前失败请求；等待小程序恢复连接后在新 Chat 中检查同一 checkout 的落盘结果，再继续未完成步骤。"
+  task.lastError = "waiting_for_network_recovery"
+  task.updatedAt = isoFormatter.string(from: Date())
+}
+
 private func taskPromptPrefix(_ template: String) -> String {
   switch template {
   case "implement-and-verify":
@@ -2584,11 +2669,11 @@ private func automationTaskMessage(_ task: AutomationTask) -> String {
   var sections = [
     taskPromptPrefix(task.promptTemplate),
     "执行边界：实际工作只允许在 Chat 页面完成；不要点击或进入 Work 页面。",
-    "GitHub 操作前先在终端执行：export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"；用 /opt/homebrew/bin/gh auth status、/opt/homebrew/bin/gh --version 和 /opt/homebrew/bin/git-lfs --version 验证本机工具。Git push 必须确保 git-lfs 在 PATH 中，不要只依赖 GitHub 连接器。",
+    "连接器路由：当前新 Chat 选用「\(task.connector)」。已在云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器；不要改用本地 gh 来替代云端证据。本地 checkout、Git/gh 元数据与安全同步必须使用 bhrum2；同步前先读取 status、远端和分支，只允许干净工作树上的 fast-forward，不得覆盖本地改动。若本轮从 bhrum2 推送到云端，最终报告 next_connector 填 GitHub，让小程序为下一新 Chat 切换到 GitHub 连接器。",
     "资源策略：项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions 中执行并以 Actions 日志或构件为准。本机只做 Git/gh 元数据与代码阅读；不要在本机运行任何项目测试、构建、打包、安装、依赖下载或会生成缓存/产物的命令。",
     "提交策略：提交前逐项选择源代码、配置和必要文档，禁止 git add -A。不要提交或等待上传无关的大文件、缓存、node_modules、构建输出、本地安装包或无关 LFS 对象；除非某个大文件是任务明确必需的发布资产。",
     "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。确实无法解决时，在最终报告 blockers 和 next_task 中明确列出下一步所需的权限、账号、工具、环境变量、具体命令或外部服务恢复条件。",
-    "若必须等待 GitHub Actions、部署、发布审核或其他外部异步操作，不要让当前 Chat 空等或把任务误报为完成。请结束本轮并报告 status=incomplete，给出 wait_seconds（预计等待秒数）和 wait_reason；小程序会在等待到期后自动创建新的 Chat，执行 next_task 复查状态。无需等待时 wait_seconds=0 且 wait_reason 为空字符串。",
+    "若遇到网络断连、DNS 失败、连接重置、502/503/504 或连接器超时，不要在当前 Chat 盲目重试。结束本轮并报告 status=incomplete，给出至少 30 秒的 wait_seconds、具体 wait_reason 和复查网络/外部服务的 next_task；小程序会探测网络恢复后自动创建新 Chat。若必须等待 GitHub Actions、部署、发布审核或其他外部异步操作，也采用同一等待协议。无需等待时 wait_seconds=0 且 wait_reason 为空字符串。",
     task.prompt
   ]
   sections.append("任务发送轮次：\(task.attempts + 1)。")
@@ -2621,7 +2706,7 @@ private func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若证据不足、仍有未完成项或存在真实卡点，必须准确标记 incomplete 或 blocked，并给出 remaining、blockers、verification 和 next_task。若只是等待 Actions、部署或其他外部异步结果，标记 incomplete，写明 wait_seconds（预计秒数）和 wait_reason，小程序会定时新建 Chat 再复查。重复卡点不能只照抄旧错误；应判断是否需要换方案。确实无法解决时，blockers 和 next_task 必须列出具体所需权限、账号、工具、环境变量、命令或外部服务恢复条件。只有全部目标可复核且验证通过时才标记 complete。回答末尾必须输出完整的 MAHAYANA_TASK_REPORT_V1_BEGIN/END JSON，总结本次独立验收结果。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若证据不足、仍有未完成项或存在真实卡点，必须准确标记 incomplete 或 blocked，并给出 remaining、blockers、verification 和 next_task。若只是等待 Actions、部署、发布审核、网络恢复或其他外部异步结果，标记 incomplete，写明 wait_seconds（预计秒数）和 wait_reason，小程序会定时新建 Chat 再复查。重复卡点不能只照抄旧错误；应判断是否需要换方案。确实无法解决时，blockers 和 next_task 必须列出具体所需权限、账号、工具、环境变量、命令或外部服务恢复条件。只有全部目标可复核且验证通过时才标记 complete。回答末尾必须输出完整的 MAHAYANA_TASK_REPORT_V1_BEGIN/END JSON，总结本次独立验收结果。
   """
 }
 
@@ -2782,6 +2867,12 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "requestedMaxConcurrent": state.queueMaxConcurrent ?? 2,
     "executionMode": "single-authenticated-process-serialized",
     "targetMode": state.queueWorkerMode ?? "not-started",
+    "network": [
+      "status": state.queueNetworkStatus ?? "unknown",
+      "lastError": state.queueNetworkLastError as Any,
+      "failureCount": state.queueNetworkFailureCount ?? 0,
+      "waitingUntil": state.queueNetworkWaitUntil as Any,
+    ],
     "workerProcess": [
       "port": state.queueWorkerPort as Any,
       "targetId": state.queueWorkerTargetId as Any,
@@ -2971,12 +3062,10 @@ private func createQueueWorkerTarget(
     state.queueWorkerProfilePath = nil
     state.queueWorkerMode = nil
   }
-  // Default to one queue-owned ChatGPT instance so the user can inspect the
-  // whole queue and its review Chats together. Every queued task reuses this
-  // same process; only the optional preference below reuses an existing app
-  // target directly.
-  if ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_PREFER_EXISTING_TARGET"] == "1",
-     let prepared = ensureHiddenChatTarget(&state),
+  // Reuse one hidden, authenticated renderer for the whole queue. Opening a
+  // dedicated Electron process is only a recovery fallback: normal queue
+  // work must never multiply ChatGPT.app instances.
+  if let prepared = ensureHiddenChatTarget(&state),
      prepared["ok"] as? Bool == true,
      let port = state.backgroundAppPort,
      let targetId = state.backgroundChatTargetId {
@@ -2987,10 +3076,9 @@ private func createQueueWorkerTarget(
     state.queueWorkerMode = "existing-process-hidden-target"
     return (port, targetId, profilePath)
   }
-  if state.backgroundProfilePath == nil,
-     !FileManager.default.fileExists(atPath: hiddenChatProfilePath()) {
-    _ = ensureHiddenChatTarget(&state)
-  }
+  // Retain the separate dedicated-profile method for an unavailable or
+  // damaged hidden renderer, but do not select it while the shared target is
+  // healthy.
   if let dedicated = createDedicatedQueueWorkerTarget(&state) {
     return dedicated
   }
@@ -3254,6 +3342,9 @@ private func queueContinuation(
     return
   }
   if let report {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
     let fingerprint = taskReportFingerprint(report)
     var fingerprints = task.reportFingerprints ?? []
     fingerprints.append(fingerprint)
@@ -3314,18 +3405,11 @@ private func monitorAutomationTask(
           workerTargetId != sharedTargetId else { return nil }
     return workerTargetId
   }()
-  // A freshly dispatched task owns the shared Chat renderer even before the
-  // local conversation id appears in the virtualized sidebar. Do not try to
-  // select that transient local id (it is not a sidebar row yet); remote ids
-  // can still be restored through the row-local React identity.
-  if !monitoringReview && dedicatedTargetId == nil && !conversationId.hasPrefix("local-chatgpt:") {
-    let restored = ensureHiddenChatTarget(&state, conversationId: conversationId)
-    guard restored?["ok"] as? Bool == true else {
-      task.lastError = restored?["error"] as? String ?? "conversation_restore_failed"
-      task.updatedAt = isoFormatter.string(from: Date())
-      return
-    }
-  }
+  // Do not restore a shared renderer before its current page is read. A new
+  // Chat may receive a durable remote id before the virtualized body/sidebar
+  // has caught up; the dispatch marker below is the reliable proof that the
+  // visible page is still this task. Manual conversation drift is handled
+  // after that marker check, without blocking a just-sent response.
   state.approveAll = true
   if state.queueWorkerMode != "dedicated-process-fallback" {
     _ = scanIPC(&state)
@@ -3336,6 +3420,15 @@ private func monitorAutomationTask(
     task.updatedAt = isoFormatter.string(from: Date())
     return
   }
+  // A permission card can replace the normal conversation body temporarily.
+  // Confirm it before asking the virtualized sidebar to restore a task, so an
+  // unloaded conversation cannot suppress automatic authorization.
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
   let now = isoFormatter.string(from: Date())
   guard var liveStatus = cdpValue(
           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
@@ -3370,6 +3463,20 @@ private func monitorAutomationTask(
         task.reviewConversationId = observed
       }
     } else {
+      // A just-created Chat starts with a local id while ChatGPT replaces the
+      // sidebar and body asynchronously. It is not evidence of a manual
+      // switch. Wait for the dispatch marker instead of pausing every queued
+      // task; recover in one fresh Chat only if that binding never arrives.
+      if conversationId.hasPrefix("local-chatgpt:") {
+        if let startedAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
+           Date().timeIntervalSince(startedAt) >= 45 {
+          queueContinuation(&task, report: nil, reason: "fresh_chat_body_pending_timeout")
+        } else {
+          task.lastError = "queue_monitor_conversation_body_pending"
+          task.updatedAt = now
+        }
+        return
+      }
       let restored = cdpValue(
         port: port,
         targetId: targetId,
@@ -3433,6 +3540,10 @@ private func monitorAutomationTask(
     // real task progress or postpone interruption recovery.
     if activityCharCount >= 80 {
       task.lastProgressAt = now
+      state.queueNetworkFailureCount = 0
+      state.queueNetworkStatus = "online"
+      state.queueNetworkLastError = nil
+      state.queueNetworkWaitUntil = nil
     }
   }
   task.updatedAt = now
@@ -3463,12 +3574,29 @@ private func monitorAutomationTask(
 
   let completedActivity = reply["completedActivity"] as? String ?? ""
   let visibleContent = reply["content"] as? String ?? ""
+  let connectionText = [
+    visibleContent,
+    completedActivity,
+    reply["devspaceActivity"] as? String ?? "",
+    // `pageContent` also contains the queue's own user instruction, which
+    // deliberately documents network errors. Inspect only assistant/tool
+    // activity so the prompt can never trigger a false network outage.
+    reply["thinking"] as? String ?? ""
+  ].joined(separator: "\n")
+  if let signal = networkRecoverySignal(connectionText) {
+    closeDedicatedAutomationTarget(task, state: state)
+    queueNetworkRecovery(&task, state: &state, reason: signal)
+    return
+  }
   let reportText = completedActivity.isEmpty ? visibleContent : completedActivity
   let parsedReport = parseTaskReport(reportText).flatMap(automationReport)
   let terminal = reply["done"] as? Bool == true
     || reply["completionCandidate"] as? Bool == true
     || reply["terminalIncomplete"] as? Bool == true
   if terminal, let report = parsedReport {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
     if monitoringReview {
       task.reviewReport = report
       task.reviewStatus = report.status
@@ -3535,6 +3663,21 @@ private func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
+  let network = queueNetworkProbe()
+  if !network.reachable {
+    state.queueNetworkStatus = "offline"
+    state.queueNetworkLastError = network.detail
+    if let runningIndex = tasks.firstIndex(where: { $0.status == "running" }) {
+      closeDedicatedAutomationTarget(tasks[runningIndex], state: state)
+      queueNetworkRecovery(&tasks[runningIndex], state: &state, reason: network.detail)
+    }
+    state.automationTasks = tasks
+    return
+  }
+  if state.queueNetworkStatus == "offline" {
+    state.queueNetworkStatus = "online"
+    state.queueNetworkLastError = nil
+  }
   for index in tasks.indices where tasks[index].status == "waiting" {
     guard let waitingUntil = tasks[index].waitingUntil.flatMap(isoFormatter.date(from:)) else {
       tasks[index].status = "queued"
@@ -3619,6 +3762,11 @@ private func runQueueIteration(_ state: inout PluginState) {
       runningCount += 1
       heldLocks.formUnion(locks)
     } catch {
+      if let signal = networkRecoverySignal(error.localizedDescription) {
+        tasks[index].attempts += 1
+        queueNetworkRecovery(&tasks[index], state: &state, reason: signal)
+        continue
+      }
       tasks[index].updatedAt = now
       tasks[index].attempts += 1
       tasks[index].lastError = error.localizedDescription
@@ -4104,6 +4252,11 @@ case "queue_retry":
   let params = commandJSONParams()
   let taskId = normalizedTaskId(params["taskId"] as? String)
   let feedback = (params["feedback"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let connectorParameter = params["connector"] as? String
+  guard connectorParameter == nil || normalizedConnector(connectorParameter) != nil else {
+    output(["ok": false, "errorCode": "invalid_connector", "message": "connector 必须是 1-256 字符且不能包含换行"], exitCode: 1)
+  }
+  let requestedConnector = normalizedConnector(connectorParameter)
   guard let taskId else {
     output(["ok": false, "errorCode": "invalid_task_id", "message": "taskId 无效"], exitCode: 1)
   }
@@ -4117,14 +4270,23 @@ case "queue_retry":
           userInfo: [NSLocalizedDescriptionKey: "没有找到任务 \(taskId)"]
         )
       }
-      guard ["running", "waiting", "blocked", "failed", "cancelled"].contains(tasks[index].status) else {
+      guard ["queued", "running", "waiting", "blocked", "failed", "cancelled"].contains(tasks[index].status) else {
         throw NSError(
           domain: "chatgpt-auto-confirm",
           code: 35,
           userInfo: [NSLocalizedDescriptionKey: "任务 \(taskId) 当前不需要中断恢复"]
         )
       }
-      if tasks[index].status == "running" {
+      if let requestedConnector {
+        tasks[index].connector = requestedConnector
+      }
+      if tasks[index].status == "queued" {
+        if !feedback.isEmpty {
+          tasks[index].reviewFeedback = "任务连接器已更新。请从同一 checkout 的最新落盘进度继续：\n\(feedback)"
+        }
+        tasks[index].lastError = "connector_updated"
+        tasks[index].updatedAt = isoFormatter.string(from: Date())
+      } else if tasks[index].status == "running" {
         // Stop the active response on the queue-owned Chat renderer. Do not
         // restore the old conversation through the legacy hidden target here:
         // that path can create an unintended second process and, worse, touch
@@ -4153,7 +4315,7 @@ case "queue_retry":
           )
         }
       }
-      if ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
+      if tasks[index].status != "queued", ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
         // An explicit operator retry is a fresh recovery budget. Keep the
         // checkout and audit history, but do not let an old continuation
         // fingerprint prevent the new architecture from making progress.
@@ -4172,7 +4334,7 @@ case "queue_retry":
         tasks[index].lastProgressAt = nil
         tasks[index].waitingUntil = nil
         tasks[index].waitReason = nil
-      } else {
+      } else if tasks[index].status != "queued" {
         queueContinuation(&tasks[index], report: tasks[index].report, reason: "operator_recovery")
       }
       if !feedback.isEmpty && tasks[index].status == "queued" {
@@ -4951,9 +5113,9 @@ private func taskReportContract() -> String {
 
 在停止生成前，必须在回答末尾输出以下机器可读任务总结。不要省略标记，不要把 JSON 放进 Markdown 代码块，字段必须完整：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"本轮结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["验证命令与结果"],"wait_seconds":0,"wait_reason":"若需要等待 Actions、部署或外部异步操作，写明原因；否则为空字符串","next_task":"若未完成，写给新 Chat 的完整续作指令；若完成则为空字符串"}
+{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"本轮结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["验证命令与结果"],"wait_seconds":0,"wait_reason":"若需要等待 Actions、部署、网络恢复或外部异步操作，写明原因；否则为空字符串","next_connector":"下一新 Chat 要选用的 connector（例如 GitHub 或 bhrum2）；不切换则为空字符串","next_task":"若未完成，写给新 Chat 的完整续作指令；若完成则为空字符串"}
 MAHAYANA_TASK_REPORT_V1_END
-只有全部目标实现且验证通过时 status 才能是 complete；此时 remaining、blockers 必须是空数组，wait_seconds 必须为 0、wait_reason 和 next_task 必须为空字符串。未完成或受阻时必须准确填写 remaining、blockers 和非空 next_task，便于新 Chat 从当前 checkout 继续，不能声称完成。若必须等待外部异步结果，status 使用 incomplete，wait_seconds 填合理的预计秒数（30-604800），wait_reason 说明等待对象；小程序会等到期后自动发送下一轮 Chat。无需等待时 wait_seconds=0、wait_reason 为空字符串。
+只有全部目标实现且验证通过时 status 才能是 complete；此时 remaining、blockers 必须是空数组，wait_seconds 必须为 0、wait_reason 和 next_task 必须为空字符串。未完成或受阻时必须准确填写 remaining、blockers 和非空 next_task，便于新 Chat 从当前 checkout 继续，不能声称完成。若必须等待网络恢复、Actions、部署或其他外部异步结果，status 使用 incomplete，wait_seconds 填合理的预计秒数（30-604800），wait_reason 说明等待对象；小程序会等到期后自动发送下一轮 Chat。云端 GitHub 阶段把 next_connector 填 GitHub，本地阶段填 bhrum2；无需切换则为空字符串。无需等待时 wait_seconds=0、wait_reason 为空字符串。
 """
 }
 
