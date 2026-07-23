@@ -19,6 +19,7 @@ const TITLES: Record<string, string> = {
   "bot-father": "Bot Father",
   "mahayana-assistant": "大乘助手",
   "chatgpt-auto-confirm": "ChatGPT 自动确认",
+  "computer-cleaner": "Computer Cleaner",
 };
 
 // Official installs use the same canonical repository + manifest-name SHA-256
