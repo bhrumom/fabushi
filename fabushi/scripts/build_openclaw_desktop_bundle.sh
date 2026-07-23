@@ -61,6 +61,17 @@ else
   NPM_CMD=("$OUT_DIR/node/bin/npm")
 fi
 
+install_published_package_dependencies() {
+  # Registry tarballs can contain lock files generated from a different
+  # package.json than the published manifest. Resolve from that manifest rather
+  # than letting a stale bundled lock make npm ci fail during release vendoring.
+  rm -f package-lock.json npm-shrinkwrap.json
+  "${NPM_CMD[@]}" install \
+    --omit=dev \
+    --ignore-scripts=false \
+    --package-lock=false
+}
+
 echo "==> Packing openclaw@$OPENCLAW_VERSION"
 npm pack "openclaw@$OPENCLAW_VERSION" --pack-destination "$WORK_DIR" >/dev/null
 OPENCLAW_TGZ="$(ls "$WORK_DIR"/openclaw-*.tgz | head -n 1)"
@@ -69,11 +80,7 @@ tar -xzf "$OPENCLAW_TGZ" -C "$OUT_DIR/openclaw" --strip-components=1
 
 echo "==> Installing production dependencies into bundled OpenClaw package"
 pushd "$OUT_DIR/openclaw" >/dev/null
-if [[ -f npm-shrinkwrap.json || -f package-lock.json ]]; then
-  "${NPM_CMD[@]}" ci --omit=dev
-else
-  "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
-fi
+install_published_package_dependencies
 popd >/dev/null
 
 if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
@@ -89,11 +96,7 @@ if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
 
   echo "==> Installing production dependencies into bundled WeChat plugin"
   pushd "$OUT_DIR/plugins/openclaw-weixin" >/dev/null
-  if [[ -f npm-shrinkwrap.json || -f package-lock.json ]]; then
-    "${NPM_CMD[@]}" ci --omit=dev
-  else
-    "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
-  fi
+  install_published_package_dependencies
   popd >/dev/null
 fi
 
