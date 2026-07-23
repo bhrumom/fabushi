@@ -14,6 +14,7 @@ export async function generateStaticParams() {
     { id: "bot-father" },
     { id: "mahayana-assistant" },
     { id: "chatgpt-auto-confirm" },
+    { id: "computer-cleaner" },
   ];
 }
 
