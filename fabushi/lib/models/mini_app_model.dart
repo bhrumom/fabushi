@@ -276,6 +276,8 @@ IconData iconForMiniApp(String key) {
       return Icons.construction_outlined;
     case 'assistant':
       return Icons.smart_toy_outlined;
+    case 'approval':
+      return Icons.verified_user_outlined;
     case 'code':
       return Icons.code;
     case 'folder':
@@ -300,6 +302,13 @@ MiniAppRegistry defaultMiniAppRegistry() {
     ('hermes-installer', 'Hermes 安装器', 'H', 'apps', MiniAppBotKind.thirdParty),
     ('bot-father', 'Bot Father', '父', 'bot_father', MiniAppBotKind.botFather),
     ('mahayana-assistant', '大乘助手', '助', 'assistant', MiniAppBotKind.assistant),
+    (
+      'chatgpt-auto-confirm',
+      'ChatGPT 自动确认',
+      '允',
+      'approval',
+      MiniAppBotKind.thirdParty,
+    ),
   ];
   final bots = definitions
       .map(
