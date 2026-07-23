@@ -36,6 +36,6 @@ test('task prompt templates expose the strict report protocol', async () => {
   assert.equal(payload.result.structuredContent.reportProtocol.protocol, 'mahayana.task-report.v1');
   assert.deepEqual(payload.result.structuredContent.reportProtocol.fields, [
     'summary', 'completed', 'remaining', 'blockers', 'verification',
-    'wait_seconds', 'wait_reason', 'next_task',
+    'wait_seconds', 'wait_reason', 'next_connector', 'next_task',
   ]);
 });

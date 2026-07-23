@@ -13,6 +13,13 @@ Use the `chatgpt-auto-confirm` queue as the controller. Send work and independen
 - Do not run project test/build/package/install commands, dependency downloads, or artifact-producing commands locally. Local work is limited to reading code plus Git and `gh` metadata needed to prepare or inspect the remote run.
 - Add or repair workflow configuration when the required remote validation does not exist, then push and inspect the resulting Action run, logs, checks, and artifacts.
 
+## Route connectors and recover connectivity
+
+- Use the GitHub connector for all cloud repository, pull-request, Actions, artifact, release, and merge evidence after code has reached GitHub.
+- Use bhrum2 for the local checkout. Before synchronizing it, inspect the worktree, remote, and branch; fetch first and fast-forward only a clean checkout. Never overwrite local changes to force synchronization.
+- If a local bhrum2 step pushes code, return `next_connector: "GitHub"` so the next fresh Chat checks cloud state through the GitHub connector. Return `next_connector: "bhrum2"` only when the next step genuinely needs local checkout work.
+- Treat DNS failures, disconnects, connection resets, 502/503/504, and connector timeouts as recoverable. Do not loop the same request. End the Chat with an `incomplete` report and a 30-second-or-greater wait; the queue probes connectivity and starts a fresh Chat when it is available.
+
 ## Keep commits small and intentional
 
 Before staging, inspect the changed-file list. Stage named source files, workflow files, configuration, and required documentation only.
@@ -29,7 +36,7 @@ Use this report contract at the end of every task or acceptance response:
 
 ```text
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"...","completed":["..."],"remaining":["..."],"blockers":["..."],"verification":["..."],"wait_seconds":0,"wait_reason":"","next_task":"..."}
+{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"...","completed":["..."],"remaining":["..."],"blockers":["..."],"verification":["..."],"wait_seconds":0,"wait_reason":"","next_connector":"GitHub|bhrum2|","next_task":"..."}
 MAHAYANA_TASK_REPORT_V1_END
 ```
 
