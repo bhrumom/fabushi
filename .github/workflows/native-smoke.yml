@@ -270,14 +270,17 @@ jobs:
             exit 1
           fi
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
-          symbols="$(nm -gU "$app_path/$executable")"
-          if echo "$symbols" | grep -q '_mahayana_runtime_'; then
+          symbols_file="$(mktemp)"
+          trap 'rm -f "$symbols_file"' EXIT
+          nm -gU "$app_path/$executable" > "$symbols_file"
+          if grep -q '_mahayana_runtime_' "$symbols_file"; then
             echo "Found Mahayana runtime symbols in iOS app bundle"
           else
             echo "Built iOS app bundle is missing Mahayana runtime symbols." >&2
             exit 1
           fi
-          if ! echo "$symbols" | grep -q '_mahayana_product_execute$'; then
+          if ! grep -q '_mahayana_product_execute$' "$symbols_file"; then
             echo "Built iOS app bundle is missing Mahayana product execute symbol." >&2
             exit 1
           fi
+          echo "Found Mahayana product execute symbol in iOS app bundle"
