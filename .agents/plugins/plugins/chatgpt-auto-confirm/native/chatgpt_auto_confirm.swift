@@ -6304,6 +6304,129 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         || `${index}:${normalize(element?.innerText || '').slice(0, 256)}`;
     }
 
+    const desiredModel = 'GPT-5.6 Sol';
+    const desiredReasoning = 'High';
+
+    function modelPickerButton() {
+      const input = findTextarea();
+      const inputRect = input?.getBoundingClientRect();
+      const candidates = [...document.querySelectorAll('button')].filter(button => {
+        if (!visible(button)) return false;
+        const label = button.getAttribute('aria-label') || '';
+        return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
+      });
+      if (!inputRect) return candidates[0] || null;
+      return candidates.sort((left, right) => {
+        const l = left.getBoundingClientRect();
+        const r = right.getBoundingClientRect();
+        const leftDistance = Math.abs(l.bottom - inputRect.bottom) + Math.abs(l.left - inputRect.left);
+        const rightDistance = Math.abs(r.bottom - inputRect.bottom) + Math.abs(r.left - inputRect.left);
+        return leftDistance - rightDistance;
+      })[0] || null;
+    }
+
+    function visibleModelMenus() {
+      const selectors = [
+        '[role="menu"]', '[role="listbox"]', '[data-composer-overlay-floating-ui]',
+        '[data-radix-menu-content]', '[data-radix-popper-content-wrapper]'
+      ].join(',');
+      return [...document.querySelectorAll(selectors)].filter(visible);
+    }
+
+    function exactModelChoice(root, label) {
+      if (!root) return null;
+      const target = normalize(label).toLowerCase();
+      const candidates = [...root.querySelectorAll(
+        'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
+      )].filter(element => visible(element) && normalize(element.textContent).toLowerCase() === target);
+      return candidates.sort((left, right) => {
+        const l = left.getBoundingClientRect();
+        const r = right.getBoundingClientRect();
+        return (l.width * l.height) - (r.width * r.height);
+      })[0] || null;
+    }
+
+    async function ensureModelAndReasoning() {
+      const picker = modelPickerButton();
+      if (!picker) return { ok: false, error: 'model_selector_not_found' };
+      picker.click();
+      await sleep(300);
+
+      let menus = visibleModelMenus();
+      let modelItem = null;
+      let modelMenu = null;
+      for (let index = 0; index < 30 && !modelItem; index += 1) {
+        menus = visibleModelMenus();
+        for (const menu of [...menus].reverse()) {
+          modelItem = exactModelChoice(menu, desiredModel);
+          if (modelItem) {
+            modelMenu = menu;
+            break;
+          }
+        }
+        if (!modelItem) await sleep(100);
+      }
+      if (!modelItem || !modelMenu) {
+        return { ok: false, error: 'gpt_5_6_sol_not_found', desiredModel };
+      }
+
+      const originalMenuText = normalize(modelMenu.textContent);
+      modelItem.click();
+      await sleep(250);
+
+      let effortItem = null;
+      let effortMenu = null;
+      let submenuTransitionConfirmed = false;
+      for (let index = 0; index < 40 && !effortItem; index += 1) {
+        menus = visibleModelMenus();
+        for (const menu of [...menus].reverse()) {
+          const candidate = exactModelChoice(menu, desiredReasoning);
+          if (!candidate) continue;
+          const menuChanged = menu !== modelMenu
+            || normalize(menu.textContent) !== originalMenuText
+            || modelItem.getAttribute('aria-expanded') === 'true';
+          if (menuChanged) {
+            effortItem = candidate;
+            effortMenu = menu;
+            submenuTransitionConfirmed = true;
+            break;
+          }
+        }
+        if (!effortItem) await sleep(100);
+      }
+      if (!effortItem || !submenuTransitionConfirmed) {
+        return {
+          ok: false, error: 'model_submenu_not_opened',
+          desiredModel, desiredReasoning, visibleMenus: menus.map(menu => normalize(menu.textContent).slice(0, 300))
+        };
+      }
+
+      effortItem.click();
+      await sleep(350);
+      const confirmedPicker = modelPickerButton();
+      const pickerEvidence = normalize([
+        confirmedPicker?.textContent,
+        confirmedPicker?.getAttribute('aria-label'),
+        confirmedPicker?.getAttribute('title')
+      ].filter(Boolean).join(' '));
+      const reasoningConfirmed = pickerEvidence.toLowerCase().includes(desiredReasoning.toLowerCase());
+      if (!reasoningConfirmed) {
+        return {
+          ok: false, error: 'reasoning_selection_not_confirmed',
+          desiredModel, desiredReasoning, pickerEvidence,
+          effortMenu: normalize(effortMenu?.textContent).slice(0, 300)
+        };
+      }
+      return {
+        ok: true,
+        model: desiredModel,
+        reasoning: desiredReasoning,
+        modelConfirmed: true,
+        reasoningConfirmed: true,
+        pickerEvidence
+      };
+    }
+
     function connectorMatches(value, target) {
       const text = normalize(value).toLowerCase();
       const needle = normalize(target).toLowerCase();
@@ -6453,6 +6576,20 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         record('new_chat', true, { selectedChat: true, userMessageCount: userMessages().length });
       }
     }
+
+    // Every task, continuation, and independent review Chat must explicitly
+    // select GPT-5.6 Sol with High reasoning before any connector or message is
+    // placed in the composer. Fail closed so a default or stale model can never
+    // receive an automated instruction.
+    const modelSelection = await ensureModelAndReasoning();
+    if (!modelSelection.ok) {
+      return fail('model_selection', modelSelection.error || 'model_selection_failed', modelSelection);
+    }
+    result.modelConfirmed = true;
+    result.reasoningConfirmed = true;
+    result.model = modelSelection.model;
+    result.reasoning = modelSelection.reasoning;
+    record('model_selection', true, modelSelection);
 
     const textarea = findTextarea();
     if (!textarea) {
