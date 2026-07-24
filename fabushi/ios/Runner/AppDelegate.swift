@@ -8,6 +8,14 @@ private func fabushiTelegramForceLink() -> UInt32
 @_silgen_name("mahayana_runtime_force_link")
 private func mahayanaRuntimeForceLink() -> UInt32
 
+@_silgen_name("mahayana_product_execute")
+private func mahayanaProductExecute(
+    _ requestJson: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("mahayana_runtime_free_string")
+private func mahayanaRuntimeFreeString(_ pointer: UnsafeMutablePointer<CChar>?)
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     // 内存警告 MethodChannel
