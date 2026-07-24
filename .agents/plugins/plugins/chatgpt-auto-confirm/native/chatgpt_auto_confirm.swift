@@ -2004,7 +2004,7 @@ private func prepareNewChatTarget(
           expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
           timeout: timeout
         )?["messageCount"] as? Int ?? 1) == 0
-      if changed || (blankConversation && previous?.isEmpty != false) {
+      if changed || blankConversation {
         var result = prepared ?? [:]
         result["newChatClicked"] = true
         return result
