@@ -207,6 +207,9 @@ jobs:
               .agents/plugins/*)
                 add_both "bundled official plugin input changed: $path"
                 ;;
+              third_party/mahayana|third_party/mahayana/*)
+                add_both "Mahayana runtime input changed: $path"
+                ;;
               frontend/*)
                 ignore_mobile_package "official site input does not require mobile install packages: $path"
                 ;;
