@@ -325,7 +325,7 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   const mockDOMTestScript = `
     const document = {
       querySelectorAll: (sel) => {
-        if (sel === 'button') {
+        if (sel === 'button' || sel === 'button, a, [role="button"]') {
           return [
             {
               innerText: 'Allow once',

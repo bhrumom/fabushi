@@ -1,11 +1,16 @@
 {
+  "schemaVersion": 1,
   "name": "fabushi-official",
+  "version": "1.0.0",
+  "homepage": "https://fabushi.ombhrum.com/miniapps/",
+  "publicCatalog": "https://fabushi.ombhrum.com/.well-known/mahayana/marketplace.json",
   "interface": {
-    "displayName": "大乘官方插件"
+    "displayName": "\u5927\u4e58\u5b98\u65b9\u63d2\u4ef6"
   },
   "plugins": [
     {
       "name": "global-dharma",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/global-dharma"
@@ -18,6 +23,7 @@
     },
     {
       "name": "faliu-flashcards",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/faliu-flashcards"
@@ -30,6 +36,7 @@
     },
     {
       "name": "platform-publish",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/platform-publish"
@@ -42,6 +49,7 @@
     },
     {
       "name": "hermes-installer",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/hermes-installer"
@@ -54,6 +62,7 @@
     },
     {
       "name": "bot-father",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/bot-father"
@@ -66,6 +75,7 @@
     },
     {
       "name": "mahayana-assistant",
+      "version": "1.0.0",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/mahayana-assistant"
@@ -78,6 +88,7 @@
     },
     {
       "name": "chatgpt-auto-confirm",
+      "version": "1.0.0+codex.20260723053507",
       "source": {
         "source": "local",
         "path": "./.agents/plugins/plugins/chatgpt-auto-confirm"
@@ -87,6 +98,19 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Productivity"
+    },
+    {
+      "name": "computer-cleaner",
+      "version": "0.1.0",
+      "source": {
+        "source": "local",
+        "path": "./.agents/plugins/plugins/computer-cleaner"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
     }
   ]
 }
