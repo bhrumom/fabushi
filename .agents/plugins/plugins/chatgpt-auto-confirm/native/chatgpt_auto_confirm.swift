@@ -1722,6 +1722,7 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
       result.hasInput = !!input;
       result.chatModel = chatModel;
       result.workComposer = workComposer;
+      result.html = document.body ? document.body.innerHTML.slice(0, 50000) : '';
       return result;
     }
     result.ok = true;
@@ -1961,6 +1962,9 @@ private func prepareNewChatTarget(
       timeout: timeout
     )
     if baseline?["ok"] as? Bool == true { break }
+    if let data = try? JSONSerialization.data(withJSONObject: baseline ?? [:], options: []) {
+      try? data.write(to: URL(fileURLWithPath: "/tmp/prepare_baseline_error.json"))
+    }
     if baseline?["error"] as? String == "not_chat_surface" {
       _ = cdpValue(
         port: port,
@@ -2005,6 +2009,9 @@ private func prepareNewChatTarget(
         result["newChatClicked"] = true
         return result
       }
+    }
+    if let data = try? JSONSerialization.data(withJSONObject: prepared ?? [:], options: []) {
+      try? data.write(to: URL(fileURLWithPath: "/tmp/prepare_prepared_error.json"))
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
