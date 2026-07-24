@@ -2010,7 +2010,18 @@ private func prepareNewChatTarget(
         return result
       }
     }
-    if let data = try? JSONSerialization.data(withJSONObject: prepared ?? [:], options: []) {
+    if let data = try? JSONSerialization.data(withJSONObject: [
+      "prepared": prepared ?? [:],
+      "previous": previous ?? "",
+      "conversationId": prepared?["conversationId"] ?? "",
+      "changed": (previous?.isEmpty != false && !(prepared?["conversationId"] as? String ?? "").isEmpty) || (previous?.isEmpty == false && (prepared?["conversationId"] as? String ?? "") != previous),
+      "messageCount": (cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
+          timeout: timeout
+        )?["messageCount"] as? Int ?? -1)
+    ], options: []) {
       try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_prepared_error.json"))
     }
     Thread.sleep(forTimeInterval: 0.25)
@@ -2345,11 +2356,26 @@ private func scanIPC(_ state: inout PluginState) -> [String: Any]? {
           }
         }
 
-        if (hasReject || cText.toLowerCase().includes('allow chatgpt to use') || cText.includes('允许') || targetMessageId || metadataBody) {
-          foundReject = hasReject || Boolean(targetMessageId || metadataBody);
+        let pureText = cText;
+        for (const b of childBtns) {
+          if (b.innerText) pureText = pureText.replace(b.innerText, '');
+        }
+        pureText = pureText.trim();
+        const cTextLower = cText.toLowerCase();
+        const hasAllowText = cTextLower.includes('allow chatgpt to use') || cText.includes('允许') || cTextLower.includes('allow ');
+
+        if (targetMessageId || metadataBody) {
+          foundReject = true;
           contextText = cText;
           processedContainers.add(container);
           break;
+        } else if (hasReject || hasAllowText) {
+          if (pureText.length > 5 || i >= 8 || !container.parentElement) {
+            foundReject = true;
+            contextText = cText;
+            processedContainers.add(container);
+            break;
+          }
         }
         container = container.parentElement;
       }
@@ -3773,7 +3799,7 @@ private func startAutomationTask(
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 22,
-      userInfo: [NSLocalizedDescriptionKey: "无法为任务 \(task.id) 准备已登录隐藏 Chat"]
+      userInfo: [NSLocalizedDescriptionKey: "无法为任务 \(task.id) 准备已登录隐藏 Chat. preparedOk: \(String(describing: prepared?["ok"])), port: \(port != nil), targetId: \(targetId != nil)"]
     )
   }
   let attempt = task.attempts + 1
