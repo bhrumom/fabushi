@@ -6,7 +6,6 @@
   "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father",
   "license": "Proprietary",
   "keywords": ["mcp", "plugin", "builder"],
-  "skills": "./skills",
   "mcpServers": "./.mcp.json",
   "runtimeVariants": [
     { "id": "local-cli", "server": "bot-father-local", "platforms": ["cli", "desktop"], "priority": 300 },

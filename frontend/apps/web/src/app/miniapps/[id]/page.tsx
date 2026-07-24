@@ -13,8 +13,6 @@ export async function generateStaticParams() {
     { id: "platform-publish" },
     { id: "bot-father" },
     { id: "mahayana-assistant" },
-    { id: "chatgpt-auto-confirm" },
-    { id: "computer-cleaner" },
   ];
 }
 

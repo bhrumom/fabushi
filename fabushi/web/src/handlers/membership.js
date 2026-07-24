@@ -1,6 +1,5 @@
 import { jsonResponse } from '../utils/response.js';
 import { verifyToken } from '../../auth-utils.js';
-import { isTestAccountRequest, testAccountUser } from '../utils/test-account.js';
 
 async function resolveTokenUser(db, tokenData) {
   if (tokenData?.userId !== undefined && tokenData?.userId !== null && db.getUserById) {
@@ -58,30 +57,8 @@ function buildMembershipPayload(user) {
   };
 }
 
-async function testAccountMembershipResponse(request, env) {
-  if (!await isTestAccountRequest(request, env)) return null;
-  const user = testAccountUser();
-  return jsonResponse({
-    username: user.username,
-    userId: user.userId,
-    userNo: user.userNo,
-    email: user.email,
-    isTestAccount: true,
-    membership: {
-      isActive: true,
-      active: true,
-      type: 'lifetime',
-      expiresAt: null,
-      daysLeft: null,
-    },
-    hasStripeCustomer: false,
-  });
-}
-
 // 检查会员状态 - Stripe端点
 export async function handleCheckMembershipStatus(request, env, db) {
-  const testAccount = await testAccountMembershipResponse(request, env);
-  if (testAccount) return testAccount;
   const result = await requireMembershipUser(request, env, db);
   if (result.response) return result.response;
   return jsonResponse(buildMembershipPayload(result.user));
@@ -89,8 +66,6 @@ export async function handleCheckMembershipStatus(request, env, db) {
 
 // 检查会员状态 - 支付宝端点
 export async function handleCheckAlipayMembership(request, env, db) {
-  const testAccount = await testAccountMembershipResponse(request, env);
-  if (testAccount) return testAccount;
   const result = await requireMembershipUser(request, env, db);
   if (result.response) return result.response;
   return jsonResponse(buildMembershipPayload(result.user));
