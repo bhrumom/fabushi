@@ -1963,7 +1963,7 @@ private func prepareNewChatTarget(
     )
     if baseline?["ok"] as? Bool == true { break }
     if let data = try? JSONSerialization.data(withJSONObject: baseline ?? [:], options: []) {
-      try? data.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("prepare_baseline_error.json"))
+      try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_baseline_error.json"))
     }
     if baseline?["error"] as? String == "not_chat_surface" {
       _ = cdpValue(
@@ -2011,7 +2011,7 @@ private func prepareNewChatTarget(
       }
     }
     if let data = try? JSONSerialization.data(withJSONObject: prepared ?? [:], options: []) {
-      try? data.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("prepare_prepared_error.json"))
+      try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_prepared_error.json"))
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
