@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 target="${1:-}"
 if [ -z "$target" ]; then
@@ -16,6 +16,28 @@ if [ ! -f "pubspec.yaml" ]; then
   echo "Run this script from the fabushi Flutter project directory." >&2
   exit 2
 fi
+
+diagnostics_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+diagnostics_file="$diagnostics_dir/mahayana-bundle-${target}-failure.txt"
+mkdir -p "$diagnostics_dir"
+record_failure() {
+  local status="$1"
+  local line="$2"
+  local command="$3"
+  trap - ERR
+  if [ ! -s "$diagnostics_file" ]; then
+    {
+      printf 'target=%s\n' "$target"
+      printf 'script=%s\n' "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}"
+      printf 'line=%s\n' "$line"
+      printf 'exit_status=%s\n' "$status"
+      printf 'command=%s\n' "$command"
+    } >"$diagnostics_file"
+  fi
+  cat "$diagnostics_file" >&2
+  exit "$status"
+}
+trap 'record_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 repo_root="$(cd .. && pwd)"
 runtime_root="$repo_root/third_party/mahayana"
