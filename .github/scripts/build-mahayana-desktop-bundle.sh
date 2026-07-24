@@ -113,7 +113,7 @@ if [ "$target" != "windows" ]; then
   fi
 fi
 
-"$cli_destination" help >/dev/null
+"$cli_destination" --help >/dev/null
 smoke_home="$(mktemp -d)"
 trap 'rm -rf "$smoke_home"' EXIT
 status_json="$(MAHAYANA_HOME="$smoke_home" "$cli_destination" status)"
