@@ -1702,6 +1702,9 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
     const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+    
+    const isChatSurface = !!document.querySelector('#prompt-textarea') || chatModel || webChat;
+
     const initialRoute = new URL(window.location.href).searchParams.get('initialRoute') || '';
     const routeMatch = initialRoute.match(/^\\/work\\/conversation\\/([^/?#]+)/);
     const portalConversation = document.querySelector('[data-above-composer-conversation-id]')
@@ -1714,7 +1717,7 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
       : (portalConversationId || null);
     const expectedConversationId = \(expectedConversationId);
     result.expectedConversationId = expectedConversationId || null;
-    if (!input || (!chatModel && !webChat) || workComposer) {
+    if (!input || !isChatSurface || workComposer) {
       result.error = 'not_chat_surface';
       result.hasInput = !!input;
       result.chatModel = chatModel;
