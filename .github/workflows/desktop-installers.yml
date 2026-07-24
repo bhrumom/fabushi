@@ -7,6 +7,7 @@ on:
     paths:
       - fabushi/**
       - .agents/plugins/**
+      - scripts/package-official-plugins.sh
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
@@ -25,6 +26,7 @@ on:
     paths:
       - fabushi/**
       - .agents/plugins/**
+      - scripts/package-official-plugins.sh
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
@@ -604,6 +606,15 @@ jobs:
         if: matrix.target == 'windows'
         shell: bash
         run: ../.github/scripts/build-mahayana-desktop-bundle.sh windows
+
+      - name: Upload Mahayana bundle failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mahayana-bundle-diagnostics-${{ matrix.target }}
+          path: ${{ runner.temp }}/mahayana-bundle-${{ matrix.target }}-failure.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Sync Windows OpenClaw assets into release build
         if: matrix.target == 'windows'
