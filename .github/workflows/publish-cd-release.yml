@@ -204,6 +204,9 @@ jobs:
               fabushi/lib/*|fabushi/assets/*|fabushi/fonts/*|fabushi/pubspec.yaml|fabushi/pubspec.lock|fabushi/analysis_options.yaml|fabushi/l10n.yaml)
                 add_both "shared Flutter package input changed: $path"
                 ;;
+              .agents/plugins/*)
+                add_both "bundled official plugin input changed: $path"
+                ;;
               frontend/*)
                 ignore_mobile_package "official site input does not require mobile install packages: $path"
                 ;;
@@ -214,7 +217,7 @@ jobs:
                 ignore_mobile_package "Worker/API input does not require mobile install packages: $path"
                 ;;
               .github/workflows/publish-cd-release.yml)
-                add_android "package release workflow changed; validate Android release package path: $path"
+                add_both "package release workflow changed; validate Android and iOS release package paths: $path"
                 ;;
               .github/workflows/*|.github/scripts/*)
                 ignore_mobile_package "CI/CD guardrail input does not require mobile install packages: $path"
