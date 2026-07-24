@@ -691,14 +691,15 @@ private func frame(of element: AXUIElement) -> CGRect? {
 private func focusedWindow(in application: NSRunningApplication) -> AXUIElement? {
   let root = AXUIElementCreateApplication(application.processIdentifier)
   var value: CFTypeRef?
-  guard AXUIElementCopyAttributeValue(
-    root,
-    kAXFocusedWindowAttribute as CFString,
-    &value
-  ) == .success,
-    let value,
-    CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-  return unsafeBitCast(value, to: AXUIElement.self)
+  if AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &value) == .success,
+     let val = value, CFGetTypeID(val) == AXUIElementGetTypeID() {
+    return unsafeBitCast(val, to: AXUIElement.self)
+  }
+  if AXUIElementCopyAttributeValue(root, kAXMainWindowAttribute as CFString, &value) == .success,
+     let val = value, CFGetTypeID(val) == AXUIElementGetTypeID() {
+    return unsafeBitCast(val, to: AXUIElement.self)
+  }
+  return nil
 }
 
 private func isActuallyVisible(
@@ -729,7 +730,7 @@ private func candidates() -> [Candidate] {
   // element can activate its window, and virtualized hidden conversation
   // elements can restore an old route. Background and hidden work is handled
   // through the renderer IPC path without focusing or navigating the UI.
-  for application in runningChatGptApplications() where application.isActive {
+  for application in runningChatGptApplications() {
     guard let activeWindow = focusedWindow(in: application) else { continue }
     let root = AXUIElementCreateApplication(application.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 1.5)
