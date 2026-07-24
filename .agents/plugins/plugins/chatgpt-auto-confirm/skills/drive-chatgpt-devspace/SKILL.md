@@ -30,6 +30,7 @@ For long-lived release, deployment, marketplace, or CI work, also apply the bund
    - `timeout: 7200` unless the user requests another total limit;
    - `stagnationTimeout: 1200` for 20 minutes without new visible progress;
    - `maxRecoveryAttempts: 5`;
+   - select GPT-5.6 Sol and High reasoning effort for complex implementation tasks when the model selector is available;
    - `autoContinueIncomplete: true`;
    - `maxTaskContinuations: 0` (continuous report-driven new-Chat continuation; `0` means no fixed cap);
    - `pollIntervalMs: 500`.
@@ -53,9 +54,9 @@ A stall requires 20 continuous minutes with no change in the visible thinking su
 
 The 20-minute timer applies only while ChatGPT still appears to be running. If generation has stopped and the stable response explicitly says the task is unfinished, blocked, or failed, return immediately with `chat_finished_incomplete`, the visible response, and diagnostics. Never wait for the stall timer after the Chat has ended.
 
-Every instruction automatically requires a final `MAHAYANA_TASK_REPORT_V1` JSON report with `status`, `summary`, `completed`, `remaining`, `blockers`, `verification`, `wait_seconds`, `wait_reason`, `next_connector`, and `next_task`. When the report says `incomplete` or `blocked`, stop monitoring that finished Chat immediately and continue in a fresh Chat built from the original goal plus the report; never append to the finished conversation. A zero continuation cap means continue until complete or until the report lacks `next_task`. Repeated blockers must trigger diagnosis and an alternative path, or an exact list of required prerequisites, rather than merely stopping on a matching fingerprint.
+Every unfinished handoff requires a `MAHAYANA_TASK_REPORT_V1` JSON report with `status`, `summary`, `completed`, `remaining`, `blockers`, `verification`, `wait_seconds`, `wait_reason`, `next_connector`, and `next_task`. A successful task result is sent to an independent acceptance Chat and does not require the machine report. When the report says `incomplete` or `blocked`, stop monitoring that finished Chat immediately and continue in a fresh Chat built from the original goal plus the report; never append to the finished conversation. A zero continuation cap means continue until complete or until the report lacks `next_task`. Repeated blockers must trigger diagnosis and an alternative path, or an exact list of required prerequisites, rather than merely stopping on a matching fingerprint.
 
-If `wait_seconds` is greater than zero, use the persistent task queue rather than holding a direct `send_and_watch` invocation open: the queue records the delay and sends the fresh continuation after the estimate expires. The report must use `incomplete`, include a nonempty `wait_reason`, and name the external check in `next_task`.
+Do not end a working Chat merely because Actions, deployments, releases, or remote checks are still running. Continue polling inside the task Chat. Use a handoff report only when continuation is impossible. The report must then use `incomplete` or `blocked`, keep `wait_seconds` as 0, and include a concrete `next_task`.
 
 For GitHub-backed work, use the GitHub connector for cloud state and bhrum2 for the local checkout. Set `next_connector` when the next fresh Chat must switch between those contexts. Treat disconnects, DNS failures, upstream 502/503/504, and connector timeouts as a recoverable wait, not as completion or an instruction to repeat a failed request.
 
