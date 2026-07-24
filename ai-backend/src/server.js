@@ -17,11 +17,6 @@ import { z } from 'zod';
 
 import { registerPlatformApi } from './platform_api.js';
 import {
-  codexResponsesMessages,
-  codexResponsesTools,
-  deepSeekResultToResponseItems,
-} from './codex_deepseek_adapter.js';
-import {
   createPluginCodexPolicy,
   pluginConversationNamespace,
   pluginMcpTokenEnv,
@@ -869,7 +864,6 @@ async function callDeepSeek(messages, options = {}) {
         options.maximumCompletionTokens || deepseekMaxCompletionTokens,
       ),
       stream: false,
-      ...(options.tools?.length ? { tools: options.tools, tool_choice: 'auto' } : {}),
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -896,14 +890,8 @@ async function callDeepSeek(messages, options = {}) {
     throw error;
   }
 
-  const upstreamMessage = payload?.choices?.[0]?.message || {};
-  const message = typeof upstreamMessage.content === 'string'
-    ? upstreamMessage.content.trim()
-    : '';
-  const toolCalls = Array.isArray(upstreamMessage.tool_calls)
-    ? upstreamMessage.tool_calls
-    : [];
-  if (!message && toolCalls.length === 0) {
+  const message = payload?.choices?.[0]?.message?.content?.trim();
+  if (!message) {
     const error = new Error('DeepSeek returned an empty response');
     error.statusCode = 502;
     throw error;
@@ -911,7 +899,6 @@ async function callDeepSeek(messages, options = {}) {
 
   return {
     message,
-    toolCalls,
     model,
     usage: {
       promptTokens: Number(payload?.usage?.prompt_tokens || 0),
@@ -1318,24 +1305,24 @@ function responsesPayload({
   text = '',
   usage = null,
   error = null,
-  outputItems = null,
 }) {
   return {
     id: responseId,
     object: 'response',
     status,
     model,
-    output: status === 'completed'
-      ? outputItems || [
-          {
-            id: itemId,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text }],
-          },
-        ]
-      : [],
+    output:
+      status === 'completed'
+        ? [
+            {
+              id: itemId,
+              type: 'message',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text }],
+            },
+          ]
+        : [],
     ...(usage ? { usage: responseUsage(usage) } : {}),
     ...(error
       ? {
@@ -2113,19 +2100,19 @@ app.post(
       return;
     }
 
-    const messages = codexResponsesMessages(req.body);
-    if (messages.length === 0) {
+    const prompt = codexResponsesPrompt(req.body);
+    if (!prompt) {
       res.status(400).json({ error: { message: 'Responses input is required' } });
       return;
     }
-    const { tools: responseTools, kinds: responseToolKinds } = codexResponsesTools(req.body);
 
     const {
       user,
       recordUsage: shouldRecordUsage,
       maxCompletionTokens: adapterMaxCompletionTokens,
     } = await resolveCodexResponsesBilling(req);
-    const promptEstimate = estimateTokens(JSON.stringify({ messages, tools: responseTools }));
+    const messages = [{ role: 'user', content: prompt }];
+    const promptEstimate = estimateTokens(JSON.stringify(messages));
     const budget = enforceTokenBudget(user, promptEstimate + 600);
     const responseCompletionLimit = adapterMaxCompletionTokens || deepseekMaxCompletionTokens;
     const maxCompletionTokens = Math.min(
@@ -2147,18 +2134,8 @@ app.post(
         model,
         maxCompletionTokens,
         maximumCompletionTokens: responseCompletionLimit,
-        tools: responseTools,
       });
-      const outputItems = deepSeekResultToResponseItems(
-        result,
-        responseToolKinds,
-        (prefix) => `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`,
-      );
-      const usage = usageWithFallback(
-        result.usage,
-        messages,
-        result.message || JSON.stringify(result.toolCalls || []),
-      );
+      const usage = usageWithFallback(result.usage, messages, result.message);
       if (shouldRecordUsage) recordUsage(user.userId, usage.totalTokens);
       res.json(
         responsesPayload({
@@ -2168,95 +2145,8 @@ app.post(
           model: result.model || model,
           text: result.message,
           usage,
-          outputItems,
         }),
       );
-      return;
-    }
-
-    if (responseTools.length > 0) {
-      res.status(200);
-      res.set({
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      res.flushHeaders?.();
-      writeResponsesEvent(res, 'response.created', {
-        type: 'response.created',
-        response: responsesPayload({ responseId, itemId, status: 'in_progress', model }),
-      });
-      try {
-        const result = await callDeepSeek(messages, {
-          model,
-          maxCompletionTokens,
-          maximumCompletionTokens: responseCompletionLimit,
-          tools: responseTools,
-        });
-        const outputItems = deepSeekResultToResponseItems(
-          result,
-          responseToolKinds,
-          (prefix) => `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`,
-        );
-        outputItems.forEach((item, outputIndex) => {
-          const addedItem = item.type === 'message'
-            ? { ...item, status: 'in_progress', content: [] }
-            : { ...item, status: 'in_progress' };
-          writeResponsesEvent(res, 'response.output_item.added', {
-            type: 'response.output_item.added',
-            output_index: outputIndex,
-            item: addedItem,
-          });
-          if (item.type === 'message') {
-            const text = item.content?.find((part) => part.type === 'output_text')?.text || '';
-            if (text) {
-              writeResponsesEvent(res, 'response.output_text.delta', {
-                type: 'response.output_text.delta',
-                item_id: item.id,
-                output_index: outputIndex,
-                content_index: 0,
-                delta: text,
-              });
-            }
-          }
-          writeResponsesEvent(res, 'response.output_item.done', {
-            type: 'response.output_item.done',
-            output_index: outputIndex,
-            item,
-          });
-        });
-        const usage = usageWithFallback(
-          result.usage,
-          messages,
-          result.message || JSON.stringify(result.toolCalls || []),
-        );
-        if (shouldRecordUsage) recordUsage(user.userId, usage.totalTokens);
-        writeResponsesEvent(res, 'response.completed', {
-          type: 'response.completed',
-          response: responsesPayload({
-            responseId,
-            itemId,
-            status: 'completed',
-            model: result.model || model,
-            text: result.message,
-            usage,
-            outputItems,
-          }),
-        });
-      } catch (error) {
-        writeResponsesEvent(res, 'response.failed', {
-          type: 'response.failed',
-          response: responsesPayload({
-            responseId,
-            itemId,
-            status: 'failed',
-            model,
-            error,
-          }),
-        });
-      }
-      res.end();
       return;
     }
 
@@ -2516,32 +2406,6 @@ app.get('/health', (_req, res) => {
     timestamp: nowIso(),
   });
 });
-
-app.get(
-  '/v1/ai/usage',
-  asyncHandler(async (req, res) => {
-    const user = await resolveUser(req, {});
-    const now = new Date();
-    const windowStart = Math.floor(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth(), 1,
-    ) / 1000);
-    const windowEnd = Math.floor(Date.UTC(
-      now.getUTCFullYear(), now.getUTCMonth() + 1, 1,
-    ) / 1000);
-    const tokenLimit = user.isTestAccount
-      ? 999_999_999
-      : user.isMember ? memberMonthlyLimit : freeMonthlyLimit;
-    const usedTokens = user.isTestAccount ? 0 : usageFor(user.userId).used;
-    jsonResponse(res, 200, {
-      windowStart,
-      windowEnd,
-      tokenLimit,
-      usedTokens,
-      reservedTokens: 0,
-      remainingTokens: Math.max(0, tokenLimit - usedTokens),
-    });
-  }),
-);
 
 app.get('/api/plugins/registry', (_req, res) => {
   jsonResponse(res, 200, {

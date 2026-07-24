@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-auto-confirm",
-  "version": "1.0.0+codex.20260723003618",
-  "description": "\u81ea\u52a8\u786e\u8ba4 ChatGPT \u6388\u6743\u5361\uff0c\u5e76\u7f16\u6392\u53ef\u6062\u590d\u3001\u53ef\u5e76\u53d1\u3001\u9700\u9a8c\u6536\u7684\u4efb\u52a1\u961f\u5217",
+  "version": "1.0.0+codex.20260723053507",
+  "description": "自动确认 ChatGPT 授权卡，并编排可恢复、可并发、需验收的任务队列",
   "author": {
     "name": "Fabushi"
   },
@@ -35,9 +35,9 @@
     }
   ],
   "interface": {
-    "displayName": "ChatGPT \u81ea\u52a8\u786e\u8ba4",
-    "shortDescription": "\u81ea\u52a8\u786e\u8ba4\u3001\u4efb\u52a1\u7eed\u4f5c\u3001\u961f\u5217\u5e76\u53d1\u548c Work \u9a8c\u6536",
-    "longDescription": "\u684c\u9762\u7aef\u5b89\u88c5\u540e\u7531\u968f\u5305 Mahayana CLI \u542f\u52a8 macOS \u540e\u53f0\u8fdb\u7a0b\uff0c\u6301\u7eed\u68c0\u6d4b\u5e76\u786e\u8ba4 ChatGPT \u6388\u6743\u5361\u3002\u5b83\u8fd8\u4f1a\u4e3a\u4efb\u52a1\u6ce8\u5165\u7ed3\u6784\u5316\u6700\u7ec8\u603b\u7ed3\uff0c\u672a\u5b8c\u6210\u65f6\u81ea\u52a8\u65b0\u5efa Chat \u7eed\u4f5c\uff0c\u5b8c\u6210\u540e\u8fd4\u56de\u5f53\u524d Work \u9a8c\u6536\uff1b\u652f\u6301\u4f9d\u8d56\u3001\u8d44\u6e90\u9501\u3001\u5e76\u53d1 worker \u548c\u4e2d\u65ad\u6062\u590d\u3002\u961f\u5217\u3001\u4f1a\u8bdd\u5f15\u7528\u4e0e\u5ba1\u8ba1\u4ec5\u4fdd\u5b58\u5728\u672c\u673a\u3002",
+    "displayName": "ChatGPT 自动确认",
+    "shortDescription": "后台确认隐藏会话，并在同一实例的隐藏页面执行可恢复任务队列",
+    "longDescription": "桌面端安装后由随包 Mahayana CLI 启动 macOS 后台进程，原地扫描所有已加载的 ChatGPT renderer 并确认授权卡，不激活应用、不切换会话。通用确认和任务队列共用同一个已登录的 ChatGPT 实例；任务、续作和独立验收只在该实例中从未显示、不获取焦点的隐藏页面中串行执行，不会打断用户正在新建或输入的会话。队列、会话引用与审计仅保存在本机。",
     "developerName": "Fabushi",
     "category": "Productivity",
     "capabilities": [
@@ -46,9 +46,9 @@
     ],
     "websiteURL": "https://fabushi.ombhrum.com/",
     "defaultPrompt": [
-      "\u542f\u52a8 ChatGPT \u540e\u53f0\u6388\u6743\u5361\u81ea\u52a8\u786e\u8ba4",
-      "\u521b\u5efa\u5e76\u542f\u52a8\u4e00\u4e2a\u53ef\u6062\u590d\u7684 ChatGPT \u4efb\u52a1\u961f\u5217",
-      "\u7b49\u5f85\u4e0b\u4e00\u4e2a\u5df2\u5b8c\u6210\u7684\u4efb\u52a1\u5e76\u8fd4\u56de Work \u9a8c\u6536"
+      "启动 ChatGPT 后台授权卡自动确认",
+      "创建并启动一个可恢复的 ChatGPT 任务队列",
+      "等待下一个已完成的任务并返回独立 Chat 验收"
     ]
   }
 }

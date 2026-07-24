@@ -1087,7 +1087,7 @@ async function handleAlipayCliSession(request, env) {
   return jsonResponse({
     success: true,
     status: 'complete',
-    accessToken: data.token,
+    token: data.token,
     username: data.username,
     user: data.user
   });

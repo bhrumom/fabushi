@@ -7,10 +7,6 @@ native-web/
 .idea/
 *.log
 node_modules/
-.mahayana-state/
-.mahayana-distribution/
-/codex-computer-use-plugin.tar.gz
-/codex-computer-use-plugin.zip
 .env
 .env.local
 

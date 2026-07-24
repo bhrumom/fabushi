@@ -167,7 +167,6 @@ class AppSettings {
       'desktop_control_bridge_port_v1';
   static const String _desktopControlBridgeTokenKey =
       'desktop_control_bridge_token_v1';
-  static const String _chatGptApprovalStateKey = 'chatgpt_approval_state_v1';
 
   static const String defaultOpenClawGatewayModel = 'openclaw/default';
   static const String defaultOpenClawDeepSeekModel = 'deepseek/deepseek-chat';
@@ -322,27 +321,6 @@ class AppSettings {
     final token = base64UrlEncode(bytes).replaceAll('=', '');
     await prefs.setString(_desktopControlBridgeTokenKey, token);
     return token;
-  }
-
-  static Future<Map<String, dynamic>?> getChatGptApprovalState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_chatGptApprovalStateKey);
-    if (raw == null || raw.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      await prefs.remove(_chatGptApprovalStateKey);
-    }
-    return null;
-  }
-
-  static Future<void> setChatGptApprovalState(
-    Map<String, dynamic> state,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_chatGptApprovalStateKey, jsonEncode(state));
   }
 
   // --- Codex & 机器人之父 API 设置 ---

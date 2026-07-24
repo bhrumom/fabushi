@@ -643,7 +643,6 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-Wl,-export_dynamic",
 					"-lc++",
 					"-all_load",
 				);
@@ -837,7 +836,6 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-Wl,-export_dynamic",
 					"-lc++",
 					"-all_load",
 				);
@@ -874,7 +872,6 @@
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-Wl,-export_dynamic",
 					"-lc++",
 					"-all_load",
 				);

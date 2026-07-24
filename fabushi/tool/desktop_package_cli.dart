@@ -436,11 +436,10 @@ Examples:
     );
     _check(
       'official MCP plugin inventory',
-      registry.plugins.length == 7 &&
+      registry.plugins.length == 6 &&
           registry.plugins.any((plugin) => plugin.id == 'global-dharma') &&
           registry.plugins.any((plugin) => plugin.id == 'bot-father') &&
-          registry.plugins.any((plugin) => plugin.id == 'mahayana-assistant') &&
-          registry.plugins.any((plugin) => plugin.id == 'chatgpt-auto-confirm'),
+          registry.plugins.any((plugin) => plugin.id == 'mahayana-assistant'),
       'plugins=${registry.plugins.map((plugin) => plugin.id).join(',')}',
     );
 
@@ -826,14 +825,6 @@ class McpPluginSmokeRegistry {
         'list_plugins',
         'plugin_status',
         'diagnose_plugin',
-      ],
-      'chatgpt-auto-confirm': [
-        'home',
-        'start',
-        'stop',
-        'status',
-        'scan_once',
-        'audit_log',
       ],
     };
     return McpPluginSmokeRegistry(

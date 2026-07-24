@@ -18,7 +18,7 @@ OPENCLAW_VERSION="${OPENCLAW_VERSION:-2026.6.1}"
 OPENCLAW_WEIXIN_VERSION="${OPENCLAW_WEIXIN_VERSION:-2.4.3}"
 OPENCLAW_WEIXIN_PACKAGE="${OPENCLAW_WEIXIN_PACKAGE:-@tencent-weixin/openclaw-weixin@$OPENCLAW_WEIXIN_VERSION}"
 OPENCLAW_BUNDLE_WEIXIN="${OPENCLAW_BUNDLE_WEIXIN:-1}"
-NODE_VERSION="${NODE_VERSION:-24.18.0}"
+NODE_VERSION="${NODE_VERSION:-24.2.0}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$ROOT_DIR/assets/openclaw/$PLATFORM"
 WORK_DIR="$ROOT_DIR/.dart_tool/openclaw_bundle/$PLATFORM"
@@ -61,17 +61,6 @@ else
   NPM_CMD=("$OUT_DIR/node/bin/npm")
 fi
 
-install_published_package_dependencies() {
-  # Registry tarballs can contain lock files generated from a different
-  # package.json than the published manifest. Resolve from that manifest rather
-  # than letting a stale bundled lock make npm ci fail during release vendoring.
-  rm -f package-lock.json npm-shrinkwrap.json
-  "${NPM_CMD[@]}" install \
-    --omit=dev \
-    --ignore-scripts=false \
-    --package-lock=false
-}
-
 echo "==> Packing openclaw@$OPENCLAW_VERSION"
 npm pack "openclaw@$OPENCLAW_VERSION" --pack-destination "$WORK_DIR" >/dev/null
 OPENCLAW_TGZ="$(ls "$WORK_DIR"/openclaw-*.tgz | head -n 1)"
@@ -80,7 +69,11 @@ tar -xzf "$OPENCLAW_TGZ" -C "$OUT_DIR/openclaw" --strip-components=1
 
 echo "==> Installing production dependencies into bundled OpenClaw package"
 pushd "$OUT_DIR/openclaw" >/dev/null
-install_published_package_dependencies
+if [[ -f package-lock.json ]]; then
+  "${NPM_CMD[@]}" ci --omit=dev
+else
+  "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
+fi
 popd >/dev/null
 
 if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
@@ -96,7 +89,11 @@ if [[ "$OPENCLAW_BUNDLE_WEIXIN" != "0" ]]; then
 
   echo "==> Installing production dependencies into bundled WeChat plugin"
   pushd "$OUT_DIR/plugins/openclaw-weixin" >/dev/null
-  install_published_package_dependencies
+  if [[ -f package-lock.json ]]; then
+    "${NPM_CMD[@]}" ci --omit=dev
+  else
+    "${NPM_CMD[@]}" install --omit=dev --ignore-scripts=false
+  fi
   popd >/dev/null
 fi
 
