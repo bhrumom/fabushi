@@ -204,7 +204,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /stopQueueWorker/);
   assert.match(nativeSource, /startAutomationReview/);
   assert.match(nativeSource, /reviewConversationId/);
-  assert.match(nativeSource, /chat_review_incomplete/);
+  assert.match(nativeSource, /chat_review_\\\(report\.status\)/);
   assert.match(nativeSource, /app:\/\/-\/index\.html/);
   assert.doesNotMatch(nativeSource, /existing-process-hidden-target/);
   assert.match(nativeSource, /quickChatPrewarmServiceJS/);

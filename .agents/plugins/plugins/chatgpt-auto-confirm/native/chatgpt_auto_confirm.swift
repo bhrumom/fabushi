@@ -6180,8 +6180,6 @@ private func parseTaskReport(_ content: String) -> [String: Any]? {
     return nil
   }
   let waitSeconds = report["wait_seconds"] as? Int ?? 0
-  let waitReason = (report["wait_reason"] as? String ?? "")
-    .trimmingCharacters(in: .whitespacesAndNewlines)
   guard (0...604_800).contains(waitSeconds) else { return nil }
   if status == "complete" {
     guard remaining.isEmpty, blockers.isEmpty,

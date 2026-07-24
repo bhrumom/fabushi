@@ -34,4 +34,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: chatgpt-auto-confirm-macos-runtime
-          path: runtime/macos/chatgpt-auto-confirm
+          if-no-files-found: error
+          path: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm
