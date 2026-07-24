@@ -91,6 +91,7 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   // 2. Start Mock CDP HTTP & WebSocket Server (AF_INET)
   let cdpPort = 0;
   let evaluateExpressionReceived = null;
+  const evaluatedTargets = new Set();
   const httpServer = http.createServer((req, res) => {
     if (req.url === '/json') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -101,6 +102,13 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
           title: 'ChatGPT - Tool Approval Mock',
           url: 'https://chatgpt.com/c/test-session-101',
           webSocketDebuggerUrl: `ws://127.0.0.1:${cdpPort}/devtools/page/101`
+        },
+        {
+          id: 'page-202',
+          type: 'page',
+          title: 'ChatGPT - Hidden Tool Approval Mock',
+          url: 'https://chatgpt.com/c/test-session-202',
+          webSocketDebuggerUrl: `ws://127.0.0.1:${cdpPort}/devtools/page/202`
         }
       ]));
     } else {
@@ -110,7 +118,8 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   });
 
   httpServer.on('upgrade', (req, socket, head) => {
-    if (req.url === '/devtools/page/101') {
+    if (req.url === '/devtools/page/101' || req.url === '/devtools/page/202') {
+      evaluatedTargets.add(req.url);
       const key = req.headers['sec-websocket-key'];
       const acceptKey = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
       socket.write(
@@ -246,10 +255,14 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   assert.equal(statusRes.ipc.unix.protocol, 'UInt32_LE_JSON');
   assert.equal(statusRes.ipc.cdp.available, true);
   assert.equal(statusRes.ipc.cdp.connected, true);
-  assert.equal(statusRes.ipc.cdp.pageTargetCount, 1);
+  assert.equal(statusRes.ipc.cdp.pageTargetCount, 2);
+  assert.equal(statusRes.loadedRendererCount, 2);
+  assert.equal(statusRes.safety.scansEveryLoadedRenderer, true);
   assert.equal(statusRes.ipc.primaryPath, 'CDP WebSocket & Unix IPC 主路径');
   assert.equal(statusRes.safety.ipcIsPrimaryPath, true);
   assert.equal(statusRes.safety.axPressIsFallback, true);
+  assert.equal(statusRes.safety.axPressVisibleForegroundOnly, true);
+  assert.equal(statusRes.safety.axPressNeverTargetsHiddenElements, true);
   assert.equal(unixInitReceived, true);
 
   const { stdout: chatStatusStdout } = await execFileAsync(
@@ -282,9 +295,15 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   );
   const scanRes = JSON.parse(scanStdout);
   assert.equal(scanRes.ok, true);
-  assert.equal(scanRes.candidates, 1);
-  assert.equal(scanRes.approved, 1);
+  assert.equal(scanRes.candidates, 2);
+  assert.equal(scanRes.approved, 2);
+  assert.equal(scanRes.loadedRendererCount, 2);
+  assert.equal(scanRes.pageChanged, false);
   assert.equal(scanRes.ipcPrimaryPath, true);
+  assert.deepEqual([...evaluatedTargets].sort(), [
+    '/devtools/page/101',
+    '/devtools/page/202',
+  ]);
   assert.ok(evaluateExpressionReceived);
   assert.match(evaluateExpressionReceived, /checkCardMatch/);
   assert.match(evaluateExpressionReceived, /sanitizeContext/);
