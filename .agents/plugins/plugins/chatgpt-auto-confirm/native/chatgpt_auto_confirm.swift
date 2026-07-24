@@ -1851,7 +1851,9 @@ private func clickNewChatJS() -> String {
     const button = ['新聊天', '新建任务', '新任务', 'new chat', 'new task']
       .map(exactButton).find(Boolean) || document.querySelector('[href="/"]');
     if (!button) {
-      return { ok: false, error: 'new_chat_button_not_found', previousConversationId };
+      const isMac = window.location.protocol === 'chatgpt:';
+      window.location.href = isMac ? 'chatgpt://work/' : '/';
+      return { ok: true, newChatClicked: true, previousConversationId, fallbackNavigated: true };
     }
     button.click();
     return { ok: true, newChatClicked: true, previousConversationId };
