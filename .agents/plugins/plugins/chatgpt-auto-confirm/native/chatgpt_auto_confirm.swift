@@ -2114,7 +2114,7 @@ private func ensureHiddenChatTarget(
 
   let prepared: [String: Any]?
   if newChat {
-    prepared = prepareNewChatTarget(port: port, targetId: targetId)
+    prepared = prepareNewChatTarget(port: port, targetId: targetId, allowBlankConversationReuse: true)
   } else {
     var current: [String: Any]?
     for _ in 0..<40 {
