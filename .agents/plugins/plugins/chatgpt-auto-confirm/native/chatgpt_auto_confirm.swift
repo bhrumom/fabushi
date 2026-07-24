@@ -2,6 +2,7 @@ import ApplicationServices
 import Cocoa
 import Darwin
 import Foundation
+import SystemConfiguration
 
 private struct ApprovalRule: Codable {
   let id: String
@@ -44,14 +45,20 @@ private struct PluginState: Codable {
   var queueReviewGate: Bool?
   var queueWatcherPid: Int32?
   var queueRuntimeRevision: String?
-  // One queue-owned authenticated ChatGPT process is shared by all queued
-  // tasks. Its Chat target is process-scoped rather than task-scoped so
-  // concurrency never multiplies heavyweight Electron instances. An existing
-  // hidden target can be preferred explicitly during migration.
+  // The queue and general confirmer share one authenticated ChatGPT process.
+  // The queue owns a hidden, never-shown prewarm BrowserWindow/renderer inside
+  // that process and never navigates the primary window where the user types.
   var queueWorkerPort: Int?
   var queueWorkerTargetId: String?
   var queueWorkerProfilePath: String?
   var queueWorkerMode: String?
+  // Reachability is queue-level state: a transient DNS/network/upstream
+  // outage pauses the durable queue instead of terminating or duplicating
+  // active Chat work.
+  var queueNetworkStatus: String?
+  var queueNetworkLastError: String?
+  var queueNetworkFailureCount: Int?
+  var queueNetworkWaitUntil: String?
 }
 
 private struct AutomationTaskReport: Codable {
@@ -68,6 +75,10 @@ private struct AutomationTaskReport: Codable {
   // instead of keeping a renderer and a model response idle.
   var waitSeconds: Int?
   var waitReason: String?
+  // A finished Chat can choose the connector for the next fresh Chat. This
+  // is useful when a local bhrum2 step has pushed code and the next step must
+  // inspect GitHub Actions through the GitHub connector.
+  var nextConnector: String?
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
@@ -75,6 +86,7 @@ private struct AutomationTaskReport: Codable {
     case nextTask = "next_task"
     case waitSeconds = "wait_seconds"
     case waitReason = "wait_reason"
+    case nextConnector = "next_connector"
   }
 }
 
@@ -119,6 +131,12 @@ private struct AutomationTask: Codable {
   var lastProgressAt: String?
   var waitingUntil: String?
   var waitReason: String?
+  // Conversation is durable state; hidden renderer is only a recoverable worker.
+  // These fields allow the queue to recover after a renderer disappears instead
+  // of treating the task as failed.
+  var hiddenWorkerLastHeartbeatAt: String? = nil
+  var hiddenWorkerRecoveryCount: Int? = nil
+  var hiddenWorkerLastError: String? = nil
 }
 
 private struct Candidate {
@@ -351,7 +369,11 @@ private func nativeSearchElements(
     "AXDirection": "AXDirectionNext",
     "AXImmediateDescendantsOnly": false,
     "AXResultsLimit": limit,
-    "AXVisibleOnly": false,
+    // AXPress on a virtualized, hidden conversation can make ChatGPT restore
+    // that conversation before dispatching the action. Hidden renderers are
+    // handled through CDP instead; the compatibility path is intentionally
+    // limited to elements that macOS reports as visible.
+    "AXVisibleOnly": true,
   ]
   var value: CFTypeRef?
   guard AXUIElementCopyParameterizedAttributeValue(
@@ -636,10 +658,79 @@ private func runningChatGptApplications() -> [NSRunningApplication] {
   }
 }
 
+private func pointAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGPoint? {
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+        let value,
+        CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+  let axValue = unsafeBitCast(value, to: AXValue.self)
+  guard AXValueGetType(axValue) == .cgPoint else { return nil }
+  var point = CGPoint.zero
+  guard AXValueGetValue(axValue, .cgPoint, &point) else { return nil }
+  return point
+}
+
+private func sizeAttribute(_ element: AXUIElement, _ attribute: CFString) -> CGSize? {
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+        let value,
+        CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+  let axValue = unsafeBitCast(value, to: AXValue.self)
+  guard AXValueGetType(axValue) == .cgSize else { return nil }
+  var size = CGSize.zero
+  guard AXValueGetValue(axValue, .cgSize, &size) else { return nil }
+  return size
+}
+
+private func frame(of element: AXUIElement) -> CGRect? {
+  guard let origin = pointAttribute(element, kAXPositionAttribute as CFString),
+        let size = sizeAttribute(element, kAXSizeAttribute as CFString) else { return nil }
+  return CGRect(origin: origin, size: size)
+}
+
+private func focusedWindow(in application: NSRunningApplication) -> AXUIElement? {
+  let root = AXUIElementCreateApplication(application.processIdentifier)
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(
+    root,
+    kAXFocusedWindowAttribute as CFString,
+    &value
+  ) == .success,
+    let value,
+    CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+  return unsafeBitCast(value, to: AXUIElement.self)
+}
+
+private func isActuallyVisible(
+  _ element: AXUIElement,
+  inside focusedWindow: AXUIElement
+) -> Bool {
+  if boolAttribute(element, "AXVisible" as CFString) == false { return false }
+  guard let elementFrame = frame(of: element),
+        let windowFrame = frame(of: focusedWindow),
+        elementFrame.width > 1,
+        elementFrame.height > 1,
+        !elementFrame.intersection(windowFrame).isNull else { return false }
+
+  var current: AXUIElement? = element
+  for _ in 0..<40 {
+    guard let node = current else { return false }
+    if CFEqual(node, focusedWindow) { return true }
+    if boolAttribute(node, "AXVisible" as CFString) == false { return false }
+    current = parent(of: node)
+  }
+  return false
+}
+
 private func candidates() -> [Candidate] {
   var values: [Candidate] = []
   var seenButtons = Set<CFHashCode>()
-  for application in runningChatGptApplications() {
+  // Never AXPress a background ChatGPT process. Pressing an accessibility
+  // element can activate its window, and virtualized hidden conversation
+  // elements can restore an old route. Background and hidden work is handled
+  // through the renderer IPC path without focusing or navigating the UI.
+  for application in runningChatGptApplications() where application.isActive {
+    guard let activeWindow = focusedWindow(in: application) else { continue }
     let root = AXUIElementCreateApplication(application.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 1.5)
     var matchedElements: [AXUIElement] = []
@@ -719,6 +810,7 @@ private func candidates() -> [Candidate] {
     }
     for button in buttons {
       guard values.count < 3,
+            isActuallyVisible(button, inside: activeWindow),
             let context = closestApprovalContext(for: button) else { continue }
       let title = accessibleString(button)
       guard isAllowButton(title: title, context: context) ||
@@ -889,6 +981,21 @@ private func isChatGptRendererTarget(_ target: [String: Any]) -> Bool {
   return url.contains("chatgpt.com") || title.contains("chatgpt")
 }
 
+private func isLoadedApprovalRendererTarget(_ target: [String: Any]) -> Bool {
+  guard target["type"] as? String == "page",
+        (target["webSocketDebuggerUrl"] as? String) != nil else { return false }
+  let url = (target["url"] as? String ?? "").lowercased()
+  if url.hasPrefix("app://-/index.html") && !url.contains("/avatar-overlay") {
+    return true
+  }
+  return isChatGptRendererTarget(target)
+}
+
+private struct CDPApprovalTarget {
+  let port: Int
+  let target: [String: Any]
+}
+
 private struct CDPClient {
   static func port() -> Int {
     if let envPortStr = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_CDP_PORT"],
@@ -979,6 +1086,39 @@ private struct CDPClient {
       method: "Page.navigate",
       paramsJSON: "{\"url\":\(jsonStringLiteral(url))}",
       timeout: 8.0
+    ), response["error"] == nil else { return false }
+    return true
+  }
+
+  @discardableResult
+  static func setWebLifecycleActive(wsURLString: String) -> Bool {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Page.setWebLifecycleState",
+      paramsJSON: "{\"state\":\"active\"}",
+      timeout: 4.0
+    ), response["error"] == nil else { return false }
+    return true
+  }
+
+  @discardableResult
+  static func setHiddenPageFocusEmulation(wsURLString: String) -> Bool {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Emulation.setFocusEmulationEnabled",
+      paramsJSON: "{\"enabled\":true}",
+      timeout: 4.0
+    ), response["error"] == nil else { return false }
+    return true
+  }
+
+  @discardableResult
+  static func setHiddenPageUserActive(wsURLString: String) -> Bool {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Emulation.setIdleOverride",
+      paramsJSON: "{\"isUserActive\":true,\"isScreenUnlocked\":true}",
+      timeout: 4.0
     ), response["error"] == nil else { return false }
     return true
   }
@@ -1139,6 +1279,31 @@ private struct CDPClient {
     }
     return result
   }
+}
+
+private func loadedApprovalTargets(_ state: PluginState) -> [CDPApprovalTarget] {
+  // Browser extensions run inside every loaded tab rather than selecting one
+  // visible tab. Reproduce that behavior for ChatGPT/Electron: enumerate every
+  // loaded renderer on each known debugging endpoint and evaluate the approval
+  // handler in place. Runtime.evaluate does not activate the app, focus a
+  // window, click the sidebar, or change the current conversation.
+  var ports: [Int] = [CDPClient.port()]
+  if let backgroundPort = state.backgroundAppPort {
+    ports.append(backgroundPort)
+  }
+  var seenPorts = Set<Int>()
+  var seenTargets = Set<String>()
+  var values: [CDPApprovalTarget] = []
+  for port in ports where seenPorts.insert(port).inserted {
+    for target in CDPClient.fetchTargets(portOverride: port)
+      where isLoadedApprovalRendererTarget(target) {
+      guard let targetId = target["id"] as? String else { continue }
+      let identity = "\(port):\(targetId)"
+      guard seenTargets.insert(identity).inserted else { continue }
+      values.append(CDPApprovalTarget(port: port, target: target))
+    }
+  }
+  return values
 }
 
 private func normalizedChatURL(_ rawValue: String?) -> String? {
@@ -1310,6 +1475,78 @@ private func backgroundConversationURL(_ conversationId: String) -> String? {
     )
   ]
   return components?.url?.absoluteString
+}
+
+private func wakeHiddenRenderer(
+  port: Int,
+  targetId: String,
+  wsURL: String
+) -> Bool {
+  // Electron can leave a show:false renderer with its document and scripts
+  // loaded while React remains suspended. CDP focus emulation and an active
+  // idle state wake the renderer scheduler without showing the BrowserWindow,
+  // focusing the application, or changing document.visibilityState.
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+  let probe = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: """
+    (async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      const startedAt = performance.now();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      return {
+        bridge: !!window.electronBridge,
+        visibility: document.visibilityState,
+        href: location.href,
+        eventLoopDelayMs: performance.now() - startedAt
+      };
+    })()
+    """,
+    timeout: 4.0
+  )
+  let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
+    ?? Double.greatestFiniteMagnitude
+  return (probe?["bridge"] as? NSNumber)?.boolValue == true
+    && probe?["visibility"] as? String == "hidden"
+    && (probe?["href"] as? String ?? "").hasPrefix("app://-/index.html")
+    && eventLoopDelayMs < 2_500
+}
+
+private func navigateHiddenConversation(
+  port: Int,
+  targetId: String,
+  conversationId: String,
+  timeout: TimeInterval = 35.0
+) -> Bool {
+  guard let url = backgroundConversationURL(conversationId),
+        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId
+        }),
+        let wsURL = target["webSocketDebuggerUrl"] as? String,
+        CDPClient.navigate(wsURLString: wsURL, url: url) else { return false }
+  Thread.sleep(forTimeInterval: 0.5)
+  guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+    return false
+  }
+  let deadline = Date().addingTimeInterval(timeout)
+  repeat {
+    guard queueTargetIsHidden(port: port, targetId: targetId) else { return false }
+    if let status = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: chatStatusJS(),
+      timeout: 5.0
+    ), normalizedConversationId(status["conversationId"] as? String) == conversationId,
+       status["chatMode"] as? Bool == true {
+      return true
+    }
+    Thread.sleep(forTimeInterval: 0.25)
+  } while Date() < deadline
+  return false
 }
 
 private func selectBackgroundConversationJS(_ conversationId: String) -> String {
@@ -1489,6 +1726,103 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
     result.surface = 'chat';
     result.hasInput = true;
     return result;
+  })()
+  """
+}
+
+private func resolveDispatchedConversationJS(
+  dispatchMarker: String,
+  localConversationId: String?
+) -> String {
+  let marker = jsonStringLiteral(dispatchMarker)
+  let localId = jsonStringLiteral(localConversationId ?? "")
+  return """
+  (async () => {
+    const dispatchMarker = \(marker);
+    const expectedLocalId = \(localId);
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const normalizeId = raw => {
+      if (typeof raw !== 'string' || !raw) return '';
+      let value = raw;
+      try { value = decodeURIComponent(value); } catch {}
+      return value.startsWith('chatgpt:') ? value.slice('chatgpt:'.length) : value;
+    };
+    const portalId = () => normalizeId(
+      document.querySelector('[data-above-composer-conversation-id]')
+        ?.getAttribute('data-above-composer-conversation-id') || ''
+    );
+    const rowCandidates = () => {
+      const values = [];
+      const rows = [...document.querySelectorAll('[data-thread-title="true"]')]
+        .map(title => title.closest('[role="button"]'))
+        .filter(Boolean);
+      for (const row of rows) {
+        const title = (row.querySelector('[data-thread-title="true"]')?.textContent || '').trim();
+        const fiberKey = Object.keys(row).find(key => key.startsWith('__reactFiber$'));
+        let fiber = fiberKey ? row[fiberKey] : null;
+        const identities = [];
+        const durableIds = [];
+        for (let depth = 0; fiber && depth < 8; depth += 1, fiber = fiber.return) {
+          const props = fiber.memoizedProps || {};
+          identities.push(props.conversationId, props.conversation?.id);
+          if (typeof props.conversation?.id === 'string') {
+            durableIds.push(props.conversation.id);
+          }
+          for (const route of [props.route, props.shortcutKey]) {
+            if (typeof route !== 'string') continue;
+            const match = route.match(/^\\/work\\/conversation\\/([^/?#]+)/);
+            if (match) identities.push(match[1]);
+          }
+        }
+        const normalizedIdentities = [...new Set(identities.map(normalizeId).filter(Boolean))];
+        const durableId = durableIds.map(normalizeId).find(id =>
+          id && !id.startsWith('local-chatgpt:')
+        ) || normalizedIdentities.find(id => id && !id.startsWith('local-chatgpt:'));
+        values.push({
+          identities: normalizedIdentities,
+          durableId: durableId || '',
+          title
+        });
+      }
+      return values;
+    };
+    for (let index = 0; index < 80; index += 1) {
+      const users = [...document.querySelectorAll(
+        '[data-message-author-role="user"], [data-user-message-bubble]'
+      )];
+      const markerVisible = users.some(user =>
+        (user.innerText || user.textContent || '').includes(dispatchMarker)
+      );
+      if (markerVisible) {
+        const portal = portalId();
+        if (portal && !portal.startsWith('local-chatgpt:')) {
+          return {ok: true, conversationId: portal, source: 'portal'};
+        }
+        // The sidebar can virtualize old rows while the user creates a
+        // foreground Chat, so "first id absent from the baseline" is unsafe.
+        // ChatGPT exposes an exact local->durable mapping on the task's own
+        // row: its route keeps the local id while conversation.id is durable.
+        const candidate = expectedLocalId
+          ? rowCandidates().find(value =>
+              value.identities.includes(expectedLocalId) && value.durableId
+            )
+          : null;
+        if (candidate?.durableId) {
+          return {
+            ok: true,
+            conversationId: candidate.durableId,
+            source: 'local-row-mapping',
+            title: candidate.title
+          };
+        }
+      }
+      await sleep(250);
+    }
+    return {
+      ok: false,
+      error: 'durable_conversation_id_pending',
+      portalConversationId: portalId() || null
+    };
   })()
   """
 }
@@ -1808,26 +2142,32 @@ private func ensureHiddenChatTarget(
   return prepared
 }
 
+private func keepApprovalBackgroundEndpointAlive(_ state: inout PluginState) {
+  guard let port = state.backgroundAppPort,
+        let targetId = state.backgroundChatTargetId,
+        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId
+        }),
+        let wsURL = target["webSocketDebuggerUrl"] as? String else {
+    // A renderer can be reclaimed while the watcher survives. Clear only the
+    // stale target reference and immediately rebuild the plugin-owned endpoint
+    // instead of waiting for the user to foreground a ChatGPT window.
+    state.backgroundChatTargetId = nil
+    _ = ensureHiddenChatTarget(&state)
+    return
+  }
+  // Reassert an active Chromium lifecycle on every watcher pass. These CDP
+  // commands do not show a BrowserWindow or activate ChatGPT, but they prevent
+  // a hidden renderer from remaining frozen after screen lock/App Nap.
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+}
+
 private func scanIPC(_ state: inout PluginState) -> [String: Any]? {
   guard state.approveAll == true || !state.rules.isEmpty else { return nil }
-  guard let port = state.backgroundAppPort,
-        let targetId = state.backgroundChatTargetId else { return nil }
-  let targets = CDPClient.fetchTargets(portOverride: port)
-  let backgroundTargetIds = Set([targetId])
-  let pageTargets = targets.filter {
-    $0["type"] as? String == "page" && $0["id"] as? String == targetId
-  }
-  guard !pageTargets.isEmpty else {
-    if !backgroundTargetIds.isEmpty {
-      return [
-        "ok": true, "candidates": 0, "approved": 0, "pending": 1,
-        "blocked": 0, "unmatched": 0, "backgroundOnly": true,
-        "pageChanged": false, "ipcPrimaryPath": true,
-        "hiddenTargetCount": backgroundTargetIds.count,
-      ]
-    }
-    return nil
-  }
+  let pageTargets = loadedApprovalTargets(state)
+  guard !pageTargets.isEmpty else { return nil }
 
   guard let rulesData = try? JSONSerialization.data(withJSONObject: state.rules.map { [
     "id": $0.id, "application": $0.application, "action": $0.action, "resource": $0.resource
@@ -2051,13 +2391,11 @@ private func scanIPC(_ state: inout PluginState) -> [String: Any]? {
   var totalUnmatched = 0
   var totalInternalActions = 0
   var totalDOMEvents = 0
-  let scannedHiddenTargetCount = pageTargets.filter {
-    guard let id = $0["id"] as? String else { return false }
-    return backgroundTargetIds.contains(id)
-  }.count
+  let scannedTargetCount = pageTargets.count
+  let scannedPorts = Array(Set(pageTargets.map(\.port))).sorted()
 
-  for target in pageTargets {
-    guard let wsURL = target["webSocketDebuggerUrl"] as? String else { continue }
+  for endpoint in pageTargets {
+    guard let wsURL = endpoint.target["webSocketDebuggerUrl"] as? String else { continue }
     guard let evalRes = CDPClient.evaluate(wsURLString: wsURL, expression: jsScript),
           let result = evalRes["result"] as? [String: Any],
           let value = ((result["result"] as? [String: Any])?["value"] ?? result["value"]) as? [String: Any] else { continue }
@@ -2109,17 +2447,19 @@ private func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       "ok": true, "candidates": totalCandidates, "approved": totalApproved,
       "pending": totalPending, "blocked": totalBlocked, "unmatched": totalUnmatched,
       "backgroundOnly": true, "pageChanged": false, "ipcPrimaryPath": true,
-      "hiddenTargetCount": scannedHiddenTargetCount,
+      "hiddenTargetCount": scannedTargetCount,
+      "loadedRendererCount": scannedTargetCount, "scannedPorts": scannedPorts,
       "internalActions": totalInternalActions, "domEvents": totalDOMEvents
     ]
   }
-  if scannedHiddenTargetCount > 0 {
+  if scannedTargetCount > 0 {
     state.lastError = nil
     return [
       "ok": true, "candidates": 0, "approved": 0, "pending": 0,
       "blocked": 0, "unmatched": 0, "backgroundOnly": true,
       "pageChanged": false, "ipcPrimaryPath": true,
-      "hiddenTargetCount": scannedHiddenTargetCount,
+      "hiddenTargetCount": scannedTargetCount,
+      "loadedRendererCount": scannedTargetCount, "scannedPorts": scannedPorts,
     ]
   }
   return nil
@@ -2146,10 +2486,10 @@ private func decide(
 }
 
 private func scan(_ state: inout PluginState) -> [String: Any] {
-  // Scan the plugin-owned hidden Chat renderer first, but never let a clean
-  // hidden page suppress the AX scan of the user's other ChatGPT windows.
-  // Authorization cards are synchronized per renderer and can remain visible
-  // in the primary window even when the background copy reports zero cards.
+  // Hidden renderers are handled through IPC without route or focus changes.
+  // AX is only a compatibility path for a genuinely visible approval card in
+  // the active ChatGPT window. It must never press virtualized elements that
+  // belong to a conversation the user has already left.
   let ipcResult = scanIPC(&state)
   let ipcCandidates = ipcResult?["candidates"] as? Int ?? 0
   let ipcApproved = ipcResult?["approved"] as? Int ?? 0
@@ -2243,6 +2583,19 @@ private func watcherIsAlive(_ pid: Int32?) -> Bool {
   return kill(pid, 0) == 0
 }
 
+private func beginWatcherActivity(
+  preventIdleSystemSleep: Bool,
+  reason: String
+) -> NSObjectProtocol {
+  // Locking the screen must not put the queue watcher into App Nap. The queue
+  // additionally prevents idle system sleep while work is running; the general
+  // approval watcher allows normal sleep and resumes after wake.
+  let options: ProcessInfo.ActivityOptions = preventIdleSystemSleep
+    ? [.userInitiated, .latencyCritical, .idleSystemSleepDisabled]
+    : [.userInitiatedAllowingIdleSystemSleep]
+  return ProcessInfo.processInfo.beginActivity(options: options, reason: reason)
+}
+
 private func parseStartPayload() throws -> ([ApprovalRule], Int, [String], [String], Bool) {
   guard CommandLine.arguments.count >= 3,
         let data = CommandLine.arguments[2].data(using: .utf8),
@@ -2297,6 +2650,8 @@ private func statusPayload(_ state: PluginState) -> [String: Any] {
   let rulePayload = state.rules.map {
     ["id": $0.id, "application": $0.application, "action": $0.action, "resource": $0.resource]
   }
+  let approvalTargets = loadedApprovalTargets(state)
+  let approvalPorts = Array(Set(approvalTargets.map(\.port))).sorted()
   return [
     "ok": true,
     "running": state.enabled && watcherIsAlive(state.watcherPid),
@@ -2307,7 +2662,9 @@ private func statusPayload(_ state: PluginState) -> [String: Any] {
     "rules": rulePayload,
     "chatTitles": state.chatTitles ?? [],
     "trackedChatURLs": state.trackedChatURLs ?? [],
-    "hiddenTargetCount": state.backgroundChatTargetId == nil ? 0 : 1,
+    "hiddenTargetCount": approvalTargets.count,
+    "loadedRendererCount": approvalTargets.count,
+    "scannedPorts": approvalPorts,
     "backgroundChat": [
       "port": state.backgroundAppPort as Any,
       "targetId": state.backgroundChatTargetId as Any,
@@ -2342,9 +2699,12 @@ private func statusPayload(_ state: PluginState) -> [String: Any] {
       "ipcIsPrimaryPath": true,
       "internalActionIsPrimary": true,
       "operatesHiddenPages": true,
-      "requiresPriorTracking": true,
+      "scansEveryLoadedRenderer": true,
+      "requiresPriorTracking": false,
       "changesVisiblePage": false,
       "axPressIsFallback": true,
+      "axPressVisibleForegroundOnly": true,
+      "axPressNeverTargetsHiddenElements": true,
     ],
   ]
 }
@@ -2469,7 +2829,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v36"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v55"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -2550,6 +2910,78 @@ private func normalizedTaskId(_ rawValue: String?) -> String? {
   return value
 }
 
+private func normalizedConnector(_ rawValue: String?) -> String? {
+  guard let value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !value.isEmpty,
+        value.count <= 256,
+        !value.contains("\n"),
+        !value.contains("\r") else { return nil }
+  return value
+}
+
+private struct QueueNetworkProbe {
+  let reachable: Bool
+  let detail: String
+}
+
+private func queueNetworkProbe() -> QueueNetworkProbe {
+  guard let reachability = SCNetworkReachabilityCreateWithName(nil, "api.github.com") else {
+    return QueueNetworkProbe(reachable: false, detail: "无法创建 GitHub 网络探测")
+  }
+  var flags = SCNetworkReachabilityFlags()
+  guard SCNetworkReachabilityGetFlags(reachability, &flags) else {
+    return QueueNetworkProbe(reachable: false, detail: "无法读取 GitHub 网络路由")
+  }
+  let isReachable = flags.contains(.reachable)
+  let needsConnection = flags.contains(.connectionRequired)
+  let canConnectAutomatically = flags.contains(.connectionOnDemand)
+    || flags.contains(.connectionOnTraffic)
+  let online = isReachable && (!needsConnection || canConnectAutomatically)
+  return QueueNetworkProbe(
+    reachable: online,
+    detail: online ? "GitHub 网络路由可达" : "GitHub 网络路由暂不可达（flags=\(flags.rawValue)）"
+  )
+}
+
+private func networkRecoverySignal(_ value: String) -> String? {
+  let text = value.lowercased()
+  let markers = [
+    "network is unreachable", "network unreachable", "err_internet_disconnected",
+    "internet disconnected", "could not resolve host", "dns lookup failed",
+    "connection reset", "connection refused", "connection timed out",
+    "upstream 502", "http 502", "http 503", "http 504",
+    "devspace_tool_timeout", "网络断开", "网络不可用", "无法解析主机",
+    "连接被重置", "连接超时", "上游 502", "上游 503", "上游 504"
+  ]
+  guard let marker = markers.first(where: { text.contains($0) }) else { return nil }
+  return marker
+}
+
+private func queueNetworkRecovery(
+  _ task: inout AutomationTask,
+  state: inout PluginState,
+  reason: String
+) {
+  // Use the regular continuation reset so the next operation is always a
+  // fresh Chat, then defer only that continuation while connectivity recovers.
+  queueContinuation(&task, report: nil, reason: "network_recovery")
+  guard task.status == "queued" else { return }
+  let failureCount = min(6, (state.queueNetworkFailureCount ?? 0) + 1)
+  let delay = min(300, 30 * (1 << min(3, failureCount - 1)))
+  let dueDate = Date().addingTimeInterval(Double(delay))
+  let compactReason = String(reason.prefix(240))
+  state.queueNetworkFailureCount = failureCount
+  state.queueNetworkStatus = "waiting_for_recovery"
+  state.queueNetworkLastError = compactReason
+  state.queueNetworkWaitUntil = isoFormatter.string(from: dueDate)
+  task.status = "waiting"
+  task.waitingUntil = state.queueNetworkWaitUntil
+  task.waitReason = "网络/上游连接恢复：\(compactReason)；将在约 \(delay) 秒后重新探测"
+  task.reviewFeedback = "小程序检测到网络、DNS 或上游连接异常（\(compactReason)）。不要重复当前失败请求；等待小程序恢复连接后在新 Chat 中检查同一 checkout 的落盘结果，再继续未完成步骤。"
+  task.lastError = "waiting_for_network_recovery"
+  task.updatedAt = isoFormatter.string(from: Date())
+}
+
 private func taskPromptPrefix(_ template: String) -> String {
   switch template {
   case "implement-and-verify":
@@ -2583,12 +3015,14 @@ private func chatOnlyInstruction(_ value: String) -> String {
 private func automationTaskMessage(_ task: AutomationTask) -> String {
   var sections = [
     taskPromptPrefix(task.promptTemplate),
+    "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 High。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
     "执行边界：实际工作只允许在 Chat 页面完成；不要点击或进入 Work 页面。",
-    "GitHub 操作前先在终端执行：export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"；用 /opt/homebrew/bin/gh auth status、/opt/homebrew/bin/gh --version 和 /opt/homebrew/bin/git-lfs --version 验证本机工具。Git push 必须确保 git-lfs 在 PATH 中，不要只依赖 GitHub 连接器。",
+    "连接器路由：当前新 Chat 选用「\(task.connector)」。已在云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器；不要改用本地 gh 来替代云端证据。本地 checkout、Git/gh 元数据与安全同步必须使用 bhrum2；同步前先读取 status、远端和分支，只允许干净工作树上的 fast-forward，不得覆盖本地改动。若本轮从 bhrum2 推送到云端，最终报告 next_connector 填 GitHub，让小程序为下一新 Chat 切换到 GitHub 连接器。",
     "资源策略：项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions 中执行并以 Actions 日志或构件为准。本机只做 Git/gh 元数据与代码阅读；不要在本机运行任何项目测试、构建、打包、安装、依赖下载或会生成缓存/产物的命令。",
     "提交策略：提交前逐项选择源代码、配置和必要文档，禁止 git add -A。不要提交或等待上传无关的大文件、缓存、node_modules、构建输出、本地安装包或无关 LFS 对象；除非某个大文件是任务明确必需的发布资产。",
-    "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。确实无法解决时，在最终报告 blockers 和 next_task 中明确列出下一步所需的权限、账号、工具、环境变量、具体命令或外部服务恢复条件。",
-    "若必须等待 GitHub Actions、部署、发布审核或其他外部异步操作，不要让当前 Chat 空等或把任务误报为完成。请结束本轮并报告 status=incomplete，给出 wait_seconds（预计等待秒数）和 wait_reason；小程序会在等待到期后自动创建新的 Chat，执行 next_task 复查状态。无需等待时 wait_seconds=0 且 wait_reason 为空字符串。",
+    "持续执行规则：不要在说明『下一步要做什么』后停止，也不要只汇报阶段性进度。直接执行所有可行步骤，持续处理失败、评审意见、Actions、部署和构件检查，直到原始目标真正完成。",
+    "等待规则：GitHub Actions、部署、发布审核、网络恢复或其他异步操作尚未结束时，留在当前 Chat 内自行等待并轮询，结果出现后立刻继续；不要用回复等待秒数、预计时间或让用户稍后再来结束本轮。",
+    "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。只有出现当前权限与工具确实无法绕过的真实阻塞，或平台硬性终止本次会话时，才允许结束未完成任务，并在未完成续作模板中准确列出具体所需权限、账号、工具、环境变量、具体命令或外部恢复条件。",
     task.prompt
   ]
   sections.append("任务发送轮次：\(task.attempts + 1)。")
@@ -2621,7 +3055,7 @@ private func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若证据不足、仍有未完成项或存在真实卡点，必须准确标记 incomplete 或 blocked，并给出 remaining、blockers、verification 和 next_task。若只是等待 Actions、部署或其他外部异步结果，标记 incomplete，写明 wait_seconds（预计秒数）和 wait_reason，小程序会定时新建 Chat 再复查。重复卡点不能只照抄旧错误；应判断是否需要换方案。确实无法解决时，blockers 和 next_task 必须列出具体所需权限、账号、工具、环境变量、命令或外部服务恢复条件。只有全部目标可复核且验证通过时才标记 complete。回答末尾必须输出完整的 MAHAYANA_TASK_REPORT_V1_BEGIN/END JSON，总结本次独立验收结果。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若 Actions、部署、发布审核或网络恢复仍在进行，必须留在这个验收 Chat 内自行等待并轮询，拿到结果后继续验收，不得回复等待时间后退出。重复卡点不能只照抄旧错误，应诊断并换可行路径。只有全部目标可复核且验证通过时，最后单独输出一行 `MAHAYANA_REVIEW_ACCEPTED`；不要输出完成态 JSON。若验收不通过，输出未完成续作模板，准确写出 remaining、blockers、verification 和 next_task，供小程序新建工作 Chat 继续；只有真实不可绕过的阻塞才可使用 blocked。
   """
 }
 
@@ -2654,7 +3088,21 @@ private func startAutomationReview(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  task.reviewConversationId = prepared["conversationId"] as? String
+  let dispatchMarker = "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
+  let resolvedConversation = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: resolveDispatchedConversationJS(
+      dispatchMarker: dispatchMarker,
+      localConversationId: normalizedConversationId(prepared["conversationId"] as? String)
+    ),
+    timeout: 24.0
+  )
+  let resolvedConversationId = normalizedConversationId(
+    resolvedConversation?["conversationId"] as? String
+  )
+  task.reviewConversationId = resolvedConversationId
+    ?? normalizedConversationId(prepared["conversationId"] as? String)
   task.reviewStatus = "running"
   task.lastError = nil
   task.lastActivitySignature = nil
@@ -2743,6 +3191,9 @@ private func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = fal
     "reviewedAt": task.reviewedAt as Any,
     "continuationDepth": task.continuationDepth ?? 0,
     "lastProgressAt": task.lastProgressAt as Any,
+    "hiddenWorkerLastHeartbeatAt": task.hiddenWorkerLastHeartbeatAt as Any,
+    "hiddenWorkerRecoveryCount": task.hiddenWorkerRecoveryCount ?? 0,
+    "hiddenWorkerLastError": task.hiddenWorkerLastError as Any,
     "waitingUntil": task.waitingUntil as Any,
     "waitReason": task.waitReason as Any,
   ]
@@ -2771,6 +3222,22 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
   let attention = tasks.filter {
     ["awaiting_review", "blocked", "failed"].contains($0.status)
   }
+  let workerRuntimeState: QueueTargetRuntimeState?
+  let workerIsHidden: Bool
+  if queueUsesBackgroundWindow(state),
+     let port = state.queueWorkerPort,
+     let targetId = state.queueWorkerTargetId {
+    let runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: false
+    )
+    workerRuntimeState = runtimeState
+    workerIsHidden = runtimeState == .hidden
+  } else {
+    workerRuntimeState = nil
+    workerIsHidden = false
+  }
   return [
     "ok": true,
     "enabled": state.queueEnabled == true,
@@ -2780,14 +3247,25 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "maxConcurrent": state.queueMaxConcurrent ?? 2,
     "effectiveMaxConcurrent": 1,
     "requestedMaxConcurrent": state.queueMaxConcurrent ?? 2,
-    "executionMode": "single-authenticated-process-serialized",
+    "executionMode": "single-authenticated-process-hidden-prewarm-serialized",
     "targetMode": state.queueWorkerMode ?? "not-started",
+    "network": [
+      "status": state.queueNetworkStatus ?? "unknown",
+      "lastError": state.queueNetworkLastError as Any,
+      "failureCount": state.queueNetworkFailureCount ?? 0,
+      "waitingUntil": state.queueNetworkWaitUntil as Any,
+    ],
     "workerProcess": [
       "port": state.queueWorkerPort as Any,
       "targetId": state.queueWorkerTargetId as Any,
       "profilePath": state.queueWorkerProfilePath as Any,
       "mode": state.queueWorkerMode as Any,
-      "shared": state.queueWorkerPort != nil && state.queueWorkerMode != "dedicated-process-fallback",
+      "sharedProcess": queueUsesBackgroundWindow(state),
+      "sameApplicationProcess": queueUsesBackgroundWindow(state),
+      "isolatedFromVisiblePage": workerIsHidden,
+      "visibilityVerified": workerIsHidden,
+      "runtimeState": workerRuntimeState.map(queueTargetRuntimeStateName) ?? "not-started",
+      "separateApplicationProcess": false,
     ],
     "reviewGate": state.queueReviewGate != false,
     "counts": counts,
@@ -2820,207 +3298,420 @@ private func startQueueWatcher(_ state: inout PluginState) throws {
   state.queueRuntimeRevision = currentQueueRuntimeRevision
 }
 
-private func dedicatedWorkerPort() -> Int? {
-  for port in 9330..<9380 where CDPClient.fetchTargets(portOverride: port).isEmpty {
-    return port
-  }
-  return nil
+private let backgroundWindowQueueWorkerMode = "single-process-hidden-prewarm"
+private let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
+
+private enum QueueTargetRuntimeState {
+  case missing
+  case hidden
+  case hiddenNonChat
+  case visible
+  case suspended
 }
 
-private func copyProfileForDedicatedWorker(source: String, destination: String) -> Bool {
-  do {
-    try FileManager.default.createDirectory(
-      atPath: destination,
-      withIntermediateDirectories: true
-    )
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/rsync")
-    process.arguments = [
-      "-a",
-      "--exclude=Singleton*",
-      "--exclude=Lockfile",
-      "--exclude=lockfile",
-      "--exclude=DevToolsActivePort",
-      source.hasSuffix("/") ? source : source + "/",
-      destination.hasSuffix("/") ? destination : destination + "/",
-    ]
-    process.standardInput = FileHandle.nullDevice
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try process.run()
-    process.waitUntilExit()
-    return process.terminationStatus == 0
-  } catch {
-    return false
+private func queueUsesBackgroundWindow(_ state: PluginState) -> Bool {
+  state.queueWorkerMode == backgroundWindowQueueWorkerMode
+}
+
+private func queueTargetRuntimeState(
+  port: Int,
+  targetId: String,
+  refreshLifecycle: Bool
+) -> QueueTargetRuntimeState {
+  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+    $0["id"] as? String == targetId
+  }), let wsURL = target["webSocketDebuggerUrl"] as? String else {
+    return .missing
+  }
+  let expression = """
+  (async () => {
+    const startedAt = performance.now();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const textarea = document.querySelector('#prompt-textarea')
+      || document.querySelector('[contenteditable="true"]');
+    const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+    const chatModel = [...document.querySelectorAll('button')].some(button => {
+      const label = button.getAttribute('aria-label') || '';
+      return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
+    });
+    const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
+    const chatMode = (chatModel || webChat) && !!textarea && !workComposer;
+    return {
+      bridge: !!window.electronBridge,
+      visibility: document.visibilityState,
+      href: location.href,
+      eventLoopDelayMs: performance.now() - startedAt,
+      chatMode,
+      surface: chatMode ? 'chat' : 'not-chat'
+    };
+  })()
+  """
+  let initial = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: expression,
+    timeout: 3.0
+  )
+  if initial?["visibility"] as? String == "visible" {
+    return .visible
+  }
+  if refreshLifecycle {
+    _ = wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL)
+  }
+  let probe = refreshLifecycle
+    ? cdpValue(port: port, targetId: targetId, expression: expression, timeout: 3.0)
+    : initial
+  if probe?["visibility"] as? String == "visible" {
+    return .visible
+  }
+  let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
+  let visibility = probe?["visibility"] as? String
+  let href = probe?["href"] as? String ?? ""
+  let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
+    ?? Double.greatestFiniteMagnitude
+  if bridge && visibility == "hidden" && href.hasPrefix("app://-/index.html")
+      && eventLoopDelayMs < 2_500 {
+    let chatMode = (probe?["chatMode"] as? NSNumber)?.boolValue ?? false
+    let surface = probe?["surface"] as? String ?? "not-chat"
+    return chatMode && surface == "chat" ? .hidden : .hiddenNonChat
+  }
+  return .suspended
+}
+
+private func queueTargetRuntimeStateName(_ state: QueueTargetRuntimeState) -> String {
+  switch state {
+  case .missing: return "missing"
+  case .hidden: return "hidden-chat"
+  case .hiddenNonChat: return "hidden-not-chat"
+  case .visible: return "visible"
+  case .suspended: return "suspended"
   }
 }
 
-private func launchDedicatedChatProcess(profilePath: String, port: Int) -> Bool {
-  do {
-    let launcher = Process()
-    launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    launcher.arguments = [
-      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
-      "--user-data-dir=\(profilePath)",
-      "--remote-debugging-port=\(port)",
-    ]
-    launcher.standardInput = FileHandle.nullDevice
-    launcher.standardOutput = FileHandle.nullDevice
-    launcher.standardError = FileHandle.nullDevice
-    try launcher.run()
-    launcher.waitUntilExit()
-    return launcher.terminationStatus == 0
-  } catch {
-    return false
-  }
+private func queueTargetIsHidden(port: Int, targetId: String) -> Bool {
+  queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: false
+  ) == .hidden
 }
 
-private func dedicatedChatTarget(port: Int) -> String? {
-  for _ in 0..<180 {
-    if let target = CDPClient.fetchTargets(portOverride: port).first(where: {
-      $0["type"] as? String == "page"
-        && ($0["webSocketDebuggerUrl"] as? String) != nil
-    }), let targetId = target["id"] as? String {
-      // A cloned profile must expose the Electron bridge and a real composer;
-      // a static startup loader is not a usable concurrent worker.
-      let loaded = cdpValue(
-        port: port,
-        targetId: targetId,
-        expression: "(() => ({bridge: !!window.electronBridge, buttons: document.querySelectorAll('button').length, text: (document.body?.innerText || '').length, url: window.location.href || ''}))()",
-        timeout: 3.0
-      )
-      let bridge = (loaded?["bridge"] as? NSNumber)?.boolValue ?? false
-      let buttons = (loaded?["buttons"] as? NSNumber)?.intValue ?? 0
-      let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
-      if bridge, buttons > 5, textLength > 100 {
-        return targetId
-      }
-    }
-    Thread.sleep(forTimeInterval: 0.25)
-  }
-  return nil
+private func generalApprovalStateForQueue() -> PluginState? {
+  let url = queueStateURL().deletingLastPathComponent().appendingPathComponent("state.json")
+  guard let data = try? Data(contentsOf: url) else { return nil }
+  return try? decoder.decode(PluginState.self, from: data)
 }
 
-// Compatibility path retained for installations that explicitly opt back in
-// while migrating from the old queue-worker implementation. Normal queue
-// runs never call this: they use the shared hidden target above.
-private func createDedicatedQueueWorkerTarget(
+private func sharedChatController(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  if let port = state.queueWorkerPort,
-     let targetId = state.queueWorkerTargetId,
-     let profilePath = state.queueWorkerProfilePath,
-     state.queueWorkerMode == "dedicated-process-fallback",
-     CDPClient.fetchTargets(portOverride: port).contains(where: {
-       $0["id"] as? String == targetId
-     }) {
+  let general = generalApprovalStateForQueue()
+  let port = general?.backgroundAppPort ?? state.backgroundAppPort ?? hiddenChatPort(state)
+  let profilePath = general?.backgroundProfilePath
+    ?? state.backgroundProfilePath
+    ?? hiddenChatProfilePath()
+  let preferredTargetIds = [
+    general?.backgroundChatTargetId,
+    state.backgroundChatTargetId,
+  ].compactMap { $0 }
+  let targets = CDPClient.fetchTargets(portOverride: port)
+  let orderedTargets = targets.sorted { lhs, rhs in
+    let lhsId = lhs["id"] as? String ?? ""
+    let rhsId = rhs["id"] as? String ?? ""
+    return (preferredTargetIds.firstIndex(of: lhsId) ?? Int.max)
+      < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
+  }
+  for target in orderedTargets {
+    guard target["type"] as? String == "page",
+          (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+          let targetId = target["id"] as? String,
+          targetId != state.queueWorkerTargetId else { continue }
+    let probe = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: "(() => ({bridge: !!window.electronBridge, buttons: document.querySelectorAll('button').length}))()",
+      timeout: 3.0
+    )
+    let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
+    let buttons = (probe?["buttons"] as? NSNumber)?.intValue ?? 0
+    guard bridge, buttons > 5 else { continue }
+    state.backgroundAppPort = port
+    state.backgroundChatTargetId = targetId
+    state.backgroundProfilePath = profilePath
     return (port, targetId, profilePath)
   }
-  if let staleProfile = state.queueWorkerProfilePath,
-     state.queueWorkerMode == "dedicated-process-fallback" {
-    terminateDedicatedChatProcess(profilePath: staleProfile)
+  guard let prepared = ensureHiddenChatTarget(&state),
+        prepared["ok"] as? Bool == true,
+        let port = prepared["port"] as? Int,
+        let targetId = prepared["targetId"] as? String else { return nil }
+  return (port, targetId, prepared["profilePath"] as? String ?? hiddenChatProfilePath())
+}
+
+private func quickChatPrewarmServiceJS(_ action: String) -> String {
+  let actionLiteral = jsonStringLiteral(action)
+  return #"""
+  (async () => {
+    try {
+      const action = \#(actionLiteral);
+      const entryURL = [...document.scripts]
+        .map(script => script.src)
+        .find(src => src && /\/assets\/index-[^/]+\.js$/.test(src));
+      if (!entryURL) return {ok: false, error: 'app_entry_module_not_found'};
+      const entrySource = await (await fetch(entryURL)).text();
+      // Desktop bundles changed from the long shared-chunk name to compact
+      // `app-initial-<hash>.js` names in July 2026. Discover every matching
+      // app-initial module instead of coupling queue startup to one generated
+      // filename. Keep the legacy pattern as a fallback for older releases.
+      const serviceModulePaths = [...new Set([
+        ...[...entrySource.matchAll(
+          /["'](\.\/app-initial-[^"']+\.js)["']/g
+        )].map(match => match[1]),
+        ...[...entrySource.matchAll(
+          /["'](\.\/app-initial~[^"']+\.js)["']/g
+        )].map(match => match[1]),
+      ])];
+      if (serviceModulePaths.length === 0) {
+        return {ok: false, error: 'quick_chat_service_module_not_found'};
+      }
+      let services = null;
+      let moduleURL = null;
+      for (const serviceModulePath of serviceModulePaths) {
+        const candidateURL = new URL(serviceModulePath, entryURL).href;
+        const serviceModule = await import(candidateURL);
+        const candidate = Object.values(serviceModule).find(value => {
+          try {
+            return value != null
+              && typeof value === 'object'
+              && typeof value.quickChatWindow?.prewarm === 'function'
+              && String(value.quickChatWindow) === '[object RpcStub]';
+          } catch {
+            return false;
+          }
+        });
+        if (candidate) {
+          services = candidate;
+          moduleURL = candidateURL;
+          break;
+        }
+      }
+      if (!services) {
+        return {
+          ok: false,
+          error: 'quick_chat_service_not_found',
+          modulePaths: serviceModulePaths
+        };
+      }
+      if (action === 'reset-prewarm') {
+        await services.quickChatWindow.clearPrewarm();
+        await services.quickChatWindow.prewarm();
+      } else if (action === 'renderer-ready') {
+        await services.quickChatWindow.rendererReady(null);
+      } else if (action === 'clear-prewarm') {
+        await services.quickChatWindow.clearPrewarm();
+      } else {
+        return {ok: false, error: 'unsupported_quick_chat_action'};
+      }
+      return {
+        ok: true,
+        action,
+        moduleURL,
+        href: location.href,
+        visibility: document.visibilityState
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error),
+        stack: error?.stack || ''
+      };
+    }
+  })()
+  """#
+}
+
+private func openBackgroundQueueWindow(
+  port: Int,
+  controllerTargetId: String
+) -> String? {
+  let existingTargetIds = Set(CDPClient.fetchTargets(portOverride: port).compactMap {
+    $0["id"] as? String
+  })
+  guard existingTargetIds.contains(controllerTargetId),
+        cdpValue(
+          port: port,
+          targetId: controllerTargetId,
+          expression: quickChatPrewarmServiceJS("reset-prewarm"),
+          timeout: 8.0
+        )?["ok"] as? Bool == true else { return nil }
+
+  var targetId: String?
+  for _ in 0..<100 {
+    targetId = CDPClient.fetchTargets(portOverride: port).compactMap { target -> String? in
+      guard let id = target["id"] as? String,
+            !existingTargetIds.contains(id),
+            target["type"] as? String == "page",
+            (target["url"] as? String ?? "").contains("quick-chat-prewarm") else { return nil }
+      return id
+    }.first
+    if targetId != nil { break }
+    Thread.sleep(forTimeInterval: 0.05)
   }
-  state.queueWorkerPort = nil
-  state.queueWorkerTargetId = nil
-  state.queueWorkerProfilePath = nil
-  state.queueWorkerMode = nil
-  let sourceProfile = state.backgroundProfilePath ?? hiddenChatProfilePath()
-  guard FileManager.default.fileExists(atPath: sourceProfile),
-        let port = dedicatedWorkerPort() else { return nil }
-  let destination = queueDirectoryURL()
-    .appendingPathComponent("workers", isDirectory: true)
-    .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
-    .path
-  guard copyProfileForDedicatedWorker(source: sourceProfile, destination: destination),
-        launchDedicatedChatProcess(profilePath: destination, port: port),
-        let targetId = dedicatedChatTarget(port: port) else {
-    terminateDedicatedChatProcess(profilePath: destination)
+  guard let targetId else { return nil }
+
+  // ChatGPT's prewarm controller closes a renderer that has not reported
+  // readiness within 15 seconds. A hidden prewarm route does not always mount
+  // its normal React page, so acknowledge it explicitly through that
+  // renderer's own app-host service before navigating it to the full app.
+  var prewarmLoaded = false
+  var acknowledged = false
+  for _ in 0..<100 {
+    let prewarmReady = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: "(() => ({bridge: !!window.electronBridge, ready: document.readyState, visibility: document.visibilityState, href: location.href}))()",
+      timeout: 3.0
+    )
+    if (prewarmReady?["bridge"] as? NSNumber)?.boolValue == true,
+       prewarmReady?["ready"] as? String == "complete",
+       prewarmReady?["visibility"] as? String == "hidden",
+       (prewarmReady?["href"] as? String ?? "").contains("quick-chat-prewarm") {
+      prewarmLoaded = true
+      break
+    }
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  guard prewarmLoaded else {
+    _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
-  state.queueWorkerPort = port
-  state.queueWorkerTargetId = targetId
-  state.queueWorkerProfilePath = destination
-  state.queueWorkerMode = "dedicated-process-fallback"
-  return (port, targetId, destination)
+  // In current desktop builds the prewarm renderer can report document
+  // readiness before its RPC client is fully registered with the main
+  // process. The measured stable handoff needs roughly 1.8 seconds.
+  Thread.sleep(forTimeInterval: 1.8)
+  for _ in 0..<100 {
+    let result = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: quickChatPrewarmServiceJS("renderer-ready"),
+      timeout: 8.0
+    )
+    if result?["ok"] as? Bool == true,
+       result?["visibility"] as? String == "hidden" {
+      acknowledged = true
+      break
+    }
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  guard acknowledged else {
+    _ = CDPClient.closeTarget(targetId, portOverride: port)
+    return nil
+  }
+  // Let the main process consume rendererReady before replacing the prewarm
+  // route. Navigating immediately can leave the quick-chat shell unclaimed.
+  Thread.sleep(forTimeInterval: 1.0)
+  guard
+        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId
+        }),
+        let wsURL = target["webSocketDebuggerUrl"] as? String,
+        CDPClient.navigate(wsURLString: wsURL, url: "app://-/index.html") else {
+    _ = CDPClient.closeTarget(targetId, portOverride: port)
+    return nil
+  }
+  // Electron deprioritizes show:false pages so aggressively that the Chat
+  // surface may need over a minute to mount. Keep the actual BrowserWindow
+  // hidden while asking Chromium to run this renderer at active lifecycle
+  // priority. document.visibilityState remains hidden and is rechecked below.
+  Thread.sleep(forTimeInterval: 0.5)
+  guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+    _ = CDPClient.closeTarget(targetId, portOverride: port)
+    return nil
+  }
+
+  // A show:false renderer is intentionally deprioritized by Electron. On
+  // current ChatGPT builds the full Chat surface can take more than 30 seconds
+  // to mount even though its document and preload bridge are already ready.
+  for _ in 0..<600 {
+    let ready = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: "(() => ({bridge: !!window.electronBridge, buttons: document.querySelectorAll('button').length, text: (document.body?.innerText || '').length, visibility: document.visibilityState, href: location.href}))()",
+      timeout: 3.0
+    )
+    let bridge = (ready?["bridge"] as? NSNumber)?.boolValue ?? false
+    let buttons = (ready?["buttons"] as? NSNumber)?.intValue ?? 0
+    let textLength = (ready?["text"] as? NSNumber)?.intValue ?? 0
+    let visibility = ready?["visibility"] as? String
+    let href = ready?["href"] as? String
+    if bridge,
+       buttons > 5,
+       textLength > 100,
+       visibility == "hidden",
+       href == "app://-/index.html" {
+      return targetId
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+  }
+  _ = CDPClient.closeTarget(targetId, portOverride: port)
+  return nil
 }
 
 private func createQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // The queue owns one authenticated ChatGPT process for its entire lifetime.
-  // Reuse its renderer for the next task/review Chat instead of launching a
-  // new process whenever a queued task is dispatched.
+  // General confirmation and the task queue share one authenticated ChatGPT
+  // application process. The queue owns a different BrowserWindow created by
+  // ChatGPT's show:false prewarm path, so it never appears, focuses, or changes
+  // the primary window where the user clicks New Chat or types a prompt.
   if let port = state.queueWorkerPort,
      let targetId = state.queueWorkerTargetId,
-     CDPClient.fetchTargets(portOverride: port).contains(where: {
-       guard ($0["id"] as? String) == targetId else { return false }
-       let url = ($0["url"] as? String ?? "").lowercased()
-       // Electron's authenticated renderer is app://-/index.html and is
-       // labeled "Codex" in some releases, not "ChatGPT". It is still the
-       // dedicated queue target; prepareNewChatTarget verifies Chat before use.
-       return isChatGptRendererTarget($0) || url.hasPrefix("app://-/index.html")
-     }) {
+     queueUsesBackgroundWindow(state),
+     queueTargetIsHidden(port: port, targetId: targetId) {
     return (port, targetId, state.queueWorkerProfilePath ?? "")
   }
-  if state.queueWorkerMode == "dedicated-process-fallback" {
-    if let profilePath = state.queueWorkerProfilePath {
-      terminateDedicatedChatProcess(profilePath: profilePath)
+  if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
+     let profilePath = state.queueWorkerProfilePath {
+    terminateDedicatedChatProcess(profilePath: profilePath)
+  }
+  state.queueWorkerPort = nil
+  state.queueWorkerTargetId = nil
+  state.queueWorkerProfilePath = nil
+  state.queueWorkerMode = nil
+
+  guard let controller = sharedChatController(&state) else { return nil }
+  var openedTargetId: String?
+  // Electron occasionally leaves a show:false renderer at its startup shell
+  // even after lifecycle activation. Discard that page and retry the official
+  // prewarm path; retries stay in the same process and never touch the primary
+  // window.
+  for _ in 0..<3 {
+    if let candidate = openBackgroundQueueWindow(
+      port: controller.port,
+      controllerTargetId: controller.targetId
+    ), candidate != controller.targetId {
+      openedTargetId = candidate
+      break
     }
-    state.queueWorkerPort = nil
-    state.queueWorkerTargetId = nil
-    state.queueWorkerProfilePath = nil
-    state.queueWorkerMode = nil
+    Thread.sleep(forTimeInterval: 0.5)
   }
-  // Default to one queue-owned ChatGPT instance so the user can inspect the
-  // whole queue and its review Chats together. Every queued task reuses this
-  // same process; only the optional preference below reuses an existing app
-  // target directly.
-  if ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_PREFER_EXISTING_TARGET"] == "1",
-     let prepared = ensureHiddenChatTarget(&state),
-     prepared["ok"] as? Bool == true,
-     let port = state.backgroundAppPort,
-     let targetId = state.backgroundChatTargetId {
-    let profilePath = state.backgroundProfilePath ?? hiddenChatProfilePath()
-    state.queueWorkerPort = port
-    state.queueWorkerTargetId = targetId
-    state.queueWorkerProfilePath = profilePath
-    state.queueWorkerMode = "existing-process-hidden-target"
-    return (port, targetId, profilePath)
-  }
-  if state.backgroundProfilePath == nil,
-     !FileManager.default.fileExists(atPath: hiddenChatProfilePath()) {
-    _ = ensureHiddenChatTarget(&state)
-  }
-  if let dedicated = createDedicatedQueueWorkerTarget(&state) {
-    return dedicated
-  }
-  // Preserve the previous hidden-target method as a fallback if the dedicated
-  // instance cannot be started (for example during an app update).
-  guard let prepared = ensureHiddenChatTarget(&state),
-        prepared["ok"] as? Bool == true,
-        let port = state.backgroundAppPort,
-        let targetId = state.backgroundChatTargetId else {
-    return nil
-  }
-  let profilePath = state.backgroundProfilePath ?? hiddenChatProfilePath()
-  state.queueWorkerPort = port
+  guard let targetId = openedTargetId else { return nil }
+  state.queueWorkerPort = controller.port
   state.queueWorkerTargetId = targetId
-  state.queueWorkerProfilePath = profilePath
-  state.queueWorkerMode = "existing-process-hidden-target"
-  return (port, targetId, profilePath)
+  state.queueWorkerProfilePath = controller.profilePath
+  state.queueWorkerMode = backgroundWindowQueueWorkerMode
+  return (controller.port, targetId, controller.profilePath)
 }
 
 private func stopQueueWorker(_ state: inout PluginState) {
-  // The default queue worker owns one dedicated process for the whole queue;
-  // stop it only after all tasks reach a terminal state. The optional existing
-  // target mode is borrowed and must remain alive for other plugin operations.
-  if state.queueWorkerMode == "dedicated-process-fallback" {
+  // Close only the hidden queue window. The primary window and the shared
+  // ChatGPT process remain available to the user and the general confirmer.
+  if queueUsesBackgroundWindow(state) {
     if let targetId = state.queueWorkerTargetId {
       _ = CDPClient.closeTarget(targetId, portOverride: state.queueWorkerPort)
     }
-    if let profilePath = state.queueWorkerProfilePath {
-      terminateDedicatedChatProcess(profilePath: profilePath)
-    }
+  } else if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
+            let profilePath = state.queueWorkerProfilePath {
+    terminateDedicatedChatProcess(profilePath: profilePath)
   }
   state.queueWorkerPort = nil
   state.queueWorkerTargetId = nil
@@ -3032,10 +3723,10 @@ private func startAutomationTask(
   _ task: inout AutomationTask,
   state: inout PluginState
 ) throws {
-  // All queued tasks use one queue-owned authenticated ChatGPT process. The
-  // renderer is intentionally single-owner: task concurrency is represented
-  // by the durable queue, while page work is serialized so tasks and review
-  // Chats never clobber one another's composer.
+  // All queued tasks use one hidden renderer inside the user's existing
+  // authenticated ChatGPT process. The renderer is intentionally single-owner:
+  // task concurrency is represented by the durable queue, while page work is
+  // serialized so tasks and review Chats never clobber one another's composer.
   var prepared: [String: Any]?
   var port: Int?
   var targetId: String?
@@ -3095,15 +3786,29 @@ private func startAutomationTask(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
+  let dispatchMarker = "任务发送轮次：\(attempt)"
+  let resolvedConversation = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: resolveDispatchedConversationJS(
+      dispatchMarker: dispatchMarker,
+      localConversationId: normalizedConversationId(prepared["conversationId"] as? String)
+    ),
+    timeout: 24.0
+  )
+  let resolvedConversationId = normalizedConversationId(
+    resolvedConversation?["conversationId"] as? String
+  )
   Thread.sleep(forTimeInterval: 0.5)
   let liveStatus = cdpValue(
     port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0
   ) ?? [:]
   // The freshly prepared blank Chat owns a stable local id before the sidebar
   // title appears. Prefer it over transitional active-row data after send.
-  let conversationId = prepared["conversationId"] as? String
-    ?? sendResult["conversationId"] as? String
-    ?? liveStatus["conversationId"] as? String
+  let conversationId = resolvedConversationId
+    ?? (prepared["conversationId"] as? String)
+    ?? (sendResult["conversationId"] as? String)
+    ?? (liveStatus["conversationId"] as? String)
   guard let conversationId = normalizedConversationId(conversationId) else {
     throw NSError(
       domain: "chatgpt-auto-confirm",
@@ -3254,6 +3959,9 @@ private func queueContinuation(
     return
   }
   if let report {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
     let fingerprint = taskReportFingerprint(report)
     var fingerprints = task.reportFingerprints ?? []
     fingerprints.append(fingerprint)
@@ -3305,37 +4013,128 @@ private func monitorAutomationTask(
     queueContinuation(&task, report: nil, reason: "missing_conversation_id")
     return
   }
-  let dedicatedTargetId: String? = {
-    guard let workerTargetId = task.workerTargetId else { return nil }
-    if state.queueWorkerMode == "dedicated-process-fallback" {
-      return workerTargetId
-    }
-    guard let sharedTargetId = state.backgroundChatTargetId,
-          workerTargetId != sharedTargetId else { return nil }
-    return workerTargetId
-  }()
-  // A freshly dispatched task owns the shared Chat renderer even before the
-  // local conversation id appears in the virtualized sidebar. Do not try to
-  // select that transient local id (it is not a sidebar row yet); remote ids
-  // can still be restored through the row-local React identity.
-  if !monitoringReview && dedicatedTargetId == nil && !conversationId.hasPrefix("local-chatgpt:") {
-    let restored = ensureHiddenChatTarget(&state, conversationId: conversationId)
-    guard restored?["ok"] as? Bool == true else {
-      task.lastError = restored?["error"] as? String ?? "conversation_restore_failed"
-      task.updatedAt = isoFormatter.string(from: Date())
-      return
-    }
-  }
+  // Do not restore the background queue renderer before its current page is read. A new
+  // Chat may receive a durable remote id before the virtualized body/sidebar
+  // has caught up; the dispatch marker below is the reliable proof that the
+  // visible page is still this task. Manual conversation drift is handled
+  // after that marker check, without blocking a just-sent response.
   state.approveAll = true
-  if state.queueWorkerMode != "dedicated-process-fallback" {
-    _ = scanIPC(&state)
+  var workerPort = task.workerPort ?? state.queueWorkerPort
+  var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
+  if !queueUsesBackgroundWindow(state) || workerPort == nil || workerTargetId == nil {
+    if let recoveredWorker = createQueueWorkerTarget(&state) {
+      workerPort = recoveredWorker.port
+      workerTargetId = recoveredWorker.targetId
+      task.workerPort = recoveredWorker.port
+      task.workerTargetId = recoveredWorker.targetId
+      task.workerProfilePath = recoveredWorker.profilePath
+      task.hiddenWorkerRecoveryCount = (task.hiddenWorkerRecoveryCount ?? 0) + 1
+      task.hiddenWorkerLastError = nil
+    }
   }
-  guard let port = task.workerPort ?? state.backgroundAppPort,
-        let targetId = dedicatedTargetId ?? state.backgroundChatTargetId else {
-    task.lastError = "queue_monitor_target_unavailable"
+  guard let initialPort = workerPort, let initialTargetId = workerTargetId else {
+    task.hiddenWorkerLastError = "queue_monitor_requires_background_window"
+    task.lastError = task.hiddenWorkerLastError
     task.updatedAt = isoFormatter.string(from: Date())
     return
   }
+  var port = initialPort
+  var targetId = initialTargetId
+  var runtimeState = queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: true
+  )
+  if runtimeState == .hiddenNonChat {
+    // A hidden prewarm page may survive an internal app reload on Work. Ask
+    // that hidden page to return to Chat before treating the renderer as lost.
+    _ = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+  }
+  if runtimeState != .hidden {
+    if runtimeState == .visible {
+      // Safety is fail-closed only for a genuinely visible page. Never close,
+      // navigate, confirm, stop, or type in a page the user may be operating.
+      state.queuePaused = true
+      task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = isoFormatter.string(from: Date())
+      return
+    }
+
+    // Missing, suspended, and hidden-but-not-Chat renderers are disposable
+    // queue-owned pages. Close any stale target, recreate ChatGPT's official
+    // show:false prewarm BrowserWindow, and verify hidden Chat again.
+    let failedRuntimeState = queueTargetRuntimeStateName(runtimeState)
+    stopQueueWorker(&state)
+    guard let recoveredWorker = createQueueWorkerTarget(&state) else {
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = isoFormatter.string(from: Date())
+      return
+    }
+    port = recoveredWorker.port
+    targetId = recoveredWorker.targetId
+    task.workerPort = recoveredWorker.port
+    task.workerTargetId = recoveredWorker.targetId
+    task.workerProfilePath = recoveredWorker.profilePath
+    task.hiddenWorkerRecoveryCount = (task.hiddenWorkerRecoveryCount ?? 0) + 1
+
+    if conversationId.hasPrefix("local-chatgpt:") {
+      // A reclaimed local-only Chat has no durable route to restore. The page
+      // is already rebuilt and verified hidden; continue the task in a fresh
+      // Chat that explicitly resumes from the same checkout instead of waiting
+      // forever on an identity that no longer exists.
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_recreated_without_durable_conversation"
+      queueContinuation(
+        &task,
+        report: nil,
+        reason: "queue_monitor_hidden_target_recreated_without_durable_conversation"
+      )
+      return
+    }
+
+    let restored = navigateHiddenConversation(
+      port: port,
+      targetId: targetId,
+      conversationId: conversationId
+    )
+    runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+    guard restored, runtimeState == .hidden else {
+      stopQueueWorker(&state)
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_recovery_failed"
+      queueContinuation(
+        &task,
+        report: nil,
+        reason: "queue_monitor_hidden_target_recovery_failed"
+      )
+      return
+    }
+  }
+  task.hiddenWorkerLastHeartbeatAt = isoFormatter.string(from: Date())
+  task.hiddenWorkerLastError = nil
+  // A permission card can replace the normal conversation body temporarily.
+  // Confirm it before restoring a task through its exact hidden-page route, so
+  // an unloaded conversation cannot suppress automatic authorization.
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
   let now = isoFormatter.string(from: Date())
   guard var liveStatus = cdpValue(
           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
@@ -3349,13 +4148,18 @@ private func monitorAutomationTask(
     task.updatedAt = now
     return
   }
-  // A user can manually select an older, already-finished Chat in the same
-  // renderer. Never parse that stale page as the active task or create another
-  // continuation/review Chat from it. Restore the task's own Chat when the
-  // sidebar can identify it; otherwise pause safely and wait for a real resume.
+  // The hidden queue renderer can still drift after an internal reload. Never
+  // parse a stale page as the active task or create a continuation/review Chat
+  // from it. Restoring here is safe because this process has no user composer.
   if let observed = normalizedConversationId(liveStatus["conversationId"] as? String),
      observed != conversationId {
-    let pageContent = reply["pageContent"] as? String ?? ""
+    // In the desktop app the active conversation pane can be rendered outside
+    // `<main>`, while `<main>` contains only the title/share chrome. Include
+    // the scoped user bubbles so a freshly sent dispatch marker is not missed.
+    let pageContent = [
+      reply["pageContent"] as? String ?? "",
+      reply["userContent"] as? String ?? "",
+    ].joined(separator: "\n")
     let dispatchMarker = monitoringReview
       ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
       : "任务发送轮次：\(task.attempts)"
@@ -3363,37 +4167,54 @@ private func monitorAutomationTask(
       // ChatGPT may replace the local id with its durable remote id after the
       // first response begins. The per-dispatch marker proves this is still
       // the current Chat, not a manually selected older attempt.
-      if !monitoringReview {
-        task.conversationId = observed
-        task.chatURL = liveStatus["chatUrl"] as? String
-      } else {
-        task.reviewConversationId = observed
+      // A virtualized sidebar can keep an older row marked current while the
+      // new local Chat is already streaming. Only a route/portal identity is
+      // authoritative enough to replace that local id; an active-row-only id
+      // must not bind the task to the stale sidebar conversation.
+      let identitySource = liveStatus["conversationSource"] as? String
+      let canPromoteLocalId = !conversationId.hasPrefix("local-chatgpt:")
+        || identitySource == "route"
+        || identitySource == "portal"
+      if canPromoteLocalId {
+        if !monitoringReview {
+          task.conversationId = observed
+          task.chatURL = liveStatus["chatUrl"] as? String
+        } else {
+          task.reviewConversationId = observed
+        }
       }
     } else {
-      let restored = cdpValue(
+      // A just-created Chat starts with a local id while ChatGPT replaces the
+      // sidebar and body asynchronously. It is not evidence of a manual
+      // switch. Wait for the dispatch marker instead of pausing every queued
+      // task; recover in one fresh Chat only if that binding never arrives.
+      if conversationId.hasPrefix("local-chatgpt:") {
+        if let startedAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
+           Date().timeIntervalSince(startedAt) >= 45 {
+          queueContinuation(&task, report: nil, reason: "fresh_chat_body_pending_timeout")
+        } else {
+          task.lastError = "queue_monitor_conversation_body_pending"
+          task.updatedAt = now
+        }
+        return
+      }
+      let restoredOK = navigateHiddenConversation(
         port: port,
         targetId: targetId,
-        expression: selectBackgroundConversationJS(conversationId),
-        timeout: 8.0
+        conversationId: conversationId
       )
-      let restoredOK = restored?["ok"] as? Bool == true
       if restoredOK,
          let statusAfterRestore = cdpValue(
            port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0),
          let restoredId = normalizedConversationId(statusAfterRestore["conversationId"] as? String),
          restoredId == conversationId {
         liveStatus = statusAfterRestore
-      } else if state.queueWorkerMode == "dedicated-process-fallback" {
-        // This renderer is owned solely by the queue, so a failed restore is
-        // a disposable renderer fault rather than a user navigation. Restart
-        // the one dedicated instance and continue from the persisted checkout.
+      } else {
+        // This hidden renderer is owned solely by the queue, so a failed
+        // restore is a disposable renderer fault rather than user navigation.
+        // Recreate it inside the same app process and continue from checkout.
         stopQueueWorker(&state)
         queueContinuation(&task, report: nil, reason: "queue_monitor_conversation_drift")
-        return
-      } else {
-        task.lastError = "queue_monitor_conversation_drift"
-        task.updatedAt = now
-        state.queuePaused = true
         return
       }
     }
@@ -3433,6 +4254,10 @@ private func monitorAutomationTask(
     // real task progress or postpone interruption recovery.
     if activityCharCount >= 80 {
       task.lastProgressAt = now
+      state.queueNetworkFailureCount = 0
+      state.queueNetworkStatus = "online"
+      state.queueNetworkLastError = nil
+      state.queueNetworkWaitUntil = nil
     }
   }
   task.updatedAt = now
@@ -3454,7 +4279,7 @@ private func monitorAutomationTask(
   if !hasAssistantActivity, !isStreaming, isPending,
      let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
      Date().timeIntervalSince(lastProgressAt) >= 90 {
-    if state.queueWorkerMode == "dedicated-process-fallback" {
+    if queueUsesBackgroundWindow(state) {
       stopQueueWorker(&state)
     }
     queueContinuation(&task, report: nil, reason: "chat_start_no_reply")
@@ -3463,12 +4288,29 @@ private func monitorAutomationTask(
 
   let completedActivity = reply["completedActivity"] as? String ?? ""
   let visibleContent = reply["content"] as? String ?? ""
+  let connectionText = [
+    visibleContent,
+    completedActivity,
+    reply["devspaceActivity"] as? String ?? "",
+    // `pageContent` also contains the queue's own user instruction, which
+    // deliberately documents network errors. Inspect only assistant/tool
+    // activity so the prompt can never trigger a false network outage.
+    reply["thinking"] as? String ?? ""
+  ].joined(separator: "\n")
+  if let signal = networkRecoverySignal(connectionText) {
+    closeDedicatedAutomationTarget(task, state: state)
+    queueNetworkRecovery(&task, state: &state, reason: signal)
+    return
+  }
   let reportText = completedActivity.isEmpty ? visibleContent : completedActivity
   let parsedReport = parseTaskReport(reportText).flatMap(automationReport)
   let terminal = reply["done"] as? Bool == true
     || reply["completionCandidate"] as? Bool == true
     || reply["terminalIncomplete"] as? Bool == true
   if terminal, let report = parsedReport {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
     if monitoringReview {
       task.reviewReport = report
       task.reviewStatus = report.status
@@ -3520,10 +4362,9 @@ private func monitorAutomationTask(
      Date().timeIntervalSince(lastProgressAt) >= 1200 {
     _ = cdpValue(
       port: port, targetId: targetId, expression: stopCurrentResponseJS(), timeout: 12.0)
-    if state.queueWorkerMode == "dedicated-process-fallback" {
+    if queueUsesBackgroundWindow(state) {
       // A stall belongs to the hidden, queue-owned renderer. Recreate that
-      // single renderer for the next Chat; never leave the queue paused on a
-      // process that has already stopped producing usable replies.
+      // never-shown prewarm window for the next Chat; never touch the primary.
       stopQueueWorker(&state)
     }
     closeDedicatedAutomationTarget(task, state: state)
@@ -3531,10 +4372,76 @@ private func monitorAutomationTask(
   }
 }
 
+private func stopLegacyQueueResponseIfStillOwned(
+  _ task: AutomationTask,
+  state: PluginState
+) {
+  guard let port = task.workerPort ?? state.queueWorkerPort,
+        let targetId = task.workerTargetId ?? state.queueWorkerTargetId,
+        let reply = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: getReplyJS(),
+          timeout: 5.0
+        ) else { return }
+  let dispatchMarker = task.reviewStatus == "running"
+    ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
+    : "任务发送轮次：\(task.attempts)"
+  let pageContent = reply["pageContent"] as? String ?? ""
+  guard pageContent.contains(dispatchMarker) else {
+    // The user or another controller has already changed this renderer. Do
+    // not stop, select, focus, or otherwise mutate the newly visible page.
+    return
+  }
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: stopCurrentResponseJS(),
+    timeout: 12.0
+  )
+}
+
 private func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
+  if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state) {
+    // Migrate pre-v41 queues without touching a borrowed visible renderer. Any
+    // running Chat is converted to a report-aware fresh continuation so the
+    // new hidden queue window first checks what already landed in checkout.
+    for index in tasks.indices
+      where tasks[index].status == "running" && tasks[index].workerPid == nil {
+      stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
+      queueContinuation(
+        &tasks[index],
+        report: nil,
+        reason: "queue_worker_background_window_migration"
+      )
+    }
+    if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
+       let profilePath = state.queueWorkerProfilePath {
+      terminateDedicatedChatProcess(profilePath: profilePath)
+    }
+    state.queueWorkerPort = nil
+    state.queueWorkerTargetId = nil
+    state.queueWorkerProfilePath = nil
+    state.queueWorkerMode = nil
+  }
+  let network = queueNetworkProbe()
+  if !network.reachable {
+    state.queueNetworkStatus = "offline"
+    state.queueNetworkLastError = network.detail
+    if let runningIndex = tasks.firstIndex(where: { $0.status == "running" }) {
+      closeDedicatedAutomationTarget(tasks[runningIndex], state: state)
+      queueNetworkRecovery(&tasks[runningIndex], state: &state, reason: network.detail)
+    }
+    state.automationTasks = tasks
+    return
+  }
+  if state.queueNetworkStatus == "offline" {
+    state.queueNetworkStatus = "online"
+    state.queueNetworkLastError = nil
+  }
   for index in tasks.indices where tasks[index].status == "waiting" {
     guard let waitingUntil = tasks[index].waitingUntil.flatMap(isoFormatter.date(from:)) else {
       tasks[index].status = "queued"
@@ -3619,6 +4526,11 @@ private func runQueueIteration(_ state: inout PluginState) {
       runningCount += 1
       heldLocks.formUnion(locks)
     } catch {
+      if let signal = networkRecoverySignal(error.localizedDescription) {
+        tasks[index].attempts += 1
+        queueNetworkRecovery(&tasks[index], state: &state, reason: signal)
+        continue
+      }
       tasks[index].updatedAt = now
       tasks[index].attempts += 1
       tasks[index].lastError = error.localizedDescription
@@ -3670,7 +4582,186 @@ private func commandJSONParams() -> [String: Any] {
   return object
 }
 
-private let command = CommandLine.arguments.dropFirst().first ?? "status"
+private let nativeCommandSummaries: [String: String] = [
+  "status": "查看自动确认、ChatGPT、隐藏页面和任务队列的当前状态。",
+  "diagnose": "执行只读诊断，检查辅助功能、ChatGPT 进程和调试连接。",
+  "start": "启动后台自动确认；第二个参数可传 JSON 配置。",
+  "stop": "停止后台自动确认并关闭插件创建的后台目标。",
+  "scan": "立即扫描一次，并允许用 JSON 临时覆盖规则或 approveAll。",
+  "sweep": "原地扫描所有已加载 renderer，不导航或切换任何页面。",
+  "audit": "读取最近的本地授权审计事件，可指定 1-100 条。",
+  "relaunch_and_confirm": "调试端口不可用时重启 ChatGPT，再执行一次确认扫描。",
+  "queue_enqueue": "把 1-50 个任务写入可恢复任务队列。",
+  "queue_start": "启动任务队列；默认等待下一个待验收任务。",
+  "queue_resume": "恢复已暂停的任务队列，不默认阻塞等待验收。",
+  "queue_status": "查看任务队列、隐藏 worker、网络等待和任务状态。",
+  "queue_attach": "把已有 ChatGPT conversationId 绑定到指定队列任务。",
+  "queue_wait_review": "等待下一个待验收、阻塞或失败的任务。",
+  "queue_review": "接受任务验收，或携带 feedback 退回重新执行。",
+  "queue_pause": "暂停调度新任务；已落盘状态会保留。",
+  "queue_retry": "恢复中断任务，可更新 connector 并附加恢复说明。",
+  "queue_cancel": "取消指定任务并停止其隐藏 worker。",
+  "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
+  "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
+  "get_reply": "读取隐藏 Chat 页面中的最新回复。",
+  "chat_status": "读取隐藏 Chat 表面、conversationId 和页面状态。",
+  "send_and_watch": "发送消息、自动确认授权，并等待带任务报告的最终回复。",
+]
+
+private func nativeCommandUsage(_ command: String, executable: String) -> String {
+  switch command {
+  case "status", "diagnose", "stop", "queue_status", "queue_pause":
+    return "\(executable) \(command)"
+  case "audit":
+    return "\(executable) audit [limit]"
+  case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
+       "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
+       "queue_review", "queue_retry", "queue_cancel", "send_message",
+       "add_connector", "get_reply", "chat_status", "send_and_watch":
+    return "\(executable) \(command) ['{...JSON...}']"
+  default:
+    return "\(executable) \(command)"
+  }
+}
+
+private func nativeCommandExample(_ command: String, executable: String) -> String? {
+  switch command {
+  case "start":
+    return "\(executable) start '{\"approveAll\":true,\"intervalMs\":750}'"
+  case "scan":
+    return "\(executable) scan '{\"approveAll\":true}'"
+  case "audit":
+    return "\(executable) audit 20"
+  case "queue_enqueue":
+    return "\(executable) queue_enqueue '{\"tasks\":[{\"id\":\"task-1\",\"title\":\"修复问题\",\"prompt\":\"完成实现并验证\"}],\"start\":true}'"
+  case "queue_start":
+    return "\(executable) queue_start '{\"waitForReview\":false,\"maxConcurrent\":2}'"
+  case "queue_review":
+    return "\(executable) queue_review '{\"taskId\":\"task-1\",\"accepted\":true}'"
+  case "queue_retry":
+    return "\(executable) queue_retry '{\"taskId\":\"task-1\",\"connector\":\"devspace1\",\"feedback\":\"从当前 checkout 继续\"}'"
+  case "send_message":
+    return "\(executable) send_message '{\"message\":\"检查当前状态\",\"connector\":\"devspace1\"}'"
+  case "send_and_watch":
+    return "\(executable) send_and_watch '{\"message\":\"完成任务并验证\",\"connector\":\"devspace1\",\"timeout\":3600}'"
+  default:
+    return nil
+  }
+}
+
+private func nativeHelpText(topic: String? = nil) -> (text: String, known: Bool) {
+  let executable = URL(fileURLWithPath: CommandLine.arguments.first ?? "chatgpt-auto-confirm")
+    .lastPathComponent
+  if let topic, !topic.isEmpty {
+    guard let summary = nativeCommandSummaries[topic] else {
+      return ("未知公开命令：\(topic)\n运行 \(executable) --help 查看可用命令。\n", false)
+    }
+    var lines = [
+      "ChatGPT 自动确认 · \(topic)",
+      "",
+      summary,
+      "",
+      "用法：",
+      "  \(nativeCommandUsage(topic, executable: executable))",
+      "",
+      "说明：",
+      "  JSON 参数必须是一个 JSON 对象，并作为第二个位置参数传入。",
+      "  也可以运行 \(executable) \(topic) --help 查看本页。",
+    ]
+    if let example = nativeCommandExample(topic, executable: executable) {
+      lines.append(contentsOf: ["", "示例：", "  \(example)"])
+    }
+    lines.append("")
+    return (lines.joined(separator: "\n"), true)
+  }
+
+  let text = """
+ChatGPT 自动确认 macOS 原生运行时
+
+用途：
+  在后台扫描 ChatGPT 授权卡、自动确认允许操作，并用隐藏 Chat 页面执行可恢复任务队列。
+  不切换用户页面、不激活窗口、不移动系统鼠标。
+
+用法：
+  \(executable) --help
+  \(executable) -h
+  \(executable) help [command]
+  \(executable) <command> --help
+  \(executable) <command> [JSON 或参数]
+
+自动确认：
+  status                 查看整体状态
+  diagnose               执行只读诊断
+  start [JSON]           启动后台自动确认
+  stop                   停止后台自动确认
+  scan [JSON]            立即扫描一次
+  sweep [JSON]           原地扫描全部 renderer
+  audit [limit]          查看最近 1-100 条审计事件
+  relaunch_and_confirm   必要时重启 ChatGPT 后扫描
+
+任务队列：
+  queue_enqueue JSON     添加可恢复任务
+  queue_start [JSON]     启动队列并可等待验收
+  queue_resume [JSON]    恢复队列
+  queue_status           查看队列状态
+  queue_attach JSON      绑定已有 conversationId
+  queue_wait_review JSON 等待待验收任务
+  queue_review JSON      提交验收结果
+  queue_pause            暂停队列
+  queue_retry JSON       恢复中断任务
+  queue_cancel JSON      取消任务
+
+隐藏 Chat：
+  send_message JSON      发送消息
+  add_connector JSON     选择 connector
+  get_reply [JSON]       读取最新回复
+  chat_status [JSON]     查看隐藏 Chat 状态
+  send_and_watch JSON    发送、确认并等待最终任务报告
+
+帮助：
+  \(executable) help start
+  \(executable) queue_enqueue --help
+
+常用示例：
+  \(executable) status
+  \(executable) start '{"approveAll":true,"intervalMs":750}'
+  \(executable) audit 20
+  \(executable) queue_status
+  \(executable) send_and_watch '{"message":"完成任务并验证","connector":"devspace1","timeout":3600}'
+
+环境变量：
+  CHATGPT_AUTO_CONFIRM_STATE         覆盖自动确认状态文件路径
+  CHATGPT_AUTO_CONFIRM_QUEUE_STATE   覆盖任务队列状态文件路径
+  CHATGPT_AUTO_CONFIRM_CDP_HOST      覆盖 ChatGPT 调试主机
+  CHATGPT_AUTO_CONFIRM_CDP_PORT      覆盖 ChatGPT 调试端口
+  CHATGPT_AUTO_CONFIRM_DEBUG=1       输出调试日志
+
+退出码：
+  0  命令成功或帮助正常显示
+  1  参数、运行时或业务执行失败
+  2  未知命令或未知帮助主题
+
+内部命令 watch 和 queue_watch 由运行时自动启动，不建议手动调用。
+外层 Mahayana CLI 用法：fabushi-plugin-cli --plugin chatgpt-auto-confirm --help
+
+"""
+  return (text, true)
+}
+
+private func printNativeHelp(_ topic: String? = nil) -> Never {
+  let help = nativeHelpText(topic: topic)
+  FileHandle.standardOutput.write(Data(help.text.utf8))
+  Foundation.exit(help.known ? 0 : 2)
+}
+
+private let commandArguments = Array(CommandLine.arguments.dropFirst())
+private let command = commandArguments.first ?? "status"
+if ["help", "--help", "-h"].contains(command) {
+  printNativeHelp(commandArguments.dropFirst().first)
+}
+if commandArguments.dropFirst().contains(where: { ["--help", "-h"].contains($0) }) {
+  printNativeHelp(command)
+}
 switch command {
 case "status":
   output(statusPayload(loadState()))
@@ -3708,6 +4799,11 @@ case "start":
     for chatURL in chatURLs { rememberChatURL(chatURL, in: &state) }
     state.intervalMs = interval
     state.startedAt = isoFormatter.string(from: Date())
+    // Keep a plugin-owned background endpoint available for IPC scanning.
+    // This process is launched behind the user's app and is never activated;
+    // separately, scanIPC also inspects every already-loaded renderer on the
+    // normal debugging endpoint without navigating any of them.
+    _ = ensureHiddenChatTarget(&state)
     let initial = scan(&state)
     try saveState(state)
     try startWatcher(&state)
@@ -3843,14 +4939,17 @@ case "stop":
   try? saveState(state)
   output(statusPayload(state))
 case "watch":
+  let activity = beginWatcherActivity(
+    preventIdleSystemSleep: false,
+    reason: "ChatGPT 自动确认后台 watcher"
+  )
+  defer { ProcessInfo.processInfo.endActivity(activity) }
   while true {
     autoreleasepool {
       var state = loadState()
       guard state.enabled else { Foundation.exit(0) }
-      // The child can start before the parent persists its PID. Always stamp
-      // the live watcher PID before saving so the child cannot race the field
-      // back to null.
       state.watcherPid = getpid()
+      keepApprovalBackgroundEndpointAlive(&state)
       _ = scan(&state)
       try? saveState(state)
       Thread.sleep(forTimeInterval: Double(state.intervalMs) / 1_000.0)
@@ -4104,6 +5203,11 @@ case "queue_retry":
   let params = commandJSONParams()
   let taskId = normalizedTaskId(params["taskId"] as? String)
   let feedback = (params["feedback"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let connectorParameter = params["connector"] as? String
+  guard connectorParameter == nil || normalizedConnector(connectorParameter) != nil else {
+    output(["ok": false, "errorCode": "invalid_connector", "message": "connector 必须是 1-256 字符且不能包含换行"], exitCode: 1)
+  }
+  let requestedConnector = normalizedConnector(connectorParameter)
   guard let taskId else {
     output(["ok": false, "errorCode": "invalid_task_id", "message": "taskId 无效"], exitCode: 1)
   }
@@ -4117,21 +5221,29 @@ case "queue_retry":
           userInfo: [NSLocalizedDescriptionKey: "没有找到任务 \(taskId)"]
         )
       }
-      guard ["running", "waiting", "blocked", "failed", "cancelled"].contains(tasks[index].status) else {
+      guard ["queued", "running", "waiting", "blocked", "failed", "cancelled"].contains(tasks[index].status) else {
         throw NSError(
           domain: "chatgpt-auto-confirm",
           code: 35,
           userInfo: [NSLocalizedDescriptionKey: "任务 \(taskId) 当前不需要中断恢复"]
         )
       }
-      if tasks[index].status == "running" {
-        // Stop the active response on the queue-owned Chat renderer. Do not
-        // restore the old conversation through the legacy hidden target here:
-        // that path can create an unintended second process and, worse, touch
-        // the Work/worker surface during a Chat-only retry.
+      if let requestedConnector {
+        tasks[index].connector = requestedConnector
+      }
+      if tasks[index].status == "queued" {
+        if !feedback.isEmpty {
+          tasks[index].reviewFeedback = "任务连接器已更新。请从同一 checkout 的最新落盘进度继续：\n\(feedback)"
+        }
+        tasks[index].lastError = "connector_updated"
+        tasks[index].updatedAt = isoFormatter.string(from: Date())
+      } else if tasks[index].status == "running" {
+        // Stop only a response inside the hidden queue window. A legacy or
+        // attached target is deliberately left untouched because it may be the
+        // page where the user is composing a new task.
         let port = tasks[index].workerPort ?? state.queueWorkerPort
         let targetId = tasks[index].workerTargetId ?? state.queueWorkerTargetId
-        if state.queueWorkerMode == "dedicated-process-fallback",
+        if queueUsesBackgroundWindow(state),
            let port,
            let targetId {
           _ = cdpValue(
@@ -4140,20 +5252,13 @@ case "queue_retry":
             expression: stopCurrentResponseJS(),
             timeout: 12.0
           )
-        } else if let conversationId = tasks[index].conversationId,
-                  let restored = ensureHiddenChatTarget(&state, conversationId: conversationId),
-                  restored["ok"] as? Bool == true,
-                  let port = state.backgroundAppPort,
-                  let targetId = state.backgroundChatTargetId {
-          _ = cdpValue(
-            port: port,
-            targetId: targetId,
-            expression: stopCurrentResponseJS(),
-            timeout: 12.0
-          )
         }
+        // An operator retry must not inherit a hidden renderer that may have
+        // drifted to a foreground-created conversation. The next attempt gets
+        // a fresh show:false page inside the same ChatGPT process.
+        stopQueueWorker(&state)
       }
-      if ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
+      if tasks[index].status != "queued", ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
         // An explicit operator retry is a fresh recovery budget. Keep the
         // checkout and audit history, but do not let an old continuation
         // fingerprint prevent the new architecture from making progress.
@@ -4172,7 +5277,7 @@ case "queue_retry":
         tasks[index].lastProgressAt = nil
         tasks[index].waitingUntil = nil
         tasks[index].waitReason = nil
-      } else {
+      } else if tasks[index].status != "queued" {
         queueContinuation(&tasks[index], report: tasks[index].report, reason: "operator_recovery")
       }
       if !feedback.isEmpty && tasks[index].status == "queued" {
@@ -4224,6 +5329,11 @@ case "queue_cancel":
     output(["ok": false, "errorCode": "queue_cancel_failed", "message": error.localizedDescription], exitCode: 1)
   }
 case "queue_watch":
+  let activity = beginWatcherActivity(
+    preventIdleSystemSleep: true,
+    reason: "ChatGPT 自动确认任务队列后台处理"
+  )
+  defer { ProcessInfo.processInfo.endActivity(activity) }
   while true {
     autoreleasepool {
       do {
@@ -4231,6 +5341,11 @@ case "queue_watch":
           guard state.queueEnabled == true else { return false }
           state.queueWatcherPid = getpid()
           state.queueRuntimeRevision = currentQueueRuntimeRevision
+          if queueUsesBackgroundWindow(state),
+             let port = state.queueWorkerPort,
+             let targetId = state.queueWorkerTargetId {
+            _ = queueTargetRuntimeState(port: port, targetId: targetId, refreshLifecycle: true)
+          }
           runQueueIteration(&state)
           return state.queueEnabled == true
         }
@@ -4949,11 +6064,13 @@ default:
 private func taskReportContract() -> String {
   """
 
-在停止生成前，必须在回答末尾输出以下机器可读任务总结。不要省略标记，不要把 JSON 放进 Markdown 代码块，字段必须完整：
+持续执行要求：不要只描述下一步、不要阶段性收尾、不要回复等待时间。普通异步等待必须在当前 Chat 内自行轮询并继续。全部目标完成时直接给出正常最终结果，不要输出机器模板；小程序会把该结果发送到新的独立验收 Chat。
+
+只有出现当前权限和工具确实无法绕过的阻塞，或平台硬性终止本次会话且任务仍未完成时，才在回答末尾输出以下未完成续作模板。不要把 JSON 放进 Markdown 代码块：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"本轮结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["验证命令与结果"],"wait_seconds":0,"wait_reason":"若需要等待 Actions、部署或外部异步操作，写明原因；否则为空字符串","next_task":"若未完成，写给新 Chat 的完整续作指令；若完成则为空字符串"}
+{"protocol":"mahayana.task-report.v1","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
 MAHAYANA_TASK_REPORT_V1_END
-只有全部目标实现且验证通过时 status 才能是 complete；此时 remaining、blockers 必须是空数组，wait_seconds 必须为 0、wait_reason 和 next_task 必须为空字符串。未完成或受阻时必须准确填写 remaining、blockers 和非空 next_task，便于新 Chat 从当前 checkout 继续，不能声称完成。若必须等待外部异步结果，status 使用 incomplete，wait_seconds 填合理的预计秒数（30-604800），wait_reason 说明等待对象；小程序会等到期后自动发送下一轮 Chat。无需等待时 wait_seconds=0、wait_reason 为空字符串。
+未完成时 remaining 和 next_task 必须非空。不要把 Actions、部署、发布审核或网络恢复的正常等待写成 wait_seconds；这些等待应留在当前 Chat 内完成。wait_seconds 和 wait_reason 仅保留兼容，固定填 0 和空字符串。云端 GitHub 阶段 next_connector 填 GitHub，本地阶段填 bhrum2。
 """
 }
 
@@ -5187,6 +6304,129 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         || `${index}:${normalize(element?.innerText || '').slice(0, 256)}`;
     }
 
+    const desiredModel = 'GPT-5.6 Sol';
+    const desiredReasoning = 'High';
+
+    function modelPickerButton() {
+      const input = findTextarea();
+      const inputRect = input?.getBoundingClientRect();
+      const candidates = [...document.querySelectorAll('button')].filter(button => {
+        if (!visible(button)) return false;
+        const label = button.getAttribute('aria-label') || '';
+        return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
+      });
+      if (!inputRect) return candidates[0] || null;
+      return candidates.sort((left, right) => {
+        const l = left.getBoundingClientRect();
+        const r = right.getBoundingClientRect();
+        const leftDistance = Math.abs(l.bottom - inputRect.bottom) + Math.abs(l.left - inputRect.left);
+        const rightDistance = Math.abs(r.bottom - inputRect.bottom) + Math.abs(r.left - inputRect.left);
+        return leftDistance - rightDistance;
+      })[0] || null;
+    }
+
+    function visibleModelMenus() {
+      const selectors = [
+        '[role="menu"]', '[role="listbox"]', '[data-composer-overlay-floating-ui]',
+        '[data-radix-menu-content]', '[data-radix-popper-content-wrapper]'
+      ].join(',');
+      return [...document.querySelectorAll(selectors)].filter(visible);
+    }
+
+    function exactModelChoice(root, label) {
+      if (!root) return null;
+      const target = normalize(label).toLowerCase();
+      const candidates = [...root.querySelectorAll(
+        'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
+      )].filter(element => visible(element) && normalize(element.textContent).toLowerCase() === target);
+      return candidates.sort((left, right) => {
+        const l = left.getBoundingClientRect();
+        const r = right.getBoundingClientRect();
+        return (l.width * l.height) - (r.width * r.height);
+      })[0] || null;
+    }
+
+    async function ensureModelAndReasoning() {
+      const picker = modelPickerButton();
+      if (!picker) return { ok: false, error: 'model_selector_not_found' };
+      picker.click();
+      await sleep(300);
+
+      let menus = visibleModelMenus();
+      let modelItem = null;
+      let modelMenu = null;
+      for (let index = 0; index < 30 && !modelItem; index += 1) {
+        menus = visibleModelMenus();
+        for (const menu of [...menus].reverse()) {
+          modelItem = exactModelChoice(menu, desiredModel);
+          if (modelItem) {
+            modelMenu = menu;
+            break;
+          }
+        }
+        if (!modelItem) await sleep(100);
+      }
+      if (!modelItem || !modelMenu) {
+        return { ok: false, error: 'gpt_5_6_sol_not_found', desiredModel };
+      }
+
+      const originalMenuText = normalize(modelMenu.textContent);
+      modelItem.click();
+      await sleep(250);
+
+      let effortItem = null;
+      let effortMenu = null;
+      let submenuTransitionConfirmed = false;
+      for (let index = 0; index < 40 && !effortItem; index += 1) {
+        menus = visibleModelMenus();
+        for (const menu of [...menus].reverse()) {
+          const candidate = exactModelChoice(menu, desiredReasoning);
+          if (!candidate) continue;
+          const menuChanged = menu !== modelMenu
+            || normalize(menu.textContent) !== originalMenuText
+            || modelItem.getAttribute('aria-expanded') === 'true';
+          if (menuChanged) {
+            effortItem = candidate;
+            effortMenu = menu;
+            submenuTransitionConfirmed = true;
+            break;
+          }
+        }
+        if (!effortItem) await sleep(100);
+      }
+      if (!effortItem || !submenuTransitionConfirmed) {
+        return {
+          ok: false, error: 'model_submenu_not_opened',
+          desiredModel, desiredReasoning, visibleMenus: menus.map(menu => normalize(menu.textContent).slice(0, 300))
+        };
+      }
+
+      effortItem.click();
+      await sleep(350);
+      const confirmedPicker = modelPickerButton();
+      const pickerEvidence = normalize([
+        confirmedPicker?.textContent,
+        confirmedPicker?.getAttribute('aria-label'),
+        confirmedPicker?.getAttribute('title')
+      ].filter(Boolean).join(' '));
+      const reasoningConfirmed = pickerEvidence.toLowerCase().includes(desiredReasoning.toLowerCase());
+      if (!reasoningConfirmed) {
+        return {
+          ok: false, error: 'reasoning_selection_not_confirmed',
+          desiredModel, desiredReasoning, pickerEvidence,
+          effortMenu: normalize(effortMenu?.textContent).slice(0, 300)
+        };
+      }
+      return {
+        ok: true,
+        model: desiredModel,
+        reasoning: desiredReasoning,
+        modelConfirmed: true,
+        reasoningConfirmed: true,
+        pickerEvidence
+      };
+    }
+
     function connectorMatches(value, target) {
       const text = normalize(value).toLowerCase();
       const needle = normalize(target).toLowerCase();
@@ -5336,6 +6576,20 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         record('new_chat', true, { selectedChat: true, userMessageCount: userMessages().length });
       }
     }
+
+    // Every task, continuation, and independent review Chat must explicitly
+    // select GPT-5.6 Sol with High reasoning before any connector or message is
+    // placed in the composer. Fail closed so a default or stale model can never
+    // receive an automated instruction.
+    const modelSelection = await ensureModelAndReasoning();
+    if (!modelSelection.ok) {
+      return fail('model_selection', modelSelection.error || 'model_selection_failed', modelSelection);
+    }
+    result.modelConfirmed = true;
+    result.reasoningConfirmed = true;
+    result.model = modelSelection.model;
+    result.reasoning = modelSelection.reasoning;
+    record('model_selection', true, modelSelection);
 
     const textarea = findTextarea();
     if (!textarea) {
@@ -5640,6 +6894,7 @@ private func getReplyJS() -> String {
       .replace(/\b([A-Z][A-Z0-9_]*(?:TOKEN|API_KEY|SECRET|PASSWORD))=([^\s,]+)/g, '$1=[REDACTED]')
       .replace(/(DeviceID\s*\n)[^\n]+/gi, '$1[REDACTED_DEVICE_ID]');
     const mainText = redact((main.innerText || '').replace(/\s+$/g, ''));
+    const userContent = redact(users.map(user => user.innerText || '').join('\n'));
     const lastUserText = (users[users.length - 1]?.innerText || '').trim();
     const userIndex = lastUserText ? mainText.lastIndexOf(lastUserText) : -1;
     const activity = (userIndex >= 0
@@ -5730,6 +6985,7 @@ private func getReplyJS() -> String {
       charCount: visibleContent.length,
       messageCount: messages.length,
       userMessageCount,
+      userContent: userContent.substring(0, 50000),
       pageContent: mainText.substring(0, 50000)
     };
   })()
@@ -5803,6 +7059,9 @@ private func chatStatusJS() -> String {
   const initialRoute = new URL(pageURL).searchParams.get('initialRoute') || '';
   const routeMatch = initialRoute.match(/\/(?:c|work\/conversation)\/([^/?#]+)/)
     || pageURL.match(/\/c\/([^/?#]+)/);
+  const routeConversationId = routeMatch
+    ? decodeURIComponent(routeMatch[1])
+    : '';
   const portalConversation = document.querySelector('[data-above-composer-conversation-id]')
     ?.getAttribute('data-above-composer-conversation-id') || '';
   const portalConversationId = portalConversation.startsWith('chatgpt:')
@@ -5824,9 +7083,13 @@ private func chatStatusJS() -> String {
   const activeConversationId = activeRowConversationIds.find(id => !id.startsWith('local-chatgpt:'))
     || activeRowConversationIds[0]
     || null;
-  const conversationId = routeMatch
-    ? decodeURIComponent(routeMatch[1])
-    : (activeConversationId || portalConversationId || null);
+  const conversationId = routeConversationId
+    || portalConversationId
+    || activeConversationId
+    || null;
+  const conversationSource = routeConversationId
+    ? 'route'
+    : (portalConversationId ? 'portal' : (activeConversationId ? 'active-row' : 'none'));
   const chatUrl = conversationId && !conversationId.startsWith('local-chatgpt:')
     ? `https://chatgpt.com/c/${conversationId}`
     : null;
@@ -5848,6 +7111,7 @@ private func chatStatusJS() -> String {
     messageCount: { user: userMsgs, assistant: asstMsgs },
     url: pageURL,
     conversationId,
+    conversationSource,
     conversationRoute,
     chatUrl
   };
