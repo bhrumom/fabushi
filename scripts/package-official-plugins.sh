@@ -29,7 +29,30 @@ if [ ! -f "$wasm_root/fabushi_official_miniapps_bg.wasm" ]; then
 fi
 
 mkdir -p "$destination/plugins"
-cp "$source_root/marketplace.json" "$destination/marketplace.json"
+python3 - "$source_root/marketplace.json" "$destination/marketplace.json" <<'PY_MARKETPLACE'
+import json
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+marketplace = json.loads(source.read_text(encoding="utf-8"))
+plugins = marketplace.get("plugins")
+if not isinstance(plugins, list):
+    raise SystemExit("official marketplace plugins must be an array")
+for plugin in plugins:
+    plugin_id = plugin.get("name")
+    plugin_source = plugin.get("source")
+    if not isinstance(plugin_id, str) or not plugin_id:
+        raise SystemExit("official marketplace plugin is missing a name")
+    if not isinstance(plugin_source, dict) or plugin_source.get("source") != "local":
+        raise SystemExit(f"official marketplace plugin {plugin_id!r} must use a local source")
+    plugin_source["path"] = f"./plugins/{plugin_id}"
+destination.write_text(
+    json.dumps(marketplace, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY_MARKETPLACE
 for plugin_source in "$source_root"/plugins/*; do
   [ -d "$plugin_source" ] || continue
   plugin_id="$(basename "$plugin_source")"
