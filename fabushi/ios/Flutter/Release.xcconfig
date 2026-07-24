@@ -3,7 +3,7 @@
 
 // Dart FFI resolves the statically linked Mahayana ABI through
 // DynamicLibrary.process(), so release exports must retain global C symbols.
-OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic
+OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -Wl,-u,_mahayana_product_execute
 
 // Keep the embedded Rust C ABI visible to Dart DynamicLibrary.process().
 EXPORTED_SYMBOLS_FILE = $(PROJECT_DIR)/Runner/RuntimeExports.txt
