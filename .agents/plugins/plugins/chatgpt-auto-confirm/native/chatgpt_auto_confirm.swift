@@ -1703,7 +1703,7 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
       && window.location.hostname === 'chatgpt.com';
     const workComposer = !!document.querySelector('[data-codex-composer="true"]');
     
-    const isChatSurface = !!document.querySelector('#prompt-textarea') || chatModel || webChat;
+    const isChatSurface = !!document.querySelector('#prompt-textarea') || chatModel || webChat || window.location.protocol === 'chatgpt:';
 
     const initialRoute = new URL(window.location.href).searchParams.get('initialRoute') || '';
     const routeMatch = initialRoute.match(/^\\/work\\/conversation\\/([^/?#]+)/);
