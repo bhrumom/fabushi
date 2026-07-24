@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - fabushi/**
+      - .agents/plugins/**
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
@@ -23,6 +24,7 @@ on:
       - main
     paths:
       - fabushi/**
+      - .agents/plugins/**
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
