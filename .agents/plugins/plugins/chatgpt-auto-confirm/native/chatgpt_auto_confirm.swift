@@ -2829,7 +2829,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v54"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v55"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3015,12 +3015,14 @@ private func chatOnlyInstruction(_ value: String) -> String {
 private func automationTaskMessage(_ task: AutomationTask) -> String {
   var sections = [
     taskPromptPrefix(task.promptTemplate),
+    "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 High。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
     "执行边界：实际工作只允许在 Chat 页面完成；不要点击或进入 Work 页面。",
     "连接器路由：当前新 Chat 选用「\(task.connector)」。已在云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器；不要改用本地 gh 来替代云端证据。本地 checkout、Git/gh 元数据与安全同步必须使用 bhrum2；同步前先读取 status、远端和分支，只允许干净工作树上的 fast-forward，不得覆盖本地改动。若本轮从 bhrum2 推送到云端，最终报告 next_connector 填 GitHub，让小程序为下一新 Chat 切换到 GitHub 连接器。",
     "资源策略：项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions 中执行并以 Actions 日志或构件为准。本机只做 Git/gh 元数据与代码阅读；不要在本机运行任何项目测试、构建、打包、安装、依赖下载或会生成缓存/产物的命令。",
     "提交策略：提交前逐项选择源代码、配置和必要文档，禁止 git add -A。不要提交或等待上传无关的大文件、缓存、node_modules、构建输出、本地安装包或无关 LFS 对象；除非某个大文件是任务明确必需的发布资产。",
-    "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。确实无法解决时，在最终报告 blockers 和 next_task 中明确列出下一步所需的权限、账号、工具、环境变量、具体命令或外部服务恢复条件。",
-    "若遇到网络断连、DNS 失败、连接重置、502/503/504 或连接器超时，不要在当前 Chat 盲目重试。结束本轮并报告 status=incomplete，给出至少 30 秒的 wait_seconds、具体 wait_reason 和复查网络/外部服务的 next_task；小程序会探测网络恢复后自动创建新 Chat。若必须等待 GitHub Actions、部署、发布审核或其他外部异步操作，也采用同一等待协议。无需等待时 wait_seconds=0 且 wait_reason 为空字符串。",
+    "持续执行规则：不要在说明『下一步要做什么』后停止，也不要只汇报阶段性进度。直接执行所有可行步骤，持续处理失败、评审意见、Actions、部署和构件检查，直到原始目标真正完成。",
+    "等待规则：GitHub Actions、部署、发布审核、网络恢复或其他异步操作尚未结束时，留在当前 Chat 内自行等待并轮询，结果出现后立刻继续；不要用回复等待秒数、预计时间或让用户稍后再来结束本轮。",
+    "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。只有出现当前权限与工具确实无法绕过的真实阻塞，或平台硬性终止本次会话时，才允许结束未完成任务，并在未完成续作模板中准确列出所需权限、账号、工具、环境变量、具体命令或外部恢复条件。",
     task.prompt
   ]
   sections.append("任务发送轮次：\(task.attempts + 1)。")
@@ -3053,7 +3055,7 @@ private func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若证据不足、仍有未完成项或存在真实卡点，必须准确标记 incomplete 或 blocked，并给出 remaining、blockers、verification 和 next_task。若只是等待 Actions、部署、发布审核、网络恢复或其他外部异步结果，标记 incomplete，写明 wait_seconds（预计秒数）和 wait_reason，小程序会定时新建 Chat 再复查。重复卡点不能只照抄旧错误；应判断是否需要换方案。确实无法解决时，blockers 和 next_task 必须列出具体所需权限、账号、工具、环境变量、命令或外部服务恢复条件。只有全部目标可复核且验证通过时才标记 complete。回答末尾必须输出完整的 MAHAYANA_TASK_REPORT_V1_BEGIN/END JSON，总结本次独立验收结果。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若 Actions、部署、发布审核或网络恢复仍在进行，必须留在这个验收 Chat 内自行等待并轮询，拿到结果后继续验收，不得回复等待时间后退出。重复卡点不能只照抄旧错误，应诊断并换可行路径。只有全部目标可复核且验证通过时，最后单独输出一行 `MAHAYANA_REVIEW_ACCEPTED`；不要输出完成态 JSON。若验收不通过，输出未完成续作模板，准确写出 remaining、blockers、verification 和 next_task，供小程序新建工作 Chat 继续；只有真实不可绕过的阻塞才可使用 blocked。
   """
 }
 
@@ -6062,11 +6064,13 @@ default:
 private func taskReportContract() -> String {
   """
 
-在停止生成前，必须在回答末尾输出以下机器可读任务总结。不要省略标记，不要把 JSON 放进 Markdown 代码块，字段必须完整：
+持续执行要求：不要只描述下一步、不要阶段性收尾、不要回复等待时间。普通异步等待必须在当前 Chat 内自行轮询并继续。全部目标完成时直接给出正常最终结果，不要输出机器模板；小程序会把该结果发送到新的独立验收 Chat。
+
+只有出现当前权限和工具确实无法绕过的阻塞，或平台硬性终止本次会话且任务仍未完成时，才在回答末尾输出以下未完成续作模板。不要把 JSON 放进 Markdown 代码块：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"本轮结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["验证命令与结果"],"wait_seconds":0,"wait_reason":"若需要等待 Actions、部署、网络恢复或外部异步操作，写明原因；否则为空字符串","next_connector":"下一新 Chat 要选用的 connector（例如 GitHub 或 bhrum2）；不切换则为空字符串","next_task":"若未完成，写给新 Chat 的完整续作指令；若完成则为空字符串"}
+{"protocol":"mahayana.task-report.v1","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
 MAHAYANA_TASK_REPORT_V1_END
-只有全部目标实现且验证通过时 status 才能是 complete；此时 remaining、blockers 必须是空数组，wait_seconds 必须为 0、wait_reason 和 next_task 必须为空字符串。未完成或受阻时必须准确填写 remaining、blockers 和非空 next_task，便于新 Chat 从当前 checkout 继续，不能声称完成。若必须等待网络恢复、Actions、部署或其他外部异步结果，status 使用 incomplete，wait_seconds 填合理的预计秒数（30-604800），wait_reason 说明等待对象；小程序会等到期后自动发送下一轮 Chat。云端 GitHub 阶段把 next_connector 填 GitHub，本地阶段填 bhrum2；无需切换则为空字符串。无需等待时 wait_seconds=0、wait_reason 为空字符串。
+未完成时 remaining 和 next_task 必须非空。不要把 Actions、部署、发布审核或网络恢复的正常等待写成 wait_seconds；这些等待应留在当前 Chat 内完成。wait_seconds 和 wait_reason 仅保留兼容，固定填 0 和空字符串。云端 GitHub 阶段 next_connector 填 GitHub，本地阶段填 bhrum2。
 """
 }
 
