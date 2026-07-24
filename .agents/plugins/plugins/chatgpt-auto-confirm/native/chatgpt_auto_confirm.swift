@@ -1654,8 +1654,8 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
       url: window.location.href || '', conversationId: null
     };
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const exactButton = text => [...document.querySelectorAll('button')].find(button =>
-      (button.innerText || button.textContent || '').trim().toLowerCase() === text.toLowerCase()
+    const exactButton = text => [...document.querySelectorAll('button, a, [role="button"]')].find(button =>
+      (button.innerText || button.textContent || button.getAttribute('title') || '').trim().toLowerCase() === text.toLowerCase()
     );
     const currentConversationId = () => {
       const raw = document.querySelector('[data-above-composer-conversation-id]')
@@ -1695,7 +1695,7 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
 
     const input = document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"]');
-    const chatModel = [...document.querySelectorAll('button')].some(button => {
+    const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
@@ -1984,10 +1984,10 @@ private func prepareNewChatTarget(
       expression: prepareBackgroundChatJS(newChat: false),
       timeout: timeout
     )
-    if prepared?["ok"] as? Bool == true,
-       let conversationId = prepared?["conversationId"] as? String,
-       !conversationId.isEmpty {
-      let changed = previous?.isEmpty != false || conversationId != previous
+    if prepared?["ok"] as? Bool == true {
+      let conversationId = prepared?["conversationId"] as? String ?? ""
+      let changed = (previous?.isEmpty != false && !conversationId.isEmpty) || 
+                    (previous?.isEmpty == false && conversationId != previous)
       let blankConversation = allowBlankConversationReuse &&
         (cdpValue(
           port: port,
@@ -1996,9 +1996,9 @@ private func prepareNewChatTarget(
           timeout: timeout
         )?["messageCount"] as? Int ?? 1) == 0
       if changed || (blankConversation && previous?.isEmpty != false) {
-      var result = prepared ?? [:]
-      result["newChatClicked"] = true
-      return result
+        var result = prepared ?? [:]
+        result["newChatClicked"] = true
+        return result
       }
     }
     Thread.sleep(forTimeInterval: 0.25)
