@@ -52,7 +52,7 @@
     },
     {
       "name": "chatgpt-auto-confirm",
-      "version": "1.0.0+codex.20260723003618",
+      "version": "1.0.0+codex.20260723053507",
       "source": { "source": "local", "path": "./.agents/plugins/plugins/chatgpt-auto-confirm" },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
