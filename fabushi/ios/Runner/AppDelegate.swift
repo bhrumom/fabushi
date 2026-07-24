@@ -41,6 +41,11 @@ private func mahayanaRuntimeFreeString(_ pointer: UnsafeMutablePointer<CChar>?)
             mahayanaRuntimeForceLink() == 1,
             "Mahayana Rust runtime failed to link"
         )
+        // Keep the product-only C ABI entry point in the final executable.
+        // Rust turns a nil request into an owned error response, which is
+        // immediately released after the linker-visible probe.
+        let productProbe = mahayanaProductExecute(nil)
+        mahayanaRuntimeFreeString(productProbe)
 
         // 设置 MethodChannel
         if let controller = window?.rootViewController as? FlutterViewController {
