@@ -5,6 +5,9 @@ import BackgroundTasks
 @_silgen_name("fabushi_telegram_force_link")
 private func fabushiTelegramForceLink() -> UInt32
 
+@_silgen_name("mahayana_runtime_force_link")
+private func mahayanaRuntimeForceLink() -> UInt32
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     // 内存警告 MethodChannel
@@ -25,6 +28,10 @@ private func fabushiTelegramForceLink() -> UInt32
         precondition(
             fabushiTelegramForceLink() == 1,
             "Telegram Rust runtime failed to link"
+        )
+        precondition(
+            mahayanaRuntimeForceLink() == 1,
+            "Mahayana Rust runtime failed to link"
         )
 
         // 设置 MethodChannel
