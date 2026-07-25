@@ -3938,8 +3938,8 @@ private func finishAutomationTask(_ task: inout AutomationTask) {
       task.finishedAt = nil
       task.lastError = "worker_exited_without_result"
     } else {
-      task.status = "failed"
-      task.lastError = "worker_exited_without_result"
+      task.status = "queued"
+      task.lastError = "worker_exited_without_result_max_retries"
     }
     return
   }
@@ -3954,7 +3954,7 @@ private func finishAutomationTask(_ task: inout AutomationTask) {
     return
   }
   if taskStatus == "incomplete" || taskStatus == "blocked" {
-    task.status = "blocked"
+    task.status = "queued"
     task.lastError = result["message"] as? String
       ?? result["errorCode"] as? String
       ?? "任务总结报告未完成"
@@ -3967,7 +3967,7 @@ private func finishAutomationTask(_ task: inout AutomationTask) {
       ?? result["errorCode"] as? String
       ?? "worker_runtime_failed"
   } else {
-    task.status = "failed"
+    task.status = "queued"
     task.lastError = result["message"] as? String
       ?? result["errorCode"] as? String
       ?? "worker_runtime_failed"
@@ -3990,10 +3990,10 @@ private func queueContinuation(
   let now = isoFormatter.string(from: Date())
   let depth = task.continuationDepth ?? 0
   if task.maxTaskContinuations > 0 && depth >= task.maxTaskContinuations {
-    task.status = "blocked"
+    task.status = "queued"
     task.lastError = "task_continuation_limit_reached"
     task.updatedAt = now
-    task.finishedAt = now
+    task.finishedAt = nil
     return
   }
   if let report {
@@ -4374,9 +4374,9 @@ private func monitorAutomationTask(
         port: port,
         targetId: targetId
       ) else {
-        task.status = "blocked"
+        task.status = "queued"
         task.lastError = "chat_review_start_failed"
-        task.finishedAt = now
+        task.finishedAt = nil
         return
       }
       task.status = "running"
@@ -4434,9 +4434,9 @@ private func monitorAutomationTask(
       port: port,
       targetId: targetId
     ) else {
-      task.status = "blocked"
+      task.status = "queued"
       task.lastError = "chat_review_start_failed"
-      task.finishedAt = now
+      task.finishedAt = nil
       return
     }
     task.status = "running"
@@ -4622,9 +4622,7 @@ private func runQueueIteration(_ state: inout PluginState) {
       tasks[index].updatedAt = now
       tasks[index].attempts += 1
       tasks[index].lastError = error.localizedDescription
-      tasks[index].status = tasks[index].attempts <= tasks[index].maxRuntimeRetries
-        ? "queued"
-        : "failed"
+      tasks[index].status = "queued"
     }
   }
   state.automationTasks = tasks
