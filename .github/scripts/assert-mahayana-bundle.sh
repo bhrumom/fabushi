@@ -34,7 +34,20 @@ fi
 
 "$cli" --help >/dev/null
 smoke_home="$(mktemp -d)"
-trap 'rm -rf "$smoke_home"' EXIT
+cleanup_smoke_home() {
+  local attempt
+  trap - ERR
+  for ((attempt = 1; attempt <= 30; attempt++)); do
+    rm -rf "$smoke_home" 2>/dev/null || true
+    if [ ! -e "$smoke_home" ]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "warning: could not fully remove Mahayana smoke home: $smoke_home" >&2
+  return 0
+}
+trap cleanup_smoke_home EXIT
 status_json="$(MAHAYANA_HOME="$smoke_home" "$cli" status)"
 grep -Eq '"model"[[:space:]]*:[[:space:]]*"deepseek-chat"' <<<"$status_json"
 grep -Eq '"modelProvider"[[:space:]]*:[[:space:]]*"first-party-dacheng"' <<<"$status_json"
