@@ -908,10 +908,13 @@ jobs:
             exit 1
           fi
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          symbols_file="$(mktemp)"
+          nm -gU "$app_path/$executable" > "$symbols_file"
           for symbol in create execute receive interrupt resolve_approval close free_string; do
-            nm -gU "$app_path/$executable" | grep "_mahayana_runtime_${symbol}$" >/dev/null
+            grep -q "_mahayana_runtime_${symbol}$" "$symbols_file"
           done
-          nm -gU "$app_path/$executable" | grep '_mahayana_product_execute$' >/dev/null
+          grep -q '_fabushi_mahayana_product_execute$' "$symbols_file"
+          rm -f "$symbols_file"
           cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 
       - name: Upload signed iOS IPA to App Store Connect

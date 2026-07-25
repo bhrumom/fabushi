@@ -632,6 +632,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = M4Q99K4UR4;
 				ENABLE_BITCODE = NO;
+				EXPORTED_SYMBOLS_FILE = "$(PROJECT_DIR)/Runner/RuntimeExports.txt";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -644,6 +645,8 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-Wl,-export_dynamic",
+					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
@@ -826,6 +829,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = M4Q99K4UR4;
 				ENABLE_BITCODE = NO;
+				EXPORTED_SYMBOLS_FILE = "$(PROJECT_DIR)/Runner/RuntimeExports.txt";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -838,6 +842,8 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-Wl,-export_dynamic",
+					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
@@ -863,6 +869,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = M4Q99K4UR4;
 				ENABLE_BITCODE = NO;
+				EXPORTED_SYMBOLS_FILE = "$(PROJECT_DIR)/Runner/RuntimeExports.txt";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -875,6 +882,8 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-Wl,-export_dynamic",
+					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
