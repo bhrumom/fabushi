@@ -646,6 +646,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
@@ -842,6 +843,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
@@ -881,6 +883,7 @@
 					"$(inherited)",
 					"-Wl,-export_dynamic",
 					"-Wl,-u,_mahayana_product_execute",
+					"-Wl,-u,_fabushi_mahayana_product_execute",
 					"-lc++",
 					"-all_load",
 				);
