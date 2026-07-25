@@ -401,7 +401,7 @@ Map<String, dynamic> _executeRuntimeInWorker(
 Map<String, dynamic> _executeProductInWorker(Map<String, dynamic> command) {
   final library = _openLibraryForWorker();
   final execute = library
-      .lookup<NativeFunction<_ProductExecuteNative>>('mahayana_product_execute')
+      .lookup<NativeFunction<_ProductExecuteNative>>(_productExecuteSymbol())
       .asFunction<_ProductExecuteDart>();
   return _callWithJson(command, execute, _freeFunction(library));
 }
@@ -532,6 +532,11 @@ List<String> _libraryCandidates() => <String>[
   if (Platform.isWindows) 'mahayana_runtime.dll',
 ];
 
+
+String _productExecuteSymbol() => Platform.isIOS
+    ? 'fabushi_mahayana_product_execute'
+    : 'mahayana_product_execute';
+
 void _verifySymbols(DynamicLibrary library) {
   library.lookup<NativeFunction<_RuntimeCreateNative>>(
     'mahayana_runtime_create',
@@ -547,7 +552,7 @@ void _verifySymbols(DynamicLibrary library) {
   );
   library.lookup<NativeFunction<_RuntimeCloseNative>>('mahayana_runtime_close');
   library.lookup<NativeFunction<_ProductExecuteNative>>(
-    'mahayana_product_execute',
+    _productExecuteSymbol(),
   );
   library.lookup<NativeFunction<_RuntimeFreeNative>>(
     'mahayana_runtime_free_string',
