@@ -41,7 +41,7 @@ MAHAYANA_TASK_REPORT_V1_END
 ```
 
 - For completed work, do not output this machine report; send the result to a separate acceptance Chat.
-- For unfinished work, use `incomplete` or `blocked`, keep `wait_seconds` as `0`, and provide a concrete `next_task` for the next Chat.
+- For unfinished work, use `incomplete` or `blocked`, use `wait_seconds` to estimate waiting time for async tasks (like GitHub Actions), and provide a concrete `next_task` for the next Chat.
 - Normal Actions/deployment/network polling is not a reason to end the Chat.
 - For a real unsolved blocker, state exactly what is needed: permission, account, tool, environment variable, command, or external service recovery condition.
 
