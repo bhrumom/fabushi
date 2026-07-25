@@ -8,6 +8,9 @@ private func fabushiTelegramForceLink() -> UInt32
 @_silgen_name("mahayana_runtime_force_link")
 private func mahayanaRuntimeForceLink() -> UInt32
 
+@_silgen_name("mahayana_runtime_create")
+private func mahayanaRuntimeCreate(_ config: UnsafePointer<CChar>?) -> UInt64
+
 @_silgen_name("mahayana_product_execute")
 private func mahayanaProductExecute(
     _ requestJson: UnsafePointer<CChar>?
@@ -51,6 +54,10 @@ func fabushiMahayanaProductExecute(
             mahayanaRuntimeForceLink() == 1,
             "Mahayana Rust runtime failed to link"
         )
+        // Keep the primary runtime ABI entry point reachable in optimized Release
+        // executables. The linker may otherwise dead-strip the exported Rust
+        // symbol even though DynamicLibrary.process() resolves it at runtime.
+        _ = mahayanaRuntimeCreate(nil)
         // Keep the product-only C ABI entry point in the final executable.
         // Rust turns a nil request into an owned error response, which is
         // immediately released after the linker-visible probe.
