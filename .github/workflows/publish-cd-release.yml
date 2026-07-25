@@ -911,9 +911,9 @@ jobs:
           symbols_file="$(mktemp)"
           nm -gU "$app_path/$executable" > "$symbols_file"
           for symbol in create execute receive interrupt resolve_approval close free_string; do
-            grep -q "_mahayana_runtime_${symbol}$" "$symbols_file"
+            grep -Eq "_+mahayana_runtime_${symbol}$" "$symbols_file"
           done
-          grep -q '_fabushi_mahayana_product_execute$' "$symbols_file"
+          grep -Eq '_+fabushi_mahayana_product_execute$' "$symbols_file"
           rm -f "$symbols_file"
           cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 
