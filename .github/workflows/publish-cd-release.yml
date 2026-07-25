@@ -913,7 +913,7 @@ jobs:
           for symbol in create execute receive interrupt resolve_approval close free_string; do
             grep -q "_mahayana_runtime_${symbol}$" "$symbols_file"
           done
-          grep -q '_mahayana_product_execute$' "$symbols_file"
+          grep -q '_fabushi_mahayana_product_execute$' "$symbols_file"
           rm -f "$symbols_file"
           cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 

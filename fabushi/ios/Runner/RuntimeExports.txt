@@ -13,4 +13,5 @@ _mahayana_runtime_resolve_approval
 _mahayana_runtime_close
 _mahayana_runtime_last_error
 _mahayana_product_execute
+_fabushi_mahayana_product_execute
 _mahayana_runtime_free_string

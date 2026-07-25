@@ -279,8 +279,8 @@ jobs:
             echo "Built iOS app bundle is missing Mahayana runtime symbols." >&2
             exit 1
           fi
-          if ! grep -q '_mahayana_product_execute$' "$symbols_file"; then
-            echo "Built iOS app bundle is missing Mahayana product execute symbol." >&2
+          if ! grep -q '_fabushi_mahayana_product_execute$' "$symbols_file"; then
+            echo "Built iOS app bundle is missing the Mahayana product FFI bridge." >&2
             exit 1
           fi
-          echo "Found Mahayana product execute symbol in iOS app bundle"
+          echo "Found Mahayana product FFI bridge in iOS app bundle"
