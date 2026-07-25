@@ -15,7 +15,16 @@ if (-not (Test-Path $Manifest)) {
   }
 }
 $Profile = "debug"
-$CargoArguments = @("rustc", "--manifest-path", $Manifest, "--package", "mahayana-ffi")
+$CargoArguments = @(
+  "rustc",
+  "--manifest-path", $Manifest,
+  "--package", "mahayana-ffi",
+  # The shared desktop host only needs the stable command/event ABI. Avoid the
+  # default desktop-full graph here: linking the in-process Codex/V8 graph into
+  # a Windows cdylib exhausts the hosted MSVC linker and surfaces only MSB8066.
+  "--no-default-features",
+  "--features", "linux-shared,local-only"
+)
 
 if ($Configuration -ne "Debug") {
   $Profile = "release"

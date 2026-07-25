@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - fabushi/**
+      - .agents/plugins/**
+      - scripts/package-official-plugins.sh
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
@@ -23,6 +25,8 @@ on:
       - main
     paths:
       - fabushi/**
+      - .agents/plugins/**
+      - scripts/package-official-plugins.sh
       - third_party/mahayana
       - third_party/mahayana/**
       - .github/scripts/package-desktop-*
@@ -589,7 +593,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y "$deb_path"
           ../.github/scripts/assert-mahayana-bundle.sh /opt/global-dharma-sharing linux
-          mahayana help >/dev/null
+          mahayana --help >/dev/null
           global-dharma-sharing-cli doctor --json
           global-dharma-sharing-cli gateway-smoke --timeout-seconds 120 --json
           global-dharma-sharing-cli miniapp-smoke --json
@@ -602,6 +606,15 @@ jobs:
         if: matrix.target == 'windows'
         shell: bash
         run: ../.github/scripts/build-mahayana-desktop-bundle.sh windows
+
+      - name: Upload Mahayana bundle failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mahayana-bundle-diagnostics-${{ matrix.target }}
+          path: ${{ runner.temp }}/mahayana-bundle-${{ matrix.target }}-failure.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Sync Windows OpenClaw assets into release build
         if: matrix.target == 'windows'
@@ -646,7 +659,7 @@ jobs:
           $mahayanaRuntime = Join-Path $installDir "mahayana_runtime.dll"
           if (-not (Test-Path $mahayana)) { throw "Bundled Mahayana CLI not found: $mahayana" }
           if (-not (Test-Path $mahayanaRuntime)) { throw "Bundled Mahayana Runtime not found: $mahayanaRuntime" }
-          & $mahayana help | Out-Null
+          & $mahayana --help | Out-Null
           $mahayanaHome = Join-Path $env:RUNNER_TEMP "mahayana-home"
           New-Item -ItemType Directory -Force -Path $mahayanaHome | Out-Null
           $env:MAHAYANA_HOME = $mahayanaHome
