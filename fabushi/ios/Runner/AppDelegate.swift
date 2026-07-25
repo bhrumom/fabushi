@@ -16,6 +16,16 @@ private func mahayanaProductExecute(
 @_silgen_name("mahayana_runtime_free_string")
 private func mahayanaRuntimeFreeString(_ pointer: UnsafeMutablePointer<CChar>?)
 
+// Swift owns the process-visible iOS ABI shim. The Rust static archive entry
+// point remains linked, while Dart FFI resolves this exported wrapper through
+// DynamicLibrary.process().
+@_cdecl("fabushi_mahayana_product_execute")
+func fabushiMahayanaProductExecute(
+    _ requestJson: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>? {
+    mahayanaProductExecute(requestJson)
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     // 内存警告 MethodChannel
@@ -44,7 +54,7 @@ private func mahayanaRuntimeFreeString(_ pointer: UnsafeMutablePointer<CChar>?)
         // Keep the product-only C ABI entry point in the final executable.
         // Rust turns a nil request into an owned error response, which is
         // immediately released after the linker-visible probe.
-        let productProbe = mahayanaProductExecute(nil)
+        let productProbe = fabushiMahayanaProductExecute(nil)
         mahayanaRuntimeFreeString(productProbe)
 
         // 设置 MethodChannel
