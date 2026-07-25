@@ -2005,24 +2005,13 @@ private func prepareNewChatTarget(
           expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
           timeout: timeout
         )?["messageCount"] as? Int ?? 1) == 0
-      if changed || blankConversation {
+      if changed || (blankConversation && previous?.isEmpty != false) {
         var result = prepared ?? [:]
         result["newChatClicked"] = true
         return result
       }
     }
-    if let data = try? JSONSerialization.data(withJSONObject: [
-      "prepared": prepared ?? [:],
-      "previous": previous ?? "",
-      "conversationId": prepared?["conversationId"] ?? "",
-      "changed": (previous?.isEmpty != false && !(prepared?["conversationId"] as? String ?? "").isEmpty) || (previous?.isEmpty == false && (prepared?["conversationId"] as? String ?? "") != previous),
-      "messageCount": (cdpValue(
-          port: port,
-          targetId: targetId,
-          expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
-          timeout: timeout
-        )?["messageCount"] as? Int ?? -1)
-    ], options: []) {
+    if let data = try? JSONSerialization.data(withJSONObject: prepared ?? [:], options: []) {
       try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_prepared_error.json"))
     }
     Thread.sleep(forTimeInterval: 0.25)
@@ -6173,7 +6162,7 @@ private func taskReportContract() -> String {
 
 只有出现当前权限和工具确实无法绕过的阻塞，或遇到长时间异步任务需要等待，或平台硬性终止本次会话且任务仍未完成时，才在回答末尾输出以下未完成续作模板。不要把 JSON 放进 Markdown 代码块：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":300,"wait_reason":"等待 Actions 构建完成","next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
+{\"protocol\":\"mahayana.task-report.v1\","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":300,"wait_reason":"等待 Actions 构建完成","next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
 MAHAYANA_TASK_REPORT_V1_END
 未完成时 remaining 和 next_task 必须非空。云端 GitHub 阶段 next_connector 填 GitHub，本地阶段填 bhrum2。
 """

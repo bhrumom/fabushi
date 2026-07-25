@@ -153,7 +153,7 @@ jobs:
           $mahayanaRuntime = Join-Path $installDir "mahayana_runtime.dll"
           if (-not (Test-Path $mahayana)) { throw "Bundled Mahayana CLI not found: $mahayana" }
           if (-not (Test-Path $mahayanaRuntime)) { throw "Bundled Mahayana Runtime not found: $mahayanaRuntime" }
-          & $mahayana help | Out-Null
+          & $mahayana --help | Out-Null
           $mahayanaHome = Join-Path $env:RUNNER_TEMP "mahayana-home"
           New-Item -ItemType Directory -Force -Path $mahayanaHome | Out-Null
           $env:MAHAYANA_HOME = $mahayanaHome

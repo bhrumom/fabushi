@@ -42,7 +42,6 @@ jobs:
           --package mahayana-core
           --package mahayana-agent-codex
           --package mahayana-agent-responses
-          --package mahayana-platform-client
           --package mahayana-runtime
           --package mahayana-ffi
           --package mahayana-cli

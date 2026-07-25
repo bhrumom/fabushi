@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 target="${1:-}"
 destination="${2:-}"
@@ -7,6 +7,26 @@ if [ -z "$target" ] || [ -z "$destination" ]; then
   echo "usage: $0 <macos|linux|windows> <destination>" >&2
   exit 2
 fi
+
+diagnostics_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+diagnostics_file="$diagnostics_dir/mahayana-bundle-${target}-failure.txt"
+mkdir -p "$diagnostics_dir"
+record_failure() {
+  local status="$1"
+  local line="$2"
+  local command="$3"
+  trap - ERR
+  {
+    printf 'target=%s\n' "$target"
+    printf 'script=%s\n' "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}"
+    printf 'line=%s\n' "$line"
+    printf 'exit_status=%s\n' "$status"
+    printf 'command=%s\n' "$command"
+  } >"$diagnostics_file"
+  cat "$diagnostics_file" >&2
+  exit "$status"
+}
+trap 'record_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_root="$repo_root/.agents/plugins"
@@ -29,7 +49,30 @@ if [ ! -f "$wasm_root/fabushi_official_miniapps_bg.wasm" ]; then
 fi
 
 mkdir -p "$destination/plugins"
-cp "$source_root/marketplace.json" "$destination/marketplace.json"
+python3 - "$source_root/marketplace.json" "$destination/marketplace.json" <<'PY_MARKETPLACE'
+import json
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+marketplace = json.loads(source.read_text(encoding="utf-8"))
+plugins = marketplace.get("plugins")
+if not isinstance(plugins, list):
+    raise SystemExit("official marketplace plugins must be an array")
+for plugin in plugins:
+    plugin_id = plugin.get("name")
+    plugin_source = plugin.get("source")
+    if not isinstance(plugin_id, str) or not plugin_id:
+        raise SystemExit("official marketplace plugin is missing a name")
+    if not isinstance(plugin_source, dict) or plugin_source.get("source") != "local":
+        raise SystemExit(f"official marketplace plugin {plugin_id!r} must use a local source")
+    plugin_source["path"] = f"./plugins/{plugin_id}"
+destination.write_text(
+    json.dumps(marketplace, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY_MARKETPLACE
 for plugin_source in "$source_root"/plugins/*; do
   [ -d "$plugin_source" ] || continue
   plugin_id="$(basename "$plugin_source")"

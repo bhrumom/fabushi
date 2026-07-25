@@ -32,7 +32,7 @@ if [ ! -f "$runtime" ]; then
   exit 1
 fi
 
-"$cli" help >/dev/null
+"$cli" --help >/dev/null
 smoke_home="$(mktemp -d)"
 trap 'rm -rf "$smoke_home"' EXIT
 status_json="$(MAHAYANA_HOME="$smoke_home" "$cli" status)"

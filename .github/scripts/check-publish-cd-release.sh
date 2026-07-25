@@ -7,6 +7,7 @@ import sys
 
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 publish_release_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
+desktop_installers_workflow = Path('.github/workflows/desktop-installers.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
@@ -55,6 +56,9 @@ for required in (
     'CI/CD guardrail input does not require mobile install packages',
     'PR label explicitly requests fresh install packages',
     'force[- ]?mobile[- ]?release|mobile[- ]?release|build[- ]?mobile[- ]?package|build[- ]?app[- ]?package',
+    '.agents/plugins/*)',
+    'bundled official plugin input changed: $path',
+    'package release workflow changed; validate Android and iOS release package paths: $path',
     'Android package build when Android or shared Flutter app inputs changed, or an explicit PR label requests it',
     'iOS package build when iOS or shared Flutter app inputs changed, or an explicit PR label requests it',
     'This workflow publishes install packages after the main production CD workflow succeeds and the change detector finds mobile app package inputs.',
@@ -64,6 +68,12 @@ for required in (
 ):
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
+
+for required in (
+    "      - .agents/plugins/**",
+):
+    if desktop_installers_workflow.count(required) < 2:
+        missing.append(f'desktop installers workflow must trigger for pull requests and pushes containing: {required.strip()}')
 
 for forbidden in (
     '      - name: Checkout source for change detection\n        uses: actions/checkout@v5\n        with:\n          ref: ${{ steps.source.outputs.source_sha }}\n          fetch-depth: 0\n\n      - name: Detect changed mobile package targets',
