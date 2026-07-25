@@ -38,6 +38,8 @@ for required in (
     'cp -R ../.github/scripts/. ../release-artifact/github-scripts',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production',
+    '.github/cd-retry.txt)',
+    'explicit CD retry marker changed: $path',
 ):
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')

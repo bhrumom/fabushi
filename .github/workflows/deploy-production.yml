@@ -112,6 +112,9 @@ jobs:
               fabushi/web/*|fabushi/e2e/*)
                 mark_deploy "worker runtime or staging gate input changed: $path"
                 ;;
+              .github/cd-retry.txt)
+                mark_deploy "explicit CD retry marker changed: $path"
+                ;;
               .github/workflows/deploy-production.yml|.github/scripts/*)
                 mark_deploy "deployment pipeline input changed: $path"
                 ;;
