@@ -271,7 +271,8 @@ jobs:
           fi
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
           symbols_file="$(mktemp)"
-          trap 'rm -f "$symbols_file"' EXIT
+          candidate_symbols_file="$(mktemp)"
+          trap 'rm -f "$symbols_file" "$candidate_symbols_file"' EXIT
           nm -gU "$app_path/$executable" > "$symbols_file"
           if grep -q '_mahayana_runtime_' "$symbols_file"; then
             echo "Found Mahayana runtime symbols in iOS app bundle"
@@ -279,8 +280,28 @@ jobs:
             echo "Built iOS app bundle is missing Mahayana runtime symbols." >&2
             exit 1
           fi
-          if ! grep -q '_fabushi_mahayana_product_execute$' "$symbols_file"; then
+
+          # Xcode debug builds may place Swift application code in
+          # Runner.debug.dylib while the Rust static runtime stays in the main
+          # executable. Search every Mach-O in the app bundle so the smoke test
+          # validates the process-visible bridge without misclassifying that
+          # standard debug layout as a missing symbol. The signed release IPA
+          # workflow still requires the bridge in the release executable.
+          product_bridge_binary=""
+          while IFS= read -r -d '' candidate; do
+            if ! file "$candidate" | grep -q 'Mach-O'; then
+              continue
+            fi
+            if ! nm -gU "$candidate" > "$candidate_symbols_file" 2>/dev/null; then
+              continue
+            fi
+            if grep -q '_fabushi_mahayana_product_execute$' "$candidate_symbols_file"; then
+              product_bridge_binary="${candidate#$app_path/}"
+              break
+            fi
+          done < <(find "$app_path" -type f -print0)
+          if [ -z "$product_bridge_binary" ]; then
             echo "Built iOS app bundle is missing the Mahayana product FFI bridge." >&2
             exit 1
           fi
-          echo "Found Mahayana product FFI bridge in iOS app bundle"
+          echo "Found Mahayana product FFI bridge in $product_bridge_binary"
