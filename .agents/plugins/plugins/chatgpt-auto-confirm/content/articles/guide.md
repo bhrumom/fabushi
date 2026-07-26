@@ -21,9 +21,9 @@ tags: [指南, 任务队列, 自动续作]
 
 ## GitHub Actions 持续运行
 
-点「启动 6 小时 Action」会用本机已登录的 `gh` 刷新三个仓库 Secret：ChatGPT 会话 Cookie、加密状态密钥和压缩后的初始任务状态。工作流只从 `main` 读取可信实现，在 GitHub 托管的 macOS Runner 安装官方 ChatGPT 应用、恢复登录并继续队列。
+点「启动 6 小时 Action」会用本机已登录的 `gh` 刷新三个仓库 Secret：ChatGPT 登录令牌、加密状态密钥和压缩后的初始任务状态。工作流只从 `main` 读取可信实现，在 GitHub 托管的 macOS Runner 安装官方 ChatGPT 应用、恢复登录并继续队列。
 
-每轮在 GitHub 的六小时硬限制前主动停止，使用 AES-256 加密任务状态并上传短期 artifact。若任务尚未完成，本轮使用 `workflow_dispatch` 启动下一轮并传递上一轮 Run ID；完成后停止续作。Action 日志只显示 Cookie 数量和任务状态，不输出 Cookie、加密密钥或任务 Secret。
+每轮在 GitHub 的六小时硬限制前主动停止，使用 AES-256 加密任务状态并上传短期 artifact。若任务尚未完成，本轮使用 `workflow_dispatch` 启动下一轮并传递上一轮 Run ID；完成后停止续作。Action 日志只显示登录恢复结果和任务状态，不输出登录令牌、加密密钥或任务 Secret。
 
 ## 单进程队列安全
 

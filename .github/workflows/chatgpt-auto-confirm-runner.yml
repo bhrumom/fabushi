@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 355
     env:
       CHATGPT_CDP_PORT: "9324"
-      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+      CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
       GH_TOKEN: ${{ github.token }}
@@ -86,6 +86,15 @@ jobs:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
 
+      - name: Restore ChatGPT login credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_CODEX_AUTH_B64"
+          mkdir -p "$HOME/.codex"
+          printf '%s' "$CHATGPT_CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
+
       - name: Install official ChatGPT desktop app
         shell: bash
         run: |
@@ -107,18 +116,6 @@ jobs:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
         run: |
           set -euo pipefail
-          test -n "$CHATGPT_SESSION_COOKIES_B64"
-          open -na /Applications/ChatGPT.app --args \
-            --user-data-dir="$PROFILE_DIR" \
-            --remote-debugging-port="$CHATGPT_CDP_PORT"
-          CHATGPT_SESSION_MODE=seed \
-            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-          osascript -e 'tell application "ChatGPT" to quit' || true
-          for _ in {1..20}; do
-            pgrep -x ChatGPT >/dev/null || break
-            sleep 1
-          done
-          pkill -x ChatGPT || true
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
