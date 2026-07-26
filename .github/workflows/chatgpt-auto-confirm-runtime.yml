@@ -54,7 +54,6 @@ jobs:
     timeout-minutes: 15
     env:
       CHATGPT_CDP_PORT: "9324"
-      CHATGPT_PROFILE_DIR: ${{ runner.temp }}/chatgpt-profile
       CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
     steps:
       - name: Checkout
@@ -68,15 +67,16 @@ jobs:
             https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg \
             --output "$RUNNER_TEMP/ChatGPT.dmg"
           mount_dir="$RUNNER_TEMP/chatgpt-mount"
-          mkdir -p "$mount_dir" "$CHATGPT_PROFILE_DIR"
-          chmod 700 "$CHATGPT_PROFILE_DIR"
+          profile_dir="$RUNNER_TEMP/chatgpt-profile"
+          mkdir -p "$mount_dir" "$profile_dir"
+          chmod 700 "$profile_dir"
           hdiutil attach "$RUNNER_TEMP/ChatGPT.dmg" \
             -nobrowse -readonly -mountpoint "$mount_dir"
           ditto "$mount_dir/ChatGPT.app" /Applications/ChatGPT.app
           hdiutil detach "$mount_dir"
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
           open -na /Applications/ChatGPT.app --args \
-            --user-data-dir="$CHATGPT_PROFILE_DIR" \
+            --user-data-dir="$profile_dir" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
 
       - name: Seed ChatGPT login credentials
@@ -95,7 +95,7 @@ jobs:
           done
           pkill -x ChatGPT || true
           open -na /Applications/ChatGPT.app --args \
-            --user-data-dir="$CHATGPT_PROFILE_DIR" \
+            --user-data-dir="$RUNNER_TEMP/chatgpt-profile" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
 
       - name: Verify ChatGPT login
