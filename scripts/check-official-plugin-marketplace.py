@@ -23,14 +23,20 @@ def main():
     assert public['protocol'] == 'mahayana.plugin-marketplace.v1'
     internal_ids = {p['name'] for p in internal['plugins']}
     public_ids = {p['id'] for p in public['plugins']}
+    public_plugins = {p['id']: p for p in public['plugins']}
     disk_ids = {p.name for p in PLUGIN_ROOT.iterdir() if p.is_dir()}
     assert internal_ids == public_ids == disk_ids
     for plugin in internal['plugins']:
         path = PLUGIN_ROOT / plugin['name']
         codex = load(path / '.codex-plugin/plugin.json')
         mahayana = load(path / '.mahayana/plugin.json')
+        assert plugin['source'] == {
+            'source': 'local',
+            'path': f"./plugins/{plugin['name']}",
+        }
         assert codex['name'] == plugin['name']
         assert codex['version'] == plugin['version']
+        assert public_plugins[plugin['name']]['version'] == plugin['version']
         assert mahayana['schemaVersion'] == 1
         assert (path / '.mcp.json').exists()
     print(f'official marketplace contract valid: {len(internal_ids)} plugins')

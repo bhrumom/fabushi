@@ -43,8 +43,8 @@
     {
       "id": "bot-father",
       "version": "1.0.0",
-      "title": "Bot Father",
-      "description": "创建完整可移植 Codex 插件",
+      "title": "机器人之父",
+      "description": "创建完整可移植的 Codex 插件",
       "homepage": "https://fabushi.ombhrum.com/miniapps/bot-father/",
       "platforms": ["cli", "desktop", "mobile", "web"]
     },
@@ -58,18 +58,26 @@
     },
     {
       "id": "chatgpt-auto-confirm",
-      "version": "1.0.0+codex.20260723003618",
+      "version": "1.0.0+codex.20260723053507",
       "title": "ChatGPT 自动确认",
-      "description": "自动确认、任务续作、队列并发和 Work 验收",
+      "description": "自动确认、任务续作、队列并发和独立验收",
       "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-auto-confirm/",
       "platforms": ["cli", "desktop"]
     },
     {
       "id": "computer-cleaner",
       "version": "0.1.0",
-      "title": "Computer Cleaner",
+      "title": "电脑清理器",
       "description": "安全预览和清理严格白名单内的可再生缓存与构建输出",
       "homepage": "https://fabushi.ombhrum.com/miniapps/computer-cleaner/",
+      "platforms": ["cli", "desktop"]
+    },
+    {
+      "id": "parallel-queue-probe",
+      "version": "0.1.0",
+      "title": "并行队列探针",
+      "description": "核验动态入队、真实任务重叠和隐藏 Chat 隔离",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/parallel-queue-probe/",
       "platforms": ["cli", "desktop"]
     }
   ],
