@@ -1,3 +1,7 @@
 [submodule "fabushi/native_libs/llama.cpp"]
 	path = fabushi/native_libs/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp
+
+[submodule "third_party/mahayana/codex"]
+	path = third_party/mahayana/codex
+	url = https://github.com/bhrum/codex.git

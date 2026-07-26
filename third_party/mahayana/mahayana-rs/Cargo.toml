@@ -39,21 +39,21 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-codex-app-server-client = { path = "../codex-rs/app-server-client" }
-codex-app-server-protocol = { path = "../codex-rs/app-server-protocol" }
-codex-arg0 = { path = "../codex-rs/arg0" }
-codex-config = { path = "../codex-rs/config" }
-codex-cli = { path = "../codex-rs/cli" }
-codex-core = { path = "../codex-rs/core" }
-codex-core-plugins = { path = "../codex-rs/core-plugins" }
-codex-exec-server = { path = "../codex-rs/exec-server" }
-codex-feedback = { path = "../codex-rs/feedback" }
-codex-login = { path = "../codex-rs/login" }
-codex-model-provider-info = { path = "../codex-rs/model-provider-info" }
-codex-protocol = { path = "../codex-rs/protocol" }
-codex-secrets = { path = "../codex-rs/secrets" }
-codex-tui = { path = "../codex-rs/tui" }
-codex-utils-absolute-path = { path = "../codex-rs/utils/absolute-path" }
+codex-app-server-client = { path = "../codex/codex-rs/app-server-client" }
+codex-app-server-protocol = { path = "../codex/codex-rs/app-server-protocol" }
+codex-arg0 = { path = "../codex/codex-rs/arg0" }
+codex-config = { path = "../codex/codex-rs/config" }
+codex-cli = { path = "../codex/codex-rs/cli" }
+codex-core = { path = "../codex/codex-rs/core" }
+codex-core-plugins = { path = "../codex/codex-rs/core-plugins" }
+codex-exec-server = { path = "../codex/codex-rs/exec-server" }
+codex-feedback = { path = "../codex/codex-rs/feedback" }
+codex-login = { path = "../codex/codex-rs/login" }
+codex-model-provider-info = { path = "../codex/codex-rs/model-provider-info" }
+codex-protocol = { path = "../codex/codex-rs/protocol" }
+codex-secrets = { path = "../codex/codex-rs/secrets" }
+codex-tui = { path = "../codex/codex-rs/tui" }
+codex-utils-absolute-path = { path = "../codex/codex-rs/utils/absolute-path" }
 crossbeam-channel = "0.5"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 crossterm = "0.28.1"
@@ -122,7 +122,7 @@ strip = "symbols"
 # Mahayana embedding workspace must repeat them here.
 [patch.crates-io]
 crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
-pagable = { path = "../codex-rs/patches/pagable-0.4.1" }
+pagable = { path = "../codex/codex-rs/patches/pagable-0.4.1" }
 ratatui = { git = "https://github.com/nornagon/ratatui", rev = "9b2ad1298408c45918ee9f8241a6f95498cdbed2" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "0e5b2d73aa18dd9f0a50ee9ff199d5aef7594186" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }
