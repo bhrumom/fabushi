@@ -119,7 +119,14 @@ cp "$cli_source" "$cli_destination"
 if [ "$bundle_mode" = "full" ]; then
   cp "$runtime_source" "$runtime_destination"
 fi
-cp "$runtime_root/LICENSE" "$share_destination/licenses/codex/LICENSE"
+if [ -f "$runtime_root/LICENSE" ]; then
+  cp "$runtime_root/LICENSE" "$share_destination/licenses/codex/LICENSE"
+elif [ -f "$runtime_root/codex-rs/LICENSE" ]; then
+  cp "$runtime_root/codex-rs/LICENSE" "$share_destination/licenses/codex/LICENSE"
+else
+  echo "Codex license file not found in Mahayana runtime bundle" >&2
+  exit 1
+fi
 cp "$runtime_root/mahayana-rs/UPSTREAM.md" \
   "$share_destination/mahayana/UPSTREAM.md"
 cp "$runtime_root/mahayana-rs/UPSTREAM.lock" \
