@@ -119,8 +119,8 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          CHATGPT_SESSION_MODE=verify \
-            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          /Applications/ChatGPT.app/Contents/Resources/codex login status |
+            grep -q 'Logged in using ChatGPT'
 
       - name: Run persistent task queue
         if: ${{ !inputs.smoke_only }}

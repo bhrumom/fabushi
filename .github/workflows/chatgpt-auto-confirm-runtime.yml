@@ -89,6 +89,8 @@ jobs:
             --remote-debugging-port="$CHATGPT_CDP_PORT"
 
       - name: Verify ChatGPT login
-        env:
-          CHATGPT_SESSION_MODE: verify
-        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          /Applications/ChatGPT.app/Contents/Resources/codex login status |
+            grep -q 'Logged in using ChatGPT'
