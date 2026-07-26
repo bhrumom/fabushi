@@ -40,6 +40,7 @@ items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCo
 const source = JSON.stringify({ welcome, tips, items, resources });
 const quickReplies = [
   { id: 'queue-status', label: '查看任务队列', aliases: [], action: { type: 'tool', name: 'queue_status', arguments: {} } },
+  { id: 'start-actions-runner', label: '启动 6 小时 Action', aliases: [], action: { type: 'tool', name: 'start_actions_runner', arguments: {} } },
   { id: 'prompt-templates', label: '内置任务提示词', aliases: [], action: { type: 'tool', name: 'prompt_templates', arguments: {} } },
   { id: 'wait-review', label: '等待验收任务', aliases: [], action: { type: 'tool', name: 'wait_for_review', arguments: { timeout: 60 } } },
 ];
