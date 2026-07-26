@@ -85,11 +85,48 @@ SectionEnd
 
 Set-Content -Path $NsisPath -Value $NsiContent -Encoding UTF8
 
-$MakeNsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-if (-not (Test-Path $MakeNsis)) {
-  $MakeNsis = "makensis"
+$MakeNsisCandidates = @()
+if (${env:ProgramFiles(x86)}) {
+  $MakeNsisCandidates += Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
+  $MakeNsisCandidates += Join-Path ${env:ProgramFiles(x86)} "NSIS\Bin\makensis.exe"
+}
+if ($env:ProgramFiles) {
+  $MakeNsisCandidates += Join-Path $env:ProgramFiles "NSIS\makensis.exe"
+  $MakeNsisCandidates += Join-Path $env:ProgramFiles "NSIS\Bin\makensis.exe"
+}
+if ($env:ChocolateyInstall) {
+  $MakeNsisCandidates += Join-Path $env:ChocolateyInstall "bin\makensis.exe"
 }
 
+$MakeNsis = $MakeNsisCandidates |
+  Where-Object { Test-Path $_ -PathType Leaf } |
+  Select-Object -First 1
+
+if (-not $MakeNsis) {
+  $MakeNsisCommand = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($MakeNsisCommand) {
+    $MakeNsis = $MakeNsisCommand.Source
+  }
+}
+
+if (-not $MakeNsis) {
+  $SearchRoots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles, $env:ChocolateyInstall) |
+    Where-Object { $_ -and (Test-Path $_ -PathType Container) } |
+    Select-Object -Unique
+  foreach ($SearchRoot in $SearchRoots) {
+    $MakeNsis = Get-ChildItem -Path $SearchRoot -Filter makensis.exe -File -Recurse -ErrorAction SilentlyContinue |
+      Select-Object -First 1 -ExpandProperty FullName
+    if ($MakeNsis) {
+      break
+    }
+  }
+}
+
+if (-not $MakeNsis) {
+  throw "NSIS makensis.exe was not found after toolchain installation. Checked: $($MakeNsisCandidates -join ', ')"
+}
+
+Write-Host "Using NSIS compiler: $MakeNsis"
 & $MakeNsis $NsisPath
 
 Write-Host "Created $InstallerPath"
