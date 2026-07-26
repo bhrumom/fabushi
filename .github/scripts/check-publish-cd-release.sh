@@ -38,6 +38,8 @@ for required in (
     'cp -R ../.github/scripts/. ../release-artifact/github-scripts',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production',
+    '.github/cd-retry.txt)',
+    'explicit CD retry marker changed: $path',
 ):
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')
@@ -58,6 +60,8 @@ for required in (
     'force[- ]?mobile[- ]?release|mobile[- ]?release|build[- ]?mobile[- ]?package|build[- ]?app[- ]?package',
     '.agents/plugins/*)',
     'bundled official plugin input changed: $path',
+    '.github/cd-retry.txt)',
+    'explicit CD retry marker changed: $path',
     'package release workflow changed; validate Android and iOS release package paths: $path',
     'Android package build when Android or shared Flutter app inputs changed, or an explicit PR label requests it',
     'iOS package build when iOS or shared Flutter app inputs changed, or an explicit PR label requests it',
