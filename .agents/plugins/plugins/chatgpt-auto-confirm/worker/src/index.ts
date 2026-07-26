@@ -145,6 +145,11 @@ const tools = [
   { name: 'queue_status', description: '读取任务队列、专用 ChatGPT worker 状态、网络恢复等待、验收 Chat 和待处理结果', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
+  { name: 'start_actions_runner', description: '把当前队列的最小续作状态和 ChatGPT 登录凭证安全刷新到 GitHub Secrets，并启动最长六小时的 GitHub Actions 持续运行器；未完成时 Action 自动启动下一轮', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, properties: {},
+  } },
   { name: 'wait_for_review', description: '等待队列出现待验收、阻塞或失败任务', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       timeout: { type: 'integer', minimum: 1, maximum: 7200, default: 3600 },
@@ -294,6 +299,8 @@ export default {
         }, 'required');
       if (name === 'queue_status') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.queue-status', {}, 'none');
+      if (name === 'start_actions_runner') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-start', {}, 'required');
       if (name === 'wait_for_review') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.queue-wait-review', {
           timeout: Math.min(7200, Math.max(1, args.timeout ?? 3600)),

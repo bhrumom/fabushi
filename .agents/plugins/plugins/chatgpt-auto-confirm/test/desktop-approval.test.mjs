@@ -175,7 +175,14 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.equal(retried.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.queue-retry');
   assert.equal(retried.result.structuredContent.hostRequest.params.connector, 'GitHub');
+  const actionsRunner = await call('start_actions_runner', {});
+  assert.equal(actionsRunner.result.structuredContent.hostRequest.capability,
+    'desktop.chatgpt-approvals.actions-runner-start');
+  assert.equal(actionsRunner.result.structuredContent.hostRequest.approval, 'required');
   assert.match(nativeSource, /case "queue_retry"/);
+  assert.match(nativeSource, /case "start_actions_runner"/);
+  assert.match(nativeSource, /case "queue_watchdog"/);
+  assert.match(nativeSource, /github_actions_watchdog_recovery/);
   assert.match(nativeSource, /operator_recovery/);
   assert.match(nativeSource, /case "queue_watch"/);
   assert.match(nativeSource, /resourceLocks/);
