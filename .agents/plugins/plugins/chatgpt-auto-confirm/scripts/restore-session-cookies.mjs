@@ -48,22 +48,43 @@ const call = (method, params = {}) => new Promise((resolve, reject) => {
 
 await call('Network.setCookies', { cookies: payload.cookies });
 await call('Page.reload', { ignoreCache: true });
-await new Promise(resolve => setTimeout(resolve, 5_000));
+const verificationDeadline = Date.now() + 90_000;
+let verified = false;
+let lastState = {};
+while (Date.now() < verificationDeadline) {
+  await new Promise(resolve => setTimeout(resolve, 2_000));
+  const evaluation = await call('Runtime.evaluate', {
+    expression: `(() => {
+      const text = (document.body?.innerText || '').slice(0, 12000);
+      const hasSidebar = Boolean(document.querySelector(
+        '[data-app-action-sidebar-scroll], nav[aria-label]'
+      ));
+      const hasProfileMenu = Boolean([...document.querySelectorAll(
+        'button[aria-label], [role="button"][aria-label]'
+      )].find(element => /profile|个人资料|個人資料/i.test(
+        element.getAttribute('aria-label') || ''
+      )));
+      const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(text);
+      return {
+        hasSidebar,
+        hasProfileMenu,
+        asksForLogin,
+        bodyLength: text.length,
+        url: location.href
+      };
+    })()`,
+    returnByValue: true,
+  });
+  lastState = evaluation.result?.value || {};
+  if (lastState.hasSidebar && lastState.hasProfileMenu && !lastState.asksForLogin) {
+    verified = true;
+    break;
+  }
+}
 socket.close();
-const cookieHeader = payload.cookies
-  .filter(cookie => cookie.name && cookie.value)
-  .map(cookie => `${cookie.name}=${cookie.value}`)
-  .join('; ');
-const response = await fetch('https://chatgpt.com/api/auth/session', {
-  headers: {
-    accept: 'application/json',
-    cookie: cookieHeader,
-    'user-agent': 'ChatGPT GitHub Actions session verifier',
-  },
-  signal: AbortSignal.timeout(30_000),
-});
-const session = await response.json().catch(() => ({}));
-if (!response.ok || !(session?.user || session?.accessToken)) {
-  throw new Error(`ChatGPT session verification failed (HTTP ${response.status})`);
+if (!verified) {
+  throw new Error(
+    `ChatGPT desktop login UI was not verified (url=${lastState.url || 'unknown'}, bodyLength=${lastState.bodyLength || 0})`
+  );
 }
 process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies\n`);
