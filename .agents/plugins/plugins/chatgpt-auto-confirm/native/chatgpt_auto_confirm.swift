@@ -6629,6 +6629,14 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
     function modelPickerButton() {
       const input = findTextarea();
       const send = findSendButton();
+      const explicit = [...document.querySelectorAll(
+        'button[aria-label], [role="button"][aria-label]'
+      )].find(button => {
+        if (!visible(button) || button === send) return false;
+        const label = normalize(button.getAttribute('aria-label')).toLowerCase();
+        return label === '选择 chatgpt 模型' || label === 'select chatgpt model';
+      });
+      if (explicit) return explicit;
       const inputRect = input?.getBoundingClientRect();
       const sendRect = send?.getBoundingClientRect();
       const composer = input?.closest('form') || input?.parentElement?.parentElement || document.body;
@@ -6711,25 +6719,35 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
     async function ensureModelAndReasoning() {
       const picker = modelPickerButton();
       if (!picker) {
-        return { ok: true, model: desiredModel, reasoning: desiredReasoning };
+        return {
+          ok: false,
+          error: 'model_picker_not_found',
+          model: desiredModel,
+          reasoning: desiredReasoning,
+          modelConfirmed: false,
+          reasoningConfirmed: false
+        };
       }
       const pickerBefore = normalize([
         picker.textContent,
         picker.getAttribute('aria-label'),
         picker.getAttribute('title')
       ].filter(Boolean).join(' '));
-      picker.click();
-      await sleep(300);
-
-      let effortCandidates = allExactModelChoices(desiredReasoning);
-      let effortItem = effortCandidates[0];
-      if (effortItem) {
-        effortItem.click();
-        await sleep(400);
-      } else {
-        // If not found, just close the picker
-        picker.click();
-        await sleep(150);
+      const selectedLabel = normalize(picker.textContent).toLowerCase();
+      const reasoningConfirmed = selectedLabel === 'high'
+        || selectedLabel === '高'
+        || selectedLabel.startsWith('high ');
+      if (!reasoningConfirmed) {
+        return {
+          ok: false,
+          error: 'reasoning_high_not_selected',
+          model: desiredModel,
+          reasoning: desiredReasoning,
+          modelConfirmed: false,
+          reasoningConfirmed: false,
+          pickerBefore,
+          selectedLabel
+        };
       }
 
       return {
@@ -6739,7 +6757,8 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         modelConfirmed: true,
         reasoningConfirmed: true,
         pickerBefore,
-        pickerEvidence: "Bypassed",
+        selectedLabel,
+        pickerEvidence: 'selected_button_state',
         verificationModelSelected: true,
         submenuHighSelected: true
       };
