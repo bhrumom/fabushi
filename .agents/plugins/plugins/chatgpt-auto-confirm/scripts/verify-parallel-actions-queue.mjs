@@ -55,6 +55,14 @@ const waitFor = async (predicate, timeoutMs, label) => {
   while (Date.now() < deadline) {
     const status = run('queue_status');
     if (predicate(status)) return status;
+    const failedProbe = status.tasks?.find(item =>
+      ['actions-parallel-a', 'actions-parallel-b'].includes(item.id) &&
+      ['failed', 'blocked'].includes(item.status));
+    if (failedProbe) {
+      throw new Error(
+        `${failedProbe.id} entered ${failedProbe.status}: ${failedProbe.lastError || 'unknown error'}`,
+      );
+    }
     await new Promise(resolve => setTimeout(resolve, 2_000));
   }
   throw new Error(`timed out waiting for ${label}`);
@@ -94,10 +102,12 @@ try {
       ['actions-parallel-a', 'actions-parallel-b'].includes(item.id) &&
       item.status === 'running') || [];
     const targets = active.map(item => item.workerTargetId).filter(Boolean);
+    const conversations = active.map(item => item.conversationId).filter(Boolean);
     return status.effectiveMaxConcurrent === 2 &&
-      status.executionMode === 'single-authenticated-process-multi-hidden-window-parallel' &&
+      status.executionMode === 'single-authenticated-process-multi-conversation-parallel' &&
       active.length === 2 &&
-      new Set(targets).size === 2 &&
+      new Set(targets).size === 1 &&
+      new Set(conversations).size === 2 &&
       status.activeWorkers?.filter(worker =>
         ['actions-parallel-a', 'actions-parallel-b'].includes(worker.taskId) &&
         worker.visibilityVerified).length === 2;
@@ -114,8 +124,9 @@ try {
     criteria: [
       'task B was enqueued after task A had already started',
       'both tasks were running in the same observation',
-      'each task owned a different hidden Chat target',
-      'both hidden targets passed visibility verification',
+      'both tasks shared one authenticated hidden Chat renderer',
+      'each task owned a different conversation id',
+      'the shared renderer passed hidden visibility verification for both tasks',
     ],
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
