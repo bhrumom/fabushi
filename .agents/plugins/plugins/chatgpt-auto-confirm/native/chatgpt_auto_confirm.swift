@@ -137,6 +137,10 @@ private struct AutomationTask: Codable {
   var hiddenWorkerLastHeartbeatAt: String? = nil
   var hiddenWorkerRecoveryCount: Int? = nil
   var hiddenWorkerLastError: String? = nil
+  // GitHub-hosted sessions persist their recovery boundary in task state so a
+  // later Actions run can distinguish fresh progress from an old renderer.
+  var watchdogLastRecoveryAt: String? = nil
+  var watchdogRecoveryCount: Int? = nil
 }
 
 private struct Candidate {
@@ -2848,7 +2852,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v55"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v56"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3213,6 +3217,8 @@ private func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = fal
     "hiddenWorkerLastHeartbeatAt": task.hiddenWorkerLastHeartbeatAt as Any,
     "hiddenWorkerRecoveryCount": task.hiddenWorkerRecoveryCount ?? 0,
     "hiddenWorkerLastError": task.hiddenWorkerLastError as Any,
+    "watchdogLastRecoveryAt": task.watchdogLastRecoveryAt as Any,
+    "watchdogRecoveryCount": task.watchdogRecoveryCount ?? 0,
     "waitingUntil": task.waitingUntil as Any,
     "waitReason": task.waitReason as Any,
   ]
@@ -4642,6 +4648,156 @@ private func waitForAutomationReview(timeout: Int) -> [String: Any] {
   ]
 }
 
+private let watchdogRecoverableStatuses = Set([
+  "queued", "running", "waiting", "blocked", "failed",
+])
+
+private func watchdogAnchorDate(_ task: AutomationTask) -> Date? {
+  [
+    task.watchdogLastRecoveryAt,
+    task.lastProgressAt,
+    task.startedAt,
+    task.createdAt,
+  ]
+  .compactMap { $0.flatMap(isoFormatter.date(from:)) }
+  .max()
+}
+
+private func watchdogTaskIsEligible(
+  _ task: AutomationTask,
+  now: Date,
+  staleAfterSeconds: Int,
+  force: Bool
+) -> Bool {
+  guard watchdogRecoverableStatuses.contains(task.status) else { return false }
+  if force { return true }
+  if task.status == "waiting",
+     let waitingUntil = task.waitingUntil.flatMap(isoFormatter.date(from:)),
+     now < waitingUntil {
+    return false
+  }
+  guard let anchor = watchdogAnchorDate(task) else { return true }
+  return now.timeIntervalSince(anchor) >= Double(staleAfterSeconds)
+}
+
+private func recoverQueueWithWatchdog(
+  _ state: inout PluginState,
+  staleAfterSeconds: Int,
+  force: Bool,
+  dryRun: Bool
+) throws -> [String: Any] {
+  let nowDate = Date()
+  let now = isoFormatter.string(from: nowDate)
+  var tasks = state.automationTasks ?? []
+  let eligibleIndexes = tasks.indices.filter {
+    watchdogTaskIsEligible(
+      tasks[$0],
+      now: nowDate,
+      staleAfterSeconds: staleAfterSeconds,
+      force: force
+    )
+  }
+  let eligibleIds = eligibleIndexes.map { tasks[$0].id }
+  guard !eligibleIndexes.isEmpty else {
+    return [
+      "ok": true,
+      "recovered": false,
+      "dryRun": dryRun,
+      "staleAfterSeconds": staleAfterSeconds,
+      "eligibleTaskIds": eligibleIds,
+      "queue": queueStatusPayload(state),
+    ]
+  }
+  if dryRun {
+    return [
+      "ok": true,
+      "recovered": false,
+      "wouldRecover": true,
+      "dryRun": true,
+      "staleAfterSeconds": staleAfterSeconds,
+      "eligibleTaskIds": eligibleIds,
+      "queue": queueStatusPayload(state),
+    ]
+  }
+
+  // Stop only the queue-owned hidden renderer. Never touch the primary window
+  // or a target whose hidden ownership cannot be verified.
+  if queueUsesBackgroundWindow(state),
+     let port = state.queueWorkerPort,
+     let targetId = state.queueWorkerTargetId,
+     queueTargetIsHidden(port: port, targetId: targetId) {
+    _ = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: stopCurrentResponseJS(),
+      timeout: 12.0
+    )
+  }
+  stopQueueWorker(&state)
+
+  if watcherIsAlive(state.queueWatcherPid), let pid = state.queueWatcherPid {
+    kill(pid, SIGTERM)
+    Thread.sleep(forTimeInterval: 0.2)
+  }
+  state.queueWatcherPid = nil
+
+  for index in eligibleIndexes {
+    let previousStatus = tasks[index].status
+    if previousStatus == "running" {
+      queueContinuation(
+        &tasks[index],
+        report: tasks[index].report,
+        reason: "github_actions_watchdog_recovery"
+      )
+    } else if previousStatus != "queued" {
+      tasks[index].status = "queued"
+      tasks[index].startedAt = nil
+      tasks[index].finishedAt = nil
+      tasks[index].workerPid = nil
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
+      tasks[index].resultPath = nil
+      tasks[index].conversationId = nil
+      tasks[index].chatURL = nil
+      tasks[index].waitingUntil = nil
+      tasks[index].waitReason = nil
+      tasks[index].lastProgressAt = nil
+      tasks[index].lastError = "github_actions_watchdog_recovery"
+      tasks[index].reviewFeedback = [
+        tasks[index].reviewFeedback,
+        "GitHub Actions 守护已安全重建隐藏 Chat。请从同一 checkout 的最新落盘进度继续，不要从头开始。",
+      ].compactMap { $0 }.joined(separator: "\n\n")
+      tasks[index].updatedAt = now
+    } else {
+      tasks[index].workerPid = nil
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
+      tasks[index].lastError = "github_actions_watchdog_recovery"
+      tasks[index].updatedAt = now
+    }
+    tasks[index].watchdogLastRecoveryAt = now
+    tasks[index].watchdogRecoveryCount = (tasks[index].watchdogRecoveryCount ?? 0) + 1
+  }
+
+  state.automationTasks = tasks
+  state.queueEnabled = true
+  state.queuePaused = false
+  try startQueueWatcher(&state)
+  return [
+    "ok": true,
+    "recovered": true,
+    "dryRun": false,
+    "staleAfterSeconds": staleAfterSeconds,
+    "eligibleTaskIds": eligibleIds,
+    "watcherPid": state.queueWatcherPid as Any,
+    "queue": queueStatusPayload(state),
+  ]
+}
+
 private func commandJSONParams() -> [String: Any] {
   guard CommandLine.arguments.count >= 3,
         let data = CommandLine.arguments[2].data(using: .utf8),
@@ -4670,6 +4826,8 @@ private let nativeCommandSummaries: [String: String] = [
   "queue_pause": "暂停调度新任务；已落盘状态会保留。",
   "queue_retry": "恢复中断任务，可更新 connector 并附加恢复说明。",
   "queue_cancel": "取消指定任务并停止其隐藏 worker。",
+  "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
+  "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
   "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
   "get_reply": "读取隐藏 Chat 页面中的最新回复。",
@@ -4685,7 +4843,8 @@ private func nativeCommandUsage(_ command: String, executable: String) -> String
     return "\(executable) audit [limit]"
   case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
        "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
-       "queue_review", "queue_retry", "queue_cancel", "send_message",
+       "queue_review", "queue_retry", "queue_cancel", "queue_watchdog",
+       "start_actions_runner", "send_message",
        "add_connector", "get_reply", "chat_status", "send_and_watch":
     return "\(executable) \(command) ['{...JSON...}']"
   default:
@@ -4709,6 +4868,10 @@ private func nativeCommandExample(_ command: String, executable: String) -> Stri
     return "\(executable) queue_review '{\"taskId\":\"task-1\",\"accepted\":true}'"
   case "queue_retry":
     return "\(executable) queue_retry '{\"taskId\":\"task-1\",\"connector\":\"devspace1\",\"feedback\":\"从当前 checkout 继续\"}'"
+  case "queue_watchdog":
+    return "\(executable) queue_watchdog '{\"staleAfterSeconds\":21600,\"force\":false}'"
+  case "start_actions_runner":
+    return "\(executable) start_actions_runner"
   case "send_message":
     return "\(executable) send_message '{\"message\":\"检查当前状态\",\"connector\":\"devspace1\"}'"
   case "send_and_watch":
@@ -4779,6 +4942,8 @@ ChatGPT 自动确认 macOS 原生运行时
   queue_pause            暂停队列
   queue_retry JSON       恢复中断任务
   queue_cancel JSON      取消任务
+  queue_watchdog JSON    检查超时并安全恢复队列
+  start_actions_runner   启动六小时 GitHub Actions 持续运行器
 
 隐藏 Chat：
   send_message JSON      发送消息
@@ -5150,6 +5315,89 @@ case "queue_start", "queue_resume":
   }
 case "queue_status":
   output(queueStatusPayload(loadQueueState()))
+case "queue_watchdog":
+  let params = commandJSONParams()
+  let staleAfterSeconds = min(
+    604_800,
+    max(300, params["staleAfterSeconds"] as? Int ?? 21_600)
+  )
+  let force = params["force"] as? Bool ?? false
+  let dryRun = params["dryRun"] as? Bool ?? false
+  do {
+    let payload = try withQueueStateLock { state in
+      try recoverQueueWithWatchdog(
+        &state,
+        staleAfterSeconds: staleAfterSeconds,
+        force: force,
+        dryRun: dryRun
+      )
+    }
+    output(payload)
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "queue_watchdog_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
+case "start_actions_runner":
+  let executableURL = URL(
+    fileURLWithPath: CommandLine.arguments[0]
+  ).resolvingSymlinksInPath()
+  let pluginDirectory = executableURL
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let scriptURL = pluginDirectory
+    .appendingPathComponent("scripts")
+    .appendingPathComponent("dispatch-actions-runner.sh")
+  guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+    output([
+      "ok": false,
+      "errorCode": "actions_dispatch_script_missing",
+      "message": "安装包缺少 GitHub Actions 启动脚本。",
+    ], exitCode: 1)
+  }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/sh")
+  process.arguments = [scriptURL.path]
+  let stdout = Pipe()
+  let stderr = Pipe()
+  process.standardOutput = stdout
+  process.standardError = stderr
+  do {
+    try process.run()
+    process.waitUntilExit()
+    let outputText = String(
+      data: stdout.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let errorText = String(
+      data: stderr.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard process.terminationStatus == 0 else {
+      output([
+        "ok": false,
+        "errorCode": "github_cli_failed",
+        "message": errorText.isEmpty ? "gh 执行失败" : errorText,
+      ], exitCode: 1)
+    }
+    output([
+      "ok": true,
+      "dispatched": true,
+      "repository": "bhrumom/fabushi",
+      "workflow": "chatgpt-auto-confirm-runner.yml",
+      "ref": "main",
+      "message": outputText,
+    ])
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "github_cli_launch_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
 case "queue_attach":
   let params = commandJSONParams()
   let taskId = normalizedTaskId(params["taskId"] as? String)

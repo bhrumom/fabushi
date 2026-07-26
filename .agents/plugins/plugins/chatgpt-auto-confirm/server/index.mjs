@@ -15,6 +15,7 @@ const nativeCommands = new Map([
   ['get_reply', 'get_reply'], ['chat_status', 'chat_status'],
   ['enqueue_tasks', 'queue_enqueue'], ['start_queue', 'queue_start'],
   ['queue_status', 'queue_status'], ['wait_for_review', 'queue_wait_review'],
+  ['start_actions_runner', 'start_actions_runner'],
   ['review_task', 'queue_review'], ['pause_queue', 'queue_pause'],
   ['resume_queue', 'queue_resume'], ['retry_task', 'queue_retry'],
   ['cancel_task', 'queue_cancel'],
@@ -36,7 +37,8 @@ function runNativeTool(rpc) {
     ? 7_300_000
     : ['start_queue', 'wait_for_review'].includes(tool)
       ? 7_300_000
-    : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000 : 15_000;
+    : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000
+    : tool === 'start_actions_runner' ? 120_000 : 15_000;
   const invocation = spawnSync(nativeRuntime, args, {
     encoding: 'utf8', timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024,
     env: process.env,
