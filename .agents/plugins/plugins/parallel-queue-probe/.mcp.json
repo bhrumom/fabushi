@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "parallel-queue-probe-local": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./scripts/parallel-queue-probe.mjs", "mcp-serve"],
+      "cwd": "."
+    }
+  }
+}
