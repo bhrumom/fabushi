@@ -61,30 +61,38 @@ const shellTarget = await findTarget(
   120_000,
   'ChatGPT app shell'
 );
-const shell = await connect(shellTarget);
-await shell.call('Network.setCookies', { cookies: payload.cookies });
-shell.socket.close();
-
-const contentTarget = await findTarget(
-  item =>
-    item.type === 'page' &&
-    /^https:\/\/(chatgpt\.com|chat\.openai\.com)(\/|$)/i.test(item.url),
-  120_000,
-  'ChatGPT content page'
-);
-const { socket, call } = await connect(contentTarget);
+const { socket, call } = await connect(shellTarget);
+await call('Page.setWebLifecycleState', { state: 'active' });
+await call('Emulation.setFocusEmulationEnabled', { enabled: true });
+await call('Emulation.setIdleOverride', {
+  isUserActive: true,
+  isScreenUnlocked: true,
+});
 await call('Network.setCookies', { cookies: payload.cookies });
 await call('Runtime.evaluate', {
-  expression: 'setTimeout(() => location.reload(), 0); true',
+  expression: `(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+    setTimeout(() => location.reload(), 0);
+    return true;
+  })()`,
   returnByValue: true,
 });
-const verificationDeadline = Date.now() + 90_000;
+const verificationDeadline = Date.now() + 120_000;
 let verified = false;
 let lastState = {};
 while (Date.now() < verificationDeadline) {
   await new Promise(resolve => setTimeout(resolve, 2_000));
+  await call('Page.setWebLifecycleState', { state: 'active' });
+  await call('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await call('Emulation.setIdleOverride', {
+    isUserActive: true,
+    isScreenUnlocked: true,
+  });
   const evaluation = await call('Runtime.evaluate', {
     expression: `(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
       const text = (document.body?.innerText || '').slice(0, 12000);
       const hasSidebar = Boolean(document.querySelector(
         '[data-app-action-sidebar-scroll], nav[aria-label]'
@@ -100,7 +108,11 @@ while (Date.now() < verificationDeadline) {
         hasProfileMenu,
         asksForLogin,
         bodyLength: text.length,
-        url: location.href
+        url: location.href,
+        bridge: Boolean(window.electronBridge),
+        visibility: document.visibilityState,
+        readyState: document.readyState,
+        rootChildren: document.querySelector('#root')?.childElementCount || 0
       };
     })()`,
     returnByValue: true,
@@ -114,7 +126,7 @@ while (Date.now() < verificationDeadline) {
 socket.close();
 if (!verified) {
   throw new Error(
-    `ChatGPT desktop login UI was not verified (url=${lastState.url || 'unknown'}, bodyLength=${lastState.bodyLength || 0})`
+    `ChatGPT desktop login UI was not verified (${JSON.stringify(lastState)})`
   );
 }
 process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies\n`);
