@@ -6,46 +6,74 @@ if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
   throw new Error('The ChatGPT cookie secret is empty');
 }
 
-const deadline = Date.now() + 120_000;
-let target;
-while (Date.now() < deadline) {
-  try {
-    const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json());
-    target = targets.find(item =>
-      item.type === 'page' &&
-      item.url === 'app://-/index.html' &&
-      item.webSocketDebuggerUrl
-    );
-    if (target) break;
-  } catch {}
-  await new Promise(resolve => setTimeout(resolve, 1_000));
-}
-if (!target) throw new Error('ChatGPT did not expose a page target within 120 seconds');
+const listTargets = async () =>
+  fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json());
 
-const socket = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => {
-  socket.addEventListener('open', resolve, { once: true });
-  socket.addEventListener('error', reject, { once: true });
-});
-let sequence = 0;
-const call = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++sequence;
-  const timer = setTimeout(() => {
-    socket.removeEventListener('message', onMessage);
-    reject(new Error(`${method} timed out`));
-  }, 30_000);
-  const onMessage = event => {
-    const message = JSON.parse(String(event.data));
-    if (message.id !== id) return;
-    clearTimeout(timer);
-    socket.removeEventListener('message', onMessage);
-    if (message.error) reject(new Error(`${method} failed`));
-    else resolve(message.result || {});
-  };
-  socket.addEventListener('message', onMessage);
-  socket.send(JSON.stringify({ id, method, params }));
-});
+const findTarget = async (predicate, timeoutMs, label) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastTargets = [];
+  while (Date.now() < deadline) {
+    try {
+      lastTargets = await listTargets();
+      const target = lastTargets.find(item =>
+        item.webSocketDebuggerUrl && predicate(item)
+      );
+      if (target) return target;
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+  const safeTargets = lastTargets.map(item => ({
+    type: item.type,
+    url: String(item.url || '').slice(0, 160),
+  }));
+  throw new Error(`${label} was not exposed; targets=${JSON.stringify(safeTargets)}`);
+};
 
+const connect = async target => {
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve, { once: true });
+    socket.addEventListener('error', reject, { once: true });
+  });
+  let sequence = 0;
+  const call = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => {
+      socket.removeEventListener('message', onMessage);
+      reject(new Error(`${method} timed out`));
+    }, 30_000);
+    const onMessage = event => {
+      const message = JSON.parse(String(event.data));
+      if (message.id !== id) return;
+      clearTimeout(timer);
+      socket.removeEventListener('message', onMessage);
+      if (message.error) reject(new Error(`${method} failed`));
+      else resolve(message.result || {});
+    };
+    socket.addEventListener('message', onMessage);
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  return { socket, call };
+};
+
+const shellTarget = await findTarget(
+  item => item.type === 'page' && item.url === 'app://-/index.html',
+  120_000,
+  'ChatGPT app shell'
+);
+const shell = await connect(shellTarget);
+await shell.call('Network.setCookies', { cookies: payload.cookies });
+await shell.call('Page.reload', { ignoreCache: true });
+shell.socket.close();
+
+const contentTarget = await findTarget(
+  item =>
+    item.type === 'page' &&
+    /^https:\/\/(chatgpt\.com|chat\.openai\.com)(\/|$)/i.test(item.url),
+  120_000,
+  'ChatGPT content page'
+);
+const { socket, call } = await connect(contentTarget);
 await call('Network.setCookies', { cookies: payload.cookies });
 await call('Page.reload', { ignoreCache: true });
 const verificationDeadline = Date.now() + 90_000;
