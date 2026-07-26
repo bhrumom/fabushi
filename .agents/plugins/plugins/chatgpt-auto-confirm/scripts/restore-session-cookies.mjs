@@ -1,6 +1,10 @@
 const port = Number(process.env.CHATGPT_CDP_PORT || 9324);
+const mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify';
 const encoded = process.env.CHATGPT_SESSION_COOKIES_B64;
 if (!encoded) throw new Error('CHATGPT_SESSION_COOKIES_B64 is required');
+if (!['seed', 'verify', 'restore-and-verify'].includes(mode)) {
+  throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
+}
 const payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
 if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
   throw new Error('The ChatGPT cookie secret is empty');
@@ -68,16 +72,32 @@ await call('Emulation.setIdleOverride', {
   isUserActive: true,
   isScreenUnlocked: true,
 });
-await call('Network.setCookies', { cookies: payload.cookies });
-await call('Runtime.evaluate', {
-  expression: `(() => {
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.dispatchEvent(new Event('focus'));
-    setTimeout(() => location.reload(), 0);
-    return true;
-  })()`,
-  returnByValue: true,
-});
+if (mode !== 'verify') {
+  await call('Network.setCookies', { cookies: payload.cookies });
+}
+if (mode === 'seed') {
+  const result = await call('Network.getAllCookies');
+  const restored = (result.cookies || []).filter(cookie =>
+    /(^|\.)((chatgpt|openai)\.com)$/i.test(cookie.domain || '')
+  ).length;
+  socket.close();
+  if (restored === 0) {
+    throw new Error('ChatGPT session cookies were not persisted');
+  }
+  process.stdout.write(`Seeded ${restored} ChatGPT session cookies\n`);
+  process.exit(0);
+}
+if (mode === 'restore-and-verify') {
+  await call('Runtime.evaluate', {
+    expression: `(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      setTimeout(() => location.reload(), 0);
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+}
 const verificationDeadline = Date.now() + 120_000;
 let verified = false;
 let lastState = {};
