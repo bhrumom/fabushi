@@ -36,7 +36,6 @@ jobs:
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
-      CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64 }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout trusted runner implementation
@@ -95,6 +94,7 @@ jobs:
       - name: Import dynamic parallel task inbox
         env:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: ${{ github.workspace }}/.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/import-actions-task-inbox.mjs
 
       - name: Restore ChatGPT login credentials
