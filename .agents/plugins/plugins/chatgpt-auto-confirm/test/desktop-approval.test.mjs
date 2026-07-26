@@ -203,6 +203,12 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /freshly prepared blank Chat owns a stable local id/);
   assert.match(nativeSource, /never replace a local id with/);
   assert.match(nativeSource, /appendTextPreservingConnector/);
+  assert.match(nativeSource, /model_picker_not_found/);
+  assert.match(nativeSource, /reasoning_high_not_selected/);
+  assert.match(nativeSource, /pickerEvidence: 'selected_button_state'/);
+  assert.match(nativeSource, /selectedLabel === 'high'/);
+  assert.match(nativeSource, /selectedLabel === '高'/);
+  assert.doesNotMatch(nativeSource, /pickerEvidence: "Bypassed"/);
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);
   assert.match(nativeSource, /single-authenticated-process-hidden-prewarm-serialized/);
