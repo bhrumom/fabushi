@@ -211,7 +211,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.doesNotMatch(nativeSource, /pickerEvidence: "Bypassed"/);
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);
-  assert.match(nativeSource, /single-authenticated-process-hidden-prewarm-serialized/);
+  assert.match(nativeSource, /single-authenticated-process-multi-hidden-window-parallel/);
+  assert.match(nativeSource,
+    /let maxConcurrent = min\(4, max\(1, state\.queueMaxConcurrent \?\? 2\)\)/);
+  assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
+  assert.match(nativeSource, /"activeWorkers": activeWorkers/);
   assert.match(nativeSource, /single-process-hidden-prewarm/);
   assert.match(nativeSource, /isolated-dedicated-process/);
   assert.match(nativeSource, /stopQueueWorker/);
@@ -247,7 +251,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /runtimeState == \.hiddenNonChat/);
   assert.match(nativeSource, /expression: clickChatJS\(\)/);
   assert.match(nativeSource, /if runtimeState == \.visible/);
-  assert.match(nativeSource, /stopQueueWorker\(&state\)[\s\S]*createQueueWorkerTarget\(&state\)/);
+  assert.match(nativeSource,
+    /closeDedicatedAutomationTarget\(task, state: state\)[\s\S]*createIndependentQueueWorkerTarget\(&state\)/);
   assert.match(nativeSource, /hiddenWorkerLastHeartbeatAt/);
   assert.match(nativeSource, /hiddenWorkerRecoveryCount/);
   assert.match(nativeSource, /"runtimeState": workerRuntimeState\.map\(queueTargetRuntimeStateName\)/);

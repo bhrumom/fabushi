@@ -127,7 +127,7 @@ const tools = [
   { name: 'prompt_templates', description: '读取内置任务提示词和最终总结协议', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
-  { name: 'enqueue_tasks', description: '把一个或多个任务加入本地持久队列；默认共用一个专用 ChatGPT 实例，任务、验收 Chat 和等待外部结果后的定时续作均在 Chat 页面按队列安全串行；旧版隐藏 target 仅作为兼容回退', annotations: annotations(), inputSchema: {
+  { name: 'enqueue_tasks', description: '把一个或多个任务加入本地持久队列；同一已登录 ChatGPT 实例会为无依赖、无资源锁冲突的任务创建相互隔离的隐藏 Chat 并行执行，最大并发数为 4', annotations: annotations(), inputSchema: {
     type: 'object', additionalProperties: false, required: ['tasks'], properties: {
       tasks: { type: 'array', minItems: 1, maxItems: 50, items: queuedTaskSchema },
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4, default: 2 },
