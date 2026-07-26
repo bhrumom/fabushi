@@ -219,6 +219,9 @@ jobs:
               fabushi/web/*|workers/*|worker/*|functions/*|api/*|server/*|migrations/*|drizzle/*|supabase/*|cloudflare/*|wrangler.toml|wrangler.*.toml|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock)
                 ignore_mobile_package "Worker/API input does not require mobile install packages: $path"
                 ;;
+              .github/cd-retry.txt)
+                add_both "explicit CD retry marker changed: $path"
+                ;;
               .github/workflows/publish-cd-release.yml)
                 add_both "package release workflow changed; validate Android and iOS release package paths: $path"
                 ;;
