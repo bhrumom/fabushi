@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 test('Actions inbox appends a dynamic task once and enables parallel scheduling', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-'));
   const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
   const script = fileURLToPath(
     new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
   const inbox = {
@@ -24,11 +25,11 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
   const env = {
     ...process.env,
     CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
-    CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64:
-      Buffer.from(JSON.stringify(inbox)).toString('base64'),
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
   };
   try {
     writeFileSync(statePath, JSON.stringify({ automationTasks: [] }));
+    writeFileSync(inboxPath, JSON.stringify(inbox));
     execFileSync(process.execPath, [script], { env });
     execFileSync(process.execPath, [script], { env });
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
