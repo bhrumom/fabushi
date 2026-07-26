@@ -5,7 +5,7 @@ description: Run long-lived coding, GitHub release, deployment, or plugin-market
 
 # Actions-First Task Queue
 
-Use the `chatgpt-auto-confirm` queue as the controller. Send work and independent acceptance to fresh **Chat** conversations only; do not use a Work/worker page as a fallback. One queue-owned ChatGPT process serializes page actions while the durable queue holds all pending work.
+Use the `chatgpt-auto-confirm` queue as the controller. Send work and independent acceptance to fresh **Chat** conversations only; do not use a Work/worker page as a fallback. One queue-owned ChatGPT process creates an isolated hidden Chat for each running task. Tasks without dependency or resource-lock conflicts may run concurrently; page actions remain isolated inside their owning hidden Chat.
 
 ## Run work remotely
 

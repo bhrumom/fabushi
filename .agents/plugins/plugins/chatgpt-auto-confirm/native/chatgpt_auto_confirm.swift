@@ -3242,6 +3242,7 @@ private func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = fal
 
 private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
   let tasks = state.automationTasks ?? []
+  let requestedMaxConcurrent = min(4, max(1, state.queueMaxConcurrent ?? 2))
   var counts: [String: Int] = [:]
   for task in tasks { counts[task.status, default: 0] += 1 }
   let attention = tasks.filter {
@@ -3263,16 +3264,29 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     workerRuntimeState = nil
     workerIsHidden = false
   }
+  let activeWorkers = tasks.filter { $0.status == "running" }.map { task in
+    let runtimeState: QueueTargetRuntimeState? = {
+      guard let port = task.workerPort, let targetId = task.workerTargetId else { return nil }
+      return queueTargetRuntimeState(port: port, targetId: targetId, refreshLifecycle: false)
+    }()
+    return [
+      "taskId": task.id,
+      "port": task.workerPort as Any,
+      "targetId": task.workerTargetId as Any,
+      "runtimeState": runtimeState.map(queueTargetRuntimeStateName) ?? "not-started",
+      "visibilityVerified": runtimeState == .hidden,
+    ] as [String: Any]
+  }
   return [
     "ok": true,
     "enabled": state.queueEnabled == true,
     "paused": state.queuePaused == true,
     "running": state.queueEnabled == true && watcherIsAlive(state.queueWatcherPid),
     "watcherPid": state.queueWatcherPid as Any,
-    "maxConcurrent": state.queueMaxConcurrent ?? 2,
-    "effectiveMaxConcurrent": 1,
-    "requestedMaxConcurrent": state.queueMaxConcurrent ?? 2,
-    "executionMode": "single-authenticated-process-hidden-prewarm-serialized",
+    "maxConcurrent": requestedMaxConcurrent,
+    "effectiveMaxConcurrent": requestedMaxConcurrent,
+    "requestedMaxConcurrent": requestedMaxConcurrent,
+    "executionMode": "single-authenticated-process-multi-hidden-window-parallel",
     "targetMode": state.queueWorkerMode ?? "not-started",
     "network": [
       "status": state.queueNetworkStatus ?? "unknown",
@@ -3292,6 +3306,7 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "runtimeState": workerRuntimeState.map(queueTargetRuntimeStateName) ?? "not-started",
       "separateApplicationProcess": false,
     ],
+    "activeWorkers": activeWorkers,
     "reviewGate": state.queueReviewGate != false,
     "counts": counts,
     "tasks": tasks.map { taskPublicPayload($0) },
@@ -3727,6 +3742,19 @@ private func createQueueWorkerTarget(
   return (controller.port, targetId, controller.profilePath)
 }
 
+private func createIndependentQueueWorkerTarget(
+  _ state: inout PluginState
+) -> (port: Int, targetId: String, profilePath: String)? {
+  // A task keeps its own target id. Clear only the reusable prewarm pointer so
+  // the next runnable task receives another hidden BrowserWindow in the same
+  // authenticated ChatGPT process.
+  state.queueWorkerPort = nil
+  state.queueWorkerTargetId = nil
+  state.queueWorkerProfilePath = nil
+  state.queueWorkerMode = nil
+  return createQueueWorkerTarget(&state)
+}
+
 private func stopQueueWorker(_ state: inout PluginState) {
   // Close only the hidden queue window. The primary window and the shared
   // ChatGPT process remain available to the user and the general confirmer.
@@ -3748,15 +3776,14 @@ private func startAutomationTask(
   _ task: inout AutomationTask,
   state: inout PluginState
 ) throws {
-  // All queued tasks use one hidden renderer inside the user's existing
-  // authenticated ChatGPT process. The renderer is intentionally single-owner:
-  // task concurrency is represented by the durable queue, while page work is
-  // serialized so tasks and review Chats never clobber one another's composer.
+  // Every running task owns a separate hidden renderer inside the same
+  // authenticated ChatGPT process. This keeps composers isolated while
+  // allowing independent tasks to make progress concurrently.
   var prepared: [String: Any]?
   var port: Int?
   var targetId: String?
   var workerProfilePath: String?
-  guard let worker = createQueueWorkerTarget(&state) else {
+  guard let worker = createIndependentQueueWorkerTarget(&state) else {
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 33,
@@ -3905,10 +3932,11 @@ private func closeDedicatedAutomationTarget(
   _ task: AutomationTask,
   state: PluginState
 ) {
-  // The dedicated target belongs to the queue, not to an individual task.
-  // Keep it alive for the next queued task and release it only when the queue
-  // reaches a terminal state (runQueueIteration calls stopQueueWorker).
-  _ = task
+  // Parallel queue targets are task-owned. Closing one must never navigate,
+  // focus, or stop a sibling task or the user's visible ChatGPT window.
+  if let targetId = task.workerTargetId {
+    _ = CDPClient.closeTarget(targetId, portOverride: task.workerPort)
+  }
   _ = state
 }
 
@@ -4047,8 +4075,8 @@ private func monitorAutomationTask(
   state.approveAll = true
   var workerPort = task.workerPort ?? state.queueWorkerPort
   var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
-  if !queueUsesBackgroundWindow(state) || workerPort == nil || workerTargetId == nil {
-    if let recoveredWorker = createQueueWorkerTarget(&state) {
+  if workerPort == nil || workerTargetId == nil {
+    if let recoveredWorker = createIndependentQueueWorkerTarget(&state) {
       workerPort = recoveredWorker.port
       workerTargetId = recoveredWorker.targetId
       task.workerPort = recoveredWorker.port
@@ -4101,8 +4129,8 @@ private func monitorAutomationTask(
     // queue-owned pages. Close any stale target, recreate ChatGPT's official
     // show:false prewarm BrowserWindow, and verify hidden Chat again.
     let failedRuntimeState = queueTargetRuntimeStateName(runtimeState)
-    stopQueueWorker(&state)
-    guard let recoveredWorker = createQueueWorkerTarget(&state) else {
+    closeDedicatedAutomationTarget(task, state: state)
+    guard let recoveredWorker = createIndependentQueueWorkerTarget(&state) else {
       task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
       task.lastError = task.hiddenWorkerLastError
       task.updatedAt = isoFormatter.string(from: Date())
@@ -4140,7 +4168,7 @@ private func monitorAutomationTask(
       refreshLifecycle: true
     )
     guard restored, runtimeState == .hidden else {
-      stopQueueWorker(&state)
+      closeDedicatedAutomationTarget(task, state: state)
       task.hiddenWorkerLastError = "queue_monitor_hidden_target_recovery_failed"
       queueContinuation(
         &task,
@@ -4239,7 +4267,7 @@ private func monitorAutomationTask(
         // This hidden renderer is owned solely by the queue, so a failed
         // restore is a disposable renderer fault rather than user navigation.
         // Recreate it inside the same app process and continue from checkout.
-        stopQueueWorker(&state)
+        closeDedicatedAutomationTarget(task, state: state)
         queueContinuation(&task, report: nil, reason: "queue_monitor_conversation_drift")
         return
       }
@@ -4305,9 +4333,7 @@ private func monitorAutomationTask(
   if !hasAssistantActivity, !isStreaming, isPending,
      let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
      Date().timeIntervalSince(lastProgressAt) >= 90 {
-    if queueUsesBackgroundWindow(state) {
-      stopQueueWorker(&state)
-    }
+    closeDedicatedAutomationTarget(task, state: state)
     queueContinuation(&task, report: nil, reason: "chat_start_no_reply")
     return
   }
@@ -4437,11 +4463,8 @@ private func monitorAutomationTask(
      Date().timeIntervalSince(lastProgressAt) >= 1200 {
     _ = cdpValue(
       port: port, targetId: targetId, expression: stopCurrentResponseJS(), timeout: 12.0)
-    if queueUsesBackgroundWindow(state) {
-      // A stall belongs to the hidden, queue-owned renderer. Recreate that
-      // never-shown prewarm window for the next Chat; never touch the primary.
-      stopQueueWorker(&state)
-    }
+    // A stall belongs only to this hidden task renderer.
+    closeDedicatedAutomationTarget(task, state: state)
     closeDedicatedAutomationTarget(task, state: state)
     queueContinuation(&task, report: nil, reason: "page_stalled")
   }
@@ -4506,7 +4529,7 @@ private func runQueueIteration(_ state: inout PluginState) {
   if !network.reachable {
     state.queueNetworkStatus = "offline"
     state.queueNetworkLastError = network.detail
-    if let runningIndex = tasks.firstIndex(where: { $0.status == "running" }) {
+    for runningIndex in tasks.indices where tasks[runningIndex].status == "running" {
       closeDedicatedAutomationTarget(tasks[runningIndex], state: state)
       queueNetworkRecovery(&tasks[runningIndex], state: &state, reason: network.detail)
     }
@@ -4564,10 +4587,10 @@ private func runQueueIteration(_ state: inout PluginState) {
     return
   }
 
-  // One authenticated ChatGPT process owns the renderer. Keep queue state
-  // concurrent-safe, but serialize page work so tasks cannot overwrite one
-  // another's composer or require another Electron process.
-  let maxConcurrent = 1
+  // Each running task owns a separate hidden BrowserWindow. Dependencies and
+  // resource locks still serialize conflicting work, while unrelated tasks
+  // may run in parallel inside the authenticated ChatGPT process.
+  let maxConcurrent = min(4, max(1, state.queueMaxConcurrent ?? 2))
   var runningCount = tasks.filter { $0.status == "running" }.count
   var heldLocks = Set(tasks.filter { $0.status == "running" }.flatMap(\.resourceLocks))
   var statuses = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.status) })
