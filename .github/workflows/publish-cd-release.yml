@@ -902,6 +902,10 @@ jobs:
             echo "flutter build ipa completed but no IPA was found under build/ios/ipa" >&2
             exit 1
           fi
+          release_ipa="../ios-release-assets/fabushi-ios-${short_sha}.ipa"
+          mkdir -p "$(dirname "$release_ipa")"
+          cp "$ipa_path" "$release_ipa"
+
           ipa_extract="$(mktemp -d)"
           symbols_file="$(mktemp)"
           candidate_symbols_file="$(mktemp)"
@@ -916,8 +920,11 @@ jobs:
           # Recent Xcode versions may place Swift application code in a
           # top-level Runner debug dylib even for an exported archive, while
           # the Rust static runtime remains in the main executable. Validate
-          # symbols across Mach-O files loaded by the main app process, but do
+          # exports across Mach-O files loaded by the main app process, but do
           # not accept symbols that exist only in extensions or app clips.
+          # App Store export can strip the nlist symbol table that nm reads
+          # while preserving the dyld export trie used by dlsym at runtime, so
+          # collect both views before deciding that a process symbol is absent.
           : > "$symbols_file"
           while IFS= read -r -d '' candidate; do
             relative_candidate="${candidate#$app_path/}"
@@ -929,7 +936,10 @@ jobs:
             if ! file "$candidate" | grep -q 'Mach-O'; then
               continue
             fi
-            if ! nm -gU "$candidate" > "$candidate_symbols_file" 2>/dev/null; then
+            : > "$candidate_symbols_file"
+            nm -gU "$candidate" >> "$candidate_symbols_file" 2>/dev/null || true
+            xcrun dyld_info -exports "$candidate" >> "$candidate_symbols_file" 2>/dev/null || true
+            if [ ! -s "$candidate_symbols_file" ]; then
               continue
             fi
             printf '### %s\n' "$relative_candidate" >> "$symbols_file"
@@ -937,18 +947,19 @@ jobs:
           done < <(find "$app_path" -type f -print0)
 
           for symbol in create execute receive interrupt resolve_approval close free_string; do
-            if ! grep -Eq "_+mahayana_runtime_${symbol}$" "$symbols_file"; then
+            if ! grep -Eq "(^|[[:space:]])_+mahayana_runtime_${symbol}([[:space:]]|$)" "$symbols_file"; then
               echo "Signed IPA is missing Mahayana runtime symbol: mahayana_runtime_${symbol}" >&2
+              cp "$symbols_file" ../ios-release-assets/IOS_MACHO_EXPORTS_DIAGNOSTIC.txt
               grep -E 'mahayana_runtime_|fabushi_mahayana_product_execute' "$symbols_file" || true
               exit 1
             fi
           done
-          if ! grep -Eq '_+fabushi_mahayana_product_execute$' "$symbols_file"; then
+          if ! grep -Eq '(^|[[:space:]])_+fabushi_mahayana_product_execute([[:space:]]|$)' "$symbols_file"; then
             echo "Signed IPA is missing the process-visible Mahayana product FFI bridge." >&2
+            cp "$symbols_file" ../ios-release-assets/IOS_MACHO_EXPORTS_DIAGNOSTIC.txt
             grep -E 'mahayana_runtime_|mahayana_product_execute' "$symbols_file" || true
             exit 1
           fi
-          cp "$ipa_path" "../ios-release-assets/fabushi-ios-${short_sha}.ipa"
 
       - name: Upload signed iOS IPA to App Store Connect
         if: steps.ios-signing.outputs.configured == 'true'
