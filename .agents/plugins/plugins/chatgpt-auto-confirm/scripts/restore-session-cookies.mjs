@@ -1,13 +1,16 @@
 const port = Number(process.env.CHATGPT_CDP_PORT || 9324);
 const mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify';
 const encoded = process.env.CHATGPT_SESSION_COOKIES_B64;
-if (!encoded) throw new Error('CHATGPT_SESSION_COOKIES_B64 is required');
 if (!['seed', 'verify', 'restore-and-verify'].includes(mode)) {
   throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
 }
-const payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
-  throw new Error('The ChatGPT cookie secret is empty');
+let payload = { cookies: [] };
+if (mode !== 'verify') {
+  if (!encoded) throw new Error('CHATGPT_SESSION_COOKIES_B64 is required');
+  payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+  if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
+    throw new Error('The ChatGPT cookie secret is empty');
+  }
 }
 
 const listTargets = async () =>
@@ -149,4 +152,4 @@ if (!verified) {
     `ChatGPT desktop login UI was not verified (${JSON.stringify(lastState)})`
   );
 }
-process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies\n`);
+process.stdout.write('Verified restored ChatGPT desktop login\n');

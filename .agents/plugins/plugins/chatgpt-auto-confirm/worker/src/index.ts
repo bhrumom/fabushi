@@ -145,7 +145,7 @@ const tools = [
   { name: 'queue_status', description: '读取任务队列、专用 ChatGPT worker 状态、网络恢复等待、验收 Chat 和待处理结果', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {},
   } },
-  { name: 'start_actions_runner', description: '把当前队列的最小续作状态和 ChatGPT 登录 Cookie 安全刷新到 GitHub Secrets，并启动最长六小时的 GitHub Actions 持续运行器；未完成时 Action 自动启动下一轮', annotations: {
+  { name: 'start_actions_runner', description: '把当前队列的最小续作状态和 ChatGPT 登录凭证安全刷新到 GitHub Secrets，并启动最长六小时的 GitHub Actions 持续运行器；未完成时 Action 自动启动下一轮', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {},

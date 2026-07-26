@@ -54,10 +54,19 @@ jobs:
     timeout-minutes: 15
     env:
       CHATGPT_CDP_PORT: "9324"
-      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+      CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Restore ChatGPT login credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_CODEX_AUTH_B64"
+          mkdir -p "$HOME/.codex"
+          printf '%s' "$CHATGPT_CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
 
       - name: Install official ChatGPT desktop app
         shell: bash
@@ -77,25 +86,6 @@ jobs:
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$profile_dir" \
-            --remote-debugging-port="$CHATGPT_CDP_PORT"
-
-      - name: Seed ChatGPT login credentials
-        env:
-          CHATGPT_SESSION_MODE: seed
-        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-
-      - name: Restart ChatGPT with restored credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          osascript -e 'tell application "ChatGPT" to quit' || true
-          for _ in {1..20}; do
-            pgrep -x ChatGPT >/dev/null || break
-            sleep 1
-          done
-          pkill -x ChatGPT || true
-          open -na /Applications/ChatGPT.app --args \
-            --user-data-dir="$RUNNER_TEMP/chatgpt-profile" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
 
       - name: Verify ChatGPT login
