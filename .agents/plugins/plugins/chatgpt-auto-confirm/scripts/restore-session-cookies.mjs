@@ -63,7 +63,6 @@ const shellTarget = await findTarget(
 );
 const shell = await connect(shellTarget);
 await shell.call('Network.setCookies', { cookies: payload.cookies });
-await shell.call('Page.reload', { ignoreCache: true });
 shell.socket.close();
 
 const contentTarget = await findTarget(
@@ -75,7 +74,10 @@ const contentTarget = await findTarget(
 );
 const { socket, call } = await connect(contentTarget);
 await call('Network.setCookies', { cookies: payload.cookies });
-await call('Page.reload', { ignoreCache: true });
+await call('Runtime.evaluate', {
+  expression: 'setTimeout(() => location.reload(), 0); true',
+  returnByValue: true,
+});
 const verificationDeadline = Date.now() + 90_000;
 let verified = false;
 let lastState = {};
