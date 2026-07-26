@@ -30,9 +30,14 @@ await new Promise((resolve, reject) => {
 let sequence = 0;
 const call = (method, params = {}) => new Promise((resolve, reject) => {
   const id = ++sequence;
+  const timer = setTimeout(() => {
+    socket.removeEventListener('message', onMessage);
+    reject(new Error(`${method} timed out`));
+  }, 30_000);
   const onMessage = event => {
     const message = JSON.parse(String(event.data));
     if (message.id !== id) return;
+    clearTimeout(timer);
     socket.removeEventListener('message', onMessage);
     if (message.error) reject(new Error(`${method} failed`));
     else resolve(message.result || {});
@@ -44,30 +49,21 @@ const call = (method, params = {}) => new Promise((resolve, reject) => {
 await call('Network.setCookies', { cookies: payload.cookies });
 await call('Page.reload', { ignoreCache: true });
 await new Promise(resolve => setTimeout(resolve, 5_000));
-const authentication = await call('Runtime.evaluate', {
-  expression: `(
-    async () => {
-      try {
-        const response = await fetch('https://chatgpt.com/api/auth/session', {
-          credentials: 'include',
-          cache: 'no-store'
-        });
-        const data = await response.json().catch(() => ({}));
-        return {
-          status: response.status,
-          authenticated: Boolean(data && (data.user || data.accessToken))
-        };
-      } catch {
-        return { status: 0, authenticated: false };
-      }
-    }
-  )()`,
-  awaitPromise: true,
-  returnByValue: true,
-});
 socket.close();
-const authValue = authentication.result?.value;
-if (!authValue?.authenticated) {
-  throw new Error(`ChatGPT session verification failed (HTTP ${authValue?.status || 0})`);
+const cookieHeader = payload.cookies
+  .filter(cookie => cookie.name && cookie.value)
+  .map(cookie => `${cookie.name}=${cookie.value}`)
+  .join('; ');
+const response = await fetch('https://chatgpt.com/api/auth/session', {
+  headers: {
+    accept: 'application/json',
+    cookie: cookieHeader,
+    'user-agent': 'ChatGPT GitHub Actions session verifier',
+  },
+  signal: AbortSignal.timeout(30_000),
+});
+const session = await response.json().catch(() => ({}));
+if (!response.ok || !(session?.user || session?.accessToken)) {
+  throw new Error(`ChatGPT session verification failed (HTTP ${response.status})`);
 }
 process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies\n`);
