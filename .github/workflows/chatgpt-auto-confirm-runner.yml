@@ -119,8 +119,8 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          /Applications/ChatGPT.app/Contents/Resources/codex login status |
-            grep -q 'Logged in using ChatGPT'
+          login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status)
+          grep -q 'Logged in using ChatGPT' <<< "$login_status"
 
       - name: Run persistent task queue
         if: ${{ !inputs.smoke_only }}

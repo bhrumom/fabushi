@@ -92,5 +92,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /Applications/ChatGPT.app/Contents/Resources/codex login status |
-            grep -q 'Logged in using ChatGPT'
+          login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status)
+          grep -q 'Logged in using ChatGPT' <<< "$login_status"
