@@ -88,6 +88,15 @@ test('native task queue persists queued work without starting ChatGPT', async t 
     const status = JSON.parse((await execFileAsync(runtimePath, ['queue_status'], { env })).stdout);
     assert.equal(status.tasks[0].resourceLocks[0], 'test:queue');
     assert.equal(status.recoverable, true);
+    const watchdog = JSON.parse((await execFileAsync(
+      runtimePath,
+      ['queue_watchdog', JSON.stringify({
+        staleAfterSeconds: 21600, force: true, dryRun: true,
+      })],
+      { env },
+    )).stdout);
+    assert.equal(watchdog.wouldRecover, true);
+    assert.deepEqual(watchdog.eligibleTaskIds, ['queue-contract']);
   } finally {
     rmSync(stateDirectory, { recursive: true, force: true });
   }

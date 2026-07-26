@@ -1,0 +1,180 @@
+name: ChatGPT auto-confirm continuous runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_run_id:
+        description: Previous runner workflow run containing encrypted continuation state
+        required: false
+        type: string
+      smoke_only:
+        description: Verify installation and restored login without running or continuing tasks
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: chatgpt-auto-confirm-continuous-runner
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run ChatGPT auto-confirm for up to six hours
+    runs-on: macos-15
+    timeout-minutes: 355
+    env:
+      CHATGPT_CDP_PORT: "9324"
+      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+      CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
+      CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout trusted runner implementation
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Prepare private runtime directories
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/chatgpt-auto-confirm"
+          profile_dir="$runtime_dir/profile"
+          state_path="$runtime_dir/queue-state.json"
+          mkdir -p "$runtime_dir" "$profile_dir"
+          chmod 700 "$runtime_dir" "$profile_dir"
+          {
+            echo "runtime_dir=$runtime_dir"
+            echo "profile_dir=$profile_dir"
+            echo "state_path=$state_path"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore encrypted continuation state
+        shell: bash
+        env:
+          PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
+          STATE_PATH: ${{ steps.paths.outputs.state_path }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$PREVIOUS_RUN_ID" ]]; then
+            [[ "$PREVIOUS_RUN_ID" =~ ^[0-9]+$ ]]
+            mkdir -p "$RUNNER_TEMP/previous-state"
+            gh run download "$PREVIOUS_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name chatgpt-auto-confirm-state \
+              --dir "$RUNNER_TEMP/previous-state"
+            openssl enc -d -aes-256-cbc -pbkdf2 \
+              -pass env:CHATGPT_AUTO_CONFIRM_STATE_KEY \
+              -in "$RUNNER_TEMP/previous-state/queue-state.enc" \
+              -out "$STATE_PATH"
+          else
+            test -n "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64"
+            printf '%s' "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64" |
+              base64 --decode |
+              gzip -dc > "$STATE_PATH"
+          fi
+          chmod 600 "$STATE_PATH"
+
+      - name: Remove stale local worker bindings
+        env:
+          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
+
+      - name: Install official ChatGPT desktop app
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg \
+            --output "$RUNNER_TEMP/ChatGPT.dmg"
+          mount_dir="$RUNNER_TEMP/chatgpt-mount"
+          mkdir -p "$mount_dir"
+          hdiutil attach "$RUNNER_TEMP/ChatGPT.dmg" \
+            -nobrowse -readonly -mountpoint "$mount_dir"
+          ditto "$mount_dir/ChatGPT.app" /Applications/ChatGPT.app
+          hdiutil detach "$mount_dir"
+          xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
+
+      - name: Launch ChatGPT and restore login
+        shell: bash
+        env:
+          PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_SESSION_COOKIES_B64"
+          open -na /Applications/ChatGPT.app --args \
+            --user-data-dir="$PROFILE_DIR" \
+            --remote-debugging-port="$CHATGPT_CDP_PORT"
+          node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+
+      - name: Run persistent task queue
+        if: ${{ !inputs.smoke_only }}
+        id: controller
+        continue-on-error: true
+        env:
+          CHATGPT_AUTO_CONFIRM_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          ACTION_SESSION_SECONDS: "20100"
+          ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-actions-controller.mjs
+
+      - name: Record successful smoke verification
+        if: ${{ inputs.smoke_only }}
+        shell: bash
+        run: |
+          printf '%s\n' \
+            '{"status":"complete","reason":"chatgpt_login_smoke_verified"}' \
+            > "${{ steps.paths.outputs.runtime_dir }}/action-result.json"
+
+      - name: Prepare encrypted continuation snapshot
+        if: always()
+        shell: bash
+        env:
+          STATE_PATH: ${{ steps.paths.outputs.state_path }}
+          RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_AUTO_CONFIRM_STATE_KEY"
+          if [[ ! -s "$RESULT_PATH" ]]; then
+            printf '%s\n' '{"status":"incomplete","reason":"controller_failed_before_result"}' > "$RESULT_PATH"
+          fi
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -pass env:CHATGPT_AUTO_CONFIRM_STATE_KEY \
+            -in "$STATE_PATH" \
+            -out "${{ steps.paths.outputs.runtime_dir }}/queue-state.enc"
+
+      - name: Upload encrypted continuation state
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chatgpt-auto-confirm-state
+          if-no-files-found: error
+          retention-days: 2
+          path: |
+            ${{ steps.paths.outputs.runtime_dir }}/queue-state.enc
+            ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+
+      - name: Start the next six-hour session when incomplete
+        if: always()
+        shell: bash
+        env:
+          RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+        run: |
+          set -euo pipefail
+          status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
+          if [[ "$status" == "complete" ]]; then
+            echo "All queued tasks completed; no continuation was dispatched."
+            exit 0
+          fi
+          gh workflow run chatgpt-auto-confirm-runner.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f previous_run_id="$GITHUB_RUN_ID"
+          echo "Dispatched continuation from run $GITHUB_RUN_ID."

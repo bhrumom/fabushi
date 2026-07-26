@@ -5,6 +5,10 @@ import worker from '../worker/src/index.ts';
 import { HOME, RESOURCES } from '../worker/src/content.generated.ts';
 
 const plugin = JSON.parse(readFileSync(new URL('../.codex-plugin/plugin.json', import.meta.url), 'utf8'));
+const actionsWorkflow = readFileSync(
+  new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
+  'utf8',
+);
 
 test('home contract', () => {
   assert.equal(HOME.schema, 'mahayana.miniapp.home.v1');
@@ -13,10 +17,20 @@ test('home contract', () => {
   assert.ok(Buffer.byteLength(JSON.stringify(HOME)) <= 32768);
   assert.ok(HOME.feed.items.length <= 10);
   assert.deepEqual(HOME.quickReplies.map(item => item.action.name), [
-    'queue_status', 'prompt_templates', 'wait_for_review',
+    'queue_status', 'start_actions_runner', 'prompt_templates', 'wait_for_review',
   ]);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
+test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
+  assert.match(actionsWorkflow, /runs-on: macos-15/);
+  assert.match(actionsWorkflow, /timeout-minutes: 355/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
+  assert.match(actionsWorkflow, /queue-state\.enc/);
+  assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
+  assert.doesNotMatch(actionsWorkflow, /pull_request:/);
+  assert.doesNotMatch(actionsWorkflow, /push:/);
+});
 test('JSON-RPC errors use the top-level error member', async () => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
     method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'unknown' }),
