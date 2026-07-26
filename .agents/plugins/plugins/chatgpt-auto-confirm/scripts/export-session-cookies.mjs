@@ -16,9 +16,14 @@ await new Promise((resolve, reject) => {
 let sequence = 0;
 const call = (method, params = {}) => new Promise((resolve, reject) => {
   const id = ++sequence;
+  const timer = setTimeout(() => {
+    socket.removeEventListener('message', onMessage);
+    reject(new Error(`${method} timed out`));
+  }, 30_000);
   const onMessage = event => {
     const message = JSON.parse(String(event.data));
     if (message.id !== id) return;
+    clearTimeout(timer);
     socket.removeEventListener('message', onMessage);
     if (message.error) reject(new Error(`${method} failed`));
     else resolve(message.result || {});
