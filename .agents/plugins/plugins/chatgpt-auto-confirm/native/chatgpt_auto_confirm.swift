@@ -1470,6 +1470,12 @@ private func hiddenChatPort(_ state: PluginState) -> Int {
   return state.backgroundAppPort ?? 9324
 }
 
+private func configuredHiddenChatPort() -> Int? {
+  guard let raw = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_BACKGROUND_PORT"],
+        let port = Int(raw), port > 0 && port <= 65535 else { return nil }
+  return port
+}
+
 private func backgroundConversationURL(_ conversationId: String) -> String? {
   var components = URLComponents(string: "app://-/index.html")
   components?.queryItems = [
@@ -1719,6 +1725,14 @@ private func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = ni
     result.conversationId = routeMatch
       ? decodeURIComponent(routeMatch[1])
       : (portalConversationId || null);
+    result.messageCount = document.querySelectorAll(
+      '[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]'
+    ).length;
+    result.inputTextLength = (
+      input?.tagName === 'TEXTAREA' || input?.tagName === 'INPUT'
+        ? (input.value || '')
+        : (input?.innerText || input?.textContent || '')
+    ).trim().length;
     const expectedConversationId = \(expectedConversationId);
     result.expectedConversationId = expectedConversationId || null;
     if (!input || !isChatSurface || workComposer) {
@@ -1966,9 +1980,6 @@ private func prepareNewChatTarget(
       timeout: timeout
     )
     if baseline?["ok"] as? Bool == true { break }
-    if let data = try? JSONSerialization.data(withJSONObject: baseline ?? [:], options: []) {
-      try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_baseline_error.json"))
-    }
     if baseline?["error"] as? String == "not_chat_surface" {
       _ = cdpValue(
         port: port,
@@ -1982,6 +1993,8 @@ private func prepareNewChatTarget(
   guard let baseline,
         baseline["ok"] as? Bool == true else { return nil }
   let previousConversationId = baseline["conversationId"] as? String
+  let baselineWasBlank = (baseline["messageCount"] as? Int ?? 1) == 0 &&
+    (baseline["inputTextLength"] as? Int ?? 1) == 0
   guard let clicked = cdpValue(
     port: port,
     targetId: targetId,
@@ -1990,7 +2003,9 @@ private func prepareNewChatTarget(
   ), clicked["ok"] as? Bool == true else { return nil }
   let previous = clicked["previousConversationId"] as? String ?? previousConversationId
 
-  for _ in 0..<40 {
+  var stableConversationId: String?
+  var stableSamples = 0
+  for _ in 0..<80 {
     let prepared = cdpValue(
       port: port,
       targetId: targetId,
@@ -2002,20 +2017,33 @@ private func prepareNewChatTarget(
       let changed = (previous?.isEmpty != false && !conversationId.isEmpty) || 
                     (previous?.isEmpty == false && conversationId != previous)
       let blankConversation = allowBlankConversationReuse &&
-        (cdpValue(
-          port: port,
-          targetId: targetId,
-          expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
-          timeout: timeout
-        )?["messageCount"] as? Int ?? 1) == 0
-      if changed || (blankConversation && previous?.isEmpty != false) {
+        baselineWasBlank &&
+        (prepared?["messageCount"] as? Int ?? 1) == 0
+      // The desktop renderer intentionally keeps a virtualized fallback turn
+      // from the previous Chat in the DOM after switching. The portal id and
+      // composer are authoritative; requiring zero message nodes would reject
+      // a correctly created blank Chat forever.
+      let composerReady = (prepared?["inputTextLength"] as? Int ?? 1) == 0
+      let candidateReady = composerReady &&
+        (changed || blankConversation)
+      if candidateReady && stableConversationId == conversationId {
+        stableSamples += 1
+      } else if candidateReady {
+        stableConversationId = conversationId
+        stableSamples = 1
+      } else {
+        stableConversationId = nil
+        stableSamples = 0
+      }
+      // React updates the portal conversation id before it finishes replacing
+      // the old message tree and composer. Require several identical blank
+      // observations so task B cannot type into task A's transitioning view.
+      if stableSamples >= 3 {
         var result = prepared ?? [:]
         result["newChatClicked"] = true
+        result["stableSamples"] = stableSamples
         return result
       }
-    }
-    if let data = try? JSONSerialization.data(withJSONObject: prepared ?? [:], options: []) {
-      try? data.write(to: URL(fileURLWithPath: "/Users/gloriachan/Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/prepare_prepared_error.json"))
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
@@ -3100,7 +3128,12 @@ private func startAutomationReview(
   guard let sendResult = cdpValue(
     port: port,
     targetId: targetId,
-    expression: sendMessageJS(message: outbound, connector: task.connector, newChat: false),
+    expression: sendMessageJS(
+      message: outbound,
+      connector: task.connector,
+      newChat: false,
+      expectedConversationId: normalizedConversationId(prepared["conversationId"] as? String)
+    ),
     timeout: 35.0
   ), sendResult["ok"] as? Bool == true else {
     return false
@@ -3273,6 +3306,7 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "taskId": task.id,
       "port": task.workerPort as Any,
       "targetId": task.workerTargetId as Any,
+      "conversationId": task.conversationId as Any,
       "runtimeState": runtimeState.map(queueTargetRuntimeStateName) ?? "not-started",
       "visibilityVerified": runtimeState == .hidden,
     ] as [String: Any]
@@ -3286,7 +3320,7 @@ private func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "maxConcurrent": requestedMaxConcurrent,
     "effectiveMaxConcurrent": requestedMaxConcurrent,
     "requestedMaxConcurrent": requestedMaxConcurrent,
-    "executionMode": "single-authenticated-process-multi-hidden-window-parallel",
+    "executionMode": "single-authenticated-process-multi-conversation-parallel",
     "targetMode": state.queueWorkerMode ?? "not-started",
     "network": [
       "status": state.queueNetworkStatus ?? "unknown",
@@ -3339,6 +3373,7 @@ private func startQueueWatcher(_ state: inout PluginState) throws {
 }
 
 private let backgroundWindowQueueWorkerMode = "single-process-hidden-prewarm"
+private let sharedConversationQueueWorkerMode = "single-process-hidden-chat-conversations"
 private let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 
 private enum QueueTargetRuntimeState {
@@ -3351,6 +3386,7 @@ private enum QueueTargetRuntimeState {
 
 private func queueUsesBackgroundWindow(_ state: PluginState) -> Bool {
   state.queueWorkerMode == backgroundWindowQueueWorkerMode
+    || state.queueWorkerMode == sharedConversationQueueWorkerMode
 }
 
 private func queueTargetRuntimeState(
@@ -3446,7 +3482,10 @@ private func sharedChatController(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
   let general = generalApprovalStateForQueue()
-  let port = general?.backgroundAppPort ?? state.backgroundAppPort ?? hiddenChatPort(state)
+  let port = configuredHiddenChatPort()
+    ?? general?.backgroundAppPort
+    ?? state.backgroundAppPort
+    ?? hiddenChatPort(state)
   let profilePath = general?.backgroundProfilePath
     ?? state.backgroundProfilePath
     ?? hiddenChatProfilePath()
@@ -3699,10 +3738,10 @@ private func openBackgroundQueueWindow(
 private func createQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // General confirmation and the task queue share one authenticated ChatGPT
-  // application process. The queue owns a different BrowserWindow created by
-  // ChatGPT's show:false prewarm path, so it never appears, focuses, or changes
-  // the primary window where the user clicks New Chat or types a prompt.
+  // Reuse the plugin-owned hidden Chat renderer. Model responses continue on
+  // ChatGPT's service after the renderer moves to another conversation, so
+  // several tasks can run concurrently while page dispatch and monitoring are
+  // serialized through this one authenticated renderer.
   if let port = state.queueWorkerPort,
      let targetId = state.queueWorkerTargetId,
      queueUsesBackgroundWindow(state),
@@ -3718,47 +3757,81 @@ private func createQueueWorkerTarget(
   state.queueWorkerProfilePath = nil
   state.queueWorkerMode = nil
 
-  guard let controller = sharedChatController(&state) else { return nil }
-  var openedTargetId: String?
-  // Electron occasionally leaves a show:false renderer at its startup shell
-  // even after lifecycle activation. Discard that page and retry the official
-  // prewarm path; retries stay in the same process and never touch the primary
-  // window.
-  for _ in 0..<3 {
-    if let candidate = openBackgroundQueueWindow(
-      port: controller.port,
-      controllerTargetId: controller.targetId
-    ), candidate != controller.targetId {
-      openedTargetId = candidate
-      break
-    }
-    Thread.sleep(forTimeInterval: 0.5)
+  let general = generalApprovalStateForQueue()
+  let port = configuredHiddenChatPort()
+    ?? general?.backgroundAppPort
+    ?? state.backgroundAppPort
+    ?? hiddenChatPort(state)
+  let profilePath = general?.backgroundProfilePath
+    ?? state.backgroundProfilePath
+    ?? hiddenChatProfilePath()
+  let preferredTargetIds = [
+    general?.backgroundChatTargetId,
+    state.backgroundChatTargetId,
+  ].compactMap { $0 }
+  let targets = CDPClient.fetchTargets(portOverride: port).sorted { lhs, rhs in
+    let lhsId = lhs["id"] as? String ?? ""
+    let rhsId = rhs["id"] as? String ?? ""
+    return (preferredTargetIds.firstIndex(of: lhsId) ?? Int.max)
+      < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
   }
-  guard let targetId = openedTargetId else { return nil }
-  state.queueWorkerPort = controller.port
+  for target in targets {
+    guard target["type"] as? String == "page",
+          (target["url"] as? String ?? "") == "app://-/index.html",
+          let targetId = target["id"] as? String,
+          queueTargetRuntimeState(
+            port: port,
+            targetId: targetId,
+            refreshLifecycle: true
+          ) == .hidden else { continue }
+    let prepared = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: prepareBackgroundChatJS(newChat: false),
+      timeout: 5.0
+    )
+    guard prepared?["ok"] as? Bool == true else { continue }
+    state.backgroundAppPort = port
+    state.backgroundChatTargetId = targetId
+    state.backgroundProfilePath = profilePath
+    state.queueWorkerPort = port
+    state.queueWorkerTargetId = targetId
+    state.queueWorkerProfilePath = profilePath
+    state.queueWorkerMode = sharedConversationQueueWorkerMode
+    return (port, targetId, profilePath)
+  }
+
+  guard let prepared = ensureHiddenChatTarget(&state),
+        prepared["ok"] as? Bool == true,
+        let preparedPort = prepared["port"] as? Int,
+        let targetId = prepared["targetId"] as? String,
+        queueTargetRuntimeState(
+          port: preparedPort,
+          targetId: targetId,
+          refreshLifecycle: true
+        ) == .hidden else {
+    return nil
+  }
+  let preparedProfilePath = prepared["profilePath"] as? String ?? profilePath
+  state.queueWorkerPort = preparedPort
   state.queueWorkerTargetId = targetId
-  state.queueWorkerProfilePath = controller.profilePath
-  state.queueWorkerMode = backgroundWindowQueueWorkerMode
-  return (controller.port, targetId, controller.profilePath)
+  state.queueWorkerProfilePath = preparedProfilePath
+  state.queueWorkerMode = sharedConversationQueueWorkerMode
+  return (preparedPort, targetId, preparedProfilePath)
 }
 
 private func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // A task keeps its own target id. Clear only the reusable prewarm pointer so
-  // the next runnable task receives another hidden BrowserWindow in the same
-  // authenticated ChatGPT process.
-  state.queueWorkerPort = nil
-  state.queueWorkerTargetId = nil
-  state.queueWorkerProfilePath = nil
-  state.queueWorkerMode = nil
+  // Tasks own different conversation ids, not different Electron renderers.
+  // The single hidden renderer dispatches and samples them in short turns.
   return createQueueWorkerTarget(&state)
 }
 
 private func stopQueueWorker(_ state: inout PluginState) {
   // Close only the hidden queue window. The primary window and the shared
   // ChatGPT process remain available to the user and the general confirmer.
-  if queueUsesBackgroundWindow(state) {
+  if state.queueWorkerMode == backgroundWindowQueueWorkerMode {
     if let targetId = state.queueWorkerTargetId {
       _ = CDPClient.closeTarget(targetId, portOverride: state.queueWorkerPort)
     }
@@ -3776,9 +3849,8 @@ private func startAutomationTask(
   _ task: inout AutomationTask,
   state: inout PluginState
 ) throws {
-  // Every running task owns a separate hidden renderer inside the same
-  // authenticated ChatGPT process. This keeps composers isolated while
-  // allowing independent tasks to make progress concurrently.
+  // Page actions are serialized through one hidden renderer, while each task
+  // owns a distinct Chat conversation whose response runs independently.
   var prepared: [String: Any]?
   var port: Int?
   var targetId: String?
@@ -3814,7 +3886,12 @@ private func startAutomationTask(
   guard let sendResult = cdpValue(
     port: port,
     targetId: targetId,
-    expression: sendMessageJS(message: outbound, connector: task.connector, newChat: false),
+    expression: sendMessageJS(
+      message: outbound,
+      connector: task.connector,
+      newChat: false,
+      expectedConversationId: normalizedConversationId(prepared["conversationId"] as? String)
+    ),
     timeout: 65.0
   ) else {
     throw NSError(
@@ -3912,7 +3989,7 @@ private func terminateDedicatedChatProcess(profilePath: String) {
   try? FileManager.default.removeItem(atPath: profilePath)
 }
 
-private func stopAutomationWorker(_ task: AutomationTask) {
+private func stopAutomationWorker(_ task: AutomationTask, state: PluginState) {
   if let statePath = task.workerStatePath,
      let data = FileManager.default.contents(atPath: statePath),
      let workerState = try? decoder.decode(PluginState.self, from: data),
@@ -3920,7 +3997,8 @@ private func stopAutomationWorker(_ task: AutomationTask) {
      let pid = workerState.watcherPid {
     kill(pid, SIGTERM)
   }
-  if let targetId = task.workerTargetId {
+  if state.queueWorkerMode != sharedConversationQueueWorkerMode,
+     let targetId = task.workerTargetId {
     _ = CDPClient.closeTarget(targetId, portOverride: task.workerPort)
   }
   if let profilePath = task.workerProfilePath {
@@ -3932,18 +4010,18 @@ private func closeDedicatedAutomationTarget(
   _ task: AutomationTask,
   state: PluginState
 ) {
-  // Parallel queue targets are task-owned. Closing one must never navigate,
-  // focus, or stop a sibling task or the user's visible ChatGPT window.
-  if let targetId = task.workerTargetId {
+  // Multi-conversation tasks share the plugin-owned hidden renderer. A task
+  // may stop or replace only its conversation binding, never that renderer.
+  if state.queueWorkerMode != sharedConversationQueueWorkerMode,
+     let targetId = task.workerTargetId {
     _ = CDPClient.closeTarget(targetId, portOverride: task.workerPort)
   }
-  _ = state
 }
 
-private func finishAutomationTask(_ task: inout AutomationTask) {
+private func finishAutomationTask(_ task: inout AutomationTask, state: PluginState) {
   let now = isoFormatter.string(from: Date())
   defer {
-    stopAutomationWorker(task)
+    stopAutomationWorker(task, state: state)
     task.workerPid = nil
     task.updatedAt = now
     task.finishedAt = task.status == "queued" ? nil : now
@@ -4557,7 +4635,7 @@ private func runQueueIteration(_ state: inout PluginState) {
   for index in tasks.indices where tasks[index].status == "running" {
     if tasks[index].workerPid != nil {
       if watcherIsAlive(tasks[index].workerPid) { continue }
-      finishAutomationTask(&tasks[index])
+      finishAutomationTask(&tasks[index], state: state)
     } else {
       monitorAutomationTask(&tasks[index], state: &state)
     }
@@ -4587,9 +4665,8 @@ private func runQueueIteration(_ state: inout PluginState) {
     return
   }
 
-  // Each running task owns a separate hidden BrowserWindow. Dependencies and
-  // resource locks still serialize conflicting work, while unrelated tasks
-  // may run in parallel inside the authenticated ChatGPT process.
+  // The renderer serializes page actions, but each task has a different Chat
+  // conversation. Once sent, ChatGPT runs those responses independently.
   let maxConcurrent = min(4, max(1, state.queueMaxConcurrent ?? 2))
   var runningCount = tasks.filter { $0.status == "running" }.count
   var heldLocks = Set(tasks.filter { $0.status == "running" }.flatMap(\.resourceLocks))
@@ -5654,7 +5731,7 @@ case "queue_cancel":
       if watcherIsAlive(tasks[index].workerPid), let pid = tasks[index].workerPid {
         kill(pid, SIGTERM)
       }
-      stopAutomationWorker(tasks[index])
+      stopAutomationWorker(tasks[index], state: state)
       tasks[index].status = "cancelled"
       tasks[index].workerPid = nil
       tasks[index].updatedAt = isoFormatter.string(from: Date())
@@ -6572,7 +6649,12 @@ private func verifySentMessageJS(message: String) -> String {
   """
 }
 
-private func sendMessageJS(message: String, connector: String?, newChat: Bool = false) -> String {
+private func sendMessageJS(
+  message: String,
+  connector: String?,
+  newChat: Bool = false,
+  expectedConversationId: String? = nil
+) -> String {
   let escapedMessage = jsEscape(message)
   let connectorPart: String
   if let connector, !connector.isEmpty {
@@ -6581,11 +6663,13 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
     connectorPart = "null"
   }
   let newChatBool = newChat ? "true" : "false"
+  let expectedConversation = jsonStringLiteral(expectedConversationId ?? "")
   return """
   (async () => {
     const connector = \(connectorPart);
     const message = "\(escapedMessage)";
     const newChat = \(newChatBool);
+    const expectedConversationId = \(expectedConversation);
     const result = {
       ok: false, sent: false, connectorAdded: false, error: null,
       url: window.location.href || '', backgroundOnly: true,
@@ -6635,6 +6719,16 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
       const web = [...document.querySelectorAll('[data-message-author-role="user"]')];
       const app = [...document.querySelectorAll('[data-user-message-bubble]')];
       return web.length > 0 ? web : app;
+    }
+
+    function currentConversationId() {
+      const raw = document.querySelector('[data-above-composer-conversation-id]')
+        ?.getAttribute('data-above-composer-conversation-id') || '';
+      return raw.startsWith('chatgpt:') ? raw.slice('chatgpt:'.length) : raw;
+    }
+
+    function conversationIsExpected() {
+      return !expectedConversationId || currentConversationId() === expectedConversationId;
     }
 
     function userMessageIdentity(element, index) {
@@ -6904,6 +6998,12 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
       });
     }
     record('chat_surface', true, { surface: 'chat', workerUsed: false });
+    if (!conversationIsExpected()) {
+      return fail('conversation_guard', 'conversation_changed_before_send', {
+        expectedConversationId,
+        actualConversationId: currentConversationId() || null
+      });
+    }
 
     if (newChat) {
       const newChatButton = [...document.querySelectorAll('button')].find(button => {
@@ -7027,29 +7127,54 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
       result.connectorConfirmed = true;
       record('connector_confirmation', true, { connector, evidenceCount: evidence.length });
     } else {
-      result.connectorConfirmed = true;
-      record('connector_confirmation', true, { connectorRequired: false });
+    result.connectorConfirmed = true;
+    record('connector_confirmation', true, { connectorRequired: false });
     }
 
     // Step 2: Type the message
-    const ta2 = findTextarea();
-    if (!ta2) {
-      return fail('message_input', 'input_lost_after_connector');
+    let ta2 = null;
+    let actualInput = '';
+    let inputConfirmed = false;
+    for (let attempt = 0; attempt < 8 && !inputConfirmed; attempt += 1) {
+      if (!conversationIsExpected()) {
+        return fail('conversation_guard', 'conversation_changed_during_send', {
+          expectedConversationId,
+          actualConversationId: currentConversationId() || null,
+          inputAttempt: attempt
+        });
+      }
+      // React can replace the contenteditable after a new-chat or connector
+      // transition. Reacquire it on every attempt instead of writing through
+      // a detached node.
+      ta2 = findTextarea();
+      if (!ta2 || !document.contains(ta2)) {
+        await sleep(250);
+        continue;
+      }
+      const before = normalize(inputText(ta2));
+      const connectorStillSelected = !connector ||
+        before.includes(connector.toLowerCase()) ||
+        connectorEvidence(connector.toLowerCase()).length > 0;
+      if (!(before.endsWith(normalize(message)) && connectorStillSelected)) {
+        ta2.focus();
+        if (connector && attempt === 0) {
+          appendTextPreservingConnector(ta2, message);
+        } else {
+          replaceText(ta2, message);
+        }
+      }
+      await sleep(250);
+      const currentInput = findTextarea();
+      if (!currentInput || !document.contains(currentInput)) continue;
+      ta2 = currentInput;
+      actualInput = inputText(ta2);
+      const normalizedActualInput = normalize(actualInput);
+      inputConfirmed = connector
+        ? normalizedActualInput.endsWith(normalize(message))
+          && (normalizedActualInput.includes(connector.toLowerCase())
+            || connectorEvidence(connector.toLowerCase()).length > 0)
+        : normalizedActualInput === normalize(message);
     }
-    ta2.focus();
-    if (connector) {
-      appendTextPreservingConnector(ta2, message);
-    } else {
-      replaceText(ta2, message);
-    }
-    await sleep(350);
-    const actualInput = inputText(ta2);
-    const normalizedActualInput = normalize(actualInput);
-    const inputConfirmed = connector
-      ? normalizedActualInput.endsWith(normalize(message))
-        && (normalizedActualInput.includes(connector.toLowerCase())
-          || connectorEvidence(connector.toLowerCase()).length > 0)
-      : normalizedActualInput === normalize(message);
     if (!inputConfirmed) {
       return fail('message_input', 'message_input_not_confirmed', {
         expectedLength: message.length, actualLength: actualInput.length,
@@ -7061,6 +7186,12 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
       expectedLength: message.length, actualLength: actualInput.length,
       replacedExistingDraft: true
     });
+    if (!conversationIsExpected()) {
+      return fail('conversation_guard', 'conversation_changed_before_dispatch', {
+        expectedConversationId,
+        actualConversationId: currentConversationId() || null
+      });
+    }
 
     // Step 3: Click send
     let sendBtn = null;
