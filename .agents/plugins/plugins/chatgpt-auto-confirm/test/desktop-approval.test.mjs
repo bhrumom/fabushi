@@ -211,10 +211,20 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.doesNotMatch(nativeSource, /pickerEvidence: "Bypassed"/);
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);
-  assert.match(nativeSource, /single-authenticated-process-multi-hidden-window-parallel/);
+  assert.match(nativeSource, /single-authenticated-process-multi-conversation-parallel/);
   assert.match(nativeSource,
     /let maxConcurrent = min\(4, max\(1, state\.queueMaxConcurrent \?\? 2\)\)/);
   assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
+  assert.match(nativeSource, /single-process-hidden-chat-conversations/);
+  assert.match(nativeSource, /different conversation ids, not different Electron renderers/);
+  assert.match(nativeSource, /"conversationId": task\.conversationId/);
+  assert.match(nativeSource, /stableSamples >= 3/);
+  assert.match(nativeSource, /conversation_changed_before_send/);
+  assert.match(nativeSource, /conversation_changed_during_send/);
+  assert.match(nativeSource, /conversation_changed_before_dispatch/);
+  assert.match(nativeSource,
+    /state\.queueWorkerMode != sharedConversationQueueWorkerMode,[\s\S]*CDPClient\.closeTarget/);
+  assert.match(nativeSource, /configuredHiddenChatPort\(\)/);
   assert.match(nativeSource, /"activeWorkers": activeWorkers/);
   assert.match(nativeSource, /single-process-hidden-prewarm/);
   assert.match(nativeSource, /isolated-dedicated-process/);
@@ -238,9 +248,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /document\.dispatchEvent\(new Event\('visibilitychange'\)\)/);
   assert.match(nativeSource, /window\.dispatchEvent\(new Event\('focus'\)\)/);
   assert.match(nativeSource, /document\.visibilityState remains hidden/);
-  assert.match(nativeSource, /for _ in 0\.\.<3/);
-  assert.match(nativeSource, /Discard that page and retry the official/);
-  assert.match(nativeSource, /ChatGPT's show:false prewarm path/);
+  assert.match(nativeSource, /Model responses continue on/);
+  assert.match(nativeSource, /serialized through this one authenticated renderer/);
   assert.match(nativeSource, /visibility == "hidden"/);
   assert.match(nativeSource, /queueTargetIsHidden/);
   assert.match(nativeSource, /queue_worker_visibility_not_hidden/);
