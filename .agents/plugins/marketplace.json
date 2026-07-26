@@ -13,7 +13,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/global-dharma"
+        "path": "./plugins/global-dharma"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -26,7 +26,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/faliu-flashcards"
+        "path": "./plugins/faliu-flashcards"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -39,7 +39,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/platform-publish"
+        "path": "./plugins/platform-publish"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -52,7 +52,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/hermes-installer"
+        "path": "./plugins/hermes-installer"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -65,7 +65,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/bot-father"
+        "path": "./plugins/bot-father"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -78,7 +78,7 @@
       "version": "1.0.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/mahayana-assistant"
+        "path": "./plugins/mahayana-assistant"
       },
       "policy": {
         "installation": "INSTALLED_BY_DEFAULT",
@@ -91,7 +91,7 @@
       "version": "1.0.0+codex.20260723053507",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/chatgpt-auto-confirm"
+        "path": "./plugins/chatgpt-auto-confirm"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -104,13 +104,26 @@
       "version": "0.1.0",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/computer-cleaner"
+        "path": "./plugins/computer-cleaner"
       },
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools"
+    },
+    {
+      "name": "parallel-queue-probe",
+      "version": "0.1.0",
+      "source": {
+        "source": "local",
+        "path": "./plugins/parallel-queue-probe"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }

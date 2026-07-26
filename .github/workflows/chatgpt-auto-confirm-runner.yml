@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      parallel_queue_smoke:
+        description: Dynamically enqueue two tasks and require real hidden-Chat overlap
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: write
@@ -31,6 +36,7 @@ jobs:
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
+      CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64 }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout trusted runner implementation
@@ -86,6 +92,11 @@ jobs:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
 
+      - name: Import dynamic parallel task inbox
+        env:
+          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/import-actions-task-inbox.mjs
+
       - name: Restore ChatGPT login credentials
         shell: bash
         run: |
@@ -122,8 +133,16 @@ jobs:
           login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status 2>&1)
           grep -q 'Logged in using ChatGPT' <<< "$login_status"
 
+      - name: Verify dynamic parallel task queue
+        if: ${{ inputs.parallel_queue_smoke }}
+        env:
+          CHATGPT_AUTO_CONFIRM_PARALLEL_STATE: ${{ steps.paths.outputs.runtime_dir }}/parallel-smoke-state.json
+          CHATGPT_AUTO_CONFIRM_PARALLEL_EVIDENCE: ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
+          CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/verify-parallel-actions-queue.mjs
+
       - name: Run persistent task queue
-        if: ${{ !inputs.smoke_only }}
+        if: ${{ !inputs.smoke_only && !inputs.parallel_queue_smoke }}
         id: controller
         continue-on-error: true
         env:
@@ -134,12 +153,14 @@ jobs:
           ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-actions-controller.mjs
 
-      - name: Record successful smoke verification
-        if: ${{ inputs.smoke_only }}
+      - name: Record successful hosted verification
+        if: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
         shell: bash
+        env:
+          VERIFICATION_REASON: ${{ inputs.parallel_queue_smoke && 'dynamic_parallel_queue_verified' || 'chatgpt_login_smoke_verified' }}
         run: |
           printf '%s\n' \
-            '{"status":"complete","reason":"chatgpt_login_smoke_verified"}' \
+            "{\"status\":\"complete\",\"reason\":\"$VERIFICATION_REASON\"}" \
             > "${{ steps.paths.outputs.runtime_dir }}/action-result.json"
 
       - name: Prepare encrypted continuation snapshot
@@ -169,6 +190,7 @@ jobs:
           path: |
             ${{ steps.paths.outputs.runtime_dir }}/queue-state.enc
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+            ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
 
       - name: Start the next six-hour session when incomplete
         if: always()
