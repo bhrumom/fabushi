@@ -123,7 +123,7 @@ prepare_openclaw_for_macos_app_store() {
       continue
     fi
 
-    options=(--force --sign "$identity")
+    options=(--force --timestamp --options runtime --sign "$identity")
     if [ -x "$file" ]; then
       options+=(--entitlements "$entitlements")
       executable_count=$((executable_count + 1))
@@ -186,9 +186,9 @@ prepare_mahayana_for_macos_app_store() {
     return 1
   fi
 
-  codesign --force --sign "$identity" "$runtime"
+  codesign --force --timestamp --options runtime --sign "$identity" "$runtime"
   codesign --verify --strict --verbose=2 "$runtime"
-  codesign --force --sign "$identity" --entitlements "$entitlements" "$cli"
+  codesign --force --timestamp --options runtime --sign "$identity" --entitlements "$entitlements" "$cli"
   codesign --verify --strict --verbose=2 "$cli"
   {
     echo "cli=$cli"
