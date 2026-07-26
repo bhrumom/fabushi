@@ -111,7 +111,19 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          CHATGPT_SESSION_MODE=seed \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          osascript -e 'tell application "ChatGPT" to quit' || true
+          for _ in {1..20}; do
+            pgrep -x ChatGPT >/dev/null || break
+            sleep 1
+          done
+          pkill -x ChatGPT || true
+          open -na /Applications/ChatGPT.app --args \
+            --user-data-dir="$PROFILE_DIR" \
+            --remote-debugging-port="$CHATGPT_CDP_PORT"
+          CHATGPT_SESSION_MODE=verify \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
 
       - name: Run persistent task queue
         if: ${{ !inputs.smoke_only }}
