@@ -1,0 +1,19 @@
+{
+  "name": "parallel-queue-probe",
+  "version": "0.1.0",
+  "description": "Verify that a Mahayana task queue dynamically starts independent tasks in parallel.",
+  "author": {
+    "name": "Fabushi"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "并行队列探针",
+    "shortDescription": "核验动态入队、真实重叠和隐藏 Chat 隔离。",
+    "longDescription": "读取 GitHub Actions 生成的并行队列证据，只有两个动态任务同时运行、目标不同且都保持隐藏时才判定通过。",
+    "developerName": "Fabushi",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "defaultPrompt": "检查这次 Action 的 parallel-queue-evidence.json 是否满足并行验收标准。"
+  },
+  "mcpServers": "./.mcp.json"
+}

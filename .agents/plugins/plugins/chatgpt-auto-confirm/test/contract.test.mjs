@@ -28,6 +28,11 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
+  assert.match(actionsWorkflow, /parallel_queue_smoke/);
+  assert.match(actionsWorkflow, /verify-parallel-actions-queue\.mjs/);
+  assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64/);
+  assert.match(actionsWorkflow, /import-actions-task-inbox\.mjs/);
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
 });

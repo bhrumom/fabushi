@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "cli": {
+      "executable": "./scripts/parallel-queue-probe.mjs"
+    }
+  },
+  "commands": [
+    {
+      "name": "verify",
+      "tool": "verify_parallel_queue"
+    }
+  ]
+}
