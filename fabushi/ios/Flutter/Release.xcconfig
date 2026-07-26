@@ -1,6 +1,12 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
 
+// Xcode app targets can otherwise pass -no_exported_symbols for optimized
+// executables. Keep the process ABI global so Dart DynamicLibrary.process()
+// can resolve the embedded Rust runtime after App Store export stripping.
+LD_EXPORT_SYMBOLS = YES
+GCC_SYMBOLS_PRIVATE_EXTERN = NO
+
 // Dart FFI resolves the statically linked Mahayana ABI through
 // DynamicLibrary.process(), so release exports must retain global C symbols.
 OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -Wl,-u,_mahayana_runtime_force_link -Wl,-u,_mahayana_runtime_create -Wl,-u,_mahayana_runtime_execute -Wl,-u,_mahayana_runtime_receive -Wl,-u,_mahayana_runtime_interrupt -Wl,-u,_mahayana_runtime_resolve_approval -Wl,-u,_mahayana_runtime_close -Wl,-u,_mahayana_runtime_free_string -Wl,-u,_mahayana_product_execute -Wl,-u,_fabushi_mahayana_product_execute
