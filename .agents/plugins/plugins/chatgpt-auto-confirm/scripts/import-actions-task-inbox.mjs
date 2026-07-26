@@ -1,11 +1,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const statePath = process.env.CHATGPT_AUTO_CONFIRM_QUEUE_STATE;
-const encoded = process.env.CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64?.trim();
+const inboxPath = process.env.CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE?.trim();
 if (!statePath) throw new Error('CHATGPT_AUTO_CONFIRM_QUEUE_STATE is required');
-if (!encoded) process.exit(0);
+if (!inboxPath) throw new Error('CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE is required');
 
-const inbox = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+const inbox = JSON.parse(readFileSync(inboxPath, 'utf8'));
 const incoming = Array.isArray(inbox.tasks) ? inbox.tasks : [];
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
 const tasks = Array.isArray(state.automationTasks) ? state.automationTasks : [];
