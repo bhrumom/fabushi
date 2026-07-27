@@ -353,7 +353,7 @@ func openBackgroundQueueWindow(
   // service is still the supported way to obtain a show:false BrowserWindow,
   // but hosted accounts without that gate must mount the normal authenticated
   // app root in the same hidden window before selecting Chat.
-  let hiddenAppURL = "app://-/index.html?initialRoute=%2F"
+  let hiddenAppURL = "app://-/index.html?initialRoute=%2Fwork"
   guard
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
@@ -386,7 +386,37 @@ func openBackgroundQueueWindow(
     let ready = cdpValue(
       port: port,
       targetId: targetId,
-      expression: "(() => ({bridge: !!window.electronBridge, ready: document.readyState, scripts: document.scripts.length, buttons: document.querySelectorAll('button').length, inputs: document.querySelectorAll('textarea, [contenteditable=\"true\"]').length, text: (document.body?.innerText || '').length, html: (document.body?.innerHTML || '').length, visibility: document.visibilityState, href: location.href}))()",
+      expression: """
+      (() => {
+        const redact = value => (value || '')
+          .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, '[email]')
+          .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '[id]')
+          .replace(/\\s+/g, ' ')
+          .trim();
+        const buttonLabels = [...document.querySelectorAll('button, a, [role="button"]')]
+          .flatMap(node => [
+            node.innerText,
+            node.getAttribute('aria-label'),
+            node.getAttribute('title')
+          ])
+          .map(redact)
+          .filter(Boolean)
+          .slice(0, 12);
+        return {
+          bridge: !!window.electronBridge,
+          ready: document.readyState,
+          scripts: document.scripts.length,
+          buttons: document.querySelectorAll('button').length,
+          buttonLabels,
+          inputs: document.querySelectorAll('textarea, [contenteditable="true"]').length,
+          text: (document.body?.innerText || '').length,
+          safeText: redact(document.body?.innerText).slice(0, 800),
+          html: (document.body?.innerHTML || '').length,
+          visibility: document.visibilityState,
+          href: location.href
+        };
+      })()
+      """,
       timeout: 3.0
     )
     lastReady = ready
@@ -400,7 +430,7 @@ func openBackgroundQueueWindow(
        textLength > 100,
        visibility == "hidden",
        href?.hasPrefix("app://-/index.html") == true,
-       href?.contains("initialRoute=%2F") == true {
+       href?.contains("initialRoute=%2Fwork") == true {
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
@@ -415,7 +445,9 @@ func openBackgroundQueueWindow(
     "text=\((lastReady?["text"] as? NSNumber)?.intValue ?? -1)",
     "html=\((lastReady?["html"] as? NSNumber)?.intValue ?? -1)",
     "visibility=\(lastReady?["visibility"] as? String ?? "none")",
-    "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2F"))",
+    "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2Fwork"))",
+    "labels=\((lastReady?["buttonLabels"] as? [String] ?? []).joined(separator: "|"))",
+    "safeText=\(lastReady?["safeText"] as? String ?? "none")",
   ].joined(separator: ":")
   _ = CDPClient.closeTarget(targetId, portOverride: port)
   return nil
