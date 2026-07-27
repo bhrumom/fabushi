@@ -287,7 +287,7 @@ func sendMessageJS(
       )].filter(button => {
         if (!visible(button) || button === send) return false;
         const label = normalize(button.getAttribute('aria-label')).toLowerCase();
-        return label === '选择 chatgpt 模型' || label === 'select chatgpt model';
+        return label.includes('chatgpt 模型') || /select chatgpt model/i.test(label);
       }).sort((left, right) => {
         const leftInComposer = composer?.contains(left) ? 0 : 1;
         const rightInComposer = composer?.contains(right) ? 0 : 1;
