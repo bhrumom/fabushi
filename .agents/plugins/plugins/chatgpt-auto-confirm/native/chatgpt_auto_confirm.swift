@@ -2904,7 +2904,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v61"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v62"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3776,13 +3776,15 @@ private func openBackgroundQueueWindow(
   // A show:false renderer is intentionally deprioritized by Electron. On
   // current ChatGPT builds the full Chat surface can take more than 30 seconds
   // to mount even though its document and preload bridge are already ready.
+  var lastReady: [String: Any]?
   for _ in 0..<600 {
     let ready = cdpValue(
       port: port,
       targetId: targetId,
-      expression: "(() => ({bridge: !!window.electronBridge, buttons: document.querySelectorAll('button').length, text: (document.body?.innerText || '').length, visibility: document.visibilityState, href: location.href}))()",
+      expression: "(() => ({bridge: !!window.electronBridge, ready: document.readyState, scripts: document.scripts.length, buttons: document.querySelectorAll('button').length, inputs: document.querySelectorAll('textarea, [contenteditable=\"true\"]').length, text: (document.body?.innerText || '').length, html: (document.body?.innerHTML || '').length, visibility: document.visibilityState, href: location.href}))()",
       timeout: 3.0
     )
+    lastReady = ready
     let bridge = (ready?["bridge"] as? NSNumber)?.boolValue ?? false
     let buttons = (ready?["buttons"] as? NSNumber)?.intValue ?? 0
     let textLength = (ready?["text"] as? NSNumber)?.intValue ?? 0
@@ -3798,7 +3800,18 @@ private func openBackgroundQueueWindow(
     }
     Thread.sleep(forTimeInterval: 0.1)
   }
-  failure = "prewarm_hidden_chat_surface_timeout"
+  failure = [
+    "prewarm_hidden_chat_surface_timeout",
+    "bridge=\((lastReady?["bridge"] as? NSNumber)?.boolValue ?? false)",
+    "ready=\(lastReady?["ready"] as? String ?? "none")",
+    "scripts=\((lastReady?["scripts"] as? NSNumber)?.intValue ?? -1)",
+    "buttons=\((lastReady?["buttons"] as? NSNumber)?.intValue ?? -1)",
+    "inputs=\((lastReady?["inputs"] as? NSNumber)?.intValue ?? -1)",
+    "text=\((lastReady?["text"] as? NSNumber)?.intValue ?? -1)",
+    "html=\((lastReady?["html"] as? NSNumber)?.intValue ?? -1)",
+    "visibility=\(lastReady?["visibility"] as? String ?? "none")",
+    "routeMatches=\((lastReady?["href"] as? String ?? "").contains(conversationId))",
+  ].joined(separator: ":")
   _ = CDPClient.closeTarget(targetId, portOverride: port)
   return nil
 }
