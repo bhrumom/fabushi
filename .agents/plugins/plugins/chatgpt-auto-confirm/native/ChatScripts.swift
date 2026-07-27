@@ -282,10 +282,17 @@ func sendMessageJS(
       const send = findSendButton();
       const scope = quickChatRoot() || document;
 
-      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"]');
+      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
       if (testIdButton && visible(testIdButton)) return testIdButton;
 
       const composer = input?.closest('form') || input?.parentElement?.parentElement;
+
+      // Search in composer area first for aria-haspopup buttons (strong signal = dropdown trigger)
+      const popupButton = [...(composer || document).querySelectorAll(
+        '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
+      )].find(button => visible(button) && button !== send);
+      if (popupButton) return popupButton;
+
       const explicit = [...scope.querySelectorAll(
         'button[aria-label], [role="button"][aria-label]'
       )].filter(button => {
@@ -295,7 +302,10 @@ func sendMessageJS(
           || /select chatgpt model/i.test(label)
           || label.includes('model selector')
           || label.includes('choose model')
-          || label.includes('选择模型');
+          || label.includes('选择模型')
+          || label.includes('intelligence')
+          || label.includes('reasoning')
+          || label.includes('推理');
       }).sort((left, right) => {
         const leftInComposer = composer?.contains(left) ? 0 : 1;
         const rightInComposer = composer?.contains(right) ? 0 : 1;
@@ -308,11 +318,16 @@ func sendMessageJS(
       })[0] || null;
       if (explicit) return explicit;
 
+      // Use includes() not === to handle buttons with extra SVG/icon text appended
       const textMatch = [...scope.querySelectorAll('button, [role="button"]')].find(button => {
         if (!visible(button) || button === send) return false;
         const text = normalize(button.textContent).toLowerCase();
-        return text.includes('gpt-') || text === 'thinking' || text === '思考' || text === 'chatgpt' || 
-               text === 'high' || text === 'medium' || text.includes('instant') || text === 'pro' || text === '高';
+        // Strip SVG text noise: only look at first 30 chars
+        const shortText = text.slice(0, 30).trim();
+        return shortText.includes('gpt-') || shortText.includes('thinking') || shortText === 'chatgpt' ||
+               shortText.includes('high') || shortText.includes('medium') || shortText.includes('instant') ||
+               shortText.includes('pro') || shortText.includes('高') || shortText.includes('智能') ||
+               shortText.includes('reasoning') || shortText.includes('推理');
       });
       if (textMatch) return textMatch;
 
