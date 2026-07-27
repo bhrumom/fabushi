@@ -4,6 +4,21 @@
   "reviewGate": false,
   "tasks": [
     {
+      "id": "chatgpt-parallel-actions-audit-20260727",
+      "title": "并行验收 ChatGPT Actions 队列",
+      "promptTemplate": "diagnose-and-fix",
+      "connector": "GitHub",
+      "priority": 60,
+      "timeout": 1800,
+      "maxTaskContinuations": 4,
+      "maxRuntimeRetries": 2,
+      "dependsOn": [],
+      "resourceLocks": [
+        "verification:chatgpt-parallel-actions"
+      ],
+      "prompt": "独立验收 fabushi 仓库的 ChatGPT auto-confirm GitHub Actions 持续队列。不要修改仓库。检查最新 continuous runner、runtime validation、任务导入日志和并行证据构件，确认失败任务不会六小时空转、终态错误可见、续跑只发生在 status=incomplete。与大乘 CLI 市场任务并行运行，并在最终 mahayana.task-report.v1 的 verification 中记录 Actions run URL、同时 running 的任务 ID、不同 conversationId 和时间重叠证据。若证据尚未产生，返回 incomplete 和合理 wait_seconds，要求新 Chat 继续核验；不得把缺失证据报告为 complete。"
+    },
+    {
       "id": "mahayana-marketplace-parallel-20260726",
       "title": "并行完善大乘 CLI 云端插件市场",
       "promptTemplate": "continue-to-complete",

@@ -42,3 +42,56 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Actions inbox refreshes and requeues an existing failed task', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-retry-'));
+  const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
+  const script = fileURLToPath(
+    new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
+  const env = {
+    ...process.env,
+    CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
+  };
+  try {
+    writeFileSync(statePath, JSON.stringify({
+      automationTasks: [{
+        id: 'marketplace-parallel',
+        title: 'Old title',
+        prompt: 'Old prompt',
+        status: 'failed',
+        attempts: 3,
+        workerPid: 123,
+        workerTargetId: 'stale-target',
+        conversationId: 'stale-conversation',
+        lastError: 'new_chat_prepare_failed',
+      }],
+    }));
+    writeFileSync(inboxPath, JSON.stringify({
+      maxConcurrent: 2,
+      tasks: [{
+        id: 'marketplace-parallel',
+        title: 'Updated title',
+        prompt: 'Updated prompt',
+        maxRuntimeRetries: 4,
+      }],
+    }));
+    const output = execFileSync(process.execPath, [script], { env, encoding: 'utf8' });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const task = state.automationTasks[0];
+    assert.match(output, /requeued 1 failed task/);
+    assert.equal(state.automationTasks.length, 1);
+    assert.equal(task.title, 'Updated title');
+    assert.equal(task.prompt, 'Updated prompt');
+    assert.equal(task.maxRuntimeRetries, 4);
+    assert.equal(task.status, 'queued');
+    assert.equal(task.attempts, 0);
+    assert.equal(task.workerPid, null);
+    assert.equal(task.workerTargetId, null);
+    assert.equal(task.conversationId, null);
+    assert.equal(task.lastError, null);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
