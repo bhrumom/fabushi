@@ -246,6 +246,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /label\.includes\('current mode: chatgpt'\)/);
   assert.match(nativeSource, /button\.innerText,[\s\S]*button\.getAttribute\('title'\)/);
   assert.match(nativeSource, /alreadySelected: true/);
+  assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode = true/);
+  assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode === true/);
   assert.match(nativeSource, /!quickChatRoot && !currentChatGPTMode/);
   assert.match(nativeSource, /chatSelection\?\["retryAfterModeSwitch"\] as\? Bool == true/);
   assert.match(nativeSource, /chatSelected: true,[\s\S]*dispatchOnly: true/);

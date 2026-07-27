@@ -632,7 +632,8 @@ func sendMessageJS(
 
     function chatModeIsActive() {
       const quickRoot = quickChatRoot();
-      const currentChatGPTMode = [...document.querySelectorAll('button, a, [role="button"]')]
+      const currentChatGPTMode = window.__mahayanaConfirmedChatGPTMode === true
+        || [...document.querySelectorAll('button, a, [role="button"]')]
         .some(button => {
           const label = [
             button.innerText,
