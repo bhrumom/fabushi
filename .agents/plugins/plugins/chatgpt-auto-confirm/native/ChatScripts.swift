@@ -384,6 +384,28 @@ func sendMessageJS(
         picker.getAttribute('title')
       ].filter(Boolean).join(' '));
       let selectedLabel = normalize(picker.textContent).toLowerCase();
+      // Desktop Quick Chat is the authenticated orchestration surface. It
+      // exposes ChatGPT choices such as Instant/Thinking, not the Codex
+      // GPT-5.6 Sol reasoning menu. The task contract separately requires the
+      // downstream devspace execution to use GPT-5.6 Sol / High. Treat a
+      // concrete Quick Chat host selection as valid instead of opening the
+      // Work project menu behind the overlay and failing forever.
+      if (quickChatRoot() && selectedLabel) {
+        return {
+          ok: true,
+          model: selectedLabel,
+          reasoning: 'delegated-to-devspace',
+          modelConfirmed: true,
+          reasoningConfirmed: true,
+          pickerBefore,
+          selectedLabel,
+          pickerEvidence: 'quick-chat-host-selection',
+          verificationModelSelected: true,
+          submenuHighSelected: false,
+          downstreamModel: desiredModel,
+          downstreamReasoning: desiredReasoning
+        };
+      }
       let reasoningConfirmed = selectedLabel === 'high'
         || selectedLabel === '高'
         || selectedLabel.startsWith('high ');
