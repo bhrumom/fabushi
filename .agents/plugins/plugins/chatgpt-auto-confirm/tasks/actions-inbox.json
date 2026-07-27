@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "maxConcurrent": 2,
+  "reviewGate": false,
+  "tasks": [
+    {
+      "id": "chatgpt-parallel-actions-audit-20260727",
+      "title": "并行验收 ChatGPT Actions 队列",
+      "promptTemplate": "diagnose-and-fix",
+      "connector": "GitHub",
+      "priority": 60,
+      "timeout": 1800,
+      "maxTaskContinuations": 4,
+      "maxRuntimeRetries": 2,
+      "dependsOn": [],
+      "resourceLocks": [
+        "verification:chatgpt-parallel-actions"
+      ],
+      "prompt": "独立验收 fabushi 仓库的 ChatGPT auto-confirm GitHub Actions 持续队列。不要修改仓库。检查最新 continuous runner、runtime validation、任务导入日志和并行证据构件，确认失败任务不会六小时空转、终态错误可见、续跑只发生在 status=incomplete。与大乘 CLI 市场任务并行运行，并在最终 mahayana.task-report.v1 的 verification 中记录 Actions run URL、同时 running 的任务 ID、不同 conversationId 和时间重叠证据。若证据尚未产生，返回 incomplete 和合理 wait_seconds，要求新 Chat 继续核验；不得把缺失证据报告为 complete。"
+    },
+    {
+      "id": "mahayana-marketplace-parallel-20260726",
+      "title": "并行完善大乘 CLI 云端插件市场",
+      "promptTemplate": "continue-to-complete",
+      "connector": "GitHub",
+      "priority": 50,
+      "timeout": 7200,
+      "maxTaskContinuations": 20,
+      "maxRuntimeRetries": 2,
+      "dependsOn": [],
+      "resourceLocks": [
+        "worktree:mahayana-marketplace",
+        "service:mahayana-marketplace"
+      ],
+      "prompt": "在 fabushi 仓库内继续完成大乘 CLI 云端插件市场，不得拆分为另一个仓库。检查并完善云端市场浏览、插件包下载、SHA-256 与大小校验、安全安装和版本元数据；创建一个可从市场安装的真实插件，并用大乘 CLI 完成发布、浏览、下载、安装和运行的端到端验证。测试账号必须通过 TEST_ACCOUNT_TOKEN 使用现有 TestAccount 无限测试配额逻辑，严禁把令牌写入代码、任务文件或日志。使用隔离 worktree/分支工作，提交 PR 并通过必需 CI 后合并。并行能力必须提供真实证据：在另一个任务仍为 running 时动态加入或启动本任务；同一次 queue_status 观测中至少两个 worker 同时为 running，effectiveMaxConcurrent >= 2，两个 workerTargetId 不同，两个窗口均保持 hidden/visibilityVerified，执行时间区间存在重叠。只有市场端到端测试与上述并行证据都通过，任务才可报告 complete。"
+    }
+  ]
+}
