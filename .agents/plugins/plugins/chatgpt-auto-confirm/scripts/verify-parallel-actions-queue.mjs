@@ -72,6 +72,9 @@ const waitFor = async (predicate, timeoutMs, label) => {
     requestedMaxConcurrent: lastStatus?.requestedMaxConcurrent,
     effectiveMaxConcurrent: lastStatus?.effectiveMaxConcurrent,
     watcherAlive: lastStatus?.watcherAlive,
+    running: lastStatus?.running,
+    watcherPid: lastStatus?.watcherPid,
+    network: lastStatus?.network,
     activeWorkers: lastStatus?.activeWorkers,
     tasks: lastStatus?.tasks?.filter(item =>
       ['actions-parallel-a', 'actions-parallel-b'].includes(item.id)),
