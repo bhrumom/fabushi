@@ -263,7 +263,7 @@ func continueHiddenOnboardingJS() -> String {
     const allowed = new Set([
       'continue', '继续', 'next', '下一步', 'done', '完成', 'skip', '跳过'
     ]);
-    const button = [...document.querySelectorAll('button, [role="button"]')].find(node => {
+    const button = [...document.querySelectorAll('button, a, [role="button"]')].find(node => {
       const labels = [
         node.innerText,
         node.textContent,
