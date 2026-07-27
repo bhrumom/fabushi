@@ -634,10 +634,12 @@ func runQueueIteration(_ state: inout PluginState) {
     let locks = Set(task.resourceLocks)
     guard heldLocks.isDisjoint(with: locks) else { continue }
     do {
+      queueTrace("task=\(tasks[index].id) stage=scheduler-selected")
       try startAutomationTask(&tasks[index], state: &state)
       runningCount += 1
       heldLocks.formUnion(locks)
     } catch {
+      queueTrace("task=\(tasks[index].id) stage=start-failed error=\(error.localizedDescription)")
       if let signal = networkRecoverySignal(error.localizedDescription) {
         tasks[index].attempts += 1
         queueNetworkRecovery(&tasks[index], state: &state, reason: signal)

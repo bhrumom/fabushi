@@ -689,6 +689,7 @@ func startAutomationTask(
   var port: Int?
   var targetId: String?
   var workerProfilePath: String?
+  queueTrace("task=\(task.id) stage=create-worker begin")
   guard let worker = createIndependentQueueWorkerTarget(&state) else {
     let detail = state.lastError ?? "unknown"
     throw NSError(
@@ -699,9 +700,11 @@ func startAutomationTask(
       ]
     )
   }
+  queueTrace("task=\(task.id) stage=create-worker complete target=\(worker.targetId)")
   port = worker.port
   targetId = worker.targetId
   workerProfilePath = worker.profilePath
+  queueTrace("task=\(task.id) stage=prepare-new-chat begin")
   prepared = prepareNewChatTarget(
     port: worker.port,
     targetId: worker.targetId,
@@ -718,8 +721,10 @@ func startAutomationTask(
       userInfo: [NSLocalizedDescriptionKey: "无法为任务 \(task.id) 准备已登录隐藏 Chat"]
     )
   }
+  queueTrace("task=\(task.id) stage=prepare-new-chat complete")
   let attempt = task.attempts + 1
   let outbound = messageWithTaskReportContract(automationTaskMessage(task))
+  queueTrace("task=\(task.id) stage=send begin")
   guard let sendResult = cdpValue(
     port: port,
     targetId: targetId,
@@ -747,6 +752,7 @@ func startAutomationTask(
       userInfo: [NSLocalizedDescriptionKey: "任务 \(task.id) 页面发送失败（\(stage): \(error)） candidates: \(candidates)"]
     )
   }
+  queueTrace("task=\(task.id) stage=send complete")
   _ = cdpValue(
     port: port,
     targetId: targetId,
@@ -754,6 +760,7 @@ func startAutomationTask(
     timeout: 4.0
   )
   let dispatchMarker = "任务发送轮次：\(attempt)"
+  queueTrace("task=\(task.id) stage=resolve-conversation begin")
   let resolvedConversation = cdpValue(
     port: port,
     targetId: targetId,
@@ -810,6 +817,7 @@ func startAutomationTask(
   task.lastResultJSON = jsonString(sendResult)
   task.lastActivitySignature = nil
   task.lastProgressAt = now
+  queueTrace("task=\(task.id) stage=running conversation=\(conversationId)")
 }
 
 func terminateDedicatedChatProcess(profilePath: String) {
