@@ -159,6 +159,52 @@ prepare_openclaw_for_macos_app_store() {
   echo "Prepared OpenClaw App Store payload at $openclaw_assets (signed Mach-O files=$signed_count, executable entitlements=$executable_count)."
 }
 
+
+prepare_official_plugin_runtimes_for_macos_app_store() {
+  local app_path="$1"
+  local plugins_root="$app_path/Contents/Resources/mahayana/share/mahayana/plugins/plugins"
+  local entitlements="$PWD/macos/Runner/OpenClawChild.entitlements"
+  local identity
+  local signed_count=0
+  local signing_report="$status_dir/MACOS_APP_STORE_PLUGIN_RUNTIME_SIGNING.txt"
+
+  if [ ! -d "$plugins_root" ]; then
+    echo "Official plugin runtime directory missing: $plugins_root" >&2
+    return 1
+  fi
+  if [ ! -f "$entitlements" ]; then
+    echo "Missing plugin runtime entitlements: $entitlements" >&2
+    return 1
+  fi
+
+  identity="$(resolve_macos_app_store_signing_identity)"
+  if [ -z "$identity" ]; then
+    echo "Unable to resolve signing identity for official plugin runtimes." >&2
+    return 1
+  fi
+
+  echo "signing_identity=$identity" > "$signing_report"
+  while IFS= read -r -d '' file; do
+    if ! is_macho_file "$file"; then
+      continue
+    fi
+    if [ -x "$file" ]; then
+      codesign --force --timestamp --options runtime --sign "$identity" --entitlements "$entitlements" "$file"
+    else
+      codesign --force --timestamp --options runtime --sign "$identity" "$file"
+    fi
+    codesign --verify --strict --verbose=2 "$file"
+    echo "$file" >> "$signing_report"
+    signed_count=$((signed_count + 1))
+  done < <(find "$plugins_root" -type f \( -name 'fabushi-plugin-cli' -o -name 'fabushi-plugin-cli.exe' -o -name '*.dylib' -o -name '*.node' -o -perm -111 \) -print0)
+
+  if [ "$signed_count" -eq 0 ]; then
+    echo "No official plugin Mach-O runtimes found under $plugins_root." >&2
+    return 1
+  fi
+  echo "signed_macho_files=$signed_count" >> "$signing_report"
+}
+
 prepare_mahayana_for_macos_app_store() {
   local app_path="$1"
   local cli="$app_path/Contents/MacOS/mahayana"
@@ -504,6 +550,7 @@ if [ -x "$fix_bundled_dylibs_script" ]; then
   "$fix_bundled_dylibs_script" "$archived_app_path"
 fi
 prepare_mahayana_for_macos_app_store "$archived_app_path"
+prepare_official_plugin_runtimes_for_macos_app_store "$archived_app_path"
 
 case "$(uname -m)" in
   arm64) openclaw_platform="macos-arm64" ;;
