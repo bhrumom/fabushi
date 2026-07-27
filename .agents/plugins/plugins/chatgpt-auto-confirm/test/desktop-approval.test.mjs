@@ -246,7 +246,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /reset-prewarm/);
   assert.match(nativeSource, /renderer-ready/);
   assert.match(nativeSource, /quick-chat-prewarm/);
-  assert.match(nativeSource, /initialRoute=%2Fchatgpt%2Fquick-chat/);
+  assert.match(nativeSource, /initialRoute=%2Fchatgpt%2Fquick-chat%2F/);
+  assert.match(nativeSource, /UUID\(\)\.uuidString\.lowercased\(\)/);
+  assert.match(nativeSource, /reports rendererReady\(null\) and renders no body/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
   assert.match(nativeSource, /Emulation\.setFocusEmulationEnabled/);
   assert.match(nativeSource, /Emulation\.setIdleOverride/);
