@@ -720,6 +720,7 @@ func clickChatJS() -> String {
     // click after this evaluation returns so a destroyed execution context is
     // not mistaken for a failed mode selection. The caller independently
     // waits for and validates the resulting hidden Chat surface.
+    window.__mahayanaConfirmedChatGPTMode = true;
     setTimeout(() => {
       try { button.click(); } catch (_) {}
     }, 0);
