@@ -237,6 +237,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /candidateLabels/);
   assert.match(nativeSource, /switch mode, current mode:/);
   assert.match(nativeSource, /modeSwitch\.click\(\)/);
+  assert.match(nativeSource, /includeChatGPT && label === 'chatgpt'/);
+  assert.match(nativeSource, /button = exactChat\(true\)/);
   assert.match(nativeSource, /negative preflight[\s\S]*must not leave every task queued forever/);
   assert.match(nativeSource, /watcher-trace\.log/);
   assert.match(nativeSource, /stage=prepare-new-chat/);
