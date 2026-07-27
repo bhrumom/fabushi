@@ -254,6 +254,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Quick Chat itself is feature-gated per account/);
   assert.match(nativeSource, /safeText=/);
   assert.match(nativeSource, /selectionLabels=/);
+  assert.match(nativeSource, /continueHiddenOnboardingJS/);
+  assert.match(nativeSource, /desktop app's informational onboarding/);
+  assert.doesNotMatch(nativeSource, /'turn on'.*'not now'/);
   assert.match(nativeSource, /routeMatches=/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
   assert.match(nativeSource, /Emulation\.setFocusEmulationEnabled/);

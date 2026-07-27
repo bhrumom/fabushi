@@ -256,6 +256,32 @@ func quickChatPrewarmServiceJS(_ action: String) -> String {
   """#
 }
 
+func continueHiddenOnboardingJS() -> String {
+  #"""
+  (() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const allowed = new Set([
+      'continue', '继续', 'next', '下一步', 'done', '完成'
+    ]);
+    const button = [...document.querySelectorAll('button, [role="button"]')].find(node => {
+      const labels = [
+        node.innerText,
+        node.textContent,
+        node.getAttribute('aria-label'),
+        node.getAttribute('title')
+      ].map(normalize).filter(Boolean);
+      return labels.some(label => allowed.has(label));
+    });
+    if (!button) return {ok: true, clicked: false};
+    const label = normalize(
+      button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
+    );
+    button.click();
+    return {ok: true, clicked: true, label};
+  })()
+  """#
+}
+
 func openBackgroundQueueWindow(
   port: Int,
   controllerTargetId: String,
@@ -531,12 +557,27 @@ func createQueueWorkerTarget(
        controllerTargetId: controller.targetId,
        failure: &prewarmFailure
      ) {
-    let chatSelection = cdpValue(
-      port: controller.port,
-      targetId: hiddenTargetId,
-      expression: clickChatJS(),
-      timeout: 4.0
-    )
+    // A fresh hosted runner can restore authentication before completing the
+    // desktop app's informational onboarding. Advance only neutral navigation
+    // buttons, then select Chat once the real app shell is available.
+    var chatSelection: [String: Any]?
+    for _ in 0..<12 {
+      chatSelection = cdpValue(
+        port: controller.port,
+        targetId: hiddenTargetId,
+        expression: clickChatJS(),
+        timeout: 4.0
+      )
+      if chatSelection?["ok"] as? Bool == true { break }
+      let onboarding = cdpValue(
+        port: controller.port,
+        targetId: hiddenTargetId,
+        expression: continueHiddenOnboardingJS(),
+        timeout: 4.0
+      )
+      guard onboarding?["clicked"] as? Bool == true else { break }
+      Thread.sleep(forTimeInterval: 0.8)
+    }
     var hiddenPrepared = false
     var lastHiddenPrepare: [String: Any]?
     for _ in 0..<80 {
