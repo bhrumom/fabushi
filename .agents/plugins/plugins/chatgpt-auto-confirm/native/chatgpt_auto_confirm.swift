@@ -2880,7 +2880,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v56"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v57"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3799,6 +3799,54 @@ private func createQueueWorkerTarget(
     state.queueWorkerProfilePath = profilePath
     state.queueWorkerMode = sharedConversationQueueWorkerMode
     return (port, targetId, profilePath)
+  }
+
+  // A fresh hosted runner normally has only ChatGPT's visible primary window.
+  // Ask that authenticated renderer's official quick-chat service to create
+  // the show:false prewarm BrowserWindow, then turn it into the queue-owned
+  // hidden Chat surface. Previously this implementation existed but was never
+  // called, so the queue could only reuse a hidden target created elsewhere.
+  if let controller = sharedChatController(&state),
+     let hiddenTargetId = openBackgroundQueueWindow(
+       port: controller.port,
+       controllerTargetId: controller.targetId
+     ) {
+    _ = cdpValue(
+      port: controller.port,
+      targetId: hiddenTargetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    var hiddenPrepared = false
+    for _ in 0..<80 {
+      let prepared = cdpValue(
+        port: controller.port,
+        targetId: hiddenTargetId,
+        expression: prepareBackgroundChatJS(newChat: false),
+        timeout: 5.0
+      )
+      if prepared?["ok"] as? Bool == true,
+         queueTargetRuntimeState(
+           port: controller.port,
+           targetId: hiddenTargetId,
+           refreshLifecycle: true
+         ) == .hidden {
+        hiddenPrepared = true
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.25)
+    }
+    if hiddenPrepared {
+      state.backgroundAppPort = controller.port
+      state.backgroundChatTargetId = hiddenTargetId
+      state.backgroundProfilePath = controller.profilePath
+      state.queueWorkerPort = controller.port
+      state.queueWorkerTargetId = hiddenTargetId
+      state.queueWorkerProfilePath = controller.profilePath
+      state.queueWorkerMode = sharedConversationQueueWorkerMode
+      return (controller.port, hiddenTargetId, controller.profilePath)
+    }
+    _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
   }
 
   guard let prepared = ensureHiddenChatTarget(&state),
