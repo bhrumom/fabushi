@@ -45,14 +45,15 @@ func queueTargetRuntimeState(
     // Quick Chat is rendered above the existing Work page. The Work composer
     // remains mounted behind the overlay and must not disqualify the active
     // Quick Chat surface.
-    const workComposer = !quickChatRoot
+    const currentChatGPTMode = !!window.__mahayanaConfirmedChatGPTMode;
+    const workComposer = !quickChatRoot && !currentChatGPTMode
       && !!document.querySelector('[data-codex-composer="true"]');
     const chatModel = [...document.querySelectorAll('button')].some(button => {
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
     const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
-    const chatMode = (!!quickChatRoot || chatModel || webChat)
+    const chatMode = (!!quickChatRoot || chatModel || webChat || currentChatGPTMode)
       && !!textarea && !workComposer;
     return {
       bridge: !!window.electronBridge,
@@ -620,7 +621,10 @@ func createQueueWorkerTarget(
       let prepared = cdpValue(
         port: controller.port,
         targetId: hiddenTargetId,
-        expression: prepareBackgroundChatJS(newChat: false),
+        expression: prepareBackgroundChatJS(
+          newChat: false,
+          confirmedChatMode: chatSelection?["ok"] as? Bool == true
+        ),
         timeout: 5.0
       )
       lastHiddenPrepare = prepared

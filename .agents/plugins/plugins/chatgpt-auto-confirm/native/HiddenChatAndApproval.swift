@@ -372,8 +372,13 @@ func normalizedConversationId(_ rawValue: String?) -> String? {
   return value
 }
 
-func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> String {
+func prepareBackgroundChatJS(
+  newChat: Bool,
+  conversationId: String? = nil,
+  confirmedChatMode: Bool = false
+) -> String {
   let newChatValue = newChat ? "true" : "false"
+  let confirmedChatModeValue = confirmedChatMode ? "true" : "false"
   let expectedConversationId = jsonStringLiteral(conversationId ?? "")
   return """
   (async () => {
@@ -383,6 +388,11 @@ func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> St
       url: window.location.href || '', conversationId: null
     };
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const confirmedChatMode = \(confirmedChatModeValue);
+    // Selecting ChatGPT can replace the Electron renderer and erase transient
+    // window globals. The native caller carries that verified selection across
+    // the replacement and reseeds the new renderer before surface detection.
+    if (confirmedChatMode) window.__mahayanaConfirmedChatGPTMode = true;
     const exactButton = text => [...document.querySelectorAll('button, a, [role="button"]')].find(button =>
       (button.innerText || button.textContent || button.getAttribute('title') || '').trim().toLowerCase() === text.toLowerCase()
     );
