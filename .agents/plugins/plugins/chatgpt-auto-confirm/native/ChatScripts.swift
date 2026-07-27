@@ -281,18 +281,28 @@ func sendMessageJS(
       const input = findTextarea();
       const send = findSendButton();
       const scope = quickChatRoot() || document;
+      const composer = input?.closest('form') || input?.parentElement?.parentElement;
       const explicit = [...scope.querySelectorAll(
         'button[aria-label], [role="button"][aria-label]'
-      )].find(button => {
+      )].filter(button => {
         if (!visible(button) || button === send) return false;
         const label = normalize(button.getAttribute('aria-label')).toLowerCase();
         return label === '选择 chatgpt 模型' || label === 'select chatgpt model';
-      });
+      }).sort((left, right) => {
+        const leftInComposer = composer?.contains(left) ? 0 : 1;
+        const rightInComposer = composer?.contains(right) ? 0 : 1;
+        if (leftInComposer !== rightInComposer) return leftInComposer - rightInComposer;
+        const inputRect = input?.getBoundingClientRect();
+        if (!inputRect) return 0;
+        const l = left.getBoundingClientRect();
+        const r = right.getBoundingClientRect();
+        return Math.abs(inputRect.bottom - l.bottom) - Math.abs(inputRect.bottom - r.bottom);
+      })[0] || null;
       if (explicit) return explicit;
       const inputRect = input?.getBoundingClientRect();
       const sendRect = send?.getBoundingClientRect();
-      const composer = input?.closest('form') || input?.parentElement?.parentElement || document.body;
-      const candidates = [...composer.querySelectorAll(
+      const fallbackScope = composer || document.body;
+      const candidates = [...fallbackScope.querySelectorAll(
         'button, [role="button"], [data-testid], [aria-haspopup="menu"]'
       )].filter(button => {
         if (!visible(button) || button === send) return false;
@@ -353,6 +363,17 @@ func sendMessageJS(
       )].filter(element => visible(element) && normalize(element.textContent).toLowerCase() === target);
     }
 
+    function allPrefixedModelChoices(label) {
+      const target = normalize(label).toLowerCase();
+      return [...document.querySelectorAll(
+        'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
+      )].filter(element => {
+        if (!visible(element)) return false;
+        const text = normalize(element.textContent).toLowerCase();
+        return text === target || text.startsWith(`${target} `);
+      });
+    }
+
     function selectedChoice(element) {
       if (!element) return false;
       const selectedValues = [
@@ -391,7 +412,11 @@ func sendMessageJS(
       // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
       // before sending, while the task contract separately requires downstream
       // Codex/devspace execution to use GPT-5.6 Sol / High.
-      if (quickChatRoot()) {
+      const quickChatModelSurface = !!quickChatRoot()
+        || ['instant', 'thinking', 'pro'].some(label =>
+          selectedLabel === label || selectedLabel.startsWith(`${label} `)
+        );
+      if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
         let quickChatConfirmed = selectedLabel === 'thinking'
           || selectedLabel === '思考'
@@ -400,11 +425,9 @@ func sendMessageJS(
           picker.click();
           await sleep(350);
           const thinkingChoice = [
-            ...allExactModelChoices('Thinking'),
-            ...allExactModelChoices('思考')
-          ].find(choice =>
-            visibleModelMenus().some(menu => menu.contains(choice))
-          ) || null;
+            ...allPrefixedModelChoices('Thinking'),
+            ...allPrefixedModelChoices('思考')
+          ][0] || null;
           if (thinkingChoice) {
             if (!selectedChoice(thinkingChoice)) thinkingChoice.click();
             quickChatChoiceClicked = true;
@@ -414,8 +437,7 @@ func sendMessageJS(
           selectedLabel = normalize(picker?.textContent).toLowerCase();
           quickChatConfirmed = selectedLabel === 'thinking'
             || selectedLabel === '思考'
-            || selectedLabel.startsWith('thinking ')
-            || selectedChoice(thinkingChoice);
+            || selectedLabel.startsWith('thinking ');
         }
         if (!quickChatConfirmed) {
           return {
