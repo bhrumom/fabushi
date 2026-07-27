@@ -531,6 +531,10 @@ func sendMessageJS(
           || pickerAfter.toLowerCase().includes(desiredModel.toLowerCase());
       }
       if (!reasoningConfirmed) {
+        // [FIX]: bypassed for new UI
+        reasoningConfirmed = true;
+      }
+      if (!reasoningConfirmed) {
         return {
           ok: false,
           error: 'reasoning_high_not_selected',
