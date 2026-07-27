@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import worker from '../worker/src/index.ts';
 
-const nativeSource = readFileSync(new URL(
-  '../native/chatgpt_auto_confirm.swift', import.meta.url), 'utf8');
+const nativeDirectory = new URL('../native/', import.meta.url);
+const nativeSource = readdirSync(nativeDirectory)
+  .filter(name => name.endsWith('.swift'))
+  .sort()
+  .map(name => readFileSync(new URL(name, nativeDirectory), 'utf8'))
+  .join('\n');
 
 const call = async (name, args = {}) => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -246,8 +250,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /reset-prewarm/);
   assert.match(nativeSource, /renderer-ready/);
   assert.match(nativeSource, /quick-chat-prewarm/);
-  assert.match(nativeSource, /initialRoute=%2Fchatgpt%2Fquick-chat%2F/);
+  assert.match(nativeSource, /initialRoute=%2Fchatgpt%2Fquick-chat%2Flocal-chatgpt%3A/);
   assert.match(nativeSource, /UUID\(\)\.uuidString\.lowercased\(\)/);
+  assert.match(nativeSource, /"local-chatgpt:\\\(conversationUUID\\\)"/);
   assert.match(nativeSource, /reports rendererReady\(null\) and renders no body/);
   assert.match(nativeSource, /routeMatches=/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
