@@ -628,12 +628,13 @@ func createQueueWorkerTarget(
         timeout: 5.0
       )
       lastHiddenPrepare = prepared
-      if prepared?["ok"] as? Bool == true,
-         queueTargetRuntimeState(
-           port: controller.port,
-           targetId: hiddenTargetId,
-           refreshLifecycle: true
-         ) == .hidden {
+      let state = queueTargetRuntimeState(
+        port: controller.port,
+        targetId: hiddenTargetId,
+        refreshLifecycle: true
+      )
+      queueTrace("worker-create stage=chat-prepare state=\(queueTargetRuntimeStateName(state))")
+      if prepared?["ok"] as? Bool == true, state == .hidden {
         hiddenPrepared = true
         queueTrace("worker-create stage=chat-prepare complete")
         break
