@@ -231,6 +231,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /switch mode, current mode:/);
   assert.match(nativeSource, /modeSwitch\.click\(\)/);
   assert.match(nativeSource, /negative preflight[\s\S]*must not leave every task queued forever/);
+  assert.match(nativeSource, /watcher-trace\.log/);
+  assert.match(nativeSource, /stage=prepare-new-chat/);
   assert.match(nativeSource, /label === 'quick chat'/);
   assert.match(nativeSource, /data-pip-obstacle="quick-chat"/);
   assert.match(nativeSource, /prewarm_hidden_target_not_chat/);

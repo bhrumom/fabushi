@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v74"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v75"
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -16,6 +16,35 @@ func queueStateURL() -> URL {
     return URL(fileURLWithPath: override)
   }
   return stateURL().deletingLastPathComponent().appendingPathComponent("queue-state.json")
+}
+
+func queueTraceURL() -> URL {
+  queueDirectoryURL().appendingPathComponent("watcher-trace.log")
+}
+
+func queueTrace(_ message: String) {
+  let url = queueTraceURL()
+  try? FileManager.default.createDirectory(
+    at: url.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  if !FileManager.default.fileExists(atPath: url.path) {
+    _ = FileManager.default.createFile(atPath: url.path, contents: nil)
+  }
+  guard let handle = try? FileHandle(forWritingTo: url) else { return }
+  defer { try? handle.close() }
+  if ((try? handle.seekToEnd()) ?? 0) > 262_144 {
+    try? handle.truncate(atOffset: 0)
+    try? handle.seek(toOffset: 0)
+  }
+  let timestamp = isoFormatter.string(from: Date())
+  handle.write(Data("[\(timestamp)] \(message)\n".utf8))
+}
+
+func queueTraceTail() -> [String] {
+  guard let data = try? Data(contentsOf: queueTraceURL()),
+        let text = String(data: data.suffix(16_384), encoding: .utf8) else { return [] }
+  return Array(text.split(separator: "\n").suffix(40)).map(String.init)
 }
 
 func loadQueueState() -> PluginState {
@@ -481,6 +510,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "separateApplicationProcess": false,
     ],
     "activeWorkers": activeWorkers,
+    "watcherTrace": queueTraceTail(),
     "reviewGate": state.queueReviewGate != false,
     "counts": counts,
     "tasks": tasks.map { taskPublicPayload($0) },
