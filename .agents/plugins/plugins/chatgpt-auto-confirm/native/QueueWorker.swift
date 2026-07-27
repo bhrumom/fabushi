@@ -353,7 +353,7 @@ func openBackgroundQueueWindow(
   // service is still the supported way to obtain a show:false BrowserWindow,
   // but hosted accounts without that gate must mount the normal authenticated
   // app root in the same hidden window before selecting Chat.
-  let hiddenAppURL = "app://-/index.html?initialRoute=%2Fwork"
+  let hiddenAppURL = "app://-/index.html?initialRoute=%2F"
   guard
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
@@ -426,11 +426,11 @@ func openBackgroundQueueWindow(
     let visibility = ready?["visibility"] as? String
     let href = ready?["href"] as? String
     if bridge,
-       buttons > 5,
+       buttons >= 1,
        textLength > 100,
        visibility == "hidden",
        href?.hasPrefix("app://-/index.html") == true,
-       href?.contains("initialRoute=%2Fwork") == true {
+       href?.contains("initialRoute=%2F") == true {
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
@@ -445,7 +445,7 @@ func openBackgroundQueueWindow(
     "text=\((lastReady?["text"] as? NSNumber)?.intValue ?? -1)",
     "html=\((lastReady?["html"] as? NSNumber)?.intValue ?? -1)",
     "visibility=\(lastReady?["visibility"] as? String ?? "none")",
-    "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2Fwork"))",
+    "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2F"))",
     "labels=\((lastReady?["buttonLabels"] as? [String] ?? []).joined(separator: "|"))",
     "safeText=\(lastReady?["safeText"] as? String ?? "none")",
   ].joined(separator: ":")
@@ -570,6 +570,8 @@ func createQueueWorkerTarget(
     }
     _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
     let selectionError = chatSelection?["error"] as? String ?? "none"
+    let selectionLabels = (chatSelection?["candidateLabels"] as? [String] ?? [])
+      .joined(separator: "|")
     let prepareError = lastHiddenPrepare?["error"] as? String ?? "no_result"
     let workComposer = lastHiddenPrepare?["workComposer"] as? Bool ?? false
     let hasInput = lastHiddenPrepare?["hasInput"] as? Bool ?? false
@@ -577,6 +579,7 @@ func createQueueWorkerTarget(
     prewarmFailure = [
       "prewarm_hidden_target_not_chat",
       "selection=\(selectionError)",
+      "selectionLabels=\(selectionLabels)",
       "prepare=\(prepareError)",
       "hasInput=\(hasInput)",
       "chatModel=\(chatModel)",
