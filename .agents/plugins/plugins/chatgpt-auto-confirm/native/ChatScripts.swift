@@ -281,13 +281,21 @@ func sendMessageJS(
       const input = findTextarea();
       const send = findSendButton();
       const scope = quickChatRoot() || document;
+
+      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"]');
+      if (testIdButton && visible(testIdButton)) return testIdButton;
+
       const composer = input?.closest('form') || input?.parentElement?.parentElement;
       const explicit = [...scope.querySelectorAll(
         'button[aria-label], [role="button"][aria-label]'
       )].filter(button => {
         if (!visible(button) || button === send) return false;
         const label = normalize(button.getAttribute('aria-label')).toLowerCase();
-        return label.includes('chatgpt 模型') || /select chatgpt model/i.test(label);
+        return label.includes('chatgpt 模型') 
+          || /select chatgpt model/i.test(label)
+          || label.includes('model selector')
+          || label.includes('choose model')
+          || label.includes('选择模型');
       }).sort((left, right) => {
         const leftInComposer = composer?.contains(left) ? 0 : 1;
         const rightInComposer = composer?.contains(right) ? 0 : 1;
@@ -299,39 +307,28 @@ func sendMessageJS(
         return Math.abs(inputRect.bottom - l.bottom) - Math.abs(inputRect.bottom - r.bottom);
       })[0] || null;
       if (explicit) return explicit;
-      const inputRect = input?.getBoundingClientRect();
-      const sendRect = send?.getBoundingClientRect();
+
+      const textMatch = [...scope.querySelectorAll('button, [role="button"]')].find(button => {
+        if (!visible(button) || button === send) return false;
+        const text = normalize(button.textContent).toLowerCase();
+        return text.includes('gpt-') || text === 'thinking' || text === '思考' || text === 'chatgpt';
+      });
+      if (textMatch) return textMatch;
+
       const fallbackScope = composer || document.body;
       const candidates = [...fallbackScope.querySelectorAll(
         'button, [role="button"], [data-testid], [aria-haspopup="menu"]'
       )].filter(button => {
         if (!visible(button) || button === send) return false;
-        const rect = button.getBoundingClientRect();
         const text = normalize(button.textContent);
         const popup = button.getAttribute('aria-haspopup');
-        const hasVisibleLabel = text.length > 0 || popup === 'menu' || popup === 'listbox';
-        if (!hasVisibleLabel) return false;
-        if (sendRect) {
-          const verticallyAligned = rect.top < sendRect.bottom + 8 && rect.bottom > sendRect.top - 8;
-          const leftOfSend = rect.right <= sendRect.left + 8;
-          const nearby = sendRect.left - rect.right >= -8 && sendRect.left - rect.right <= 260;
-          return verticallyAligned && leftOfSend && nearby;
-        }
-        if (!inputRect) return true;
-        return rect.top < inputRect.bottom + 32 && rect.bottom > inputRect.top - 32;
+        return text.length > 0 || popup === 'menu' || popup === 'listbox';
       });
       return candidates.sort((left, right) => {
-        const l = left.getBoundingClientRect();
-        const r = right.getBoundingClientRect();
-        if (sendRect) {
-          const leftDistance = Math.max(0, sendRect.left - l.right);
-          const rightDistance = Math.max(0, sendRect.left - r.right);
-          if (leftDistance !== rightDistance) return leftDistance - rightDistance;
-        }
         const leftPopup = left.getAttribute('aria-haspopup') ? 0 : 1;
         const rightPopup = right.getAttribute('aria-haspopup') ? 0 : 1;
         if (leftPopup !== rightPopup) return leftPopup - rightPopup;
-        return r.width - l.width;
+        return right.getBoundingClientRect().width - left.getBoundingClientRect().width;
       })[0] || null;
     }
 
