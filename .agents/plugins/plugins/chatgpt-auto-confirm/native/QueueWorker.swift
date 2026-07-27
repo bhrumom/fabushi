@@ -35,15 +35,25 @@ func queueTargetRuntimeState(
   (async () => {
     const startedAt = performance.now();
     await new Promise(resolve => setTimeout(resolve, 50));
-    const textarea = document.querySelector('#prompt-textarea')
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const textarea = quickChatRoot?.querySelector(
+      '#prompt-textarea, [contenteditable="true"]'
+    ) || document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"]');
-    const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+    // Quick Chat is rendered above the existing Work page. The Work composer
+    // remains mounted behind the overlay and must not disqualify the active
+    // Quick Chat surface.
+    const workComposer = !quickChatRoot
+      && !!document.querySelector('[data-codex-composer="true"]');
     const chatModel = [...document.querySelectorAll('button')].some(button => {
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
     const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
-    const chatMode = (chatModel || webChat) && !!textarea && !workComposer;
+    const chatMode = (!!quickChatRoot || chatModel || webChat)
+      && !!textarea && !workComposer;
     return {
       bridge: !!window.electronBridge,
       visibility: document.visibilityState,
