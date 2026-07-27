@@ -777,10 +777,21 @@ func startAutomationTask(
     let stage = sendResult["failedStage"] as? String ?? "unknown"
     let error = sendResult["error"] as? String ?? "unknown"
     let candidates = (sendResult["candidateTexts"] as? [String])?.joined(separator: ", ") ?? ""
+    let stageDetails: String
+    if let stages = sendResult["stages"],
+       JSONSerialization.isValidJSONObject(stages),
+       let data = try? JSONSerialization.data(withJSONObject: stages),
+       let json = String(data: data, encoding: .utf8) {
+      stageDetails = json
+    } else {
+      stageDetails = "[]"
+    }
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 23,
-      userInfo: [NSLocalizedDescriptionKey: "任务 \(task.id) 页面发送失败（\(stage): \(error)） candidates: \(candidates)"]
+      userInfo: [
+        NSLocalizedDescriptionKey: "任务 \(task.id) 页面发送失败（\(stage): \(error)） candidates: \(candidates) stages: \(stageDetails)"
+      ]
     )
   }
   queueTrace("task=\(task.id) stage=send complete")
