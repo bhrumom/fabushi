@@ -191,6 +191,7 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/queue-state.enc
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
             ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
+            ${{ steps.paths.outputs.runtime_dir }}/task-queue/watcher-trace.log
 
       - name: Continue incomplete work or report terminal failure
         if: always()
