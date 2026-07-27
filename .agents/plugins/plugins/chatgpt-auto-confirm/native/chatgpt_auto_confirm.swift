@@ -3610,18 +3610,26 @@ private func quickChatPrewarmServiceJS(_ action: String) -> String {
 
 private func openBackgroundQueueWindow(
   port: Int,
-  controllerTargetId: String
+  controllerTargetId: String,
+  failure: inout String?
 ) -> String? {
   let existingTargetIds = Set(CDPClient.fetchTargets(portOverride: port).compactMap {
     $0["id"] as? String
   })
-  guard existingTargetIds.contains(controllerTargetId),
-        cdpValue(
-          port: port,
-          targetId: controllerTargetId,
-          expression: quickChatPrewarmServiceJS("reset-prewarm"),
-          timeout: 8.0
-        )?["ok"] as? Bool == true else { return nil }
+  guard existingTargetIds.contains(controllerTargetId) else {
+    failure = "prewarm_controller_target_missing"
+    return nil
+  }
+  let reset = cdpValue(
+    port: port,
+    targetId: controllerTargetId,
+    expression: quickChatPrewarmServiceJS("reset-prewarm"),
+    timeout: 8.0
+  )
+  guard reset?["ok"] as? Bool == true else {
+    failure = "prewarm_reset_failed:\(reset?["error"] as? String ?? "no_result")"
+    return nil
+  }
 
   var targetId: String?
   for _ in 0..<100 {
@@ -3635,7 +3643,10 @@ private func openBackgroundQueueWindow(
     if targetId != nil { break }
     Thread.sleep(forTimeInterval: 0.05)
   }
-  guard let targetId else { return nil }
+  guard let targetId else {
+    failure = "prewarm_target_not_created"
+    return nil
+  }
 
   // ChatGPT's prewarm controller closes a renderer that has not reported
   // readiness within 15 seconds. A hidden prewarm route does not always mount
@@ -3660,6 +3671,7 @@ private func openBackgroundQueueWindow(
     Thread.sleep(forTimeInterval: 0.05)
   }
   guard prewarmLoaded else {
+    failure = "prewarm_renderer_not_loaded"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
@@ -3682,6 +3694,7 @@ private func openBackgroundQueueWindow(
     Thread.sleep(forTimeInterval: 0.05)
   }
   guard acknowledged else {
+    failure = "prewarm_renderer_ready_not_acknowledged"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
@@ -3694,6 +3707,7 @@ private func openBackgroundQueueWindow(
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String,
         CDPClient.navigate(wsURLString: wsURL, url: "app://-/index.html") else {
+    failure = "prewarm_navigation_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
@@ -3703,6 +3717,7 @@ private func openBackgroundQueueWindow(
   // priority. document.visibilityState remains hidden and is rechecked below.
   Thread.sleep(forTimeInterval: 0.5)
   guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+    failure = "prewarm_renderer_wake_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
@@ -3731,6 +3746,7 @@ private func openBackgroundQueueWindow(
     }
     Thread.sleep(forTimeInterval: 0.1)
   }
+  failure = "prewarm_hidden_chat_surface_timeout"
   _ = CDPClient.closeTarget(targetId, portOverride: port)
   return nil
 }
@@ -3806,10 +3822,12 @@ private func createQueueWorkerTarget(
   // the show:false prewarm BrowserWindow, then turn it into the queue-owned
   // hidden Chat surface. Previously this implementation existed but was never
   // called, so the queue could only reuse a hidden target created elsewhere.
+  var prewarmFailure: String?
   if let controller = sharedChatController(&state),
      let hiddenTargetId = openBackgroundQueueWindow(
        port: controller.port,
-       controllerTargetId: controller.targetId
+       controllerTargetId: controller.targetId,
+       failure: &prewarmFailure
      ) {
     _ = cdpValue(
       port: controller.port,
@@ -3847,7 +3865,9 @@ private func createQueueWorkerTarget(
       return (controller.port, hiddenTargetId, controller.profilePath)
     }
     _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
+    prewarmFailure = "prewarm_hidden_target_not_chat"
   }
+  state.lastError = prewarmFailure ?? "prewarm_controller_unavailable"
 
   guard let prepared = ensureHiddenChatTarget(&state),
         prepared["ok"] as? Bool == true,
@@ -3904,10 +3924,13 @@ private func startAutomationTask(
   var targetId: String?
   var workerProfilePath: String?
   guard let worker = createIndependentQueueWorkerTarget(&state) else {
+    let detail = state.lastError ?? "unknown"
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 33,
-      userInfo: [NSLocalizedDescriptionKey: "当前 ChatGPT 实例没有可用的隐藏 Chat 页面"]
+      userInfo: [
+        NSLocalizedDescriptionKey: "当前 ChatGPT 实例没有可用的隐藏 Chat 页面（\(detail)）"
+      ]
     )
   }
   port = worker.port
