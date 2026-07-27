@@ -2904,7 +2904,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v58"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v59"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3517,31 +3517,47 @@ private func sharedChatController(
     general?.backgroundChatTargetId,
     state.backgroundChatTargetId,
   ].compactMap { $0 }
-  let targets = CDPClient.fetchTargets(portOverride: port)
-  let orderedTargets = targets.sorted { lhs, rhs in
-    let lhsId = lhs["id"] as? String ?? ""
-    let rhsId = rhs["id"] as? String ?? ""
-    return (preferredTargetIds.firstIndex(of: lhsId) ?? Int.max)
-      < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
-  }
-  for target in orderedTargets {
-    guard target["type"] as? String == "page",
-          (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
-          let targetId = target["id"] as? String,
-          targetId != state.queueWorkerTargetId else { continue }
-    let probe = cdpValue(
-      port: port,
-      targetId: targetId,
-      expression: "(() => ({bridge: !!window.electronBridge, buttons: document.querySelectorAll('button').length}))()",
-      timeout: 3.0
-    )
-    let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
-    let buttons = (probe?["buttons"] as? NSNumber)?.intValue ?? 0
-    guard bridge, buttons > 5 else { continue }
-    state.backgroundAppPort = port
-    state.backgroundChatTargetId = targetId
-    state.backgroundProfilePath = profilePath
-    return (port, targetId, profilePath)
+  // Hosted macOS runners invoke the queue only a few seconds after launching
+  // ChatGPT. The preload bridge and entry module can be ready before React has
+  // rendered five buttons, so wait for the actual prewarm prerequisites
+  // instead of taking one button-count snapshot.
+  for _ in 0..<120 {
+    let targets = CDPClient.fetchTargets(portOverride: port)
+    let orderedTargets = targets.sorted { lhs, rhs in
+      let lhsId = lhs["id"] as? String ?? ""
+      let rhsId = rhs["id"] as? String ?? ""
+      return (preferredTargetIds.firstIndex(of: lhsId) ?? Int.max)
+        < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
+    }
+    for target in orderedTargets {
+      guard target["type"] as? String == "page",
+            (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+            let targetId = target["id"] as? String,
+            targetId != state.queueWorkerTargetId else { continue }
+      let probe = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: """
+        (() => ({
+          bridge: !!window.electronBridge,
+          ready: document.readyState,
+          entryScripts: [...document.scripts].filter(script =>
+            /\\/assets\\/index-[^/]+\\.js$/.test(script.src || '')
+          ).length
+        }))()
+        """,
+        timeout: 3.0
+      )
+      let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
+      let ready = probe?["ready"] as? String
+      let entryScripts = (probe?["entryScripts"] as? NSNumber)?.intValue ?? 0
+      guard bridge, ready == "complete", entryScripts > 0 else { continue }
+      state.backgroundAppPort = port
+      state.backgroundChatTargetId = targetId
+      state.backgroundProfilePath = profilePath
+      return (port, targetId, profilePath)
+    }
+    Thread.sleep(forTimeInterval: 0.25)
   }
   guard let prepared = ensureHiddenChatTarget(&state),
         prepared["ok"] as? Bool == true,
@@ -3905,7 +3921,8 @@ private func createQueueWorkerTarget(
       "workComposer=\(workComposer)",
     ].joined(separator: ":")
   }
-  state.lastError = prewarmFailure ?? "prewarm_controller_unavailable"
+  let prewarmCreationFailure = prewarmFailure ?? "prewarm_controller_unavailable"
+  state.lastError = prewarmCreationFailure
 
   let fallback = ensureHiddenChatTarget(&state)
   guard let prepared = fallback,
@@ -3917,9 +3934,7 @@ private func createQueueWorkerTarget(
           targetId: targetId,
           refreshLifecycle: true
         ) == .hidden else {
-    if let prewarmFailure {
-      state.lastError = prewarmFailure
-    }
+    state.lastError = prewarmCreationFailure
     return nil
   }
   let preparedProfilePath = prepared["profilePath"] as? String ?? profilePath
