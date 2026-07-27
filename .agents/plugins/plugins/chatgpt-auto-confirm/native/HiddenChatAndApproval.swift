@@ -433,7 +433,8 @@ func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> St
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
-    const currentChatGPTMode = [...document.querySelectorAll('button, a, [role="button"]')]
+    const currentChatGPTMode = window.__mahayanaConfirmedChatGPTMode === true
+      || [...document.querySelectorAll('button, a, [role="button"]')]
       .some(button => {
         const label = [
           button.innerText,
@@ -643,6 +644,7 @@ func clickChatJS() -> String {
       )
     );
     if (currentChatGPTMode) {
+      window.__mahayanaConfirmedChatGPTMode = true;
       return {
         ok: true,
         chatSelected: false,
