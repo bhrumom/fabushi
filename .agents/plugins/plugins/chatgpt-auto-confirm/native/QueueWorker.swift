@@ -355,7 +355,6 @@ func openBackgroundQueueWindow(
   // client-generated UUID shape used by the official Quick Chat popover so it
   // mounts a usable new-conversation composer without ever showing the window.
   let conversationUUID = UUID().uuidString.lowercased()
-  let conversationId = "local-chatgpt:\(conversationUUID)"
   let quickChatURL =
     "app://-/index.html?initialRoute=%2Fchatgpt%2Fquick-chat%2Flocal-chatgpt%3A\(conversationUUID)"
   guard

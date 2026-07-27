@@ -252,7 +252,6 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /quick-chat-prewarm/);
   assert.match(nativeSource, /initialRoute=%2Fchatgpt%2Fquick-chat%2Flocal-chatgpt%3A/);
   assert.match(nativeSource, /UUID\(\)\.uuidString\.lowercased\(\)/);
-  assert.match(nativeSource, /"local-chatgpt:\\\(conversationUUID\\\)"/);
   assert.match(nativeSource, /reports rendererReady\(null\) and renders no body/);
   assert.match(nativeSource, /routeMatches=/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
