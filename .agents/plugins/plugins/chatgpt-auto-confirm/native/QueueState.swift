@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v73"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v74"
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -105,20 +105,32 @@ struct QueueNetworkProbe {
 
 func queueNetworkProbe() -> QueueNetworkProbe {
   guard let reachability = SCNetworkReachabilityCreateWithName(nil, "api.github.com") else {
-    return QueueNetworkProbe(reachable: false, detail: "无法创建 GitHub 网络探测")
+    return QueueNetworkProbe(
+      reachable: true,
+      detail: "无法创建 GitHub 路由预检；按实际请求结果判断网络状态"
+    )
   }
   var flags = SCNetworkReachabilityFlags()
   guard SCNetworkReachabilityGetFlags(reachability, &flags) else {
-    return QueueNetworkProbe(reachable: false, detail: "无法读取 GitHub 网络路由")
+    return QueueNetworkProbe(
+      reachable: true,
+      detail: "无法读取 GitHub 路由预检；按实际请求结果判断网络状态"
+    )
   }
   let isReachable = flags.contains(.reachable)
   let needsConnection = flags.contains(.connectionRequired)
   let canConnectAutomatically = flags.contains(.connectionOnDemand)
     || flags.contains(.connectionOnTraffic)
   let online = isReachable && (!needsConnection || canConnectAutomatically)
+  // SCNetworkReachability is deprecated on current macOS and can report
+  // false negatives on ephemeral GitHub-hosted runners. A negative preflight
+  // must not leave every task queued forever. Start the task and let the
+  // existing networkRecoverySignal path handle an actual request failure.
   return QueueNetworkProbe(
-    reachable: online,
-    detail: online ? "GitHub 网络路由可达" : "GitHub 网络路由暂不可达（flags=\(flags.rawValue)）"
+    reachable: true,
+    detail: online
+      ? "GitHub 网络路由可达"
+      : "GitHub 路由预检不确定（flags=\(flags.rawValue)）；按实际请求结果判断"
   )
 }
 
