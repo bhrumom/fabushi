@@ -597,6 +597,10 @@ func createQueueWorkerTarget(
         timeout: 4.0
       )
       if chatSelection?["ok"] as? Bool == true { break }
+      if chatSelection?["retryAfterModeSwitch"] as? Bool == true {
+        Thread.sleep(forTimeInterval: 0.8)
+        continue
+      }
       let onboarding = cdpValue(
         port: controller.port,
         targetId: hiddenTargetId,
