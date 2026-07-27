@@ -632,6 +632,12 @@ func clickChatJS() -> String {
     );
     let button = exactChat();
     if (!button) {
+      button = candidates().find(candidate =>
+        candidate.getAttribute('role') === 'menuitem'
+        && labelsFor(candidate).some(label => label === 'chatgpt')
+      );
+    }
+    if (!button) {
       const modeSwitch = candidates().find(candidate =>
         labelsFor(candidate).some(label =>
           label.includes('switch mode, current mode:')
@@ -640,12 +646,17 @@ func clickChatJS() -> String {
         )
       );
       if (modeSwitch) {
-        modeSwitch.click();
-        await sleep(350);
-        // Newer desktop builds name the Chat mode "ChatGPT". Only accept that
-        // label after opening the mode menu so the page title cannot be
-        // mistaken for the selectable mode item.
-        button = exactChat(true);
+        // Opening the switcher can itself replace the renderer. Return before
+        // dispatching the click, then let the caller evaluate the new page and
+        // select the ChatGPT menu item in a fresh execution context.
+        setTimeout(() => {
+          try { modeSwitch.click(); } catch (_) {}
+        }, 0);
+        return {
+          ok: false,
+          error: 'mode_switch_dispatched',
+          retryAfterModeSwitch: true
+        };
       }
     }
     if (!button) {
