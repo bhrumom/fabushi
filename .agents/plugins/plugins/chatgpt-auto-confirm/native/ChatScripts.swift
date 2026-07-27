@@ -216,17 +216,26 @@ func sendMessageJS(
       return result;
     };
 
+    function quickChatRoot() {
+      return document.querySelector(
+        '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+      )?.closest('[role="dialog"], section, div') || null;
+    }
+
     function findTextarea() {
-      return document.querySelector('#prompt-textarea')
-        || document.querySelector('[data-codex-composer="true"]')
+      const quickRoot = quickChatRoot();
+      return quickRoot
+        ? quickRoot.querySelector('#prompt-textarea, [contenteditable="true"]')
+        : document.querySelector('#prompt-textarea')
         || document.querySelector('[contenteditable="true"][data-placeholder]')
         || document.querySelector('[contenteditable="true"]');
     }
 
     function findSendButton() {
-      return document.querySelector('[data-testid="send-button"]')
-        || document.querySelector('button[aria-label="Send prompt"]')
-        || document.querySelector('button[aria-label="发送"]');
+      const scope = quickChatRoot() || document;
+      return scope.querySelector('[data-testid="send-button"]')
+        || scope.querySelector('button[aria-label="Send prompt"]')
+        || scope.querySelector('button[aria-label="发送"]');
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -239,8 +248,9 @@ func sendMessageJS(
     }
 
     function userMessages() {
-      const web = [...document.querySelectorAll('[data-message-author-role="user"]')];
-      const app = [...document.querySelectorAll('[data-user-message-bubble]')];
+      const scope = quickChatRoot() || document;
+      const web = [...scope.querySelectorAll('[data-message-author-role="user"]')];
+      const app = [...scope.querySelectorAll('[data-user-message-bubble]')];
       return web.length > 0 ? web : app;
     }
 
@@ -460,14 +470,15 @@ func sendMessageJS(
     }
 
     function chatModeIsActive() {
+      const quickRoot = quickChatRoot();
       const chatModel = [...document.querySelectorAll('button')].some(button => {
         const label = button.getAttribute('aria-label') || '';
         return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
       });
       const webChat = window.location.protocol === 'https:'
         && window.location.hostname === 'chatgpt.com';
-      return (chatModel || webChat) && !!findTextarea()
-        && !document.querySelector('[data-codex-composer="true"]');
+      return (!!quickRoot || chatModel || webChat) && !!findTextarea()
+        && (!!quickRoot || !document.querySelector('[data-codex-composer="true"]'));
     }
 
     function replaceText(el, text) {
@@ -848,7 +859,10 @@ func getReplyJS() -> String {
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const visible = element => !!(element && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
-    const main = document.querySelector('main') || document.body;
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const main = quickChatRoot || document.querySelector('main') || document.body;
     const thinkingToggles = [...main.querySelectorAll('button')].filter(button => {
       const text = (button.innerText || '').trim();
       return text.startsWith('正在思考') || text.startsWith('Thinking');
@@ -865,11 +879,11 @@ func getReplyJS() -> String {
       await sleep(120);
     }
 
-    const webMessages = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
-    const appMessages = [...document.querySelectorAll('[data-local-conversation-final-assistant]')];
+    const webMessages = [...main.querySelectorAll('[data-message-author-role="assistant"]')];
+    const appMessages = [...main.querySelectorAll('[data-local-conversation-final-assistant]')];
     const messages = webMessages.length > 0 ? webMessages : appMessages;
-    const webUsers = [...document.querySelectorAll('[data-message-author-role="user"]')];
-    const appUsers = [...document.querySelectorAll('[data-user-message-bubble]')];
+    const webUsers = [...main.querySelectorAll('[data-message-author-role="user"]')];
+    const appUsers = [...main.querySelectorAll('[data-user-message-bubble]')];
     const users = webUsers.length > 0 ? webUsers : appUsers;
     const userMessageCount = users.length;
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -882,7 +896,7 @@ func getReplyJS() -> String {
       '[aria-label="停止生成"]', 'button[aria-label="停止"]',
       'button[data-testid*="stop"]'
     ];
-    let stopBtn = stopSelectors.map(selector => document.querySelector(selector)).find(visible) || null;
+    let stopBtn = stopSelectors.map(selector => main.querySelector(selector)).find(visible) || null;
     if (!stopBtn) {
       const composer = document.querySelector('#prompt-textarea')?.closest('form')
         || document.querySelector('#prompt-textarea')?.parentElement?.parentElement;
@@ -1009,18 +1023,21 @@ func getReplyJS() -> String {
 func chatStatusJS() -> String {
   #"""
   (() => {
-  const textarea = document.querySelector('#prompt-textarea')
-    || document.querySelector('[data-codex-composer="true"]')
+  const quickChatRoot = document.querySelector(
+    '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+  )?.closest('[role="dialog"], section, div');
+  const scope = quickChatRoot || document;
+  const textarea = scope.querySelector('#prompt-textarea')
     || document.querySelector('[contenteditable="true"]');
   const hasInput = !!textarea;
 
-  const stopBtn = document.querySelector('[data-testid="stop-button"]')
-    || document.querySelector('[aria-label="Stop streaming"]')
-    || document.querySelector('[aria-label="Stop responding"]')
-    || document.querySelector('[aria-label="停止输出"]')
-    || document.querySelector('[aria-label="停止回答"]')
-    || document.querySelector('button[aria-label="停止"]')
-    || document.querySelector('button[data-testid*="stop"]');
+  const stopBtn = scope.querySelector('[data-testid="stop-button"]')
+    || scope.querySelector('[aria-label="Stop streaming"]')
+    || scope.querySelector('[aria-label="Stop responding"]')
+    || scope.querySelector('[aria-label="停止输出"]')
+    || scope.querySelector('[aria-label="停止回答"]')
+    || scope.querySelector('button[aria-label="停止"]')
+    || scope.querySelector('button[data-testid*="stop"]');
   const streaming = !!stopBtn;
 
   // Get conversation title from the document title or header
@@ -1068,7 +1085,8 @@ func chatStatusJS() -> String {
   });
   const webChat = window.location.protocol === 'https:'
     && window.location.hostname === 'chatgpt.com';
-  const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+  const workComposer = !quickChatRoot
+    && !!document.querySelector('[data-codex-composer="true"]');
   const pageURL = window.location.href || '';
   const initialRoute = new URL(pageURL).searchParams.get('initialRoute') || '';
   const routeMatch = initialRoute.match(/\/(?:c|work\/conversation)\/([^/?#]+)/)
@@ -1116,8 +1134,8 @@ func chatStatusJS() -> String {
     hasInput: hasInput,
     streaming: streaming,
     mode: mode,
-    chatMode: (chatModel || webChat) && hasInput && !workComposer,
-    surface: (chatModel || webChat) && hasInput && !workComposer ? 'chat' : 'not-chat',
+    chatMode: (!!quickChatRoot || chatModel || webChat) && hasInput && !workComposer,
+    surface: (!!quickChatRoot || chatModel || webChat) && hasInput && !workComposer ? 'chat' : 'not-chat',
     backgroundOnly: true,
     workerUsed: false,
     title: title || '',
@@ -1152,7 +1170,12 @@ func addConnectorJS(connector: String) -> String {
       return compactTarget.length >= 3 && compactText.includes(compactTarget);
     };
     const isVisible = el => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
-    const input = document.querySelector('#prompt-textarea')
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const input = quickChatRoot?.querySelector(
+      '#prompt-textarea, [contenteditable="true"]'
+    ) || document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"]');
     const selected = [...document.querySelectorAll('button[aria-label]')].some(el => {
       const label = (el.getAttribute('aria-label') || '').toLowerCase();
@@ -1170,7 +1193,8 @@ func addConnectorJS(connector: String) -> String {
     });
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
-    if ((!chatModel && !webChat) || document.querySelector('[data-codex-composer="true"]')) {
+    if ((!quickChatRoot && !chatModel && !webChat)
+        || (!quickChatRoot && document.querySelector('[data-codex-composer="true"]'))) {
       result.error = 'not_chat_surface';
       return result;
     }
