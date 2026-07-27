@@ -390,7 +390,12 @@ func sendMessageJS(
     }
 
     async function ensureModelAndReasoning() {
-      let picker = modelPickerButton();
+      let picker = null;
+      for (let i = 0; i < 40; i++) {
+        picker = modelPickerButton();
+        if (picker) break;
+        await sleep(100);
+      }
       if (!picker) {
         return {
           ok: false,
