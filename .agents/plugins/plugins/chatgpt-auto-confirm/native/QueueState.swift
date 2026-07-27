@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v63"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v65"
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -499,4 +499,3 @@ func startQueueWatcher(_ state: inout PluginState) throws {
   state.queueWatcherPid = process.processIdentifier
   state.queueRuntimeRevision = currentQueueRuntimeRevision
 }
-

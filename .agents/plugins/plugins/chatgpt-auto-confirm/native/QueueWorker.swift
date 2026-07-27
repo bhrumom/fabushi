@@ -349,14 +349,11 @@ func openBackgroundQueueWindow(
   // Let the main process consume rendererReady before replacing the prewarm
   // route. Navigating immediately can leave the quick-chat shell unclaimed.
   Thread.sleep(forTimeInterval: 1.0)
-  // The bare quick-chat route is intentionally only a prewarm shell:
-  // QuickChatWindowPage reports rendererReady(null) and renders no body until
-  // a client conversation id is present. Give the hidden window the same
-  // client-generated UUID shape used by the official Quick Chat popover so it
-  // mounts a usable new-conversation composer without ever showing the window.
-  let conversationUUID = UUID().uuidString.lowercased()
-  let quickChatURL =
-    "app://-/index.html?initialRoute=%2Fchatgpt%2Fquick-chat%2Flocal-chatgpt%3A\(conversationUUID)"
+  // Quick Chat itself is feature-gated per account. The official prewarm
+  // service is still the supported way to obtain a show:false BrowserWindow,
+  // but hosted accounts without that gate must mount the normal authenticated
+  // app root in the same hidden window before selecting Chat.
+  let hiddenAppURL = "app://-/index.html?initialRoute=%2F"
   guard
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
@@ -364,7 +361,7 @@ func openBackgroundQueueWindow(
         let wsURL = target["webSocketDebuggerUrl"] as? String,
         CDPClient.navigate(
           wsURLString: wsURL,
-          url: quickChatURL
+          url: hiddenAppURL
         ) else {
     failure = "prewarm_navigation_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
@@ -403,7 +400,7 @@ func openBackgroundQueueWindow(
        textLength > 100,
        visibility == "hidden",
        href?.hasPrefix("app://-/index.html") == true,
-       href?.contains(conversationUUID) == true {
+       href?.contains("initialRoute=%2F") == true {
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
@@ -418,7 +415,7 @@ func openBackgroundQueueWindow(
     "text=\((lastReady?["text"] as? NSNumber)?.intValue ?? -1)",
     "html=\((lastReady?["html"] as? NSNumber)?.intValue ?? -1)",
     "visibility=\(lastReady?["visibility"] as? String ?? "none")",
-    "routeMatches=\((lastReady?["href"] as? String ?? "").contains(conversationUUID))",
+    "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2F"))",
   ].joined(separator: ":")
   _ = CDPClient.closeTarget(targetId, portOverride: port)
   return nil
