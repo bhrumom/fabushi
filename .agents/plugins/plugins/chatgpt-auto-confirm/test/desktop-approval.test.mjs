@@ -243,6 +243,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /retryAfterModeSwitch: true/);
   assert.match(nativeSource, /__mahayanaChatModeSwitchAttempted/);
   assert.match(nativeSource, /\[\.\.\.candidates\(\)\]\.reverse\(\)\.find/);
+  assert.match(nativeSource, /label\.includes\('current mode: chatgpt'\)/);
+  assert.match(nativeSource, /alreadySelected: true/);
+  assert.match(nativeSource, /!quickChatRoot && !currentChatGPTMode/);
   assert.match(nativeSource, /chatSelection\?\["retryAfterModeSwitch"\] as\? Bool == true/);
   assert.match(nativeSource, /chatSelected: true,[\s\S]*dispatchOnly: true/);
   assert.match(nativeSource, /negative preflight[\s\S]*must not leave every task queued forever/);

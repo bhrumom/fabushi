@@ -632,14 +632,21 @@ func sendMessageJS(
 
     function chatModeIsActive() {
       const quickRoot = quickChatRoot();
+      const currentChatGPTMode = [...document.querySelectorAll('button, a, [role="button"]')]
+        .some(button => {
+          const label = (button.getAttribute('aria-label') || '').toLowerCase();
+          return label.includes('current mode: chatgpt')
+            || (label.includes('当前模式') && label.includes('chatgpt'));
+        });
       const chatModel = [...document.querySelectorAll('button')].some(button => {
         const label = button.getAttribute('aria-label') || '';
         return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
       });
       const webChat = window.location.protocol === 'https:'
         && window.location.hostname === 'chatgpt.com';
-      return (!!quickRoot || chatModel || webChat) && !!findTextarea()
-        && (!!quickRoot || !document.querySelector('[data-codex-composer="true"]'));
+      return (!!quickRoot || currentChatGPTMode || chatModel || webChat) && !!findTextarea()
+        && (!!quickRoot || currentChatGPTMode
+          || !document.querySelector('[data-codex-composer="true"]'));
     }
 
     function replaceText(el, text) {
@@ -1240,13 +1247,16 @@ func chatStatusJS() -> String {
   const mode = modeButton
     ? `${modeButton.getAttribute('aria-label') || ''} ${modeButton.textContent || ''}`.trim()
     : '';
+  const normalizedMode = mode.toLowerCase();
+  const currentChatGPTMode = normalizedMode.includes('current mode: chatgpt')
+    || (normalizedMode.includes('当前模式') && normalizedMode.includes('chatgpt'));
   const chatModel = [...document.querySelectorAll('button')].some(button => {
     const label = button.getAttribute('aria-label') || '';
     return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
   });
   const webChat = window.location.protocol === 'https:'
     && window.location.hostname === 'chatgpt.com';
-  const workComposer = !quickChatRoot
+  const workComposer = !quickChatRoot && !currentChatGPTMode
     && !!document.querySelector('[data-codex-composer="true"]');
   const pageURL = window.location.href || '';
   const initialRoute = new URL(pageURL).searchParams.get('initialRoute') || '';
@@ -1295,8 +1305,10 @@ func chatStatusJS() -> String {
     hasInput: hasInput,
     streaming: streaming,
     mode: mode,
-    chatMode: (!!quickChatRoot || chatModel || webChat) && hasInput && !workComposer,
-    surface: (!!quickChatRoot || chatModel || webChat) && hasInput && !workComposer ? 'chat' : 'not-chat',
+    chatMode: (!!quickChatRoot || currentChatGPTMode || chatModel || webChat)
+      && hasInput && !workComposer,
+    surface: (!!quickChatRoot || currentChatGPTMode || chatModel || webChat)
+      && hasInput && !workComposer ? 'chat' : 'not-chat',
     backgroundOnly: true,
     workerUsed: false,
     title: title || '',
