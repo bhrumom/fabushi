@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatgpt-auto-confirm-continuous-runner
+  group: chatgpt-auto-confirm-fix-test-runner
   cancel-in-progress: false
 
 jobs:
