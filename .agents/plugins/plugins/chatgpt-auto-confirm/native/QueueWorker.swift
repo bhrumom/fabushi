@@ -261,7 +261,7 @@ func continueHiddenOnboardingJS() -> String {
   (() => {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const allowed = new Set([
-      'continue', '继续', 'next', '下一步', 'done', '完成'
+      'continue', '继续', 'next', '下一步', 'done', '完成', 'skip', '跳过'
     ]);
     const button = [...document.querySelectorAll('button, [role="button"]')].find(node => {
       const labels = [
