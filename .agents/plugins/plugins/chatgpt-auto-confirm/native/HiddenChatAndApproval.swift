@@ -623,6 +623,7 @@ func clickChatJS() -> String {
       candidate.getAttribute('aria-label'),
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
+    const modeSwitchAttempted = window.__mahayanaChatModeSwitchAttempted === true;
     const exactChat = (includeChatGPT = false) => candidates().find(candidate =>
       labelsFor(candidate).some(label =>
         label === 'chat'
@@ -637,6 +638,14 @@ func clickChatJS() -> String {
         && labelsFor(candidate).some(label => label === 'chatgpt')
       );
     }
+    if (!button && modeSwitchAttempted) {
+      // Floating mode choices are appended after the persistent header button
+      // and are not consistently given a menuitem role. Prefer the last exact
+      // ChatGPT label after the switcher has already been opened once.
+      button = [...candidates()].reverse().find(candidate =>
+        labelsFor(candidate).some(label => label === 'chatgpt')
+      );
+    }
     if (!button) {
       const modeSwitch = candidates().find(candidate =>
         labelsFor(candidate).some(label =>
@@ -649,6 +658,7 @@ func clickChatJS() -> String {
         // Opening the switcher can itself replace the renderer. Return before
         // dispatching the click, then let the caller evaluate the new page and
         // select the ChatGPT menu item in a fresh execution context.
+        window.__mahayanaChatModeSwitchAttempted = true;
         setTimeout(() => {
           try { modeSwitch.click(); } catch (_) {}
         }, 0);
