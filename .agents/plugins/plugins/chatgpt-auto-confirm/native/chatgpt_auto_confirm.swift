@@ -2904,7 +2904,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v60"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v61"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3741,6 +3741,14 @@ private func openBackgroundQueueWindow(
   // Let the main process consume rendererReady before replacing the prewarm
   // route. Navigating immediately can leave the quick-chat shell unclaimed.
   Thread.sleep(forTimeInterval: 1.0)
+  // The bare quick-chat route is intentionally only a prewarm shell:
+  // QuickChatWindowPage reports rendererReady(null) and renders no body until
+  // a client conversation id is present. Give the hidden window the same
+  // client-generated UUID shape used by the official Quick Chat popover so it
+  // mounts a usable new-conversation composer without ever showing the window.
+  let conversationId = UUID().uuidString.lowercased()
+  let quickChatURL =
+    "app://-/index.html?initialRoute=%2Fchatgpt%2Fquick-chat%2F\(conversationId)"
   guard
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
@@ -3748,7 +3756,7 @@ private func openBackgroundQueueWindow(
         let wsURL = target["webSocketDebuggerUrl"] as? String,
         CDPClient.navigate(
           wsURLString: wsURL,
-          url: "app://-/index.html?initialRoute=%2Fchatgpt%2Fquick-chat"
+          url: quickChatURL
         ) else {
     failure = "prewarm_navigation_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
@@ -3785,7 +3793,7 @@ private func openBackgroundQueueWindow(
        textLength > 100,
        visibility == "hidden",
        href?.hasPrefix("app://-/index.html") == true,
-       href?.contains("initialRoute=%2Fchatgpt%2Fquick-chat") == true {
+       href?.contains(conversationId) == true {
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
