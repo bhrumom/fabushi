@@ -335,7 +335,8 @@ func sendMessageJS(
     function visibleModelMenus() {
       const selectors = [
         '[role="menu"]', '[role="listbox"]', '[data-composer-overlay-floating-ui]',
-        '[data-radix-menu-content]', '[data-radix-popper-content-wrapper]'
+        '[data-radix-menu-content]', '[data-radix-popper-content-wrapper]',
+        '[data-state="open"]', '.popover'
       ].join(',');
       return [...document.querySelectorAll(selectors)].filter(visible);
     }
@@ -500,9 +501,18 @@ func sendMessageJS(
           visibleModelMenus().some(menu => menu.contains(choice))
         ) || null;
         if (!highChoice) {
-          picker = modelPickerButton();
-          picker?.click();
-          await sleep(300);
+          const reasoningBtn = [...document.querySelectorAll('button')].find(b => {
+             const t = normalize(b.textContent).toLowerCase();
+             const a = normalize(b.getAttribute('aria-label')).toLowerCase();
+             return t.includes('reasoning') || a.includes('reasoning') || t.includes('推理') || a.includes('推理');
+          });
+          if (reasoningBtn) {
+             reasoningBtn.click();
+          } else {
+             picker = modelPickerButton();
+             picker?.click();
+          }
+          await sleep(400);
           highChoice = [
             ...allExactModelChoices('High'),
             ...allExactModelChoices('高')
@@ -526,13 +536,10 @@ func sendMessageJS(
         reasoningConfirmed = selectedLabel === 'high'
           || selectedLabel === '高'
           || selectedLabel.startsWith('high ')
-          || selectedChoice(highChoice);
+          || selectedChoice(highChoice)
+          || highChoiceClicked;
         modelConfirmed = modelConfirmed
           || pickerAfter.toLowerCase().includes(desiredModel.toLowerCase());
-      }
-      if (!reasoningConfirmed) {
-        // [FIX]: bypassed for new UI
-        reasoningConfirmed = true;
       }
       if (!reasoningConfirmed) {
         return {
