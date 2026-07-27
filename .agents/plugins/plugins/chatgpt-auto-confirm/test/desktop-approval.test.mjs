@@ -223,6 +223,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /controllerTargetId: controller\.targetId/);
   assert.match(nativeSource, /prewarm_reset_failed/);
   assert.match(nativeSource, /prewarm_hidden_chat_surface_timeout/);
+  assert.match(nativeSource, /candidateLabels/);
+  assert.match(nativeSource, /prewarm_hidden_target_not_chat/);
   assert.match(nativeSource, /conversation_changed_before_send/);
   assert.match(nativeSource, /conversation_changed_during_send/);
   assert.match(nativeSource, /conversation_changed_before_dispatch/);
