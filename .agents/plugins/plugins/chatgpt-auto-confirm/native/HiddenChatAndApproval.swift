@@ -623,8 +623,12 @@ func clickChatJS() -> String {
       candidate.getAttribute('aria-label'),
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
-    const exactChat = () => candidates().find(candidate =>
-      labelsFor(candidate).some(label => label === 'chat' || label === '聊天')
+    const exactChat = (includeChatGPT = false) => candidates().find(candidate =>
+      labelsFor(candidate).some(label =>
+        label === 'chat'
+        || label === '聊天'
+        || (includeChatGPT && label === 'chatgpt')
+      )
     );
     let button = exactChat();
     if (!button) {
@@ -638,7 +642,10 @@ func clickChatJS() -> String {
       if (modeSwitch) {
         modeSwitch.click();
         await sleep(350);
-        button = exactChat();
+        // Newer desktop builds name the Chat mode "ChatGPT". Only accept that
+        // label after opening the mode menu so the page title cannot be
+        // mistaken for the selectable mode item.
+        button = exactChat(true);
       }
     }
     if (!button) {
