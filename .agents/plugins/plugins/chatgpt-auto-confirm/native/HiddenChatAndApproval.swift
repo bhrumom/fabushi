@@ -601,30 +601,50 @@ func clickNewChatJS() -> String {
 
 func clickChatJS() -> String {
   #"""
-  (() => {
+  (async () => {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const candidates = [...document.querySelectorAll('button, a, [role="button"]')];
-    const button = candidates.find(candidate => {
-      const labels = [
-        candidate.innerText,
-        candidate.textContent,
-        candidate.getAttribute('aria-label'),
-        candidate.getAttribute('title')
-      ].map(normalize).filter(Boolean);
-      return labels.some(label => label === 'chat' || label === '聊天');
-    });
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const candidates = () => [...document.querySelectorAll(
+      'button, a, [role="button"], [role="menuitem"]'
+    )];
+    const labelsFor = candidate => [
+      candidate.innerText,
+      candidate.textContent,
+      candidate.getAttribute('aria-label'),
+      candidate.getAttribute('title')
+    ].map(normalize).filter(Boolean);
+    const exactChat = () => candidates().find(candidate =>
+      labelsFor(candidate).some(label => label === 'chat' || label === '聊天')
+    );
+    let button = exactChat();
     if (!button) {
+      const modeSwitch = candidates().find(candidate =>
+        labelsFor(candidate).some(label =>
+          label.includes('switch mode, current mode:')
+          || label.includes('切换模式')
+          || label.includes('当前模式')
+        )
+      );
+      if (modeSwitch) {
+        modeSwitch.click();
+        await sleep(350);
+        button = exactChat();
+      }
+    }
+    if (!button) {
+      const visibleCandidates = candidates();
       return {
         ok: false,
         error: 'chat_button_not_found',
-        candidateLabels: candidates.flatMap(candidate => [
+        candidateLabels: visibleCandidates.flatMap(candidate => [
           candidate.innerText,
           candidate.getAttribute('aria-label'),
           candidate.getAttribute('title')
-        ]).map(normalize).filter(Boolean).slice(0, 40)
+        ]).map(normalize).filter(Boolean).slice(0, 60)
       };
     }
     button.click();
+    await sleep(350);
     return {
       ok: true,
       chatSelected: true,
@@ -1258,4 +1278,3 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
   }
   return nil
 }
-
