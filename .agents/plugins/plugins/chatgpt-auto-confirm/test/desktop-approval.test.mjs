@@ -256,7 +256,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /selectionLabels=/);
   assert.match(nativeSource, /continueHiddenOnboardingJS/);
   assert.match(nativeSource, /desktop app's informational onboarding/);
-  assert.match(nativeSource, /'skip', '跳过'/);
+  assert.match(nativeSource, /'go to chatgpt'.*'skip'/s);
   assert.match(nativeSource, /querySelectorAll\('button, a, \[role="button"\]'\)/);
   assert.doesNotMatch(nativeSource, /'turn on'.*'not now'/);
   assert.match(nativeSource, /routeMatches=/);
