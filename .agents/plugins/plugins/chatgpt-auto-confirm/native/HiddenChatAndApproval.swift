@@ -422,7 +422,12 @@ func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> St
       }
     }
 
-    const input = document.querySelector('#prompt-textarea')
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const input = quickChatRoot?.querySelector(
+      '#prompt-textarea, [contenteditable="true"]'
+    ) || document.querySelector('#prompt-textarea')
       || document.querySelector('[contenteditable="true"]');
     const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
       const label = button.getAttribute('aria-label') || '';
@@ -430,7 +435,8 @@ func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> St
     });
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
-    const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+    const workComposer = !quickChatRoot
+      && !!document.querySelector('[data-codex-composer="true"]');
     
     const isChatSurface = !!document.querySelector('#prompt-textarea') || chatModel || webChat || window.location.protocol === 'chatgpt:';
 
@@ -630,6 +636,13 @@ func clickChatJS() -> String {
         await sleep(350);
         button = exactChat();
       }
+    }
+    if (!button) {
+      button = candidates().find(candidate =>
+        labelsFor(candidate).some(label =>
+          label === 'quick chat' || label === '快速聊天'
+        )
+      );
     }
     if (!button) {
       const visibleCandidates = candidates();

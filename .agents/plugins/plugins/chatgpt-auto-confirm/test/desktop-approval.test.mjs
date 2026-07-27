@@ -230,6 +230,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /candidateLabels/);
   assert.match(nativeSource, /switch mode, current mode:/);
   assert.match(nativeSource, /modeSwitch\.click\(\)/);
+  assert.match(nativeSource, /label === 'quick chat'/);
+  assert.match(nativeSource, /data-pip-obstacle="quick-chat"/);
   assert.match(nativeSource, /prewarm_hidden_target_not_chat/);
   assert.match(nativeSource, /entryScripts/);
   assert.match(nativeSource, /prewarmCreationFailure/);
