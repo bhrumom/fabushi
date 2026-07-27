@@ -248,6 +248,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /alreadySelected: true/);
   assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode = true/);
   assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode === true/);
+  assert.match(nativeSource,
+    /destroyed execution context[\s\S]*__mahayanaConfirmedChatGPTMode = true/);
   assert.match(nativeSource, /!quickChatRoot && !currentChatGPTMode/);
   assert.match(nativeSource, /chatSelection\?\["retryAfterModeSwitch"\] as\? Bool == true/);
   assert.match(nativeSource, /chatSelected: true,[\s\S]*dispatchOnly: true/);
