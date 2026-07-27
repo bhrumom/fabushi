@@ -634,7 +634,12 @@ func sendMessageJS(
       const quickRoot = quickChatRoot();
       const currentChatGPTMode = [...document.querySelectorAll('button, a, [role="button"]')]
         .some(button => {
-          const label = (button.getAttribute('aria-label') || '').toLowerCase();
+          const label = [
+            button.innerText,
+            button.textContent,
+            button.getAttribute('aria-label'),
+            button.getAttribute('title')
+          ].filter(Boolean).join(' ').toLowerCase();
           return label.includes('current mode: chatgpt')
             || (label.includes('当前模式') && label.includes('chatgpt'));
         });
