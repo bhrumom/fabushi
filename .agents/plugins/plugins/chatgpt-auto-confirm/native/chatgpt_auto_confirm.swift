@@ -1883,12 +1883,36 @@ private func clickNewChatJS() -> String {
 private func clickChatJS() -> String {
   #"""
   (() => {
-    const button = [...document.querySelectorAll('button')].find(button =>
-      (button.innerText || button.textContent || '').trim().toLowerCase() === 'chat'
-    );
-    if (!button) return { ok: false, error: 'chat_button_not_found' };
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const candidates = [...document.querySelectorAll('button, a, [role="button"]')];
+    const button = candidates.find(candidate => {
+      const labels = [
+        candidate.innerText,
+        candidate.textContent,
+        candidate.getAttribute('aria-label'),
+        candidate.getAttribute('title')
+      ].map(normalize).filter(Boolean);
+      return labels.some(label => label === 'chat' || label === '聊天');
+    });
+    if (!button) {
+      return {
+        ok: false,
+        error: 'chat_button_not_found',
+        candidateLabels: candidates.flatMap(candidate => [
+          candidate.innerText,
+          candidate.getAttribute('aria-label'),
+          candidate.getAttribute('title')
+        ]).map(normalize).filter(Boolean).slice(0, 40)
+      };
+    }
     button.click();
-    return { ok: true, chatSelected: true };
+    return {
+      ok: true,
+      chatSelected: true,
+      selectedLabel: normalize(
+        button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
+      )
+    };
   })()
   """#
 }
@@ -2880,7 +2904,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v57"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v58"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3829,13 +3853,14 @@ private func createQueueWorkerTarget(
        controllerTargetId: controller.targetId,
        failure: &prewarmFailure
      ) {
-    _ = cdpValue(
+    let chatSelection = cdpValue(
       port: controller.port,
       targetId: hiddenTargetId,
       expression: clickChatJS(),
       timeout: 4.0
     )
     var hiddenPrepared = false
+    var lastHiddenPrepare: [String: Any]?
     for _ in 0..<80 {
       let prepared = cdpValue(
         port: controller.port,
@@ -3843,6 +3868,7 @@ private func createQueueWorkerTarget(
         expression: prepareBackgroundChatJS(newChat: false),
         timeout: 5.0
       )
+      lastHiddenPrepare = prepared
       if prepared?["ok"] as? Bool == true,
          queueTargetRuntimeState(
            port: controller.port,
@@ -3865,11 +3891,24 @@ private func createQueueWorkerTarget(
       return (controller.port, hiddenTargetId, controller.profilePath)
     }
     _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
-    prewarmFailure = "prewarm_hidden_target_not_chat"
+    let selectionError = chatSelection?["error"] as? String ?? "none"
+    let prepareError = lastHiddenPrepare?["error"] as? String ?? "no_result"
+    let workComposer = lastHiddenPrepare?["workComposer"] as? Bool ?? false
+    let hasInput = lastHiddenPrepare?["hasInput"] as? Bool ?? false
+    let chatModel = lastHiddenPrepare?["chatModel"] as? Bool ?? false
+    prewarmFailure = [
+      "prewarm_hidden_target_not_chat",
+      "selection=\(selectionError)",
+      "prepare=\(prepareError)",
+      "hasInput=\(hasInput)",
+      "chatModel=\(chatModel)",
+      "workComposer=\(workComposer)",
+    ].joined(separator: ":")
   }
   state.lastError = prewarmFailure ?? "prewarm_controller_unavailable"
 
-  guard let prepared = ensureHiddenChatTarget(&state),
+  let fallback = ensureHiddenChatTarget(&state)
+  guard let prepared = fallback,
         prepared["ok"] as? Bool == true,
         let preparedPort = prepared["port"] as? Int,
         let targetId = prepared["targetId"] as? String,
@@ -3878,6 +3917,9 @@ private func createQueueWorkerTarget(
           targetId: targetId,
           refreshLifecycle: true
         ) == .hidden else {
+    if let prewarmFailure {
+      state.lastError = prewarmFailure
+    }
     return nil
   }
   let preparedProfilePath = prepared["profilePath"] as? String ?? profilePath
