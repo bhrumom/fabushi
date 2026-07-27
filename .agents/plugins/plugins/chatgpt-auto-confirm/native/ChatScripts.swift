@@ -311,7 +311,8 @@ func sendMessageJS(
       const textMatch = [...scope.querySelectorAll('button, [role="button"]')].find(button => {
         if (!visible(button) || button === send) return false;
         const text = normalize(button.textContent).toLowerCase();
-        return text.includes('gpt-') || text === 'thinking' || text === '思考' || text === 'chatgpt';
+        return text.includes('gpt-') || text === 'thinking' || text === '思考' || text === 'chatgpt' || 
+               text === 'high' || text === 'medium' || text.includes('instant') || text === 'pro' || text === '高';
       });
       if (textMatch) return textMatch;
 
@@ -346,7 +347,11 @@ func sendMessageJS(
       const target = normalize(label).toLowerCase();
       const candidates = [...scope.querySelectorAll(
         'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
-      )].filter(element => visible(element) && normalize(element.textContent).toLowerCase() === target);
+      )].filter(element => {
+        if (!visible(element)) return false;
+        const text = normalize(element.textContent).toLowerCase().replace(/>/g, '').trim();
+        return text === target;
+      });
       return candidates.sort((left, right) => {
         const l = left.getBoundingClientRect();
         const r = right.getBoundingClientRect();
@@ -358,7 +363,11 @@ func sendMessageJS(
       const target = normalize(label).toLowerCase();
       return [...document.querySelectorAll(
         'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
-      )].filter(element => visible(element) && normalize(element.textContent).toLowerCase() === target);
+      )].filter(element => {
+        if (!visible(element)) return false;
+        const text = normalize(element.textContent).toLowerCase().replace(/>/g, '').trim();
+        return text === target;
+      });
     }
 
     function allPrefixedModelChoices(label) {
@@ -367,7 +376,7 @@ func sendMessageJS(
         'button, [role="menuitem"], [role="menuitemradio"], [role="option"], [data-list-navigation-item="true"]'
       )].filter(element => {
         if (!visible(element)) return false;
-        const text = normalize(element.textContent).toLowerCase();
+        const text = normalize(element.textContent).toLowerCase().replace(/>/g, '').trim();
         return text === target || text.startsWith(`${target} `);
       });
     }
@@ -416,20 +425,25 @@ func sendMessageJS(
       // before sending, while the task contract separately requires downstream
       // Codex/devspace execution to use GPT-5.6 Sol / High.
       const quickChatModelSurface = !!quickChatRoot()
-        || ['instant', 'thinking', 'pro'].some(label =>
+        || ['instant', 'thinking', 'pro', 'high', 'medium'].some(label =>
           selectedLabel === label || selectedLabel.startsWith(`${label} `)
         );
       if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
         let quickChatConfirmed = selectedLabel === 'thinking'
           || selectedLabel === '思考'
-          || selectedLabel.startsWith('thinking ');
+          || selectedLabel.startsWith('thinking ')
+          || selectedLabel === 'high'
+          || selectedLabel === '高'
+          || selectedLabel.startsWith('high ');
         if (!quickChatConfirmed) {
           picker.click();
           await sleep(350);
           const thinkingChoice = [
             ...allPrefixedModelChoices('Thinking'),
-            ...allPrefixedModelChoices('思考')
+            ...allPrefixedModelChoices('思考'),
+            ...allPrefixedModelChoices('High'),
+            ...allPrefixedModelChoices('高')
           ][0] || null;
           if (thinkingChoice) {
             if (!selectedChoice(thinkingChoice)) thinkingChoice.click();
@@ -440,7 +454,10 @@ func sendMessageJS(
           selectedLabel = normalize(picker?.textContent).toLowerCase();
           quickChatConfirmed = selectedLabel === 'thinking'
             || selectedLabel === '思考'
-            || selectedLabel.startsWith('thinking ');
+            || selectedLabel.startsWith('thinking ')
+            || selectedLabel === 'high'
+            || selectedLabel === '高'
+            || selectedLabel.startsWith('high ');
         }
         if (!quickChatConfirmed) {
           return {
