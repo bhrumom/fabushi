@@ -367,7 +367,7 @@ func sendMessageJS(
     }
 
     async function ensureModelAndReasoning() {
-      const picker = modelPickerButton();
+      let picker = modelPickerButton();
       if (!picker) {
         return {
           ok: false,
@@ -383,20 +383,95 @@ func sendMessageJS(
         picker.getAttribute('aria-label'),
         picker.getAttribute('title')
       ].filter(Boolean).join(' '));
-      const selectedLabel = normalize(picker.textContent).toLowerCase();
-      const reasoningConfirmed = selectedLabel === 'high'
+      let selectedLabel = normalize(picker.textContent).toLowerCase();
+      let reasoningConfirmed = selectedLabel === 'high'
         || selectedLabel === '高'
         || selectedLabel.startsWith('high ');
+      let modelConfirmed = pickerBefore.toLowerCase().includes(desiredModel.toLowerCase());
+      let modelChoiceClicked = false;
+      let highChoiceClicked = false;
+
+      if (!reasoningConfirmed || !modelConfirmed) {
+        picker.click();
+        await sleep(350);
+
+        let modelChoice = allExactModelChoices(desiredModel).find(choice =>
+          visibleModelMenus().some(menu => menu.contains(choice))
+        ) || allExactModelChoices(desiredModel)[0] || null;
+        if (modelChoice) {
+          if (!selectedChoice(modelChoice)) modelChoice.click();
+          modelChoiceClicked = true;
+          modelConfirmed = true;
+          await sleep(350);
+        }
+
+        let highChoice = [
+          ...allExactModelChoices('High'),
+          ...allExactModelChoices('高')
+        ].find(choice =>
+          visibleModelMenus().some(menu => menu.contains(choice))
+        ) || null;
+        if (!highChoice) {
+          picker = modelPickerButton();
+          picker?.click();
+          await sleep(300);
+          highChoice = [
+            ...allExactModelChoices('High'),
+            ...allExactModelChoices('高')
+          ].find(choice =>
+            visibleModelMenus().some(menu => menu.contains(choice))
+          ) || null;
+        }
+        if (highChoice) {
+          if (!selectedChoice(highChoice)) highChoice.click();
+          highChoiceClicked = true;
+          await sleep(350);
+        }
+
+        picker = modelPickerButton();
+        const pickerAfter = normalize([
+          picker?.textContent,
+          picker?.getAttribute('aria-label'),
+          picker?.getAttribute('title')
+        ].filter(Boolean).join(' '));
+        selectedLabel = normalize(picker?.textContent).toLowerCase();
+        reasoningConfirmed = selectedLabel === 'high'
+          || selectedLabel === '高'
+          || selectedLabel.startsWith('high ')
+          || selectedChoice(highChoice);
+        modelConfirmed = modelConfirmed
+          || pickerAfter.toLowerCase().includes(desiredModel.toLowerCase());
+      }
       if (!reasoningConfirmed) {
         return {
           ok: false,
           error: 'reasoning_high_not_selected',
           model: desiredModel,
           reasoning: desiredReasoning,
-          modelConfirmed: false,
+          modelConfirmed,
           reasoningConfirmed: false,
           pickerBefore,
-          selectedLabel
+          selectedLabel,
+          modelChoiceClicked,
+          highChoiceClicked,
+          visibleMenuText: visibleModelMenus()
+            .map(menu => normalize(menu.textContent).slice(0, 500))
+        };
+      }
+      if (!modelConfirmed) {
+        return {
+          ok: false,
+          error: 'target_model_not_selected',
+          model: desiredModel,
+          reasoning: desiredReasoning,
+          modelConfirmed: false,
+          reasoningConfirmed: true,
+          pickerBefore,
+          selectedLabel,
+          modelChoiceClicked,
+          highChoiceClicked,
+          visibleMenuText: visibleModelMenus()
+            .map(menu => normalize(menu.textContent).slice(0, 500))
         };
       }
 
@@ -404,13 +479,13 @@ func sendMessageJS(
         ok: true,
         model: desiredModel,
         reasoning: desiredReasoning,
-        modelConfirmed: true,
+        modelConfirmed,
         reasoningConfirmed: true,
         pickerBefore,
         selectedLabel,
         pickerEvidence: 'selected_button_state',
-        verificationModelSelected: true,
-        submenuHighSelected: true
+        verificationModelSelected: modelConfirmed,
+        submenuHighSelected: highChoiceClicked || reasoningConfirmed
       };
     }
 
