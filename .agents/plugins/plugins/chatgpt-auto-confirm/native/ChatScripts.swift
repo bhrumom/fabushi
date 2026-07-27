@@ -275,11 +275,13 @@ func sendMessageJS(
 
     const desiredModel = 'GPT-5.6 Sol';
     const desiredReasoning = 'High';
+    const desiredQuickChatModel = 'Thinking';
 
     function modelPickerButton() {
       const input = findTextarea();
       const send = findSendButton();
-      const explicit = [...document.querySelectorAll(
+      const scope = quickChatRoot() || document;
+      const explicit = [...scope.querySelectorAll(
         'button[aria-label], [role="button"][aria-label]'
       )].find(button => {
         if (!visible(button) || button === send) return false;
@@ -386,22 +388,62 @@ func sendMessageJS(
       let selectedLabel = normalize(picker.textContent).toLowerCase();
       // Desktop Quick Chat is the authenticated orchestration surface. It
       // exposes ChatGPT choices such as Instant/Thinking, not the Codex
-      // GPT-5.6 Sol reasoning menu. The task contract separately requires the
-      // downstream devspace execution to use GPT-5.6 Sol / High. Treat a
-      // concrete Quick Chat host selection as valid instead of opening the
-      // Work project menu behind the overlay and failing forever.
-      if (quickChatRoot() && selectedLabel) {
+      // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
+      // before sending, while the task contract separately requires downstream
+      // Codex/devspace execution to use GPT-5.6 Sol / High.
+      if (quickChatRoot()) {
+        let quickChatChoiceClicked = false;
+        let quickChatConfirmed = selectedLabel === 'thinking'
+          || selectedLabel === '思考'
+          || selectedLabel.startsWith('thinking ');
+        if (!quickChatConfirmed) {
+          picker.click();
+          await sleep(350);
+          const thinkingChoice = [
+            ...allExactModelChoices('Thinking'),
+            ...allExactModelChoices('思考')
+          ].find(choice =>
+            visibleModelMenus().some(menu => menu.contains(choice))
+          ) || null;
+          if (thinkingChoice) {
+            if (!selectedChoice(thinkingChoice)) thinkingChoice.click();
+            quickChatChoiceClicked = true;
+            await sleep(350);
+          }
+          picker = modelPickerButton();
+          selectedLabel = normalize(picker?.textContent).toLowerCase();
+          quickChatConfirmed = selectedLabel === 'thinking'
+            || selectedLabel === '思考'
+            || selectedLabel.startsWith('thinking ')
+            || selectedChoice(thinkingChoice);
+        }
+        if (!quickChatConfirmed) {
+          return {
+            ok: false,
+            error: 'quick_chat_thinking_not_selected',
+            model: desiredQuickChatModel,
+            reasoning: desiredReasoning,
+            modelConfirmed: false,
+            reasoningConfirmed: false,
+            pickerBefore,
+            selectedLabel,
+            quickChatChoiceClicked,
+            visibleMenuText: visibleModelMenus()
+              .map(menu => normalize(menu.textContent).slice(0, 500))
+          };
+        }
         return {
           ok: true,
-          model: selectedLabel,
-          reasoning: 'delegated-to-devspace',
+          model: desiredQuickChatModel,
+          reasoning: desiredReasoning,
           modelConfirmed: true,
           reasoningConfirmed: true,
           pickerBefore,
           selectedLabel,
-          pickerEvidence: 'quick-chat-host-selection',
+          pickerEvidence: 'quick-chat-thinking-selection',
+          quickChatChoiceClicked,
           verificationModelSelected: true,
-          submenuHighSelected: false,
+          submenuHighSelected: true,
           downstreamModel: desiredModel,
           downstreamReasoning: desiredReasoning
         };
