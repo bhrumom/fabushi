@@ -125,6 +125,7 @@ func sharedChatController(
     general?.backgroundChatTargetId,
     state.backgroundChatTargetId,
   ].compactMap { $0 }
+  queueTrace("worker-create stage=controller-discovery begin port=\(port)")
   // Hosted macOS runners invoke the queue only a few seconds after launching
   // ChatGPT. The preload bridge and entry module can be ready before React has
   // rendered five buttons, so wait for the actual prewarm prerequisites
@@ -163,6 +164,7 @@ func sharedChatController(
       state.backgroundAppPort = port
       state.backgroundChatTargetId = targetId
       state.backgroundProfilePath = profilePath
+      queueTrace("worker-create stage=controller-discovery complete target=\(targetId)")
       return (port, targetId, profilePath)
     }
     Thread.sleep(forTimeInterval: 0.25)
@@ -171,6 +173,7 @@ func sharedChatController(
         prepared["ok"] as? Bool == true,
         let port = prepared["port"] as? Int,
         let targetId = prepared["targetId"] as? String else { return nil }
+  queueTrace("worker-create stage=controller-fallback complete target=\(targetId)")
   return (port, targetId, prepared["profilePath"] as? String ?? hiddenChatProfilePath())
 }
 
@@ -290,6 +293,7 @@ func openBackgroundQueueWindow(
   controllerTargetId: String,
   failure: inout String?
 ) -> String? {
+  queueTrace("worker-create stage=prewarm-open begin controller=\(controllerTargetId)")
   let existingTargetIds = Set(CDPClient.fetchTargets(portOverride: port).compactMap {
     $0["id"] as? String
   })
@@ -307,6 +311,7 @@ func openBackgroundQueueWindow(
     failure = "prewarm_reset_failed:\(reset?["error"] as? String ?? "no_result")"
     return nil
   }
+  queueTrace("worker-create stage=prewarm-reset complete")
 
   var targetId: String?
   for _ in 0..<100 {
@@ -324,6 +329,7 @@ func openBackgroundQueueWindow(
     failure = "prewarm_target_not_created"
     return nil
   }
+  queueTrace("worker-create stage=prewarm-target complete target=\(targetId)")
 
   // ChatGPT's prewarm controller closes a renderer that has not reported
   // readiness within 15 seconds. A hidden prewarm route does not always mount
@@ -352,6 +358,7 @@ func openBackgroundQueueWindow(
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
+  queueTrace("worker-create stage=prewarm-renderer-loaded")
   // In current desktop builds the prewarm renderer can report document
   // readiness before its RPC client is fully registered with the main
   // process. The measured stable handoff needs roughly 1.8 seconds.
@@ -375,6 +382,7 @@ func openBackgroundQueueWindow(
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
+  queueTrace("worker-create stage=prewarm-renderer-acknowledged")
   // Let the main process consume rendererReady before replacing the prewarm
   // route. Navigating immediately can leave the quick-chat shell unclaimed.
   Thread.sleep(forTimeInterval: 1.0)
@@ -396,6 +404,7 @@ func openBackgroundQueueWindow(
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
+  queueTrace("worker-create stage=prewarm-navigation complete target=\(targetId)")
   // Electron deprioritizes show:false pages so aggressively that the Chat
   // surface may need over a minute to mount. Keep the actual BrowserWindow
   // hidden while asking Chromium to run this renderer at active lifecycle
@@ -406,6 +415,7 @@ func openBackgroundQueueWindow(
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
   }
+  queueTrace("worker-create stage=prewarm-renderer-awake")
 
   // A show:false renderer is intentionally deprioritized by Electron. On
   // current ChatGPT builds the full Chat surface can take more than 30 seconds
@@ -460,6 +470,7 @@ func openBackgroundQueueWindow(
        visibility == "hidden",
        href?.hasPrefix("app://-/index.html") == true,
        href?.contains("initialRoute=%2F") == true {
+      queueTrace("worker-create stage=hidden-shell-ready target=\(targetId)")
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
@@ -522,6 +533,7 @@ func createQueueWorkerTarget(
     return (preferredTargetIds.firstIndex(of: lhsId) ?? Int.max)
       < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
   }
+  queueTrace("worker-create stage=reuse-scan targets=\(targets.count)")
   for target in targets {
     guard target["type"] as? String == "page",
           (target["url"] as? String ?? "") == "app://-/index.html",
@@ -554,17 +566,20 @@ func createQueueWorkerTarget(
   // hidden Chat surface. Previously this implementation existed but was never
   // called, so the queue could only reuse a hidden target created elsewhere.
   var prewarmFailure: String?
+  queueTrace("worker-create stage=new-hidden-window begin")
   if let controller = sharedChatController(&state),
      let hiddenTargetId = openBackgroundQueueWindow(
        port: controller.port,
        controllerTargetId: controller.targetId,
        failure: &prewarmFailure
      ) {
+    queueTrace("worker-create stage=new-hidden-window complete target=\(hiddenTargetId)")
     // A fresh hosted runner can restore authentication before completing the
     // desktop app's informational onboarding. Advance only neutral navigation
     // buttons, then select Chat once the real app shell is available.
     var chatSelection: [String: Any]?
     for _ in 0..<12 {
+      queueTrace("worker-create stage=chat-selection attempt")
       chatSelection = cdpValue(
         port: controller.port,
         targetId: hiddenTargetId,
@@ -581,9 +596,13 @@ func createQueueWorkerTarget(
       guard onboarding?["clicked"] as? Bool == true else { break }
       Thread.sleep(forTimeInterval: 0.8)
     }
+    queueTrace(
+      "worker-create stage=chat-selection complete ok=\(chatSelection?["ok"] as? Bool ?? false)"
+    )
     var hiddenPrepared = false
     var lastHiddenPrepare: [String: Any]?
     for _ in 0..<80 {
+      queueTrace("worker-create stage=chat-prepare attempt")
       let prepared = cdpValue(
         port: controller.port,
         targetId: hiddenTargetId,
@@ -598,6 +617,7 @@ func createQueueWorkerTarget(
            refreshLifecycle: true
          ) == .hidden {
         hiddenPrepared = true
+        queueTrace("worker-create stage=chat-prepare complete")
         break
       }
       Thread.sleep(forTimeInterval: 0.25)
@@ -631,6 +651,7 @@ func createQueueWorkerTarget(
     ].joined(separator: ":")
   }
   let prewarmCreationFailure = prewarmFailure ?? "prewarm_controller_unavailable"
+  queueTrace("worker-create stage=prewarm-failed error=\(prewarmCreationFailure)")
   state.lastError = prewarmCreationFailure
 
   let fallback = ensureHiddenChatTarget(&state)
