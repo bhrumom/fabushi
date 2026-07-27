@@ -433,14 +433,21 @@ func prepareBackgroundChatJS(newChat: Bool, conversationId: String? = nil) -> St
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
+    const currentChatGPTMode = [...document.querySelectorAll('button, a, [role="button"]')]
+      .some(button => {
+        const label = (button.getAttribute('aria-label') || '').toLowerCase();
+        return label.includes('current mode: chatgpt')
+          || (label.includes('当前模式') && label.includes('chatgpt'));
+      });
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
-    const workComposer = !quickChatRoot
+    const workComposer = !quickChatRoot && !currentChatGPTMode
       && !!document.querySelector('[data-codex-composer="true"]');
     
     const isChatSurface = !!quickChatRoot
       || !!document.querySelector('#prompt-textarea')
       || chatModel
+      || currentChatGPTMode
       || webChat
       || window.location.protocol === 'chatgpt:';
 
@@ -624,6 +631,20 @@ func clickChatJS() -> String {
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
     const modeSwitchAttempted = window.__mahayanaChatModeSwitchAttempted === true;
+    const currentChatGPTMode = candidates().find(candidate =>
+      labelsFor(candidate).some(label =>
+        label.includes('current mode: chatgpt')
+        || (label.includes('当前模式') && label.includes('chatgpt'))
+      )
+    );
+    if (currentChatGPTMode) {
+      return {
+        ok: true,
+        chatSelected: false,
+        alreadySelected: true,
+        selectedLabel: labelsFor(currentChatGPTMode)[0] || 'chatgpt'
+      };
+    }
     const exactChat = (includeChatGPT = false) => candidates().find(candidate =>
       labelsFor(candidate).some(label =>
         label === 'chat'
