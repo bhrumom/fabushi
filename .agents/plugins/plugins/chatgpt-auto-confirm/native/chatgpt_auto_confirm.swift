@@ -2904,7 +2904,7 @@ private func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-private let currentQueueRuntimeRevision = "mahayana.task-queue.v59"
+private let currentQueueRuntimeRevision = "mahayana.task-queue.v60"
 
 private func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -3746,7 +3746,10 @@ private func openBackgroundQueueWindow(
           $0["id"] as? String == targetId
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String,
-        CDPClient.navigate(wsURLString: wsURL, url: "app://-/index.html") else {
+        CDPClient.navigate(
+          wsURLString: wsURL,
+          url: "app://-/index.html?initialRoute=%2Fchatgpt%2Fquick-chat"
+        ) else {
     failure = "prewarm_navigation_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil
@@ -3781,7 +3784,8 @@ private func openBackgroundQueueWindow(
        buttons > 5,
        textLength > 100,
        visibility == "hidden",
-       href == "app://-/index.html" {
+       href?.hasPrefix("app://-/index.html") == true,
+       href?.contains("initialRoute=%2Fchatgpt%2Fquick-chat") == true {
       return targetId
     }
     Thread.sleep(forTimeInterval: 0.1)
