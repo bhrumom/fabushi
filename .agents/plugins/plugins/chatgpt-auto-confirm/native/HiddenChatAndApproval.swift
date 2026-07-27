@@ -667,11 +667,17 @@ func clickChatJS() -> String {
         ]).map(normalize).filter(Boolean).slice(0, 60)
       };
     }
-    button.click();
-    await sleep(350);
+    // Selecting ChatGPT can replace the renderer immediately. Dispatch the
+    // click after this evaluation returns so a destroyed execution context is
+    // not mistaken for a failed mode selection. The caller independently
+    // waits for and validates the resulting hidden Chat surface.
+    setTimeout(() => {
+      try { button.click(); } catch (_) {}
+    }, 0);
     return {
       ok: true,
       chatSelected: true,
+      dispatchOnly: true,
       selectedLabel: normalize(
         button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
       )
