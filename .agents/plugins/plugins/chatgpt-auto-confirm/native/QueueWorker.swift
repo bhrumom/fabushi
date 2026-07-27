@@ -260,18 +260,21 @@ func continueHiddenOnboardingJS() -> String {
   #"""
   (() => {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const allowed = new Set([
-      'continue', '继续', 'next', '下一步', 'done', '完成', 'skip', '跳过'
-    ]);
-    const button = [...document.querySelectorAll('button, a, [role="button"]')].find(node => {
-      const labels = [
+    const preferred = [
+      'continue', '继续', 'next', '下一步', 'done', '完成',
+      'go to chatgpt', '前往 chatgpt', '进入 chatgpt',
+      'skip', '跳过'
+    ];
+    const nodes = [...document.querySelectorAll('button, a, [role="button"]')];
+    const labelsFor = node => [
         node.innerText,
         node.textContent,
         node.getAttribute('aria-label'),
         node.getAttribute('title')
       ].map(normalize).filter(Boolean);
-      return labels.some(label => allowed.has(label));
-    });
+    const button = preferred
+      .map(label => nodes.find(node => labelsFor(node).includes(label)))
+      .find(Boolean);
     if (!button) return {ok: true, clicked: false};
     const label = normalize(
       button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
