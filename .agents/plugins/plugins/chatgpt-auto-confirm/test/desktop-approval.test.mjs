@@ -250,9 +250,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /reset-prewarm/);
   assert.match(nativeSource, /renderer-ready/);
   assert.match(nativeSource, /quick-chat-prewarm/);
-  assert.match(nativeSource, /hiddenAppURL = "app:\/\/-\/index\.html\?initialRoute=%2Fwork"/);
+  assert.match(nativeSource, /hiddenAppURL = "app:\/\/-\/index\.html\?initialRoute=%2F"/);
   assert.match(nativeSource, /Quick Chat itself is feature-gated per account/);
   assert.match(nativeSource, /safeText=/);
+  assert.match(nativeSource, /selectionLabels=/);
   assert.match(nativeSource, /routeMatches=/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
   assert.match(nativeSource, /Emulation\.setFocusEmulationEnabled/);
