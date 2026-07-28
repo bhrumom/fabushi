@@ -238,6 +238,29 @@ func sendMessageJS(
         || scope.querySelector('button[aria-label="发送"]');
     }
 
+    function chatSurfaceEvidence() {
+      const quickRoot = quickChatRoot();
+      const scope = quickRoot || document;
+      const relevantControls = [...scope.querySelectorAll('button, [role="button"]')]
+        .filter(visible)
+        .map(button => normalize([
+          button.textContent,
+          button.getAttribute('aria-label'),
+          button.getAttribute('title'),
+          button.getAttribute('data-testid')
+        ].filter(Boolean).join(' ')))
+        .filter(label => /model|模型|gpt|thinking|instant|high|medium|pro|reasoning|推理|项目|project|folder|文件夹|work/i.test(label))
+        .slice(0, 32);
+      return {
+        url: window.location.href || '',
+        quickChatRoot: !!quickRoot,
+        hasInput: !!findTextarea(),
+        workComposer: !!document.querySelector('[data-codex-composer="true"]'),
+        chatMode: chatModeIsActive(),
+        relevantControls
+      };
+    }
+
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     function inputText(el) {
@@ -282,30 +305,44 @@ func sendMessageJS(
       const send = findSendButton();
       const scope = quickChatRoot() || document;
 
-      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
-      if (testIdButton && visible(testIdButton)) return testIdButton;
-
-      const composer = input?.closest('form') || input?.parentElement?.parentElement;
-
-      // Search in composer area first for aria-haspopup buttons (strong signal = dropdown trigger)
-      const popupButton = [...(composer || document).querySelectorAll(
-        '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
-      )].find(button => visible(button) && button !== send);
-      if (popupButton) return popupButton;
-
-      const explicit = [...scope.querySelectorAll(
-        'button[aria-label], [role="button"][aria-label]'
-      )].filter(button => {
-        if (!visible(button) || button === send) return false;
-        const label = normalize(button.getAttribute('aria-label')).toLowerCase();
-        return label.includes('chatgpt 模型') 
+      const controlLabel = button => normalize([
+        button?.textContent,
+        button?.getAttribute('aria-label'),
+        button?.getAttribute('title'),
+        button?.getAttribute('data-testid')
+      ].filter(Boolean).join(' ')).toLowerCase();
+      const isProjectPicker = button => {
+        const label = controlLabel(button);
+        return /(?:choose|select)\\s+project|project\\s+(?:source|folder)|source\\s+folders|add\\s+folders|选择项目|项目文件夹|源文件夹|添加文件夹/i.test(label);
+      };
+      const isModelPickerLabel = button => {
+        if (isProjectPicker(button)) return false;
+        const label = controlLabel(button);
+        return label.includes('chatgpt 模型')
           || /select chatgpt model/i.test(label)
           || label.includes('model selector')
           || label.includes('choose model')
           || label.includes('选择模型')
           || label.includes('intelligence')
           || label.includes('reasoning')
-          || label.includes('推理');
+          || label.includes('推理')
+          || label.includes('高')
+          || label.includes('智能')
+          || /\\bgpt\\b/i.test(label)
+          || /\\b(?:instant|thinking|high|medium|pro)\\b/i.test(label);
+      };
+
+      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
+      if (testIdButton && visible(testIdButton) && !isProjectPicker(testIdButton)) return testIdButton;
+
+      const composer = input?.closest('form') || input?.parentElement?.parentElement;
+
+      // Prefer an explicitly labelled model control. The composer can also contain
+      // project/source pickers, so a generic aria-haspopup match is not sufficient.
+      const explicit = [...scope.querySelectorAll(
+        'button[aria-label], [role="button"][aria-label]'
+      )].filter(button => {
+        return visible(button) && button !== send && isModelPickerLabel(button);
       }).sort((left, right) => {
         const leftInComposer = composer?.contains(left) ? 0 : 1;
         const rightInComposer = composer?.contains(right) ? 0 : 1;
@@ -321,24 +358,25 @@ func sendMessageJS(
       // Use includes() not === to handle buttons with extra SVG/icon text appended
       const textMatch = [...scope.querySelectorAll('button, [role="button"]')].find(button => {
         if (!visible(button) || button === send) return false;
-        const text = normalize(button.textContent).toLowerCase();
-        // Strip SVG text noise: only look at first 30 chars
-        const shortText = text.slice(0, 30).trim();
-        return shortText.includes('gpt-') || shortText.includes('thinking') || shortText === 'chatgpt' ||
-               shortText.includes('high') || shortText.includes('medium') || shortText.includes('instant') ||
-               shortText.includes('pro') || shortText.includes('高') || shortText.includes('智能') ||
-               shortText.includes('reasoning') || shortText.includes('推理');
+        return isModelPickerLabel(button);
       });
       if (textMatch) return textMatch;
+
+      // Only use a generic popup as a last resort, and only when its label still
+      // looks like a model control. This prevents "Choose project" from opening
+      // the project menu and being misreported as a missing High-reasoning choice.
+      const popupButton = [...(composer || document).querySelectorAll(
+        '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
+      )].find(button => visible(button) && button !== send && isModelPickerLabel(button));
+      if (popupButton) return popupButton;
 
       const fallbackScope = composer || document.body;
       const candidates = [...fallbackScope.querySelectorAll(
         'button, [role="button"], [data-testid], [aria-haspopup="menu"]'
       )].filter(button => {
         if (!visible(button) || button === send) return false;
-        const text = normalize(button.textContent);
-        const popup = button.getAttribute('aria-haspopup');
-        return text.length > 0 || popup === 'menu' || popup === 'listbox';
+        if (isProjectPicker(button)) return false;
+        return isModelPickerLabel(button);
       });
       return candidates.sort((left, right) => {
         const leftPopup = left.getAttribute('aria-haspopup') ? 0 : 1;
@@ -436,7 +474,8 @@ func sendMessageJS(
           model: desiredModel,
           reasoning: desiredReasoning,
           modelConfirmed: false,
-          reasoningConfirmed: false
+          reasoningConfirmed: false,
+          surface: chatSurfaceEvidence()
         };
       }
       const pickerBefore = normalize([
@@ -497,7 +536,8 @@ func sendMessageJS(
             selectedLabel,
             quickChatChoiceClicked,
             visibleMenuText: visibleModelMenus()
-              .map(menu => normalize(menu.textContent).slice(0, 500))
+              .map(menu => normalize(menu.textContent).slice(0, 500)),
+            surface: chatSurfaceEvidence()
           };
         }
         return {
@@ -597,7 +637,8 @@ func sendMessageJS(
           modelChoiceClicked,
           highChoiceClicked,
           visibleMenuText: visibleModelMenus()
-            .map(menu => normalize(menu.textContent).slice(0, 500))
+            .map(menu => normalize(menu.textContent).slice(0, 500)),
+          surface: chatSurfaceEvidence()
         };
       }
       if (!modelConfirmed) {
@@ -613,7 +654,8 @@ func sendMessageJS(
           modelChoiceClicked,
           highChoiceClicked,
           visibleMenuText: visibleModelMenus()
-            .map(menu => normalize(menu.textContent).slice(0, 500))
+            .map(menu => normalize(menu.textContent).slice(0, 500)),
+          surface: chatSurfaceEvidence()
         };
       }
 
@@ -761,7 +803,9 @@ func sendMessageJS(
         hasInput: !!findTextarea(), workComposer: !!document.querySelector('[data-codex-composer="true"]')
       });
     }
-    record('chat_surface', true, { surface: 'chat', workerUsed: false });
+    record('chat_surface', true, {
+      surface: 'chat', workerUsed: false, surfaceEvidence: chatSurfaceEvidence()
+    });
     if (!conversationIsExpected()) {
       return fail('conversation_guard', 'conversation_changed_before_send', {
         expectedConversationId,

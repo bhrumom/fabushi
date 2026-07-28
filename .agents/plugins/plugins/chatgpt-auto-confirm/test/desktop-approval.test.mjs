@@ -208,6 +208,12 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /never replace a local id with/);
   assert.match(nativeSource, /appendTextPreservingConnector/);
   assert.match(nativeSource, /model_picker_not_found/);
+  assert.match(nativeSource, /const isProjectPicker = button =>/);
+  assert.match(nativeSource, /label\.includes\('chatgpt 模型'\)/);
+  assert.match(nativeSource, /const explicit = \[\.\.\.scope\.querySelectorAll\(/);
+  assert.match(nativeSource, /const explicit = \[\.\.\.scope\.querySelectorAll\([\s\S]*?const textMatch/);
+  assert.match(nativeSource, /const textMatch[\s\S]*?const popupButton/);
+  assert.match(nativeSource, /isProjectPicker\(button\)/);
   assert.match(nativeSource, /reasoning_high_not_selected/);
   assert.match(nativeSource, /quick_chat_thinking_not_selected/);
   assert.match(nativeSource, /pickerEvidence: 'quick-chat-thinking-selection'/);
