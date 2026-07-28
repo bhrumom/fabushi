@@ -208,6 +208,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /never replace a local id with/);
   assert.match(nativeSource, /appendTextPreservingConnector/);
   assert.match(nativeSource, /model_picker_not_found/);
+  assert.match(nativeSource, /use standard speed/);
+  assert.match(nativeSource, /使用标准速度/);
+  assert.match(nativeSource, /neutralPromoLabels/);
   assert.match(nativeSource, /const isProjectPicker = button =>/);
   assert.match(nativeSource, /top-level Chat\/Work switch is authoritative/);
   assert.match(nativeSource, /const workComposer = !quickRoot[\s\S]*data-codex-composer/);

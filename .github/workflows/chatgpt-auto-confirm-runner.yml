@@ -37,6 +37,7 @@ jobs:
     env:
       CHATGPT_CDP_PORT: "9324"
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
+      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
       GH_TOKEN: ${{ github.token }}
@@ -126,15 +127,32 @@ jobs:
           hdiutil detach "$mount_dir"
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
 
-      - name: Launch ChatGPT and restore login
+      - name: Build native queue runtime
+        shell: bash
+        run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
+
+      - name: Launch authenticated Chat surface
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
         run: |
           set -euo pipefail
+          test -n "$CHATGPT_SESSION_COOKIES_B64"
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
+          CHATGPT_SESSION_MODE=seed \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          pkill -x ChatGPT || true
+          for _ in {1..20}; do
+            pgrep -x ChatGPT >/dev/null || break
+            sleep 1
+          done
+          open -na /Applications/ChatGPT.app --args \
+            --user-data-dir="$PROFILE_DIR" \
+            --remote-debugging-port="$CHATGPT_CDP_PORT"
+          CHATGPT_SESSION_MODE=verify \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
           login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status 2>&1)
           grep -q 'Logged in using ChatGPT' <<< "$login_status"
 
