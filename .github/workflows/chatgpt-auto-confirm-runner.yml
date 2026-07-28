@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
 
-      - name: Launch authenticated Chat surface
+      - name: Launch authenticated desktop shell
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
