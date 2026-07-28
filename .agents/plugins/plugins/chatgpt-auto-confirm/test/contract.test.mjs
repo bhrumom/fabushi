@@ -39,6 +39,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(restoreSessionScript, /Page\.reload/);
   assert.match(restoreSessionScript, /blankRecoveryCount < 2/);
   assert.match(restoreSessionScript, /Page\.navigate/);
+  assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);
