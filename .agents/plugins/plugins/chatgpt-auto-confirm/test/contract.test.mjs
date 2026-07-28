@@ -36,9 +36,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
-  assert.match(restoreSessionScript, /Page\.reload/);
+  assert.match(restoreSessionScript, /scheduleNavigation/);
   assert.match(restoreSessionScript, /blankRecoveryCount < 2/);
-  assert.match(restoreSessionScript, /Page\.navigate/);
+  assert.match(restoreSessionScript, /initialRoute=%2F/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);

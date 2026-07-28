@@ -106,6 +106,16 @@ const activate = async call => {
   });
 };
 
+const scheduleNavigation = (call, statement) => call('Runtime.evaluate', {
+  expression: `(() => {
+    setTimeout(() => {
+      try { ${statement} } catch (_) {}
+    }, 0);
+    return true;
+  })()`,
+  returnByValue: true,
+});
+
 const target = await findTarget(120_000, 'ChatGPT app shell');
 const { socket, call } = await connect(target);
 await activate(call);
@@ -128,11 +138,10 @@ if (mode !== 'verify') {
 }
 
 if (mode === 'restore-and-verify') {
-  // CDP owns the navigation lifecycle here. A scheduled location.reload()
-  // occasionally left the hosted Electron renderer at a complete but empty
-  // app:// document, while Page.reload reliably waits for the reload command
-  // to be accepted by the same target.
-  await call('Page.reload', { ignoreCache: true });
+  // Electron's app:// renderer never resolves CDP Page.reload on some hosted
+  // machines. Schedule the reload after this evaluation returns, then recover
+  // below if the newly mounted document is temporarily empty.
+  await scheduleNavigation(call, 'location.reload();');
 }
 
 // Cookie restoration authenticates the visible controller window. A fresh
@@ -198,11 +207,12 @@ while (Date.now() < verificationDeadline) {
   ) {
     blankRecoveryCount += 1;
     if (blankRecoveryCount === 1) {
-      await call('Page.reload', { ignoreCache: true });
+      await scheduleNavigation(call, 'location.reload();');
     } else {
-      await call('Page.navigate', {
-        url: 'app://-/index.html?initialRoute=%2F',
-      });
+      await scheduleNavigation(
+        call,
+        "location.href = 'app://-/index.html?initialRoute=%2F';"
+      );
     }
     process.stdout.write(
       `Recovering empty ChatGPT shell (attempt ${blankRecoveryCount})\n`
