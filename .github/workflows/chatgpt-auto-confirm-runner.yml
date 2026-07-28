@@ -23,7 +23,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatgpt-auto-confirm-fix-test-runner
+  # Parallel smoke creates its own ephemeral queue state, so it can validate
+  # the hosted Chat surface without waiting behind the persistent runner.
+  # Persistent runners keep the shared-state serialization guard.
+  group: ${{ inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}', github.ref) || 'chatgpt-auto-confirm-fix-test-runner' }}
   cancel-in-progress: false
 
 jobs:

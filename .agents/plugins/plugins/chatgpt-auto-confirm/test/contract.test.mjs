@@ -33,6 +33,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
   assert.match(actionsWorkflow, /parallel_queue_smoke/);
+  assert.match(actionsWorkflow, /chatgpt-auto-confirm-parallel-smoke/);
   assert.match(actionsWorkflow, /verify-parallel-actions-queue\.mjs/);
   assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
   assert.match(actionsWorkflow, /task-queue\/watcher-trace\.log/);
