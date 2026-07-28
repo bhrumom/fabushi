@@ -142,8 +142,16 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          CHATGPT_SESSION_MODE=restore-and-verify \
-            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          shell_ready=false
+          for attempt in 1 2; do
+            if CHATGPT_SESSION_MODE=restore-and-verify \
+              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs; then
+              shell_ready=true
+              break
+            fi
+            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the proven bootstrap in the same app instance."
+          done
+          test "$shell_ready" = true
           # The native queue's hidden-Chat probe is the authoritative end-to-end
           # authentication check. The bundled `codex login status` command can
           # wait indefinitely on a hosted desktop session after the shell is
