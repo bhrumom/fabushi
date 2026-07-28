@@ -7,6 +7,7 @@ import SystemConfiguration
 let backgroundWindowQueueWorkerMode = "single-process-hidden-prewarm"
 let sharedConversationQueueWorkerMode = "single-process-hidden-chat-conversations"
 let parallelHiddenWindowQueueWorkerMode = "single-process-hidden-chat-windows"
+let parallelDedicatedProcessQueueWorkerMode = "parallel-dedicated-hidden-chat-processes"
 let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 
 enum QueueTargetRuntimeState {
@@ -21,6 +22,7 @@ func queueUsesBackgroundWindow(_ state: PluginState) -> Bool {
   state.queueWorkerMode == backgroundWindowQueueWorkerMode
     || state.queueWorkerMode == sharedConversationQueueWorkerMode
     || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
+    || state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode
 }
 
 func queueTargetRuntimeState(
@@ -630,6 +632,184 @@ func resetStaleChatModeIfNeeded(
   )
 }
 
+func dedicatedQueueWorkerPort() -> Int? {
+  for port in 9330..<9380 where CDPClient.fetchTargets(portOverride: port).isEmpty {
+    return port
+  }
+  return nil
+}
+
+func copyProfileForDedicatedQueueWorker(
+  source: String,
+  destination: String
+) -> Bool {
+  do {
+    try FileManager.default.createDirectory(
+      atPath: destination,
+      withIntermediateDirectories: true
+    )
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/rsync")
+    process.arguments = [
+      "-a",
+      "--exclude=Singleton*",
+      "--exclude=Lockfile",
+      "--exclude=lockfile",
+      "--exclude=DevToolsActivePort",
+      source.hasSuffix("/") ? source : source + "/",
+      destination.hasSuffix("/") ? destination : destination + "/",
+    ]
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    return process.terminationStatus == 0
+  } catch {
+    return false
+  }
+}
+
+func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
+  do {
+    let launcher = Process()
+    launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    launcher.arguments = [
+      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
+      "--user-data-dir=\(profilePath)",
+      "--remote-debugging-port=\(port)",
+    ]
+    launcher.standardInput = FileHandle.nullDevice
+    launcher.standardOutput = FileHandle.nullDevice
+    launcher.standardError = FileHandle.nullDevice
+    try launcher.run()
+    launcher.waitUntilExit()
+    return launcher.terminationStatus == 0
+  } catch {
+    return false
+  }
+}
+
+func dedicatedQueueChatTarget(port: Int) -> String? {
+  for _ in 0..<240 {
+    let targets = CDPClient.fetchTargets(portOverride: port)
+    for target in targets {
+      guard target["type"] as? String == "page",
+            (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+            let targetId = target["id"] as? String else { continue }
+      let loaded = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: """
+        (() => ({
+          bridge: !!window.electronBridge,
+          ready: document.readyState,
+          buttons: document.querySelectorAll('button').length,
+          text: (document.body?.innerText || '').length,
+          visibility: document.visibilityState,
+          href: location.href
+        }))()
+        """,
+        timeout: 3.0
+      )
+      let bridge = (loaded?["bridge"] as? NSNumber)?.boolValue ?? false
+      let ready = loaded?["ready"] as? String
+      let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
+      let visibility = loaded?["visibility"] as? String
+      if bridge, ready == "complete", textLength > 100, visibility == "hidden" {
+        return targetId
+      }
+    }
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  return nil
+}
+
+func createDedicatedParallelQueueWorkerTarget(
+  _ state: inout PluginState
+) -> (port: Int, targetId: String, profilePath: String)? {
+  let general = generalApprovalStateForQueue()
+  let sourceProfile = general?.backgroundProfilePath
+    ?? state.backgroundProfilePath
+    ?? hiddenChatProfilePath()
+  guard FileManager.default.fileExists(atPath: sourceProfile) else {
+    state.lastError = "dedicated_source_profile_missing"
+    return nil
+  }
+  guard let port = dedicatedQueueWorkerPort() else {
+    state.lastError = "dedicated_worker_port_unavailable"
+    return nil
+  }
+  let profilePath = queueDirectoryURL()
+    .appendingPathComponent("workers", isDirectory: true)
+    .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+    .path
+  queueTrace("worker-create stage=dedicated-profile-copy begin port=\(port)")
+  guard copyProfileForDedicatedQueueWorker(
+    source: sourceProfile,
+    destination: profilePath
+  ) else {
+    state.lastError = "dedicated_profile_copy_failed"
+    terminateDedicatedChatProcess(profilePath: profilePath)
+    return nil
+  }
+  queueTrace("worker-create stage=dedicated-process-launch begin port=\(port)")
+  guard launchDedicatedQueueChatProcess(profilePath: profilePath, port: port),
+        let targetId = dedicatedQueueChatTarget(port: port) else {
+    state.lastError = "dedicated_hidden_chat_process_not_ready"
+    terminateDedicatedChatProcess(profilePath: profilePath)
+    return nil
+  }
+  queueTrace(
+    "worker-create stage=dedicated-process-launch complete port=\(port) target=\(targetId)"
+  )
+  let selection = selectChatOnPrimaryController(port: port, targetId: targetId)
+  var prepared: [String: Any]?
+  for _ in 0..<80 {
+    prepared = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: selection?["alreadySelected"] as? Bool == true
+      ),
+      timeout: 5.0
+    )
+    let runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+    if prepared?["ok"] as? Bool == true, runtimeState == .hidden {
+      state.queueWorkerPort = port
+      state.queueWorkerTargetId = targetId
+      state.queueWorkerProfilePath = profilePath
+      state.queueWorkerMode = parallelDedicatedProcessQueueWorkerMode
+      state.lastError = nil
+      queueTrace(
+        "worker-create stage=dedicated-chat-ready port=\(port) target=\(targetId)"
+      )
+      return (port, targetId, profilePath)
+    }
+    _ = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  let prepareError = prepared?["error"] as? String ?? "no_result"
+  state.lastError = "dedicated_hidden_target_not_chat:\(prepareError)"
+  _ = captureHiddenChatScreenshot(
+    port: port,
+    targetId: targetId,
+    label: "dedicated-not-chat"
+  )
+  terminateDedicatedChatProcess(profilePath: profilePath)
+  return nil
+}
+
 func createQueueWorkerTarget(
   _ state: inout PluginState,
   reuseExisting: Bool = true
@@ -904,17 +1084,28 @@ func createQueueWorkerTarget(
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
-    return nil
-  }
-  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
-  return worker
+  createDedicatedParallelQueueWorkerTarget(&state)
 }
 
 func stopQueueWorker(_ state: inout PluginState) {
   // Close only queue-owned hidden windows. The primary window and the shared
   // ChatGPT process remain available to the user and the general confirmer.
-  if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+  if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode {
+    for task in state.automationTasks ?? [] {
+      if let targetId = task.workerTargetId {
+        _ = CDPClient.closeTarget(targetId, portOverride: task.workerPort)
+      }
+      if let profilePath = task.workerProfilePath {
+        terminateDedicatedChatProcess(profilePath: profilePath)
+      }
+    }
+    if let profilePath = state.queueWorkerProfilePath,
+       !(state.automationTasks ?? []).contains(where: {
+         $0.workerProfilePath == profilePath
+       }) {
+      terminateDedicatedChatProcess(profilePath: profilePath)
+    }
+  } else if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
     let taskTargets = Set((state.automationTasks ?? []).compactMap { task -> String? in
       guard let port = task.workerPort,
             let targetId = task.workerTargetId,
@@ -958,8 +1149,14 @@ func startAutomationTask(
     if !taskOwnsTarget, let port, let targetId {
       _ = CDPClient.closeTarget(targetId, portOverride: port)
     }
+    if !taskOwnsTarget, let workerProfilePath {
+      terminateDedicatedChatProcess(profilePath: workerProfilePath)
+    }
   }
-  if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
+  if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
+     let staleProfilePath = task.workerProfilePath {
+    terminateDedicatedChatProcess(profilePath: staleProfilePath)
+  } else if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
      let staleTargetId = task.workerTargetId,
      let stalePort = task.workerPort,
      queueTargetIsHidden(port: stalePort, targetId: staleTargetId) {
@@ -967,6 +1164,7 @@ func startAutomationTask(
   }
   task.workerPort = nil
   task.workerTargetId = nil
+  task.workerProfilePath = nil
   queueTrace("task=\(task.id) stage=create-worker begin")
   guard let worker = createIndependentQueueWorkerTarget(&state) else {
     let detail = state.lastError ?? "unknown"
@@ -1151,6 +1349,10 @@ func closeDedicatedAutomationTarget(
   if state.queueWorkerMode != sharedConversationQueueWorkerMode,
      let targetId = task.workerTargetId {
     _ = CDPClient.closeTarget(targetId, portOverride: task.workerPort)
+  }
+  if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
+     let profilePath = task.workerProfilePath {
+    terminateDedicatedChatProcess(profilePath: profilePath)
   }
 }
 
