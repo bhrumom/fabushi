@@ -566,33 +566,56 @@ func resetStaleChatModeIfNeeded(
 
   // The hosted shell can persist "chat" while the mounted composer is still
   // Work. Re-selecting ChatGPT is then a no-op because the atom already has
-  // that value. Cross the real state boundary through Work once, then return
-  // to Chat before creating the hidden queue window.
+  // that value. Use the real compact mode menu to cross the state boundary
+  // through Codex once, then return to Chat before creating the hidden window.
   queueTrace("worker-create stage=\(stage) reset-stale-mode begin")
-  let forcedWork = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: forcePrimaryComposerModeJS("work"),
-    timeout: 5.0
-  )
+  var codexSelection: [String: Any]?
+  for _ in 0..<12 {
+    codexSelection = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickCodexModeJS(),
+      timeout: 5.0
+    )
+    if codexSelection?["dispatchOnly"] as? Bool == true { break }
+    if codexSelection?["retryAfterModeSwitch"] as? Bool == true {
+      Thread.sleep(forTimeInterval: 0.6)
+      continue
+    }
+    Thread.sleep(forTimeInterval: 0.35)
+  }
   queueTrace(
-    "worker-create stage=\(stage) reset-stale-mode work "
-      + "ok=\(forcedWork?["ok"] as? Bool ?? false) "
-      + "value=\(forcedWork?["value"] as? String ?? "none")"
+    "worker-create stage=\(stage) reset-stale-mode codex "
+      + "ok=\(codexSelection?["ok"] as? Bool ?? false) "
+      + "selectedLabel=\(codexSelection?["selectedLabel"] as? String ?? "none") "
+      + "error=\(codexSelection?["error"] as? String ?? "none")"
   )
-  Thread.sleep(forTimeInterval: 0.8)
-  let forcedChat = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: forcePrimaryComposerModeJS("chat"),
-    timeout: 5.0
-  )
+  guard codexSelection?["dispatchOnly"] as? Bool == true else { return initial }
+  Thread.sleep(forTimeInterval: 1.2)
+
+  var chatSelection: [String: Any]?
+  for _ in 0..<20 {
+    chatSelection = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 5.0
+    )
+    if chatSelection?["alreadySelected"] as? Bool == true { break }
+    if chatSelection?["retryAfterModeSwitch"] as? Bool == true
+        || chatSelection?["dispatchOnly"] as? Bool == true {
+      Thread.sleep(forTimeInterval: 0.8)
+      continue
+    }
+    Thread.sleep(forTimeInterval: 0.35)
+  }
   queueTrace(
     "worker-create stage=\(stage) reset-stale-mode chat "
-      + "ok=\(forcedChat?["ok"] as? Bool ?? false) "
-      + "value=\(forcedChat?["value"] as? String ?? "none")"
+      + "ok=\(chatSelection?["ok"] as? Bool ?? false) "
+      + "alreadySelected=\(chatSelection?["alreadySelected"] as? Bool ?? false) "
+      + "selectedLabel=\(chatSelection?["selectedLabel"] as? String ?? "none") "
+      + "error=\(chatSelection?["error"] as? String ?? "none")"
   )
-  Thread.sleep(forTimeInterval: 1.2)
   return cdpValue(
     port: port,
     targetId: targetId,
