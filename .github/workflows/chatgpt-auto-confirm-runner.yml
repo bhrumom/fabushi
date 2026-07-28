@@ -142,17 +142,7 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          CHATGPT_SESSION_MODE=seed \
-            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-          pkill -x ChatGPT || true
-          for _ in {1..20}; do
-            pgrep -x ChatGPT >/dev/null || break
-            sleep 1
-          done
-          open -na /Applications/ChatGPT.app --args \
-            --user-data-dir="$PROFILE_DIR" \
-            --remote-debugging-port="$CHATGPT_CDP_PORT"
-          CHATGPT_SESSION_MODE=verify \
+          CHATGPT_SESSION_MODE=restore-and-verify \
             node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
           # The native queue's hidden-Chat probe is the authoritative end-to-end
           # authentication check. The bundled `codex login status` command can
