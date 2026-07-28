@@ -412,6 +412,17 @@ func sendMessageJS(
     }
 
     async function ensureModelAndReasoning() {
+      // Dismiss promotional modals like "Introducing GPT-5.6 Sol"
+      const promoButtons = [...document.querySelectorAll('button')].filter(btn => {
+        const text = (btn.textContent || '').trim().toLowerCase();
+        return text === 'try gpt-5.6 sol now' || text === 'okay' || text === 'got it';
+      });
+      for (const btn of promoButtons) {
+        if (visible(btn)) {
+          btn.click();
+          await sleep(600);
+        }
+      }
       let picker = null;
       for (let i = 0; i < 40; i++) {
         picker = modelPickerButton();
