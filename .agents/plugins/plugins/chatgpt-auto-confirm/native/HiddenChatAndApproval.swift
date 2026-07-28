@@ -768,7 +768,6 @@ func clickChatJS() -> String {
         modeControls
       };
     }
-    const modeSwitchAttempted = window.__mahayanaChatModeSwitchAttempted === true;
     const currentChatGPTMode = candidates().find(candidate =>
       labelsFor(candidate).some(label =>
         label.includes('current mode: chatgpt')
@@ -786,26 +785,12 @@ func clickChatJS() -> String {
         modeControls
       };
     }
-    const exactChat = (includeChatGPT = false) => modeTabs()
+    const exactChat = () => modeTabs()
       .filter(candidate => labelsFor(candidate).some(label =>
-        isChatLabel(label) || (includeChatGPT && label === 'chatgpt')
+        isChatLabel(label)
       ))
       .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
     let button = exactChat();
-    if (!button) {
-      button = candidates().find(candidate =>
-        candidate.getAttribute('role') === 'menuitem'
-        && labelsFor(candidate).some(label => label === 'chatgpt')
-      );
-    }
-    if (!button && modeSwitchAttempted) {
-      // Floating mode choices are appended after the persistent header button
-      // and are not consistently given a menuitem role. Prefer the last exact
-      // ChatGPT label after the switcher has already been opened once.
-      button = [...candidates()].reverse().find(candidate =>
-        labelsFor(candidate).some(label => label === 'chatgpt')
-      );
-    }
     if (!button) {
       const modeSwitch = candidates().find(candidate =>
         labelsFor(candidate).some(label =>
