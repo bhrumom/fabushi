@@ -669,6 +669,24 @@ func createQueueWorkerTarget(
       state.queueWorkerMode = sharedConversationQueueWorkerMode
       return (controller.port, hiddenTargetId, controller.profilePath)
     }
+    let surfaceDiagnostic = cdpValue(
+      port: controller.port,
+      targetId: hiddenTargetId,
+      expression: pageDiagnosticJS(),
+      timeout: 5.0
+    )
+    let diagnosticButtons = (surfaceDiagnostic?["buttons"] as? [String] ?? [])
+      .joined(separator: "|")
+    let diagnosticURL = surfaceDiagnostic?["url"] as? String ?? "none"
+    let diagnosticScreenshot = captureHiddenChatScreenshot(
+      port: controller.port,
+      targetId: hiddenTargetId,
+      label: "prewarm-not-chat"
+    ) ?? "none"
+    queueTrace(
+      "worker-create stage=chat-prepare diagnostics url=\(diagnosticURL) "
+        + "buttons=\(diagnosticButtons) screenshot=\(diagnosticScreenshot)"
+    )
     _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
     let selectionError = chatSelection?["error"] as? String ?? "none"
     let selectionLabels = (chatSelection?["candidateLabels"] as? [String] ?? [])

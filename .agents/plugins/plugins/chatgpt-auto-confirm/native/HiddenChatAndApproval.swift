@@ -160,10 +160,12 @@ func pageDiagnosticJS() -> String {
   """#
 }
 
-func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled") -> String? {
-  guard let port = state.backgroundAppPort,
-        let targetId = state.backgroundChatTargetId,
-        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+func captureHiddenChatScreenshot(
+  port: Int,
+  targetId: String,
+  label: String = "stalled"
+) -> String? {
+  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String else { return nil }
@@ -175,6 +177,12 @@ func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled"
   return CDPClient.captureScreenshot(wsURLString: wsURL, outputURL: outputURL)
     ? outputURL.path
     : nil
+}
+
+func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled") -> String? {
+  guard let port = state.backgroundAppPort,
+        let targetId = state.backgroundChatTargetId else { return nil }
+  return captureHiddenChatScreenshot(port: port, targetId: targetId, label: label)
 }
 
 func hiddenChatProfilePath() -> String {
@@ -640,7 +648,7 @@ func clickChatJS() -> String {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const candidates = () => [...document.querySelectorAll(
-      'button, a, [role="button"], [role="menuitem"]'
+      'button, a, [role="button"], [role="menuitem"], [role="tab"]'
     )];
     const labelsFor = candidate => [
       candidate.innerText,
@@ -648,6 +656,95 @@ func clickChatJS() -> String {
       candidate.getAttribute('aria-label'),
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
+    const visible = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      return !!rect && (rect.width > 0 || rect.height > 0 || candidate.offsetParent !== null);
+    };
+    const isSelected = candidate => {
+      const selectedValues = [
+        candidate.getAttribute('aria-selected'),
+        candidate.getAttribute('aria-pressed'),
+        candidate.getAttribute('data-state'),
+        candidate.getAttribute('data-selected'),
+        candidate.getAttribute('data-active')
+      ].map(normalize);
+      if (selectedValues.some(value => ['true', 'active', 'selected', 'on'].includes(value))) {
+        return true;
+      }
+      return /(?:^|[ _-])(active|selected|current|chosen)(?:$|[ _-])/.test(
+        normalize(candidate.className)
+      );
+    };
+    const isChatLabel = label => label === 'chat' || label === '聊天'
+      || /^(?:chat|聊天)(?:[ ,]|$)/.test(label);
+    const isWorkLabel = label => label === 'work' || label === '工作'
+      || /^(?:work|工作)(?:[ ,]|$)/.test(label);
+    const modeTabScore = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const role = normalize(candidate.getAttribute('role'));
+      const labels = labelsFor(candidate);
+      let score = 0;
+      if (role === 'tab') score += 100;
+      if (isSelected(candidate)) score += 50;
+      if (visible(candidate)) score += 10;
+      if (rect && rect.top >= -20 && rect.top < 180) score += 20;
+      if (rect && window.innerWidth > 0
+          && rect.left > window.innerWidth * 0.25
+          && rect.right < window.innerWidth * 0.8) score += 10;
+      if (labels.some(label => isChatLabel(label) || isWorkLabel(label))) score += 5;
+      return score;
+    };
+    const modeTabs = () => candidates()
+      .filter(candidate => visible(candidate))
+      .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
+    const modeControls = modeTabs().map(candidate => ({
+      label: labelsFor(candidate)[0] || '',
+      role: candidate.getAttribute('role') || '',
+      selected: isSelected(candidate),
+      score: modeTabScore(candidate)
+    }));
+    const chatSurface = () => {
+      const quickChatRoot = document.querySelector(
+        '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+      )?.closest('[role="dialog"], section, div');
+      const input = quickChatRoot?.querySelector(
+        '#prompt-textarea, [contenteditable="true"]'
+      ) || document.querySelector('#prompt-textarea')
+        || document.querySelector('[contenteditable="true"]');
+      const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
+        const label = [
+          button.getAttribute('aria-label'),
+          button.getAttribute('title'),
+          button.innerText,
+          button.textContent
+        ].filter(Boolean).map(normalize).join(' ');
+        return label.includes('chatgpt model') || label.includes('chatgpt 模型')
+          || label.includes('select chatgpt model') || label.includes('选择 chatgpt 模型');
+      });
+      const workComposer = !quickChatRoot
+        && !!document.querySelector('[data-codex-composer="true"]');
+      const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
+      return {
+        active: !!input && !workComposer && (!!quickChatRoot || chatModel || webChat),
+        hasInput: !!input,
+        chatModel,
+        workComposer,
+        quickChatRoot: !!quickChatRoot,
+        webChat
+      };
+    };
+    const surface = chatSurface();
+    if (surface.active) {
+      window.__mahayanaConfirmedChatGPTMode = true;
+      return {
+        ok: true,
+        chatSelected: false,
+        alreadySelected: true,
+        selectedLabel: 'chat-surface-validated',
+        surface,
+        modeControls
+      };
+    }
     const modeSwitchAttempted = window.__mahayanaChatModeSwitchAttempted === true;
     const currentChatGPTMode = candidates().find(candidate =>
       labelsFor(candidate).some(label =>
@@ -655,22 +752,22 @@ func clickChatJS() -> String {
         || (label.includes('当前模式') && label.includes('chatgpt'))
       )
     );
-    if (currentChatGPTMode) {
+    if (currentChatGPTMode && surface.hasInput && !surface.workComposer) {
       window.__mahayanaConfirmedChatGPTMode = true;
       return {
         ok: true,
         chatSelected: false,
         alreadySelected: true,
-        selectedLabel: labelsFor(currentChatGPTMode)[0] || 'chatgpt'
+        selectedLabel: labelsFor(currentChatGPTMode)[0] || 'chatgpt',
+        surface,
+        modeControls
       };
     }
-    const exactChat = (includeChatGPT = false) => candidates().find(candidate =>
-      labelsFor(candidate).some(label =>
-        label === 'chat'
-        || label === '聊天'
-        || (includeChatGPT && label === 'chatgpt')
-      )
-    );
+    const exactChat = (includeChatGPT = false) => modeTabs()
+      .filter(candidate => labelsFor(candidate).some(label =>
+        isChatLabel(label) || (includeChatGPT && label === 'chatgpt')
+      ))
+      .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
     let button = exactChat();
     if (!button) {
       button = candidates().find(candidate =>
@@ -741,7 +838,9 @@ func clickChatJS() -> String {
       dispatchOnly: true,
       selectedLabel: normalize(
         button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
-      )
+      ),
+      surface,
+      modeControls
     };
   })()
   """#
