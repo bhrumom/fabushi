@@ -46,7 +46,7 @@ func queueTargetRuntimeState(
     // remains mounted behind the overlay and must not disqualify the active
     // Quick Chat surface.
     const currentChatGPTMode = !!window.__mahayanaConfirmedChatGPTMode;
-    const workComposer = !quickChatRoot && !currentChatGPTMode
+    const workComposer = !quickChatRoot
       && !!document.querySelector('[data-codex-composer="true"]');
     const chatModel = [...document.querySelectorAll('button')].some(button => {
       const label = button.getAttribute('aria-label') || '';
@@ -623,11 +623,29 @@ func createQueueWorkerTarget(
         targetId: hiddenTargetId,
         expression: prepareBackgroundChatJS(
           newChat: false,
-          confirmedChatMode: chatSelection?["ok"] as? Bool == true
+          // clickChatJS returns dispatchOnly before the top Chat/Work switch
+          // has actually changed. Only an already-selected Chat state may be
+          // carried across a renderer replacement.
+          confirmedChatMode: chatSelection?["alreadySelected"] as? Bool == true
         ),
         timeout: 5.0
       )
       lastHiddenPrepare = prepared
+      if prepared?["error"] as? String == "not_chat_surface" {
+        // A dispatch-only Chat click can replace the renderer asynchronously.
+        // Retry against the fresh top-level Chat/Work switch until the new
+        // renderer proves it is actually Chat; never accept the stale Work
+        // composer just because the previous page set a transient flag.
+        let retrySelection = cdpValue(
+          port: controller.port,
+          targetId: hiddenTargetId,
+          expression: clickChatJS(),
+          timeout: 4.0
+        )
+        if retrySelection?["alreadySelected"] as? Bool == true {
+          chatSelection = retrySelection
+        }
+      }
       let state = queueTargetRuntimeState(
         port: controller.port,
         targetId: hiddenTargetId,

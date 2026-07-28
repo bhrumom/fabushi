@@ -209,6 +209,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /appendTextPreservingConnector/);
   assert.match(nativeSource, /model_picker_not_found/);
   assert.match(nativeSource, /const isProjectPicker = button =>/);
+  assert.match(nativeSource, /top-level Chat\/Work switch is authoritative/);
+  assert.match(nativeSource, /const workComposer = !quickRoot[\s\S]*data-codex-composer/);
+  assert.match(nativeSource, /stale Work[\s\S]*transient flag/);
+  assert.match(nativeSource, /confirmedChatMode: chatSelection\?\["alreadySelected"\]/);
+  assert.match(nativeSource, /High5\.6 SolMedium/);
   assert.match(nativeSource, /label\.includes\('chatgpt 模型'\)/);
   assert.match(nativeSource, /const explicit = \[\.\.\.scope\.querySelectorAll\(/);
   assert.match(nativeSource, /const explicit = \[\.\.\.scope\.querySelectorAll\([\s\S]*?const textMatch/);
@@ -254,12 +259,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /alreadySelected: true/);
   assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode = true/);
   assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode === true/);
-  assert.match(nativeSource,
+  assert.doesNotMatch(nativeSource,
     /destroyed execution context[\s\S]*__mahayanaConfirmedChatGPTMode = true/);
   assert.match(nativeSource, /confirmedChatMode: Bool = false/);
   assert.match(nativeSource, /if \(confirmedChatMode\) window\.__mahayanaConfirmedChatGPTMode = true/);
-  assert.match(nativeSource, /confirmedChatMode: chatSelection\?\["ok"\] as\? Bool == true/);
-  assert.match(nativeSource, /!quickChatRoot && !currentChatGPTMode/);
+  assert.doesNotMatch(nativeSource, /confirmedChatMode: chatSelection\?\["ok"\] as\? Bool == true/);
   assert.match(nativeSource, /chatSelection\?\["retryAfterModeSwitch"\] as\? Bool == true/);
   assert.match(nativeSource, /chatSelected: true,[\s\S]*dispatchOnly: true/);
   assert.match(nativeSource, /negative preflight[\s\S]*must not leave every task queued forever/);
