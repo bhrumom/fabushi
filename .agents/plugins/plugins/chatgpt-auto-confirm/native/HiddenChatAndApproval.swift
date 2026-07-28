@@ -910,6 +910,116 @@ func clickChatJS() -> String {
   """#
 }
 
+func clickCodexModeJS() -> String {
+  #"""
+  (() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const candidates = () => [...document.querySelectorAll(
+      'button, [role="button"], [role="menuitem"], [role="menuitemradio"], '
+        + '[role="option"], [role="tab"]'
+    )];
+    const labelsFor = candidate => [
+      candidate.innerText,
+      candidate.textContent,
+      candidate.getAttribute('aria-label'),
+      candidate.getAttribute('title')
+    ].map(normalize).filter(Boolean);
+    const visible = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      return !!rect && (rect.width > 0 || rect.height > 0 || candidate.offsetParent !== null);
+    };
+    const dispatchPointerClick = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+      candidate.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
+    const isCodexMenuChoice = candidate => {
+      const role = normalize(candidate.getAttribute('role'));
+      const choiceRole = role === 'menuitem'
+        || role === 'menuitemradio'
+        || role === 'option';
+      const insideChoicePopup = !!candidate.closest('[role="menu"], [role="listbox"]');
+      const hasExactCodexChild = [...candidate.querySelectorAll('*')].some(child =>
+        child.children.length === 0 && normalize(child.textContent) === 'codex'
+      );
+      return (choiceRole || insideChoicePopup)
+        && (labelsFor(candidate).some(label => label === 'codex')
+          || hasExactCodexChild);
+    };
+    let target = candidates().find(candidate =>
+      visible(candidate) && isCodexMenuChoice(candidate)
+    );
+    if (!target) {
+      target = candidates().find(candidate => {
+        const role = normalize(candidate.getAttribute('role'));
+        return visible(candidate)
+          && role === 'tab'
+          && labelsFor(candidate).some(label => label === 'work' || label === '工作');
+      });
+    }
+    if (target) {
+      setTimeout(() => {
+        try { target.click(); } catch (_) {}
+      }, 0);
+      return {
+        ok: true,
+        dispatchOnly: true,
+        selectedLabel: normalize(
+          target.innerText || target.getAttribute('aria-label') || target.getAttribute('title')
+        )
+      };
+    }
+    const modeSwitch = candidates().find(candidate =>
+      labelsFor(candidate).some(label =>
+        label.includes('switch mode, current mode:')
+        || label.includes('切换模式')
+        || label.includes('当前模式')
+      )
+    );
+    if (modeSwitch) {
+      setTimeout(() => {
+        try { dispatchPointerClick(modeSwitch); } catch (_) {}
+      }, 0);
+      return {
+        ok: false,
+        error: 'mode_switch_dispatched',
+        retryAfterModeSwitch: true
+      };
+    }
+    return {
+      ok: false,
+      error: 'codex_mode_choice_not_found',
+      candidateLabels: candidates().flatMap(candidate => labelsFor(candidate)).slice(0, 60)
+    };
+  })()
+  """#
+}
+
 func composerSurfaceStateJS() -> String {
   #"""
   (() => {
