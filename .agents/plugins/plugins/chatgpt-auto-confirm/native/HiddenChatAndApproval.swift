@@ -665,7 +665,8 @@ func clickChatJS() -> String {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const candidates = () => [...document.querySelectorAll(
-      'button, a, [role="button"], [role="menuitem"], [role="tab"]'
+      'button, a, [role="button"], [role="menuitem"], '
+        + '[role="menuitemradio"], [role="option"], [role="tab"]'
     )];
     const labelsFor = candidate => [
       candidate.innerText,
@@ -697,19 +698,33 @@ func clickChatJS() -> String {
     // Chat/Work switch is absent, which previously produced a false success.
     const isChatLabel = label => label === 'chat' || label === '聊天';
     const isWorkLabel = label => label === 'work' || label === '工作';
+    // The compact desktop layout replaces the top Chat/Work tabs with a mode
+    // popup whose real Chat choice is named "ChatGPT". Accept that exact label
+    // only when it is a menu/list choice, never from the sidebar heading or a
+    // model button.
+    const isChatGPTMenuChoice = candidate => {
+      const role = normalize(candidate.getAttribute('role'));
+      const choiceRole = role === 'menuitem'
+        || role === 'menuitemradio'
+        || role === 'option';
+      const insideChoicePopup = !!candidate.closest('[role="menu"], [role="listbox"]');
+      return (choiceRole || insideChoicePopup)
+        && labelsFor(candidate).some(label => label === 'chatgpt');
+    };
     const modeTabScore = candidate => {
       const rect = candidate.getBoundingClientRect?.();
       const role = normalize(candidate.getAttribute('role'));
       const labels = labelsFor(candidate);
       let score = 0;
-      if (role === 'tab') score += 100;
+      if (role === 'tab' || role === 'option' || role.startsWith('menuitem')) score += 100;
       if (isSelected(candidate)) score += 50;
       if (visible(candidate)) score += 10;
       if (rect && rect.top >= -20 && rect.top < 180) score += 20;
       if (rect && window.innerWidth > 0
           && rect.left > window.innerWidth * 0.25
           && rect.right < window.innerWidth * 0.8) score += 10;
-      if (labels.some(label => isChatLabel(label) || isWorkLabel(label))) score += 5;
+      if (labels.some(label => isChatLabel(label) || isWorkLabel(label))
+          || isChatGPTMenuChoice(candidate)) score += 5;
       return score;
     };
     const textModeNodes = () => [...document.querySelectorAll('body *')]
@@ -717,7 +732,10 @@ func clickChatJS() -> String {
       .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
     const modeTabs = () => [...new Set([...candidates(), ...textModeNodes()])]
       .filter(candidate => visible(candidate))
-      .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
+      .filter(candidate =>
+        labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label))
+          || isChatGPTMenuChoice(candidate)
+      );
     const modeControls = modeTabs().map(candidate => ({
       label: labelsFor(candidate)[0] || '',
       tag: candidate.tagName || '',
@@ -786,9 +804,10 @@ func clickChatJS() -> String {
       };
     }
     const exactChat = () => modeTabs()
-      .filter(candidate => labelsFor(candidate).some(label =>
-        isChatLabel(label)
-      ))
+      .filter(candidate =>
+        labelsFor(candidate).some(label => isChatLabel(label))
+          || isChatGPTMenuChoice(candidate)
+      )
       .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
     let button = exactChat();
     if (!button) {
