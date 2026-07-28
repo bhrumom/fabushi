@@ -133,7 +133,8 @@ func sharedChatController(
     ?? general?.backgroundAppPort
     ?? state.backgroundAppPort
     ?? hiddenChatPort(state)
-  let profilePath = general?.backgroundProfilePath
+  let profilePath = configuredHiddenChatProfilePath()
+    ?? general?.backgroundProfilePath
     ?? state.backgroundProfilePath
     ?? hiddenChatProfilePath()
   let preferredTargetIds = [
@@ -193,7 +194,13 @@ func sharedChatController(
         let port = prepared["port"] as? Int,
         let targetId = prepared["targetId"] as? String else { return nil }
   queueTrace("worker-create stage=controller-fallback complete target=\(targetId)")
-  return (port, targetId, prepared["profilePath"] as? String ?? hiddenChatProfilePath())
+  return (
+    port,
+    targetId,
+    prepared["profilePath"] as? String
+      ?? configuredHiddenChatProfilePath()
+      ?? hiddenChatProfilePath()
+  )
 }
 
 func quickChatPrewarmServiceJS(_ action: String) -> String {
@@ -729,7 +736,8 @@ func createDedicatedParallelQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
   let general = generalApprovalStateForQueue()
-  let sourceProfile = general?.backgroundProfilePath
+  let sourceProfile = configuredHiddenChatProfilePath()
+    ?? general?.backgroundProfilePath
     ?? state.backgroundProfilePath
     ?? hiddenChatProfilePath()
   guard FileManager.default.fileExists(atPath: sourceProfile) else {
@@ -841,7 +849,8 @@ func createQueueWorkerTarget(
     ?? general?.backgroundAppPort
     ?? state.backgroundAppPort
     ?? hiddenChatPort(state)
-  let profilePath = general?.backgroundProfilePath
+  let profilePath = configuredHiddenChatProfilePath()
+    ?? general?.backgroundProfilePath
     ?? state.backgroundProfilePath
     ?? hiddenChatProfilePath()
   let preferredTargetIds = [

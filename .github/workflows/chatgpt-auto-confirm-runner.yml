@@ -163,6 +163,7 @@ jobs:
           CHATGPT_AUTO_CONFIRM_PARALLEL_STATE: ${{ steps.paths.outputs.runtime_dir }}/parallel-smoke-state.json
           CHATGPT_AUTO_CONFIRM_PARALLEL_EVIDENCE: ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/verify-parallel-actions-queue.mjs
 
       - name: Run persistent task queue
@@ -173,6 +174,7 @@ jobs:
           CHATGPT_AUTO_CONFIRM_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
           ACTION_SESSION_SECONDS: "20100"
           ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-actions-controller.mjs
