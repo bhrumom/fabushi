@@ -46,8 +46,8 @@ struct PluginState: Codable {
   var queueWatcherPid: Int32?
   var queueRuntimeRevision: String?
   // The queue and general confirmer share one authenticated ChatGPT process.
-  // The queue owns a hidden, never-shown prewarm BrowserWindow/renderer inside
-  // that process and never navigates the primary window where the user types.
+  // Every running task owns a hidden, never-shown BrowserWindow inside that
+  // process and never navigates the primary window where the user types.
   var queueWorkerPort: Int?
   var queueWorkerTargetId: String?
   var queueWorkerProfilePath: String?
@@ -148,4 +148,3 @@ struct Candidate {
   let promptText: String
   let buttonTitle: String
 }
-

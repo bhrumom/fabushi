@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v80"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v81"
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -489,7 +489,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "maxConcurrent": requestedMaxConcurrent,
     "effectiveMaxConcurrent": requestedMaxConcurrent,
     "requestedMaxConcurrent": requestedMaxConcurrent,
-    "executionMode": "single-authenticated-process-multi-conversation-parallel",
+    "executionMode": "single-authenticated-process-multi-hidden-window-parallel",
     "targetMode": state.queueWorkerMode ?? "not-started",
     "network": [
       "status": state.queueNetworkStatus ?? "unknown",

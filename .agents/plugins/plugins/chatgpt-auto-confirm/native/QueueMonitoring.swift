@@ -518,6 +518,29 @@ func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
+  if state.queueWorkerMode == sharedConversationQueueWorkerMode {
+    // v81 restores the reliable one-hidden-window-per-task path. Convert any
+    // in-flight legacy shared-renderer tasks into fresh continuations so the
+    // next dispatch cannot navigate away from another streaming Chat.
+    for index in tasks.indices
+      where tasks[index].status == "running" && tasks[index].workerPid == nil {
+      stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
+      queueContinuation(
+        &tasks[index],
+        report: nil,
+        reason: "queue_worker_parallel_hidden_window_migration"
+      )
+    }
+    if let port = state.queueWorkerPort,
+       let targetId = state.queueWorkerTargetId,
+       queueTargetIsHidden(port: port, targetId: targetId) {
+      _ = CDPClient.closeTarget(targetId, portOverride: port)
+    }
+    state.queueWorkerPort = nil
+    state.queueWorkerTargetId = nil
+    state.queueWorkerProfilePath = nil
+    state.queueWorkerMode = nil
+  }
   if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state) {
     // Migrate pre-v41 queues without touching a borrowed visible renderer. Any
     // running Chat is converted to a report-aware fresh continuation so the
@@ -635,6 +658,10 @@ func runQueueIteration(_ state: inout PluginState) {
     guard heldLocks.isDisjoint(with: locks) else { continue }
     do {
       queueTrace("task=\(tasks[index].id) stage=scheduler-selected")
+      // Controller discovery must see the windows already assigned earlier in
+      // this scheduling pass, otherwise a third task could use task A's window
+      // as the prewarm controller.
+      state.automationTasks = tasks
       try startAutomationTask(&tasks[index], state: &state)
       runningCount += 1
       heldLocks.formUnion(locks)
