@@ -122,7 +122,7 @@ try {
     const targets = active.map(item => item.workerTargetId).filter(Boolean);
     const conversations = active.map(item => item.conversationId).filter(Boolean);
     return status.effectiveMaxConcurrent === 2 &&
-      status.executionMode === 'single-authenticated-process-multi-conversation-parallel' &&
+      status.executionMode === 'single-authenticated-process-multi-hidden-window-parallel' &&
       active.length === 2 &&
       new Set(targets).size === 1 &&
       new Set(conversations).size === 2 &&

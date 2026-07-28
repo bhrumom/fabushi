@@ -777,10 +777,22 @@ case "queue_retry":
             timeout: 12.0
           )
         }
-        // An operator retry must not inherit a hidden renderer that may have
-        // drifted to a foreground-created conversation. The next attempt gets
-        // a fresh show:false page inside the same ChatGPT process.
-        stopQueueWorker(&state)
+        // An operator retry must not inherit its old hidden renderer. Parallel
+        // tasks own different windows, so close only this task and leave other
+        // running Chats untouched.
+        if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+          if let port, let targetId,
+             queueTargetIsHidden(port: port, targetId: targetId) {
+            _ = CDPClient.closeTarget(targetId, portOverride: port)
+          }
+          if state.queueWorkerTargetId == targetId {
+            state.queueWorkerPort = nil
+            state.queueWorkerTargetId = nil
+            state.queueWorkerProfilePath = nil
+          }
+        } else {
+          stopQueueWorker(&state)
+        }
       }
       if tasks[index].status != "queued", ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
         // An explicit operator retry is a fresh recovery budget. Keep the
