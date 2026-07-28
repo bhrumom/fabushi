@@ -910,14 +910,64 @@ func clickChatJS() -> String {
   """#
 }
 
-func forcePrimaryChatModeJS() -> String {
+func composerSurfaceStateJS() -> String {
   #"""
+  (() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const input = quickChatRoot?.querySelector(
+      '#prompt-textarea, [contenteditable="true"]'
+    ) || document.querySelector('#prompt-textarea')
+      || document.querySelector('[contenteditable="true"]');
+    const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
+      const label = [
+        button.getAttribute('aria-label'),
+        button.getAttribute('title'),
+        button.innerText,
+        button.textContent
+      ].filter(Boolean).map(normalize).join(' ');
+      return label.includes('chatgpt model') || label.includes('chatgpt 模型')
+        || label.includes('select chatgpt model') || label.includes('选择 chatgpt 模型');
+    });
+    const workComposer = !quickChatRoot
+      && !!document.querySelector('[data-codex-composer="true"]');
+    const currentMode = [...document.querySelectorAll('button, [role="button"]')]
+      .flatMap(candidate => [
+        candidate.getAttribute('aria-label'),
+        candidate.getAttribute('title'),
+        candidate.innerText
+      ])
+      .map(normalize)
+      .find(label =>
+        label.includes('switch mode, current mode:')
+        || label.includes('切换模式')
+        || label.includes('当前模式')
+      ) || '';
+    return {
+      ok: true,
+      hasInput: !!input,
+      chatModel,
+      workComposer,
+      quickChatRoot: !!quickChatRoot,
+      currentMode
+    };
+  })()
+  """#
+}
+
+func forcePrimaryComposerModeJS(_ requestedMode: String) -> String {
+  let mode = requestedMode == "work" ? "work" : "chat"
+  let modeLiteral = jsonStringLiteral(mode)
+  return #"""
   (async () => {
     const key = 'home-composer-mode-v1';
+    const value = \#(modeLiteral);
     const message = {
       type: 'persisted-atom-update',
       key,
-      value: 'chat',
+      value,
       deleted: false
     };
     try {
@@ -931,16 +981,16 @@ func forcePrimaryChatModeJS() -> String {
       window.postMessage({
         type: 'persisted-atom-updated',
         key,
-        value: 'chat',
+        value,
         deleted: false
       }, '*');
       // Keep the legacy renderer store aligned too. New renderers receive the
       // authoritative value from the host, while older ones still bootstrap
       // from this localStorage key.
       try {
-        window.localStorage.setItem(`codex:persisted-atom:${key}`, JSON.stringify('chat'));
+        window.localStorage.setItem(`codex:persisted-atom:${key}`, JSON.stringify(value));
       } catch (_) {}
-      return { ok: true, dispatched: true, key, value: 'chat' };
+      return { ok: true, dispatched: true, key, value };
     } catch (error) {
       return {
         ok: false,
@@ -949,6 +999,10 @@ func forcePrimaryChatModeJS() -> String {
     }
   })()
   """#
+}
+
+func forcePrimaryChatModeJS() -> String {
+  forcePrimaryComposerModeJS("chat")
 }
 
 func autoConfirmWorkHandoffJS() -> String {

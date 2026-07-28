@@ -521,6 +521,11 @@ func selectChatOnPrimaryController(
       + "error=\(forced?["error"] as? String ?? "none")"
   )
   Thread.sleep(forTimeInterval: 1.2)
+  _ = resetStaleChatModeIfNeeded(
+    port: port,
+    targetId: targetId,
+    stage: "primary-chat-selection"
+  )
   for _ in 0..<20 {
     selection = cdpValue(
       port: port,
@@ -543,6 +548,57 @@ func selectChatOnPrimaryController(
     Thread.sleep(forTimeInterval: 0.35)
   }
   return selection
+}
+
+@discardableResult
+func resetStaleChatModeIfNeeded(
+  port: Int,
+  targetId: String,
+  stage: String
+) -> [String: Any]? {
+  let initial = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: composerSurfaceStateJS(),
+    timeout: 5.0
+  )
+  guard initial?["workComposer"] as? Bool == true else { return initial }
+
+  // The hosted shell can persist "chat" while the mounted composer is still
+  // Work. Re-selecting ChatGPT is then a no-op because the atom already has
+  // that value. Cross the real state boundary through Work once, then return
+  // to Chat before creating the hidden queue window.
+  queueTrace("worker-create stage=\(stage) reset-stale-mode begin")
+  let forcedWork = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: forcePrimaryComposerModeJS("work"),
+    timeout: 5.0
+  )
+  queueTrace(
+    "worker-create stage=\(stage) reset-stale-mode work "
+      + "ok=\(forcedWork?["ok"] as? Bool ?? false) "
+      + "value=\(forcedWork?["value"] as? String ?? "none")"
+  )
+  Thread.sleep(forTimeInterval: 0.8)
+  let forcedChat = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: forcePrimaryComposerModeJS("chat"),
+    timeout: 5.0
+  )
+  queueTrace(
+    "worker-create stage=\(stage) reset-stale-mode chat "
+      + "ok=\(forcedChat?["ok"] as? Bool ?? false) "
+      + "value=\(forcedChat?["value"] as? String ?? "none")"
+  )
+  Thread.sleep(forTimeInterval: 1.2)
+  return cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: composerSurfaceStateJS(),
+    timeout: 5.0
+  )
 }
 
 func createQueueWorkerTarget(
@@ -637,6 +693,11 @@ func createQueueWorkerTarget(
        failure: &prewarmFailure
      ) {
     queueTrace("worker-create stage=new-hidden-window complete target=\(hiddenTargetId)")
+    _ = resetStaleChatModeIfNeeded(
+      port: controller.port,
+      targetId: hiddenTargetId,
+      stage: "hidden-chat-selection"
+    )
     // A fresh hosted runner can restore authentication before completing the
     // desktop app's informational onboarding. Advance only neutral navigation
     // buttons, then select Chat once the real app shell is available.
