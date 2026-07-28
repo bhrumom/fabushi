@@ -9,6 +9,10 @@ const actionsWorkflow = readFileSync(
   new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
   'utf8',
 );
+const actionsInbox = JSON.parse(readFileSync(
+  new URL('../tasks/actions-inbox.json', import.meta.url),
+  'utf8',
+));
 
 test('home contract', () => {
   assert.equal(HOME.schema, 'mahayana.miniapp.home.v1');
@@ -31,12 +35,24 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /parallel_queue_smoke/);
   assert.match(actionsWorkflow, /verify-parallel-actions-queue\.mjs/);
   assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
+  assert.match(actionsWorkflow, /task-queue\/watcher-trace\.log/);
   assert.doesNotMatch(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE/);
   assert.match(actionsWorkflow, /tasks\/actions-inbox\.json/);
   assert.match(actionsWorkflow, /import-actions-task-inbox\.mjs/);
+  assert.match(actionsWorkflow, /status" != "incomplete"/);
+  assert.match(actionsWorkflow, /VERIFICATION_ONLY/);
+  assert.match(actionsWorkflow, /no continuation was dispatched/);
+  assert.match(actionsWorkflow, /jq '\{status, reason, counts, tasks\}'/);
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
+});
+test('continuous Actions inbox contains independent work for real parallel dispatch', () => {
+  assert.ok(actionsInbox.maxConcurrent >= 2);
+  assert.ok(actionsInbox.tasks.length >= 2);
+  const firstLocks = new Set(actionsInbox.tasks[0].resourceLocks || []);
+  const secondLocks = new Set(actionsInbox.tasks[1].resourceLocks || []);
+  assert.equal([...firstLocks].some(lock => secondLocks.has(lock)), false);
 });
 test('JSON-RPC errors use the top-level error member', async () => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {

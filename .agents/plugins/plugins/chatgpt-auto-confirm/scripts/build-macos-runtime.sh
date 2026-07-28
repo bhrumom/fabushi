@@ -11,5 +11,5 @@ xcrun swiftc \
   -framework ApplicationServices \
   -framework AppKit \
   -framework SystemConfiguration \
-  "$PLUGIN_DIR/native/chatgpt_auto_confirm.swift" \
+  "$PLUGIN_DIR"/native/*.swift \
   -o "$OUTPUT_DIR/chatgpt-auto-confirm"

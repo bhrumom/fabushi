@@ -46,7 +46,7 @@
 
 ## 3. 任务分解与自动化回归验证 (Task List & Verification)
 1. **编译与回归现存测试**：确保原有模块及基础协议无任何破坏。
-2. **Swift 源码 IPC 改造**：在 `native/chatgpt_auto_confirm.swift` 中完备集成 `UnixIPCClient` 与 `CDPClient`，支持双通道检查与确认。
+2. **Swift 源码 IPC 改造**：在 `native/IPCAndCDP.swift` 及相关原生模块中完备集成 `UnixIPCClient` 与 `CDPClient`，支持双通道检查与确认。
 3. **安全与隐私脱敏机制**：JS 注入逻辑通过 Hash 截断与严格匹配，对任意 API Token 与卡片敏感正文完全屏蔽。
 4. **全自动化集成回归测试**：运行 `npm test` 验证包括 mock CDP + Mock Unix IPC 结合的主路径验证，15 项测试 100% 通过。
 5. **实时验证报告**：针对本地真实 `~/.codex/ipc/ipc.sock` 运行 `status`，确认 `clientId` 分配及 `IPC 主路径` / `AXPress 兼容回退` 架构状态准确无误。

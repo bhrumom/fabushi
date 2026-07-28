@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import worker from '../worker/src/index.ts';
 
-const nativeSource = readFileSync(new URL(
-  '../native/chatgpt_auto_confirm.swift', import.meta.url), 'utf8');
+const nativeDirectory = new URL('../native/', import.meta.url);
+const nativeSource = readdirSync(nativeDirectory)
+  .filter(name => name.endsWith('.swift'))
+  .sort()
+  .map(name => readFileSync(new URL(name, nativeDirectory), 'utf8'))
+  .join('\n');
 
 const call = async (name, args = {}) => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -205,6 +209,13 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /appendTextPreservingConnector/);
   assert.match(nativeSource, /model_picker_not_found/);
   assert.match(nativeSource, /reasoning_high_not_selected/);
+  assert.match(nativeSource, /quick_chat_thinking_not_selected/);
+  assert.match(nativeSource, /pickerEvidence: 'quick-chat-thinking-selection'/);
+  assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
+  assert.match(nativeSource, /allPrefixedModelChoices\('Thinking'\)/);
+  assert.match(nativeSource, /\['instant', 'thinking', 'pro', 'high', 'medium'\]\.some/);
+  assert.match(nativeSource, /composer\?\.contains\(left\)/);
+  assert.doesNotMatch(nativeSource, /pickerEvidence: 'quick-chat-host-selection'/);
   assert.match(nativeSource, /pickerEvidence: 'selected_button_state'/);
   assert.match(nativeSource, /selectedLabel === 'high'/);
   assert.match(nativeSource, /selectedLabel === '高'/);
@@ -219,6 +230,40 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /different conversation ids, not different Electron renderers/);
   assert.match(nativeSource, /"conversationId": task\.conversationId/);
   assert.match(nativeSource, /stableSamples >= 3/);
+  assert.match(nativeSource, /openBackgroundQueueWindow\(/);
+  assert.match(nativeSource, /controllerTargetId: controller\.targetId/);
+  assert.match(nativeSource, /prewarm_reset_failed/);
+  assert.match(nativeSource, /prewarm_hidden_chat_surface_timeout/);
+  assert.match(nativeSource, /candidateLabels/);
+  assert.match(nativeSource, /switch mode, current mode:/);
+  assert.match(nativeSource, /modeSwitch\.click\(\)/);
+  assert.match(nativeSource, /includeChatGPT && label === 'chatgpt'/);
+  assert.match(nativeSource, /candidate\.getAttribute\('role'\) === 'menuitem'/);
+  assert.match(nativeSource, /error: 'mode_switch_dispatched'/);
+  assert.match(nativeSource, /retryAfterModeSwitch: true/);
+  assert.match(nativeSource, /__mahayanaChatModeSwitchAttempted/);
+  assert.match(nativeSource, /\[\.\.\.candidates\(\)\]\.reverse\(\)\.find/);
+  assert.match(nativeSource, /label\.includes\('current mode: chatgpt'\)/);
+  assert.match(nativeSource, /button\.innerText,[\s\S]*button\.getAttribute\('title'\)/);
+  assert.match(nativeSource, /alreadySelected: true/);
+  assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode = true/);
+  assert.match(nativeSource, /__mahayanaConfirmedChatGPTMode === true/);
+  assert.match(nativeSource,
+    /destroyed execution context[\s\S]*__mahayanaConfirmedChatGPTMode = true/);
+  assert.match(nativeSource, /confirmedChatMode: Bool = false/);
+  assert.match(nativeSource, /if \(confirmedChatMode\) window\.__mahayanaConfirmedChatGPTMode = true/);
+  assert.match(nativeSource, /confirmedChatMode: chatSelection\?\["ok"\] as\? Bool == true/);
+  assert.match(nativeSource, /!quickChatRoot && !currentChatGPTMode/);
+  assert.match(nativeSource, /chatSelection\?\["retryAfterModeSwitch"\] as\? Bool == true/);
+  assert.match(nativeSource, /chatSelected: true,[\s\S]*dispatchOnly: true/);
+  assert.match(nativeSource, /negative preflight[\s\S]*must not leave every task queued forever/);
+  assert.match(nativeSource, /watcher-trace\.log/);
+  assert.match(nativeSource, /stage=prepare-new-chat/);
+  assert.match(nativeSource, /label === 'quick chat'/);
+  assert.match(nativeSource, /data-pip-obstacle="quick-chat"/);
+  assert.match(nativeSource, /prewarm_hidden_target_not_chat/);
+  assert.match(nativeSource, /entryScripts/);
+  assert.match(nativeSource, /prewarmCreationFailure/);
   assert.match(nativeSource, /conversation_changed_before_send/);
   assert.match(nativeSource, /conversation_changed_during_send/);
   assert.match(nativeSource, /conversation_changed_before_dispatch/);
@@ -238,6 +283,16 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /reset-prewarm/);
   assert.match(nativeSource, /renderer-ready/);
   assert.match(nativeSource, /quick-chat-prewarm/);
+  assert.match(nativeSource, /hiddenAppURL = "app:\/\/-\/index\.html\?initialRoute=%2F"/);
+  assert.match(nativeSource, /Quick Chat itself is feature-gated per account/);
+  assert.match(nativeSource, /safeText=/);
+  assert.match(nativeSource, /selectionLabels=/);
+  assert.match(nativeSource, /continueHiddenOnboardingJS/);
+  assert.match(nativeSource, /desktop app's informational onboarding/);
+  assert.match(nativeSource, /'go to chatgpt'.*'skip'/s);
+  assert.match(nativeSource, /querySelectorAll\('button, a, \[role="button"\]'\)/);
+  assert.doesNotMatch(nativeSource, /'turn on'.*'not now'/);
+  assert.match(nativeSource, /routeMatches=/);
   assert.match(nativeSource, /Page\.setWebLifecycleState/);
   assert.match(nativeSource, /Emulation\.setFocusEmulationEnabled/);
   assert.match(nativeSource, /Emulation\.setIdleOverride/);

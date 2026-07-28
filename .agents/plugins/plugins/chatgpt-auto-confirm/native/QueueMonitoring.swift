@@ -1,0 +1,838 @@
+import ApplicationServices
+import Cocoa
+import Darwin
+import Foundation
+import SystemConfiguration
+
+
+func taskReportFingerprint(_ report: AutomationTaskReport) -> String {
+  [report.summary, report.remaining.joined(separator: "\n"),
+   report.blockers.joined(separator: "\n"), report.nextTask]
+    .joined(separator: "|")
+    .lowercased()
+    .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+}
+
+func queueContinuation(
+  _ task: inout AutomationTask,
+  report: AutomationTaskReport?,
+  reason: String
+) {
+  let now = isoFormatter.string(from: Date())
+  let depth = task.continuationDepth ?? 0
+  if task.maxTaskContinuations > 0 && depth >= task.maxTaskContinuations {
+    task.status = "blocked"
+    task.lastError = "task_continuation_limit_reached"
+    task.updatedAt = now
+    task.finishedAt = now
+    return
+  }
+  if let report {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
+    let fingerprint = taskReportFingerprint(report)
+    var fingerprints = task.reportFingerprints ?? []
+    fingerprints.append(fingerprint)
+    task.reportFingerprints = Array(fingerprints.suffix(100))
+    let requestedWait = min(604_800, max(0, report.waitSeconds ?? 0))
+    let waitReason = (report.waitReason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    task.reviewFeedback = "上一个 Chat 报告任务未完成。请从同一 checkout 的现有进度继续，完成以下续作，不要从头开始：\n\(report.nextTask)\n\n上轮摘要：\(report.summary)\n剩余：\(report.remaining.joined(separator: "；"))\n卡点：\(report.blockers.joined(separator: "；"))"
+    if requestedWait > 0 {
+      let dueDate = Date().addingTimeInterval(Double(max(30, requestedWait)))
+      task.waitingUntil = isoFormatter.string(from: dueDate)
+      task.waitReason = waitReason
+      task.reviewFeedback = (task.reviewFeedback ?? "")
+        + "\n\n上一轮预计需要等待 \(requestedWait) 秒（\(waitReason)）。小程序已等待到期；现在请先复查外部结果，再继续未完成步骤。"
+      task.status = "waiting"
+      task.lastError = "waiting_for_external_result"
+    } else {
+      task.waitingUntil = nil
+      task.waitReason = nil
+      task.status = "queued"
+      task.lastError = reason
+    }
+  } else {
+    task.reviewFeedback = "上一个 Chat 因 \(reason) 未能给出有效完整报告。请先检查同一 checkout 的最新落盘进度与正在运行的操作，只补做剩余步骤，完成全部目标和验证后按机器模板总结。"
+    task.waitingUntil = nil
+    task.waitReason = nil
+    task.status = "queued"
+    task.lastError = reason
+  }
+  task.continuationDepth = depth + 1
+  task.updatedAt = now
+  task.startedAt = nil
+  task.finishedAt = nil
+  task.workerPid = nil
+  task.report = nil
+  task.reviewConversationId = nil
+  task.reviewStatus = nil
+  task.reviewReport = nil
+  task.lastActivitySignature = nil
+  task.lastProgressAt = nil
+}
+
+func monitorAutomationTask(
+  _ task: inout AutomationTask,
+  state: inout PluginState
+) {
+  let monitoringReview = task.reviewStatus == "running"
+  let activeConversationId = monitoringReview ? task.reviewConversationId : task.conversationId
+  guard let conversationId = activeConversationId else {
+    queueContinuation(&task, report: nil, reason: "missing_conversation_id")
+    return
+  }
+  // Do not restore the background queue renderer before its current page is read. A new
+  // Chat may receive a durable remote id before the virtualized body/sidebar
+  // has caught up; the dispatch marker below is the reliable proof that the
+  // visible page is still this task. Manual conversation drift is handled
+  // after that marker check, without blocking a just-sent response.
+  state.approveAll = true
+  var workerPort = task.workerPort ?? state.queueWorkerPort
+  var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
+  if workerPort == nil || workerTargetId == nil {
+    if let recoveredWorker = createIndependentQueueWorkerTarget(&state) {
+      workerPort = recoveredWorker.port
+      workerTargetId = recoveredWorker.targetId
+      task.workerPort = recoveredWorker.port
+      task.workerTargetId = recoveredWorker.targetId
+      task.workerProfilePath = recoveredWorker.profilePath
+      task.hiddenWorkerRecoveryCount = (task.hiddenWorkerRecoveryCount ?? 0) + 1
+      task.hiddenWorkerLastError = nil
+    }
+  }
+  guard let initialPort = workerPort, let initialTargetId = workerTargetId else {
+    task.hiddenWorkerLastError = "queue_monitor_requires_background_window"
+    task.lastError = task.hiddenWorkerLastError
+    task.updatedAt = isoFormatter.string(from: Date())
+    return
+  }
+  var port = initialPort
+  var targetId = initialTargetId
+  var runtimeState = queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: true
+  )
+  if runtimeState == .hiddenNonChat {
+    // A hidden prewarm page may survive an internal app reload on Work. Ask
+    // that hidden page to return to Chat before treating the renderer as lost.
+    _ = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+  }
+  if runtimeState != .hidden {
+    if runtimeState == .visible {
+      // Safety is fail-closed only for a genuinely visible page. Never close,
+      // navigate, confirm, stop, or type in a page the user may be operating.
+      state.queuePaused = true
+      task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = isoFormatter.string(from: Date())
+      return
+    }
+
+    // Missing, suspended, and hidden-but-not-Chat renderers are disposable
+    // queue-owned pages. Close any stale target, recreate ChatGPT's official
+    // show:false prewarm BrowserWindow, and verify hidden Chat again.
+    let failedRuntimeState = queueTargetRuntimeStateName(runtimeState)
+    closeDedicatedAutomationTarget(task, state: state)
+    guard let recoveredWorker = createIndependentQueueWorkerTarget(&state) else {
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = isoFormatter.string(from: Date())
+      return
+    }
+    port = recoveredWorker.port
+    targetId = recoveredWorker.targetId
+    task.workerPort = recoveredWorker.port
+    task.workerTargetId = recoveredWorker.targetId
+    task.workerProfilePath = recoveredWorker.profilePath
+    task.hiddenWorkerRecoveryCount = (task.hiddenWorkerRecoveryCount ?? 0) + 1
+
+    if conversationId.hasPrefix("local-chatgpt:") {
+      // A reclaimed local-only Chat has no durable route to restore. The page
+      // is already rebuilt and verified hidden; continue the task in a fresh
+      // Chat that explicitly resumes from the same checkout instead of waiting
+      // forever on an identity that no longer exists.
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_recreated_without_durable_conversation"
+      queueContinuation(
+        &task,
+        report: nil,
+        reason: "queue_monitor_hidden_target_recreated_without_durable_conversation"
+      )
+      return
+    }
+
+    let restored = navigateHiddenConversation(
+      port: port,
+      targetId: targetId,
+      conversationId: conversationId
+    )
+    runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+    guard restored, runtimeState == .hidden else {
+      closeDedicatedAutomationTarget(task, state: state)
+      task.hiddenWorkerLastError = "queue_monitor_hidden_target_recovery_failed"
+      queueContinuation(
+        &task,
+        report: nil,
+        reason: "queue_monitor_hidden_target_recovery_failed"
+      )
+      return
+    }
+  }
+  task.hiddenWorkerLastHeartbeatAt = isoFormatter.string(from: Date())
+  task.hiddenWorkerLastError = nil
+  // A permission card can replace the normal conversation body temporarily.
+  // Confirm it before restoring a task through its exact hidden-page route, so
+  // an unloaded conversation cannot suppress automatic authorization.
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
+  let now = isoFormatter.string(from: Date())
+  guard var liveStatus = cdpValue(
+          port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
+    task.lastError = "queue_monitor_cdp_failed"
+    task.updatedAt = isoFormatter.string(from: Date())
+    return
+  }
+  guard let reply = cdpValue(
+          port: port, targetId: targetId, expression: getReplyJS(), timeout: 6.0) else {
+    task.lastError = "queue_monitor_cdp_failed"
+    task.updatedAt = now
+    return
+  }
+  // The hidden queue renderer can still drift after an internal reload. Never
+  // parse a stale page as the active task or create a continuation/review Chat
+  // from it. Restoring here is safe because this process has no user composer.
+  if let observed = normalizedConversationId(liveStatus["conversationId"] as? String),
+     observed != conversationId {
+    // In the desktop app the active conversation pane can be rendered outside
+    // `<main>`, while `<main>` contains only the title/share chrome. Include
+    // the scoped user bubbles so a freshly sent dispatch marker is not missed.
+    let pageContent = [
+      reply["pageContent"] as? String ?? "",
+      reply["userContent"] as? String ?? "",
+    ].joined(separator: "\n")
+    let dispatchMarker = monitoringReview
+      ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
+      : "任务发送轮次：\(task.attempts)"
+    if pageContent.contains(dispatchMarker) {
+      // ChatGPT may replace the local id with its durable remote id after the
+      // first response begins. The per-dispatch marker proves this is still
+      // the current Chat, not a manually selected older attempt.
+      // A virtualized sidebar can keep an older row marked current while the
+      // new local Chat is already streaming. Only a route/portal identity is
+      // authoritative enough to replace that local id; an active-row-only id
+      // must not bind the task to the stale sidebar conversation.
+      let identitySource = liveStatus["conversationSource"] as? String
+      let canPromoteLocalId = !conversationId.hasPrefix("local-chatgpt:")
+        || identitySource == "route"
+        || identitySource == "portal"
+      if canPromoteLocalId {
+        if !monitoringReview {
+          task.conversationId = observed
+          task.chatURL = liveStatus["chatUrl"] as? String
+        } else {
+          task.reviewConversationId = observed
+        }
+      }
+    } else {
+      // A just-created Chat starts with a local id while ChatGPT replaces the
+      // sidebar and body asynchronously. It is not evidence of a manual
+      // switch. Wait for the dispatch marker instead of pausing every queued
+      // task; recover in one fresh Chat only if that binding never arrives.
+      if conversationId.hasPrefix("local-chatgpt:") {
+        if let startedAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
+           Date().timeIntervalSince(startedAt) >= 45 {
+          queueContinuation(&task, report: nil, reason: "fresh_chat_body_pending_timeout")
+        } else {
+          task.lastError = "queue_monitor_conversation_body_pending"
+          task.updatedAt = now
+        }
+        return
+      }
+      let restoredOK = navigateHiddenConversation(
+        port: port,
+        targetId: targetId,
+        conversationId: conversationId
+      )
+      if restoredOK,
+         let statusAfterRestore = cdpValue(
+           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0),
+         let restoredId = normalizedConversationId(statusAfterRestore["conversationId"] as? String),
+         restoredId == conversationId {
+        liveStatus = statusAfterRestore
+      } else {
+        // This hidden renderer is owned solely by the queue, so a failed
+        // restore is a disposable renderer fault rather than user navigation.
+        // Recreate it inside the same app process and continue from checkout.
+        closeDedicatedAutomationTarget(task, state: state)
+        queueContinuation(&task, report: nil, reason: "queue_monitor_conversation_drift")
+        return
+      }
+    }
+  }
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoConfirmChatContinuationJS(),
+    timeout: 4.0
+  )
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
+  task.lastError = nil
+  // A new local id is the authoritative identity. The sidebar can keep the
+  // previous row marked current briefly, so never replace a local id with
+  // transitional remote metadata from that stale row.
+  if !monitoringReview && task.conversationId?.hasPrefix("local-chatgpt:") != true,
+     let resolved = normalizedConversationId(liveStatus["conversationId"] as? String),
+     !resolved.hasPrefix("local-chatgpt:") {
+    task.conversationId = resolved
+  }
+  if !monitoringReview && task.conversationId?.hasPrefix("local-chatgpt:") != true,
+     let chatURL = liveStatus["chatUrl"] as? String {
+    task.chatURL = chatURL
+  }
+  let activitySignature = reply["activitySignature"] as? String ?? ""
+  let activityCharCount = reply["activityCharCount"] as? Int ?? 0
+  if !activitySignature.isEmpty && activitySignature != task.lastActivitySignature {
+    task.lastActivitySignature = activitySignature
+    // Page virtualization can temporarily replace the full task stream with
+    // only the conversation title and Share/Sources chrome. Record the new
+    // signature so it does not churn, but do not treat that regression as
+    // real task progress or postpone interruption recovery.
+    if activityCharCount >= 80 {
+      task.lastProgressAt = now
+      state.queueNetworkFailureCount = 0
+      state.queueNetworkStatus = "online"
+      state.queueNetworkLastError = nil
+      state.queueNetworkWaitUntil = nil
+    }
+  }
+  task.updatedAt = now
+  task.lastResultJSON = jsonString([
+    monitoringReview ? "reviewReply" : "reply": reply,
+    "conversationId": conversationId,
+    "chatUrl": task.chatURL as Any,
+    "reviewConversationId": task.reviewConversationId as Any,
+  ])
+
+  // A sent Chat that never creates any assistant or tool activity is not a
+  // long-running build. It is a failed renderer/send state. Recover quickly
+  // in a fresh Chat instead of accumulating 20-minute title-only stalls.
+  let hasAssistantActivity = (reply["messageCount"] as? Int ?? 0) > 0
+    || !(reply["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    || !(reply["devspaceActivity"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  let isStreaming = reply["streaming"] as? Bool == true
+  let isPending = reply["pending"] as? Bool == true
+  if !hasAssistantActivity, !isStreaming, isPending,
+     let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
+     Date().timeIntervalSince(lastProgressAt) >= 90 {
+    closeDedicatedAutomationTarget(task, state: state)
+    queueContinuation(&task, report: nil, reason: "chat_start_no_reply")
+    return
+  }
+
+  let completedActivity = reply["completedActivity"] as? String ?? ""
+  let visibleContent = reply["content"] as? String ?? ""
+  let connectionText = [
+    visibleContent,
+    completedActivity,
+    reply["devspaceActivity"] as? String ?? "",
+    // `pageContent` also contains the queue's own user instruction, which
+    // deliberately documents network errors. Inspect only assistant/tool
+    // activity so the prompt can never trigger a false network outage.
+    reply["thinking"] as? String ?? ""
+  ].joined(separator: "\n")
+  if let signal = networkRecoverySignal(connectionText) {
+    closeDedicatedAutomationTarget(task, state: state)
+    queueNetworkRecovery(&task, state: &state, reason: signal)
+    return
+  }
+  let reportText = completedActivity.isEmpty ? visibleContent : completedActivity
+  let parsedReport = parseTaskReport(reportText).flatMap(automationReport)
+  let terminalIncomplete = reply["terminalIncomplete"] as? Bool == true
+    || reply["explicitlyIncomplete"] as? Bool == true
+  let terminal = reply["done"] as? Bool == true
+    || reply["completionCandidate"] as? Bool == true
+    || terminalIncomplete
+  if terminal, let report = parsedReport {
+    if let requestedConnector = normalizedConnector(report.nextConnector) {
+      task.connector = requestedConnector
+    }
+    if monitoringReview {
+      task.reviewReport = report
+      task.reviewStatus = report.status
+      if report.status == "complete" {
+        task.status = "completed"
+        task.lastError = nil
+        task.finishedAt = now
+        task.reviewedAt = now
+      } else {
+        task.reviewConversationId = nil
+        task.reviewStatus = nil
+        queueContinuation(&task, report: report, reason: "chat_review_\(report.status)")
+      }
+      return
+    }
+    task.report = report
+    if report.status == "complete" {
+      guard startAutomationReview(
+        &task,
+        report: report,
+        port: port,
+        targetId: targetId
+      ) else {
+        task.status = "blocked"
+        task.lastError = "chat_review_start_failed"
+        task.finishedAt = now
+        return
+      }
+      task.status = "running"
+      task.lastError = nil
+      task.finishedAt = nil
+    } else {
+      closeDedicatedAutomationTarget(task, state: state)
+      queueContinuation(&task, report: report, reason: "chat_finished_\(report.status)")
+    }
+    return
+  }
+  if terminal {
+    if terminalIncomplete {
+      closeDedicatedAutomationTarget(task, state: state)
+      queueContinuation(&task, report: nil, reason: "unfinished_reply_missing_continuation_report")
+      return
+    }
+    let normalResult = reportText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalResult.isEmpty else {
+      closeDedicatedAutomationTarget(task, state: state)
+      queueContinuation(&task, report: nil, reason: "empty_terminal_reply")
+      return
+    }
+    let acceptedResult = AutomationTaskReport(
+      protocolName: "mahayana.task-report.v1",
+      status: "complete",
+      summary: normalResult,
+      completed: [],
+      remaining: [],
+      blockers: [],
+      verification: [],
+      nextTask: "",
+      waitSeconds: 0,
+      waitReason: "",
+      nextConnector: nil
+    )
+    if monitoringReview {
+      guard normalResult.contains("MAHAYANA_REVIEW_ACCEPTED") else {
+        closeDedicatedAutomationTarget(task, state: state)
+        queueContinuation(&task, report: nil, reason: "review_result_missing_acceptance_marker")
+        return
+      }
+      task.reviewReport = acceptedResult
+      task.reviewStatus = "complete"
+      task.status = "completed"
+      task.lastError = nil
+      task.finishedAt = now
+      task.reviewedAt = now
+      return
+    }
+    task.report = acceptedResult
+    guard startAutomationReview(
+      &task,
+      report: acceptedResult,
+      port: port,
+      targetId: targetId
+    ) else {
+      task.status = "blocked"
+      task.lastError = "chat_review_start_failed"
+      task.finishedAt = now
+      return
+    }
+    task.status = "running"
+    task.lastError = nil
+    task.finishedAt = nil
+    return
+  }
+
+  if let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
+     Date().timeIntervalSince(lastProgressAt) >= 1200 {
+    _ = cdpValue(
+      port: port, targetId: targetId, expression: stopCurrentResponseJS(), timeout: 12.0)
+    // A stall belongs only to this hidden task renderer.
+    closeDedicatedAutomationTarget(task, state: state)
+    closeDedicatedAutomationTarget(task, state: state)
+    queueContinuation(&task, report: nil, reason: "page_stalled")
+  }
+}
+
+func stopLegacyQueueResponseIfStillOwned(
+  _ task: AutomationTask,
+  state: PluginState
+) {
+  guard let port = task.workerPort ?? state.queueWorkerPort,
+        let targetId = task.workerTargetId ?? state.queueWorkerTargetId,
+        let reply = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: getReplyJS(),
+          timeout: 5.0
+        ) else { return }
+  let dispatchMarker = task.reviewStatus == "running"
+    ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
+    : "任务发送轮次：\(task.attempts)"
+  let pageContent = reply["pageContent"] as? String ?? ""
+  guard pageContent.contains(dispatchMarker) else {
+    // The user or another controller has already changed this renderer. Do
+    // not stop, select, focus, or otherwise mutate the newly visible page.
+    return
+  }
+  _ = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: stopCurrentResponseJS(),
+    timeout: 12.0
+  )
+}
+
+func runQueueIteration(_ state: inout PluginState) {
+  var tasks = state.automationTasks ?? []
+  let now = isoFormatter.string(from: Date())
+  let currentDate = Date()
+  if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state) {
+    // Migrate pre-v41 queues without touching a borrowed visible renderer. Any
+    // running Chat is converted to a report-aware fresh continuation so the
+    // new hidden queue window first checks what already landed in checkout.
+    for index in tasks.indices
+      where tasks[index].status == "running" && tasks[index].workerPid == nil {
+      stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
+      queueContinuation(
+        &tasks[index],
+        report: nil,
+        reason: "queue_worker_background_window_migration"
+      )
+    }
+    if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
+       let profilePath = state.queueWorkerProfilePath {
+      terminateDedicatedChatProcess(profilePath: profilePath)
+    }
+    state.queueWorkerPort = nil
+    state.queueWorkerTargetId = nil
+    state.queueWorkerProfilePath = nil
+    state.queueWorkerMode = nil
+  }
+  let network = queueNetworkProbe()
+  if !network.reachable {
+    state.queueNetworkStatus = "offline"
+    state.queueNetworkLastError = network.detail
+    for runningIndex in tasks.indices where tasks[runningIndex].status == "running" {
+      closeDedicatedAutomationTarget(tasks[runningIndex], state: state)
+      queueNetworkRecovery(&tasks[runningIndex], state: &state, reason: network.detail)
+    }
+    state.automationTasks = tasks
+    return
+  }
+  if state.queueNetworkStatus == "offline" {
+    state.queueNetworkStatus = "online"
+    state.queueNetworkLastError = nil
+  }
+  for index in tasks.indices where tasks[index].status == "waiting" {
+    guard let waitingUntil = tasks[index].waitingUntil.flatMap(isoFormatter.date(from:)) else {
+      tasks[index].status = "queued"
+      tasks[index].waitReason = nil
+      tasks[index].updatedAt = now
+      continue
+    }
+    guard currentDate >= waitingUntil else { continue }
+    tasks[index].status = "queued"
+    tasks[index].waitingUntil = nil
+    tasks[index].waitReason = nil
+    tasks[index].lastError = nil
+    tasks[index].updatedAt = now
+  }
+  for index in tasks.indices where tasks[index].status == "running" {
+    if tasks[index].workerPid != nil {
+      if watcherIsAlive(tasks[index].workerPid) { continue }
+      finishAutomationTask(&tasks[index], state: state)
+    } else {
+      monitorAutomationTask(&tasks[index], state: &state)
+    }
+  }
+
+  guard state.queueEnabled == true, state.queuePaused != true else {
+    state.automationTasks = tasks
+    return
+  }
+  if tasks.isEmpty {
+    state.queueEnabled = false
+    stopQueueWorker(&state)
+    state.automationTasks = tasks
+    return
+  }
+  let terminalStatuses = Set(["completed", "cancelled", "failed"])
+  if !tasks.isEmpty && tasks.allSatisfy({ terminalStatuses.contains($0.status) }) {
+    state.queueEnabled = false
+    stopQueueWorker(&state)
+    state.automationTasks = tasks
+    return
+  }
+  if state.queueReviewGate != false && tasks.contains(where: {
+    ["awaiting_review", "blocked"].contains($0.status)
+  }) {
+    state.automationTasks = tasks
+    return
+  }
+
+  // The renderer serializes page actions, but each task has a different Chat
+  // conversation. Once sent, ChatGPT runs those responses independently.
+  let maxConcurrent = min(4, max(1, state.queueMaxConcurrent ?? 2))
+  var runningCount = tasks.filter { $0.status == "running" }.count
+  var heldLocks = Set(tasks.filter { $0.status == "running" }.flatMap(\.resourceLocks))
+  var statuses = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.status) })
+  for index in tasks.indices where tasks[index].status == "queued" {
+    let failedDependencies = tasks[index].dependsOn.filter {
+      ["blocked", "failed", "cancelled"].contains(statuses[$0] ?? "")
+    }
+    if !failedDependencies.isEmpty {
+      tasks[index].status = "blocked"
+      tasks[index].lastError = "dependency_not_completed:\(failedDependencies.joined(separator: ","))"
+      tasks[index].updatedAt = now
+      statuses[tasks[index].id] = "blocked"
+    }
+  }
+  let candidates = tasks.indices
+    .filter { tasks[$0].status == "queued" }
+    .sorted {
+      if tasks[$0].priority != tasks[$1].priority {
+        return tasks[$0].priority > tasks[$1].priority
+      }
+      return tasks[$0].createdAt < tasks[$1].createdAt
+    }
+  for index in candidates where runningCount < maxConcurrent {
+    let task = tasks[index]
+    let dependenciesReady = task.dependsOn.allSatisfy { statuses[$0] == "completed" }
+    guard dependenciesReady else { continue }
+    let locks = Set(task.resourceLocks)
+    guard heldLocks.isDisjoint(with: locks) else { continue }
+    do {
+      queueTrace("task=\(tasks[index].id) stage=scheduler-selected")
+      try startAutomationTask(&tasks[index], state: &state)
+      runningCount += 1
+      heldLocks.formUnion(locks)
+    } catch {
+      queueTrace("task=\(tasks[index].id) stage=start-failed error=\(error.localizedDescription)")
+      if let signal = networkRecoverySignal(error.localizedDescription) {
+        tasks[index].attempts += 1
+        queueNetworkRecovery(&tasks[index], state: &state, reason: signal)
+        continue
+      }
+      tasks[index].updatedAt = now
+      tasks[index].attempts += 1
+      tasks[index].lastError = error.localizedDescription
+      tasks[index].status = tasks[index].attempts <= tasks[index].maxRuntimeRetries
+        ? "queued"
+        : "failed"
+    }
+  }
+  state.automationTasks = tasks
+}
+
+func waitForAutomationReview(timeout: Int) -> [String: Any] {
+  let deadline = Date().addingTimeInterval(Double(min(7200, max(1, timeout))))
+  while Date() < deadline {
+    let state = loadQueueState()
+    let tasks = state.automationTasks ?? []
+    if let task = tasks.first(where: {
+      ["awaiting_review", "blocked", "failed"].contains($0.status)
+    }) {
+      return [
+        "ok": true,
+        "ready": true,
+        "task": taskPublicPayload(task, includeResult: true),
+        "queue": queueStatusPayload(state),
+        "reviewInstruction": task.status == "awaiting_review"
+          ? "请验收修改和验证证据，然后调用 review_task。accepted=true 会自动启动后续任务；accepted=false 会携带 feedback 重新排队。"
+          : "任务需要处理卡点或运行失败。可检查报告后取消、修正任务或重新排队。",
+      ]
+    }
+    if tasks.isEmpty || tasks.allSatisfy({ ["completed", "cancelled"].contains($0.status) }) {
+      return ["ok": true, "ready": false, "queueComplete": true, "queue": queueStatusPayload(state)]
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+  }
+  return [
+    "ok": true,
+    "ready": false,
+    "timedOut": true,
+    "queue": queueStatusPayload(loadQueueState()),
+  ]
+}
+
+let watchdogRecoverableStatuses = Set([
+  "queued", "running", "waiting", "blocked", "failed",
+])
+
+func watchdogAnchorDate(_ task: AutomationTask) -> Date? {
+  [
+    task.watchdogLastRecoveryAt,
+    task.lastProgressAt,
+    task.startedAt,
+    task.createdAt,
+  ]
+  .compactMap { $0.flatMap(isoFormatter.date(from:)) }
+  .max()
+}
+
+func watchdogTaskIsEligible(
+  _ task: AutomationTask,
+  now: Date,
+  staleAfterSeconds: Int,
+  force: Bool
+) -> Bool {
+  guard watchdogRecoverableStatuses.contains(task.status) else { return false }
+  if force { return true }
+  if task.status == "waiting",
+     let waitingUntil = task.waitingUntil.flatMap(isoFormatter.date(from:)),
+     now < waitingUntil {
+    return false
+  }
+  guard let anchor = watchdogAnchorDate(task) else { return true }
+  return now.timeIntervalSince(anchor) >= Double(staleAfterSeconds)
+}
+
+func recoverQueueWithWatchdog(
+  _ state: inout PluginState,
+  staleAfterSeconds: Int,
+  force: Bool,
+  dryRun: Bool
+) throws -> [String: Any] {
+  let nowDate = Date()
+  let now = isoFormatter.string(from: nowDate)
+  var tasks = state.automationTasks ?? []
+  let eligibleIndexes = tasks.indices.filter {
+    watchdogTaskIsEligible(
+      tasks[$0],
+      now: nowDate,
+      staleAfterSeconds: staleAfterSeconds,
+      force: force
+    )
+  }
+  let eligibleIds = eligibleIndexes.map { tasks[$0].id }
+  guard !eligibleIndexes.isEmpty else {
+    return [
+      "ok": true,
+      "recovered": false,
+      "dryRun": dryRun,
+      "staleAfterSeconds": staleAfterSeconds,
+      "eligibleTaskIds": eligibleIds,
+      "queue": queueStatusPayload(state),
+    ]
+  }
+  if dryRun {
+    return [
+      "ok": true,
+      "recovered": false,
+      "wouldRecover": true,
+      "dryRun": true,
+      "staleAfterSeconds": staleAfterSeconds,
+      "eligibleTaskIds": eligibleIds,
+      "queue": queueStatusPayload(state),
+    ]
+  }
+
+  // Stop only the queue-owned hidden renderer. Never touch the primary window
+  // or a target whose hidden ownership cannot be verified.
+  if queueUsesBackgroundWindow(state),
+     let port = state.queueWorkerPort,
+     let targetId = state.queueWorkerTargetId,
+     queueTargetIsHidden(port: port, targetId: targetId) {
+    _ = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: stopCurrentResponseJS(),
+      timeout: 12.0
+    )
+  }
+  stopQueueWorker(&state)
+
+  if watcherIsAlive(state.queueWatcherPid), let pid = state.queueWatcherPid {
+    kill(pid, SIGTERM)
+    Thread.sleep(forTimeInterval: 0.2)
+  }
+  state.queueWatcherPid = nil
+
+  for index in eligibleIndexes {
+    let previousStatus = tasks[index].status
+    if previousStatus == "running" {
+      queueContinuation(
+        &tasks[index],
+        report: tasks[index].report,
+        reason: "github_actions_watchdog_recovery"
+      )
+    } else if previousStatus != "queued" {
+      tasks[index].status = "queued"
+      tasks[index].startedAt = nil
+      tasks[index].finishedAt = nil
+      tasks[index].workerPid = nil
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
+      tasks[index].resultPath = nil
+      tasks[index].conversationId = nil
+      tasks[index].chatURL = nil
+      tasks[index].waitingUntil = nil
+      tasks[index].waitReason = nil
+      tasks[index].lastProgressAt = nil
+      tasks[index].lastError = "github_actions_watchdog_recovery"
+      tasks[index].reviewFeedback = [
+        tasks[index].reviewFeedback,
+        "GitHub Actions 守护已安全重建隐藏 Chat。请从同一 checkout 的最新落盘进度继续，不要从头开始。",
+      ].compactMap { $0 }.joined(separator: "\n\n")
+      tasks[index].updatedAt = now
+    } else {
+      tasks[index].workerPid = nil
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
+      tasks[index].lastError = "github_actions_watchdog_recovery"
+      tasks[index].updatedAt = now
+    }
+    tasks[index].watchdogLastRecoveryAt = now
+    tasks[index].watchdogRecoveryCount = (tasks[index].watchdogRecoveryCount ?? 0) + 1
+  }
+
+  state.automationTasks = tasks
+  state.queueEnabled = true
+  state.queuePaused = false
+  try startQueueWatcher(&state)
+  return [
+    "ok": true,
+    "recovered": true,
+    "dryRun": false,
+    "staleAfterSeconds": staleAfterSeconds,
+    "eligibleTaskIds": eligibleIds,
+    "watcherPid": state.queueWatcherPid as Any,
+    "queue": queueStatusPayload(state),
+  ]
+}
