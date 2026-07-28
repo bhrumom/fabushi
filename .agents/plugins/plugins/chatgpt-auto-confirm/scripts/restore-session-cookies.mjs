@@ -106,16 +106,6 @@ const activate = async call => {
   });
 };
 
-const scheduleNavigation = (call, statement) => call('Runtime.evaluate', {
-  expression: `(() => {
-    setTimeout(() => {
-      try { ${statement} } catch (_) {}
-    }, 0);
-    return true;
-  })()`,
-  returnByValue: true,
-});
-
 const target = await findTarget(120_000, 'ChatGPT app shell');
 const { socket, call } = await connect(target);
 await activate(call);
@@ -138,10 +128,15 @@ if (mode !== 'verify') {
 }
 
 if (mode === 'restore-and-verify') {
-  // Electron's app:// renderer never resolves CDP Page.reload on some hosted
-  // machines. Schedule the reload after this evaluation returns, then recover
-  // below if the newly mounted document is temporarily empty.
-  await scheduleNavigation(call, 'location.reload();');
+  await call('Runtime.evaluate', {
+    expression: `(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      setTimeout(() => location.reload(), 0);
+      return true;
+    })()`,
+    returnByValue: true,
+  });
 }
 
 // Cookie restoration authenticates the visible controller window. A fresh
@@ -150,10 +145,8 @@ if (mode === 'restore-and-verify') {
 // afterwards. Requiring the controller itself to finish rendering Chat here
 // prevented the real hidden-Chat path from ever running.
 const verificationDeadline = Date.now() + 120_000;
-const verificationStartedAt = Date.now();
 let verified = false;
 let lastState = {};
-let blankRecoveryCount = 0;
 while (Date.now() < verificationDeadline) {
   await sleep(2_000);
   await activate(call);
@@ -197,28 +190,6 @@ while (Date.now() < verificationDeadline) {
     returnByValue: true,
   });
   lastState = evaluation.result?.value || {};
-  const blankForMs = Date.now() - verificationStartedAt;
-  if (
-    lastState.bridge
-    && lastState.readyState === 'complete'
-    && lastState.bodyLength === 0
-    && blankForMs >= 10_000
-    && blankRecoveryCount < 2
-  ) {
-    blankRecoveryCount += 1;
-    if (blankRecoveryCount === 1) {
-      await scheduleNavigation(call, 'location.reload();');
-    } else {
-      await scheduleNavigation(
-        call,
-        "location.href = 'app://-/index.html?initialRoute=%2F';"
-      );
-    }
-    process.stdout.write(
-      `Recovering empty ChatGPT shell (attempt ${blankRecoveryCount})\n`
-    );
-    continue;
-  }
   if (
     !lastState.asksForLogin
     && lastState.bridge
