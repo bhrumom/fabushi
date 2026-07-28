@@ -235,6 +235,6 @@ jobs:
           fi
           gh workflow run chatgpt-auto-confirm-runner.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main \
+            --ref "$GITHUB_REF_NAME" \
             -f previous_run_id="$GITHUB_RUN_ID"
           echo "Dispatched continuation from run $GITHUB_RUN_ID."

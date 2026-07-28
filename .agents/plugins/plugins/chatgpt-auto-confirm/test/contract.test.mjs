@@ -52,6 +52,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /status" != "incomplete"/);
   assert.match(actionsWorkflow, /VERIFICATION_ONLY/);
   assert.match(actionsWorkflow, /no continuation was dispatched/);
+  assert.match(actionsWorkflow, /--ref "\$GITHUB_REF_NAME"/);
   assert.match(actionsWorkflow, /jq '\{status, reason, counts, tasks\}'/);
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
