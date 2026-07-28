@@ -205,6 +205,36 @@ func sendMessageJS(
       element.offsetWidth || element.offsetHeight || element.getClientRects().length
     ));
     const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+    const dispatchPointerClick = element => {
+      const rect = element?.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      element.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mousedown', pressed));
+      element.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
     const record = (stage, ok, details = {}) => {
       result.stages.push({ stage, ok, ...details });
       return ok;
@@ -525,8 +555,10 @@ func sendMessageJS(
           || selectedLabel === '高'
           || selectedLabel.startsWith('high ');
         if (!quickChatConfirmed) {
-          picker.click();
-          await sleep(350);
+          // The desktop ChatGPT model switcher is a Radix trigger that opens
+          // on pointerdown; HTMLElement.click() alone leaves the menu closed.
+          dispatchPointerClick(picker);
+          await sleep(500);
           const thinkingChoice = [
             ...allPrefixedModelChoices('Thinking'),
             ...allPrefixedModelChoices('思考'),
@@ -587,8 +619,8 @@ func sendMessageJS(
       let highChoiceClicked = false;
 
       if (!reasoningConfirmed || !modelConfirmed) {
-        picker.click();
-        await sleep(350);
+        dispatchPointerClick(picker);
+        await sleep(500);
 
         let modelChoice = allExactModelChoices(desiredModel).find(choice =>
           visibleModelMenus().some(menu => menu.contains(choice))
