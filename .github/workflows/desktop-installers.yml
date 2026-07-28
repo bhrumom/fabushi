@@ -1,25 +1,6 @@
 name: Desktop installers
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - fabushi/**
-      - .agents/plugins/**
-      - scripts/package-official-plugins.sh
-      - third_party/mahayana
-      - third_party/mahayana/**
-      - .github/scripts/package-desktop-*
-      - .github/scripts/build-desktop-cli.sh
-      - .github/scripts/build-mahayana-desktop-bundle.sh
-      - .github/scripts/assert-mahayana-bundle.sh
-      - .github/scripts/assert-openclaw-bundle.sh
-      - .github/scripts/sync-openclaw-build-assets-v2.sh
-      - .github/scripts/notarize-macos-dmg.sh
-      - .github/scripts/fix-macos-bundled-dylibs.sh
-      - .github/scripts/upload-macos-app-store.sh
-      - .github/workflows/desktop-installers.yml
   push:
     branches:
       - main
