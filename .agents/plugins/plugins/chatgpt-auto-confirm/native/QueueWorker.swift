@@ -679,6 +679,13 @@ func copyProfileForDedicatedQueueWorker(
 
 func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
   do {
+    let existingApplicationPids = Set(
+      NSWorkspace.shared.runningApplications.compactMap { application -> pid_t? in
+        guard let bundleIdentifier = application.bundleIdentifier,
+              targetBundleIdentifiers.contains(bundleIdentifier) else { return nil }
+        return application.processIdentifier
+      }
+    )
     let launcher = Process()
     launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     launcher.arguments = [
@@ -691,7 +698,36 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     launcher.standardError = FileHandle.nullDevice
     try launcher.run()
     launcher.waitUntilExit()
-    return launcher.terminationStatus == 0
+    guard launcher.terminationStatus == 0 else { return false }
+
+    // `open -j` launches a new ChatGPT instance without activation, but the
+    // Electron renderer still reports `document.visibilityState == visible`.
+    // Hide the newly created application process explicitly. This is the same
+    // transition used by the successful local hidden-Chat probe: the full
+    // Chat renderer stays mounted while its visibility changes to `hidden`.
+    for _ in 0..<200 {
+      let application = NSWorkspace.shared.runningApplications.first { candidate in
+        guard let bundleIdentifier = candidate.bundleIdentifier else { return false }
+        return targetBundleIdentifiers.contains(bundleIdentifier)
+          && !existingApplicationPids.contains(candidate.processIdentifier)
+          && !candidate.isTerminated
+      }
+      if let application {
+        _ = application.hide()
+        for _ in 0..<80 {
+          if application.isHidden {
+            queueTrace(
+              "worker-create stage=dedicated-process-hidden "
+                + "port=\(port) pid=\(application.processIdentifier)"
+            )
+            return true
+          }
+          Thread.sleep(forTimeInterval: 0.05)
+        }
+      }
+      Thread.sleep(forTimeInterval: 0.05)
+    }
+    return false
   } catch {
     return false
   }
