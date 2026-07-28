@@ -509,8 +509,19 @@ func selectChatOnPrimaryController(
   targetId: String
 ) -> [String: Any]? {
   var selection: [String: Any]?
-  var forcedPersistedChatMode = false
-  for attempt in 0..<20 {
+  let forced = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: forcePrimaryChatModeJS(),
+    timeout: 5.0
+  )
+  queueTrace(
+    "worker-create stage=primary-chat-selection force-persisted-mode "
+      + "ok=\(forced?["ok"] as? Bool ?? false) "
+      + "error=\(forced?["error"] as? String ?? "none")"
+  )
+  Thread.sleep(forTimeInterval: 1.2)
+  for _ in 0..<20 {
     selection = cdpValue(
       port: port,
       targetId: targetId,
@@ -520,22 +531,6 @@ func selectChatOnPrimaryController(
     if selection?["alreadySelected"] as? Bool == true { return selection }
     if selection?["retryAfterModeSwitch"] as? Bool == true {
       Thread.sleep(forTimeInterval: 0.8)
-      continue
-    }
-    if !forcedPersistedChatMode && attempt >= 2 {
-      let forced = cdpValue(
-        port: port,
-        targetId: targetId,
-        expression: forcePrimaryChatModeJS(),
-        timeout: 5.0
-      )
-      queueTrace(
-        "worker-create stage=primary-chat-selection force-persisted-mode "
-          + "ok=\(forced?["ok"] as? Bool ?? false) "
-          + "error=\(forced?["error"] as? String ?? "none")"
-      )
-      forcedPersistedChatMode = true
-      Thread.sleep(forTimeInterval: 1.2)
       continue
     }
     if selection?["dispatchOnly"] as? Bool == true {
