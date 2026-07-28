@@ -522,13 +522,6 @@ func selectChatOnPrimaryController(
       Thread.sleep(forTimeInterval: 0.8)
       continue
     }
-    if selection?["dispatchOnly"] as? Bool == true {
-      // The primary Chat/Work control is a React text toggle. Its click can
-      // replace the renderer after Runtime.evaluate returns, so re-probe the
-      // same target instead of trusting the dispatch result.
-      Thread.sleep(forTimeInterval: 0.8)
-      continue
-    }
     if !forcedPersistedChatMode && attempt >= 2 {
       let forced = cdpValue(
         port: port,
@@ -543,6 +536,13 @@ func selectChatOnPrimaryController(
       )
       forcedPersistedChatMode = true
       Thread.sleep(forTimeInterval: 1.2)
+      continue
+    }
+    if selection?["dispatchOnly"] as? Bool == true {
+      // The primary Chat/Work control is a React text toggle. Its click can
+      // replace the renderer after Runtime.evaluate returns, so re-probe the
+      // same target instead of trusting the dispatch result.
+      Thread.sleep(forTimeInterval: 0.8)
       continue
     }
     Thread.sleep(forTimeInterval: 0.35)
