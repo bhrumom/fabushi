@@ -9,6 +9,10 @@ const actionsWorkflow = readFileSync(
   new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
   'utf8',
 );
+const restoreSessionScript = readFileSync(
+  new URL('../scripts/restore-session-cookies.mjs', import.meta.url),
+  'utf8',
+);
 const actionsInbox = JSON.parse(readFileSync(
   new URL('../tasks/actions-inbox.json', import.meta.url),
   'utf8',
@@ -32,6 +36,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
+  assert.match(restoreSessionScript, /Page\.reload/);
+  assert.match(restoreSessionScript, /blankRecoveryCount < 2/);
+  assert.match(restoreSessionScript, /Page\.navigate/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);

@@ -128,15 +128,11 @@ if (mode !== 'verify') {
 }
 
 if (mode === 'restore-and-verify') {
-  await call('Runtime.evaluate', {
-    expression: `(() => {
-      document.dispatchEvent(new Event('visibilitychange'));
-      window.dispatchEvent(new Event('focus'));
-      setTimeout(() => location.reload(), 0);
-      return true;
-    })()`,
-    returnByValue: true,
-  });
+  // CDP owns the navigation lifecycle here. A scheduled location.reload()
+  // occasionally left the hosted Electron renderer at a complete but empty
+  // app:// document, while Page.reload reliably waits for the reload command
+  // to be accepted by the same target.
+  await call('Page.reload', { ignoreCache: true });
 }
 
 // Cookie restoration authenticates the visible controller window. A fresh
@@ -145,8 +141,10 @@ if (mode === 'restore-and-verify') {
 // afterwards. Requiring the controller itself to finish rendering Chat here
 // prevented the real hidden-Chat path from ever running.
 const verificationDeadline = Date.now() + 120_000;
+const verificationStartedAt = Date.now();
 let verified = false;
 let lastState = {};
+let blankRecoveryCount = 0;
 while (Date.now() < verificationDeadline) {
   await sleep(2_000);
   await activate(call);
@@ -190,6 +188,27 @@ while (Date.now() < verificationDeadline) {
     returnByValue: true,
   });
   lastState = evaluation.result?.value || {};
+  const blankForMs = Date.now() - verificationStartedAt;
+  if (
+    lastState.bridge
+    && lastState.readyState === 'complete'
+    && lastState.bodyLength === 0
+    && blankForMs >= 10_000
+    && blankRecoveryCount < 2
+  ) {
+    blankRecoveryCount += 1;
+    if (blankRecoveryCount === 1) {
+      await call('Page.reload', { ignoreCache: true });
+    } else {
+      await call('Page.navigate', {
+        url: 'app://-/index.html?initialRoute=%2F',
+      });
+    }
+    process.stdout.write(
+      `Recovering empty ChatGPT shell (attempt ${blankRecoveryCount})\n`
+    );
+    continue;
+  }
   if (
     !lastState.asksForLogin
     && lastState.bridge
