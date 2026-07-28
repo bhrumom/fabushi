@@ -117,6 +117,11 @@ if (mode === 'restore-and-verify') {
   });
 }
 
+// Cookie restoration authenticates the visible controller window. A fresh
+// hosted runner commonly opens that controller on Work, while the native queue
+// runtime creates and validates its own show:false Chat window immediately
+// afterwards. Requiring the controller itself to finish rendering Chat here
+// prevented the real hidden-Chat path from ever running.
 const verificationDeadline = Date.now() + 120_000;
 let verified = false;
 let lastState = {};
@@ -164,10 +169,16 @@ while (Date.now() < verificationDeadline) {
   });
   lastState = evaluation.result?.value || {};
   if (
-    lastState.hasChat
-    && lastState.hasWork
-    && !lastState.asksForLogin
+    !lastState.asksForLogin
     && lastState.bridge
+    && lastState.readyState === 'complete'
+    && lastState.bodyLength > 50
+    && (
+      lastState.currentMode
+      || lastState.workComposer
+      || lastState.hasChat
+      || lastState.hasWork
+    )
   ) {
     verified = true;
     break;
@@ -177,9 +188,9 @@ while (Date.now() < verificationDeadline) {
 socket.close();
 if (!verified) {
   throw new Error(
-    `Authenticated Chat surface was not verified (${JSON.stringify(lastState)})`
+    `Authenticated desktop shell was not verified (${JSON.stringify(lastState)})`
   );
 }
 process.stdout.write(
-  `Verified authenticated Chat surface (${JSON.stringify(lastState)})\n`
+  `Verified authenticated desktop shell (${JSON.stringify(lastState)})\n`
 );
