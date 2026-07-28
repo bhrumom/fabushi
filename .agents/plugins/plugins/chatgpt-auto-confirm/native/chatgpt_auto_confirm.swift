@@ -2005,7 +2005,7 @@ private func prepareNewChatTarget(
           expression: "(() => ({messageCount: document.querySelectorAll('[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]').length}))()",
           timeout: timeout
         )?["messageCount"] as? Int ?? 1) == 0
-      if changed || (blankConversation && previous?.isEmpty != false) {
+      if changed || blankConversation {
         var result = prepared ?? [:]
         result["newChatClicked"] = true
         return result
@@ -6478,6 +6478,18 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
     }
 
     async function ensureModelAndReasoning() {
+      // Dismiss promotional modals like "Introducing GPT-5.6 Sol"
+      const promoButtons = [...document.querySelectorAll('button')].filter(btn => {
+        const text = (btn.textContent || '').trim().toLowerCase();
+        return text === 'try gpt-5.6 sol now' || text === 'okay' || text === 'got it';
+      });
+      for (const btn of promoButtons) {
+        if (visible(btn)) {
+          btn.click();
+          await sleep(600);
+        }
+      }
+
       const picker = modelPickerButton();
       if (!picker) {
         return { ok: true, model: desiredModel, reasoning: desiredReasoning };
@@ -6696,6 +6708,43 @@ private func sendMessageJS(message: String, connector: String?, newChat: Bool = 
         || connectorMatches(el.getAttribute('data-app-name'), target);
       let evidence = connectorEvidence(target);
       let found = evidence.length > 0;
+
+      if (!found) {
+        // Fallback 1: Try the @mention picker approach which works again
+        if (textarea) {
+          textarea.focus();
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            const range = document.createRange();
+            range.selectNodeContents(textarea);
+            range.collapse(false);
+            selection.addRange(range);
+            document.execCommand('insertText', false, '@' + target + ' ');
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '@' + target + ' ' }));
+            
+            // Wait for React to process and potentially spawn the popup or convert to chip
+            await sleep(500);
+            
+            // Sometimes it creates a picker menu, so let's try to click the first item
+            const mentionItem = [...document.querySelectorAll('[role="option"], [role="menuitem"], [role="presentation"]')].find(el => {
+              const text = (el.textContent || '').trim().toLowerCase();
+              return text.includes(target);
+            });
+            if (mentionItem) {
+              mentionItem.click();
+              await sleep(350);
+            }
+            
+            // Clear the text box after selection
+            textarea.innerHTML = '';
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: '' }));
+            
+            evidence = connectorEvidence(target);
+            found = evidence.length > 0;
+          }
+        }
+      }
 
       if (!found) {
         const visibleAppItem = () => [...document.querySelectorAll(
