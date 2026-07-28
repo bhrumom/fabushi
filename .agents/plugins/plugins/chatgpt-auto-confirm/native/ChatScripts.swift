@@ -241,6 +241,15 @@ func sendMessageJS(
     function chatSurfaceEvidence() {
       const quickRoot = quickChatRoot();
       const scope = quickRoot || document;
+      const modeControls = [...scope.querySelectorAll('button, [role="button"]')]
+        .filter(visible)
+        .map(button => normalize([
+          button.textContent,
+          button.getAttribute('aria-label'),
+          button.getAttribute('title')
+        ].filter(Boolean).join(' ')))
+        .filter(label => /^(chat|work|聊天|工作)$|current mode|当前模式/i.test(label))
+        .slice(0, 12);
       const relevantControls = [...scope.querySelectorAll('button, [role="button"]')]
         .filter(visible)
         .map(button => normalize([
@@ -257,6 +266,7 @@ func sendMessageJS(
         hasInput: !!findTextarea(),
         workComposer: !!document.querySelector('[data-codex-composer="true"]'),
         chatMode: chatModeIsActive(),
+        modeControls,
         relevantControls
       };
     }
@@ -328,8 +338,10 @@ func sendMessageJS(
           || label.includes('推理')
           || label.includes('高')
           || label.includes('智能')
-          || /\\bgpt\\b/i.test(label)
-          || /\\b(?:instant|thinking|high|medium|pro)\\b/i.test(label);
+          // The hosted Chat renderer currently concatenates hidden model
+          // labels into one button, e.g. "5.6 TerraExtra High5.6 SolMedium".
+          // Word boundaries therefore miss "High5.6" and "SolMedium".
+          || /(?:gpt|model|thinking|instant|high|medium|pro|terra|sol)/i.test(label);
       };
 
       const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
@@ -730,6 +742,8 @@ func sendMessageJS(
 
     function chatModeIsActive() {
       const quickRoot = quickChatRoot();
+      const workComposer = !quickRoot
+        && !!document.querySelector('[data-codex-composer="true"]');
       const currentChatGPTMode = window.__mahayanaConfirmedChatGPTMode === true
         || [...document.querySelectorAll('button, a, [role="button"]')]
         .some(button => {
@@ -748,9 +762,11 @@ func sendMessageJS(
       });
       const webChat = window.location.protocol === 'https:'
         && window.location.hostname === 'chatgpt.com';
-      return (!!quickRoot || currentChatGPTMode || chatModel || webChat) && !!findTextarea()
-        && (!!quickRoot || currentChatGPTMode
-          || !document.querySelector('[data-codex-composer="true"]'));
+      // The desktop app can leave the Work composer mounted while a stale
+      // ChatGPT flag or model label is still present. Work must never pass as
+      // Chat: the top-level Chat/Work switch is authoritative here.
+      return (!!quickRoot || currentChatGPTMode || chatModel || webChat)
+        && !!findTextarea() && !workComposer;
     }
 
     function replaceText(el, text) {
@@ -1362,7 +1378,8 @@ func chatStatusJS() -> String {
   });
   const webChat = window.location.protocol === 'https:'
     && window.location.hostname === 'chatgpt.com';
-  const workComposer = !quickChatRoot && !currentChatGPTMode
+  // A stale mode flag must not hide the Work composer from surface checks.
+  const workComposer = !quickChatRoot
     && !!document.querySelector('[data-codex-composer="true"]');
   const pageURL = window.location.href || '';
   const initialRoute = new URL(pageURL).searchParams.get('initialRoute') || '';

@@ -62,6 +62,8 @@ jobs:
             echo "profile_dir=$profile_dir"
             echo "state_path=$state_path"
           } >> "$GITHUB_OUTPUT"
+          mkdir -p "$runtime_dir/diagnostics"
+          touch "$runtime_dir/diagnostics/.keep"
 
       - name: Restore encrypted continuation state
         shell: bash
@@ -195,6 +197,7 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
             ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
             ${{ steps.paths.outputs.runtime_dir }}/task-queue/watcher-trace.log
+            ${{ steps.paths.outputs.runtime_dir }}/diagnostics
 
       - name: Continue incomplete work or report terminal failure
         if: always()

@@ -457,7 +457,9 @@ func prepareBackgroundChatJS(
       });
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
-    const workComposer = !quickChatRoot && !currentChatGPTMode
+    // The top-level Chat/Work switch is authoritative. A stale mode flag must
+    // not make the Work composer look like Chat after a renderer replacement.
+    const workComposer = !quickChatRoot
       && !!document.querySelector('[data-codex-composer="true"]');
     
     const isChatSurface = !!quickChatRoot
@@ -730,7 +732,6 @@ func clickChatJS() -> String {
     // click after this evaluation returns so a destroyed execution context is
     // not mistaken for a failed mode selection. The caller independently
     // waits for and validates the resulting hidden Chat surface.
-    window.__mahayanaConfirmedChatGPTMode = true;
     setTimeout(() => {
       try { button.click(); } catch (_) {}
     }, 0);
@@ -818,28 +819,35 @@ func prepareNewChatTarget(
 ) -> [String: Any]? {
   // First wait for the app bundle/composer. Target.createTarget can expose a
   // static startup shell until its explicit Page.navigate has completed.
-  _ = cdpValue(
+  func confirmedChatSelection(_ result: [String: Any]?) -> Bool {
+    guard result?["ok"] as? Bool == true else { return false }
+    return result?["alreadySelected"] as? Bool == true
+  }
+  var chatModeConfirmed = confirmedChatSelection(cdpValue(
     port: port,
     targetId: targetId,
     expression: clickChatJS(),
     timeout: timeout
-  )
+  ))
   var baseline: [String: Any]?
   for _ in 0..<40 {
     baseline = cdpValue(
       port: port,
       targetId: targetId,
-      expression: prepareBackgroundChatJS(newChat: false),
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: chatModeConfirmed
+      ),
       timeout: timeout
     )
     if baseline?["ok"] as? Bool == true { break }
     if baseline?["error"] as? String == "not_chat_surface" {
-      _ = cdpValue(
+      chatModeConfirmed = confirmedChatSelection(cdpValue(
         port: port,
         targetId: targetId,
         expression: clickChatJS(),
         timeout: timeout
-      )
+      )) || chatModeConfirmed
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
@@ -862,7 +870,10 @@ func prepareNewChatTarget(
     let prepared = cdpValue(
       port: port,
       targetId: targetId,
-      expression: prepareBackgroundChatJS(newChat: false),
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: chatModeConfirmed
+      ),
       timeout: timeout
     )
     if prepared?["ok"] as? Bool == true {
@@ -980,12 +991,14 @@ func ensureHiddenChatTarget(
 
   // The hidden window can reopen on Work. Switch the mode synchronously so
   // the following composer probe never awaits across a renderer transition.
-  _ = cdpValue(
+  let initialChatSelection = cdpValue(
     port: port,
     targetId: targetId,
     expression: clickChatJS(),
     timeout: 4.0
   )
+  var chatModeConfirmed = initialChatSelection?["ok"] as? Bool == true
+    && initialChatSelection?["alreadySelected"] as? Bool == true
 
   if let conversationId, !conversationId.isEmpty {
     let selected = cdpValue(
@@ -1015,10 +1028,24 @@ func ensureHiddenChatTarget(
       current = cdpValue(
         port: port,
         targetId: targetId,
-        expression: prepareBackgroundChatJS(newChat: false, conversationId: conversationId),
+        expression: prepareBackgroundChatJS(
+          newChat: false,
+          conversationId: conversationId,
+          confirmedChatMode: chatModeConfirmed
+        ),
         timeout: 4.0
       )
       if current?["ok"] as? Bool == true { break }
+      if current?["error"] as? String == "not_chat_surface" {
+        let retrySelection = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: clickChatJS(),
+          timeout: 4.0
+        )
+        chatModeConfirmed = chatModeConfirmed
+          || (retrySelection?["alreadySelected"] as? Bool == true)
+      }
       Thread.sleep(forTimeInterval: 0.25)
     }
     prepared = current
