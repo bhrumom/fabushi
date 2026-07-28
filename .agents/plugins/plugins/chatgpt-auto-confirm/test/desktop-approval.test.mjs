@@ -250,7 +250,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /prewarm_hidden_chat_surface_timeout/);
   assert.match(nativeSource, /candidateLabels/);
   assert.match(nativeSource, /switch mode, current mode:/);
-  assert.match(nativeSource, /modeSwitch\.click\(\)/);
+  assert.match(nativeSource, /dispatchPointerClick\(modeSwitch\)/);
+  assert.match(nativeSource, /new PointerEvent\('pointerdown'/);
   assert.match(nativeSource, /const isChatLabel = label => label === 'chat'/);
   assert.match(nativeSource, /persisted-atom-update/);
   assert.match(nativeSource, /home-composer-mode-v1/);
@@ -260,6 +261,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /role === 'menuitemradio'/);
   assert.match(nativeSource, /candidate\.closest\('\[role="menu"\], \[role="listbox"\]'\)/);
   assert.match(nativeSource, /labelsFor\(candidate\)\.some\(label => label === 'chatgpt'\)/);
+  assert.match(nativeSource, /normalize\(child\.textContent\) === 'chatgpt'/);
   assert.match(nativeSource, /error: 'mode_switch_dispatched'/);
   assert.match(nativeSource, /retryAfterModeSwitch: true/);
   assert.match(nativeSource, /__mahayanaChatModeSwitchAttempted/);

@@ -674,6 +674,39 @@ func clickChatJS() -> String {
       candidate.getAttribute('aria-label'),
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
+    const dispatchPointerClick = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      // Radix's compact mode trigger opens on pointerdown. HTMLElement.click()
+      // emits only click, so the hosted app silently stayed on the Codex/Work
+      // composer even though the dispatch itself reported success.
+      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+      candidate.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
     const visible = candidate => {
       const rect = candidate.getBoundingClientRect?.();
       return !!rect && (rect.width > 0 || rect.height > 0 || candidate.offsetParent !== null);
@@ -708,8 +741,12 @@ func clickChatJS() -> String {
         || role === 'menuitemradio'
         || role === 'option';
       const insideChoicePopup = !!candidate.closest('[role="menu"], [role="listbox"]');
+      const hasExactChatGPTChild = [...candidate.querySelectorAll('*')].some(child =>
+        child.children.length === 0 && normalize(child.textContent) === 'chatgpt'
+      );
       return (choiceRole || insideChoicePopup)
-        && labelsFor(candidate).some(label => label === 'chatgpt');
+        && (labelsFor(candidate).some(label => label === 'chatgpt')
+          || hasExactChatGPTChild);
     };
     const modeTabScore = candidate => {
       const rect = candidate.getBoundingClientRect?.();
@@ -824,7 +861,7 @@ func clickChatJS() -> String {
         // select the ChatGPT menu item in a fresh execution context.
         window.__mahayanaChatModeSwitchAttempted = true;
         setTimeout(() => {
-          try { modeSwitch.click(); } catch (_) {}
+          try { dispatchPointerClick(modeSwitch); } catch (_) {}
         }, 0);
         return {
           ok: false,
