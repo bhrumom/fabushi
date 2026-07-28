@@ -153,8 +153,10 @@ jobs:
             --remote-debugging-port="$CHATGPT_CDP_PORT"
           CHATGPT_SESSION_MODE=verify \
             node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-          login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status 2>&1)
-          grep -q 'Logged in using ChatGPT' <<< "$login_status"
+          # The native queue's hidden-Chat probe is the authoritative end-to-end
+          # authentication check. The bundled `codex login status` command can
+          # wait indefinitely on a hosted desktop session after the shell is
+          # already authenticated, so do not block queue startup on it.
 
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
