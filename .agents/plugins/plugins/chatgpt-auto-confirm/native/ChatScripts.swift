@@ -288,9 +288,16 @@ func sendMessageJS(
       const composer = input?.closest('form') || input?.parentElement?.parentElement;
 
       // Search in composer area first for aria-haspopup buttons (strong signal = dropdown trigger)
+      // Filter out icon-only buttons (like attachment paperclip) by requiring some text
       const popupButton = [...(composer || document).querySelectorAll(
         '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
-      )].find(button => visible(button) && button !== send);
+      )].find(button => {
+        if (!visible(button) || button === send) return false;
+        const text = normalize(button.textContent).toLowerCase();
+        // The model picker should have some text (e.g., 'gpt', 'high', 'auto', 'model'). 
+        // The attachment button is usually empty text.
+        return text.length > 0;
+      });
       if (popupButton) return popupButton;
 
       const explicit = [...scope.querySelectorAll(
