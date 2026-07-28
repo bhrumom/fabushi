@@ -235,3 +235,7 @@ if (!verified) {
 process.stdout.write(
   `Verified authenticated desktop shell (${JSON.stringify(lastState)})\n`
 );
+// This is a one-shot bootstrap command. Electron does not always complete the
+// DevTools WebSocket close handshake on hosted macOS, which can otherwise keep
+// Node alive after verification has already succeeded.
+process.exit(0);
