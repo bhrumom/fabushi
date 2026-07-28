@@ -51,8 +51,28 @@ const findTarget = async (timeoutMs, label) => {
 const connect = async target => {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.addEventListener('open', resolve, { once: true });
-    socket.addEventListener('error', reject, { once: true });
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.removeEventListener('open', onOpen);
+      socket.removeEventListener('error', onError);
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = event => {
+      cleanup();
+      reject(event);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      try {
+        socket.close();
+      } catch {}
+      reject(new Error('ChatGPT CDP socket connection timed out'));
+    }, 15_000);
+    socket.addEventListener('open', onOpen, { once: true });
+    socket.addEventListener('error', onError, { once: true });
   });
   let sequence = 0;
   const call = (method, params = {}) => new Promise((resolve, reject) => {

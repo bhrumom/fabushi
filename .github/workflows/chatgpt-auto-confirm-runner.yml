@@ -132,6 +132,7 @@ jobs:
         run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
 
       - name: Launch authenticated desktop shell
+        timeout-minutes: 6
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}

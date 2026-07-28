@@ -34,6 +34,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=seed/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=verify/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
+  assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
   assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
