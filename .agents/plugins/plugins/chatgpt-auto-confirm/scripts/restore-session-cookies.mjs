@@ -23,7 +23,9 @@ const sleep = milliseconds =>
   new Promise(resolve => setTimeout(resolve, milliseconds));
 
 const listTargets = async () =>
-  fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json());
+  fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(5_000),
+  }).then(response => response.json());
 
 const findTarget = async (timeoutMs, label) => {
   const deadline = Date.now() + timeoutMs;

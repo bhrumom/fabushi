@@ -31,8 +31,8 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
-  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=seed/);
-  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=verify/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
+  assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
