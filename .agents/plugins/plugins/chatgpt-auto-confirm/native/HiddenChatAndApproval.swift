@@ -869,6 +869,15 @@ func forcePrimaryChatModeJS() -> String {
         return { ok: false, error: 'electron_bridge_unavailable' };
       }
       await window.electronBridge.sendMessageFromView(message);
+      // The host broadcasts this event to other renderers, but the source
+      // renderer may not receive its own update while it is in Work mode.
+      // Deliver the same official persisted-atom event locally as well.
+      window.postMessage({
+        type: 'persisted-atom-updated',
+        key,
+        value: 'chat',
+        deleted: false
+      }, '*');
       // Keep the legacy renderer store aligned too. New renderers receive the
       // authoritative value from the host, while older ones still bootstrap
       // from this localStorage key.
