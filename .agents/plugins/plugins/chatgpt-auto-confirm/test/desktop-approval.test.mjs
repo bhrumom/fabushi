@@ -227,6 +227,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /pickerEvidence: 'quick-chat-thinking-selection'/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
   assert.match(nativeSource, /allPrefixedModelChoices\('Thinking'\)/);
+  assert.match(nativeSource, /dispatchPointerClick\(picker\)/);
+  assert.match(nativeSource, /model switcher is a Radix trigger/);
   assert.match(nativeSource, /\['instant', 'thinking', 'pro', 'high', 'medium'\]\.some/);
   assert.match(nativeSource, /composer\?\.contains\(left\)/);
   assert.doesNotMatch(nativeSource, /pickerEvidence: 'quick-chat-host-selection'/);
