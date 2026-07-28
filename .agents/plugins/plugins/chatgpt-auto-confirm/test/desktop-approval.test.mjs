@@ -256,7 +256,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /home-composer-mode-v1/);
   assert.match(nativeSource, /force-persisted-mode/);
   assert.doesNotMatch(nativeSource, /includeChatGPT && label === 'chatgpt'/);
-  assert.doesNotMatch(nativeSource, /candidate\.getAttribute\('role'\) === 'menuitem'/);
+  assert.match(nativeSource, /const isChatGPTMenuChoice = candidate =>/);
+  assert.match(nativeSource, /role === 'menuitemradio'/);
+  assert.match(nativeSource, /candidate\.closest\('\[role="menu"\], \[role="listbox"\]'\)/);
+  assert.match(nativeSource, /labelsFor\(candidate\)\.some\(label => label === 'chatgpt'\)/);
   assert.match(nativeSource, /error: 'mode_switch_dispatched'/);
   assert.match(nativeSource, /retryAfterModeSwitch: true/);
   assert.match(nativeSource, /__mahayanaChatModeSwitchAttempted/);
