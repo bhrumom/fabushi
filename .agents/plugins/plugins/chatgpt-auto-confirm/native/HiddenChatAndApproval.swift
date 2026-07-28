@@ -692,10 +692,11 @@ func clickChatJS() -> String {
         normalize(candidate.className)
       );
     };
-    const isChatLabel = label => label === 'chat' || label === '聊天'
-      || /^(?:chat|聊天)(?:[ ,]|$)/.test(label);
-    const isWorkLabel = label => label === 'work' || label === '工作'
-      || /^(?:work|工作)(?:[ ,]|$)/.test(label);
+    // Do not treat labels such as "Chat sidebar options" as the Chat mode.
+    // The Work composer exposes that sidebar label even when the top-level
+    // Chat/Work switch is absent, which previously produced a false success.
+    const isChatLabel = label => label === 'chat' || label === '聊天';
+    const isWorkLabel = label => label === 'work' || label === '工作';
     const modeTabScore = candidate => {
       const rect = candidate.getBoundingClientRect?.();
       const role = normalize(candidate.getAttribute('role'));
@@ -864,6 +865,38 @@ func clickChatJS() -> String {
       surface,
       modeControls
     };
+  })()
+  """#
+}
+
+func forcePrimaryChatModeJS() -> String {
+  #"""
+  (async () => {
+    const key = 'home-composer-mode-v1';
+    const message = {
+      type: 'persisted-atom-update',
+      key,
+      value: 'chat',
+      deleted: false
+    };
+    try {
+      if (!window.electronBridge?.sendMessageFromView) {
+        return { ok: false, error: 'electron_bridge_unavailable' };
+      }
+      await window.electronBridge.sendMessageFromView(message);
+      // Keep the legacy renderer store aligned too. New renderers receive the
+      // authoritative value from the host, while older ones still bootstrap
+      // from this localStorage key.
+      try {
+        window.localStorage.setItem(`codex:persisted-atom:${key}`, JSON.stringify('chat'));
+      } catch (_) {}
+      return { ok: true, dispatched: true, key, value: 'chat' };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || 'persisted_atom_update_failed')
+      };
+    }
   })()
   """#
 }
