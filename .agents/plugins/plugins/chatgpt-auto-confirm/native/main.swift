@@ -780,7 +780,19 @@ case "queue_retry":
         // An operator retry must not inherit its old hidden renderer. Parallel
         // tasks own different windows, so close only this task and leave other
         // running Chats untouched.
-        if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+        if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode {
+          if let port, let targetId {
+            _ = CDPClient.closeTarget(targetId, portOverride: port)
+          }
+          if let profilePath = tasks[index].workerProfilePath {
+            terminateDedicatedChatProcess(profilePath: profilePath)
+          }
+          if state.queueWorkerTargetId == targetId {
+            state.queueWorkerPort = nil
+            state.queueWorkerTargetId = nil
+            state.queueWorkerProfilePath = nil
+          }
+        } else if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
           if let port, let targetId,
              queueTargetIsHidden(port: port, targetId: targetId) {
             _ = CDPClient.closeTarget(targetId, portOverride: port)

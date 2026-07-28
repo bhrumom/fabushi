@@ -45,9 +45,9 @@ struct PluginState: Codable {
   var queueReviewGate: Bool?
   var queueWatcherPid: Int32?
   var queueRuntimeRevision: String?
-  // The queue and general confirmer share one authenticated ChatGPT process.
-  // Every running task owns a hidden, never-shown BrowserWindow inside that
-  // process and never navigates the primary window where the user types.
+  // Every running task owns a hidden ChatGPT process cloned from the restored
+  // authenticated profile. It never navigates the primary window where the
+  // user types, and tasks cannot close one another's renderer.
   var queueWorkerPort: Int?
   var queueWorkerTargetId: String?
   var queueWorkerProfilePath: String?

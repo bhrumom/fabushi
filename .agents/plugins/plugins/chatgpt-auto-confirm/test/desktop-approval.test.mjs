@@ -238,15 +238,17 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.doesNotMatch(nativeSource, /pickerEvidence: "Bypassed"/);
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);
-  assert.match(nativeSource, /single-authenticated-process-multi-hidden-window-parallel/);
+  assert.match(nativeSource, /parallel-dedicated-hidden-chat-processes/);
   assert.match(nativeSource,
     /let maxConcurrent = min\(4, max\(1, state\.queueMaxConcurrent \?\? 2\)\)/);
   assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
   assert.match(nativeSource, /single-process-hidden-chat-windows/);
-  assert.match(nativeSource, /createQueueWorkerTarget\(&state, reuseExisting: false\)/);
-  assert.match(nativeSource, /every running[\s\S]*different hidden BrowserWindow/);
-  assert.match(nativeSource, /must never fall back to a renderer that already/);
+  assert.match(nativeSource, /createDedicatedParallelQueueWorkerTarget/);
+  assert.match(nativeSource, /copyProfileForDedicatedQueueWorker/);
+  assert.match(nativeSource, /launchDedicatedQueueChatProcess/);
+  assert.match(nativeSource, /-g", "-j", "-n"/);
+  assert.match(nativeSource, /parallelDedicatedProcessQueueWorkerMode/);
   assert.match(nativeSource, /"conversationId": task\.conversationId/);
   assert.match(nativeSource, /stableSamples >= 3/);
   assert.match(nativeSource, /openBackgroundQueueWindow\(/);

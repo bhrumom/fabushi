@@ -518,22 +518,26 @@ func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
-  if state.queueWorkerMode == sharedConversationQueueWorkerMode {
-    // v81 restores the reliable one-hidden-window-per-task path. Convert any
-    // in-flight legacy shared-renderer tasks into fresh continuations so the
-    // next dispatch cannot navigate away from another streaming Chat.
+  if state.queueWorkerMode == sharedConversationQueueWorkerMode
+      || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+    // v82 restores the previously successful dedicated-process path. The
+    // official quick-chat prewarm service owns only one window and closes it
+    // when the next prewarm starts, so migrate both shared-renderer variants.
     for index in tasks.indices
       where tasks[index].status == "running" && tasks[index].workerPid == nil {
       stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
       queueContinuation(
         &tasks[index],
         report: nil,
-        reason: "queue_worker_parallel_hidden_window_migration"
+        reason: "queue_worker_parallel_dedicated_process_migration"
       )
     }
-    if let port = state.queueWorkerPort,
-       let targetId = state.queueWorkerTargetId,
-       queueTargetIsHidden(port: port, targetId: targetId) {
+    if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+      state.automationTasks = tasks
+      stopQueueWorker(&state)
+    } else if let port = state.queueWorkerPort,
+              let targetId = state.queueWorkerTargetId,
+              queueTargetIsHidden(port: port, targetId: targetId) {
       _ = CDPClient.closeTarget(targetId, portOverride: port)
     }
     state.queueWorkerPort = nil
@@ -658,9 +662,8 @@ func runQueueIteration(_ state: inout PluginState) {
     guard heldLocks.isDisjoint(with: locks) else { continue }
     do {
       queueTrace("task=\(tasks[index].id) stage=scheduler-selected")
-      // Controller discovery must see the windows already assigned earlier in
-      // this scheduling pass, otherwise a third task could use task A's window
-      // as the prewarm controller.
+      // Persist the processes already assigned earlier in this scheduling pass
+      // so cleanup and diagnostics always know every task-owned target.
       state.automationTasks = tasks
       try startAutomationTask(&tasks[index], state: &state)
       runningCount += 1
