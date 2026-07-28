@@ -52,8 +52,10 @@ const task = (suffix) => ({
 
 const waitFor = async (predicate, timeoutMs, label) => {
   const deadline = Date.now() + timeoutMs;
+  let lastStatus;
   while (Date.now() < deadline) {
     const status = run('queue_status');
+    lastStatus = status;
     if (predicate(status)) return status;
     const failedProbe = status.tasks?.find(item =>
       ['actions-parallel-a', 'actions-parallel-b'].includes(item.id) &&
@@ -65,7 +67,23 @@ const waitFor = async (predicate, timeoutMs, label) => {
     }
     await new Promise(resolve => setTimeout(resolve, 2_000));
   }
-  throw new Error(`timed out waiting for ${label}`);
+  const diagnostic = {
+    executionMode: lastStatus?.executionMode,
+    requestedMaxConcurrent: lastStatus?.requestedMaxConcurrent,
+    effectiveMaxConcurrent: lastStatus?.effectiveMaxConcurrent,
+    watcherAlive: lastStatus?.watcherAlive,
+    running: lastStatus?.running,
+    watcherPid: lastStatus?.watcherPid,
+    network: lastStatus?.network,
+    activeWorkers: lastStatus?.activeWorkers,
+    watcherTrace: lastStatus?.watcherTrace,
+    tasks: lastStatus?.tasks?.filter(item =>
+      ['actions-parallel-a', 'actions-parallel-b'].includes(item.id)),
+    lastError: lastStatus?.lastError,
+  };
+  throw new Error(
+    `timed out waiting for ${label}: ${JSON.stringify(diagnostic)}`,
+  );
 };
 
 const cancel = (taskId) => {

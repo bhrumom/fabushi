@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatgpt-auto-confirm-continuous-runner
+  group: chatgpt-auto-confirm-fix-test-runner
   cancel-in-progress: false
 
 jobs:
@@ -191,18 +191,30 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/queue-state.enc
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
             ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
+            ${{ steps.paths.outputs.runtime_dir }}/task-queue/watcher-trace.log
 
-      - name: Start the next six-hour session when incomplete
+      - name: Continue incomplete work or report terminal failure
         if: always()
         shell: bash
         env:
           RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+          VERIFICATION_ONLY: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
         run: |
           set -euo pipefail
           status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
           if [[ "$status" == "complete" ]]; then
             echo "All queued tasks completed; no continuation was dispatched."
             exit 0
+          fi
+          if [[ "$VERIFICATION_ONLY" == "true" ]]; then
+            echo "::error::Hosted verification did not complete; no continuation was dispatched."
+            jq '{status, reason, counts, tasks}' "$RESULT_PATH"
+            exit 1
+          fi
+          if [[ "$status" != "incomplete" ]]; then
+            echo "::error::Task queue ended with status $status."
+            jq '{status, reason, counts, tasks}' "$RESULT_PATH"
+            exit 1
           fi
           gh workflow run chatgpt-auto-confirm-runner.yml \
             --repo "$GITHUB_REPOSITORY" \

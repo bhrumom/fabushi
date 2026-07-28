@@ -9,12 +9,51 @@ const inbox = JSON.parse(readFileSync(inboxPath, 'utf8'));
 const incoming = Array.isArray(inbox.tasks) ? inbox.tasks : [];
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
 const tasks = Array.isArray(state.automationTasks) ? state.automationTasks : [];
-const knownIds = new Set(tasks.map(task => task.id));
+const knownTasks = new Map(tasks.map(task => [task.id, task]));
 const now = new Date().toISOString();
 const appended = [];
+const requeued = [];
+
+const resetExecution = (task) => {
+  task.attempts = 0;
+  task.status = 'queued';
+  task.startedAt = null;
+  task.finishedAt = null;
+  task.workerPid = null;
+  task.workerPort = null;
+  task.workerTargetId = null;
+  task.workerStatePath = null;
+  task.workerProfilePath = null;
+  task.resultPath = null;
+  task.conversationId = null;
+  task.chatURL = null;
+  task.lastActivitySignature = null;
+  task.lastProgressAt = null;
+  task.hiddenWorkerLastHeartbeatAt = null;
+  task.hiddenWorkerLastError = null;
+  task.waitingUntil = null;
+  task.waitReason = null;
+  task.lastError = null;
+  task.updatedAt = now;
+};
 
 for (const task of incoming) {
-  if (!task?.id || knownIds.has(task.id)) continue;
+  if (!task?.id) continue;
+  const existing = knownTasks.get(task.id);
+  if (existing) {
+    for (const field of [
+      'title', 'prompt', 'promptTemplate', 'connector', 'dependsOn',
+      'resourceLocks', 'priority', 'timeout', 'maxTaskContinuations',
+      'maxRuntimeRetries',
+    ]) {
+      if (task[field] !== undefined) existing[field] = task[field];
+    }
+    if (['failed', 'blocked'].includes(existing.status)) {
+      resetExecution(existing);
+      requeued.push(existing.id);
+    }
+    continue;
+  }
   tasks.push({
     id: task.id,
     title: task.title,
@@ -62,7 +101,7 @@ for (const task of incoming) {
     waitingUntil: null,
     waitReason: null,
   });
-  knownIds.add(task.id);
+  knownTasks.set(task.id, tasks.at(-1));
   appended.push(task.id);
 }
 
@@ -73,4 +112,7 @@ state.queueMaxConcurrent = Math.min(4, Math.max(2,
   Number(inbox.maxConcurrent || state.queueMaxConcurrent || 2)));
 state.queueReviewGate = inbox.reviewGate ?? false;
 writeFileSync(statePath, `${JSON.stringify(state)}\n`, { mode: 0o600 });
-process.stdout.write(`Imported ${appended.length} new queued task(s).\n`);
+process.stdout.write(
+  `Imported ${appended.length} new queued task(s); requeued ${requeued.length} failed task(s).` +
+  `${requeued.length ? ` Requeued: ${requeued.join(', ')}.` : ''}\n`,
+);
