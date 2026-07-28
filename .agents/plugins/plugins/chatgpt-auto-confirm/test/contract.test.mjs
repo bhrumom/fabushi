@@ -29,6 +29,11 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /runs-on: macos-15/);
   assert.match(actionsWorkflow, /timeout-minutes: 355/);
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=seed/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=verify/);
+  assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);

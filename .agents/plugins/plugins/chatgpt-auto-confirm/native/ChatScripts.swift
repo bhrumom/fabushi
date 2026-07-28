@@ -462,16 +462,27 @@ func sendMessageJS(
     }
 
     async function ensureModelAndReasoning() {
-      // Dismiss promotional modals like "Introducing GPT-5.6 Sol"
-      const promoButtons = [...document.querySelectorAll('button')].filter(btn => {
-        const text = (btn.textContent || '').trim().toLowerCase();
-        return text === 'try gpt-5.6 sol now' || text === 'okay' || text === 'got it';
-      });
-      for (const btn of promoButtons) {
-        if (visible(btn)) {
-          btn.click();
-          await sleep(600);
-        }
+      // Dismiss promotional modals before looking for the model picker. The
+      // desktop app can show localized Fast-mode announcements over a newly
+      // created Chat; their buttons otherwise look like the only open menu.
+      const neutralPromoLabels = new Set([
+        'try gpt-5.6 sol now', 'okay', 'got it',
+        'use standard speed', 'continue with standard speed',
+        '使用标准速度', '使用標準速度',
+        'not now', 'maybe later', '暂不', '暫不', '以后再说', '稍後再說'
+      ]);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const promoButton = [...document.querySelectorAll('button')].find(btn => {
+          const text = normalize([
+            btn.textContent,
+            btn.getAttribute('aria-label'),
+            btn.getAttribute('title')
+          ].filter(Boolean).join(' ')).toLowerCase();
+          return visible(btn) && neutralPromoLabels.has(text);
+        });
+        if (!promoButton) break;
+        promoButton.click();
+        await sleep(600);
       }
       let picker = null;
       for (let i = 0; i < 40; i++) {
