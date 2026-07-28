@@ -677,6 +677,17 @@ func createQueueWorkerTarget(
     )
     let diagnosticButtons = (surfaceDiagnostic?["buttons"] as? [String] ?? [])
       .joined(separator: "|")
+    let diagnosticModes = (surfaceDiagnostic?["modeNodes"] as? [[String: Any]] ?? [])
+      .map { node in
+        let text = node["text"] as? String ?? ""
+        let tag = node["tag"] as? String ?? ""
+        let role = node["role"] as? String ?? ""
+        let selected = node["ariaSelected"] as? String ?? ""
+        let pressed = node["ariaPressed"] as? String ?? ""
+        let className = node["className"] as? String ?? ""
+        return "\(text)@\(tag)#\(role)[selected=\(selected),pressed=\(pressed)]{\(className)}"
+      }
+      .joined(separator: "|")
     let diagnosticURL = surfaceDiagnostic?["url"] as? String ?? "none"
     let diagnosticScreenshot = captureHiddenChatScreenshot(
       port: controller.port,
@@ -685,7 +696,8 @@ func createQueueWorkerTarget(
     ) ?? "none"
     queueTrace(
       "worker-create stage=chat-prepare diagnostics url=\(diagnosticURL) "
-        + "buttons=\(diagnosticButtons) screenshot=\(diagnosticScreenshot)"
+        + "buttons=\(diagnosticButtons) modes=\(diagnosticModes) "
+        + "screenshot=\(diagnosticScreenshot)"
     )
     _ = CDPClient.closeTarget(hiddenTargetId, portOverride: controller.port)
     let selectionError = chatSelection?["error"] as? String ?? "none"
