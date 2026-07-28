@@ -213,7 +213,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /pickerEvidence: 'quick-chat-thinking-selection'/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
   assert.match(nativeSource, /allPrefixedModelChoices\('Thinking'\)/);
-  assert.match(nativeSource, /\['instant', 'thinking', 'pro'\]\.some/);
+  assert.match(nativeSource, /\['instant', 'thinking', 'pro', 'high', 'medium'\]\.some/);
   assert.match(nativeSource, /composer\?\.contains\(left\)/);
   assert.doesNotMatch(nativeSource, /pickerEvidence: 'quick-chat-host-selection'/);
   assert.match(nativeSource, /pickerEvidence: 'selected_button_state'/);
