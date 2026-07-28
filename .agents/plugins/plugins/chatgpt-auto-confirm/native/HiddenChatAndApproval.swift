@@ -149,10 +149,26 @@ func pageDiagnosticJS() -> String {
       .map(button => (button.innerText || button.getAttribute('aria-label') || '').trim())
       .filter(Boolean)
       .slice(0, 100);
+    const normalizeModeText = value => (value || '').replace(/\s+/g, ' ').trim();
+    const modeNodes = [...document.querySelectorAll('body *')]
+      .filter(node => node.children.length === 0)
+      .filter(node => ['Chat', 'Work', '聊天', '工作'].includes(normalizeModeText(node.innerText || node.textContent)))
+      .filter(node => node.offsetWidth || node.offsetHeight || node.getClientRects().length)
+      .slice(0, 40)
+      .map(node => ({
+        text: normalizeModeText(node.innerText || node.textContent),
+        tag: node.tagName || '',
+        role: node.getAttribute('role') || '',
+        ariaSelected: node.getAttribute('aria-selected') || '',
+        ariaPressed: node.getAttribute('aria-pressed') || '',
+        className: normalizeModeText(node.className),
+        parent: node.parentElement?.outerHTML?.slice(0, 600) || ''
+      }));
     return {
       ok: true,
       content: text.substring(0, 50000),
       buttons,
+      modeNodes,
       signature: `${text.length}:${text.slice(-4000)}:${buttons.join('|')}`,
       url: window.location.href || ''
     };
@@ -174,6 +190,7 @@ func captureHiddenChatScreenshot(
   let outputURL = stateURL().deletingLastPathComponent()
     .appendingPathComponent("diagnostics", isDirectory: true)
     .appendingPathComponent("chat-\(label)-\(formatter.string(from: Date())).png")
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
   return CDPClient.captureScreenshot(wsURLString: wsURL, outputURL: outputURL)
     ? outputURL.path
     : nil
@@ -694,12 +711,17 @@ func clickChatJS() -> String {
       if (labels.some(label => isChatLabel(label) || isWorkLabel(label))) score += 5;
       return score;
     };
-    const modeTabs = () => candidates()
+    const textModeNodes = () => [...document.querySelectorAll('body *')]
+      .filter(candidate => candidate.children.length === 0 && visible(candidate))
+      .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
+    const modeTabs = () => [...new Set([...candidates(), ...textModeNodes()])]
       .filter(candidate => visible(candidate))
       .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
     const modeControls = modeTabs().map(candidate => ({
       label: labelsFor(candidate)[0] || '',
+      tag: candidate.tagName || '',
       role: candidate.getAttribute('role') || '',
+      className: normalize(candidate.className),
       selected: isSelected(candidate),
       score: modeTabScore(candidate)
     }));
