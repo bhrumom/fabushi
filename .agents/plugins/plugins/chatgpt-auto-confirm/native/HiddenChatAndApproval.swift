@@ -208,6 +208,13 @@ func hiddenChatProfilePath() -> String {
     .path
 }
 
+func configuredHiddenChatProfilePath() -> String? {
+  guard let raw = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_PROFILE_PATH"]?
+          .trimmingCharacters(in: .whitespacesAndNewlines),
+        !raw.isEmpty else { return nil }
+  return raw
+}
+
 func hiddenChatPort(_ state: PluginState) -> Int {
   if let raw = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_BACKGROUND_PORT"],
      let port = Int(raw), port > 0 && port <= 65535 { return port }
@@ -1289,7 +1296,9 @@ func ensureHiddenChatTarget(
   conversationId: String? = nil
 ) -> [String: Any]? {
   let port = hiddenChatPort(state)
-  let profilePath = state.backgroundProfilePath ?? hiddenChatProfilePath()
+  let profilePath = configuredHiddenChatProfilePath()
+    ?? state.backgroundProfilePath
+    ?? hiddenChatProfilePath()
   var targets = CDPClient.fetchTargets(portOverride: port)
   let allowTestWebTarget = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_ALLOW_TEST_WEB_TARGET"] == "1"
   let assignedTargetId = state.backgroundChatTargetId
