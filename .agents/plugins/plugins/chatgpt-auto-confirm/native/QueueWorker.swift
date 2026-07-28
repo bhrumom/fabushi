@@ -504,6 +504,35 @@ func openBackgroundQueueWindow(
   return nil
 }
 
+func selectChatOnPrimaryController(
+  port: Int,
+  targetId: String
+) -> [String: Any]? {
+  var selection: [String: Any]?
+  for _ in 0..<16 {
+    selection = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    if selection?["alreadySelected"] as? Bool == true { return selection }
+    if selection?["retryAfterModeSwitch"] as? Bool == true {
+      Thread.sleep(forTimeInterval: 0.8)
+      continue
+    }
+    if selection?["dispatchOnly"] as? Bool == true {
+      // The primary Chat/Work control is a React text toggle. Its click can
+      // replace the renderer after Runtime.evaluate returns, so re-probe the
+      // same target instead of trusting the dispatch result.
+      Thread.sleep(forTimeInterval: 0.8)
+      continue
+    }
+    Thread.sleep(forTimeInterval: 0.35)
+  }
+  return selection
+}
+
 func createQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
@@ -578,6 +607,17 @@ func createQueueWorkerTarget(
   // called, so the queue could only reuse a hidden target created elsewhere.
   var prewarmFailure: String?
   queueTrace("worker-create stage=new-hidden-window begin")
+  if let controller = sharedChatController(&state),
+     let controllerSelection = selectChatOnPrimaryController(
+       port: controller.port,
+       targetId: controller.targetId
+     ) {
+    queueTrace(
+      "worker-create stage=primary-chat-selection complete "
+        + "alreadySelected=\(controllerSelection["alreadySelected"] as? Bool ?? false) "
+        + "selectedLabel=\(controllerSelection["selectedLabel"] as? String ?? "none")"
+    )
+  }
   if let controller = sharedChatController(&state),
      let hiddenTargetId = openBackgroundQueueWindow(
        port: controller.port,
@@ -693,6 +733,10 @@ func createQueueWorkerTarget(
       port: controller.port,
       targetId: hiddenTargetId,
       label: "prewarm-not-chat"
+    ) ?? captureHiddenChatScreenshot(
+      port: controller.port,
+      targetId: controller.targetId,
+      label: "primary-not-chat"
     ) ?? "none"
     queueTrace(
       "worker-create stage=chat-prepare diagnostics url=\(diagnosticURL) "
