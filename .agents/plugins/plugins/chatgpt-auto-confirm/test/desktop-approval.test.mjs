@@ -256,6 +256,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /persisted-atom-update/);
   assert.match(nativeSource, /home-composer-mode-v1/);
   assert.match(nativeSource, /force-persisted-mode/);
+  assert.match(nativeSource, /func forcePrimaryComposerModeJS\(_ requestedMode: String\)/);
+  assert.match(nativeSource, /forcePrimaryComposerModeJS\("work"\)/);
+  assert.match(nativeSource, /reset-stale-mode begin/);
+  assert.match(nativeSource, /expression: composerSurfaceStateJS\(\)/);
   assert.doesNotMatch(nativeSource, /includeChatGPT && label === 'chatgpt'/);
   assert.match(nativeSource, /const isChatGPTMenuChoice = candidate =>/);
   assert.match(nativeSource, /role === 'menuitemradio'/);
