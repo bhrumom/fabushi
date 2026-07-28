@@ -124,7 +124,7 @@ try {
     return status.effectiveMaxConcurrent === 2 &&
       status.executionMode === 'single-authenticated-process-multi-hidden-window-parallel' &&
       active.length === 2 &&
-      new Set(targets).size === 1 &&
+      new Set(targets).size === 2 &&
       new Set(conversations).size === 2 &&
       status.activeWorkers?.filter(worker =>
         ['actions-parallel-a', 'actions-parallel-b'].includes(worker.taskId) &&
@@ -142,9 +142,10 @@ try {
     criteria: [
       'task B was enqueued after task A had already started',
       'both tasks were running in the same observation',
-      'both tasks shared one authenticated hidden Chat renderer',
+      'both tasks shared one authenticated ChatGPT process',
+      'each task owned a different hidden Chat window',
       'each task owned a different conversation id',
-      'the shared renderer passed hidden visibility verification for both tasks',
+      'both task windows passed hidden visibility verification',
     ],
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
