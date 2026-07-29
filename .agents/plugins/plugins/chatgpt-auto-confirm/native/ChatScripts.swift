@@ -353,7 +353,7 @@ func sendMessageJS(
       ].filter(Boolean).join(' ')).toLowerCase();
       const isProjectPicker = button => {
         const label = controlLabel(button);
-        return /(?:choose|select)\\s+project|project\\s+(?:source|folder)|source\\s+folders|add\\s+folders|选择项目|项目文件夹|源文件夹|添加文件夹/i.test(label);
+        return /(?:choose|select|new)\\s+project|project\\s+(?:source|folder)|source\\s+folders|add\\s+folders|选择项目|项目文件夹|源文件夹|添加文件夹|新建项目|创建项目/i.test(label);
       };
       const isModelPickerLabel = button => {
         if (isProjectPicker(button)) return false;
