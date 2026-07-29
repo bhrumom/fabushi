@@ -149,10 +149,26 @@ func pageDiagnosticJS() -> String {
       .map(button => (button.innerText || button.getAttribute('aria-label') || '').trim())
       .filter(Boolean)
       .slice(0, 100);
+    const normalizeModeText = value => (value || '').replace(/\s+/g, ' ').trim();
+    const modeNodes = [...document.querySelectorAll('body *')]
+      .filter(node => node.children.length === 0)
+      .filter(node => ['Chat', 'Work', '聊天', '工作'].includes(normalizeModeText(node.innerText || node.textContent)))
+      .filter(node => node.offsetWidth || node.offsetHeight || node.getClientRects().length)
+      .slice(0, 40)
+      .map(node => ({
+        text: normalizeModeText(node.innerText || node.textContent),
+        tag: node.tagName || '',
+        role: node.getAttribute('role') || '',
+        ariaSelected: node.getAttribute('aria-selected') || '',
+        ariaPressed: node.getAttribute('aria-pressed') || '',
+        className: normalizeModeText(node.className),
+        parent: node.parentElement?.outerHTML?.slice(0, 600) || ''
+      }));
     return {
       ok: true,
       content: text.substring(0, 50000),
       buttons,
+      modeNodes,
       signature: `${text.length}:${text.slice(-4000)}:${buttons.join('|')}`,
       url: window.location.href || ''
     };
@@ -160,10 +176,12 @@ func pageDiagnosticJS() -> String {
   """#
 }
 
-func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled") -> String? {
-  guard let port = state.backgroundAppPort,
-        let targetId = state.backgroundChatTargetId,
-        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+func captureHiddenChatScreenshot(
+  port: Int,
+  targetId: String,
+  label: String = "stalled"
+) -> String? {
+  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
           $0["id"] as? String == targetId
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String else { return nil }
@@ -172,15 +190,29 @@ func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled"
   let outputURL = stateURL().deletingLastPathComponent()
     .appendingPathComponent("diagnostics", isDirectory: true)
     .appendingPathComponent("chat-\(label)-\(formatter.string(from: Date())).png")
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
   return CDPClient.captureScreenshot(wsURLString: wsURL, outputURL: outputURL)
     ? outputURL.path
     : nil
+}
+
+func captureHiddenChatScreenshot(_ state: PluginState, label: String = "stalled") -> String? {
+  guard let port = state.backgroundAppPort,
+        let targetId = state.backgroundChatTargetId else { return nil }
+  return captureHiddenChatScreenshot(port: port, targetId: targetId, label: label)
 }
 
 func hiddenChatProfilePath() -> String {
   FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/Mahayana/plugins/chatgpt-auto-confirm/background-chat-profile")
     .path
+}
+
+func configuredHiddenChatProfilePath() -> String? {
+  guard let raw = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_PROFILE_PATH"]?
+          .trimmingCharacters(in: .whitespacesAndNewlines),
+        !raw.isEmpty else { return nil }
+  return raw
 }
 
 func hiddenChatPort(_ state: PluginState) -> Int {
@@ -457,7 +489,9 @@ func prepareBackgroundChatJS(
       });
     const webChat = window.location.protocol === 'https:'
       && window.location.hostname === 'chatgpt.com';
-    const workComposer = !quickChatRoot && !currentChatGPTMode
+    // The top-level Chat/Work switch is authoritative. A stale mode flag must
+    // not make the Work composer look like Chat after a renderer replacement.
+    const workComposer = !quickChatRoot
       && !!document.querySelector('[data-codex-composer="true"]');
     
     const isChatSurface = !!quickChatRoot
@@ -638,7 +672,8 @@ func clickChatJS() -> String {
     const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const candidates = () => [...document.querySelectorAll(
-      'button, a, [role="button"], [role="menuitem"]'
+      'button, a, [role="button"], [role="menuitem"], '
+        + '[role="menuitemradio"], [role="option"], [role="tab"]'
     )];
     const labelsFor = candidate => [
       candidate.innerText,
@@ -646,44 +681,179 @@ func clickChatJS() -> String {
       candidate.getAttribute('aria-label'),
       candidate.getAttribute('title')
     ].map(normalize).filter(Boolean);
-    const modeSwitchAttempted = window.__mahayanaChatModeSwitchAttempted === true;
+    const dispatchPointerClick = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      // Radix's compact mode trigger opens on pointerdown. HTMLElement.click()
+      // emits only click, so the hosted app silently stayed on the Codex/Work
+      // composer even though the dispatch itself reported success.
+      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+      candidate.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
+    const visible = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      return !!rect && (rect.width > 0 || rect.height > 0 || candidate.offsetParent !== null);
+    };
+    const isSelected = candidate => {
+      const selectedValues = [
+        candidate.getAttribute('aria-selected'),
+        candidate.getAttribute('aria-pressed'),
+        candidate.getAttribute('data-state'),
+        candidate.getAttribute('data-selected'),
+        candidate.getAttribute('data-active')
+      ].map(normalize);
+      if (selectedValues.some(value => ['true', 'active', 'selected', 'on'].includes(value))) {
+        return true;
+      }
+      return /(?:^|[ _-])(active|selected|current|chosen)(?:$|[ _-])/.test(
+        normalize(candidate.className)
+      );
+    };
+    // Do not treat labels such as "Chat sidebar options" as the Chat mode.
+    // The Work composer exposes that sidebar label even when the top-level
+    // Chat/Work switch is absent, which previously produced a false success.
+    const isChatLabel = label => label === 'chat' || label === '聊天';
+    const isWorkLabel = label => label === 'work' || label === '工作';
+    // The compact desktop layout replaces the top Chat/Work tabs with a mode
+    // popup whose real Chat choice is named "ChatGPT". Accept that exact label
+    // only when it is a menu/list choice, never from the sidebar heading or a
+    // model button.
+    const isChatGPTMenuChoice = candidate => {
+      const role = normalize(candidate.getAttribute('role'));
+      const choiceRole = role === 'menuitem'
+        || role === 'menuitemradio'
+        || role === 'option';
+      const insideChoicePopup = !!candidate.closest('[role="menu"], [role="listbox"]');
+      const hasExactChatGPTChild = [...candidate.querySelectorAll('*')].some(child =>
+        child.children.length === 0 && normalize(child.textContent) === 'chatgpt'
+      );
+      return (choiceRole || insideChoicePopup)
+        && (labelsFor(candidate).some(label => label === 'chatgpt')
+          || hasExactChatGPTChild);
+    };
+    const modeTabScore = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const role = normalize(candidate.getAttribute('role'));
+      const labels = labelsFor(candidate);
+      let score = 0;
+      if (role === 'tab' || role === 'option' || role.startsWith('menuitem')) score += 100;
+      if (isSelected(candidate)) score += 50;
+      if (visible(candidate)) score += 10;
+      if (rect && rect.top >= -20 && rect.top < 180) score += 20;
+      if (rect && window.innerWidth > 0
+          && rect.left > window.innerWidth * 0.25
+          && rect.right < window.innerWidth * 0.8) score += 10;
+      if (labels.some(label => isChatLabel(label) || isWorkLabel(label))
+          || isChatGPTMenuChoice(candidate)) score += 5;
+      return score;
+    };
+    const textModeNodes = () => [...document.querySelectorAll('body *')]
+      .filter(candidate => candidate.children.length === 0 && visible(candidate))
+      .filter(candidate => labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label)));
+    const modeTabs = () => [...new Set([...candidates(), ...textModeNodes()])]
+      .filter(candidate => visible(candidate))
+      .filter(candidate =>
+        labelsFor(candidate).some(label => isChatLabel(label) || isWorkLabel(label))
+          || isChatGPTMenuChoice(candidate)
+      );
+    const modeControls = modeTabs().map(candidate => ({
+      label: labelsFor(candidate)[0] || '',
+      tag: candidate.tagName || '',
+      role: candidate.getAttribute('role') || '',
+      className: normalize(candidate.className),
+      selected: isSelected(candidate),
+      score: modeTabScore(candidate)
+    }));
+    const chatSurface = () => {
+      const quickChatRoot = document.querySelector(
+        '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+      )?.closest('[role="dialog"], section, div');
+      const input = quickChatRoot?.querySelector(
+        '#prompt-textarea, [contenteditable="true"]'
+      ) || document.querySelector('#prompt-textarea')
+        || document.querySelector('[contenteditable="true"]');
+      const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
+        const label = [
+          button.getAttribute('aria-label'),
+          button.getAttribute('title'),
+          button.innerText,
+          button.textContent
+        ].filter(Boolean).map(normalize).join(' ');
+        return label.includes('chatgpt model') || label.includes('chatgpt 模型')
+          || label.includes('select chatgpt model') || label.includes('选择 chatgpt 模型');
+      });
+      const workComposer = !quickChatRoot
+        && !!document.querySelector('[data-codex-composer="true"]');
+      const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
+      return {
+        active: !!input && !workComposer && (!!quickChatRoot || chatModel || webChat),
+        hasInput: !!input,
+        chatModel,
+        workComposer,
+        quickChatRoot: !!quickChatRoot,
+        webChat
+      };
+    };
+    const surface = chatSurface();
+    if (surface.active) {
+      window.__mahayanaConfirmedChatGPTMode = true;
+      return {
+        ok: true,
+        chatSelected: false,
+        alreadySelected: true,
+        selectedLabel: 'chat-surface-validated',
+        surface,
+        modeControls
+      };
+    }
     const currentChatGPTMode = candidates().find(candidate =>
       labelsFor(candidate).some(label =>
         label.includes('current mode: chatgpt')
         || (label.includes('当前模式') && label.includes('chatgpt'))
       )
     );
-    if (currentChatGPTMode) {
+    if (currentChatGPTMode && surface.hasInput && !surface.workComposer) {
       window.__mahayanaConfirmedChatGPTMode = true;
       return {
         ok: true,
         chatSelected: false,
         alreadySelected: true,
-        selectedLabel: labelsFor(currentChatGPTMode)[0] || 'chatgpt'
+        selectedLabel: labelsFor(currentChatGPTMode)[0] || 'chatgpt',
+        surface,
+        modeControls
       };
     }
-    const exactChat = (includeChatGPT = false) => candidates().find(candidate =>
-      labelsFor(candidate).some(label =>
-        label === 'chat'
-        || label === '聊天'
-        || (includeChatGPT && label === 'chatgpt')
+    const exactChat = () => modeTabs()
+      .filter(candidate =>
+        labelsFor(candidate).some(label => isChatLabel(label))
+          || isChatGPTMenuChoice(candidate)
       )
-    );
+      .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
     let button = exactChat();
-    if (!button) {
-      button = candidates().find(candidate =>
-        candidate.getAttribute('role') === 'menuitem'
-        && labelsFor(candidate).some(label => label === 'chatgpt')
-      );
-    }
-    if (!button && modeSwitchAttempted) {
-      // Floating mode choices are appended after the persistent header button
-      // and are not consistently given a menuitem role. Prefer the last exact
-      // ChatGPT label after the switcher has already been opened once.
-      button = [...candidates()].reverse().find(candidate =>
-        labelsFor(candidate).some(label => label === 'chatgpt')
-      );
-    }
     if (!button) {
       const modeSwitch = candidates().find(candidate =>
         labelsFor(candidate).some(label =>
@@ -698,7 +868,7 @@ func clickChatJS() -> String {
         // select the ChatGPT menu item in a fresh execution context.
         window.__mahayanaChatModeSwitchAttempted = true;
         setTimeout(() => {
-          try { modeSwitch.click(); } catch (_) {}
+          try { dispatchPointerClick(modeSwitch); } catch (_) {}
         }, 0);
         return {
           ok: false,
@@ -730,7 +900,6 @@ func clickChatJS() -> String {
     // click after this evaluation returns so a destroyed execution context is
     // not mistaken for a failed mode selection. The caller independently
     // waits for and validates the resulting hidden Chat surface.
-    window.__mahayanaConfirmedChatGPTMode = true;
     setTimeout(() => {
       try { button.click(); } catch (_) {}
     }, 0);
@@ -740,10 +909,217 @@ func clickChatJS() -> String {
       dispatchOnly: true,
       selectedLabel: normalize(
         button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
-      )
+      ),
+      surface,
+      modeControls
     };
   })()
   """#
+}
+
+func clickCodexModeJS() -> String {
+  #"""
+  (() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const candidates = () => [...document.querySelectorAll(
+      'button, [role="button"], [role="menuitem"], [role="menuitemradio"], '
+        + '[role="option"], [role="tab"]'
+    )];
+    const labelsFor = candidate => [
+      candidate.innerText,
+      candidate.textContent,
+      candidate.getAttribute('aria-label'),
+      candidate.getAttribute('title')
+    ].map(normalize).filter(Boolean);
+    const visible = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      return !!rect && (rect.width > 0 || rect.height > 0 || candidate.offsetParent !== null);
+    };
+    const dispatchPointerClick = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+      candidate.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
+    const isCodexMenuChoice = candidate => {
+      const role = normalize(candidate.getAttribute('role'));
+      const choiceRole = role === 'menuitem'
+        || role === 'menuitemradio'
+        || role === 'option';
+      const insideChoicePopup = !!candidate.closest('[role="menu"], [role="listbox"]');
+      const hasExactCodexChild = [...candidate.querySelectorAll('*')].some(child =>
+        child.children.length === 0 && normalize(child.textContent) === 'codex'
+      );
+      return (choiceRole || insideChoicePopup)
+        && (labelsFor(candidate).some(label => label === 'codex')
+          || hasExactCodexChild);
+    };
+    let target = candidates().find(candidate =>
+      visible(candidate) && isCodexMenuChoice(candidate)
+    );
+    if (!target) {
+      target = candidates().find(candidate => {
+        const role = normalize(candidate.getAttribute('role'));
+        return visible(candidate)
+          && role === 'tab'
+          && labelsFor(candidate).some(label => label === 'work' || label === '工作');
+      });
+    }
+    if (target) {
+      setTimeout(() => {
+        try { target.click(); } catch (_) {}
+      }, 0);
+      return {
+        ok: true,
+        dispatchOnly: true,
+        selectedLabel: normalize(
+          target.innerText || target.getAttribute('aria-label') || target.getAttribute('title')
+        )
+      };
+    }
+    const modeSwitch = candidates().find(candidate =>
+      labelsFor(candidate).some(label =>
+        label.includes('switch mode, current mode:')
+        || label.includes('切换模式')
+        || label.includes('当前模式')
+      )
+    );
+    if (modeSwitch) {
+      setTimeout(() => {
+        try { dispatchPointerClick(modeSwitch); } catch (_) {}
+      }, 0);
+      return {
+        ok: false,
+        error: 'mode_switch_dispatched',
+        retryAfterModeSwitch: true
+      };
+    }
+    return {
+      ok: false,
+      error: 'codex_mode_choice_not_found',
+      candidateLabels: candidates().flatMap(candidate => labelsFor(candidate)).slice(0, 60)
+    };
+  })()
+  """#
+}
+
+func composerSurfaceStateJS() -> String {
+  #"""
+  (() => {
+    const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const quickChatRoot = document.querySelector(
+      '[data-pip-obstacle="quick-chat"], [data-quick-chat-drag-handle]'
+    )?.closest('[role="dialog"], section, div');
+    const input = quickChatRoot?.querySelector(
+      '#prompt-textarea, [contenteditable="true"]'
+    ) || document.querySelector('#prompt-textarea')
+      || document.querySelector('[contenteditable="true"]');
+    const chatModel = [...document.querySelectorAll('button, a, [role="button"]')].some(button => {
+      const label = [
+        button.getAttribute('aria-label'),
+        button.getAttribute('title'),
+        button.innerText,
+        button.textContent
+      ].filter(Boolean).map(normalize).join(' ');
+      return label.includes('chatgpt model') || label.includes('chatgpt 模型')
+        || label.includes('select chatgpt model') || label.includes('选择 chatgpt 模型');
+    });
+    const workComposer = !quickChatRoot
+      && !!document.querySelector('[data-codex-composer="true"]');
+    const currentMode = [...document.querySelectorAll('button, [role="button"]')]
+      .flatMap(candidate => [
+        candidate.getAttribute('aria-label'),
+        candidate.getAttribute('title'),
+        candidate.innerText
+      ])
+      .map(normalize)
+      .find(label =>
+        label.includes('switch mode, current mode:')
+        || label.includes('切换模式')
+        || label.includes('当前模式')
+      ) || '';
+    return {
+      ok: true,
+      hasInput: !!input,
+      chatModel,
+      workComposer,
+      quickChatRoot: !!quickChatRoot,
+      currentMode
+    };
+  })()
+  """#
+}
+
+func forcePrimaryComposerModeJS(_ requestedMode: String) -> String {
+  let mode = requestedMode == "work" ? "work" : "chat"
+  let modeLiteral = jsonStringLiteral(mode)
+  return #"""
+  (async () => {
+    const key = 'home-composer-mode-v1';
+    const value = \#(modeLiteral);
+    const message = {
+      type: 'persisted-atom-update',
+      key,
+      value,
+      deleted: false
+    };
+    try {
+      if (!window.electronBridge?.sendMessageFromView) {
+        return { ok: false, error: 'electron_bridge_unavailable' };
+      }
+      await window.electronBridge.sendMessageFromView(message);
+      // The host broadcasts this event to other renderers, but the source
+      // renderer may not receive its own update while it is in Work mode.
+      // Deliver the same official persisted-atom event locally as well.
+      window.postMessage({
+        type: 'persisted-atom-updated',
+        key,
+        value,
+        deleted: false
+      }, '*');
+      // Keep the legacy renderer store aligned too. New renderers receive the
+      // authoritative value from the host, while older ones still bootstrap
+      // from this localStorage key.
+      try {
+        window.localStorage.setItem(`codex:persisted-atom:${key}`, JSON.stringify(value));
+      } catch (_) {}
+      return { ok: true, dispatched: true, key, value };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || 'persisted_atom_update_failed')
+      };
+    }
+  })()
+  """#
+}
+
+func forcePrimaryChatModeJS() -> String {
+  forcePrimaryComposerModeJS("chat")
 }
 
 func autoConfirmWorkHandoffJS() -> String {
@@ -818,28 +1194,35 @@ func prepareNewChatTarget(
 ) -> [String: Any]? {
   // First wait for the app bundle/composer. Target.createTarget can expose a
   // static startup shell until its explicit Page.navigate has completed.
-  _ = cdpValue(
+  func confirmedChatSelection(_ result: [String: Any]?) -> Bool {
+    guard result?["ok"] as? Bool == true else { return false }
+    return result?["alreadySelected"] as? Bool == true
+  }
+  var chatModeConfirmed = confirmedChatSelection(cdpValue(
     port: port,
     targetId: targetId,
     expression: clickChatJS(),
     timeout: timeout
-  )
+  ))
   var baseline: [String: Any]?
   for _ in 0..<40 {
     baseline = cdpValue(
       port: port,
       targetId: targetId,
-      expression: prepareBackgroundChatJS(newChat: false),
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: chatModeConfirmed
+      ),
       timeout: timeout
     )
     if baseline?["ok"] as? Bool == true { break }
     if baseline?["error"] as? String == "not_chat_surface" {
-      _ = cdpValue(
+      chatModeConfirmed = confirmedChatSelection(cdpValue(
         port: port,
         targetId: targetId,
         expression: clickChatJS(),
         timeout: timeout
-      )
+      )) || chatModeConfirmed
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
@@ -862,7 +1245,10 @@ func prepareNewChatTarget(
     let prepared = cdpValue(
       port: port,
       targetId: targetId,
-      expression: prepareBackgroundChatJS(newChat: false),
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: chatModeConfirmed
+      ),
       timeout: timeout
     )
     if prepared?["ok"] as? Bool == true {
@@ -910,7 +1296,9 @@ func ensureHiddenChatTarget(
   conversationId: String? = nil
 ) -> [String: Any]? {
   let port = hiddenChatPort(state)
-  let profilePath = state.backgroundProfilePath ?? hiddenChatProfilePath()
+  let profilePath = configuredHiddenChatProfilePath()
+    ?? state.backgroundProfilePath
+    ?? hiddenChatProfilePath()
   var targets = CDPClient.fetchTargets(portOverride: port)
   let allowTestWebTarget = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_ALLOW_TEST_WEB_TARGET"] == "1"
   let assignedTargetId = state.backgroundChatTargetId
@@ -980,12 +1368,14 @@ func ensureHiddenChatTarget(
 
   // The hidden window can reopen on Work. Switch the mode synchronously so
   // the following composer probe never awaits across a renderer transition.
-  _ = cdpValue(
+  let initialChatSelection = cdpValue(
     port: port,
     targetId: targetId,
     expression: clickChatJS(),
     timeout: 4.0
   )
+  var chatModeConfirmed = initialChatSelection?["ok"] as? Bool == true
+    && initialChatSelection?["alreadySelected"] as? Bool == true
 
   if let conversationId, !conversationId.isEmpty {
     let selected = cdpValue(
@@ -1015,10 +1405,24 @@ func ensureHiddenChatTarget(
       current = cdpValue(
         port: port,
         targetId: targetId,
-        expression: prepareBackgroundChatJS(newChat: false, conversationId: conversationId),
+        expression: prepareBackgroundChatJS(
+          newChat: false,
+          conversationId: conversationId,
+          confirmedChatMode: chatModeConfirmed
+        ),
         timeout: 4.0
       )
       if current?["ok"] as? Bool == true { break }
+      if current?["error"] as? String == "not_chat_surface" {
+        let retrySelection = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: clickChatJS(),
+          timeout: 4.0
+        )
+        chatModeConfirmed = chatModeConfirmed
+          || (retrySelection?["alreadySelected"] as? Bool == true)
+      }
       Thread.sleep(forTimeInterval: 0.25)
     }
     prepared = current
