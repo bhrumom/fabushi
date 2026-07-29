@@ -344,12 +344,12 @@ func openBackgroundQueueWindow(
   // normal active renderer in the authenticated browser context so Electron
   // does not suspend the page or leave it on the sign-in prewarm shell.
   if ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_HOSTED"] == "true",
-     let controllerContextId = CDPClient.targetInfo(
+    let controllerContextId = CDPClient.targetInfo(
        targetId: controllerTargetId,
        portOverride: port
      )?["browserContextId"] as? String,
      let targetId = CDPClient.createTarget(
-       url: "app://-/index.html?initialRoute=%2F",
+       url: "https://chatgpt.com/",
        browserContextId: controllerContextId,
        background: false,
        portOverride: port
@@ -374,7 +374,7 @@ func openBackgroundQueueWindow(
          portOverride: port
        )?["browserContextId"] as? String,
        let targetId = CDPClient.createTarget(
-         url: "app://-/index.html?initialRoute=%2F",
+         url: "https://chatgpt.com/",
          browserContextId: controllerContextId,
          background: false,
          portOverride: port
