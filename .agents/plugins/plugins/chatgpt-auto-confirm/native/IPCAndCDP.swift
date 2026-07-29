@@ -334,7 +334,12 @@ struct CDPClient {
     return result["targetInfo"] as? [String: Any]
   }
 
-  static func createBackgroundTarget(url: String, browserContextId: String?, portOverride: Int? = nil) -> String? {
+  static func createTarget(
+    url: String,
+    browserContextId: String?,
+    background: Bool,
+    portOverride: Int? = nil
+  ) -> String? {
     guard let browserWS = browserWebSocketURL(portOverride: portOverride) else { return nil }
     func create(in contextId: String?) -> String? {
       let contextJSON = contextId.map {
@@ -343,7 +348,7 @@ struct CDPClient {
       guard let response = sendCommand(
             wsURLString: browserWS,
             method: "Target.createTarget",
-            paramsJSON: "{\"url\":\(jsonStringLiteral(url)),\"background\":true\(contextJSON)}",
+            paramsJSON: "{\"url\":\(jsonStringLiteral(url)),\"background\":\(background ? \"true\" : \"false\")\(contextJSON)}",
             timeout: 4.0
           ),
             let result = response["result"] as? [String: Any] else { return nil }
@@ -356,6 +361,15 @@ struct CDPClient {
     // Target domain cannot address directly. Its default target context is
     // still the same one used by ChatGPT web renderers, so retry there.
     return create(in: nil)
+  }
+
+  static func createBackgroundTarget(url: String, browserContextId: String?, portOverride: Int? = nil) -> String? {
+    createTarget(
+      url: url,
+      browserContextId: browserContextId,
+      background: true,
+      portOverride: portOverride
+    )
   }
 
   @discardableResult

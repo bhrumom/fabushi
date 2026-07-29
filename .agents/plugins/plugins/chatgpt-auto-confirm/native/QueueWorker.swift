@@ -354,9 +354,10 @@ func openBackgroundQueueWindow(
          targetId: controllerTargetId,
          portOverride: port
        )?["browserContextId"] as? String,
-       let targetId = CDPClient.createBackgroundTarget(
+       let targetId = CDPClient.createTarget(
          url: "app://-/index.html?initialRoute=%2F",
          browserContextId: controllerContextId,
+         background: false,
          portOverride: port
        ) {
       queueTrace(
