@@ -344,8 +344,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /document\.dispatchEvent\(new Event\('visibilitychange'\)\)/);
   assert.match(nativeSource, /window\.dispatchEvent\(new Event\('focus'\)\)/);
   assert.match(nativeSource, /document\.visibilityState remains hidden/);
-  assert.match(nativeSource, /Model responses continue on/);
-  assert.match(nativeSource, /serialized through this one authenticated renderer/);
+  assert.match(nativeSource, /parallelDedicatedProcessQueueWorkerMode/);
+  assert.match(nativeSource, /A fresh parallel task must never fall back to a renderer/);
+  assert.match(nativeSource, /Each parallel task owns a fresh hidden Chat BrowserWindow/);
   assert.match(nativeSource, /visibility == "hidden"/);
   assert.match(nativeSource, /queueTargetIsHidden/);
   assert.match(nativeSource, /queue_worker_visibility_not_hidden/);
