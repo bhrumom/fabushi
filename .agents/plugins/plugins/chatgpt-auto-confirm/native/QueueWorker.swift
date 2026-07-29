@@ -764,7 +764,11 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     let fallbackLauncher = Process()
     fallbackLauncher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     fallbackLauncher.arguments = [
-      "-na", "/Applications/ChatGPT.app", "--args",
+      // `-g -j` keeps the new app out of the foreground while `-n` forces a
+      // separate instance. This is the same LaunchServices path used by the
+      // background worker and avoids the hosted runner coalescing the launch
+      // into the already-visible controller instance.
+      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
@@ -773,6 +777,14 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     fallbackLauncher.standardError = FileHandle.nullDevice
     try fallbackLauncher.run()
     dedicatedQueueChatLaunchers[port] = fallbackLauncher
+    // `open` is only a short-lived LaunchServices request; wait for that
+    // request to be accepted before polling for the registered app and its
+    // hidden renderer. Never wait on the ChatGPT process itself.
+    fallbackLauncher.waitUntilExit()
+    queueTrace(
+      "worker-create stage=dedicated-process-launchservices-fallback complete "
+        + "port=\(port) status=\(fallbackLauncher.terminationStatus)"
+    )
     return hideNewDedicatedApplication(preferredProcessId: nil, attempts: 400)
   } catch {
     return false
@@ -1156,11 +1168,7 @@ func createQueueWorkerTarget(
         prepared["ok"] as? Bool == true,
         let preparedPort = prepared["port"] as? Int,
         let targetId = prepared["targetId"] as? String,
-        queueTargetRuntimeState(
-          port: preparedPort,
-          targetId: targetId,
-          refreshLifecycle: true
-        ) == .hidden else {
+        queueTargetIsReady(port: preparedPort, targetId: targetId) else {
     state.lastError = prewarmCreationFailure
     return nil
   }
