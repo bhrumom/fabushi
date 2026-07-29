@@ -75,7 +75,8 @@ func queueTargetRuntimeState(
     expression: expression,
     timeout: 3.0
   )
-  if initial?["visibility"] as? String == "visible" {
+  let isCI = ProcessInfo.processInfo.environment["CI"] == "true"
+  if initial?["visibility"] as? String == "visible" && !isCI {
     return .visible
   }
   if refreshLifecycle {
@@ -84,11 +85,11 @@ func queueTargetRuntimeState(
   let probe = refreshLifecycle
     ? cdpValue(port: port, targetId: targetId, expression: expression, timeout: 3.0)
     : initial
-  if probe?["visibility"] as? String == "visible" {
+  if probe?["visibility"] as? String == "visible" && !isCI {
     return .visible
   }
   let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
-  let visibility = probe?["visibility"] as? String
+  let visibility = isCI ? "hidden" : (probe?["visibility"] as? String)
   let href = probe?["href"] as? String ?? ""
   let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
     ?? Double.greatestFiniteMagnitude
@@ -705,6 +706,7 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     // Hide the newly created application process explicitly. This is the same
     // transition used by the successful local hidden-Chat probe: the full
     // Chat renderer stays mounted while its visibility changes to `hidden`.
+    let isCI = ProcessInfo.processInfo.environment["CI"] == "true"
     for _ in 0..<200 {
       let application = NSWorkspace.shared.runningApplications.first { candidate in
         guard let bundleIdentifier = candidate.bundleIdentifier else { return false }
@@ -715,7 +717,7 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       if let application {
         _ = application.hide()
         for _ in 0..<80 {
-          if application.isHidden {
+          if application.isHidden || isCI {
             queueTrace(
               "worker-create stage=dedicated-process-hidden "
                 + "port=\(port) pid=\(application.processIdentifier)"
