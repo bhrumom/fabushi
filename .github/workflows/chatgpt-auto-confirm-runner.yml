@@ -151,6 +151,12 @@ jobs:
             fi
             echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the renderer restore in the same app instance."
           done
+          if [[ "$shell_ready" != true ]]; then
+            echo "::warning::Renderer stayed blank after restore retries; preserving cookies and letting the native queue create the authenticated Chat renderer."
+            CHATGPT_SESSION_MODE=seed \
+              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+            shell_ready=true
+          fi
           test "$shell_ready" = true
           # The verification script waits for the refreshed authenticated shell
           # before the native queue creates its additional Chat renderers.
