@@ -357,6 +357,22 @@ func openBackgroundQueueWindow(
     queueTrace(
       "worker-create stage=hosted-active-renderer target=\(targetId)"
     )
+    // A newly created visible web renderer can expose its document before
+    // ChatGPT has mounted the composer. Let the page finish loading before
+    // the caller performs mode selection and surface detection.
+    for _ in 0..<240 {
+      let loaded = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: "(() => ({ready: document.readyState, input: !!document.querySelector('#prompt-textarea, [contenteditable=\\\"true\\\"]'), bodyLength: (document.body?.innerText || '').length}))()",
+        timeout: 3.0
+      )
+      let ready = loaded?["ready"] as? String
+      let hasInput = (loaded?["input"] as? NSNumber)?.boolValue == true
+      let bodyLength = (loaded?["bodyLength"] as? NSNumber)?.intValue ?? 0
+      if ready == "complete" && (hasInput || bodyLength > 50) { break }
+      Thread.sleep(forTimeInterval: 0.25)
+    }
     return targetId
   }
   let reset = cdpValue(
