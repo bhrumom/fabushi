@@ -671,12 +671,16 @@ func copyProfileForDedicatedQueueWorker(
     ]
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
+    let pipe = Pipe()
+    process.standardError = pipe
+    process.standardOutput = pipe
     try process.run()
     process.waitUntilExit()
     let status = process.terminationStatus
     if status != 0 && status != 24 {
-      queueTrace("rsync failed with status \(status)")
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      queueTrace("rsync failed with status \(status), output: \(output)")
     }
     return status == 0 || status == 24
   } catch {
