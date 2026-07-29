@@ -540,6 +540,26 @@ func sendMessageJS(
         picker.getAttribute('aria-label'),
         picker.getAttribute('title')
       ].filter(Boolean).join(' '));
+      // The web Chat shell exposes a workspace/profile trigger beside the
+      // composer. Its label can contain words such as "business" and was
+      // occasionally selected as the model picker by generic fallbacks.
+      // Prefer the explicit High/model control when that happens.
+      if (/workspace|profile|account|business/i.test(pickerBefore)) {
+        const explicitModel = [...document.querySelectorAll(
+          'button, [role="button"], [role="tab"]'
+        )].find(candidate => {
+          if (!visible(candidate)) return false;
+          const label = normalize([
+            candidate.textContent,
+            candidate.getAttribute('aria-label'),
+            candidate.getAttribute('title')
+          ].filter(Boolean).join(' ')).toLowerCase();
+          return label === 'high'
+            || label === '高'
+            || label.includes(desiredModel.toLowerCase());
+        });
+        if (explicitModel) picker = explicitModel;
+      }
       let selectedLabel = normalize(picker.textContent).toLowerCase();
       // Desktop Quick Chat is the authenticated orchestration surface. It
       // exposes ChatGPT choices such as Instant/Thinking, not the Codex
