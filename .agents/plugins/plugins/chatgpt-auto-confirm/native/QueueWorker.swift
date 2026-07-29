@@ -9,6 +9,10 @@ let sharedConversationQueueWorkerMode = "single-process-hidden-chat-conversation
 let parallelHiddenWindowQueueWorkerMode = "single-process-hidden-chat-windows"
 let parallelDedicatedProcessQueueWorkerMode = "parallel-dedicated-hidden-chat-processes"
 let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
+// Electron stays alive after its executable is launched. Keep the launcher
+// objects alive for the lifetime of each dedicated worker; otherwise releasing
+// `Process` can tear down the child before its CDP endpoint is ready.
+var dedicatedQueueChatLaunchers: [Int: Process] = [:]
 
 enum QueueTargetRuntimeState {
   case missing
@@ -701,8 +705,14 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     launcher.standardOutput = FileHandle.nullDevice
     launcher.standardError = FileHandle.nullDevice
     try launcher.run()
-    launcher.waitUntilExit()
-    guard launcher.terminationStatus == 0 else { return false }
+    dedicatedQueueChatLaunchers[port] = launcher
+    // Do not wait for Electron to exit: it is the long-lived worker process.
+    // Waiting here blocked the queue scheduler until the smoke action timed out.
+    Thread.sleep(forTimeInterval: 0.25)
+    if !launcher.isRunning && launcher.terminationStatus != 0 {
+      dedicatedQueueChatLaunchers.removeValue(forKey: port)
+      return false
+    }
 
     // Direct Electron launch creates a dedicated instance, but the renderer
     // still reports `document.visibilityState == visible` until it is hidden.
@@ -1367,6 +1377,9 @@ func terminateDedicatedChatProcess(profilePath: String) {
   process.standardError = FileHandle.nullDevice
   try? process.run()
   process.waitUntilExit()
+  dedicatedQueueChatLaunchers = dedicatedQueueChatLaunchers.filter { _, launcher in
+    launcher.isRunning
+  }
   Thread.sleep(forTimeInterval: 0.2)
   try? FileManager.default.removeItem(atPath: profilePath)
 }

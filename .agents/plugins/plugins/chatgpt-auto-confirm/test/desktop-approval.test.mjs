@@ -248,6 +248,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /copyProfileForDedicatedQueueWorker/);
   assert.match(nativeSource, /launchDedicatedQueueChatProcess/);
   assert.match(nativeSource, /Applications\/ChatGPT\.app\/Contents\/MacOS\/ChatGPT/);
+  assert.match(nativeSource, /var dedicatedQueueChatLaunchers: \[Int: Process\] = \[:\]/);
+  assert.match(nativeSource, /dedicatedQueueChatLaunchers\[port\] = launcher/);
+  assert.doesNotMatch(nativeSource, /launcher\.run\(\)\s*launcher\.waitUntilExit\(\)/);
   assert.match(nativeSource, /existingApplicationPids/);
   assert.match(nativeSource, /application\.hide\(\)/);
   assert.match(nativeSource, /application\.isHidden/);
