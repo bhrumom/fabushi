@@ -123,6 +123,15 @@ func queueTargetIsHidden(port: Int, targetId: String) -> Bool {
   ) == .hidden
 }
 
+func queueTargetIsReady(port: Int, targetId: String) -> Bool {
+  switch queueTargetRuntimeState(port: port, targetId: targetId, refreshLifecycle: true) {
+  case .hidden, .visible:
+    return true
+  case .missing, .hiddenNonChat, .suspended:
+    return false
+  }
+}
+
 func generalApprovalStateForQueue() -> PluginState? {
   let url = queueStateURL().deletingLastPathComponent().appendingPathComponent("state.json")
   guard let data = try? Data(contentsOf: url) else { return nil }
@@ -1045,7 +1054,7 @@ func createQueueWorkerTarget(
     queueTrace(
       "worker-create stage=chat-selection complete ok=\(chatSelection?["ok"] as? Bool ?? false)"
     )
-    var hiddenPrepared = false
+    var workerPrepared = false
     var lastHiddenPrepare: [String: Any]?
     for _ in 0..<80 {
       queueTrace("worker-create stage=chat-prepare attempt")
@@ -1083,14 +1092,15 @@ func createQueueWorkerTarget(
         refreshLifecycle: true
       )
       queueTrace("worker-create stage=chat-prepare state=\(queueTargetRuntimeStateName(state))")
-      if prepared?["ok"] as? Bool == true, state == .hidden {
-        hiddenPrepared = true
+      if prepared?["ok"] as? Bool == true,
+         (state == .hidden || state == .visible) {
+        workerPrepared = true
         queueTrace("worker-create stage=chat-prepare complete")
         break
       }
       Thread.sleep(forTimeInterval: 0.25)
     }
-    if hiddenPrepared {
+    if workerPrepared {
       state.backgroundAppPort = controller.port
       state.backgroundChatTargetId = hiddenTargetId
       state.backgroundProfilePath = controller.profilePath
@@ -1183,7 +1193,14 @@ func createQueueWorkerTarget(
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  createDedicatedParallelQueueWorkerTarget(&state)
+  // Reuse the authenticated ChatGPT process and create a fresh renderer in
+  // it. Hosted Actions do not need a second Electron process or hidden macOS
+  // window; those requirements caused the repeated cloud failures.
+  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+    return nil
+  }
+  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
+  return worker
 }
 
 func stopQueueWorker(_ state: inout PluginState) {
@@ -1258,7 +1275,7 @@ func startAutomationTask(
   } else if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
      let staleTargetId = task.workerTargetId,
      let stalePort = task.workerPort,
-     queueTargetIsHidden(port: stalePort, targetId: staleTargetId) {
+     queueTargetIsReady(port: stalePort, targetId: staleTargetId) {
     _ = CDPClient.closeTarget(staleTargetId, portOverride: stalePort)
   }
   task.workerPort = nil
