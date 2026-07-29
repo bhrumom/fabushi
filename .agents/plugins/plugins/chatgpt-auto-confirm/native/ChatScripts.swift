@@ -355,8 +355,12 @@ func sendMessageJS(
         const label = controlLabel(button);
         return /(?:choose|select|new)\\s+project|project\\s+(?:source|folder)|source\\s+folders|add\\s+folders|选择项目|项目文件夹|源文件夹|添加文件夹|新建项目|创建项目/i.test(label);
       };
+      const isAccountOrWorkspaceControl = button => {
+        const label = controlLabel(button);
+        return /workspace|profile|account|settings|teammates|成员|工作区|账户|账号|设置/i.test(label);
+      };
       const isModelPickerLabel = button => {
-        if (isProjectPicker(button)) return false;
+        if (isProjectPicker(button) || isAccountOrWorkspaceControl(button)) return false;
         const label = controlLabel(button);
         return label.includes('chatgpt 模型')
           || /select chatgpt model/i.test(label)
