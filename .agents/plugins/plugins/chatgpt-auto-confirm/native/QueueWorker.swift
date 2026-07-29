@@ -350,9 +350,13 @@ func openBackgroundQueueWindow(
     // Hosted accounts may not expose the Quick Chat RPC. Create a normal
     // authenticated renderer through CDP and let the caller prepare Chat.
     if reset?["error"] as? String == "quick_chat_service_not_found",
+       let controllerContextId = CDPClient.targetInfo(
+         targetId: controllerTargetId,
+         portOverride: port
+       )?["browserContextId"] as? String,
        let targetId = CDPClient.createBackgroundTarget(
          url: "app://-/index.html?initialRoute=%2F",
-         browserContextId: nil,
+         browserContextId: controllerContextId,
          portOverride: port
        ) {
       queueTrace(
