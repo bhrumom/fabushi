@@ -1193,14 +1193,9 @@ func createQueueWorkerTarget(
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // Reuse the authenticated ChatGPT process and create a fresh renderer in
-  // it. Hosted Actions do not need a second Electron process or hidden macOS
-  // window; those requirements caused the repeated cloud failures.
-  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
-    return nil
-  }
-  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
-  return worker
+  // Parallel smoke verification requires an isolated ChatGPT process, CDP
+  // port, profile, and hidden renderer for every task.
+  return createDedicatedParallelQueueWorkerTarget(&state)
 }
 
 func stopQueueWorker(_ state: inout PluginState) {
