@@ -74,6 +74,12 @@ const failureFingerprint = tasks => JSON.stringify(tasks
     lastError: task.lastError || null,
     hiddenWorkerLastError: task.hiddenWorkerLastError || null,
   })));
+const isNonRecoverableFailure = task => {
+  const detail = [task.lastError, task.hiddenWorkerLastError]
+    .filter(Boolean)
+    .join(' ');
+  return /model_selection\s*:|model_picker_not_found|quick_chat_thinking_not_selected|reasoning_high_not_selected|target_model_not_selected|task_continuation_limit_reached|dependency_not_completed/.test(detail.replace(/\s+/g, ' '));
+};
 const watchdogDiagnostics = result => ({
   ok: result?.ok !== false,
   recovered: result?.recovered === true,
@@ -109,9 +115,17 @@ while (Date.now() < deadline) {
     writeResult('complete', queue, 'all_tasks_terminal');
     process.exit(0);
   }
+  const allTerminal = tasks.length > 0 && tasks.every(task =>
+    ['completed', 'cancelled', 'failed', 'blocked'].includes(task.status));
+  const hasRecoverableTerminalFailure = tasks.some(task =>
+    ['failed', 'blocked'].includes(task.status) && !isNonRecoverableFailure(task));
+  if (allTerminal && !hasRecoverableTerminalFailure) {
+    writeResult('failed', queue, 'terminal_task_failure');
+    process.exit(1);
+  }
 
   const needsRecovery = tasks.some(task =>
-    ['failed', 'blocked'].includes(task.status) ||
+    (['failed', 'blocked'].includes(task.status) && !isNonRecoverableFailure(task)) ||
     (task.lastError && String(task.lastError).includes('not_chat_surface')));
   if (needsRecovery && Date.now() - lastRecovery >= recoveryIntervalMs) {
     const currentFailureFingerprint = failureFingerprint(tasks);

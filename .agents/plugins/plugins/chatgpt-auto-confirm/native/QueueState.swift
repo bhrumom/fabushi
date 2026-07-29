@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v80"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v83"
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -489,7 +489,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "maxConcurrent": requestedMaxConcurrent,
     "effectiveMaxConcurrent": requestedMaxConcurrent,
     "requestedMaxConcurrent": requestedMaxConcurrent,
-    "executionMode": "single-authenticated-process-multi-conversation-parallel",
+    "executionMode": "parallel-dedicated-hidden-chat-processes",
     "targetMode": state.queueWorkerMode ?? "not-started",
     "network": [
       "status": state.queueNetworkStatus ?? "unknown",
@@ -502,12 +502,15 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "targetId": state.queueWorkerTargetId as Any,
       "profilePath": state.queueWorkerProfilePath as Any,
       "mode": state.queueWorkerMode as Any,
-      "sharedProcess": queueUsesBackgroundWindow(state),
-      "sameApplicationProcess": queueUsesBackgroundWindow(state),
+      "sharedProcess": queueUsesBackgroundWindow(state)
+        && state.queueWorkerMode != parallelDedicatedProcessQueueWorkerMode,
+      "sameApplicationProcess": queueUsesBackgroundWindow(state)
+        && state.queueWorkerMode != parallelDedicatedProcessQueueWorkerMode,
       "isolatedFromVisiblePage": workerIsHidden,
       "visibilityVerified": workerIsHidden,
       "runtimeState": workerRuntimeState.map(queueTargetRuntimeStateName) ?? "not-started",
-      "separateApplicationProcess": false,
+      "separateApplicationProcess":
+        state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
     ],
     "activeWorkers": activeWorkers,
     "watcherTrace": queueTraceTail(),

@@ -9,6 +9,10 @@ const actionsWorkflow = readFileSync(
   new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
   'utf8',
 );
+const restoreSessionScript = readFileSync(
+  new URL('../scripts/restore-session-cookies.mjs', import.meta.url),
+  'utf8',
+);
 const actionsInbox = JSON.parse(readFileSync(
   new URL('../tasks/actions-inbox.json', import.meta.url),
   'utf8',
@@ -29,10 +33,23 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /runs-on: macos-15/);
   assert.match(actionsWorkflow, /timeout-minutes: 355/);
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
+  assert.match(actionsWorkflow, /for attempt in 1 2/);
+  assert.match(actionsWorkflow, /retrying the proven bootstrap in the same app instance/);
+  assert.match(restoreSessionScript, /setTimeout\(\(\) => location\.reload\(\), 0\)/);
+  assert.match(restoreSessionScript, /process\.exit\(0\)/);
+  assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
+  assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
+  assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);
+  assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
+  assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
   assert.match(actionsWorkflow, /parallel_queue_smoke/);
+  assert.match(actionsWorkflow, /chatgpt-auto-confirm-parallel-smoke/);
   assert.match(actionsWorkflow, /verify-parallel-actions-queue\.mjs/);
   assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
   assert.match(actionsWorkflow, /task-queue\/watcher-trace\.log/);
@@ -43,6 +60,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /status" != "incomplete"/);
   assert.match(actionsWorkflow, /VERIFICATION_ONLY/);
   assert.match(actionsWorkflow, /no continuation was dispatched/);
+  assert.match(actionsWorkflow, /--ref "\$GITHUB_REF_NAME"/);
   assert.match(actionsWorkflow, /jq '\{status, reason, counts, tasks\}'/);
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
