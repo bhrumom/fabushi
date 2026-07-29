@@ -69,3 +69,55 @@ if (command === 'queue_watchdog') {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Actions controller does not watchdog-requeue deterministic model-selection failures', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-model-selection-'));
+  const runtimePath = path.join(directory, 'fake-runtime.mjs');
+  const resultPath = path.join(directory, 'action-result.json');
+  try {
+    writeFileSync(runtimePath, `#!/usr/bin/env node
+const command = process.argv[2];
+if (command === 'queue_watchdog') {
+  console.log(JSON.stringify({ ok: true, recovered: false }));
+} else if (command === 'queue_status') {
+  console.log(JSON.stringify({
+    ok: true,
+    counts: { failed: 1 },
+    tasks: [{
+      id: 'model-selection-task',
+      status: 'failed',
+      attempts: 1,
+      lastError: '任务页面发送失败（model_selection: reasoning_high_not_selected）',
+      hiddenWorkerLastError: null,
+    }],
+  }));
+} else {
+  console.log(JSON.stringify({ ok: false, message: 'unexpected command' }));
+  process.exitCode = 1;
+}
+`);
+    chmodSync(runtimePath, 0o755);
+    const result = spawnSync(process.execPath, [controller], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        CHATGPT_AUTO_CONFIRM_NATIVE: runtimePath,
+        ACTION_RESULT_PATH: resultPath,
+        ACTION_SESSION_SECONDS: '2',
+        ACTION_POLL_INTERVAL_MS: '10',
+        ACTION_RECOVERY_INTERVAL_MS: '10',
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /WATCHDOG_RECOVERY/);
+    const report = JSON.parse(readFileSync(resultPath, 'utf8'));
+    assert.equal(report.status, 'failed');
+    assert.equal(report.reason, 'terminal_task_failure');
+    assert.equal(report.tasks[0].lastError,
+      '任务页面发送失败（model_selection: reasoning_high_not_selected）');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
