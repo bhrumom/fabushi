@@ -142,20 +142,16 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          shell_ready=false
-          for attempt in 1 2; do
-            if CHATGPT_SESSION_MODE=restore-and-verify \
-              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs; then
-              shell_ready=true
-              break
-            fi
-            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the proven bootstrap in the same app instance."
-          done
-          test "$shell_ready" = true
+          # Seed the authenticated partition without reloading the controller.
+          # On fresh hosted macOS runners the visible Electron shell can remain
+          # on its lightweight startup page while the real Chat renderer is
+          # created by the native queue. Reloading that startup page races the
+          # app bootstrap and leaves it permanently blank.
+          CHATGPT_SESSION_MODE=seed \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
           # The native queue's hidden-Chat probe is the authoritative end-to-end
-          # authentication check. The bundled `codex login status` command can
-          # wait indefinitely on a hosted desktop session after the shell is
-          # already authenticated, so do not block queue startup on it.
+          # authentication check, including a real Chat page. Do not require
+          # the visible controller shell to render before that probe runs.
 
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
