@@ -687,9 +687,13 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       }
     )
     let launcher = Process()
-    launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    // Launch the Electron executable directly. LaunchServices can coalesce
+    // `open -n` requests into the visible controller process on hosted macOS,
+    // which leaves the dedicated CDP port empty forever.
+    launcher.executableURL = URL(
+      fileURLWithPath: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
+    )
     launcher.arguments = [
-      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
@@ -700,8 +704,8 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     launcher.waitUntilExit()
     guard launcher.terminationStatus == 0 else { return false }
 
-    // `open -j` launches a new ChatGPT instance without activation, but the
-    // Electron renderer still reports `document.visibilityState == visible`.
+    // Direct Electron launch creates a dedicated instance, but the renderer
+    // still reports `document.visibilityState == visible` until it is hidden.
     // Hide the newly created application process explicitly. This is the same
     // transition used by the successful local hidden-Chat probe: the full
     // Chat renderer stays mounted while its visibility changes to `hidden`.
