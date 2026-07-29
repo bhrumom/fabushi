@@ -142,6 +142,8 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
+          # The cookie write must be followed by a renderer reload. Without it,
+          # the hosted page can remain on the pre-authenticated sign-in shell.
           shell_ready=false
           for attempt in 1 2; do
             if CHATGPT_SESSION_MODE=restore-and-verify \
