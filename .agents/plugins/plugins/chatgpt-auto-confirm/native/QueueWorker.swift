@@ -726,7 +726,7 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       }
       if let application {
         _ = application.hide()
-        for _ in 0..<80 {
+        for _ in 0..<240 {
           if application.isHidden || isCI {
             queueTrace(
               "worker-create stage=dedicated-process-hidden "
@@ -823,7 +823,7 @@ func createDedicatedParallelQueueWorkerTarget(
   )
   let selection = selectChatOnPrimaryController(port: port, targetId: targetId)
   var prepared: [String: Any]?
-  for _ in 0..<80 {
+  for _ in 0..<240 {
     prepared = cdpValue(
       port: port,
       targetId: targetId,
@@ -1003,7 +1003,7 @@ func createQueueWorkerTarget(
     )
     var hiddenPrepared = false
     var lastHiddenPrepare: [String: Any]?
-    for _ in 0..<80 {
+    for _ in 0..<240 {
       queueTrace("worker-create stage=chat-prepare attempt")
       let prepared = cdpValue(
         port: controller.port,
