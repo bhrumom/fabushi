@@ -1,8 +1,6 @@
 name: ChatGPT auto-confirm continuous runner
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       previous_run_id:
