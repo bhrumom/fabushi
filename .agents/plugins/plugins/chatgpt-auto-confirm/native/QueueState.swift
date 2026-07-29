@@ -489,7 +489,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     "maxConcurrent": requestedMaxConcurrent,
     "effectiveMaxConcurrent": requestedMaxConcurrent,
     "requestedMaxConcurrent": requestedMaxConcurrent,
-    "executionMode": "parallel-dedicated-hidden-chat-processes",
+    "executionMode": "parallel-chat-windows",
     "targetMode": state.queueWorkerMode ?? "not-started",
     "network": [
       "status": state.queueNetworkStatus ?? "unknown",
