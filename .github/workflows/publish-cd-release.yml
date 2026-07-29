@@ -205,7 +205,7 @@ jobs:
                 add_both "shared Flutter package input changed: $path"
                 ;;
               .agents/plugins/*)
-                add_both "bundled official plugin input changed: $path"
+                ignore_mobile_package "independent plugin input does not require mobile install packages: $path"
                 ;;
               third_party/mahayana|third_party/mahayana/*)
                 add_both "Mahayana runtime input changed: $path"
