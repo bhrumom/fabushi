@@ -690,6 +690,35 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
         return application.processIdentifier
       }
     )
+    func hideNewDedicatedApplication(
+      preferredProcessId: pid_t?,
+      attempts: Int
+    ) -> Bool {
+      for _ in 0..<attempts {
+        let application = NSWorkspace.shared.runningApplications.first { candidate in
+          guard !candidate.isTerminated else { return false }
+          if candidate.processIdentifier == preferredProcessId { return true }
+          guard let bundleIdentifier = candidate.bundleIdentifier else { return false }
+          return targetBundleIdentifiers.contains(bundleIdentifier)
+            && !existingApplicationPids.contains(candidate.processIdentifier)
+        }
+        if let application {
+          _ = application.hide()
+          for _ in 0..<80 {
+            if application.isHidden {
+              queueTrace(
+                "worker-create stage=dedicated-process-hidden "
+                  + "port=\(port) pid=\(application.processIdentifier)"
+              )
+              return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+          }
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+      }
+      return false
+    }
     let launcher = Process()
     // Launch the Electron executable directly. LaunchServices can coalesce
     // `open -n` requests into the visible controller process on hosted macOS,
@@ -723,30 +752,28 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
     // Hosted runners can take substantially longer than a local launch to
     // register a fresh Electron application with LaunchServices. Prefer the
     // exact process we launched even before its bundle metadata is available.
-    for _ in 0..<1_200 {
-      let application = NSWorkspace.shared.runningApplications.first { candidate in
-        guard !candidate.isTerminated else { return false }
-        if candidate.processIdentifier == launchedProcessId { return true }
-        guard let bundleIdentifier = candidate.bundleIdentifier else { return false }
-        return targetBundleIdentifiers.contains(bundleIdentifier)
-          && !existingApplicationPids.contains(candidate.processIdentifier)
-      }
-      if let application {
-        _ = application.hide()
-        for _ in 0..<80 {
-          if application.isHidden {
-            queueTrace(
-              "worker-create stage=dedicated-process-hidden "
-                + "port=\(port) pid=\(application.processIdentifier)"
-            )
-            return true
-          }
-          Thread.sleep(forTimeInterval: 0.05)
-        }
-      }
-      Thread.sleep(forTimeInterval: 0.05)
+    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 1_200) {
+      return true
     }
-    return false
+
+    // On some hosted macOS images the direct Electron executable becomes a
+    // short-lived launcher and never registers an NSRunningApplication. Use
+    // LaunchServices only as a bounded fallback, retaining the isolated
+    // profile and CDP port; subsequent code still requires a hidden Chat page.
+    queueTrace("worker-create stage=dedicated-process-launchservices-fallback begin port=\(port)")
+    let fallbackLauncher = Process()
+    fallbackLauncher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    fallbackLauncher.arguments = [
+      "-na", "/Applications/ChatGPT.app", "--args",
+      "--user-data-dir=\(profilePath)",
+      "--remote-debugging-port=\(port)",
+    ]
+    fallbackLauncher.standardInput = FileHandle.nullDevice
+    fallbackLauncher.standardOutput = FileHandle.nullDevice
+    fallbackLauncher.standardError = FileHandle.nullDevice
+    try fallbackLauncher.run()
+    dedicatedQueueChatLaunchers[port] = fallbackLauncher
+    return hideNewDedicatedApplication(preferredProcessId: nil, attempts: 400)
   } catch {
     return false
   }
