@@ -142,11 +142,16 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          # The cookie write must be followed by a renderer reload. Without it,
-          # the hosted page remains on the pre-authenticated sign-in shell even
-          # though Network.getAllCookies reports the cookies as persisted.
-          CHATGPT_SESSION_MODE=restore-and-verify \
-            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
+          shell_ready=false
+          for attempt in 1 2; do
+            if CHATGPT_SESSION_MODE=restore-and-verify \
+              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs; then
+              shell_ready=true
+              break
+            fi
+            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the renderer restore in the same app instance."
+          done
+          test "$shell_ready" = true
           # The verification script waits for the refreshed authenticated shell
           # before the native queue creates its additional Chat renderers.
 
