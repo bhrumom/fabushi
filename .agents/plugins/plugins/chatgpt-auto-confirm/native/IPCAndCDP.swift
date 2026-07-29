@@ -345,11 +345,16 @@ struct CDPClient {
       let contextJSON = contextId.map {
         ",\"browserContextId\":\(jsonStringLiteral($0))"
       } ?? ""
-      let backgroundJSON = background ? "true" : "false"
+      let paramsJSON: String
+      if background {
+        paramsJSON = "{\"url\":\(jsonStringLiteral(url)),\"background\":true\(contextJSON)}"
+      } else {
+        paramsJSON = "{\"url\":\(jsonStringLiteral(url)),\"background\":false\(contextJSON)}"
+      }
       guard let response = sendCommand(
             wsURLString: browserWS,
             method: "Target.createTarget",
-            paramsJSON: "{\"url\":\(jsonStringLiteral(url)),\"background\":\(backgroundJSON)\(contextJSON)}",
+            paramsJSON: paramsJSON,
             timeout: 4.0
           ),
             let result = response["result"] as? [String: Any] else { return nil }
