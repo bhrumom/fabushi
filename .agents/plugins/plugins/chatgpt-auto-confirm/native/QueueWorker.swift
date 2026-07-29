@@ -713,18 +713,23 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       dedicatedQueueChatLaunchers.removeValue(forKey: port)
       return false
     }
+    let launchedProcessId = launcher.processIdentifier
 
     // Direct Electron launch creates a dedicated instance, but the renderer
     // still reports `document.visibilityState == visible` until it is hidden.
     // Hide the newly created application process explicitly. This is the same
     // transition used by the successful local hidden-Chat probe: the full
     // Chat renderer stays mounted while its visibility changes to `hidden`.
-    for _ in 0..<200 {
+    // Hosted runners can take substantially longer than a local launch to
+    // register a fresh Electron application with LaunchServices. Prefer the
+    // exact process we launched even before its bundle metadata is available.
+    for _ in 0..<1_200 {
       let application = NSWorkspace.shared.runningApplications.first { candidate in
+        guard !candidate.isTerminated else { return false }
+        if candidate.processIdentifier == launchedProcessId { return true }
         guard let bundleIdentifier = candidate.bundleIdentifier else { return false }
         return targetBundleIdentifiers.contains(bundleIdentifier)
           && !existingApplicationPids.contains(candidate.processIdentifier)
-          && !candidate.isTerminated
       }
       if let application {
         _ = application.hide()
