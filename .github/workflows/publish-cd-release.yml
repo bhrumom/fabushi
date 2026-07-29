@@ -223,7 +223,7 @@ jobs:
                 add_both "explicit CD retry marker changed: $path"
                 ;;
               .github/workflows/publish-cd-release.yml)
-                add_both "package release workflow changed; validate Android and iOS release package paths: $path"
+                ignore_mobile_package "package release workflow changed without mobile app input: $path"
                 ;;
               .github/workflows/*|.github/scripts/*)
                 ignore_mobile_package "CI/CD guardrail input does not require mobile install packages: $path"
