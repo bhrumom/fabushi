@@ -152,6 +152,26 @@ try {
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(evidence)}\n`);
+} catch (error) {
+  // The smoke artifact is the only durable observability channel on ephemeral
+  // hosted macOS runners. Preserve the bounded queue state before cleanup so
+  // a failed isolated-worker launch can be diagnosed from the next run.
+  let status;
+  try {
+    status = run('queue_status');
+  } catch {}
+  writeFileSync(evidencePath, `${JSON.stringify({
+    status: 'failed',
+    checkedAt: new Date().toISOString(),
+    error: error instanceof Error ? error.message : String(error),
+    executionMode: status?.executionMode,
+    activeWorkers: status?.activeWorkers,
+    watcherTrace: status?.watcherTrace,
+    tasks: status?.tasks?.filter(item =>
+      ['actions-parallel-a', 'actions-parallel-b'].includes(item.id)),
+    lastError: status?.lastError,
+  }, null, 2)}\n`);
+  throw error;
 } finally {
   cancel('actions-parallel-a');
   cancel('actions-parallel-b');
