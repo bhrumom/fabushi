@@ -958,9 +958,16 @@ func sendMessageJS(
       let found = evidence.length > 0;
 
       if (!found) {
-        const visibleAppItem = () => [...document.querySelectorAll(
-          'button[data-list-navigation-item="true"], [role="menuitemradio"], [role="option"], button'
-        )].find(el => visible(el) && textMatches(el));
+        const visibleAppItem = () => {
+          const menuRoots = [...document.querySelectorAll(
+            '[role="menu"], [role="listbox"], [data-composer-overlay-floating-ui], '
+              + '[data-radix-menu-content], [data-radix-popper-content-wrapper]'
+          )].filter(visible);
+          const scopes = menuRoots.length ? menuRoots : [document];
+          return scopes.flatMap(root => [...root.querySelectorAll(
+            'button[data-list-navigation-item="true"], [role="menuitemradio"], [role="option"], button'
+          )]).find(el => visible(el) && textMatches(el));
+        };
         const addButton = document.querySelector('button[aria-label="添加文件等"]')
           || document.querySelector('button[aria-label="添加文件等内容"]')
           || document.querySelector('button[aria-label="附加文件或连接应用"]')
