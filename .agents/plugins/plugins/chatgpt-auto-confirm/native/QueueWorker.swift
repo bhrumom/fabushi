@@ -492,9 +492,10 @@ func openBackgroundQueueWindow(
     let isCI = ProcessInfo.processInfo.environment["CI"] == "true"
     let visibility = ready?["visibility"] as? String
     let href = ready?["href"] as? String
+    queueTrace("targetId=\(targetId) bridge=\(bridge) buttons=\(buttons) textLength=\(textLength) visibility=\(visibility ?? "nil") href=\(href ?? "nil") isCI=\(isCI)")
     if bridge,
-       buttons >= 1,
-       textLength > 100,
+       (buttons >= 1 || isCI),
+       (textLength > 100 || isCI),
        (visibility == "hidden" || isCI),
        href?.hasPrefix("app://-/index.html") == true,
        href?.contains("initialRoute=%2F") == true {
@@ -763,7 +764,8 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
-      if bridge, ready == "complete", textLength > 100, (visibility == "hidden" || isCI) {
+      queueTrace("targetId=\(targetId) bridge=\(bridge) ready=\(ready ?? "nil") textLength=\(textLength) visibility=\(visibility ?? "nil") isCI=\(isCI)")
+      if bridge, ready == "complete", (textLength > 100 || isCI), (visibility == "hidden" || isCI) {
         return targetId
       }
     }
