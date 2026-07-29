@@ -247,7 +247,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /createDedicatedParallelQueueWorkerTarget/);
   assert.match(nativeSource, /copyProfileForDedicatedQueueWorker/);
   assert.match(nativeSource, /launchDedicatedQueueChatProcess/);
-  assert.match(nativeSource, /-g", "-j", "-n"/);
+  assert.match(nativeSource, /Applications\/ChatGPT\.app\/Contents\/MacOS\/ChatGPT/);
   assert.match(nativeSource, /existingApplicationPids/);
   assert.match(nativeSource, /application\.hide\(\)/);
   assert.match(nativeSource, /application\.isHidden/);
