@@ -1193,9 +1193,13 @@ func createQueueWorkerTarget(
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // Parallel smoke verification requires an isolated ChatGPT process, CDP
-  // port, profile, and hidden renderer for every task.
-  return createDedicatedParallelQueueWorkerTarget(&state)
+  // Reuse the authenticated ChatGPT process and create a fresh renderer in
+  // it. Hosted Actions do not need a second Electron process or profile copy.
+  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+    return nil
+  }
+  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
+  return worker
 }
 
 func stopQueueWorker(_ state: inout PluginState) {
