@@ -347,6 +347,20 @@ func openBackgroundQueueWindow(
     timeout: 8.0
   )
   guard reset?["ok"] as? Bool == true else {
+    // Some hosted accounts do not expose the Quick Chat RPC at all. The
+    // authenticated controller can still create a normal Chat renderer; use
+    // that supported CDP path instead of failing before queue startup.
+    if reset?["error"] as? String == "quick_chat_service_not_found",
+       let targetId = CDPClient.createBackgroundTarget(
+         url: "app://-/index.html?initialRoute=%2F",
+         browserContextId: nil,
+         portOverride: port
+       ) {
+      queueTrace(
+        "worker-create stage=prewarm-fallback-normal-target target=\(targetId)"
+      )
+      return targetId
+    }
     failure = "prewarm_reset_failed:\(reset?["error"] as? String ?? "no_result")"
     return nil
   }
