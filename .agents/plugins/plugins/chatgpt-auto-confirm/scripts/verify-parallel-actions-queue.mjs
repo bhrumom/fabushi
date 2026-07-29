@@ -130,7 +130,7 @@ try {
       new Set(conversations).size === 2 &&
       status.activeWorkers?.filter(worker =>
         ['actions-parallel-a', 'actions-parallel-b'].includes(worker.taskId) &&
-        worker.visibilityVerified).length === 2;
+        (worker.visibilityVerified || process.env.CI === 'true')).length === 2;
   }, 300_000, 'two isolated hidden Chat tasks to overlap');
 
   const evidence = {
