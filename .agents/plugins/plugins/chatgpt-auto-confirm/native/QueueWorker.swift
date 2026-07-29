@@ -773,7 +773,7 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
       queueTrace("targetId=\(targetId) bridge=\(bridge) ready=\(ready ?? "nil") textLength=\(textLength) visibility=\(visibility ?? "nil") isCI=\(isCI)")
-      if bridge, ready == "complete", (textLength > 100 || isCI), (visibility == "hidden" || isCI) {
+      if bridge, (ready == "complete" || ready == "interactive"), (textLength > 100 || isCI), (visibility == "hidden" || isCI) {
         return targetId
       }
     }
