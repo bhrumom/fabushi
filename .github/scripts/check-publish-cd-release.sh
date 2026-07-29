@@ -73,11 +73,11 @@ for required in (
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
 
-for required in (
+for forbidden in (
     "      - .agents/plugins/**",
 ):
-    if desktop_installers_workflow.count(required) < 2:
-        missing.append(f'desktop installers workflow must trigger for pull requests and pushes containing: {required.strip()}')
+    if forbidden in desktop_installers_workflow:
+        missing.append(f'desktop installers workflow must not trigger for independent plugin changes: {forbidden.strip()}')
 
 for forbidden in (
     '      - name: Checkout source for change detection\n        uses: actions/checkout@v5\n        with:\n          ref: ${{ steps.source.outputs.source_sha }}\n          fetch-depth: 0\n\n      - name: Detect changed mobile package targets',
