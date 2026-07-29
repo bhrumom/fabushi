@@ -2,7 +2,7 @@ const port = Number(process.env.CHATGPT_CDP_PORT || 9324);
 const mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify';
 const encoded = process.env.CHATGPT_SESSION_COOKIES_B64;
 
-if (!['seed', 'verify', 'restore-and-verify'].includes(mode)) {
+if (!['seed', 'restore', 'verify', 'restore-and-verify'].includes(mode)) {
   throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
 }
 
@@ -137,6 +137,14 @@ if (mode === 'restore-and-verify') {
     })()`,
     returnByValue: true,
   });
+}
+
+// Hosted macOS can leave the visible controller blank after reload. The
+// native queue must be allowed to create and verify the real Chat renderer.
+if (mode === 'restore') {
+  socket.close();
+  process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies and requested renderer reload\n`);
+  process.exit(0);
 }
 
 // Cookie restoration authenticates the visible controller window. A fresh

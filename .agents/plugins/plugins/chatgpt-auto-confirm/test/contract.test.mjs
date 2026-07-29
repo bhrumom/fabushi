@@ -35,10 +35,10 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
-  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore/);
   assert.match(actionsWorkflow, /cookie write must be followed by a renderer reload/);
   assert.match(actionsWorkflow, /verification script waits for the refreshed authenticated shell/);
-  assert.match(restoreSessionScript, /mode === 'seed'/);
+  assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
