@@ -242,7 +242,7 @@ struct CDPClient {
     guard let response = sendCommand(
       wsURLString: wsURLString,
       method: "Page.captureScreenshot",
-      paramsJSON: "{\"format\":\"png\",\"captureBeyondViewport\":false}",
+      paramsJSON: "{\"format\":\"png\",\"captureBeyondViewport\":true,\"fromSurface\":true}",
       timeout: 8.0
     ), let result = response["result"] as? [String: Any],
        let encoded = result["data"] as? String,
@@ -459,4 +459,3 @@ struct CDPClient {
     return result
   }
 }
-

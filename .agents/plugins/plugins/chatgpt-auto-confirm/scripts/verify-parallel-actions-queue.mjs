@@ -119,12 +119,14 @@ try {
     const active = status.tasks?.filter(item =>
       ['actions-parallel-a', 'actions-parallel-b'].includes(item.id) &&
       item.status === 'running') || [];
+    const ports = active.map(item => item.workerPort).filter(Boolean);
     const targets = active.map(item => item.workerTargetId).filter(Boolean);
     const conversations = active.map(item => item.conversationId).filter(Boolean);
     return status.effectiveMaxConcurrent === 2 &&
-      status.executionMode === 'single-authenticated-process-multi-conversation-parallel' &&
+      status.executionMode === 'parallel-dedicated-hidden-chat-processes' &&
       active.length === 2 &&
-      new Set(targets).size === 1 &&
+      new Set(ports).size === 2 &&
+      new Set(targets).size === 2 &&
       new Set(conversations).size === 2 &&
       status.activeWorkers?.filter(worker =>
         ['actions-parallel-a', 'actions-parallel-b'].includes(worker.taskId) &&
@@ -142,9 +144,10 @@ try {
     criteria: [
       'task B was enqueued after task A had already started',
       'both tasks were running in the same observation',
-      'both tasks shared one authenticated hidden Chat renderer',
+      'both tasks used clones of the restored authenticated ChatGPT profile',
+      'each task owned a different hidden ChatGPT process, CDP port, and renderer',
       'each task owned a different conversation id',
-      'the shared renderer passed hidden visibility verification for both tasks',
+      'both task windows passed hidden visibility verification',
     ],
   };
   writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);

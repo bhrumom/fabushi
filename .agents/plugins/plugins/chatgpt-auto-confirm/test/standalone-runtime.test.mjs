@@ -87,7 +87,7 @@ test('native task queue persists queued work without starting ChatGPT', async t 
     assert.equal(queued.maxConcurrent, 2);
     assert.equal(queued.effectiveMaxConcurrent, 2);
     assert.equal(queued.executionMode,
-      'single-authenticated-process-multi-conversation-parallel');
+      'parallel-dedicated-hidden-chat-processes');
     const status = JSON.parse((await execFileAsync(runtimePath, ['queue_status'], { env })).stdout);
     assert.equal(status.tasks[0].resourceLocks[0], 'test:queue');
     assert.equal(status.recoverable, true);

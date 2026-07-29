@@ -23,7 +23,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: chatgpt-auto-confirm-fix-test-runner
+  # Parallel smoke creates its own ephemeral queue state, so it can validate
+  # the hosted Chat surface without waiting behind the persistent runner.
+  # Persistent runners keep the shared-state serialization guard.
+  group: ${{ inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}', github.ref) || 'chatgpt-auto-confirm-fix-test-runner' }}
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +37,7 @@ jobs:
     env:
       CHATGPT_CDP_PORT: "9324"
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
+      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
       GH_TOKEN: ${{ github.token }}
@@ -59,6 +63,8 @@ jobs:
             echo "profile_dir=$profile_dir"
             echo "state_path=$state_path"
           } >> "$GITHUB_OUTPUT"
+          mkdir -p "$runtime_dir/diagnostics"
+          touch "$runtime_dir/diagnostics/.keep"
 
       - name: Restore encrypted continuation state
         shell: bash
@@ -121,17 +127,35 @@ jobs:
           hdiutil detach "$mount_dir"
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
 
-      - name: Launch ChatGPT and restore login
+      - name: Build native queue runtime
+        shell: bash
+        run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
+
+      - name: Launch authenticated desktop shell
+        timeout-minutes: 6
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
         run: |
           set -euo pipefail
+          test -n "$CHATGPT_SESSION_COOKIES_B64"
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          login_status=$(/Applications/ChatGPT.app/Contents/Resources/codex login status 2>&1)
-          grep -q 'Logged in using ChatGPT' <<< "$login_status"
+          shell_ready=false
+          for attempt in 1 2; do
+            if CHATGPT_SESSION_MODE=restore-and-verify \
+              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs; then
+              shell_ready=true
+              break
+            fi
+            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the proven bootstrap in the same app instance."
+          done
+          test "$shell_ready" = true
+          # The native queue's hidden-Chat probe is the authoritative end-to-end
+          # authentication check. The bundled `codex login status` command can
+          # wait indefinitely on a hosted desktop session after the shell is
+          # already authenticated, so do not block queue startup on it.
 
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
@@ -139,6 +163,7 @@ jobs:
           CHATGPT_AUTO_CONFIRM_PARALLEL_STATE: ${{ steps.paths.outputs.runtime_dir }}/parallel-smoke-state.json
           CHATGPT_AUTO_CONFIRM_PARALLEL_EVIDENCE: ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/verify-parallel-actions-queue.mjs
 
       - name: Run persistent task queue
@@ -149,6 +174,7 @@ jobs:
           CHATGPT_AUTO_CONFIRM_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
           ACTION_SESSION_SECONDS: "20100"
           ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-actions-controller.mjs
@@ -192,6 +218,7 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
             ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
             ${{ steps.paths.outputs.runtime_dir }}/task-queue/watcher-trace.log
+            ${{ steps.paths.outputs.runtime_dir }}/diagnostics
 
       - name: Continue incomplete work or report terminal failure
         if: always()
@@ -218,6 +245,6 @@ jobs:
           fi
           gh workflow run chatgpt-auto-confirm-runner.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main \
+            --ref "$GITHUB_REF_NAME" \
             -f previous_run_id="$GITHUB_RUN_ID"
           echo "Dispatched continuation from run $GITHUB_RUN_ID."

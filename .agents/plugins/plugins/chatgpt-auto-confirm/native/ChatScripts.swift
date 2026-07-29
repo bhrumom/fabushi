@@ -205,6 +205,36 @@ func sendMessageJS(
       element.offsetWidth || element.offsetHeight || element.getClientRects().length
     ));
     const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+    const dispatchPointerClick = element => {
+      const rect = element?.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+        buttons: 1,
+        clientX,
+        clientY
+      };
+      element.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mousedown', pressed));
+      element.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed,
+        buttons: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
     const record = (stage, ok, details = {}) => {
       result.stages.push({ stage, ok, ...details });
       return ok;
@@ -236,6 +266,39 @@ func sendMessageJS(
       return scope.querySelector('[data-testid="send-button"]')
         || scope.querySelector('button[aria-label="Send prompt"]')
         || scope.querySelector('button[aria-label="发送"]');
+    }
+
+    function chatSurfaceEvidence() {
+      const quickRoot = quickChatRoot();
+      const scope = quickRoot || document;
+      const modeControls = [...scope.querySelectorAll('button, [role="button"]')]
+        .filter(visible)
+        .map(button => normalize([
+          button.textContent,
+          button.getAttribute('aria-label'),
+          button.getAttribute('title')
+        ].filter(Boolean).join(' ')))
+        .filter(label => /^(chat|work|聊天|工作)$|current mode|当前模式/i.test(label))
+        .slice(0, 12);
+      const relevantControls = [...scope.querySelectorAll('button, [role="button"]')]
+        .filter(visible)
+        .map(button => normalize([
+          button.textContent,
+          button.getAttribute('aria-label'),
+          button.getAttribute('title'),
+          button.getAttribute('data-testid')
+        ].filter(Boolean).join(' ')))
+        .filter(label => /model|模型|gpt|thinking|instant|high|medium|pro|reasoning|推理|项目|project|folder|文件夹|work/i.test(label))
+        .slice(0, 32);
+      return {
+        url: window.location.href || '',
+        quickChatRoot: !!quickRoot,
+        hasInput: !!findTextarea(),
+        workComposer: !!document.querySelector('[data-codex-composer="true"]'),
+        chatMode: chatModeIsActive(),
+        modeControls,
+        relevantControls
+      };
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -282,30 +345,46 @@ func sendMessageJS(
       const send = findSendButton();
       const scope = quickChatRoot() || document;
 
-      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
-      if (testIdButton && visible(testIdButton)) return testIdButton;
-
-      const composer = input?.closest('form') || input?.parentElement?.parentElement;
-
-      // Search in composer area first for aria-haspopup buttons (strong signal = dropdown trigger)
-      const popupButton = [...(composer || document).querySelectorAll(
-        '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
-      )].find(button => visible(button) && button !== send);
-      if (popupButton) return popupButton;
-
-      const explicit = [...scope.querySelectorAll(
-        'button[aria-label], [role="button"][aria-label]'
-      )].filter(button => {
-        if (!visible(button) || button === send) return false;
-        const label = normalize(button.getAttribute('aria-label')).toLowerCase();
-        return label.includes('chatgpt 模型') 
+      const controlLabel = button => normalize([
+        button?.textContent,
+        button?.getAttribute('aria-label'),
+        button?.getAttribute('title'),
+        button?.getAttribute('data-testid')
+      ].filter(Boolean).join(' ')).toLowerCase();
+      const isProjectPicker = button => {
+        const label = controlLabel(button);
+        return /(?:choose|select)\\s+project|project\\s+(?:source|folder)|source\\s+folders|add\\s+folders|选择项目|项目文件夹|源文件夹|添加文件夹/i.test(label);
+      };
+      const isModelPickerLabel = button => {
+        if (isProjectPicker(button)) return false;
+        const label = controlLabel(button);
+        return label.includes('chatgpt 模型')
           || /select chatgpt model/i.test(label)
           || label.includes('model selector')
           || label.includes('choose model')
           || label.includes('选择模型')
           || label.includes('intelligence')
           || label.includes('reasoning')
-          || label.includes('推理');
+          || label.includes('推理')
+          || label.includes('高')
+          || label.includes('智能')
+          // The hosted Chat renderer currently concatenates hidden model
+          // labels into one button, e.g. "5.6 TerraExtra High5.6 SolMedium".
+          // Word boundaries therefore miss "High5.6" and "SolMedium".
+          || /(?:gpt|model|thinking|instant|high|medium|pro|terra|sol)/i.test(label);
+      };
+
+      const testIdButton = scope.querySelector('[data-testid="model-switcher"], [data-testid="composer-model-selector"], [data-testid="model-picker"], [data-testid="chat-model-selector"]');
+      if (testIdButton && visible(testIdButton) && !isProjectPicker(testIdButton)) return testIdButton;
+
+      const composer = input?.closest('form') || input?.parentElement?.parentElement;
+
+      // Prefer an explicitly labelled model control. The composer can also contain
+      // project/source pickers, so a generic aria-haspopup match is not sufficient.
+      const explicit = [...scope.querySelectorAll(
+        'button[aria-label], [role="button"][aria-label]'
+      )].filter(button => {
+        return visible(button) && button !== send && isModelPickerLabel(button);
       }).sort((left, right) => {
         const leftInComposer = composer?.contains(left) ? 0 : 1;
         const rightInComposer = composer?.contains(right) ? 0 : 1;
@@ -321,24 +400,25 @@ func sendMessageJS(
       // Use includes() not === to handle buttons with extra SVG/icon text appended
       const textMatch = [...scope.querySelectorAll('button, [role="button"]')].find(button => {
         if (!visible(button) || button === send) return false;
-        const text = normalize(button.textContent).toLowerCase();
-        // Strip SVG text noise: only look at first 30 chars
-        const shortText = text.slice(0, 30).trim();
-        return shortText.includes('gpt-') || shortText.includes('thinking') || shortText === 'chatgpt' ||
-               shortText.includes('high') || shortText.includes('medium') || shortText.includes('instant') ||
-               shortText.includes('pro') || shortText.includes('高') || shortText.includes('智能') ||
-               shortText.includes('reasoning') || shortText.includes('推理');
+        return isModelPickerLabel(button);
       });
       if (textMatch) return textMatch;
+
+      // Only use a generic popup as a last resort, and only when its label still
+      // looks like a model control. This prevents "Choose project" from opening
+      // the project menu and being misreported as a missing High-reasoning choice.
+      const popupButton = [...(composer || document).querySelectorAll(
+        '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
+      )].find(button => visible(button) && button !== send && isModelPickerLabel(button));
+      if (popupButton) return popupButton;
 
       const fallbackScope = composer || document.body;
       const candidates = [...fallbackScope.querySelectorAll(
         'button, [role="button"], [data-testid], [aria-haspopup="menu"]'
       )].filter(button => {
         if (!visible(button) || button === send) return false;
-        const text = normalize(button.textContent);
-        const popup = button.getAttribute('aria-haspopup');
-        return text.length > 0 || popup === 'menu' || popup === 'listbox';
+        if (isProjectPicker(button)) return false;
+        return isModelPickerLabel(button);
       });
       return candidates.sort((left, right) => {
         const leftPopup = left.getAttribute('aria-haspopup') ? 0 : 1;
@@ -412,6 +492,28 @@ func sendMessageJS(
     }
 
     async function ensureModelAndReasoning() {
+      // Dismiss promotional modals before looking for the model picker. The
+      // desktop app can show localized Fast-mode announcements over a newly
+      // created Chat; their buttons otherwise look like the only open menu.
+      const neutralPromoLabels = new Set([
+        'try gpt-5.6 sol now', 'okay', 'got it',
+        'use standard speed', 'continue with standard speed',
+        '使用标准速度', '使用標準速度',
+        'not now', 'maybe later', '暂不', '暫不', '以后再说', '稍後再說'
+      ]);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const promoButton = [...document.querySelectorAll('button')].find(btn => {
+          const text = normalize([
+            btn.textContent,
+            btn.getAttribute('aria-label'),
+            btn.getAttribute('title')
+          ].filter(Boolean).join(' ')).toLowerCase();
+          return visible(btn) && neutralPromoLabels.has(text);
+        });
+        if (!promoButton) break;
+        promoButton.click();
+        await sleep(600);
+      }
       let picker = null;
       for (let i = 0; i < 40; i++) {
         picker = modelPickerButton();
@@ -425,7 +527,8 @@ func sendMessageJS(
           model: desiredModel,
           reasoning: desiredReasoning,
           modelConfirmed: false,
-          reasoningConfirmed: false
+          reasoningConfirmed: false,
+          surface: chatSurfaceEvidence()
         };
       }
       const pickerBefore = normalize([
@@ -452,8 +555,10 @@ func sendMessageJS(
           || selectedLabel === '高'
           || selectedLabel.startsWith('high ');
         if (!quickChatConfirmed) {
-          picker.click();
-          await sleep(350);
+          // The desktop ChatGPT model switcher is a Radix trigger that opens
+          // on pointerdown; HTMLElement.click() alone leaves the menu closed.
+          dispatchPointerClick(picker);
+          await sleep(500);
           const thinkingChoice = [
             ...allPrefixedModelChoices('Thinking'),
             ...allPrefixedModelChoices('思考'),
@@ -486,7 +591,8 @@ func sendMessageJS(
             selectedLabel,
             quickChatChoiceClicked,
             visibleMenuText: visibleModelMenus()
-              .map(menu => normalize(menu.textContent).slice(0, 500))
+              .map(menu => normalize(menu.textContent).slice(0, 500)),
+            surface: chatSurfaceEvidence()
           };
         }
         return {
@@ -513,8 +619,8 @@ func sendMessageJS(
       let highChoiceClicked = false;
 
       if (!reasoningConfirmed || !modelConfirmed) {
-        picker.click();
-        await sleep(350);
+        dispatchPointerClick(picker);
+        await sleep(500);
 
         let modelChoice = allExactModelChoices(desiredModel).find(choice =>
           visibleModelMenus().some(menu => menu.contains(choice))
@@ -586,7 +692,8 @@ func sendMessageJS(
           modelChoiceClicked,
           highChoiceClicked,
           visibleMenuText: visibleModelMenus()
-            .map(menu => normalize(menu.textContent).slice(0, 500))
+            .map(menu => normalize(menu.textContent).slice(0, 500)),
+          surface: chatSurfaceEvidence()
         };
       }
       if (!modelConfirmed) {
@@ -602,7 +709,8 @@ func sendMessageJS(
           modelChoiceClicked,
           highChoiceClicked,
           visibleMenuText: visibleModelMenus()
-            .map(menu => normalize(menu.textContent).slice(0, 500))
+            .map(menu => normalize(menu.textContent).slice(0, 500)),
+          surface: chatSurfaceEvidence()
         };
       }
 
@@ -677,6 +785,8 @@ func sendMessageJS(
 
     function chatModeIsActive() {
       const quickRoot = quickChatRoot();
+      const workComposer = !quickRoot
+        && !!document.querySelector('[data-codex-composer="true"]');
       const currentChatGPTMode = window.__mahayanaConfirmedChatGPTMode === true
         || [...document.querySelectorAll('button, a, [role="button"]')]
         .some(button => {
@@ -695,9 +805,11 @@ func sendMessageJS(
       });
       const webChat = window.location.protocol === 'https:'
         && window.location.hostname === 'chatgpt.com';
-      return (!!quickRoot || currentChatGPTMode || chatModel || webChat) && !!findTextarea()
-        && (!!quickRoot || currentChatGPTMode
-          || !document.querySelector('[data-codex-composer="true"]'));
+      // The desktop app can leave the Work composer mounted while a stale
+      // ChatGPT flag or model label is still present. Work must never pass as
+      // Chat: the top-level Chat/Work switch is authoritative here.
+      return (!!quickRoot || currentChatGPTMode || chatModel || webChat)
+        && !!findTextarea() && !workComposer;
     }
 
     function replaceText(el, text) {
@@ -750,7 +862,9 @@ func sendMessageJS(
         hasInput: !!findTextarea(), workComposer: !!document.querySelector('[data-codex-composer="true"]')
       });
     }
-    record('chat_surface', true, { surface: 'chat', workerUsed: false });
+    record('chat_surface', true, {
+      surface: 'chat', workerUsed: false, surfaceEvidence: chatSurfaceEvidence()
+    });
     if (!conversationIsExpected()) {
       return fail('conversation_guard', 'conversation_changed_before_send', {
         expectedConversationId,
@@ -1307,7 +1421,8 @@ func chatStatusJS() -> String {
   });
   const webChat = window.location.protocol === 'https:'
     && window.location.hostname === 'chatgpt.com';
-  const workComposer = !quickChatRoot && !currentChatGPTMode
+  // A stale mode flag must not hide the Work composer from surface checks.
+  const workComposer = !quickChatRoot
     && !!document.querySelector('[data-codex-composer="true"]');
   const pageURL = window.location.href || '';
   const initialRoute = new URL(pageURL).searchParams.get('initialRoute') || '';
