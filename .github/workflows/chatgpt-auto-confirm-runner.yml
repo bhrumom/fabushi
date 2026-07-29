@@ -142,16 +142,13 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          # Seed the authenticated partition without reloading the controller.
-          # On fresh hosted macOS runners the visible Electron shell can remain
-          # on its lightweight startup page while the real Chat renderer is
-          # created by the native queue. Reloading that startup page races the
-          # app bootstrap and leaves it permanently blank.
-          CHATGPT_SESSION_MODE=seed \
+          # The cookie write must be followed by a renderer reload. Without it,
+          # the hosted page remains on the pre-authenticated sign-in shell even
+          # though Network.getAllCookies reports the cookies as persisted.
+          CHATGPT_SESSION_MODE=restore-and-verify \
             node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-          # The native queue's hidden-Chat probe is the authoritative end-to-end
-          # authentication check, including a real Chat page. Do not require
-          # the visible controller shell to render before that probe runs.
+          # The verification script waits for the refreshed authenticated shell
+          # before the native queue creates its additional Chat renderers.
 
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
