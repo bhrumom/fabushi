@@ -479,6 +479,41 @@ jobs:
             exit 1
           fi
           app_path="build/macos/Build/Products/Release/global_dharma_sharing.app"
+          plugins_root="$app_path/Contents/Resources/mahayana/share/mahayana/plugins/plugins"
+          child_entitlements="$PWD/macos/Runner/OpenClawChild.entitlements"
+          signed_plugin_runtimes=0
+
+          if [ ! -d "$plugins_root" ]; then
+            echo "Bundled official plugin runtime directory is missing: $plugins_root" >&2
+            exit 1
+          fi
+          if [ ! -f "$child_entitlements" ]; then
+            echo "Bundled runtime entitlements are missing: $child_entitlements" >&2
+            exit 1
+          fi
+
+          while IFS= read -r -d '' runtime_file; do
+            if ! file -b "$runtime_file" 2>/dev/null | grep -Eq 'Mach-O'; then
+              continue
+            fi
+
+            signing_args=(--force --timestamp --options runtime --sign "$identity")
+            if [ -x "$runtime_file" ]; then
+              signing_args+=(--entitlements "$child_entitlements")
+            fi
+
+            echo "Signing bundled official plugin runtime: $runtime_file"
+            codesign "${signing_args[@]}" "$runtime_file"
+            codesign --verify --strict --verbose=2 "$runtime_file"
+            signed_plugin_runtimes=$((signed_plugin_runtimes + 1))
+          done < <(find "$plugins_root" -depth -type f -print0)
+
+          if [ "$signed_plugin_runtimes" -eq 0 ]; then
+            echo "No bundled official plugin Mach-O runtimes were found under $plugins_root" >&2
+            exit 1
+          fi
+
+          echo "Signed $signed_plugin_runtimes bundled official plugin Mach-O runtimes."
           codesign --force --deep --timestamp --options runtime --sign "$identity" "$app_path"
           codesign --verify --deep --strict --verbose=2 "$app_path"
 
