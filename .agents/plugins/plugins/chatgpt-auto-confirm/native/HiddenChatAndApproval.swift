@@ -339,6 +339,61 @@ func navigateHiddenConversation(
   return false
 }
 
+func restoreHiddenConversation(
+  port: Int,
+  targetId: String,
+  conversationId: String,
+  timeout: TimeInterval = 35.0
+) -> [String: Any] {
+  // Prefer the live sidebar. A direct Page.navigate on the hosted desktop
+  // renderer can leave the app on its startup spinner, which also poisons the
+  // subsequent fresh-chat fallback.
+  let sidebar = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: selectBackgroundConversationJS(conversationId),
+    timeout: min(timeout, 20.0)
+  )
+  if sidebar?["ok"] as? Bool == true,
+     let status = cdpValue(
+       port: port,
+       targetId: targetId,
+       expression: chatStatusJS(),
+       timeout: 5.0
+     ), normalizedConversationId(status["conversationId"] as? String) == conversationId,
+        status["chatMode"] as? Bool == true {
+    var result = sidebar ?? [:]
+    result["ok"] = true
+    result["strategy"] = "sidebar"
+    return result
+  }
+
+  let sidebarError = sidebar?["error"] as? String
+    ?? "continuation_sidebar_selection_failed"
+  if queueUsesHostedRenderer() {
+    return [
+      "ok": false,
+      "error": sidebarError,
+      "strategy": "sidebar",
+      "conversationId": conversationId,
+    ]
+  }
+
+  let navigated = navigateHiddenConversation(
+    port: port,
+    targetId: targetId,
+    conversationId: conversationId,
+    timeout: timeout
+  )
+  return [
+    "ok": navigated,
+    "error": navigated ? "" : "continuation_route_navigation_failed",
+    "strategy": "route",
+    "sidebarError": sidebarError,
+    "conversationId": conversationId,
+  ]
+}
+
 func selectBackgroundConversationJS(_ conversationId: String) -> String {
   let expected = jsonStringLiteral(conversationId)
   return """
@@ -1301,23 +1356,67 @@ func autoApproveDedicatedAuthorizationJS() -> String {
   #"""
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const normalize = value => (value || '').replace(/[\s↵]+/g, ' ').trim().toLowerCase();
-    const visible = element => !!(element
-      && !element.disabled
+    const normalize = value => (value || '').replace(/[\s\u21b5]+/g, ' ').trim().toLowerCase();
+    const rendered = element => !!(element
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+    const visible = element => rendered(element) && !element.disabled;
     const allowed = new Set([
-      '完全访问', 'full access', 'allow', 'allow once', '允许', '允许一次',
-      'approve', 'approve once', 'confirm', 'confirm once', '确认', '确认一次',
-      '同意', '同意一次'
+      '\u5b8c\u5168\u8bbf\u95ee', 'full access', 'allow', 'allow once',
+      '\u5141\u8bb8', '\u5141\u8bb8\u4e00\u6b21', 'approve', 'approve once',
+      'confirm', 'confirm once', '\u786e\u8ba4', '\u786e\u8ba4\u4e00\u6b21',
+      '\u540c\u610f', '\u540c\u610f\u4e00\u6b21'
     ]);
+    const rejectLabels = new Set([
+      'deny', 'reject', 'cancel', 'deny once', 'reject once',
+      '\u62d2\u7edd', '\u62d2\u7edd\u4e00\u6b21', '\u4e0d\u5141\u8bb8',
+      '\u4e0d\u5141\u8bb8\u4e00\u6b21', '\u53d6\u6d88'
+    ]);
+    const sessionHints = [
+      'this chat', 'this conversation', 'for this chat', 'for this conversation',
+      'for this session', 'during this chat', 'always allow in this chat',
+      '\u672c\u6b21\u4f1a\u8bdd', '\u8fd9\u6b21\u4f1a\u8bdd',
+      '\u6b64\u4f1a\u8bdd', '\u5f53\u524d\u4f1a\u8bdd',
+      '\u5728\u6b64\u804a\u5929\u4e2d', '\u672c\u6b21\u804a\u5929',
+      '\u59cb\u7ec8\u5141\u8bb8', '\u4f1a\u8bdd\u671f\u95f4'
+    ];
     const label = button => normalize(
       button.innerText || button.textContent
         || button.getAttribute('aria-label') || button.getAttribute('title')
     );
+    const isSessionScope = value => !!value
+      && sessionHints.some(hint => value.includes(hint));
+    const dispatchPointerClick = candidate => {
+      const rect = candidate.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
+      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const pressed = {
+        bubbles: true, cancelable: true, composed: true,
+        button: 0, buttons: 1, clientX, clientY
+      };
+      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
+      candidate.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
+    const confirmCardClosed = async candidate => {
+      for (let index = 0; index < 30; index += 1) {
+        await sleep(100);
+        if (!candidate.isConnected || !rendered(candidate)) return true;
+      }
+      return false;
+    };
     const priority = new Map([
-      ['allow', 0], ['允许', 0], ['approve', 0], ['同意', 0], ['confirm', 0], ['确认', 0],
-      ['allow once', 1], ['允许一次', 1], ['approve once', 1], ['同意一次', 1],
-      ['confirm once', 1], ['确认一次', 1], ['full access', 20], ['完全访问', 20]
+      ['allow', 0], ['\u5141\u8bb8', 0], ['approve', 0], ['\u540c\u610f', 0],
+      ['confirm', 0], ['\u786e\u8ba4', 0], ['allow once', 1],
+      ['\u5141\u8bb8\u4e00\u6b21', 1], ['approve once', 1],
+      ['\u540c\u610f\u4e00\u6b21', 1], ['confirm once', 1],
+      ['\u786e\u8ba4\u4e00\u6b21', 1], ['full access', 20],
+      ['\u5b8c\u5168\u8bbf\u95ee', 20]
     ]);
     const candidates = [...document.querySelectorAll('button')]
       .filter(visible)
@@ -1332,37 +1431,109 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     if (!candidate) {
       return { ok: true, clicked: false, confirmed: false, candidateLabels };
     }
+
+    let card = candidate.button.parentElement;
+    let cardButtons = [];
+    for (let index = 0; index < 15 && card; index += 1) {
+      cardButtons = [...card.querySelectorAll('button, a, [role="button"]')]
+        .filter(visible);
+      const cardLabels = cardButtons.map(label);
+      const cardText = normalize(card.innerText || card.textContent || '');
+      if (cardLabels.some(value => rejectLabels.has(value))
+          || cardText.includes('allow chatgpt to use')
+          || cardText.includes('\u5141\u8bb8 chatgpt \u4f7f\u7528')) {
+        break;
+      }
+      card = card.parentElement;
+      cardButtons = [];
+    }
+
+    const sessionControl = cardButtons.find(button =>
+      button !== candidate.button && isSessionScope(label(button))
+    ) || cardButtons.find(button => {
+      if (button === candidate.button) return false;
+      const value = label(button);
+      return !allowed.has(value) && !rejectLabels.has(value) && (
+        button.getAttribute('aria-haspopup') === 'menu'
+          || button.getAttribute('aria-expanded') !== null
+          || /menu|dropdown|chevron|more/.test(normalize(
+            button.getAttribute('data-testid') || button.getAttribute('data-slot')
+              || button.getAttribute('class') || ''
+          ))
+      );
+    });
+
+    if (sessionControl) {
+      const menuTriggerLabel = label(sessionControl);
+      try {
+        dispatchPointerClick(sessionControl);
+      } catch (error) {
+        return {
+          ok: false, clicked: false, confirmed: false,
+          strategy: 'session-scope', label: menuTriggerLabel, candidateLabels,
+          error: String(error?.message || error || 'session_scope_menu_click_failed')
+        };
+      }
+      let menuCandidates = [];
+      for (let index = 0; index < 40; index += 1) {
+        await sleep(100);
+        if (!candidate.button.isConnected || !rendered(candidate.button)) {
+          return {
+            ok: true, clicked: true, confirmed: true,
+            strategy: 'session-scope-direct', label: menuTriggerLabel,
+            menuTriggerLabel, candidateLabels
+          };
+        }
+        const menuItems = [...document.querySelectorAll(
+          '[role="menuitem"], [role="menuitemradio"], [role="option"], '
+            + '[role="menu"] button, [role="listbox"] button, '
+            + '[data-radix-menu-content] button, '
+            + '[data-radix-popper-content-wrapper] button'
+        )].filter(item => item !== sessionControl && visible(item));
+        menuCandidates = menuItems.map(label).filter(Boolean).slice(-30);
+        const sessionOption = menuItems.find(item => isSessionScope(label(item)));
+        if (!sessionOption) continue;
+        const sessionScopeLabel = label(sessionOption);
+        try {
+          dispatchPointerClick(sessionOption);
+        } catch (error) {
+          return {
+            ok: false, clicked: true, confirmed: false,
+            strategy: 'session-scope', label: sessionScopeLabel,
+            menuTriggerLabel, candidateLabels, menuCandidates,
+            error: String(error?.message || error || 'session_scope_option_click_failed')
+          };
+        }
+        const confirmed = await confirmCardClosed(candidate.button);
+        return {
+          ok: confirmed, clicked: true, confirmed,
+          strategy: 'session-scope', label: sessionScopeLabel,
+          menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates,
+          error: confirmed ? null : 'session_scope_approval_not_confirmed'
+        };
+      }
+      return {
+        ok: false, clicked: true, confirmed: false,
+        strategy: 'session-scope', label: menuTriggerLabel,
+        menuTriggerLabel, candidateLabels, menuCandidates,
+        error: 'session_scope_option_not_found'
+      };
+    }
+
     try {
-      candidate.button.click();
+      dispatchPointerClick(candidate.button);
     } catch (error) {
       return {
-        ok: false,
-        clicked: false,
-        confirmed: false,
-        label: candidate.label,
-        candidateLabels,
+        ok: false, clicked: false, confirmed: false,
+        strategy: 'single-approval', label: candidate.label, candidateLabels,
         error: String(error?.message || error || 'approval_click_failed')
       };
     }
-    for (let index = 0; index < 20; index += 1) {
-      await sleep(100);
-      if (!candidate.button.isConnected || !visible(candidate.button)) {
-        return {
-          ok: true,
-          clicked: true,
-          confirmed: true,
-          label: candidate.label,
-          candidateLabels
-        };
-      }
-    }
+    const confirmed = await confirmCardClosed(candidate.button);
     return {
-      ok: false,
-      clicked: true,
-      confirmed: false,
-      label: candidate.label,
-      candidateLabels,
-      error: 'approval_click_not_confirmed'
+      ok: confirmed, clicked: true, confirmed,
+      strategy: 'single-approval', label: candidate.label, candidateLabels,
+      error: confirmed ? null : 'approval_click_not_confirmed'
     };
   })()
   """#
@@ -1413,6 +1584,32 @@ func prepareNewChatTarget(
   let previousConversationId = baseline["conversationId"] as? String
   let baselineWasBlank = (baseline["messageCount"] as? Int ?? 1) == 0 &&
     (baseline["inputTextLength"] as? Int ?? 1) == 0
+  if allowBlankConversationReuse && baselineWasBlank {
+    var stableBlankSamples = 0
+    for _ in 0..<12 {
+      let current = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: prepareBackgroundChatJS(
+          newChat: false,
+          confirmedChatMode: chatModeConfirmed
+        ),
+        timeout: timeout
+      )
+      let blankAndReady = current?["ok"] as? Bool == true
+        && (current?["messageCount"] as? Int ?? 1) == 0
+        && (current?["inputTextLength"] as? Int ?? 1) == 0
+      stableBlankSamples = blankAndReady ? stableBlankSamples + 1 : 0
+      if stableBlankSamples >= 3 {
+        var result = current ?? [:]
+        result["newChatClicked"] = false
+        result["blankConversationReused"] = true
+        result["stableSamples"] = stableBlankSamples
+        return result
+      }
+      Thread.sleep(forTimeInterval: 0.15)
+    }
+  }
   guard let clicked = cdpValue(
     port: port,
     targetId: targetId,
