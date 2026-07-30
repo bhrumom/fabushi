@@ -158,6 +158,12 @@ try {
   try {
     status = run('queue_status');
   } catch {}
+  
+  try {
+    const screenshotPath = evidencePath.replace('.json', '-screenshot.png');
+    spawnSync('screencapture', ['-x', screenshotPath]);
+  } catch {}
+
   writeFileSync(evidencePath, `${JSON.stringify({
     status: 'failed',
     checkedAt: new Date().toISOString(),
