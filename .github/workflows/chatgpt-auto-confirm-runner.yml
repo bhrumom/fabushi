@@ -137,7 +137,7 @@ jobs:
         run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
 
       - name: Launch authenticated desktop shell
-        timeout-minutes: 6
+        timeout-minutes: 4
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
@@ -147,26 +147,12 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          # The cookie write must be followed by a renderer reload. Without it,
-          # the hosted page can remain on the pre-authenticated sign-in shell.
-          shell_ready=false
-          for attempt in 1 2; do
-            if CHATGPT_SESSION_MODE=restore-and-verify \
-              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs; then
-              shell_ready=true
-              break
-            fi
-            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying the renderer restore in the same app instance."
-          done
-          if [[ "$shell_ready" != true ]]; then
-            echo "::warning::Renderer stayed blank after restore retries; preserving cookies and letting the native queue create the authenticated Chat renderer."
-            CHATGPT_SESSION_MODE=restore \
-              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
-            shell_ready=true
-          fi
-          test "$shell_ready" = true
-          # The verification script waits for the refreshed authenticated shell
-          # before the native queue creates its additional Chat renderers.
+          # Bootstrap only: persist cookies and request one bounded renderer reload.
+          # The native queue owns authenticated Chat creation and verification. Making
+          # the visible controller pass Runtime.evaluate here can stall hosted macOS
+          # before the real hidden-Chat queue gets a chance to start.
+          CHATGPT_SESSION_MODE=restore \
+            node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
 
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
