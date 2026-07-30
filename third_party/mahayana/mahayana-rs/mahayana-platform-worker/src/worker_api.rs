@@ -61,7 +61,6 @@ const MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS: usize = 6;
 const MARKETPLACE_DEPLOYMENT_VERIFY_DELAY_SECONDS: u64 = 3;
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct MarketplacePluginRow {
     plugin_id: String,
     display_name: String,
