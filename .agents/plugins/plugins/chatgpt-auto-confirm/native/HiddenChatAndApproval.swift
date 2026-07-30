@@ -186,7 +186,7 @@ func captureHiddenChatScreenshot(
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String else { return nil }
   let formatter = DateFormatter()
-  formatter.dateFormat = "yyyyMMdd-HHmmss"
+  formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
   let outputURL = stateURL().deletingLastPathComponent()
     .appendingPathComponent("diagnostics", isDirectory: true)
     .appendingPathComponent("chat-\(label)-\(formatter.string(from: Date())).png")
@@ -1194,6 +1194,109 @@ func autoConfirmChatContinuationJS() -> String {
   """#
 }
 
+func detectDedicatedAuthorizationJS() -> String {
+  #"""
+  (() => {
+    const normalize = value => (value || '').replace(/[\s↵]+/g, ' ').trim().toLowerCase();
+    const visible = element => !!(element
+      && !element.disabled
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+    const label = button => normalize(
+      button.innerText || button.textContent
+        || button.getAttribute('aria-label') || button.getAttribute('title')
+    );
+    const allowLabels = new Set([
+      'allow', 'allow once', 'approve', 'approve once', 'confirm', 'confirm once',
+      '允许', '允许一次', '同意', '同意一次', '确认', '确认一次',
+      'full access', '完全访问'
+    ]);
+    const rejectLabels = new Set([
+      'deny', 'reject', 'cancel', 'deny once', 'reject once',
+      '拒绝', '拒绝一次', '不允许', '不允许一次', '取消'
+    ]);
+    const sessionHints = [
+      'this chat', 'this conversation', 'for this chat', 'for this conversation',
+      'for this session', 'during this chat', 'always allow in this chat',
+      '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
+      '始终允许', '会话期间'
+    ];
+    const buttons = [...document.querySelectorAll('button, a, [role="button"]')]
+      .filter(visible);
+    const candidates = buttons
+      .map((button, index) => ({ button, index, label: label(button) }))
+      .filter(candidate => allowLabels.has(candidate.label));
+    const candidate = candidates[0];
+    if (!candidate) {
+      return {
+        ok: true,
+        found: false,
+        candidates: 0,
+        candidateLabels: [],
+        selectedLabel: '',
+        cardButtonLabels: [],
+        sessionScopeLabels: [],
+        menuTriggerLabels: [],
+        menuTriggerCount: 0,
+        unlabeledControlCount: 0
+      };
+    }
+
+    let container = candidate.button.parentElement;
+    for (let index = 0; index < 15 && container; index += 1) {
+      const cardButtons = [...container.querySelectorAll('button, a, [role="button"]')]
+        .filter(visible);
+      const cardLabels = cardButtons.map(label);
+      const hasReject = cardLabels.some(value => rejectLabels.has(value));
+      const cardText = normalize(container.innerText || container.textContent || '');
+      if (hasReject || cardText.includes('allow chatgpt to use') || cardText.includes('允许 chatgpt 使用')) {
+        const nonDecisionControls = cardButtons.filter(button => {
+          const value = label(button);
+          return !allowLabels.has(value) && !rejectLabels.has(value);
+        });
+        const menuTriggers = nonDecisionControls.filter(button =>
+          button.getAttribute('aria-haspopup') === 'menu'
+            || button.getAttribute('aria-expanded') !== null
+            || normalize(button.getAttribute('data-state')) === 'open'
+            || /menu|dropdown|chevron|more/.test(normalize(
+              button.getAttribute('data-testid') || button.getAttribute('data-slot')
+                || button.getAttribute('class') || ''
+            ))
+        );
+        const sessionScopeLabels = cardLabels.filter(value =>
+          value && sessionHints.some(hint => value.includes(hint))
+        );
+        return {
+          ok: true,
+          found: true,
+          candidates: candidates.length,
+          candidateLabels: candidates.map(item => item.label),
+          selectedLabel: candidate.label,
+          cardButtonLabels: cardLabels.filter(Boolean),
+          sessionScopeLabels,
+          menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
+          menuTriggerCount: menuTriggers.length,
+          unlabeledControlCount: nonDecisionControls.filter(button => !label(button)).length
+        };
+      }
+      container = container.parentElement;
+    }
+
+    return {
+      ok: true,
+      found: true,
+      candidates: candidates.length,
+      candidateLabels: candidates.map(item => item.label),
+      selectedLabel: candidate.label,
+      cardButtonLabels: [],
+      sessionScopeLabels: [],
+      menuTriggerLabels: [],
+      menuTriggerCount: 0,
+      unlabeledControlCount: 0
+    };
+  })()
+  """#
+}
+
 func autoApproveDedicatedAuthorizationJS() -> String {
   #"""
   (async () => {
@@ -1204,16 +1307,26 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
     const allowed = new Set([
       '完全访问', 'full access', 'allow', 'allow once', '允许', '允许一次',
-      'approve', 'approve once', 'confirm', '确认'
+      'approve', 'approve once', 'confirm', 'confirm once', '确认', '确认一次',
+      '同意', '同意一次'
     ]);
     const label = button => normalize(
       button.innerText || button.textContent
         || button.getAttribute('aria-label') || button.getAttribute('title')
     );
+    const priority = new Map([
+      ['allow', 0], ['允许', 0], ['approve', 0], ['同意', 0], ['confirm', 0], ['确认', 0],
+      ['allow once', 1], ['允许一次', 1], ['approve once', 1], ['同意一次', 1],
+      ['confirm once', 1], ['确认一次', 1], ['full access', 20], ['完全访问', 20]
+    ]);
     const candidates = [...document.querySelectorAll('button')]
       .filter(visible)
-      .map(button => ({ button, label: label(button) }))
-      .filter(candidate => allowed.has(candidate.label));
+      .map((button, index) => ({ button, index, label: label(button) }))
+      .filter(candidate => allowed.has(candidate.label))
+      .sort((left, right) =>
+        (priority.get(left.label) ?? 10) - (priority.get(right.label) ?? 10)
+          || left.index - right.index
+      );
     const candidateLabels = candidates.map(candidate => candidate.label);
     const candidate = candidates[0];
     if (!candidate) {
@@ -1773,6 +1886,30 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
 
   for endpoint in pageTargets {
     guard let wsURL = endpoint.target["webSocketDebuggerUrl"] as? String else { continue }
+    let targetId = endpoint.target["id"] as? String ?? "unknown-target"
+    var approvalDetection: [String: Any]?
+    var approvalScreenshotPath: String?
+    if let detectionEval = CDPClient.evaluate(
+          wsURLString: wsURL,
+          expression: detectDedicatedAuthorizationJS()
+        ),
+       let detectionResult = detectionEval["result"] as? [String: Any],
+       let detectionValue = ((detectionResult["result"] as? [String: Any])?["value"]
+         ?? detectionResult["value"]) as? [String: Any],
+       detectionValue["found"] as? Bool == true {
+      approvalDetection = detectionValue
+      approvalScreenshotPath = captureHiddenChatScreenshot(
+        port: endpoint.port,
+        targetId: targetId,
+        label: "approval-watcher-before"
+      )
+      queueTrace(
+        "task=approval-watcher stage=approval-ipc-detected strategy=per-card "
+          + "target=\(targetId) selected=\(detectionValue["selectedLabel"] as? String ?? "none") "
+          + "screenshot=\(approvalScreenshotPath ?? "none") "
+          + approvalDetectionTraceFields(detectionValue)
+      )
+    }
     guard let evalRes = CDPClient.evaluate(wsURLString: wsURL, expression: jsScript),
           let result = evalRes["result"] as? [String: Any],
           let value = ((result["result"] as? [String: Any])?["value"] ?? result["value"]) as? [String: Any] else { continue }
@@ -1790,6 +1927,28 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     totalUnmatched += u
     totalInternalActions += internalActions
     totalDOMEvents += domEvents
+
+    if approvalDetection != nil || a > 0 || b > 0 {
+      queueTrace(
+        "task=approval-watcher stage=approval-ipc-result strategy=per-card "
+          + "target=\(targetId) approved=\(a) pending=\(p) blocked=\(b) unmatched=\(u) "
+          + "internalActions=\(internalActions) domEvents=\(domEvents) "
+          + "screenshot=\(approvalScreenshotPath ?? "none") "
+          + approvalDetectionTraceFields(approvalDetection)
+      )
+      if approvalDetection != nil && a == 0 {
+        let afterPath = captureHiddenChatScreenshot(
+          port: endpoint.port,
+          targetId: targetId,
+          label: "approval-watcher-after"
+        )
+        queueTrace(
+          "task=approval-watcher stage=approval-ipc-unconfirmed strategy=per-card "
+            + "target=\(targetId) beforeScreenshot=\(approvalScreenshotPath ?? "none") "
+            + "afterScreenshot=\(afterPath ?? "none")"
+        )
+      }
+    }
 
     if let audits = value["audits"] as? [[String: Any]] {
       for item in audits {
