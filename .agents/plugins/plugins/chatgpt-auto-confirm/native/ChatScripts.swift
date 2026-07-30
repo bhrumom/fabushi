@@ -1223,6 +1223,8 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
   (async () => {
     const expectedConversationId = \(expected);
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const visible = element => !!(element
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
     const normalizeConversationId = value => {
       const raw = (value || '').trim();
       if (!raw) return '';
@@ -1263,19 +1265,48 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       node.getAttribute?.('title') || '',
       node.textContent || ''
     ].join(' ').replace(/\\s+/g, ' ').trim().toLowerCase();
-    const button = controls.find(node => {
+    const isContinueControl = node => {
       const text = label(node);
       return /\\bcontinue\\s+in\\s+(?:a\\s+)?new\\s+(?:chat|task)\\b/.test(text)
         || /(?:在|从这里).*(?:新任务|新聊天).*(?:继续|分支)/.test(text)
         || /从这里(?:继续|分支).*(?:新任务|新聊天)/.test(text)
         || /在新(?:的)?聊天中(?:创建)?分支/.test(text);
-    });
+    };
+    let button = controls.find(node => visible(node) && isContinueControl(node));
+    let overflowOpened = false;
+    let overflowCandidates = [];
+    if (!button) {
+      const overflow = controls.find(node => {
+        const text = label(node);
+        return visible(node) && (
+          /^more actions(?:\\s|$)/.test(text)
+          || /^more(?:\\s|$)/.test(text)
+          || /^更多(?:操作|动作)?(?:\\s|$)/.test(text)
+        );
+      });
+      if (overflow) {
+        overflow.click();
+        overflowOpened = true;
+        for (let index = 0; index < 30 && !button; index += 1) {
+          await sleep(100);
+          const menuControls = [...document.querySelectorAll(
+            '[role="menuitem"], [role="menu"] button, [role="menu"] a, '
+              + '[data-radix-menu-content] button, [data-radix-menu-content] [role="button"], '
+              + '[data-headlessui-state] [role="menuitem"]'
+          )].filter(visible);
+          overflowCandidates = menuControls.map(label).filter(Boolean).slice(-30);
+          button = menuControls.find(isContinueControl) || null;
+        }
+      }
+    }
     if (!button) {
       return {
         ok: false,
         error: 'continue_in_new_task_button_not_found',
         conversationId: current,
-        candidateControls: controls.map(label).filter(Boolean).slice(-20)
+        overflowOpened,
+        candidateControls: controls.map(label).filter(Boolean).slice(-20),
+        overflowCandidates
       };
     }
 
@@ -1302,6 +1333,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
           return {
             ok: true,
             continuationClicked: true,
+            overflowOpened,
             previousConversationId: current,
             conversationId: nextConversationId,
             stableSamples
@@ -1315,6 +1347,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
     return {
       ok: false,
       error: 'continue_in_new_task_not_confirmed',
+      overflowOpened,
       previousConversationId: current,
       conversationId: currentConversationId()
     };
@@ -1410,11 +1443,26 @@ func getReplyJS() -> String {
         /(?:在|从这里).*(?:新任务|新聊天).*(?:继续|分支)/,
         /从这里(?:继续|分支).*(?:新任务|新聊天)/,
       ]),
-      like: hasResponseControl([/^like(?:\s|$)/, /^喜欢(?:\s|$)/]),
-      dislike: hasResponseControl([/^dislike(?:\s|$)/, /^不喜欢(?:\s|$)/]),
+      moreActions: hasResponseControl([
+        /^more actions(?:\s|$)/,
+        /^more(?:\s|$)/,
+        /^更多(?:操作|动作)?(?:\s|$)/,
+      ]),
+      like: hasResponseControl([
+        /^like(?:\s|$)/,
+        /^good response(?:\s|$)/,
+        /^喜欢(?:\s|$)/,
+        /^好的回答(?:\s|$)/,
+      ]),
+      dislike: hasResponseControl([
+        /^dislike(?:\s|$)/,
+        /^bad response(?:\s|$)/,
+        /^不喜欢(?:\s|$)/,
+        /^不好的回答(?:\s|$)/,
+      ]),
     };
     const responseActionsComplete = responseActions.copy
-      && responseActions.branch
+      && (responseActions.branch || responseActions.moreActions)
       && responseActions.like
       && responseActions.dislike;
 
