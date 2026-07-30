@@ -14,6 +14,10 @@ let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 // `Process` can tear down the child before its CDP endpoint is ready.
 var dedicatedQueueChatLaunchers: [Int: Process] = [:]
 
+func queueUsesHostedRenderer() -> Bool {
+  ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_HOSTED"] == "true"
+}
+
 enum QueueTargetRuntimeState {
   case missing
   case hidden
@@ -80,6 +84,14 @@ func queueTargetRuntimeState(
     timeout: 3.0
   )
   if initial?["visibility"] as? String == "visible" {
+    return .visible
+  }
+  // GitHub-hosted runs intentionally use a normal authenticated web renderer.
+  // It may report hidden while the CDP target remains live; the Chat surface
+  // itself is the readiness signal, not Electron's visibility state.
+  if queueUsesHostedRenderer(),
+     (initial?["chatMode"] as? NSNumber)?.boolValue == true,
+     (initial?["href"] as? String)?.hasPrefix("https://chatgpt.com/") == true {
     return .visible
   }
   if refreshLifecycle {
@@ -945,7 +957,8 @@ func createDedicatedParallelQueueWorkerTarget(
       targetId: targetId,
       refreshLifecycle: true
     )
-    if prepared?["ok"] as? Bool == true, runtimeState == .hidden {
+    let hostedReady = queueUsesHostedRenderer() && runtimeState == .visible
+    if prepared?["ok"] as? Bool == true, (runtimeState == .hidden || hostedReady) {
       state.queueWorkerPort = port
       state.queueWorkerTargetId = targetId
       state.queueWorkerProfilePath = profilePath
