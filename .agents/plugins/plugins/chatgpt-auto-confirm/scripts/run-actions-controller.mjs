@@ -47,6 +47,8 @@ const taskDiagnostics = (queue) => (Array.isArray(queue?.tasks) ? queue.tasks : 
     id: task.id,
     status: task.status,
     attempts: task.attempts,
+    continuationDepth: task.continuationDepth ?? null,
+    maxTaskContinuations: task.maxTaskContinuations ?? null,
     conversationId: task.conversationId || null,
     lastError: task.lastError || null,
     hiddenWorkerLastError: task.hiddenWorkerLastError || null,
@@ -78,7 +80,7 @@ const isNonRecoverableFailure = task => {
   const detail = [task.lastError, task.hiddenWorkerLastError]
     .filter(Boolean)
     .join(' ');
-  return /model_selection\s*:|model_picker_not_found|quick_chat_thinking_not_selected|reasoning_high_not_selected|target_model_not_selected|task_continuation_limit_reached|dependency_not_completed/.test(detail.replace(/\s+/g, ' '));
+  return /model_selection\s*:|model_picker_not_found|quick_chat_thinking_not_selected|reasoning_high_not_selected|target_model_not_selected|connector_selection_not_confirmed|task_continuation_limit_reached|dependency_not_completed/.test(detail.replace(/\s+/g, ' '));
 };
 const watchdogDiagnostics = result => ({
   ok: result?.ok !== false,
