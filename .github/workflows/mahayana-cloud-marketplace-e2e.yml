@@ -108,7 +108,25 @@ jobs:
           set -euo pipefail
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
           "$cli" login test
-          "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" | tee "$RUNNER_TEMP/publish.json"
+          "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" | tee "$RUNNER_TEMP/publish.log"
+          python3 - "$RUNNER_TEMP/publish.log" "$RUNNER_TEMP/publish.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          for offset, character in enumerate(source):
+              if character != "{":
+                  continue
+              try:
+                  value = json.loads(source[offset:])
+              except json.JSONDecodeError:
+                  continue
+              Path(sys.argv[2]).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+              break
+          else:
+              raise SystemExit("Mahayana publish output did not contain a final JSON object")
+          PY
           deployment_url="$(jq -er '.deploymentUrl' "$RUNNER_TEMP/publish.json")"
           case "$deployment_url" in
             https://*.workers.dev|https://*.pages.dev) ;;
@@ -201,6 +219,7 @@ jobs:
           path: |
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
+            ${{ runner.temp }}/publish.log
             ${{ runner.temp }}/publish.json
             ${{ runner.temp }}/plugin-index.html
             ${{ runner.temp }}/plugin-site.json
