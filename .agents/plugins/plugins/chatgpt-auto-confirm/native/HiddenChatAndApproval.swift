@@ -400,6 +400,26 @@ func selectBackgroundConversationJS(_ conversationId: String) -> String {
   (async () => {
     const expected = \(expected);
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const rendered = element => !!(element
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+    const dispatchPointerClick = element => {
+      const rect = element.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.max(1, rect.width / 2) : 1;
+      const clientY = rect ? rect.top + Math.max(1, rect.height / 2) : 1;
+      const pressed = {
+        bubbles: true, cancelable: true, composed: true,
+        button: 0, buttons: 1, clientX, clientY
+      };
+      element.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mousedown', pressed));
+      element.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
     const portalId = () => {
       const raw = document.querySelector('[data-above-composer-conversation-id]')
         ?.getAttribute('data-above-composer-conversation-id') || '';
@@ -431,9 +451,16 @@ func selectBackgroundConversationJS(_ conversationId: String) -> String {
       let decoded = value;
       try { decoded = decodeURIComponent(value); } catch {}
       return decoded === expected || decoded.endsWith(`:${expected}`)
+        || decoded.endsWith(`/c/${expected}`)
+        || decoded.endsWith(`/work/conversation/${expected}`)
         || (expected.startsWith('local-chatgpt:') && decoded.includes(expected));
     };
     const rowMatches = row => {
+      const domCandidates = [
+        row.getAttribute?.('href'), row.getAttribute?.('data-conversation-id'),
+        row.getAttribute?.('data-thread-id'), row.getAttribute?.('data-testid')
+      ];
+      if (domCandidates.some(matches)) return true;
       const fiberKey = Object.keys(row).find(key => key.startsWith('__reactFiber$'));
       let fiber = fiberKey ? row[fiberKey] : null;
       // Stop before the virtual-list parent. That parent contains every item
@@ -455,25 +482,52 @@ func selectBackgroundConversationJS(_ conversationId: String) -> String {
         ? { ok: true, selected: false, alreadyActive: true, messagesReady: true, conversationId: current }
         : { ok: false, error: ready.error, expected, conversationId: current };
     }
-    const rows = [...document.querySelectorAll('[data-thread-title="true"]')]
-      .map(title => title.closest('[role="button"]')).filter(Boolean);
+    const directLinks = [...document.querySelectorAll(
+      `a[href*="/c/${expected}"], a[href*="/work/conversation/${expected}"], `
+        + `[data-conversation-id="${expected}"], [data-thread-id="${expected}"]`
+    )];
+    const titledRows = [...document.querySelectorAll('[data-thread-title="true"]')]
+      .map(title => title.closest('a, button, [role="button"]')).filter(Boolean);
+    const rows = [...new Set([...directLinks, ...titledRows])].filter(rendered);
     const row = rows.find(rowMatches);
-    if (!row) return { ok: false, error: 'conversation_sidebar_row_not_found', expected };
+    if (!row) {
+      return {
+        ok: false,
+        error: 'conversation_sidebar_row_not_found',
+        expected,
+        candidateRowCount: rows.length,
+        directLinkCount: directLinks.length
+      };
+    }
     const previousFingerprint = conversationFingerprint();
-    row.click();
+    const clickStrategy = directLinks.includes(row) ? 'direct-link' : 'sidebar-row';
+    dispatchPointerClick(row);
     for (let index = 0; index < 40; index += 1) {
       await sleep(150);
       const resolved = portalId();
       const input = document.querySelector('#prompt-textarea')
         || document.querySelector('[contenteditable="true"]');
       if (resolved && input && (matches(resolved) || rowMatches(row))) {
-        const ready = await waitForConversationBody(previousFingerprint, true);
+        const exactConversation = matches(resolved);
+        const ready = await waitForConversationBody(previousFingerprint, !exactConversation);
         return ready.ok
-          ? { ok: true, selected: true, messagesReady: true, conversationId: resolved }
-          : { ok: false, error: ready.error, expected, conversationId: resolved };
+          ? {
+              ok: true, selected: true, messagesReady: true,
+              conversationId: resolved, clickStrategy,
+              candidateRowCount: rows.length, directLinkCount: directLinks.length
+            }
+          : {
+              ok: false, error: ready.error, expected,
+              conversationId: resolved, clickStrategy,
+              candidateRowCount: rows.length, directLinkCount: directLinks.length
+            };
       }
     }
-    return { ok: false, error: 'conversation_sidebar_selection_timeout', expected };
+    return {
+      ok: false,
+      error: 'conversation_sidebar_selection_timeout', expected, clickStrategy,
+      candidateRowCount: rows.length, directLinkCount: directLinks.length
+    };
   })()
   """
 }
