@@ -31,6 +31,9 @@ for (const task of state.automationTasks || []) {
     // authorization, and observes its real terminal state. Re-queuing here
     // would skip that recovery and create a new Chat before the prior one had
     // actually finished.
+    // Refresh only the handoff heartbeat so the startup watchdog does not
+    // declare the task stale before the first monitor pass can reattach.
+    task.lastProgressAt = new Date().toISOString();
     task.lastError = 'github_actions_runner_continuation';
     const note = 'GitHub Actions 已在新托管 Runner 中接管。请从同一 checkout 的最新落盘进度继续。';
     task.reviewFeedback = [task.reviewFeedback, note].filter(Boolean).join('\n\n');
