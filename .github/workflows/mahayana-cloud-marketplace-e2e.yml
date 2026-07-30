@@ -68,18 +68,9 @@ jobs:
 
           path = Path("third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs")
           source = path.read_text(encoding="utf-8")
-          old = '''    let message = serde_json::from_str::<Value>(&body)
-              .ok()
-              .and_then(|value| {
-                  value
-                      .get("error")
-                      .or_else(|| value.get("message"))
-                      .and_then(Value::as_str)
-                      .map(str::to_string)
-              })
-              .unwrap_or(body);
-          '''
-          new = '''    let message = serde_json::from_str::<Value>(&body)
+          start = source.index('    let message = serde_json::from_str::<Value>(&body)')
+          end = source.index('    Err(ProductError::HttpStatus {', start)
+          replacement = '''    let message = serde_json::from_str::<Value>(&body)
               .ok()
               .and_then(|value| {
                   let code = value.get("error").and_then(Value::as_str);
@@ -95,9 +86,7 @@ jobs:
               })
               .unwrap_or(body);
           '''
-          if source.count(old) != 1:
-              raise SystemExit("unexpected Mahayana API error decoder")
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          path.write_text(source[:start] + replacement + source[end:], encoding="utf-8")
           PY
           cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
           cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client
