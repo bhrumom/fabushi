@@ -137,6 +137,12 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /responseActions\.branch/);
   assert.match(nativeSource, /responseActions\.like/);
   assert.match(nativeSource, /responseActions\.dislike/);
+  assert.match(nativeSource, /retainedConversationDiagnosticCount = 5/);
+  assert.match(nativeSource, /\.live\.json/);
+  assert.match(nativeSource, /\.final\.json/);
+  assert.match(nativeSource, /writeQueueConversationDiagnostic\(task\)/);
+  assert.match(nativeSource, /finalReason: "terminal_observed"/);
+  assert.match(nativeSource, /pruneQueueConversationDiagnostics/);
   assert.match(nativeSource, /data-content-search-unit-key\$=":assistant"/);
   assert.match(nativeSource, /data-content-search-unit-key\$=":user"/);
   assert.match(nativeSource, /const appUserBubbles =/);

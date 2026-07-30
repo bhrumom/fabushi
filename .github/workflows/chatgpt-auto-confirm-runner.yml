@@ -85,6 +85,10 @@ jobs:
               -pass env:CHATGPT_AUTO_CONFIRM_STATE_KEY \
               -in "$RUNNER_TEMP/previous-state/queue-state.enc" \
               -out "$STATE_PATH"
+            if [[ -d "$RUNNER_TEMP/previous-state/diagnostics" ]]; then
+              ditto "$RUNNER_TEMP/previous-state/diagnostics" \
+                "$(dirname "$STATE_PATH")/diagnostics"
+            fi
           else
             test -n "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64"
             printf '%s' "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64" |

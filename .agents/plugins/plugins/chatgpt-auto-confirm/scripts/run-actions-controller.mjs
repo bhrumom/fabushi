@@ -42,6 +42,12 @@ const run = (command, params = undefined) => {
   return payload;
 };
 
+const recognitionDiagnostics = task => {
+  if (!task.replyDiagnostics) return null;
+  const { pageSnapshot: _pageSnapshot, ...recognition } = task.replyDiagnostics;
+  return recognition;
+};
+
 const taskDiagnostics = (queue) => (Array.isArray(queue?.tasks) ? queue.tasks : [])
   .map(task => ({
     id: task.id,
@@ -53,6 +59,15 @@ const taskDiagnostics = (queue) => (Array.isArray(queue?.tasks) ? queue.tasks : 
     lastError: task.lastError || null,
     hiddenWorkerLastError: task.hiddenWorkerLastError || null,
     lastProgressAt: task.lastProgressAt || null,
+    replyDiagnostics: recognitionDiagnostics(task),
+  }));
+
+const pageDiagnostics = queue => (Array.isArray(queue?.tasks) ? queue.tasks : [])
+  .filter(task => task.replyDiagnostics?.pageSnapshot)
+  .map(task => ({
+    id: task.id,
+    conversationId: task.conversationId || null,
+    page: task.replyDiagnostics.pageSnapshot,
   }));
 
 const writeResult = (status, queue, reason) => {
@@ -97,6 +112,8 @@ const initialRecovery = run('queue_watchdog', { staleAfterSeconds: 300, force: t
 process.stdout.write(`WATCHDOG_INITIAL ${JSON.stringify(watchdogDiagnostics(initialRecovery))}\n`);
 let lastRecovery = 0;
 let lastQueueFingerprint = '';
+let lastPageFingerprint = '';
+let lastTraceFingerprint = '';
 let lastFailureFingerprint = '';
 let sameFailureRecoveries = 0;
 while (Date.now() < deadline) {
@@ -104,8 +121,19 @@ while (Date.now() < deadline) {
   const tasks = Array.isArray(queue.tasks) ? queue.tasks : [];
   const fingerprint = queueFingerprint(queue);
   if (fingerprint !== lastQueueFingerprint) {
-    process.stdout.write(`QUEUE_STATUS ${fingerprint}\n`);
+    process.stdout.write(`QUEUE_RECOGNITION ${fingerprint}\n`);
     lastQueueFingerprint = fingerprint;
+  }
+  const pageFingerprint = JSON.stringify(pageDiagnostics(queue));
+  if (pageFingerprint !== lastPageFingerprint) {
+    process.stdout.write(`QUEUE_PAGE ${pageFingerprint}\n`);
+    lastPageFingerprint = pageFingerprint;
+  }
+  const trace = Array.isArray(queue.watcherTrace) ? queue.watcherTrace : [];
+  const traceFingerprint = JSON.stringify(trace);
+  if (traceFingerprint !== lastTraceFingerprint) {
+    process.stdout.write(`QUEUE_TRACE ${traceFingerprint}\n`);
+    lastTraceFingerprint = traceFingerprint;
   }
   if (tasks.length === 0) {
     writeResult('failed', queue, 'no_tasks_configured');
