@@ -43,7 +43,8 @@ test('hosted runner rotation preserves the conversation needed for serial contin
   const [task] = prepared.automationTasks;
   assert.equal(task.status, 'running');
   assert.equal(task.startedAt, '2026-07-30T08:58:58Z');
-  assert.equal(task.lastProgressAt, '2026-07-30T09:03:00Z');
+  assert.notEqual(task.lastProgressAt, '2026-07-30T09:03:00Z');
+  assert.ok(Number.isFinite(Date.parse(task.lastProgressAt)));
   assert.equal(task.conversationId, 'conversation-to-continue');
   assert.equal(task.chatURL, 'https://chatgpt.com/c/conversation-to-continue');
   assert.equal(task.workerPid, null);
