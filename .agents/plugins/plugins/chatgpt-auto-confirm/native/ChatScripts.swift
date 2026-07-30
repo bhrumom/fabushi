@@ -1224,7 +1224,26 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
     const expectedConversationId = \(expected);
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const visible = element => !!(element
+      && !element.disabled
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+    const dispatchPointerClick = element => {
+      const rect = element.getBoundingClientRect?.();
+      const clientX = rect ? rect.left + Math.max(1, rect.width / 2) : 1;
+      const clientY = rect ? rect.top + Math.max(1, rect.height / 2) : 1;
+      const pressed = {
+        bubbles: true, cancelable: true, composed: true,
+        button: 0, buttons: 1, clientX, clientY
+      };
+      element.dispatchEvent(new PointerEvent('pointerdown', {
+        ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mousedown', pressed));
+      element.dispatchEvent(new PointerEvent('pointerup', {
+        ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
+      }));
+      element.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+    };
     const normalizeConversationId = value => {
       const raw = (value || '').trim();
       if (!raw) return '';
@@ -1257,9 +1276,16 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       'article, [data-testid^="conversation-turn-"], '
         + '[data-content-search-turn-key], [data-turn-key]'
     ) || last?.parentElement?.parentElement || last;
-    const controls = [...(responseTurn?.querySelectorAll(
+    const responseControls = [...(responseTurn?.querySelectorAll(
       'button, a, [role="button"], [aria-label], [title]'
     ) || [])];
+    // Desktop releases sometimes portal the latest response actions outside
+    // the turn container. Include global controls, then prefer the last match
+    // so an older response cannot receive the continuation click.
+    const globalControls = [...document.querySelectorAll(
+      'button, a, [role="button"], [aria-label], [title]'
+    )];
+    const controls = [...new Set([...responseControls, ...globalControls])];
     const label = node => [
       node.getAttribute?.('aria-label') || '',
       node.getAttribute?.('title') || '',
@@ -1272,11 +1298,12 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
         || /从这里(?:继续|分支).*(?:新任务|新聊天)/.test(text)
         || /在新(?:的)?聊天中(?:创建)?分支/.test(text);
     };
-    let button = controls.find(node => visible(node) && isContinueControl(node));
+    let button = [...controls].reverse()
+      .find(node => visible(node) && isContinueControl(node));
     let overflowOpened = false;
     let overflowCandidates = [];
     if (!button) {
-      const overflow = controls.find(node => {
+      const overflow = [...controls].reverse().find(node => {
         const text = label(node);
         return visible(node) && (
           /^more actions(?:\\s|$)/.test(text)
@@ -1285,7 +1312,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
         );
       });
       if (overflow) {
-        overflow.click();
+        dispatchPointerClick(overflow);
         overflowOpened = true;
         for (let index = 0; index < 30 && !button; index += 1) {
           await sleep(100);
@@ -1295,7 +1322,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
               + '[data-headlessui-state] [role="menuitem"]'
           )].filter(visible);
           overflowCandidates = menuControls.map(label).filter(Boolean).slice(-30);
-          button = menuControls.find(isContinueControl) || null;
+          button = [...menuControls].reverse().find(isContinueControl) || null;
         }
       }
     }
@@ -1310,7 +1337,8 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       };
     }
 
-    button.click();
+    const continuationLabel = label(button);
+    dispatchPointerClick(button);
     let stableConversationId = '';
     let stableSamples = 0;
     for (let index = 0; index < 120; index += 1) {
@@ -1334,6 +1362,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
             ok: true,
             continuationClicked: true,
             overflowOpened,
+            continuationLabel,
             previousConversationId: current,
             conversationId: nextConversationId,
             stableSamples
@@ -1348,6 +1377,7 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       ok: false,
       error: 'continue_in_new_task_not_confirmed',
       overflowOpened,
+      continuationLabel,
       previousConversationId: current,
       conversationId: currentConversationId()
     };

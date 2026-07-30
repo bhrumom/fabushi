@@ -1387,7 +1387,7 @@ func startAutomationTask(
       prepared = [
         "ok": false,
         "error": restoration["error"] as? String
-          ?? "continuation_navigation_failed",
+          ?? "continuation_conversation_click_failed",
         "conversationId": previousConversationId,
       ]
     }
@@ -1395,7 +1395,9 @@ func startAutomationTask(
       "task=\(task.id) stage=prepare-continuation "
         + "restored=\(restorationSucceeded) "
         + "strategy=\(restoration["strategy"] as? String ?? "none") "
+        + "conversationClick=\(restoration["clickStrategy"] as? String ?? "none") "
         + "clicked=\(prepared?["continuationClicked"] as? Bool == true) "
+        + "continuationLabel=\(prepared?["continuationLabel"] as? String ?? "none") "
         + "newConversation=\(prepared?["conversationId"] as? String ?? "none") "
         + "error=\(prepared?["error"] as? String ?? "none")"
     )
