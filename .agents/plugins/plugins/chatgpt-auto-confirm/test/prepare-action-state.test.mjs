@@ -17,6 +17,8 @@ test('hosted runner rotation preserves the conversation needed for serial contin
       status: 'running',
       attempts: 7,
       continuationDepth: 2,
+      startedAt: '2026-07-30T08:58:58Z',
+      lastProgressAt: '2026-07-30T09:03:00Z',
       conversationId: 'conversation-to-continue',
       chatURL: 'https://chatgpt.com/c/conversation-to-continue',
       workerPid: 123,
@@ -36,7 +38,9 @@ test('hosted runner rotation preserves the conversation needed for serial contin
 
   const prepared = JSON.parse(readFileSync(statePath, 'utf8'));
   const [task] = prepared.automationTasks;
-  assert.equal(task.status, 'queued');
+  assert.equal(task.status, 'running');
+  assert.equal(task.startedAt, '2026-07-30T08:58:58Z');
+  assert.equal(task.lastProgressAt, '2026-07-30T09:03:00Z');
   assert.equal(task.conversationId, 'conversation-to-continue');
   assert.equal(task.chatURL, 'https://chatgpt.com/c/conversation-to-continue');
   assert.equal(task.workerPid, null);
