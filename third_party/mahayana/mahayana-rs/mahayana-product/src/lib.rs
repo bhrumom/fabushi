@@ -1043,13 +1043,12 @@ fn https_deployment_url(value: &str) -> Result<String, ProductError> {
     Ok(url.to_string().trim_end_matches('/').to_string())
 }
 
-
 fn safe_marketplace_version(value: &str) -> Result<&str, ProductError> {
     let value = non_empty(value, "version")?;
     ((1..=128).contains(&value.len())
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+')
-        }))
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+')))
     .then_some(value)
     .ok_or(ProductError::InvalidParameter("version"))
 }
