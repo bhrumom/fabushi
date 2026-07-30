@@ -28,10 +28,12 @@ use serde::Serialize;
 use serde_json::json;
 use sha2::Digest;
 use sha2::Sha256;
+use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
 use worker::Context;
 use worker::Date;
+use worker::Delay;
 use worker::Env;
 use worker::Fetch;
 use worker::FormEntry;
@@ -55,6 +57,8 @@ const MAX_ACCOUNT_LOGIN_FAILURES: i64 = 10;
 const USAGE_WINDOW_SECONDS: i64 = 30 * 24 * 60 * 60;
 const USAGE_RESERVATION_SECONDS: i64 = 10 * 60;
 const MAX_TOKENS_PER_RESERVATION: i64 = 2_000_000;
+const MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS: usize = 6;
+const MARKETPLACE_DEPLOYMENT_VERIFY_DELAY_SECONDS: u64 = 3;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1063,7 +1067,7 @@ async fn marketplace_release_publish(
         );
     }
 
-    let remote_package = match verified_marketplace_site_package(
+    let remote_package = match verified_marketplace_site_package_with_retry(
         &deployment_url,
         &plugin_id,
         &version,
@@ -2309,6 +2313,39 @@ async fn fetch_verified_marketplace_package(
         return Err("Cloudflare plugin package SHA-256 does not match approved metadata.".into());
     }
     Ok(package)
+}
+
+async fn verified_marketplace_site_package_with_retry(
+    deployment_url: &str,
+    plugin_id: &str,
+    version: &str,
+    expected_sha256: &str,
+    expected_size: usize,
+) -> std::result::Result<Vec<u8>, String> {
+    let mut last_error = "Cloudflare plugin deployment is not available yet.".to_string();
+    for attempt in 1..=MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS {
+        match verified_marketplace_site_package(
+            deployment_url,
+            plugin_id,
+            version,
+            expected_sha256,
+            expected_size,
+        )
+        .await
+        {
+            Ok(package) => return Ok(package),
+            Err(error) => last_error = error,
+        }
+        if attempt < MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS {
+            Delay::from(Duration::from_secs(
+                MARKETPLACE_DEPLOYMENT_VERIFY_DELAY_SECONDS,
+            ))
+            .await;
+        }
+    }
+    Err(format!(
+        "Cloudflare plugin deployment verification failed after {MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS} attempts: {last_error}"
+    ))
 }
 
 async fn verified_marketplace_site_package(

@@ -22,6 +22,7 @@ use std::env;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::thread;
 use std::time::Duration;
 
 const DEFAULT_API_BASE_URL: &str = "https://api.ombhrum.com";
@@ -275,6 +276,53 @@ impl MahayanaProductClient {
             ));
         }
         Ok(bytes)
+    }
+
+    /// Wait until a newly deployed Cloudflare plugin site serves the exact
+    /// release manifest and package. Cloudflare deployments can report success
+    /// before static assets are readable from every edge, while the platform
+    /// intentionally performs an immediate authoritative verification.
+    pub fn wait_for_marketplace_deployment(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        deployment_url: &str,
+        package_sha256: &str,
+        package_size: u64,
+    ) -> Result<(), ProductError> {
+        let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+        let version = safe_marketplace_version(version)?;
+        let deployment_url = https_deployment_url(deployment_url)?;
+        let package_sha256 = safe_sha256(package_sha256)?;
+        if package_size == 0 || package_size > 50 * 1024 * 1024 {
+            return Err(ProductError::InvalidParameter("packageSize"));
+        }
+        let package_size = usize::try_from(package_size)
+            .map_err(|_| ProductError::InvalidParameter("packageSize"))?;
+        let client = http_client()?;
+        let manifest_url = format!("{deployment_url}/mahayana/plugin.json");
+        let package_url = format!("{deployment_url}/mahayana/plugin.tar.gz");
+        let mut last_error = "deployment assets are not available yet".to_string();
+        for attempt in 1..=24 {
+            match verify_marketplace_deployment_once(
+                &client,
+                &manifest_url,
+                &package_url,
+                plugin_id,
+                version,
+                package_sha256,
+                package_size,
+            ) {
+                Ok(()) => return Ok(()),
+                Err(error) => last_error = error,
+            }
+            if attempt < 24 {
+                thread::sleep(Duration::from_secs(5));
+            }
+        }
+        Err(ProductError::Response(format!(
+            "Cloudflare plugin deployment did not become verifiable: {last_error}"
+        )))
     }
 
     pub fn publish_plugin(
@@ -1021,6 +1069,111 @@ impl MahayanaProductClient {
     }
 }
 
+fn verify_marketplace_deployment_once(
+    client: &reqwest::blocking::Client,
+    manifest_url: &str,
+    package_url: &str,
+    plugin_id: &str,
+    version: &str,
+    package_sha256: &str,
+    package_size: usize,
+) -> Result<(), String> {
+    let mut manifest_response = client
+        .get(manifest_url)
+        .header("Accept", "application/json")
+        .send()
+        .map_err(|error| format!("failed to fetch plugin manifest: {error}"))?;
+    if !manifest_response.status().is_success() {
+        return Err(format!(
+            "plugin manifest returned HTTP {}",
+            manifest_response.status()
+        ));
+    }
+    if manifest_response
+        .content_length()
+        .is_some_and(|length| length > 64 * 1024)
+    {
+        return Err("plugin manifest exceeds 64 KiB".into());
+    }
+    let mut manifest_bytes = Vec::with_capacity(
+        manifest_response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0)
+            .min(64 * 1024),
+    );
+    manifest_response
+        .take(64 * 1024 + 1)
+        .read_to_end(&mut manifest_bytes)
+        .map_err(|error| format!("failed to read plugin manifest: {error}"))?;
+    if manifest_bytes.len() > 64 * 1024 {
+        return Err("plugin manifest exceeds 64 KiB".into());
+    }
+    let manifest = serde_json::from_slice::<Value>(&manifest_bytes)
+        .map_err(|error| format!("plugin manifest is invalid JSON: {error}"))?;
+    validate_marketplace_site_manifest(
+        &manifest,
+        plugin_id,
+        version,
+        package_sha256,
+        package_size,
+    )?;
+
+    let mut package_response = client
+        .get(package_url)
+        .send()
+        .map_err(|error| format!("failed to fetch plugin package: {error}"))?;
+    if !package_response.status().is_success() {
+        return Err(format!(
+            "plugin package returned HTTP {}",
+            package_response.status()
+        ));
+    }
+    if package_response
+        .content_length()
+        .is_some_and(|length| length != package_size as u64)
+    {
+        return Err("plugin package size does not match release metadata".into());
+    }
+    let mut package = Vec::with_capacity(package_size);
+    package_response
+        .take(package_size as u64 + 1)
+        .read_to_end(&mut package)
+        .map_err(|error| format!("failed to read plugin package: {error}"))?;
+    if package.len() != package_size {
+        return Err("plugin package size does not match release metadata".into());
+    }
+    let actual_sha256 = format!("{:x}", sha2::Sha256::digest(&package));
+    if !actual_sha256.eq_ignore_ascii_case(package_sha256) {
+        return Err("plugin package SHA-256 does not match release metadata".into());
+    }
+    Ok(())
+}
+
+fn validate_marketplace_site_manifest(
+    manifest: &Value,
+    plugin_id: &str,
+    version: &str,
+    package_sha256: &str,
+    package_size: usize,
+) -> Result<(), String> {
+    let matches = manifest.get("schemaVersion").and_then(Value::as_u64) == Some(1)
+        && manifest.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
+        && manifest.get("version").and_then(Value::as_str) == Some(version)
+        && manifest.get("packagePath").and_then(Value::as_str)
+            == Some("/mahayana/plugin.tar.gz")
+        && manifest
+            .get("packageSha256")
+            .and_then(Value::as_str)
+            .is_some_and(|digest| digest.eq_ignore_ascii_case(package_sha256))
+        && manifest.get("packageSize").and_then(Value::as_u64) == Some(package_size as u64)
+        && manifest.get("runtime").and_then(Value::as_str)
+            == Some("independent-worker-or-pages");
+    matches
+        .then_some(())
+        .ok_or_else(|| "plugin manifest does not match release metadata".to_string())
+}
+
 fn https_deployment_url(value: &str) -> Result<String, ProductError> {
     let mut url = url::Url::parse(value.trim())
         .map_err(|_| ProductError::InvalidParameter("deploymentUrl"))?;
@@ -1493,6 +1646,42 @@ mod tests {
         assert_eq!(
             safe_platform_path("/api/../admin"),
             Err(ProductError::InvalidParameter("path"))
+        );
+    }
+
+    #[test]
+    fn marketplace_site_manifest_must_match_release_metadata() {
+        let digest = "a".repeat(64);
+        let manifest = json!({
+            "schemaVersion": 1,
+            "pluginId": "cloud-market-hello",
+            "version": "1.0.0",
+            "packagePath": "/mahayana/plugin.tar.gz",
+            "packageSha256": digest,
+            "packageSize": 4706,
+            "runtime": "independent-worker-or-pages",
+        });
+        assert_eq!(
+            validate_marketplace_site_manifest(
+                &manifest,
+                "cloud-market-hello",
+                "1.0.0",
+                &"a".repeat(64),
+                4706,
+            ),
+            Ok(())
+        );
+        let mut wrong_runtime = manifest;
+        wrong_runtime["runtime"] = Value::String("r2-package".into());
+        assert!(
+            validate_marketplace_site_manifest(
+                &wrong_runtime,
+                "cloud-market-hello",
+                "1.0.0",
+                &"a".repeat(64),
+                4706,
+            )
+            .is_err()
         );
     }
 

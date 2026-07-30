@@ -847,7 +847,17 @@ fn plugin_command(
             let deployment_url = deployment_url
                 .map(Ok)
                 .unwrap_or_else(|| plugin_dev::deploy_plugin_site(&path))?;
-            let response = MahayanaProductClient::default()
+            let client = MahayanaProductClient::default();
+            client
+                .wait_for_marketplace_deployment(
+                    &plugin_id,
+                    &version,
+                    &deployment_url,
+                    &package_sha256,
+                    package_size,
+                )
+                .map_err(|error| error.to_string())?;
+            let response = client
                 .publish_plugin(
                     &plugin_id,
                     &version,
