@@ -1196,10 +1196,18 @@ async fn marketplace_release_metadata(
     };
     let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
     let Some(package_size) = exact_nonnegative_i64(row.package_size) else {
-        return error_response(503, "marketplace_package_size_invalid", "The approved release has an invalid package size.");
+        return error_response(
+            503,
+            "marketplace_package_size_invalid",
+            "The approved release has an invalid package size.",
+        );
     };
     let Some(published_at) = exact_nonnegative_i64(row.published_at) else {
-        return error_response(503, "marketplace_published_at_invalid", "The approved release has an invalid published timestamp.");
+        return error_response(
+            503,
+            "marketplace_published_at_invalid",
+            "The approved release has an invalid published timestamp.",
+        );
     };
     Response::from_json(&json!({
         "pluginId": row.plugin_id,
@@ -1247,7 +1255,9 @@ async fn marketplace_plugin_download(
             "The approved release does not point to a valid Cloudflare Pages/Worker site.",
         );
     }
-    let package_size = match exact_nonnegative_i64(release.package_size).and_then(|size| usize::try_from(size).ok()) {
+    let package_size = match exact_nonnegative_i64(release.package_size)
+        .and_then(|size| usize::try_from(size).ok())
+    {
         Some(size) if size > 0 && size <= 50 * 1024 * 1024 => size,
         _ => {
             return error_response(
