@@ -1,0 +1,56 @@
+name: Mahayana Marketplace D1 Number Fix
+
+on:
+  push:
+    branches:
+      - codex/mahayana-marketplace-parallel-20260726-r16
+    paths:
+      - .github/workflows/mahayana-marketplace-d1-number-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/mahayana-marketplace-parallel-20260726-r16
+          fetch-depth: 0
+      - name: Patch D1 numeric decoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs')
+          s = p.read_text()
+          replacements = [
+              ('    package_size: Option<i64>,\n    platforms_json: String,\n    deployment_url: Option<String>,\n    published_at: Option<i64>,', '    package_size: Option<f64>,\n    platforms_json: String,\n    deployment_url: Option<String>,\n    published_at: Option<f64>,'),
+              ('    package_size: i64,\n    deployment_url: String,\n    published_at: i64,', '    package_size: f64,\n    deployment_url: String,\n    published_at: f64,'),
+              ('    deployment_url: String,\n    package_sha256: String,\n    package_size: i64,', '    deployment_url: String,\n    package_sha256: String,\n    package_size: f64,'),
+              ('                "packageSize": row.package_size,\n                "platforms": platforms,\n                "deploymentUrl": row.deployment_url,\n                "publishedAt": row.published_at,', '                "packageSize": row.package_size.and_then(exact_nonnegative_i64),\n                "platforms": platforms,\n                "deploymentUrl": row.deployment_url,\n                "publishedAt": row.published_at.and_then(exact_nonnegative_i64),'),
+              ('    let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();\n    Response::from_json(&json!({', '    let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();\n    let Some(package_size) = exact_nonnegative_i64(row.package_size) else {\n        return error_response(503, "marketplace_package_size_invalid", "The approved release has an invalid package size.");\n    };\n    let Some(published_at) = exact_nonnegative_i64(row.published_at) else {\n        return error_response(503, "marketplace_published_at_invalid", "The approved release has an invalid published timestamp.");\n    };\n    Response::from_json(&json!({'),
+              ('        "packageSize": row.package_size,\n        "deploymentUrl": row.deployment_url,\n        "publishedAt": row.published_at,', '        "packageSize": package_size,\n        "deploymentUrl": row.deployment_url,\n        "publishedAt": published_at,'),
+              ('    let package_size = match usize::try_from(release.package_size) {\n        Ok(size) if size > 0 && size <= 50 * 1024 * 1024 => size,', '    let package_size = match exact_nonnegative_i64(release.package_size).and_then(|size| usize::try_from(size).ok()) {\n        Some(size) if size > 0 && size <= 50 * 1024 * 1024 => size,'),
+              ('    headers.set("Content-Length", &release.package_size.to_string())?;', '    headers.set("Content-Length", &package_size.to_string())?;'),
+              ('fn is_version_identifier(value: &str) -> bool {', 'fn exact_nonnegative_i64(value: f64) -> Option<i64> {\n    (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value <= i64::MAX as f64)\n        .then_some(value as i64)\n}\n\nfn is_version_identifier(value: &str) -> bool {'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f'unexpected replacement count {s.count(old)} for {old[:80]!r}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
+      - name: Commit focused fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
+          git commit -m "Fix marketplace D1 numeric decoding"
+          git push origin HEAD:codex/mahayana-marketplace-parallel-20260726-r16
