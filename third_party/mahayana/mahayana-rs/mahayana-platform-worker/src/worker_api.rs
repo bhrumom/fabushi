@@ -67,10 +67,10 @@ struct MarketplacePluginRow {
     description: String,
     latest_version: Option<String>,
     package_sha256: Option<String>,
-    package_size: Option<i64>,
+    package_size: Option<f64>,
     platforms_json: String,
     deployment_url: Option<String>,
-    published_at: Option<i64>,
+    published_at: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,9 +78,9 @@ struct MarketplaceReleaseMetadataRow {
     plugin_id: String,
     version: String,
     package_sha256: String,
-    package_size: i64,
+    package_size: f64,
     deployment_url: String,
-    published_at: i64,
+    published_at: f64,
     platforms_json: String,
 }
 
@@ -88,7 +88,7 @@ struct MarketplaceReleaseMetadataRow {
 struct MarketplaceReleaseDownloadRow {
     deployment_url: String,
     package_sha256: String,
-    package_size: i64,
+    package_size: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -943,10 +943,10 @@ async fn marketplace_plugins(request: Request, context: RouteContext<()>) -> Res
                 "description": row.description,
                 "latestVersion": row.latest_version,
                 "packageSha256": row.package_sha256,
-                "packageSize": row.package_size,
+                "packageSize": row.package_size.and_then(exact_nonnegative_i64),
                 "platforms": platforms,
                 "deploymentUrl": row.deployment_url,
-                "publishedAt": row.published_at,
+                "publishedAt": row.published_at.and_then(exact_nonnegative_i64),
             })
         })
         .collect::<Vec<_>>();
@@ -1195,13 +1195,19 @@ async fn marketplace_release_metadata(
         );
     };
     let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
+    let Some(package_size) = exact_nonnegative_i64(row.package_size) else {
+        return error_response(503, "marketplace_package_size_invalid", "The approved release has an invalid package size.");
+    };
+    let Some(published_at) = exact_nonnegative_i64(row.published_at) else {
+        return error_response(503, "marketplace_published_at_invalid", "The approved release has an invalid published timestamp.");
+    };
     Response::from_json(&json!({
         "pluginId": row.plugin_id,
         "version": row.version,
         "packageSha256": row.package_sha256,
-        "packageSize": row.package_size,
+        "packageSize": package_size,
         "deploymentUrl": row.deployment_url,
-        "publishedAt": row.published_at,
+        "publishedAt": published_at,
         "platforms": platforms,
     }))
 }
@@ -1241,8 +1247,8 @@ async fn marketplace_plugin_download(
             "The approved release does not point to a valid Cloudflare Pages/Worker site.",
         );
     }
-    let package_size = match usize::try_from(release.package_size) {
-        Ok(size) if size > 0 && size <= 50 * 1024 * 1024 => size,
+    let package_size = match exact_nonnegative_i64(release.package_size).and_then(|size| usize::try_from(size).ok()) {
+        Some(size) if size > 0 && size <= 50 * 1024 * 1024 => size,
         _ => {
             return error_response(
                 503,
@@ -1269,7 +1275,7 @@ async fn marketplace_plugin_download(
         "Content-Disposition",
         &format!("attachment; filename=\"{plugin_id}-{version}.tar.gz\""),
     )?;
-    headers.set("Content-Length", &release.package_size.to_string())?;
+    headers.set("Content-Length", &package_size.to_string())?;
     headers.set("X-Mahayana-Package-Sha256", &release.package_sha256)?;
     headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
     Ok(Response::from_bytes(package)?.with_headers(headers))
@@ -2393,6 +2399,11 @@ fn route_version(context: &RouteContext<()>) -> Result<&str> {
         .map(String::as_str)
         .filter(|value| is_version_identifier(value))
         .ok_or_else(|| worker::Error::RustError("invalid route parameter version".into()))
+}
+
+fn exact_nonnegative_i64(value: f64) -> Option<i64> {
+    (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value <= i64::MAX as f64)
+        .then_some(value as i64)
 }
 
 fn is_version_identifier(value: &str) -> bool {
