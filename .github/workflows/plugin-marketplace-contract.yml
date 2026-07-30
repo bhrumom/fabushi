@@ -29,6 +29,7 @@ on:
 permissions:
   contents: read
 
+# Keep the contract and Cloudflare-backed install path in one required check.
 jobs:
   contract:
     runs-on: ubuntu-latest
