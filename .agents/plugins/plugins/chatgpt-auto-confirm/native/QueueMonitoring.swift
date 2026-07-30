@@ -235,6 +235,22 @@ func monitorAutomationTask(
     reply["userContent"] as? String ?? "",
   ].joined(separator: "\n")
   let hasCurrentDispatchMarker = currentPageContent.contains(dispatchMarker)
+  let replyIsActivelyResponding = reply["streaming"] as? Bool == true
+    || reply["stopAvailable"] as? Bool == true
+    || reply["waitingForApproval"] as? Bool == true
+    || reply["devspaceWaiting"] as? Bool == true
+  let replyIsPending = reply["pending"] as? Bool == true
+  let responseIsInFlight = replyIsActivelyResponding || replyIsPending
+  let dispatchAge = task.startedAt
+    .flatMap(isoFormatter.date(from:))
+    .map { Date().timeIntervalSince($0) } ?? 0
+  let observedActivitySignature = reply["activitySignature"] as? String ?? ""
+  if responseIsInFlight,
+     !observedActivitySignature.isEmpty,
+     observedActivitySignature != task.lastActivitySignature {
+    task.lastActivitySignature = observedActivitySignature
+    task.lastProgressAt = now
+  }
   // The hidden queue renderer can still drift after an internal reload. Never
   // parse a stale page as the active task or create a continuation/review Chat
   // from it. Restoring here is safe because this process has no user composer.
@@ -268,14 +284,28 @@ func monitorAutomationTask(
       // sidebar and body asynchronously. It is not evidence of a manual
       // switch. Wait for the dispatch marker instead of pausing every queued
       // task; recover in one fresh Chat only if that binding never arrives.
-      if conversationId.hasPrefix("local-chatgpt:") {
-        if let startedAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
-           Date().timeIntervalSince(startedAt) >= 45 {
-          queueContinuation(&task, report: nil, reason: "fresh_chat_body_pending_timeout")
-        } else {
-          task.lastError = "queue_monitor_conversation_body_pending"
-          task.updatedAt = now
+      // Never navigate away from or close a renderer while ChatGPT is still
+      // responding. Closing the hidden target cancels the server-side stream
+      // and is exactly what users see as an automatically stopped reply.
+      if responseIsInFlight || dispatchAge < 300 {
+        let pendingReason = responseIsInFlight
+          ? "queue_monitor_conversation_marker_active"
+          : "queue_monitor_conversation_marker_grace"
+        if task.lastError != pendingReason {
+          queueTrace(
+            "task=\(task.id) stage=monitor-pending reason=\(pendingReason) "
+              + "expectedConversation=\(conversationId) observedConversation=\(observed) "
+              + "dispatchAge=\(Int(dispatchAge)) streaming=\(replyIsActivelyResponding) "
+              + "pending=\(replyIsPending) stopAvailable=\(reply["stopAvailable"] as? Bool == true) "
+              + "userMessages=\(reply["userMessageCount"] as? Int ?? 0)"
+          )
         }
+        task.lastError = pendingReason
+        task.updatedAt = now
+        return
+      }
+      if conversationId.hasPrefix("local-chatgpt:") {
+        queueContinuation(&task, report: nil, reason: "fresh_chat_body_pending_timeout")
         return
       }
       let restoredOK = navigateHiddenConversation(
@@ -304,11 +334,17 @@ func monitorAutomationTask(
   // because the route/id already matches. The user-message marker is the
   // durable proof that the body belongs to the current queue attempt.
   if !hasCurrentDispatchMarker {
-    let markerError = "queue_monitor_current_dispatch_marker_pending"
+    let markerError = responseIsInFlight
+      ? "queue_monitor_current_dispatch_marker_active"
+      : "queue_monitor_current_dispatch_marker_pending"
     if task.lastError != markerError {
       queueTrace(
         "task=\(task.id) stage=monitor-pending reason=\(markerError) "
-          + "conversation=\(conversationId) expectedMarker=\(dispatchMarker)"
+          + "conversation=\(conversationId) expectedMarker=\(dispatchMarker) "
+          + "dispatchAge=\(Int(dispatchAge)) streaming=\(replyIsActivelyResponding) "
+          + "pending=\(replyIsPending) stopAvailable=\(reply["stopAvailable"] as? Bool == true) "
+          + "userMessages=\(reply["userMessageCount"] as? Int ?? 0) "
+          + "userContentChars=\((reply["userContent"] as? String ?? "").count)"
       )
     }
     task.lastError = markerError
@@ -320,8 +356,7 @@ func monitorAutomationTask(
       "expectedDispatchMarker": dispatchMarker,
       "hasCurrentDispatchMarker": false,
     ])
-    if let startedAt = task.startedAt.flatMap(isoFormatter.date(from:)),
-       Date().timeIntervalSince(startedAt) >= 120 {
+    if !responseIsInFlight, dispatchAge >= 300 {
       closeDedicatedAutomationTarget(task, state: state)
       queueContinuation(
         &task,
@@ -531,62 +566,41 @@ func monitorAutomationTask(
 
   if let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
      Date().timeIntervalSince(lastProgressAt) >= 1200 {
-    _ = cdpValue(
-      port: port, targetId: targetId, expression: stopCurrentResponseJS(), timeout: 12.0)
+    if responseIsInFlight {
+      let activeStallError = "page_stalled_but_response_active"
+      if task.lastError != activeStallError {
+        queueTrace(
+          "task=\(task.id) stage=monitor-preserved reason=\(activeStallError) "
+            + "streaming=\(replyIsActivelyResponding) pending=\(replyIsPending) "
+            + "stopAvailable=\(reply["stopAvailable"] as? Bool == true)"
+        )
+      }
+      // An active ChatGPT stream may legitimately spend a long time inside a
+      // connector. Never click Stop or close its renderer merely because no
+      // visible text changed; the hosted session deadline remains the outer
+      // bound and preserves the conversation for diagnosis.
+      task.lastError = activeStallError
+      task.updatedAt = now
+      return
+    }
     // A stall belongs only to this hidden task renderer.
-    closeDedicatedAutomationTarget(task, state: state)
     closeDedicatedAutomationTarget(task, state: state)
     queueContinuation(&task, report: nil, reason: "page_stalled")
   }
-}
-
-func stopLegacyQueueResponseIfStillOwned(
-  _ task: AutomationTask,
-  state: PluginState
-) {
-  guard let port = task.workerPort ?? state.queueWorkerPort,
-        let targetId = task.workerTargetId ?? state.queueWorkerTargetId,
-        let reply = cdpValue(
-          port: port,
-          targetId: targetId,
-          expression: getReplyJS(),
-          timeout: 5.0
-        ) else { return }
-  let dispatchMarker = task.reviewStatus == "running"
-    ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
-    : "任务发送轮次：\(task.attempts)"
-  let pageContent = reply["pageContent"] as? String ?? ""
-  guard pageContent.contains(dispatchMarker) else {
-    // The user or another controller has already changed this renderer. Do
-    // not stop, select, focus, or otherwise mutate the newly visible page.
-    return
-  }
-  _ = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: stopCurrentResponseJS(),
-    timeout: 12.0
-  )
 }
 
 func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
+  let hasRunningTasks = tasks.contains { $0.status == "running" }
   if state.queueWorkerMode == sharedConversationQueueWorkerMode
-      || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+      || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
+     !hasRunningTasks {
     // v82 restores the previously successful dedicated-process path. The
     // official quick-chat prewarm service owns only one window and closes it
-    // when the next prewarm starts, so migrate both shared-renderer variants.
-    for index in tasks.indices
-      where tasks[index].status == "running" && tasks[index].workerPid == nil {
-      stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
-      queueContinuation(
-        &tasks[index],
-        report: nil,
-        reason: "queue_worker_parallel_dedicated_process_migration"
-      )
-    }
+    // when the next prewarm starts, so migrate both shared-renderer variants
+    // only while idle. Migrating a running task closes its active response.
     if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
       state.automationTasks = tasks
       stopQueueWorker(&state)
@@ -600,19 +614,10 @@ func runQueueIteration(_ state: inout PluginState) {
     state.queueWorkerProfilePath = nil
     state.queueWorkerMode = nil
   }
-  if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state) {
+  if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state)
+      && !hasRunningTasks {
     // Migrate pre-v41 queues without touching a borrowed visible renderer. Any
-    // running Chat is converted to a report-aware fresh continuation so the
-    // new hidden queue window first checks what already landed in checkout.
-    for index in tasks.indices
-      where tasks[index].status == "running" && tasks[index].workerPid == nil {
-      stopLegacyQueueResponseIfStillOwned(tasks[index], state: state)
-      queueContinuation(
-        &tasks[index],
-        report: nil,
-        reason: "queue_worker_background_window_migration"
-      )
-    }
+    // running Chat must finish before the migration is allowed.
     if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
        let profilePath = state.queueWorkerProfilePath {
       terminateDedicatedChatProcess(profilePath: profilePath)

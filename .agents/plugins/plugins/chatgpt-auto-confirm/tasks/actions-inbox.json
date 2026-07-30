@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "authoritative": true,
   "maxConcurrent": 1,
   "reviewGate": false,
   "tasks": [
