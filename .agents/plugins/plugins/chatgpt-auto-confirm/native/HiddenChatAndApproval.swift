@@ -1167,21 +1167,61 @@ func autoConfirmChatContinuationJS() -> String {
 
 func autoApproveDedicatedAuthorizationJS() -> String {
   #"""
-  (() => {
+  (async () => {
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const normalize = value => (value || '').replace(/[\s↵]+/g, ' ').trim().toLowerCase();
+    const visible = element => !!(element
+      && !element.disabled
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
     const allowed = new Set([
       '完全访问', 'full access', 'allow', 'allow once', '允许', '允许一次',
       'approve', 'approve once', 'confirm', '确认'
     ]);
-    const button = [...document.querySelectorAll('button')].find(button => {
-      if (button.disabled || !(button.offsetWidth || button.offsetHeight || button.getClientRects().length)) return false;
-      return allowed.has(normalize(button.innerText || button.textContent || button.getAttribute('aria-label')));
-    });
-    if (!button) return { ok: true, clicked: false };
-    setTimeout(() => {
-      try { button.click(); } catch (_) {}
-    }, 0);
-    return { ok: true, clicked: true, dispatchOnly: true };
+    const label = button => normalize(
+      button.innerText || button.textContent
+        || button.getAttribute('aria-label') || button.getAttribute('title')
+    );
+    const candidates = [...document.querySelectorAll('button')]
+      .filter(visible)
+      .map(button => ({ button, label: label(button) }))
+      .filter(candidate => allowed.has(candidate.label));
+    const candidateLabels = candidates.map(candidate => candidate.label);
+    const candidate = candidates[0];
+    if (!candidate) {
+      return { ok: true, clicked: false, confirmed: false, candidateLabels };
+    }
+    try {
+      candidate.button.click();
+    } catch (error) {
+      return {
+        ok: false,
+        clicked: false,
+        confirmed: false,
+        label: candidate.label,
+        candidateLabels,
+        error: String(error?.message || error || 'approval_click_failed')
+      };
+    }
+    for (let index = 0; index < 20; index += 1) {
+      await sleep(100);
+      if (!candidate.button.isConnected || !visible(candidate.button)) {
+        return {
+          ok: true,
+          clicked: true,
+          confirmed: true,
+          label: candidate.label,
+          candidateLabels
+        };
+      }
+    }
+    return {
+      ok: false,
+      clicked: true,
+      confirmed: false,
+      label: candidate.label,
+      candidateLabels,
+      error: 'approval_click_not_confirmed'
+    };
   })()
   """#
 }

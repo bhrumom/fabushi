@@ -1484,7 +1484,11 @@ func getReplyJS() -> String {
 
     const approvalButton = [...main.querySelectorAll('button, a, [role="button"]')].find(button => {
       const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '').trim().toLowerCase();
-      return visible(button) && ['允许一次', 'allow once', 'approve once'].includes(text);
+      return visible(button) && [
+        '完全访问', 'full access', 'allow', 'allow once',
+        '允许', '允许一次', 'approve', 'approve once',
+        'confirm', '确认'
+      ].includes(text);
     });
     const thinkingActive = !responseActionsComplete && !!latestThinking && (
       latestThinking.getAttribute('aria-expanded') !== null
