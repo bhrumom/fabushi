@@ -86,9 +86,8 @@ func queueTargetRuntimeState(
   if initial?["visibility"] as? String == "visible" {
     return .visible
   }
-  // GitHub-hosted runs intentionally use a normal authenticated web renderer.
-  // It may report hidden while the CDP target remains live; the Chat surface
-  // itself is the readiness signal, not Electron's visibility state.
+  // Hosted runs use a normal authenticated web renderer. Its Chat surface is
+  // live even when Electron reports a non-visible document state.
   if queueUsesHostedRenderer(),
      (initial?["chatMode"] as? NSNumber)?.boolValue == true,
      (initial?["href"] as? String)?.hasPrefix("https://chatgpt.com/") == true {
