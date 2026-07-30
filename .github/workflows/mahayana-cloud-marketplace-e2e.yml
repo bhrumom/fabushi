@@ -1,24 +1,8 @@
 name: Mahayana Cloud Marketplace E2E
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "third_party/mahayana/mahayana-rs/mahayana-cli/**"
-      - "third_party/mahayana/mahayana-rs/mahayana-product/**"
-      - "third_party/mahayana/mahayana-rs/mahayana-platform-worker/**"
-      - "examples/mahayana-cloud-marketplace/**"
-      - ".github/workflows/mahayana-cloud-marketplace-e2e.yml"
-  push:
-    branches: [main]
-    paths:
-      - "third_party/mahayana/mahayana-rs/mahayana-cli/**"
-      - "third_party/mahayana/mahayana-rs/mahayana-product/**"
-      - "third_party/mahayana/mahayana-rs/mahayana-platform-worker/**"
-      - "examples/mahayana-cloud-marketplace/**"
-      - ".github/workflows/mahayana-cloud-marketplace-e2e.yml"
-  workflow_dispatch:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
