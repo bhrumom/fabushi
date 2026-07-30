@@ -983,23 +983,35 @@ func sendMessageJS(
           return fail('apps_menu', 'input_not_found', { connector });
         }
         connectorTextarea.focus();
-        replaceText(connectorTextarea, `@${connector} `);
+        replaceText(connectorTextarea, `@${connector}`);
         record('apps_menu', true, { typedMention: true });
+        
+        let menuAppeared = false;
         for (let i = 0; i < 80; i++) {
           await sleep(150);
           evidence = connectorEvidence(target);
-          if (evidence.length > 0) break;
+          if (evidence.length > 0) {
+            menuAppeared = true;
+            break;
+          }
         }
-        if (evidence.length === 0) {
+        
+        if (menuAppeared) {
           connectorTextarea.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
           }));
           for (let i = 0; i < 40; i++) {
             await sleep(150);
             evidence = connectorEvidence(target);
-            if (evidence.length > 0) break;
+            if (evidence.length > 0 && !evidence.some(el => el.getAttribute && el.getAttribute('role') === 'option')) {
+              // break when evidence is no longer just the popup menu, but the confirmed chip
+              break;
+            }
           }
         }
+        
+        // Re-evaluate final evidence
+        evidence = connectorEvidence(target);
         found = evidence.length > 0;
       }
 
