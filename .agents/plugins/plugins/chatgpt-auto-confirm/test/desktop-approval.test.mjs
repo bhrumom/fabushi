@@ -126,6 +126,14 @@ test('send_and_watch streams visible thinking and uses bounded 20-minute new-Cha
   assert.match(nativeSource, /sendVerification/);
   assert.match(nativeSource, /approval_watcher_start_failed/);
   assert.match(nativeSource, /completionCandidate/);
+  assert.match(nativeSource, /responseActionsComplete/);
+  assert.match(nativeSource, /responseActions\.copy/);
+  assert.match(nativeSource, /responseActions\.branch/);
+  assert.match(nativeSource, /responseActions\.share/);
+  assert.match(nativeSource, /queue_monitor_current_dispatch_marker_pending/);
+  assert.match(nativeSource, /current_dispatch_marker_timeout/);
+  assert.match(nativeSource, /stage=continuation-queued/);
+  assert.match(nativeSource, /stage=terminal-observed/);
   assert.match(nativeSource, /completedThinkingToggles/);
   assert.match(nativeSource, /completedSectionText/);
   assert.match(nativeSource, /completedActivity\.length > 0/);
@@ -197,6 +205,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /monitorAutomationTask/);
   assert.match(nativeSource, /virtual-list parent/);
   assert.match(nativeSource, /maxTaskContinuations > 0/);
+  assert.match(nativeSource, /watchdogTaskHasNonRecoverableFailure/);
+  assert.match(nativeSource, /connector_selection_not_confirmed/);
   assert.match(nativeSource, /activeConversationId is shared by every visible row/);
   assert.match(nativeSource, /getAttribute\('aria-current'\) === 'page'/);
   assert.match(nativeSource, /activeRowConversationIds/);

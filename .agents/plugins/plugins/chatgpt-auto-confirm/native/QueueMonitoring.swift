@@ -21,12 +21,21 @@ func queueContinuation(
   let now = isoFormatter.string(from: Date())
   let depth = task.continuationDepth ?? 0
   if task.maxTaskContinuations > 0 && depth >= task.maxTaskContinuations {
+    queueTrace(
+      "task=\(task.id) stage=continuation-blocked reason=\(reason) "
+        + "depth=\(depth) max=\(task.maxTaskContinuations)"
+    )
     task.status = "blocked"
     task.lastError = "task_continuation_limit_reached"
     task.updatedAt = now
     task.finishedAt = now
     return
   }
+  queueTrace(
+    "task=\(task.id) stage=continuation-queued reason=\(reason) "
+      + "depth=\(depth) nextDepth=\(depth + 1) "
+      + "reportStatus=\(report?.status ?? "none")"
+  )
   if let report {
     if let requestedConnector = normalizedConnector(report.nextConnector) {
       task.connector = requestedConnector
@@ -218,6 +227,14 @@ func monitorAutomationTask(
     task.updatedAt = now
     return
   }
+  let dispatchMarker = monitoringReview
+    ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
+    : "任务发送轮次：\(task.attempts)"
+  let currentPageContent = [
+    reply["pageContent"] as? String ?? "",
+    reply["userContent"] as? String ?? "",
+  ].joined(separator: "\n")
+  let hasCurrentDispatchMarker = currentPageContent.contains(dispatchMarker)
   // The hidden queue renderer can still drift after an internal reload. Never
   // parse a stale page as the active task or create a continuation/review Chat
   // from it. Restoring here is safe because this process has no user composer.
@@ -226,14 +243,7 @@ func monitorAutomationTask(
     // In the desktop app the active conversation pane can be rendered outside
     // `<main>`, while `<main>` contains only the title/share chrome. Include
     // the scoped user bubbles so a freshly sent dispatch marker is not missed.
-    let pageContent = [
-      reply["pageContent"] as? String ?? "",
-      reply["userContent"] as? String ?? "",
-    ].joined(separator: "\n")
-    let dispatchMarker = monitoringReview
-      ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
-      : "任务发送轮次：\(task.attempts)"
-    if pageContent.contains(dispatchMarker) {
+    if hasCurrentDispatchMarker {
       // ChatGPT may replace the local id with its durable remote id after the
       // first response begins. The per-dispatch marker proves this is still
       // the current Chat, not a manually selected older attempt.
@@ -288,6 +298,38 @@ func monitorAutomationTask(
         return
       }
     }
+  }
+  // ChatGPT can publish the new conversation id before replacing the
+  // virtualized body. Never parse an older response as this dispatch merely
+  // because the route/id already matches. The user-message marker is the
+  // durable proof that the body belongs to the current queue attempt.
+  if !hasCurrentDispatchMarker {
+    let markerError = "queue_monitor_current_dispatch_marker_pending"
+    if task.lastError != markerError {
+      queueTrace(
+        "task=\(task.id) stage=monitor-pending reason=\(markerError) "
+          + "conversation=\(conversationId) expectedMarker=\(dispatchMarker)"
+      )
+    }
+    task.lastError = markerError
+    task.updatedAt = now
+    task.lastResultJSON = jsonString([
+      "reply": reply,
+      "conversationId": conversationId,
+      "chatUrl": task.chatURL as Any,
+      "expectedDispatchMarker": dispatchMarker,
+      "hasCurrentDispatchMarker": false,
+    ])
+    if let startedAt = task.startedAt.flatMap(isoFormatter.date(from:)),
+       Date().timeIntervalSince(startedAt) >= 120 {
+      closeDedicatedAutomationTarget(task, state: state)
+      queueContinuation(
+        &task,
+        report: nil,
+        reason: "current_dispatch_marker_timeout"
+      )
+    }
+    return
   }
   _ = cdpValue(
     port: port,
@@ -377,6 +419,18 @@ func monitorAutomationTask(
   let terminal = reply["done"] as? Bool == true
     || reply["completionCandidate"] as? Bool == true
     || terminalIncomplete
+  if terminal {
+    let actions = reply["responseActions"] as? [String: Any] ?? [:]
+    let actionEvidence = jsonString(actions) ?? "{}"
+    queueTrace(
+      "task=\(task.id) stage=terminal-observed marker=true "
+        + "done=\(reply["done"] as? Bool == true) "
+        + "candidate=\(reply["completionCandidate"] as? Bool == true) "
+        + "incomplete=\(terminalIncomplete) "
+        + "actions=\(actionEvidence) "
+        + "report=\(parsedReport?.status ?? "none")"
+    )
+  }
   if terminal, let report = parsedReport {
     if let requestedConnector = normalizedConnector(report.nextConnector) {
       task.connector = requestedConnector
@@ -722,6 +776,22 @@ let watchdogRecoverableStatuses = Set([
   "queued", "running", "waiting", "blocked", "failed",
 ])
 
+func watchdogTaskHasNonRecoverableFailure(_ task: AutomationTask) -> Bool {
+  let detail = [
+    task.lastError,
+    task.hiddenWorkerLastError,
+  ].compactMap { $0 }.joined(separator: " ").lowercased()
+  return [
+    "task_continuation_limit_reached",
+    "dependency_not_completed",
+    "model_picker_not_found",
+    "quick_chat_thinking_not_selected",
+    "reasoning_high_not_selected",
+    "target_model_not_selected",
+    "connector_selection_not_confirmed",
+  ].contains { detail.contains($0) }
+}
+
 func watchdogAnchorDate(_ task: AutomationTask) -> Date? {
   [
     task.watchdogLastRecoveryAt,
@@ -740,6 +810,7 @@ func watchdogTaskIsEligible(
   force: Bool
 ) -> Bool {
   guard watchdogRecoverableStatuses.contains(task.status) else { return false }
+  guard !watchdogTaskHasNonRecoverableFailure(task) else { return false }
   if force { return true }
   if task.status == "waiting",
      let waitingUntil = task.waitingUntil.flatMap(isoFormatter.date(from:)),
