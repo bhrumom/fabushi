@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>云市场问候</title>
+<main>
+  <h1>云市场问候</h1>
+  <p>这个真实小程序通过独立 Cloudflare Worker 网页发布，并由大乘 CLI 安全下载安装。</p>
+  <button id="hello">运行 hello</button>
+  <output id="result">尚未运行</output>
+</main>
+<script>
+  document.querySelector('#hello').addEventListener('click', () => {
+    document.querySelector('#result').textContent = 'Hello, Mahayana!';
+  });
+</script>
+</html>

@@ -28,9 +28,6 @@ database_name = "fabushi-db"
 database_id = "7b6318f0-fbc2-42f9-9887-85f878ae76d0"
 migrations_dir = "account-migrations"
 
-[[r2_buckets]]
-binding = "PLUGIN_PACKAGES"
-bucket_name = "mahayana-plugin-packages"
 
 [[queues.producers]]
 binding = "PLATFORM_EVENTS"

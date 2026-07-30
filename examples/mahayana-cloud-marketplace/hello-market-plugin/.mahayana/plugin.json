@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "supportedPlatforms": ["cli", "desktop"],
+  "runtime": {
+    "cli": {
+      "executable": "./server/index.mjs",
+      "args": []
+    }
+  },
+  "miniapp": {
+    "entry": "./ui/index.html",
+    "bridgeVersion": "1.0",
+    "permissions": ["mcp.call"]
+  },
+  "commands": [
+    {
+      "name": "hello",
+      "tool": "hello"
+    }
+  ],
+  "gates": []
+}

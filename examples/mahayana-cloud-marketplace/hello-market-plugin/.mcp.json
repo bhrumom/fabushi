@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "cloud-market-hello-local": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./server/index.mjs"],
+      "cwd": "."
+    }
+  }
+}
