@@ -792,7 +792,7 @@ func sendMessageJS(
         'button, [role="button"], [role="option"], [data-state], span, div'
       )].filter(element => {
         if (!visible(element) || !connectorMatches(element.textContent, target)) return false;
-        if (element.closest('[data-composer-overlay-floating-ui]')) return false;
+        if (element.closest('[role="menu"], [role="listbox"], [role="option"]')) return false;
         const rect = element.getBoundingClientRect();
         const overlapsPromptHorizontally = rect.right >= promptRect.left
           && rect.left <= promptRect.right;
