@@ -4,7 +4,7 @@
   "reviewGate": false,
   "tasks": [
     {
-      "id": "mahayana-marketplace-20260730",
+      "id": "mahayana-marketplace-cloudflare-20260730",
       "title": "完善大乘 CLI 云端插件市场",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
