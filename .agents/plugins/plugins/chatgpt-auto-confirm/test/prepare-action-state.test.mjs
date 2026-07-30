@@ -4,8 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const scriptPath = new URL('../scripts/prepare-action-state.mjs', import.meta.url);
+const scriptPath = fileURLToPath(
+  new URL('../scripts/prepare-action-state.mjs', import.meta.url),
+);
 
 test('hosted runner rotation preserves the conversation needed for serial continuation', () => {
   const directory = mkdtempSync(join(tmpdir(), 'chatgpt-action-state-'));
