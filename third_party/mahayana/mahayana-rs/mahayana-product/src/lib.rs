@@ -241,7 +241,7 @@ impl MahayanaProductClient {
         if let Some(token) = token {
             request = request.bearer_auth(token);
         }
-        let mut response = request
+        let response = request
             .send()
             .map_err(|error| ProductError::Transport(error.to_string()))?;
         if !response.status().is_success() {
@@ -325,6 +325,7 @@ impl MahayanaProductClient {
         )))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn publish_plugin(
         &self,
         plugin_id: &str,
@@ -1078,7 +1079,7 @@ fn verify_marketplace_deployment_once(
     package_sha256: &str,
     package_size: usize,
 ) -> Result<(), String> {
-    let mut manifest_response = client
+    let manifest_response = client
         .get(manifest_url)
         .header("Accept", "application/json")
         .send()
@@ -1119,7 +1120,7 @@ fn verify_marketplace_deployment_once(
         package_size,
     )?;
 
-    let mut package_response = client
+    let package_response = client
         .get(package_url)
         .send()
         .map_err(|error| format!("failed to fetch plugin package: {error}"))?;
