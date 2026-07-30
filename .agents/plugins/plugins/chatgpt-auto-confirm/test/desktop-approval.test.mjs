@@ -139,6 +139,16 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /responseActions\.dislike/);
   assert.match(nativeSource, /data-content-search-unit-key\$=":assistant"/);
   assert.match(nativeSource, /data-content-search-unit-key\$=":user"/);
+  assert.match(nativeSource, /const appUserBubbles =/);
+  assert.match(nativeSource, /const appContentUsers =/);
+  assert.match(
+    nativeSource,
+    /const appUsers = appContentUsers\.length > 0 \? appContentUsers : appUserBubbles/,
+  );
+  assert.doesNotMatch(
+    nativeSource,
+    /\[data-user-message-bubble\], '\s*\+\s*'\[data-content-search-unit-key/,
+  );
   assert.match(nativeSource, /data-content-search-turn-key/);
   assert.match(nativeSource, /data-turn-key/);
   assert.match(nativeSource, /在新任务中继续|新任务/);
