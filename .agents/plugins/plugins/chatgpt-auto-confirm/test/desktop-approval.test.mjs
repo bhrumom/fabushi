@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import worker from '../worker/src/index.ts';
+
+const hiddenApprovalSource = readFileSync(
+  new URL('../native/HiddenChatAndApproval.swift', import.meta.url),
+  'utf8',
+);
+const approvalScriptMatch = hiddenApprovalSource.match(
+  /func autoApproveDedicatedAuthorizationJS\(\) -> String \{[\s\S]*?#"""([\s\S]*?)"""#/,
+);
+assert.ok(approvalScriptMatch, 'embedded authorization script must be extractable');
+const approvalScript = approvalScriptMatch[1].trim();
 
 const nativeDirectory = new URL('../native/', import.meta.url);
 const nativeSource = readdirSync(nativeDirectory)
@@ -89,6 +100,11 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /continue_in_new_task_button_not_found/);
   assert.match(nativeSource, /stage=prepare-continuation/);
   assert.match(nativeSource, /continuation_navigation_failed/);
+  assert.match(nativeSource, /restoreHiddenConversation/);
+  assert.match(nativeSource, /strategy=.*restoration/);
+  assert.match(nativeSource, /fallback=recreate-worker/);
+  assert.match(nativeSource, /continuation_fallback_new_chat_failed/);
+  assert.match(nativeSource, /blankConversationReused/);
   assert.match(nativeSource, /fallback=new-chat/);
   assert.match(nativeSource, /continuationFallback/);
   assert.match(nativeSource, /case \.visible:[\s\S]*queueUsesHostedRenderer\(\)/);
@@ -159,6 +175,12 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /detectDedicatedAuthorizationJS/);
   assert.match(nativeSource, /sessionScopeLabels/);
   assert.match(nativeSource, /menuTriggerCount/);
+  assert.match(nativeSource, /session-scope/);
+  assert.match(nativeSource, /session_scope_option_not_found/);
+  assert.match(nativeSource, /dispatchPointerClick\(sessionControl\)/);
+  assert.match(nativeSource, /dispatchPointerClick\(sessionOption\)/);
+  assert.match(nativeSource, /sessionScopeLabel/);
+  assert.match(nativeSource, /timeout: 8\.0/);
   assert.match(nativeSource, /strategy=per-card/);
   assert.match(nativeSource, /approval-watcher-before/);
   assert.match(nativeSource, /approval-ipc-detected/);
@@ -521,6 +543,80 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /idleSystemSleepDisabled/);
   assert.match(nativeSource, /userInitiatedAllowingIdleSystemSleep/);
   assert.match(nativeSource, /flock\(descriptor, LOCK_EX\)/);
+});
+
+test('session-scoped approval opens the adjacent menu and selects the conversation option', async () => {
+  const clicks = [];
+  let menuOpen = false;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(id, text, attributes = {}) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.attributes = attributes;
+      this.disabled = false;
+      this.offsetWidth = 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: this.offsetWidth, height: this.offsetHeight };
+    }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type !== 'click') return true;
+      clicks.push(this.id);
+      if (this.id === 'session-trigger') menuOpen = true;
+      if (this.id === 'session-option') {
+        allow.isConnected = false;
+        allow.offsetWidth = 0;
+        allow.offsetHeight = 0;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('deny', 'Deny');
+  const allow = new FakeElement('allow', 'Allow');
+  const sessionTrigger = new FakeElement(
+    'session-trigger',
+    '',
+    { 'aria-label': 'Allow bhrum2 for this conversation', 'aria-haspopup': 'menu' },
+  );
+  const sessionOption = new FakeElement(
+    'session-option',
+    'Allow bhrum2 for this conversation',
+    { role: 'menuitem' },
+  );
+  const card = new FakeElement('card', 'Allow ChatGPT to use bhrum2?');
+  card.querySelectorAll = () => [deny, allow, sessionTrigger];
+  deny.parentElement = card;
+  allow.parentElement = card;
+  sessionTrigger.parentElement = card;
+  const document = {
+    querySelectorAll(selector) {
+      if (selector === 'button') return [deny, allow, sessionTrigger];
+      if (selector.includes('[role="menuitem"]')) return menuOpen ? [sessionOption] : [];
+      return [];
+    },
+  };
+  const result = await runInNewContext(approvalScript, {
+    document,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmed, true);
+  assert.equal(result.strategy, 'session-scope');
+  assert.equal(result.sessionScopeLabel, 'allow bhrum2 for this conversation');
+  assert.deepEqual(clicks, ['session-trigger', 'session-option']);
+  assert.equal(clicks.includes('allow'), false);
 });
 
 test('approval decisions do not inspect or block card contents', () => {
