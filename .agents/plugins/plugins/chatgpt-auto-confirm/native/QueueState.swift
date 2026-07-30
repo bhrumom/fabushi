@@ -22,6 +22,99 @@ func queueTraceURL() -> URL {
   queueDirectoryURL().appendingPathComponent("watcher-trace.log")
 }
 
+let retainedConversationDiagnosticCount = 5
+
+func queueConversationDiagnosticsDirectoryURL() -> URL {
+  queueStateURL().deletingLastPathComponent()
+    .appendingPathComponent("diagnostics", isDirectory: true)
+}
+
+func queueConversationDiagnosticBaseName(_ task: AutomationTask) -> String {
+  let reviewing = task.reviewStatus == "running"
+  let rawConversation = reviewing ? task.reviewConversationId : task.conversationId
+  let conversation = (rawConversation ?? "conversation-pending")
+    .replacingOccurrences(
+      of: "[^A-Za-z0-9_-]+",
+      with: "-",
+      options: .regularExpression
+    )
+  let kind = reviewing ? "review" : "work"
+  return "\(task.id)-attempt-\(task.attempts)-review-\(task.reviewRound)-\(kind)-\(conversation.prefix(80))"
+}
+
+func writeQueueConversationDiagnostic(
+  _ task: AutomationTask,
+  finalReason: String? = nil
+) {
+  guard let rawResult = task.lastResultJSON,
+        let resultData = rawResult.data(using: .utf8),
+        let result = try? JSONSerialization.jsonObject(with: resultData) else { return }
+  let directory = queueConversationDiagnosticsDirectoryURL()
+  try? FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true
+  )
+  let baseName = queueConversationDiagnosticBaseName(task)
+  let liveURL = directory.appendingPathComponent("\(baseName).live.json")
+  let finalURL = directory.appendingPathComponent("\(baseName).final.json")
+  let payload: [String: Any] = [
+    "recordedAt": isoFormatter.string(from: Date()),
+    "taskId": task.id,
+    "attempts": task.attempts,
+    "reviewRound": task.reviewRound,
+    "conversationId": task.conversationId ?? NSNull(),
+    "reviewConversationId": task.reviewConversationId ?? NSNull(),
+    "status": finalReason == nil ? "live" : "final",
+    "finalReason": finalReason ?? NSNull(),
+    "result": result,
+  ]
+  guard let data = try? JSONSerialization.data(
+    withJSONObject: payload,
+    options: [.prettyPrinted, .sortedKeys]
+  ) else { return }
+  let targetURL = finalReason == nil ? liveURL : finalURL
+  do {
+    try data.write(to: targetURL, options: .atomic)
+    try? FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: targetURL.path
+    )
+    if finalReason != nil {
+      try? FileManager.default.removeItem(at: liveURL)
+      pruneQueueConversationDiagnostics(taskId: task.id)
+    }
+  } catch {
+    queueTrace(
+      "task=\(task.id) stage=diagnostic-write-failed error=\(error.localizedDescription)"
+    )
+  }
+}
+
+func pruneQueueConversationDiagnostics(taskId: String) {
+  let directory = queueConversationDiagnosticsDirectoryURL()
+  guard let urls = try? FileManager.default.contentsOfDirectory(
+    at: directory,
+    includingPropertiesForKeys: [.contentModificationDateKey],
+    options: [.skipsHiddenFiles]
+  ) else { return }
+  let prefix = "\(taskId)-"
+  let finalized = urls.filter {
+    $0.lastPathComponent.hasPrefix(prefix)
+      && $0.lastPathComponent.hasSuffix(".final.json")
+  }.sorted {
+    let lhs = (try? $0.resourceValues(
+      forKeys: [.contentModificationDateKey]
+    ).contentModificationDate) ?? .distantPast
+    let rhs = (try? $1.resourceValues(
+      forKeys: [.contentModificationDateKey]
+    ).contentModificationDate) ?? .distantPast
+    return lhs > rhs
+  }
+  for staleURL in finalized.dropFirst(retainedConversationDiagnosticCount) {
+    try? FileManager.default.removeItem(at: staleURL)
+  }
+}
+
 func queueTrace(_ message: String) {
   let url = queueTraceURL()
   try? FileManager.default.createDirectory(
@@ -433,6 +526,47 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
      let reportData = try? encoder.encode(report),
      let reportObject = try? JSONSerialization.jsonObject(with: reportData) {
     payload["reviewReport"] = reportObject
+  }
+  if let raw = task.lastResultJSON,
+     let data = raw.data(using: .utf8),
+     let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+    let reply = (result["reply"] as? [String: Any])
+      ?? (result["reviewReply"] as? [String: Any])
+    if let reply {
+      payload["replyDiagnostics"] = [
+        "kind": result["reviewReply"] == nil ? "reply" : "reviewReply",
+        "hasCurrentDispatchMarker": result["hasCurrentDispatchMarker"] ?? NSNull(),
+        "done": reply["done"] ?? NSNull(),
+        "pending": reply["pending"] ?? NSNull(),
+        "streaming": reply["streaming"] ?? NSNull(),
+        "waitingForApproval": reply["waitingForApproval"] ?? NSNull(),
+        "approvalTitle": reply["approvalTitle"] ?? NSNull(),
+        "stopAvailable": reply["stopAvailable"] ?? NSNull(),
+        "completionCandidate": reply["completionCandidate"] ?? NSNull(),
+        "terminalIncomplete": reply["terminalIncomplete"] ?? NSNull(),
+        "hasClosedTaskReport": reply["hasClosedTaskReport"] ?? NSNull(),
+        "structuredComplete": reply["structuredComplete"] ?? NSNull(),
+        "structuredIncomplete": reply["structuredIncomplete"] ?? NSNull(),
+        "explicitlyIncomplete": reply["explicitlyIncomplete"] ?? NSNull(),
+        "explicitFinalResult": reply["explicitFinalResult"] ?? NSNull(),
+        "responseActions": reply["responseActions"] ?? NSNull(),
+        "responseActionsComplete": reply["responseActionsComplete"] ?? NSNull(),
+        "responseControlLabels": reply["responseControlLabels"] ?? NSNull(),
+        "messageCount": reply["messageCount"] ?? NSNull(),
+        "userMessageCount": reply["userMessageCount"] ?? NSNull(),
+        "charCount": reply["charCount"] ?? NSNull(),
+        "activityCharCount": reply["activityCharCount"] ?? NSNull(),
+        "completedThinkingTitle": reply["completedThinkingTitle"] ?? NSNull(),
+        "pageSnapshot": [
+          "pageContent": reply["pageContent"] ?? NSNull(),
+          "userContent": reply["userContent"] ?? NSNull(),
+          "assistantContent": reply["content"] ?? NSNull(),
+          "thinking": reply["thinking"] ?? NSNull(),
+          "completedActivity": reply["completedActivity"] ?? NSNull(),
+          "devspaceActivity": reply["devspaceActivity"] ?? NSNull(),
+        ],
+      ]
+    }
   }
   if includeResult, let raw = task.lastResultJSON,
      let data = raw.data(using: .utf8),

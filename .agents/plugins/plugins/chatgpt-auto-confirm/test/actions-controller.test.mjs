@@ -34,7 +34,17 @@ if (command === 'queue_watchdog') {
       attempts: 3,
       lastError: 'new_chat_prepare_failed',
       hiddenWorkerLastError: 'queue_monitor_hidden_target_rebuild_failed:missing',
+      replyDiagnostics: {
+        done: false,
+        responseActionsComplete: false,
+        responseControlLabels: ['复制', '在新任务中继续'],
+        pageSnapshot: {
+          pageContent: '最终结果\\n复制\\n在新任务中继续',
+          assistantContent: '最终结果',
+        },
+      },
     }],
+    watcherTrace: ['[2026-07-30T08:00:00Z] task=broken-task stage=monitor'],
   }));
 } else {
   console.log(JSON.stringify({ ok: false, message: 'unexpected command' }));
@@ -65,6 +75,11 @@ if (command === 'queue_watchdog') {
     assert.deepEqual(report.counts, { failed: 1 });
     assert.equal(report.tasks[0].id, 'broken-task');
     assert.equal(report.tasks[0].lastError, 'new_chat_prepare_failed');
+    assert.equal(report.tasks[0].replyDiagnostics.done, false);
+    assert.match(result.stdout, /QUEUE_TRACE/);
+    assert.match(result.stdout, /responseControlLabels/);
+    assert.match(result.stdout, /QUEUE_PAGE/);
+    assert.match(result.stdout, /最终结果/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
