@@ -290,12 +290,41 @@ func navigateHiddenConversation(
         let wsURL = target["webSocketDebuggerUrl"] as? String,
         CDPClient.navigate(wsURLString: wsURL, url: url) else { return false }
   Thread.sleep(forTimeInterval: 0.5)
-  guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+  let initialRuntimeState = queueTargetRuntimeState(
+    port: port,
+    targetId: targetId,
+    refreshLifecycle: false
+  )
+  switch initialRuntimeState {
+  case .hidden, .hiddenNonChat:
+    guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+      return false
+    }
+  case .visible:
+    // GitHub-hosted verification deliberately reuses an authenticated visible
+    // web renderer. Treat it as a valid dedicated queue surface instead of
+    // requiring Electron's show:false visibility contract.
+    guard queueUsesHostedRenderer() else { return false }
+    _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+    _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+  case .missing, .suspended:
     return false
   }
   let deadline = Date().addingTimeInterval(timeout)
   repeat {
-    guard queueTargetIsHidden(port: port, targetId: targetId) else { return false }
+    let runtimeState = queueTargetRuntimeState(
+      port: port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+    switch runtimeState {
+    case .hidden, .hiddenNonChat:
+      break
+    case .visible:
+      guard queueUsesHostedRenderer() else { return false }
+    case .missing, .suspended:
+      return false
+    }
     if let status = cdpValue(
       port: port,
       targetId: targetId,
