@@ -1,0 +1,19 @@
+{
+  "name": "cloud-market-hello",
+  "version": "1.0.0",
+  "description": "A real Mahayana marketplace mini app deployed as an independent Cloudflare Worker site.",
+  "author": {
+    "name": "Fabushi"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "云市场问候",
+    "shortDescription": "验证云端市场发布、安装和运行。",
+    "longDescription": "一个独立部署到 Cloudflare Worker 的真实大乘小程序，用于端到端验证市场浏览、下载、校验、安全安装和运行。",
+    "developerName": "Fabushi",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "defaultPrompt": "运行 hello 工具并返回云端市场问候。"
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,7 @@
+name = "mahayana-cloud-market-hello"
+main = "worker/src/index.ts"
+compatibility_date = "2026-07-19"
+
+[assets]
+directory = ".mahayana-distribution"
+run_worker_first = ["/mcp", "/mcp/*"]
