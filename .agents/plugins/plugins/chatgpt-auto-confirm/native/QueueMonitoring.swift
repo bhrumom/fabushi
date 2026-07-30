@@ -18,6 +18,7 @@ func queueContinuation(
   report: AutomationTaskReport?,
   reason: String
 ) {
+  writeQueueConversationDiagnostic(task, finalReason: reason)
   let now = isoFormatter.string(from: Date())
   let depth = task.continuationDepth ?? 0
   if task.maxTaskContinuations > 0 && depth >= task.maxTaskContinuations {
@@ -414,6 +415,7 @@ func monitorAutomationTask(
     "chatUrl": task.chatURL as Any,
     "reviewConversationId": task.reviewConversationId as Any,
   ])
+  writeQueueConversationDiagnostic(task)
 
   // A sent Chat that never creates any assistant or tool activity is not a
   // long-running build. It is a failed renderer/send state. Recover quickly
@@ -465,6 +467,7 @@ func monitorAutomationTask(
         + "actions=\(actionEvidence) "
         + "report=\(parsedReport?.status ?? "none")"
     )
+    writeQueueConversationDiagnostic(task, finalReason: "terminal_observed")
   }
   if terminal, let report = parsedReport {
     if let requestedConnector = normalizedConnector(report.nextConnector) {
