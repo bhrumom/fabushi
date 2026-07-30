@@ -13,10 +13,36 @@ func taskReportFingerprint(_ report: AutomationTaskReport) -> String {
     .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
 }
 
+func approvalDiagnosticToken(_ value: String) -> String {
+  let normalized = value.replacingOccurrences(
+    of: "[^A-Za-z0-9_-]+",
+    with: "-",
+    options: .regularExpression
+  )
+  return String(normalized.prefix(80)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+}
+
+func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
+  guard let detection else {
+    return "detection=none"
+  }
+  let details = jsonString([
+    "candidateLabels": detection["candidateLabels"] ?? [],
+    "cardButtonLabels": detection["cardButtonLabels"] ?? [],
+    "sessionScopeLabels": detection["sessionScopeLabels"] ?? [],
+    "menuTriggerLabels": detection["menuTriggerLabels"] ?? [],
+    "menuTriggerCount": detection["menuTriggerCount"] ?? 0,
+    "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
+  ]) ?? "{}"
+  return "detection=\(details)"
+}
+
 func traceQueueApproval(
   _ result: [String: Any]?,
   taskId: String,
-  stage: String
+  stage: String,
+  detection: [String: Any]? = nil,
+  screenshotPath: String? = nil
 ) {
   guard let result else { return }
   guard result["clicked"] as? Bool == true
@@ -25,13 +51,74 @@ func traceQueueApproval(
     "labels": result["candidateLabels"] ?? [],
   ]) ?? "{\"labels\":[]}"
   queueTrace(
-    "task=\(taskId) stage=approval-\(stage) "
+    "task=\(taskId) stage=approval-\(stage) strategy=per-card "
       + "clicked=\(result["clicked"] as? Bool == true) "
       + "confirmed=\(result["confirmed"] as? Bool == true) "
       + "label=\(result["label"] as? String ?? "none") "
       + "error=\(result["error"] as? String ?? "none") "
-      + "candidates=\(candidates)"
+      + "screenshot=\(screenshotPath ?? "none") "
+      + "candidates=\(candidates) "
+      + approvalDetectionTraceFields(detection)
   )
+}
+
+@discardableResult
+func approveDedicatedAuthorizationWithDiagnostics(
+  port: Int,
+  targetId: String,
+  taskId: String,
+  stage: String
+) -> [String: Any]? {
+  let detection = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: detectDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
+  guard detection?["found"] as? Bool == true else { return nil }
+
+  let safeTask = approvalDiagnosticToken(taskId)
+  let safeStage = approvalDiagnosticToken(stage)
+  let screenshotPath = captureHiddenChatScreenshot(
+    port: port,
+    targetId: targetId,
+    label: "approval-\(safeTask)-\(safeStage)-before"
+  )
+  queueTrace(
+    "task=\(taskId) stage=approval-\(stage)-detected strategy=per-card "
+      + "selected=\(detection?["selectedLabel"] as? String ?? "none") "
+      + "screenshot=\(screenshotPath ?? "none") "
+      + approvalDetectionTraceFields(detection)
+  )
+
+  let result = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 4.0
+  )
+  traceQueueApproval(
+    result,
+    taskId: taskId,
+    stage: stage,
+    detection: detection,
+    screenshotPath: screenshotPath
+  )
+
+  if result?["clicked"] as? Bool != true || result?["confirmed"] as? Bool != true {
+    let afterPath = captureHiddenChatScreenshot(
+      port: port,
+      targetId: targetId,
+      label: "approval-\(safeTask)-\(safeStage)-after"
+    )
+    queueTrace(
+      "task=\(taskId) stage=approval-\(stage)-unconfirmed strategy=per-card "
+        + "beforeScreenshot=\(screenshotPath ?? "none") "
+        + "afterScreenshot=\(afterPath ?? "none") "
+        + "error=\(result?["error"] as? String ?? "none")"
+    )
+  }
+  return result
 }
 
 func queueContinuation(
@@ -230,13 +317,12 @@ func monitorAutomationTask(
   // A permission card can replace the normal conversation body temporarily.
   // Confirm it before restoring a task through its exact hidden-page route, so
   // an unloaded conversation cannot suppress automatic authorization.
-  let initialApproval = cdpValue(
+  _ = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
-    expression: autoApproveDedicatedAuthorizationJS(),
-    timeout: 4.0
+    taskId: task.id,
+    stage: "before-read"
   )
-  traceQueueApproval(initialApproval, taskId: task.id, stage: "before-read")
   let now = isoFormatter.string(from: Date())
   guard var liveStatus = cdpValue(
           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
@@ -395,13 +481,12 @@ func monitorAutomationTask(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  let followupApproval = cdpValue(
+  _ = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
-    expression: autoApproveDedicatedAuthorizationJS(),
-    timeout: 4.0
+    taskId: task.id,
+    stage: "after-read"
   )
-  traceQueueApproval(followupApproval, taskId: task.id, stage: "after-read")
   task.lastError = nil
   // A new local id is the authoritative identity. The sidebar can keep the
   // previous row marked current briefly, so never replace a local id with
