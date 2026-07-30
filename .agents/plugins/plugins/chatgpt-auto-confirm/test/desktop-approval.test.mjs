@@ -135,8 +135,18 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /responseActionsComplete/);
   assert.match(nativeSource, /responseActions\.copy/);
   assert.match(nativeSource, /responseActions\.branch/);
+  assert.match(nativeSource, /responseActions\.moreActions/);
   assert.match(nativeSource, /responseActions\.like/);
   assert.match(nativeSource, /responseActions\.dislike/);
+  assert.match(nativeSource, /good response/);
+  assert.match(nativeSource, /bad response/);
+  assert.match(nativeSource, /more actions/);
+  assert.match(
+    nativeSource,
+    /responseActions\.branch \|\| responseActions\.moreActions/,
+  );
+  assert.match(nativeSource, /overflowOpened/);
+  assert.match(nativeSource, /overflowCandidates/);
   assert.match(nativeSource, /retainedConversationDiagnosticCount = 5/);
   assert.match(nativeSource, /\.live\.json/);
   assert.match(nativeSource, /\.final\.json/);
