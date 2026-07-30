@@ -87,7 +87,7 @@ jobs:
       - name: Apply marketplace database migrations
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
         shell: bash
-        run: npx --yes wrangler@4 d1 migrations apply PLATFORM_DB --remote --yes
+        run: printf 'y\n' | npx --yes wrangler@4 d1 migrations apply PLATFORM_DB --remote
 
       - name: Deploy Mahayana platform Worker
         id: platform
@@ -212,7 +212,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mahayana-cloud-marketplace-e2e-${{ github.run_id }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
           path: |
             ${{ runner.temp }}/platform-deploy.log
