@@ -1356,12 +1356,17 @@ func getReplyJS() -> String {
     ];
     const messages = webMessages.length > 0 ? webMessages : appMessages;
     const webUsers = [...main.querySelectorAll('[data-message-author-role="user"]')];
-    const appUsers = [
-      ...main.querySelectorAll(
-        '[data-user-message-bubble], '
-          + '[data-content-search-unit-key$=":user"]'
-      )
+    const appUserBubbles = [...main.querySelectorAll('[data-user-message-bubble]')];
+    const appContentUsers = [
+      ...main.querySelectorAll('[data-content-search-unit-key$=":user"]')
     ];
+    // A completed desktop Chat currently exposes both the content-search row
+    // and a nested/parallel message bubble for the same logical user turn.
+    // Combining both selector results counts one prompt twice, which leaves
+    // `awaitingAssistant` true after the single matching reply has completed.
+    // Prefer the stable content-search rows and retain the bubble selector only
+    // as a fallback for older app builds.
+    const appUsers = appContentUsers.length > 0 ? appContentUsers : appUserBubbles;
     const users = webUsers.length > 0 ? webUsers : appUsers;
     const userText = user => (
       user?.querySelector('[data-selected-text-overlay-target]') || user
