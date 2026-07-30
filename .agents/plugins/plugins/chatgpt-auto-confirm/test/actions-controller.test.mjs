@@ -76,10 +76,12 @@ if (command === 'queue_watchdog') {
     assert.equal(report.tasks[0].id, 'broken-task');
     assert.equal(report.tasks[0].lastError, 'new_chat_prepare_failed');
     assert.equal(report.tasks[0].replyDiagnostics.done, false);
-    assert.match(result.stdout, /QUEUE_TRACE/);
+    assert.match(result.stdout, /QUEUE_TRACE_EVENT_CHUNK/);
     assert.match(result.stdout, /responseControlLabels/);
-    assert.match(result.stdout, /QUEUE_PAGE/);
+    assert.match(result.stdout, /QUEUE_PAGE_FULL_CHUNK/);
     assert.match(result.stdout, /最终结果/);
+    assert.doesNotMatch(result.stdout, /QUEUE_PAGE \[/);
+    assert.ok(result.stdout.split('\n').every(line => line.length < 4_096));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

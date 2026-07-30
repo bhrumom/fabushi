@@ -70,6 +70,76 @@ const pageDiagnostics = queue => (Array.isArray(queue?.tasks) ? queue.tasks : []
     page: task.replyDiagnostics.pageSnapshot,
   }));
 
+const maxLogChunkChars = 2_000;
+const writeChunkedEvent = (label, payload) => {
+  const serialized = JSON.stringify(payload);
+  const total = Math.max(1, Math.ceil(serialized.length / maxLogChunkChars));
+  for (let index = 0; index < total; index += 1) {
+    const chunk = serialized.slice(
+      index * maxLogChunkChars,
+      (index + 1) * maxLogChunkChars,
+    );
+    process.stdout.write(
+      `${label}_CHUNK ${index + 1}/${total} ${JSON.stringify(chunk)}\n`,
+    );
+  }
+};
+
+const commonPrefixLength = (left, right) => {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left[index] === right[index]) index += 1;
+  return index;
+};
+
+const pageFieldState = new Map();
+const emitPageDiagnostics = queue => {
+  for (const task of pageDiagnostics(queue)) {
+    for (const [field, rawValue] of Object.entries(task.page)) {
+      const value = typeof rawValue === 'string'
+        ? rawValue
+        : JSON.stringify(rawValue);
+      const key = `${task.id}:${task.conversationId}:${field}`;
+      const previous = pageFieldState.get(key);
+      if (previous === undefined) {
+        writeChunkedEvent('QUEUE_PAGE_FULL', {
+          id: task.id,
+          conversationId: task.conversationId,
+          field,
+          value,
+        });
+      } else if (previous !== value) {
+        const prefixLength = commonPrefixLength(previous, value);
+        writeChunkedEvent('QUEUE_PAGE_DELTA', {
+          id: task.id,
+          conversationId: task.conversationId,
+          field,
+          prefixLength,
+          removedLength: previous.length - prefixLength,
+          append: value.slice(prefixLength),
+        });
+      }
+      pageFieldState.set(key, value);
+    }
+  }
+};
+
+let previousTrace = [];
+const emitTraceEvents = queue => {
+  const trace = Array.isArray(queue.watcherTrace) ? queue.watcherTrace : [];
+  let overlap = Math.min(previousTrace.length, trace.length);
+  while (
+    overlap > 0
+    && previousTrace.slice(-overlap).some((entry, index) => entry !== trace[index])
+  ) {
+    overlap -= 1;
+  }
+  for (const event of trace.slice(overlap)) {
+    writeChunkedEvent('QUEUE_TRACE_EVENT', { event });
+  }
+  previousTrace = trace;
+};
+
 const writeResult = (status, queue, reason) => {
   const result = {
     status,
@@ -112,8 +182,6 @@ const initialRecovery = run('queue_watchdog', { staleAfterSeconds: 300, force: t
 process.stdout.write(`WATCHDOG_INITIAL ${JSON.stringify(watchdogDiagnostics(initialRecovery))}\n`);
 let lastRecovery = 0;
 let lastQueueFingerprint = '';
-let lastPageFingerprint = '';
-let lastTraceFingerprint = '';
 let lastFailureFingerprint = '';
 let sameFailureRecoveries = 0;
 while (Date.now() < deadline) {
@@ -124,17 +192,8 @@ while (Date.now() < deadline) {
     process.stdout.write(`QUEUE_RECOGNITION ${fingerprint}\n`);
     lastQueueFingerprint = fingerprint;
   }
-  const pageFingerprint = JSON.stringify(pageDiagnostics(queue));
-  if (pageFingerprint !== lastPageFingerprint) {
-    process.stdout.write(`QUEUE_PAGE ${pageFingerprint}\n`);
-    lastPageFingerprint = pageFingerprint;
-  }
-  const trace = Array.isArray(queue.watcherTrace) ? queue.watcherTrace : [];
-  const traceFingerprint = JSON.stringify(trace);
-  if (traceFingerprint !== lastTraceFingerprint) {
-    process.stdout.write(`QUEUE_TRACE ${traceFingerprint}\n`);
-    lastTraceFingerprint = traceFingerprint;
-  }
+  emitPageDiagnostics(queue);
+  emitTraceEvents(queue);
   if (tasks.length === 0) {
     writeResult('failed', queue, 'no_tasks_configured');
     process.exit(1);
