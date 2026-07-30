@@ -129,7 +129,8 @@ func monitorAutomationTask(
       refreshLifecycle: true
     )
   }
-  if runtimeState != .hidden {
+  let hostedReady = queueUsesHostedRenderer() && runtimeState == .visible
+  if runtimeState != .hidden && !hostedReady {
     if runtimeState == .visible {
       // Safety is fail-closed only for a genuinely visible page. Never close,
       // navigate, confirm, stop, or type in a page the user may be operating.
