@@ -232,7 +232,10 @@ fn copy_site_tree(source: &Path, destination: &Path) -> Result<(), String> {
         } else if file_type.is_file() {
             fs::copy(entry.path(), target).map_err(|error| error.to_string())?;
         } else {
-            return Err(format!("unsupported plugin web asset: {}", entry.path().display()));
+            return Err(format!(
+                "unsupported plugin web asset: {}",
+                entry.path().display()
+            ));
         }
     }
     Ok(())
@@ -703,7 +706,6 @@ fn validate_marketplace_entry(entry: &Value) -> Result<&str, String> {
         .ok_or_else(|| format!("marketplace plugin {name} requires source.path"))
 }
 
-
 pub fn marketplace_mini_apps(marketplace_root: &Path) -> Result<Vec<Value>, String> {
     let marketplace_path = marketplace_root.join("marketplace.json");
     let marketplace: Value = serde_json::from_str(
@@ -724,7 +726,12 @@ pub fn marketplace_mini_apps(marketplace_root: &Path) -> Result<Vec<Value>, Stri
             &fs::read_to_string(&manifest_path)
                 .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?,
         )
-        .map_err(|error| format!("invalid plugin manifest {}: {error}", manifest_path.display()))?;
+        .map_err(|error| {
+            format!(
+                "invalid plugin manifest {}: {error}",
+                manifest_path.display()
+            )
+        })?;
         let plugin_id = manifest
             .get("name")
             .and_then(Value::as_str)

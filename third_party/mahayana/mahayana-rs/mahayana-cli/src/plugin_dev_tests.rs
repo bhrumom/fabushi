@@ -196,7 +196,6 @@ fn marketplace_install_extracts_a_verified_pages_bundle_into_the_repository() {
     fs::remove_dir_all(destination_repository).expect("remove destination repository");
 }
 
-
 #[test]
 fn marketplace_install_rejects_manifest_version_mismatch() {
     let source_repository = temporary_repository("market-version-source");
@@ -224,7 +223,11 @@ fn marketplace_install_rejects_manifest_version_mismatch() {
     )
     .expect_err("reject mismatched version");
     assert!(error.contains("插件包版本 0.1.0 与市场版本 9.9.9 不一致"));
-    assert!(!destination_repository.join(".agents/plugins/plugins/versioned-plugin").exists());
+    assert!(
+        !destination_repository
+            .join(".agents/plugins/plugins/versioned-plugin")
+            .exists()
+    );
 
     fs::remove_dir_all(source_repository).expect("remove source repository");
     fs::remove_dir_all(destination_repository).expect("remove destination repository");

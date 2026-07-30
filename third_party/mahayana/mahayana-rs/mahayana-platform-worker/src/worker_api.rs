@@ -932,8 +932,8 @@ async fn marketplace_plugins(request: Request, context: RouteContext<()>) -> Res
     let plugins = rows
         .into_iter()
         .map(|row| {
-            let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json)
-                .unwrap_or_default();
+            let platforms =
+                serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
             json!({
                 "pluginId": row.plugin_id,
                 "displayName": row.display_name,
@@ -1006,10 +1006,7 @@ async fn marketplace_release_publish(
         );
     }
     let expected_sha256 = field("packageSha256")?.to_ascii_lowercase();
-    if expected_sha256.len() != 64
-        || !expected_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+    if expected_sha256.len() != 64 || !expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         return error_response(
             400,
@@ -1030,9 +1027,9 @@ async fn marketplace_release_publish(
     let platforms = serde_json::from_str::<Vec<String>>(&field("platforms")?)
         .map_err(|_| worker::Error::RustError("invalid marketplace platforms".into()))?;
     if platforms.is_empty()
-        || platforms.iter().any(|platform| {
-            !matches!(platform.as_str(), "cli" | "desktop" | "mobile" | "web")
-        })
+        || platforms
+            .iter()
+            .any(|platform| !matches!(platform.as_str(), "cli" | "desktop" | "mobile" | "web"))
     {
         return error_response(
             400,
@@ -1077,11 +1074,7 @@ async fn marketplace_release_publish(
     {
         Ok(package) => package,
         Err(message) => {
-            return error_response(
-                400,
-                "marketplace_deployment_verification_failed",
-                &message,
-            );
+            return error_response(400, "marketplace_deployment_verification_failed", &message);
         }
     };
     if remote_package != package {
@@ -1120,8 +1113,16 @@ async fn marketplace_release_publish(
                 &format!("Published from {deployment_url}"),
                 &account.user_id,
                 &version,
-                if account.is_test_account { "public" } else { "unlisted" },
-                if account.is_test_account { "approved" } else { "pending" },
+                if account.is_test_account {
+                    "public"
+                } else {
+                    "unlisted"
+                },
+                if account.is_test_account {
+                    "approved"
+                } else {
+                    "pending"
+                },
                 now,
                 &platforms_json
             )?,
@@ -1162,7 +1163,6 @@ async fn marketplace_release_publish(
     }))
 }
 
-
 async fn marketplace_release_metadata(
     _request: Request,
     context: RouteContext<()>,
@@ -1191,8 +1191,7 @@ async fn marketplace_release_metadata(
             "The approved plugin release does not exist.",
         );
     };
-    let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json)
-        .unwrap_or_default();
+    let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
     Response::from_json(&json!({
         "pluginId": row.plugin_id,
         "version": row.version,
@@ -2261,7 +2260,8 @@ async fn fetch_marketplace_asset(
     asset_path: &str,
     max_bytes: usize,
 ) -> std::result::Result<Vec<u8>, String> {
-    let url = marketplace_asset_url(deployment_url, asset_path).map_err(|error| error.to_string())?;
+    let url =
+        marketplace_asset_url(deployment_url, asset_path).map_err(|error| error.to_string())?;
     let parsed = url
         .parse()
         .map_err(|error| format!("invalid Cloudflare plugin asset URL: {error}"))?;
@@ -2299,12 +2299,8 @@ async fn fetch_verified_marketplace_package(
     expected_sha256: &str,
     expected_size: usize,
 ) -> std::result::Result<Vec<u8>, String> {
-    let package = fetch_marketplace_asset(
-        deployment_url,
-        "/mahayana/plugin.tar.gz",
-        expected_size,
-    )
-    .await?;
+    let package =
+        fetch_marketplace_asset(deployment_url, "/mahayana/plugin.tar.gz", expected_size).await?;
     if package.len() != expected_size {
         return Err("Cloudflare plugin package size does not match approved metadata.".into());
     }
@@ -2322,19 +2318,17 @@ async fn verified_marketplace_site_package(
     expected_sha256: &str,
     expected_size: usize,
 ) -> std::result::Result<Vec<u8>, String> {
-    let manifest_bytes = fetch_marketplace_asset(
-        deployment_url,
-        "/mahayana/plugin.json",
-        64 * 1024,
-    )
-    .await?;
+    let manifest_bytes =
+        fetch_marketplace_asset(deployment_url, "/mahayana/plugin.json", 64 * 1024).await?;
     let manifest: MarketplaceSiteManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|error| format!("invalid Cloudflare plugin manifest: {error}"))?;
     if manifest.schema_version != 1
         || manifest.plugin_id != plugin_id
         || manifest.version != version
         || manifest.package_path != "/mahayana/plugin.tar.gz"
-        || !manifest.package_sha256.eq_ignore_ascii_case(expected_sha256)
+        || !manifest
+            .package_sha256
+            .eq_ignore_ascii_case(expected_sha256)
         || manifest.package_size != expected_size
         || manifest.runtime != "independent-worker-or-pages"
     {
@@ -2357,7 +2351,6 @@ fn route_identifier<'a>(context: &'a RouteContext<()>, name: &str) -> Result<&'a
     Ok(value)
 }
 
-
 fn route_version(context: &RouteContext<()>) -> Result<&str> {
     context
         .param("version")
@@ -2369,9 +2362,9 @@ fn route_version(context: &RouteContext<()>) -> Result<&str> {
 fn is_version_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+')
-        })
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'+'))
 }
 
 fn is_public_https_url(value: &str) -> bool {
@@ -2389,9 +2382,7 @@ fn is_public_https_url(value: &str) -> bool {
     }
     url.host_str()
         .map(str::to_ascii_lowercase)
-        .is_some_and(|domain| {
-            domain.ends_with(".workers.dev") || domain.ends_with(".pages.dev")
-        })
+        .is_some_and(|domain| domain.ends_with(".workers.dev") || domain.ends_with(".pages.dev"))
 }
 
 fn is_identifier(value: &str) -> bool {

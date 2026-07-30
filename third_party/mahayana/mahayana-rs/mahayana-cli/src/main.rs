@@ -529,9 +529,9 @@ fn verified_marketplace_archive(
         .get("plugins")
         .and_then(Value::as_array)
         .and_then(|plugins| {
-            plugins.iter().find(|plugin| {
-                plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
-            })
+            plugins
+                .iter()
+                .find(|plugin| plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id))
         })
         .ok_or_else(|| format!("市场中没有已审核插件 {plugin_id}"))?;
     let version = requested_version
@@ -605,12 +605,14 @@ fn marketplace_command(command: MarketplaceCommand) -> Result<(), String> {
             version,
             output,
         } => {
-            let verified =
-                verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
+            let verified = verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
             let output = output.unwrap_or_else(|| {
                 PathBuf::from(format!("{plugin_id}-{}.tar.gz", verified.version))
             });
-            if let Some(parent) = output.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+            if let Some(parent) = output
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
                 fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
             let mut file = fs::OpenOptions::new()
@@ -643,8 +645,7 @@ fn marketplace_command(command: MarketplaceCommand) -> Result<(), String> {
             version,
             repository,
         } => {
-            let verified =
-                verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
+            let verified = verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
             print_json(&plugin_dev::install_marketplace_bundle(
                 &repository,
                 &plugin_id,
