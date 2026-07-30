@@ -97,3 +97,40 @@ test('Actions inbox refreshes and requeues an existing failed task', () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('authoritative Actions inbox removes stale tasks from restored initial state', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-authoritative-'));
+  const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
+  const script = fileURLToPath(
+    new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
+  const env = {
+    ...process.env,
+    CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
+  };
+  try {
+    writeFileSync(statePath, JSON.stringify({
+      automationTasks: [
+        { id: 'autonomous-pr-manager-001', status: 'queued', attempts: 1519 },
+        { id: 'marketplace-current', status: 'failed', attempts: 4 },
+      ],
+    }));
+    writeFileSync(inboxPath, JSON.stringify({
+      authoritative: true,
+      tasks: [{
+        id: 'marketplace-current',
+        title: 'Current marketplace task',
+        prompt: 'Continue current work',
+      }],
+    }));
+    const output = execFileSync(process.execPath, [script], { env, encoding: 'utf8' });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.match(output, /Removed stale tasks: autonomous-pr-manager-001/);
+    assert.deepEqual(state.automationTasks.map(task => task.id), ['marketplace-current']);
+    assert.equal(state.automationTasks[0].status, 'queued');
+    assert.equal(state.automationTasks[0].attempts, 0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
