@@ -40,6 +40,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /verification script waits for the refreshed authenticated shell/);
   assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
+  assert.match(restoreSessionScript, /Page\.reload/);
+  assert.match(restoreSessionScript, /Optional CDP command/);
+  assert.doesNotMatch(restoreSessionScript, /Page\.setWebLifecycleState/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell\n\s+timeout-minutes: 6/);
