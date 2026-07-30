@@ -96,7 +96,8 @@ func queueTargetRuntimeState(
   let href = probe?["href"] as? String ?? ""
   let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
     ?? Double.greatestFiniteMagnitude
-  if bridge && visibility == "hidden" && href.hasPrefix("app://-/index.html")
+  if bridge && visibility == "hidden"
+      && (href.hasPrefix("app://-/index.html") || href.hasPrefix("https://chatgpt.com/"))
       && eventLoopDelayMs < 2_500 {
     let chatMode = (probe?["chatMode"] as? NSNumber)?.boolValue ?? false
     let surface = probe?["surface"] as? String ?? "not-chat"
