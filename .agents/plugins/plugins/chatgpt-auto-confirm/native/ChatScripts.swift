@@ -967,71 +967,44 @@ func sendMessageJS(
     }
     record('input_discovery', true, { existingDraftLength: inputText(textarea).length });
 
-    // Step 1: Select the connector from ChatGPT's current Apps menu.
-    // ChatGPT no longer exposes connectors through the old @mention picker.
+    // Step 1: Select the connector directly by @mention in the textarea
     if (connector) {
       const target = connector.toLowerCase();
-      const textMatches = el => connectorMatches(el.textContent, target)
-        || connectorMatches(el.getAttribute('aria-label'), target)
-        || connectorMatches(el.getAttribute('title'), target)
-        || connectorMatches(el.getAttribute('data-testid'), target)
-        || connectorMatches(el.getAttribute('data-connector-id'), target)
-        || connectorMatches(el.getAttribute('data-app-name'), target);
       let evidence = connectorEvidence(target);
       let found = evidence.length > 0;
 
       if (!found) {
-        const visibleAppItem = () => {
-          const menuRoots = [...document.querySelectorAll(
-            '[role="menu"], [role="listbox"], [data-composer-overlay-floating-ui], '
-              + '[data-radix-menu-content], [data-radix-popper-content-wrapper]'
-          )].filter(visible);
-          const scopes = menuRoots.length ? menuRoots : [document];
-          return scopes.flatMap(root => [...root.querySelectorAll(
-            'button[data-list-navigation-item="true"], [role="menuitemradio"], [role="option"], button'
-          )]).find(el => visible(el) && textMatches(el));
-        };
-        const addButton = document.querySelector('button[aria-label="添加文件等"]')
-          || document.querySelector('button[aria-label="添加文件等内容"]')
-          || document.querySelector('button[aria-label="附加文件或连接应用"]')
-          || document.querySelector('button[aria-label*="Add files"]')
-          || document.querySelector('button[aria-label*="attachments"]');
-        if (addButton) {
-          let appItem = visibleAppItem();
-          if (!appItem) {
-            addButton.click();
-            await sleep(350);
-            record('apps_menu', true, { opened: true });
-          } else {
-            record('apps_menu', true, { alreadyOpen: true });
+        const textarea = findTextarea();
+        if (textarea) {
+          textarea.focus();
+          replaceText(textarea, `@${connector} `);
+          record('apps_menu', true, { typedMention: true });
+          
+          // Wait for the connector to become selected automatically
+          for (let i = 0; i < 80; i++) {
+            await sleep(150);
+            evidence = connectorEvidence(target);
+            if (evidence.length > 0) break;
           }
-          const moreItem = [...document.querySelectorAll('[role="menuitem"]')].find(el => {
-            const text = (el.textContent || '').trim().toLowerCase();
-            return visible(el) && (text === '更多' || text === 'more' || text.includes('更多'));
-          });
-          if (moreItem) {
-            moreItem.click();
-            await sleep(350);
-          }
-          for (let index = 0; index < 20 && !appItem; index += 1) {
-            appItem = visibleAppItem();
-            if (!appItem) await sleep(150);
-          }
-          if (appItem) {
-            appItem.click();
-            for (let i = 0; i < 80; i++) {
+          
+          // If a space alone didn't confirm the connector popup, try dispatching enter
+          if (evidence.length === 0) {
+            try {
+              textarea.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+              }));
+            } catch (_) {}
+            
+            for (let i = 0; i < 40; i++) {
               await sleep(150);
               evidence = connectorEvidence(target);
               if (evidence.length > 0) break;
             }
-            found = evidence.length > 0;
-          } else {
-            return fail('connector_selection', 'connector_not_found', {
-              connector, appsMenuOpened: true
-            });
           }
+          
+          found = evidence.length > 0;
         } else {
-          return fail('apps_menu', 'apps_button_not_found', { connector });
+          return fail('apps_menu', 'input_not_found', { connector });
         }
       }
 
