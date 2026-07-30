@@ -25,14 +25,12 @@ for (const task of state.automationTasks || []) {
   task.workerProfilePath = null;
   task.resultPath = null;
   if (task.status === 'running') {
-    task.status = 'queued';
-    task.startedAt = null;
-    task.finishedAt = null;
-    // Keep the finished/active Chat identity across hosted runner rotation.
-    // startAutomationTask will reopen this conversation and click
-    // "Continue in new task" when continuationDepth is non-zero. Clearing it
-    // here silently turns a serial continuation into an unrelated fresh Chat.
-    task.lastProgressAt = null;
+    // Keep both the active state and Chat identity across hosted runner
+    // rotation. monitorAutomationTask recreates only the hidden renderer,
+    // navigates back to this durable conversation, confirms pending
+    // authorization, and observes its real terminal state. Re-queuing here
+    // would skip that recovery and create a new Chat before the prior one had
+    // actually finished.
     task.lastError = 'github_actions_runner_continuation';
     const note = 'GitHub Actions 已在新托管 Runner 中接管。请从同一 checkout 的最新落盘进度继续。';
     task.reviewFeedback = [task.reviewFeedback, note].filter(Boolean).join('\n\n');
