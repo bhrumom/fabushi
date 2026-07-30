@@ -1,6 +1,10 @@
 name = "mahayana-platform"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-07-18"
+# Marketplace plugins are independent public Workers/Pages deployments. The
+# platform must resolve their public workers.dev URLs instead of requiring a
+# static service binding for every dynamically published plugin.
+compatibility_flags = ["global_fetch_strictly_public"]
 
 [build]
 # wasm-bindgen 0.2.126's abort catch-wrapper requires an externref table that
