@@ -156,6 +156,14 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /traceQueueApproval/);
   assert.match(nativeSource, /stage=approval-/);
   assert.match(nativeSource, /candidateLabels/);
+  assert.match(nativeSource, /detectDedicatedAuthorizationJS/);
+  assert.match(nativeSource, /sessionScopeLabels/);
+  assert.match(nativeSource, /menuTriggerCount/);
+  assert.match(nativeSource, /strategy=per-card/);
+  assert.match(nativeSource, /approval-watcher-before/);
+  assert.match(nativeSource, /approval-ipc-detected/);
+  assert.match(nativeSource, /approval-.*-before/);
+  assert.match(nativeSource, /yyyyMMdd-HHmmss-SSS/);
   assert.match(nativeSource, /retainedConversationDiagnosticCount = 5/);
   assert.match(nativeSource, /\.live\.json/);
   assert.match(nativeSource, /\.final\.json/);
