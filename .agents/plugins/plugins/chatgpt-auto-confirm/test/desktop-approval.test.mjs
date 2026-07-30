@@ -14,6 +14,33 @@ const approvalScriptMatch = hiddenApprovalSource.match(
 assert.ok(approvalScriptMatch, 'embedded authorization script must be extractable');
 const approvalScript = approvalScriptMatch[1].trim();
 
+const chatScriptsSource = readFileSync(
+  new URL('../native/ChatScripts.swift', import.meta.url),
+  'utf8',
+);
+const extractTripleQuotedScript = (source, functionSignature) => {
+  const functionStart = source.indexOf(functionSignature);
+  assert.notEqual(functionStart, -1, `${functionSignature} must exist`);
+  const scriptStartMarker = 'return """';
+  const scriptStart = source.indexOf(scriptStartMarker, functionStart);
+  assert.notEqual(scriptStart, -1, `${functionSignature} script must start`);
+  const contentStart = scriptStart + scriptStartMarker.length;
+  const contentEnd = source.indexOf('"""', contentStart);
+  assert.notEqual(contentEnd, -1, `${functionSignature} script must end`);
+  return source.slice(contentStart, contentEnd).trim();
+};
+const selectConversationScript = extractTripleQuotedScript(
+  hiddenApprovalSource,
+  'func selectBackgroundConversationJS(_ conversationId: String) -> String',
+);
+const continueInNewTaskScript = extractTripleQuotedScript(
+  chatScriptsSource,
+  'func continueInNewTaskJS(expectedConversationId: String? = nil) -> String',
+);
+const renderInterpolatedSwiftScript = (script, expected) => script
+  .replace('\\(expected)', JSON.stringify(expected))
+  .replaceAll('\\\\', '\\');
+
 const nativeDirectory = new URL('../native/', import.meta.url);
 const nativeSource = readdirSync(nativeDirectory)
   .filter(name => name.endsWith('.swift'))
@@ -99,7 +126,7 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /continuationClicked/);
   assert.match(nativeSource, /continue_in_new_task_button_not_found/);
   assert.match(nativeSource, /stage=prepare-continuation/);
-  assert.match(nativeSource, /continuation_navigation_failed/);
+  assert.match(nativeSource, /continuation_conversation_click_failed/);
   assert.match(nativeSource, /restoreHiddenConversation/);
   assert.match(nativeSource, /strategy=.*restoration/);
   assert.match(nativeSource, /fallback=recreate-worker/);
@@ -543,6 +570,133 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /idleSystemSleepDisabled/);
   assert.match(nativeSource, /userInitiatedAllowingIdleSystemSleep/);
   assert.match(nativeSource, /flock\(descriptor, LOCK_EX\)/);
+});
+
+test('continuation clicks the original conversation and then Continue in new task', async () => {
+  const previousConversationId = '6a6b3d26-c654-83e8-8b6a-55ee1eb0719f';
+  const nextConversationId = '7b7c4e37-d765-94f9-9c77-66ff2fc072a0';
+  const clicks = [];
+  let activeConversationId = 'different-chat';
+  let overflowOpen = false;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(id, text = '', attributes = {}) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.attributes = attributes;
+      this.disabled = false;
+      this.offsetWidth = 120;
+      this.offsetHeight = 28;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    hasAttribute(name) { return this.attributes[name] !== undefined; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: this.offsetWidth, height: this.offsetHeight };
+    }
+    closest() { return this.parentElement; }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type !== 'click') return true;
+      clicks.push(this.id);
+      if (this.id === 'conversation-row') activeConversationId = previousConversationId;
+      if (this.id === 'more-actions') overflowOpen = true;
+      if (this.id === 'continue-option') activeConversationId = nextConversationId;
+      return true;
+    }
+  }
+  const assistant = new FakeElement('assistant', 'Completed response');
+  assistant.attributes['data-message-author-role'] = 'assistant';
+  const conversationRow = new FakeElement(
+    'conversation-row',
+    'Marketplace continuation',
+    { href: `/c/${previousConversationId}` },
+  );
+  const prompt = new FakeElement('prompt');
+  const portal = {
+    getAttribute(name) {
+      return name === 'data-above-composer-conversation-id'
+        ? `chatgpt:${activeConversationId}` : null;
+    },
+  };
+  const selectDocument = {
+    querySelector(selector) {
+      if (selector === '[data-above-composer-conversation-id]') return portal;
+      if (selector === '#prompt-textarea') return prompt;
+      if (selector === '[contenteditable="true"]') return null;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector.includes('[data-message-author-role]')) return [assistant];
+      if (selector.startsWith('a[href*=')) return [conversationRow];
+      if (selector === '[data-thread-title="true"]') return [];
+      return [];
+    },
+  };
+  const renderedSelectScript = renderInterpolatedSwiftScript(
+    selectConversationScript,
+    previousConversationId,
+  );
+  const selectResult = await runInNewContext(renderedSelectScript, {
+    document: selectDocument,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout,
+  });
+  assert.equal(selectResult.ok, true);
+  assert.equal(selectResult.clickStrategy, 'direct-link');
+  assert.equal(selectResult.conversationId, previousConversationId);
+
+  const moreActions = new FakeElement('more-actions', '', { 'aria-label': 'More actions' });
+  const continueOption = new FakeElement(
+    'continue-option',
+    'Continue in new task',
+    { role: 'menuitem' },
+  );
+  const responseTurn = new FakeElement('response-turn');
+  responseTurn.querySelectorAll = () => [moreActions];
+  assistant.parentElement = responseTurn;
+  assistant.closest = () => responseTurn;
+  const main = {
+    querySelectorAll() { return [assistant]; },
+  };
+  const continueDocument = {
+    querySelector(selector) {
+      if (selector === '[data-above-composer-conversation-id]') return portal;
+      if (selector === 'main') return main;
+      if (selector.includes('textarea')) return prompt;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector.startsWith('button, a')) return [moreActions];
+      if (selector.includes('[role="menuitem"]')) return overflowOpen ? [continueOption] : [];
+      return [];
+    },
+  };
+  const renderedContinueScript = renderInterpolatedSwiftScript(
+    continueInNewTaskScript,
+    previousConversationId,
+  );
+  const continueResult = await runInNewContext(renderedContinueScript, {
+    document: continueDocument,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout,
+  });
+  assert.equal(continueResult.ok, true);
+  assert.equal(continueResult.continuationClicked, true);
+  assert.equal(continueResult.continuationLabel, 'continue in new task');
+  assert.equal(continueResult.conversationId, nextConversationId);
+  assert.deepEqual(clicks, [
+    'conversation-row',
+    'more-actions',
+    'continue-option',
+  ]);
 });
 
 test('session-scoped approval opens the adjacent menu and selects the conversation option', async () => {
