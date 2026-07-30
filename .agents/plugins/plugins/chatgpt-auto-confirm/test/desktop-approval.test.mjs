@@ -58,7 +58,7 @@ test('outbound sends discard old chat URLs while read-only reply requests keep t
   assert.equal(reply.result.structuredContent.hostRequest.params.chatUrl, chatUrl);
 });
 
-test('every outbound message creates a new Chat and old conversations are read-only resume targets', async () => {
+test('initial outbound messages create a new Chat and same-task continuations use the reply action', async () => {
   const conversationId = '6a5f93ae-5118-83e8-a96a-2a7f321dd0e8';
   const sent = await call('send_and_watch', {
     message: '继续同一会话', connector: 'devspace1', conversationId, newChat: true,
@@ -84,9 +84,13 @@ test('every outbound message creates a new Chat and old conversations are read-o
   assert.match(nativeSource, /__reactFiber\$/);
   assert.match(nativeSource, /new_chat_conversation_not_created/);
   assert.match(nativeSource, /new_chat_creation_not_confirmed/);
+  assert.match(nativeSource, /continueInNewTaskJS/);
+  assert.match(nativeSource, /continuationClicked/);
+  assert.match(nativeSource, /continue_in_new_task_button_not_found/);
+  assert.match(nativeSource, /stage=prepare-continuation/);
 });
 
-test('send_and_watch streams visible thinking and uses bounded 20-minute new-Chat recovery', async () => {
+test('send_and_watch streams visible thinking and uses bounded same-task recovery', async () => {
   const sent = await call('send_and_watch', {
     message: '继续完成任务', connector: 'devspace1',
   });
@@ -102,9 +106,11 @@ test('send_and_watch streams visible thinking and uses bounded 20-minute new-Cha
   assert.match(nativeSource, /stopConfirmed/);
   assert.match(nativeSource, /old_chat_stop_not_confirmed/);
   assert.match(nativeSource, /stop_confirmation_timeout/);
-  assert.match(nativeSource, /sendMessageJS\(message: continuationMessage, connector: connector, newChat: true\)/);
+  assert.match(nativeSource, /continueInNewTaskJS/);
+  assert.match(nativeSource, /message: continuationMessage/);
+  assert.match(nativeSource, /newChat: false/);
   assert.doesNotMatch(nativeSource, /private func stopAndContinueJS/);
-  assert.match(nativeSource, /"createdNewChat": stopConfirmed/);
+  assert.match(nativeSource, /"continuedInNewTask"/);
   assert.match(nativeSource, /DEVSPACE_TOOL_TIMEOUT|devspace_timeout/);
   assert.match(nativeSource, /继续在此聊天/);
   assert.match(nativeSource, /autoConfirmChatContinuationJS/);
@@ -129,7 +135,12 @@ test('send_and_watch streams visible thinking and uses bounded 20-minute new-Cha
   assert.match(nativeSource, /responseActionsComplete/);
   assert.match(nativeSource, /responseActions\.copy/);
   assert.match(nativeSource, /responseActions\.branch/);
-  assert.match(nativeSource, /responseActions\.share/);
+  assert.match(nativeSource, /responseActions\.like/);
+  assert.match(nativeSource, /responseActions\.dislike/);
+  assert.match(nativeSource, /data-content-search-unit-key\$=":assistant"/);
+  assert.match(nativeSource, /data-content-search-turn-key/);
+  assert.match(nativeSource, /data-turn-key/);
+  assert.match(nativeSource, /在新任务中继续|新任务/);
   assert.match(nativeSource, /queue_monitor_current_dispatch_marker_pending/);
   assert.match(nativeSource, /current_dispatch_marker_timeout/);
   assert.match(nativeSource, /stage=continuation-queued/);

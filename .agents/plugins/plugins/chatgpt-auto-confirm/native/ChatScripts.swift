@@ -1217,6 +1217,111 @@ func stopCurrentResponseJS() -> String {
   """#
 }
 
+func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
+  let expected = expectedConversationId.map(jsonStringLiteral) ?? "null"
+  return """
+  (async () => {
+    const expectedConversationId = \(expected);
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const normalizeConversationId = value => {
+      const raw = (value || '').trim();
+      if (!raw) return '';
+      return raw.startsWith('chatgpt:') ? raw.slice('chatgpt:'.length) : raw;
+    };
+    const currentConversationId = () => normalizeConversationId(
+      document.querySelector('[data-above-composer-conversation-id]')
+        ?.getAttribute('data-above-composer-conversation-id') || ''
+    );
+    const current = currentConversationId();
+    if (expectedConversationId
+        && current
+        && normalizeConversationId(expectedConversationId) !== current) {
+      return {
+        ok: false,
+        error: 'continuation_conversation_changed',
+        expectedConversationId: normalizeConversationId(expectedConversationId),
+        actualConversationId: current
+      };
+    }
+
+    const main = document.querySelector('main') || document;
+    const messages = [...main.querySelectorAll(
+      '[data-message-author-role="assistant"], '
+        + '[data-local-conversation-final-assistant], '
+        + '[data-content-search-unit-key$=":assistant"]'
+    )];
+    const last = messages[messages.length - 1] || null;
+    const responseTurn = last?.closest(
+      'article, [data-testid^="conversation-turn-"], '
+        + '[data-content-search-turn-key], [data-turn-key]'
+    ) || last?.parentElement?.parentElement || last;
+    const controls = [...(responseTurn?.querySelectorAll(
+      'button, a, [role="button"], [aria-label], [title]'
+    ) || [])];
+    const label = node => [
+      node.getAttribute?.('aria-label') || '',
+      node.getAttribute?.('title') || '',
+      node.textContent || ''
+    ].join(' ').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const button = controls.find(node => {
+      const text = label(node);
+      return /\\bcontinue\\s+in\\s+(?:a\\s+)?new\\s+(?:chat|task)\\b/.test(text)
+        || /(?:在|从这里).*(?:新任务|新聊天).*(?:继续|分支)/.test(text)
+        || /从这里(?:继续|分支).*(?:新任务|新聊天)/.test(text)
+        || /在新(?:的)?聊天中(?:创建)?分支/.test(text);
+    });
+    if (!button) {
+      return {
+        ok: false,
+        error: 'continue_in_new_task_button_not_found',
+        conversationId: current,
+        candidateControls: controls.map(label).filter(Boolean).slice(-20)
+      };
+    }
+
+    button.click();
+    let stableConversationId = '';
+    let stableSamples = 0;
+    for (let index = 0; index < 120; index += 1) {
+      await sleep(250);
+      const nextConversationId = currentConversationId();
+      const composer = document.querySelector(
+        'textarea, [contenteditable="true"][role="textbox"], '
+          + '[contenteditable="true"][data-lexical-editor="true"]'
+      );
+      const changed = !!nextConversationId && nextConversationId !== current;
+      const composerReady = !!composer;
+      if (changed && composerReady) {
+        if (stableConversationId === nextConversationId) {
+          stableSamples += 1;
+        } else {
+          stableConversationId = nextConversationId;
+          stableSamples = 1;
+        }
+        if (stableSamples >= 3) {
+          return {
+            ok: true,
+            continuationClicked: true,
+            previousConversationId: current,
+            conversationId: nextConversationId,
+            stableSamples
+          };
+        }
+      } else {
+        stableConversationId = '';
+        stableSamples = 0;
+      }
+    }
+    return {
+      ok: false,
+      error: 'continue_in_new_task_not_confirmed',
+      previousConversationId: current,
+      conversationId: currentConversationId()
+    };
+  })()
+  """
+}
+
 func getReplyJS() -> String {
   #"""
   (async () => {
@@ -1243,20 +1348,28 @@ func getReplyJS() -> String {
     }
 
     const webMessages = [...main.querySelectorAll('[data-message-author-role="assistant"]')];
-    const appMessages = [...main.querySelectorAll('[data-local-conversation-final-assistant]')];
+    const appMessages = [
+      ...main.querySelectorAll(
+        '[data-local-conversation-final-assistant], '
+          + '[data-content-search-unit-key$=":assistant"]'
+      )
+    ];
     const messages = webMessages.length > 0 ? webMessages : appMessages;
     const webUsers = [...main.querySelectorAll('[data-message-author-role="user"]')];
     const appUsers = [...main.querySelectorAll('[data-user-message-bubble]')];
     const users = webUsers.length > 0 ? webUsers : appUsers;
     const userMessageCount = users.length;
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
-    const content = last?.innerText || '';
+    const assistantContent = last?.querySelector('[data-selected-text-overlay-target]')
+      || last;
+    const content = assistantContent?.innerText || '';
     const normalizeControlLabel = value => (value || '')
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
     const responseTurn = last?.closest(
-      'article, [data-testid^="conversation-turn-"], [data-message-id]'
+      'article, [data-testid^="conversation-turn-"], '
+        + '[data-content-search-turn-key], [data-turn-key]'
     ) || last?.parentElement?.parentElement || last;
     const responseControls = [...(responseTurn?.querySelectorAll(
       'button, a, [role="button"], [aria-label], [title]'
@@ -1278,14 +1391,19 @@ func getReplyJS() -> String {
       copy: hasResponseControl([/^copy(?:\s|$)/, /^复制(?:\s|$)/]),
       branch: hasResponseControl([
         /\bbranch(?:\s+in\s+new\s+chat)?\b/,
+        /\bcontinue\s+in\s+(?:a\s+)?new\s+(?:chat|task)\b/,
         /新(?:建)?(?:聊天)?分支/,
         /在新(?:的)?聊天中(?:创建)?分支/,
+        /(?:在|从这里).*(?:新任务|新聊天).*(?:继续|分支)/,
+        /从这里(?:继续|分支).*(?:新任务|新聊天)/,
       ]),
-      share: hasResponseControl([/^share(?:\s|$)/, /^分享(?:\s|$)/]),
+      like: hasResponseControl([/^like(?:\s|$)/, /^喜欢(?:\s|$)/]),
+      dislike: hasResponseControl([/^dislike(?:\s|$)/, /^不喜欢(?:\s|$)/]),
     };
     const responseActionsComplete = responseActions.copy
       && responseActions.branch
-      && responseActions.share;
+      && responseActions.like
+      && responseActions.dislike;
 
     const stopSelectors = [
       '[data-testid="stop-button"]', '[aria-label="Stop streaming"]',

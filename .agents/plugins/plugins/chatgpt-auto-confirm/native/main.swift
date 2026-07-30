@@ -1415,12 +1415,38 @@ case "send_and_watch":
         ) ?? ["ok": false, "error": "stop_cdp_failed"]
         let stopConfirmed = stopResult["stopConfirmed"] as? Bool ?? false
         let recoveryResult: [String: Any]
+        var continuationPreparation: [String: Any] = [:]
         if stopConfirmed {
-          recoveryResult = cdpEvaluateOnChatGPT(
-            sendMessageJS(message: continuationMessage, connector: connector, newChat: true),
+          continuationPreparation = cdpEvaluateOnChatGPT(
+            continueInNewTaskJS(
+              expectedConversationId: normalizedConversationId(
+                finalReply["conversationId"] as? String
+              )
+            ),
             timeout: 35.0,
             preferredURL: activeChatURL
-          ) ?? ["ok": false, "error": "new_chat_recovery_cdp_failed"]
+          ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
+          if continuationPreparation["ok"] as? Bool == true {
+            recoveryResult = cdpEvaluateOnChatGPT(
+              sendMessageJS(
+                message: continuationMessage,
+                connector: connector,
+                newChat: false,
+                expectedConversationId: normalizedConversationId(
+                  continuationPreparation["conversationId"] as? String
+                )
+              ),
+              timeout: 35.0,
+              preferredURL: activeChatURL
+            ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
+          } else {
+            recoveryResult = [
+              "ok": false,
+              "error": continuationPreparation["error"]
+                ?? "continue_in_new_task_not_confirmed",
+              "failedStage": "continue_in_new_task",
+            ]
+          }
         } else {
           recoveryResult = [
             "ok": false,
@@ -1436,7 +1462,8 @@ case "send_and_watch":
           "stopped": stopResult["stopped"] as? Bool ?? false,
           "stopConfirmed": stopConfirmed,
           "stopVerification": stopResult,
-          "createdNewChat": stopConfirmed,
+          "continuedInNewTask": continuationPreparation["continuationClicked"] as? Bool ?? false,
+          "continuationPreparation": continuationPreparation,
           "continued": recoveryResult["messageConfirmed"] as? Bool ?? false,
           "sendVerification": recoveryResult,
           "error": recoveryResult["error"] as Any,
@@ -1574,38 +1601,48 @@ case "send_and_watch":
       .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     let hasNextTask = !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let continuationAllowed = maxTaskContinuations == 0 || continuationDepth < maxTaskContinuations
-    if continuationAllowed && hasNextTask {
-      var childParams = params
-      childParams["message"] = continuationFromTaskReport(
-        report, originalGoal: originalGoal, iteration: continuationDepth + 1)
-      childParams["originalGoal"] = originalGoal
-      childParams["continuationDepth"] = continuationDepth + 1
-      childParams["reportFingerprints"] = Array((reportFingerprints + [fingerprint]).suffix(100))
-      childParams["resumeExisting"] = false
-      childParams["newChat"] = true
-      childParams["conversationId"] = NSNull()
-      childParams["chatUrl"] = NSNull()
-      emitProgress([
-        "event": "task_continuation",
-        "status": "started",
-        "errorCode": "task_continuation_started",
-        "reason": taskStatus as Any,
-        "iteration": continuationDepth + 1,
-        "taskReport": report,
-        "backgroundOnly": true,
-        "workerUsed": false,
-      ])
-      relayFreshChatContinuation(childParams)
-    }
-    if hasNextTask && continuationAllowed {
-      resultPayload["errorCode"] = "task_continuation_started"
-      resultPayload["message"] = "任务未完成，小程序已自动启动下一轮 Chat 续作。"
-    } else if hasNextTask {
-      resultPayload["errorCode"] = "task_continuation_limit_reached"
-      resultPayload["message"] = "未完成任务已达到显式配置的自动新 Chat 续作上限。"
-    } else {
+    if !hasNextTask {
       resultPayload["errorCode"] = "task_continuation_unavailable"
       resultPayload["message"] = "未完成报告缺少 next_task，小程序无法构造下一轮 Chat 续作。"
+    } else if !continuationAllowed {
+      resultPayload["errorCode"] = "task_continuation_limit_reached"
+      resultPayload["message"] = "未完成任务已达到显式配置的自动续作上限。"
+    } else {
+      let continuationPreparation = cdpEvaluateOnChatGPT(
+        continueInNewTaskJS(),
+        timeout: 35.0,
+        preferredURL: activeChatURL
+      ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
+      if continuationPreparation["ok"] as? Bool == true {
+        var childParams = params
+        childParams["message"] = continuationFromTaskReport(
+          report, originalGoal: originalGoal, iteration: continuationDepth + 1)
+        childParams["originalGoal"] = originalGoal
+        childParams["continuationDepth"] = continuationDepth + 1
+        childParams["reportFingerprints"] = Array((reportFingerprints + [fingerprint]).suffix(100))
+        childParams["resumeExisting"] = false
+        childParams["freshTargetPrepared"] = true
+        childParams["newChat"] = false
+        childParams["conversationId"] = NSNull()
+        childParams["chatUrl"] = NSNull()
+        emitProgress([
+          "event": "task_continuation",
+          "status": "started",
+          "errorCode": "task_continuation_started",
+          "reason": taskStatus as Any,
+          "iteration": continuationDepth + 1,
+          "continuationPreparation": continuationPreparation,
+          "taskReport": report,
+          "backgroundOnly": true,
+          "workerUsed": false,
+        ])
+        relayFreshChatContinuation(childParams)
+      }
+      resultPayload["continuationPreparation"] = continuationPreparation
+      resultPayload["errorCode"] =
+        continuationPreparation["error"] ?? "continue_in_new_task_not_confirmed"
+      resultPayload["message"] =
+        "任务未完成，但没有确认点击上一条回复底部的“在新任务中继续”；小程序已停止，避免丢失上下文。"
     }
   }
   output(resultPayload, exitCode: resultPayload["ok"] as? Bool == true ? 0 : 1)
