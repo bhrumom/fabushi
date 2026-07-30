@@ -229,7 +229,7 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/diagnostics
 
       - name: Continue incomplete work or report terminal failure
-        if: always()
+        if: success() || failure()
         shell: bash
         env:
           RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
