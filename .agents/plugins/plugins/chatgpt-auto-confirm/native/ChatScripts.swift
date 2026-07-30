@@ -1251,6 +1251,41 @@ func getReplyJS() -> String {
     const userMessageCount = users.length;
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
     const content = last?.innerText || '';
+    const normalizeControlLabel = value => (value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    const responseTurn = last?.closest(
+      'article, [data-testid^="conversation-turn-"], [data-message-id]'
+    ) || last?.parentElement?.parentElement || last;
+    const responseControls = [...(responseTurn?.querySelectorAll(
+      'button, a, [role="button"], [aria-label], [title]'
+    ) || [])].filter(visible);
+    const responseControlLabels = responseControls.map(control => normalizeControlLabel(
+      control.getAttribute('aria-label')
+        || control.getAttribute('title')
+        || control.innerText
+        || control.textContent
+    )).filter(Boolean);
+    const hasResponseControl = patterns => responseControlLabels.some(label =>
+      patterns.some(pattern => pattern.test(label))
+    );
+    // A locally completed ChatGPT response exposes its stable per-response
+    // action row. Streaming/stale virtualized bodies do not reliably expose
+    // all three controls, so this is stronger completion evidence than text,
+    // a changed conversation id, or an old collapsed Thinking section.
+    const responseActions = {
+      copy: hasResponseControl([/^copy(?:\s|$)/, /^复制(?:\s|$)/]),
+      branch: hasResponseControl([
+        /\bbranch(?:\s+in\s+new\s+chat)?\b/,
+        /新(?:建)?(?:聊天)?分支/,
+        /在新(?:的)?聊天中(?:创建)?分支/,
+      ]),
+      share: hasResponseControl([/^share(?:\s|$)/, /^分享(?:\s|$)/]),
+    };
+    const responseActionsComplete = responseActions.copy
+      && responseActions.branch
+      && responseActions.share;
 
     const stopSelectors = [
       '[data-testid="stop-button"]', '[aria-label="Stop streaming"]',
@@ -1272,7 +1307,7 @@ func getReplyJS() -> String {
       const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '').trim().toLowerCase();
       return visible(button) && ['允许一次', 'allow once', 'approve once'].includes(text);
     });
-    const thinkingActive = !!latestThinking && (
+    const thinkingActive = !responseActionsComplete && !!latestThinking && (
       latestThinking.getAttribute('aria-expanded') !== null
       || !!latestThinking.querySelector('[class*="shimmer"], [class*="Shimmer"]')
     );
@@ -1325,11 +1360,16 @@ func getReplyJS() -> String {
     );
     const waitingForApproval = !!approvalButton;
     const awaitingAssistant = userMessageCount > messages.length;
-    const done = !!last && messages.length >= userMessageCount && !active && content.length > 0;
+    const done = !!last
+      && messages.length >= userMessageCount
+      && !active
+      && content.length > 0
+      && responseActionsComplete;
     const completionCandidate = !done
       && !active
       && !waitingForApproval
       && !stopBtn
+      && responseActionsComplete
       && !!latestCompletedThinking
       && userMessageCount > 0
       && completedActivity.length > 0
@@ -1339,6 +1379,7 @@ func getReplyJS() -> String {
     const terminalIncomplete = (!active || hasClosedTaskReport)
       && !waitingForApproval
       && !stopBtn
+      && responseActionsComplete
       && userMessageCount > 0
       && (structuredIncomplete || explicitlyIncomplete)
       && (hasClosedTaskReport || done || (!!latestCompletedThinking && completedActivity.length > 0));
@@ -1370,6 +1411,9 @@ func getReplyJS() -> String {
       completedThinkingTitle: latestCompletedThinking
         ? (latestCompletedThinking.innerText || '').trim().substring(0, 200)
         : '',
+      responseActions,
+      responseActionsComplete,
+      responseControlLabels: responseControlLabels.slice(0, 40),
       streaming: active,
       done,
       pending: !done && (awaitingAssistant || active),

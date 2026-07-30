@@ -20,6 +20,7 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
       title: 'Marketplace',
       prompt: 'Finish the marketplace',
       resourceLocks: ['worktree:marketplace'],
+      maxTaskContinuations: 0,
     }],
   };
   const env = {
@@ -35,6 +36,7 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     assert.equal(state.automationTasks.length, 1);
     assert.equal(state.automationTasks[0].id, 'marketplace-parallel');
+    assert.equal(state.automationTasks[0].maxTaskContinuations, 0);
     assert.equal(state.queueMaxConcurrent, 2);
     assert.equal(state.queueReviewGate, false);
     assert.equal(state.queueEnabled, true);
