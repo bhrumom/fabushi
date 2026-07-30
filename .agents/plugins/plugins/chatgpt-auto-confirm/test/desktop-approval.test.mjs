@@ -147,6 +147,10 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   );
   assert.match(nativeSource, /overflowOpened/);
   assert.match(nativeSource, /overflowCandidates/);
+  assert.match(nativeSource, /approval_click_not_confirmed/);
+  assert.match(nativeSource, /traceQueueApproval/);
+  assert.match(nativeSource, /stage=approval-/);
+  assert.match(nativeSource, /candidateLabels/);
   assert.match(nativeSource, /retainedConversationDiagnosticCount = 5/);
   assert.match(nativeSource, /\.live\.json/);
   assert.match(nativeSource, /\.final\.json/);

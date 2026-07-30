@@ -13,6 +13,27 @@ func taskReportFingerprint(_ report: AutomationTaskReport) -> String {
     .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
 }
 
+func traceQueueApproval(
+  _ result: [String: Any]?,
+  taskId: String,
+  stage: String
+) {
+  guard let result else { return }
+  guard result["clicked"] as? Bool == true
+          || result["error"] as? String != nil else { return }
+  let candidates = jsonString([
+    "labels": result["candidateLabels"] ?? [],
+  ]) ?? "{\"labels\":[]}"
+  queueTrace(
+    "task=\(taskId) stage=approval-\(stage) "
+      + "clicked=\(result["clicked"] as? Bool == true) "
+      + "confirmed=\(result["confirmed"] as? Bool == true) "
+      + "label=\(result["label"] as? String ?? "none") "
+      + "error=\(result["error"] as? String ?? "none") "
+      + "candidates=\(candidates)"
+  )
+}
+
 func queueContinuation(
   _ task: inout AutomationTask,
   report: AutomationTaskReport?,
@@ -209,12 +230,13 @@ func monitorAutomationTask(
   // A permission card can replace the normal conversation body temporarily.
   // Confirm it before restoring a task through its exact hidden-page route, so
   // an unloaded conversation cannot suppress automatic authorization.
-  _ = cdpValue(
+  let initialApproval = cdpValue(
     port: port,
     targetId: targetId,
     expression: autoApproveDedicatedAuthorizationJS(),
     timeout: 4.0
   )
+  traceQueueApproval(initialApproval, taskId: task.id, stage: "before-read")
   let now = isoFormatter.string(from: Date())
   guard var liveStatus = cdpValue(
           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
@@ -373,12 +395,13 @@ func monitorAutomationTask(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  _ = cdpValue(
+  let followupApproval = cdpValue(
     port: port,
     targetId: targetId,
     expression: autoApproveDedicatedAuthorizationJS(),
     timeout: 4.0
   )
+  traceQueueApproval(followupApproval, taskId: task.id, stage: "after-read")
   task.lastError = nil
   // A new local id is the authoritative identity. The sidebar can keep the
   // previous row marked current briefly, so never replace a local id with
