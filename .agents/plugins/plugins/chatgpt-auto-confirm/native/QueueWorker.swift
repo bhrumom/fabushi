@@ -1326,6 +1326,9 @@ func startAutomationTask(
   var targetId: String?
   var workerProfilePath: String?
   var taskOwnsTarget = false
+  let previousConversationId = (task.continuationDepth ?? 0) > 0
+    ? normalizedConversationId(task.conversationId)
+    : nil
   defer {
     if !taskOwnsTarget, let port, let targetId {
       _ = CDPClient.closeTarget(targetId, portOverride: port)
@@ -1361,13 +1364,46 @@ func startAutomationTask(
   port = worker.port
   targetId = worker.targetId
   workerProfilePath = worker.profilePath
-  queueTrace("task=\(task.id) stage=prepare-new-chat begin")
-  prepared = prepareNewChatTarget(
-    port: worker.port,
-    targetId: worker.targetId,
-    timeout: 4.0,
-    allowBlankConversationReuse: true
-  )
+  if let previousConversationId {
+    queueTrace(
+      "task=\(task.id) stage=prepare-continuation begin "
+        + "previousConversation=\(previousConversationId)"
+    )
+    guard navigateHiddenConversation(
+      port: worker.port,
+      targetId: worker.targetId,
+      conversationId: previousConversationId
+    ) else {
+      throw NSError(
+        domain: "chatgpt-auto-confirm",
+        code: 34,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "任务 \(task.id) 无法恢复上一轮会话，未点击“在新任务中继续”"
+        ]
+      )
+    }
+    prepared = cdpValue(
+      port: worker.port,
+      targetId: worker.targetId,
+      expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
+      timeout: 35.0
+    )
+    queueTrace(
+      "task=\(task.id) stage=prepare-continuation "
+        + "clicked=\(prepared?["continuationClicked"] as? Bool == true) "
+        + "newConversation=\(prepared?["conversationId"] as? String ?? "none") "
+        + "error=\(prepared?["error"] as? String ?? "none")"
+    )
+  } else {
+    queueTrace("task=\(task.id) stage=prepare-new-chat begin")
+    prepared = prepareNewChatTarget(
+      port: worker.port,
+      targetId: worker.targetId,
+      timeout: 4.0,
+      allowBlankConversationReuse: true
+    )
+  }
   guard let prepared,
         prepared["ok"] as? Bool == true,
         let port,
@@ -1378,7 +1414,9 @@ func startAutomationTask(
       userInfo: [NSLocalizedDescriptionKey: "无法为任务 \(task.id) 准备已登录隐藏 Chat"]
     )
   }
-  queueTrace("task=\(task.id) stage=prepare-new-chat complete")
+  queueTrace(
+    "task=\(task.id) stage=\(previousConversationId == nil ? "prepare-new-chat" : "prepare-continuation") complete"
+  )
   let attempt = task.attempts + 1
   let outbound = messageWithTaskReportContract(automationTaskMessage(task))
   queueTrace("task=\(task.id) stage=send begin")
