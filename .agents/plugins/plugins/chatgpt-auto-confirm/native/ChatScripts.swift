@@ -804,7 +804,30 @@ func sendMessageJS(
           && rect.bottom <= promptRect.bottom + 24;
         return overlapsPromptHorizontally && isInComposerBand;
       }) : [];
-      return [...composerMatches, ...checkedMenuMatches, ...inlineMentionMatches, ...nearbyExactMatches];
+      // In the current web Chat surface the selected app can be rendered as a
+      // standalone chip/button outside the composer form (and outside the
+      // menu), with only its app label exposed.  Treat that stable selected
+      // control as evidence too; do not count menu options that are merely
+      // available for selection.
+      const standaloneSelectedMatches = [...document.querySelectorAll(
+        '[data-connector-id], [data-app-name], button[aria-label], [role="button"]'
+      )].filter(element => {
+        if (!visible(element) || !connectorMatches([
+          element.getAttribute('aria-label'), element.getAttribute('title'),
+          element.getAttribute('data-testid'), element.getAttribute('data-connector-id'),
+          element.getAttribute('data-app-name'), element.textContent
+        ].filter(Boolean).join(' '), target)) return false;
+        if (element.closest('[role="menu"], [role="listbox"], [role="option"]')) return false;
+        return element.closest('form')
+          || element.getAttribute('aria-pressed') === 'true'
+          || element.getAttribute('aria-checked') === 'true'
+          || element.getAttribute('data-state') === 'checked'
+          || element.getAttribute('data-state') === 'on'
+          || element.getAttribute('data-selected') === 'true'
+          || element.getAttribute('data-active') === 'true';
+      });
+      return [...composerMatches, ...checkedMenuMatches, ...inlineMentionMatches,
+        ...nearbyExactMatches, ...standaloneSelectedMatches];
     }
 
     function chatModeIsActive() {
