@@ -8,7 +8,16 @@ if (!inboxPath) throw new Error('CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE is require
 const inbox = JSON.parse(readFileSync(inboxPath, 'utf8'));
 const incoming = Array.isArray(inbox.tasks) ? inbox.tasks : [];
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
-const tasks = Array.isArray(state.automationTasks) ? state.automationTasks : [];
+const incomingIds = new Set(incoming.map(task => task?.id).filter(Boolean));
+const originalTasks = Array.isArray(state.automationTasks) ? state.automationTasks : [];
+const removed = [];
+const tasks = inbox.authoritative === true
+  ? originalTasks.filter((task) => {
+    const keep = incomingIds.has(task?.id);
+    if (!keep && task?.id) removed.push(task.id);
+    return keep;
+  })
+  : originalTasks;
 const knownTasks = new Map(tasks.map(task => [task.id, task]));
 const now = new Date().toISOString();
 const appended = [];
@@ -114,5 +123,6 @@ state.queueReviewGate = inbox.reviewGate ?? false;
 writeFileSync(statePath, `${JSON.stringify(state)}\n`, { mode: 0o600 });
 process.stdout.write(
   `Imported ${appended.length} new queued task(s); requeued ${requeued.length} failed task(s).` +
-  `${requeued.length ? ` Requeued: ${requeued.join(', ')}.` : ''}\n`,
+  `${requeued.length ? ` Requeued: ${requeued.join(', ')}.` : ''}` +
+  `${removed.length ? ` Removed stale tasks: ${removed.join(', ')}.` : ''}\n`,
 );

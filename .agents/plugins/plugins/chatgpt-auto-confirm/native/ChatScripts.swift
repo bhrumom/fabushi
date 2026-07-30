@@ -1356,8 +1356,16 @@ func getReplyJS() -> String {
     ];
     const messages = webMessages.length > 0 ? webMessages : appMessages;
     const webUsers = [...main.querySelectorAll('[data-message-author-role="user"]')];
-    const appUsers = [...main.querySelectorAll('[data-user-message-bubble]')];
+    const appUsers = [
+      ...main.querySelectorAll(
+        '[data-user-message-bubble], '
+          + '[data-content-search-unit-key$=":user"]'
+      )
+    ];
     const users = webUsers.length > 0 ? webUsers : appUsers;
+    const userText = user => (
+      user?.querySelector('[data-selected-text-overlay-target]') || user
+    )?.innerText || '';
     const userMessageCount = users.length;
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
     const assistantContent = last?.querySelector('[data-selected-text-overlay-target]')
@@ -1438,8 +1446,8 @@ func getReplyJS() -> String {
       .replace(/\b([A-Z][A-Z0-9_]*(?:TOKEN|API_KEY|SECRET|PASSWORD))=([^\s,]+)/g, '$1=[REDACTED]')
       .replace(/(DeviceID\s*\n)[^\n]+/gi, '$1[REDACTED_DEVICE_ID]');
     const mainText = redact((main.innerText || '').replace(/\s+$/g, ''));
-    const userContent = redact(users.map(user => user.innerText || '').join('\n'));
-    const lastUserText = (users[users.length - 1]?.innerText || '').trim();
+    const userContent = redact(users.map(userText).join('\n'));
+    const lastUserText = userText(users[users.length - 1]).trim();
     const userIndex = lastUserText ? mainText.lastIndexOf(lastUserText) : -1;
     const activity = (userIndex >= 0
       ? mainText.slice(userIndex + lastUserText.length)

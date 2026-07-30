@@ -138,6 +138,7 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /responseActions\.like/);
   assert.match(nativeSource, /responseActions\.dislike/);
   assert.match(nativeSource, /data-content-search-unit-key\$=":assistant"/);
+  assert.match(nativeSource, /data-content-search-unit-key\$=":user"/);
   assert.match(nativeSource, /data-content-search-turn-key/);
   assert.match(nativeSource, /data-turn-key/);
   assert.match(nativeSource, /在新任务中继续|新任务/);
@@ -145,6 +146,9 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /current_dispatch_marker_timeout/);
   assert.match(nativeSource, /stage=continuation-queued/);
   assert.match(nativeSource, /stage=terminal-observed/);
+  assert.match(nativeSource, /queue_monitor_current_dispatch_marker_active/);
+  assert.match(nativeSource, /page_stalled_but_response_active/);
+  assert.match(nativeSource, /Never click Stop or close its renderer/);
   assert.match(nativeSource, /completedThinkingToggles/);
   assert.match(nativeSource, /completedSectionText/);
   assert.match(nativeSource, /completedActivity\.length > 0/);
@@ -393,11 +397,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.doesNotMatch(nativeSource, /openNewWindowUsingApplicationMenu/);
   assert.doesNotMatch(nativeSource, /kAXMinimizedAttribute/);
   assert.match(nativeSource, /state\.queueWorkerTargetId/);
-  assert.match(nativeSource, /queue_worker_background_window_migration/);
   assert.match(nativeSource, /queue_monitor_requires_background_window/);
-  assert.match(nativeSource, /stopLegacyQueueResponseIfStillOwned/);
-  assert.match(nativeSource, /pageContent\.contains\(dispatchMarker\)/);
-  assert.match(nativeSource, /not stop, select, focus/);
+  assert.match(nativeSource, /let hasRunningTasks = tasks\.contains/);
+  assert.match(nativeSource, /only while idle/);
+  assert.match(nativeSource, /&& !hasRunningTasks/);
+  assert.doesNotMatch(nativeSource, /stopLegacyQueueResponseIfStillOwned/);
   assert.match(nativeSource, /closeDedicatedAutomationTarget/);
   assert.match(nativeSource, /page where the user is composing a new task/);
   assert.match(nativeSource, /实际工作只允许在 Chat 页面完成/);
