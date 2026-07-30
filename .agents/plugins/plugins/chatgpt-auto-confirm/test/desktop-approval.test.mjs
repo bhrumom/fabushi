@@ -88,6 +88,11 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /continuationClicked/);
   assert.match(nativeSource, /continue_in_new_task_button_not_found/);
   assert.match(nativeSource, /stage=prepare-continuation/);
+  assert.match(nativeSource, /continuation_navigation_failed/);
+  assert.match(nativeSource, /fallback=new-chat/);
+  assert.match(nativeSource, /continuationFallback/);
+  assert.match(nativeSource, /case \.visible:[\s\S]*queueUsesHostedRenderer\(\)/);
+  assert.doesNotMatch(nativeSource, /无法恢复上一轮会话，未点击/);
 });
 
 test('send_and_watch streams visible thinking and uses bounded same-task recovery', async () => {

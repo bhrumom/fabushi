@@ -1322,6 +1322,7 @@ func startAutomationTask(
   // authenticated ChatGPT process. This preserves the proven real Chat UI path
   // without navigating away from another task's streaming conversation.
   var prepared: [String: Any]?
+  var preparationFailure: String?
   var port: Int?
   var targetId: String?
   var workerProfilePath: String?
@@ -1369,32 +1370,57 @@ func startAutomationTask(
       "task=\(task.id) stage=prepare-continuation begin "
         + "previousConversation=\(previousConversationId)"
     )
-    guard navigateHiddenConversation(
+    let navigationSucceeded = navigateHiddenConversation(
       port: worker.port,
       targetId: worker.targetId,
       conversationId: previousConversationId
-    ) else {
-      throw NSError(
-        domain: "chatgpt-auto-confirm",
-        code: 34,
-        userInfo: [
-          NSLocalizedDescriptionKey:
-            "任务 \(task.id) 无法恢复上一轮会话，未点击“在新任务中继续”"
-        ]
-      )
-    }
-    prepared = cdpValue(
-      port: worker.port,
-      targetId: worker.targetId,
-      expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
-      timeout: 35.0
     )
+    if navigationSucceeded {
+      prepared = cdpValue(
+        port: worker.port,
+        targetId: worker.targetId,
+        expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
+        timeout: 35.0
+      )
+    } else {
+      prepared = [
+        "ok": false,
+        "error": "continuation_navigation_failed",
+        "conversationId": previousConversationId,
+      ]
+    }
     queueTrace(
       "task=\(task.id) stage=prepare-continuation "
+        + "navigated=\(navigationSucceeded) "
         + "clicked=\(prepared?["continuationClicked"] as? Bool == true) "
         + "newConversation=\(prepared?["conversationId"] as? String ?? "none") "
         + "error=\(prepared?["error"] as? String ?? "none")"
     )
+    if prepared?["ok"] as? Bool != true {
+      let continuationError = prepared?["error"] as? String ?? "continuation_no_result"
+      preparationFailure = continuationError
+      let screenshot = captureHiddenChatScreenshot(
+        port: worker.port,
+        targetId: worker.targetId,
+        label: "continuation-fallback"
+      )
+      queueTrace(
+        "task=\(task.id) stage=prepare-continuation fallback=new-chat "
+          + "reason=\(continuationError) "
+          + "screenshot=\(screenshot ?? "none")"
+      )
+      if var fallback = prepareNewChatTarget(
+        port: worker.port,
+        targetId: worker.targetId,
+        timeout: 4.0,
+        allowBlankConversationReuse: true
+      ) {
+        fallback["continuationFallback"] = true
+        fallback["continuationFailure"] = continuationError
+        fallback["previousConversationId"] = previousConversationId
+        prepared = fallback
+      }
+    }
   } else {
     queueTrace("task=\(task.id) stage=prepare-new-chat begin")
     prepared = prepareNewChatTarget(
@@ -1411,7 +1437,10 @@ func startAutomationTask(
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 22,
-      userInfo: [NSLocalizedDescriptionKey: "无法为任务 \(task.id) 准备已登录隐藏 Chat"]
+      userInfo: [
+        NSLocalizedDescriptionKey:
+          "无法为任务 \(task.id) 准备已登录 Chat（\(preparationFailure ?? "unknown")）"
+      ]
     )
   }
   queueTrace(
