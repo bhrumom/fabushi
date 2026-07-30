@@ -1160,15 +1160,13 @@ fn validate_marketplace_site_manifest(
     let matches = manifest.get("schemaVersion").and_then(Value::as_u64) == Some(1)
         && manifest.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
         && manifest.get("version").and_then(Value::as_str) == Some(version)
-        && manifest.get("packagePath").and_then(Value::as_str)
-            == Some("/mahayana/plugin.tar.gz")
+        && manifest.get("packagePath").and_then(Value::as_str) == Some("/mahayana/plugin.tar.gz")
         && manifest
             .get("packageSha256")
             .and_then(Value::as_str)
             .is_some_and(|digest| digest.eq_ignore_ascii_case(package_sha256))
         && manifest.get("packageSize").and_then(Value::as_u64) == Some(package_size as u64)
-        && manifest.get("runtime").and_then(Value::as_str)
-            == Some("independent-worker-or-pages");
+        && manifest.get("runtime").and_then(Value::as_str) == Some("independent-worker-or-pages");
     matches
         .then_some(())
         .ok_or_else(|| "plugin manifest does not match release metadata".to_string())
