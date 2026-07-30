@@ -88,6 +88,7 @@ jobs:
           '''
           path.write_text(source[:start] + replacement + source[end:], encoding="utf-8")
           PY
+          cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all
           cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
           cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client
           cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
