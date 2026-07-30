@@ -28,8 +28,10 @@ for (const task of state.automationTasks || []) {
     task.status = 'queued';
     task.startedAt = null;
     task.finishedAt = null;
-    task.conversationId = null;
-    task.chatURL = null;
+    // Keep the finished/active Chat identity across hosted runner rotation.
+    // startAutomationTask will reopen this conversation and click
+    // "Continue in new task" when continuationDepth is non-zero. Clearing it
+    // here silently turns a serial continuation into an unrelated fresh Chat.
     task.lastProgressAt = null;
     task.lastError = 'github_actions_runner_continuation';
     const note = 'GitHub Actions 已在新托管 Runner 中接管。请从同一 checkout 的最新落盘进度继续。';
