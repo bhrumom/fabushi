@@ -46,7 +46,7 @@ export const handleRequest = request => {
       jsonrpc: '2.0',
       id: request.id,
       result: {
-        content: [{ type: 'text', text: result.message }],
+        content: [{ type: 'text', text: `${result.message} [${result.pluginId}]` }],
         structuredContent: result,
         isError: false,
       },
