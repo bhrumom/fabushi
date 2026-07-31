@@ -1,139 +1,97 @@
 # 参考资料
 
-本文件保存市场、发布和软件更新安全方面的任务设计依据。MCP `2026-07-28` 协议与 Cloudflare 边缘迁移的专门官方资料见 `MCP_2026_07_28_REFERENCES.md`。实施时仍应以当前官方文档和仓库实际代码为准。
+本文件保存市场、发布和更新安全设计依据。MCP Apps 与 Cloudflare runtime 的正式依据请优先阅读 `MCP_APPS_REFERENCES.md`。
 
 ## 1. 当前仓库
 
-- 现有动态市场发布、浏览和下载：`fabushi/web/src/handlers/marketplace.js`
+- 动态市场：`fabushi/web/src/handlers/marketplace.js`
 - 动态市场测试：`fabushi/web/tests/marketplace.test.js`
 - 官方内置市场：`.agents/plugins/marketplace.json`
-- 公共发现清单：`frontend/apps/web/public/.well-known/mahayana/marketplace.json`
-- 市场说明：`docs/plugin-marketplace.md`
-- Flutter 小程序 registry：`fabushi/lib/services/mini_app_registry_service.dart`
+- 公共发现：`frontend/apps/web/public/.well-known/mahayana/marketplace.json`
+- Web 小程序 Host：`frontend/apps/web/src/app/miniapps/[id]/McpPluginApp.tsx`
+- 大乘自定义 SDK：`frontend/packages/mcp-app-sdk/`
+- Flutter 小程序模型：`fabushi/lib/models/mini_app_model.dart`
+- Flutter registry：`fabushi/lib/services/mini_app_registry_service.dart`
 - 本地插件发现：`fabushi/lib/services/codex_plugin_catalog_io.dart`
-- 官方安装脚本：`scripts/install-official-plugin.sh`、`scripts/install-official-plugin.ps1`
-- 官方插件打包：`scripts/package-official-plugin-release.py`
-- MCP 最新边缘升级设计：`MCP_2026_07_28_EDGE.md`
-- MCP 最新官方资料：`MCP_2026_07_28_REFERENCES.md`
 
-## 2. MCP Registry
+## 2. MCP Apps
 
-MCP Registry 是中央元数据目录，记录唯一名称、包位置、远程 URL、执行和配置方法；实际包可位于 npm、PyPI、Docker 等仓库，远程服务由开发者提供。发布后的版本元数据不可变。
+- https://github.com/modelcontextprotocol/ext-apps
+- https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
+- https://github.com/modelcontextprotocol/ext-apps/blob/main/docs/overview.md
+
+采用：
+
+- `io.modelcontextprotocol/ui`；
+- `ui://`；
+- `text/html;profile=mcp-app`；
+- AppBridge；
+- sandbox/CSP；
+- model/app visibility；
+- JSON-RPC over postMessage。
+
+## 3. Cloudflare stateless MCP
+
+- https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/
+- https://developers.cloudflare.com/agents/model-context-protocol/guides/migrate-to-mcp-sdk-v2/
+- https://developers.cloudflare.com/agents/model-context-protocol/guides/remote-mcp-server/
+- https://developers.cloudflare.com/workers/versions-and-deployments/
+
+采用：
+
+- `createMcpHandler`；
+- `@modelcontextprotocol/server` SDK v2；
+- production `legacy: "reject"`；
+- 每请求 server factory；
+- 显式业务状态；
+- Host/Origin/OAuth 校验。
+
+禁止使用 `createLegacyMcpHandler`、`McpAgent` 和 SDK v1 production server。
+
+## 4. MCP Registry
 
 - https://modelcontextprotocol.io/registry/about
 - https://modelcontextprotocol.io/registry/faq
 - https://modelcontextprotocol.io/registry/versioning
-- https://modelcontextprotocol.io/registry/package-types
-- https://modelcontextprotocol.io/registry/registry-aggregators
 
-大乘采用的启示：
+采用：Registry/Marketplace 负责身份、发现和可信元数据；运行与包字节可以由插件服务承载；版本元数据不可变。
 
-- Registry/Marketplace 负责身份、发现和可信元数据；
-- 运行和包字节不必全部托管在中央市场；
-- 版本必须唯一且元数据不可变；
-- 市场可以在基础 registry 上增加审核、评分和安全状态。
-
-## 3. npm
-
-npm 的包名+版本发布后不可覆盖；Trusted Publishing 使用 CI OIDC 避免长期发布 Token，并可生成 provenance。
+## 5. npm Trusted Publishing 与 provenance
 
 - https://docs.npmjs.com/cli/publish/
-- https://docs.npmjs.com/policies/unpublish/
 - https://docs.npmjs.com/trusted-publishers/
 - https://docs.npmjs.com/generating-provenance-statements/
 - https://docs.npmjs.com/viewing-package-provenance/
 
-大乘采用的启示：
+采用：`pluginId + version` 不可复用；GitHub Actions OIDC 短期发布凭证；provenance 绑定源码、commit、workflow 和构件。
 
-- `<pluginId, version>` 永久唯一；
-- 发布使用短期、工作流限定 OIDC；
-- provenance 绑定源码、commit、workflow 和构件；
-- 不能把 SHA-256 当作发布者身份验证。
-
-## 4. VS Code Marketplace
-
-VS Code 扩展以 VSIX 包发布，由 Marketplace 承担认证、托管和管理。
+## 6. VS Code、Slack、Forge
 
 - https://code.visualstudio.com/api/working-with-extensions/publishing-extension
-
-大乘采用的启示：
-
-- 本地运行插件适合不可变包和统一安装契约；
-- 市场应提供一致的发布和审核体验；
-- 大乘同时包含远程服务，因此不能只复制中心包仓库。
-
-## 5. Slack 应用
-
-Slack 应用可以由开发者自托管，Marketplace 负责展示、审核和安装入口。
-
 - https://api.slack.com/distribution/hosting
-- https://api.slack.com/docs/slack-apps-mgmt
-
-大乘采用的启示：
-
-- 中央目录与开发者运行平面可以分离；
-- 自托管适合远程 MCP 和 SaaS 集成；
-- 自托管仍必须经过身份、审核和安装安全控制。
-
-## 6. Atlassian Forge
-
-Forge 由 Atlassian 管理基础设施、扩缩容和安全边界，开发者不需要自己提供运行环境；Connect 自托管属于旧路线。
-
 - https://developer.atlassian.com/developer-guide/cloud-app-hosting/
-- https://developer.atlassian.com/platform/forge/introduction/the-forge-platform/
-- https://developer.atlassian.com/platform/forge/introduction/why-build-with-forge/
 
-大乘采用的启示：
+采用混合市场：中央控制平面 + 每插件独立运行平面；普通用户默认平台托管，高级用户可验证后自托管。
 
-- 普通发布者默认应使用平台托管模式；
-- 平台托管需要承担沙箱、配额、日志、数据隔离和滥用治理；
-- 同时保留高级自托管以满足企业控制需求。
-
-## 7. Cloudflare Workers 版本与部署
-
-Cloudflare Worker version 捕获代码、静态资源、bindings 和兼容设置；deployment 决定哪些版本对外服务，并支持渐进部署和回滚。
-
-- https://developers.cloudflare.com/workers/versions-and-deployments/
-- https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/
-- https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/
-
-大乘采用的启示：
-
-- 一个插件使用一个稳定 Worker 服务；
-- 每个插件版本映射到 Worker version，而不是永久新 Worker 项目；
-- production deployment 可以提升、灰度和回滚；
-- Cloudflare version 不会自动版本化外部 D1/KV/Durable Object 状态，因此数据迁移必须独立设计。
-
-## 8. The Update Framework
-
-TUF 为软件更新定义 root、targets、snapshot、timestamp 等角色，防止任意安装、回退、冻结、混搭、错误软件和密钥泄露影响扩散。
+## 7. The Update Framework
 
 - https://theupdateframework.github.io/specification/draft/
 - https://theupdateframework.io/
 
-大乘本轮采用核心思想：
+采用：根信任、目标哈希和大小、元数据版本与过期、防回退、防冻结、密钥轮换和撤销。
 
-- 根信任和在线签名密钥分离；
-- 目标元数据包含哈希和大小；
-- 元数据版本和过期时间；
-- consistent snapshot/不可变寻址；
-- 防回退、防冻结和防混搭；
-- 密钥轮换和撤销；
-- 数据格式未来可升级到完整 TUF。
-
-## 9. 任务设计结论
-
-综合以上模型，大乘不应强制所有插件使用同一种物理托管方式，而应统一逻辑契约：
+## 8. 任务设计结论
 
 ```text
-插件稳定身份
-+ 独立服务边界
-+ 不可变版本发布物
-+ 中央签名可信元数据
-+ 托管/自托管两种发布模式
-+ CLI 直连下载和本地安全验证
-+ MCP 2026-07-28 无状态边缘服务
-+ 标准 MCP Apps、Tasks 与 MRTR
+MCP Apps-only UI/runtime contract
++ Cloudflare stateless SDK v2
++ production legacy rejection
++ plugin stable identity
++ independent service boundary
++ immutable releases
++ central signed metadata
++ OIDC/provenance
++ CLI direct download and safe install
 ```
 
-这既适用于网页和远程 MCP，也适用于 CLI 本地 Runtime 和混合插件。
+不得把 Cloudflare 文档更新时间误写为 MCP Apps 规范版本。当前任务正式采用 MCP Apps stable `2026-01-26`，Cloudflare runtime 使用实施时官方要求的精确 SDK v2 版本。
