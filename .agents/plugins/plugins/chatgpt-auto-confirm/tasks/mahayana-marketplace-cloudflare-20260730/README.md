@@ -1,97 +1,92 @@
-# 大乘可热安装本地 Web MCP Apps 任务
+# 大乘单一身份多构件 MCP Apps 市场任务
 
 任务 ID：`mahayana-marketplace-cloudflare-20260730`  
-目标版本：`goalVersion = 7`  
+目标版本：`goalVersion = 8`  
 文档状态：等待产品审核，尚未合并到 `main`，不得启动实施 Action。
 
 ## 一句话目标
 
-> 把大乘小程序统一为可签名下载、安装到本地、通过网页热更新、由 MCP Tool 驱动的标准 MCP Apps；移动端、桌面 WebView 和普通 Web/PWA 尽可能复用同一套本地网页包与 Web Runtime，不要求每个插件能力都预编译进主 App。
-
-## 最高优先级设计
-
-1. `LOCAL_WEB_MCP_RUNTIME.md`：移动端和 Web 端共用可下载本地网页包、Local Web MCP Runtime、热安装、热更新和聊天 Tool 调用。
-2. `LOCAL_FIRST_MCP_APPS.md`：本地优先、桌面 stdio、独立运行和 Runtime Profiles。
-3. `MCP_APPS_ONLY.md`：MCP Apps UI、AppBridge、sandbox、CSP、tool visibility 和旧协议删除。
-
-其他文档与以上文件冲突时，以以上顺序为准。
-
-## 核心结构
-
-```text
-签名 MCP App 包
-├── ui/                 MCP Apps View
-├── runtime/web/        本地 JavaScript/WASM Tool Runtime
-├── tools.json
-├── permissions
-├── skills/workflows
-└── provenance/signature
-```
-
-移动端安装后，从 App 私有目录通过安全本地 Origin 加载；普通 Web/PWA 从浏览器本地存储和 Service Worker 加载。同一 Tool 逻辑在不同网页宿主复用。
-
-## 聊天与页面统一调用
-
-聊天输入：
-
-```text
-用户指令 → Host 选择 MCP Tool → Local Web Runtime 执行 → UI 显示结果
-```
-
-页面按钮：
-
-```text
-MCP Apps View → AppBridge tools/call → Local Web Runtime
-```
-
-禁止依赖模拟点击网页按钮。
+> 一个小程序只有一个插件身份、一个版本、一套 Tool 契约和一套 MCP Apps UI，但同一个签名 Release 可以包含桌面原生 CLI、网页 JavaScript/WebAssembly 等多个平台构件；安装器识别平台后只下载当前设备需要的内容。
 
 ## 全球法布施
 
-如果现有网页已能通过标准 Web API 完成发送，则全球法布施采用 `local-web`：
+同一个 `global-dharma` Release 包含：
 
-- 同一网页包安装到 iOS、Android、桌面和 Web；
-- 本地 Worker 执行 `send/status/cancel/logs` Tool；
-- 本地保存队列和状态；
-- Cloudflare 只负责市场、签名包、更新和网页需要调用的可选远程 API；
-- 更新网页 Runtime 不要求发布新的大乘主 App。
+- common：manifest、tools、permissions、MCP Apps UI、Skills、workflows；
+- native artifacts：macOS、Windows、Linux 对应 OS/CPU 的 CLI；
+- web-wasm artifact：iOS、Android、桌面 WebView、普通 Web/PWA 使用的 Worker、JavaScript adapter 和 WebAssembly。
 
-## 主 App 更新边界
+平台安装：
 
-HTML/CSS/JavaScript/WASM、Tool 流程、表单、规则、Skills 和普通 HTTPS 能力可以随插件更新。
+```text
+桌面 App = common UI + 当前 OS/CPU native CLI
+纯 CLI    = 必要 common + 当前 OS/CPU native CLI
+移动端    = common UI + web-wasm
+Web/PWA   = common UI + web-wasm
+```
 
-新增相机、蓝牙、通讯录、短信、辅助功能、长期后台任务或其他受限原生能力时，仍可能需要主 App 更新或平台批准。
+桌面端 MCP Host 通过 stdio 调用 CLI；移动/Web Host 通过 Worker/MessagePort 调用 WebAssembly/Web Runtime。两者实现同一组：
 
-## 商店合规
+```text
+global-dharma.send
+global-dharma.status
+global-dharma.cancel
+global-dharma.logs
+```
 
-热更新必须是受管理的 HTML5/JavaScript 小程序市场，而不是任意代码下载器：
+页面按钮和聊天输入必须调用同一个 Tool，不得模拟网页点击。
 
-- 完整市场索引、插件元数据和深链；
-- 签名、来源、权限、隐私、内容和恶意代码审核；
-- 用户逐插件安装与授权；
-- 商店说明和审核账号完整；
-- 不向下载的小程序任意暴露原生平台 API。
+## 关键原则
 
-## 仍须删除
+- 不是多个独立平台插件，而是同一插件版本下的多个构件；
+- plugin ID、version、Tool schema、错误码、权限和 UI resource 跨平台一致；
+- 每个构件独立 URL、SHA、大小、provenance 和平台条件；
+- 父 Release Manifest 对完整构件图签名；
+- 安装器按 platform、OS、architecture、Host version、WASM features 和 capabilities 选择最小下载集合；
+- 移动端不得下载桌面二进制；
+- 无头 CLI 可不下载非必要 UI；
+- UI 与 Runtime 必须同版本原子激活、升级和回滚；
+- native CLI 和 web-wasm 必须通过同一 Tool Contract Test；
+- 推荐共享 Rust 核心同时编译为 native 和 WASM，平台适配层分别处理 stdio、fetch、Worker、IndexedDB/OPFS 等能力；
+- 不要求每个插件支持所有平台，例如 ChatGPT 自动确认可以只有 desktop native 构件。
 
-- 大乘自定义 iframe bridge；
-- `mcp-2025-06-18` fallback；
+## MCP Apps 与本地网页
+
+UI 统一使用 MCP Apps stable `2026-01-26`：
+
+- `io.modelcontextprotocol/ui`；
+- `ui://`；
+- `text/html;profile=mcp-app`；
+- `_meta.ui.resourceUri`；
+- AppBridge、sandbox、CSP、tool visibility、host context 和 teardown。
+
+移动/Web 的网页与 WASM 构件下载安装到本地，从安全本地 Origin、WebView 或 Service Worker 缓存加载，可在不升级大乘主 App 的情况下热更新。新增受限原生系统能力时仍可能需要主 App 更新。
+
+## 必读顺序
+
+1. `MULTI_ARTIFACT_MCP_APP.md`：构件、Release、平台选择、原子安装最高优先级约束；
+2. `LOCAL_WEB_MCP_RUNTIME.md`：移动/Web 本地网页与 WASM Runtime；
+3. `LOCAL_FIRST_MCP_APPS.md`：本地优先执行；
+4. `MCP_APPS_ONLY.md`：MCP Apps、Host、安全与旧协议删除；
+5. 其余 PRD、技术设计、迁移、验收和安全文档。
+
+## 旧路径删除
+
+仍必须删除：
+
 - `Mcp-Session-Id`；
-- 旧 GET/SSE/DELETE session；
-- SDK v1 server；
+- 旧 GET/SSE/DELETE Session；
+- SDK v1 Server；
+- `createLegacyMcpHandler`、`McpAgent`、`WorkerTransport`；
+- `mcp-2025-06-18` fallback；
+- 大乘自定义 iframe bridge；
 - 运行旧插件的兼容路径。
-
-## 队列配置
-
-- revision：`2026-07-31.7`
-- goalVersion：`7`
-- 标题：`全面迁移大乘小程序至可热安装的本地 Web MCP Apps 运行架构`
 
 ## 审核状态
 
-收到明确“审核通过”之前：
+本分支和 Draft PR 只用于审核任务方案。收到明确“审核通过”之前：
 
 - 不合并到 `main`；
 - 不启用自动合并；
 - 不启动新的持续 Action；
-- 不影响当前运行中的任务。
+- 不影响当前队列任务。
