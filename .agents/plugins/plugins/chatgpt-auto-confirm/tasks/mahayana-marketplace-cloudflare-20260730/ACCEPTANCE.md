@@ -1,129 +1,140 @@
-# 验收标准：可热安装的本地 Web MCP Apps
+# 验收标准：单一身份、多构件 MCP Apps 架构
 
-任务只有在所有“必须”项满足并提供真实平台证据后才能报告 `complete`。
+任务只有在所有必须项满足并提供真实平台证据后才能报告 `complete`。
 
-## 1. 同一网页包跨平台
+## 1. 单一插件身份
 
-- [ ] 全球法布施使用同一个签名插件包覆盖 iOS、Android、桌面 WebView 和普通 Web/PWA。
-- [ ] 四个平台使用相同 `ui/` 资源。
-- [ ] 四个平台使用相同 `runtime/web/` Tool 实现。
-- [ ] 平台差异仅由 Host 存储、生命周期和安全适配器处理。
-- [ ] 不为全球法布施在移动端编写专属原生业务实现。
+- [ ] 每个小程序只有一个稳定 plugin ID。
+- [ ] 一个 Release 只有一个 semantic version。
+- [ ] Tool 名称、input/output schema、错误码、权限和业务语义跨构件一致。
+- [ ] MCP Apps `ui://` resource identity 跨平台一致。
+- [ ] 父 Release Manifest 对完整构件图签名。
 
-## 2. 本地安装
+## 2. 多构件发布
 
-- [ ] 插件包从市场不可变 URL 下载。
-- [ ] 安装前验证市场签名、SHA、大小、来源、权限、CSP 和撤销状态。
-- [ ] 解压到版本化本地目录。
-- [ ] 使用安全本地 Origin 加载，不使用不安全 `file://` 通配访问。
-- [ ] UI 和 Runtime 在断网时可以打开。
-- [ ] 安装失败不破坏当前版本。
+- [ ] Release 支持 common、native 和 web-wasm 构件。
+- [ ] common 包含 manifest、tools、permissions、UI、Skills 和 workflows。
+- [ ] macOS、Windows、Linux 按实际 OS/CPU 提供 native CLI 构件。
+- [ ] iOS、Android、桌面 WebView 和普通 Web/PWA 使用 web-wasm 构件。
+- [ ] 每个构件有独立不可变 URL、SHA-256、大小、来源和 provenance。
+- [ ] 构件声明 platform、OS、architecture、Host/MCP Apps version、WASM features 和 required capabilities。
+- [ ] 构件选择条件不存在歧义或错误重叠。
 
-## 3. MCP Apps UI
+## 3. 平台最小安装
+
+- [ ] 桌面 App 只下载 common UI 与当前 OS/CPU native CLI。
+- [ ] 纯 CLI 环境可跳过非必要 UI 大资源。
+- [ ] iOS/Android 只下载 common UI 与 web-wasm，不下载桌面二进制。
+- [ ] 普通 Web/PWA 只缓存 common UI 与 web-wasm。
+- [ ] 不兼容构件在下载前即被拒绝。
+- [ ] 安装前展示下载大小、执行位置、权限和选择的构件。
+
+## 4. 全球法布施
+
+- [ ] 同一 `global-dharma` Release 同时包含 native CLI 与 web-wasm。
+- [ ] macOS native CLI 真实运行。
+- [ ] Windows native CLI 真实运行。
+- [ ] Linux native CLI 真实运行。
+- [ ] iOS WebView + Worker/WASM 真实运行。
+- [ ] Android WebView + Worker/WASM 真实运行。
+- [ ] 桌面 WebView + Worker/WASM 真实运行。
+- [ ] 普通 Web/PWA + Worker/WASM 真实运行。
+- [ ] 所有环境实现相同 `send/status/cancel/logs` Tool Contract。
+- [ ] 页面按钮和聊天输入调用同一个 Tool。
+- [ ] 不通过向 iframe 注入自然语言或模拟点击实现发送。
+
+## 5. MCP Apps
 
 - [ ] 声明 `io.modelcontextprotocol/ui`。
-- [ ] 使用 `ui://` Resource。
+- [ ] 使用 `ui://` resource。
 - [ ] MIME 为 `text/html;profile=mcp-app`。
-- [ ] Tool 使用 `_meta.ui.resourceUri`。
-- [ ] Host 使用 AppBridge 或规范一致实现。
-- [ ] iframe/WebView 有 sandbox、CSP、Origin 和导航策略。
-- [ ] model/app Tool visibility 正确。
+- [ ] Tool 通过 `_meta.ui.resourceUri` 关联 UI。
+- [ ] View 使用 AppBridge 或规范一致实现。
+- [ ] iframe/WebView 使用 sandbox、CSP、Origin 和网络 allowlist。
+- [ ] app/model Tool visibility 正确。
+- [ ] host context、display modes 和 teardown 正常。
 
-## 4. Local Web MCP Runtime
+## 6. 本地 Web/WASM Runtime
 
-- [ ] `runtime/web/` 使用 JavaScript/TypeScript/WASM。
-- [ ] Runtime 运行于 Dedicated Worker、MessagePort 或等价隔离环境。
-- [ ] UI 与 Runtime 不是同一个高权限执行上下文。
-- [ ] Runtime 实现 `tools/list`、`tools/call` 和必要 Resource/Workflow 契约。
-- [ ] Runtime 只能访问获批域名和插件私有存储。
-- [ ] UI 无法直接读取 Secret。
-- [ ] Runtime 崩溃可单独重启，不导致主 App 崩溃。
+- [ ] UI 与 Runtime 分离。
+- [ ] Web Runtime 在 Worker、MessagePort 或等价隔离环境中执行。
+- [ ] 移动端从 App 私有目录和安全本地 Origin 加载。
+- [ ] 普通 Web/PWA 使用 Service Worker、Cache Storage、IndexedDB 或 OPFS。
+- [ ] 无网络时可打开 UI、读取本地状态和管理队列。
+- [ ] 网络恢复后可继续允许的任务。
+- [ ] 长期 Secret 不进入安装包或 WASM。
+- [ ] Host 提供短期授权句柄或受控网络代理。
 
-## 5. 聊天和页面共用 Tool
+## 7. Native 与 WASM 契约一致
 
-- [ ] 用户在对话框发送全球法布施指令时，Host 调用正式 MCP Tool。
-- [ ] 用户在 MCP App 页面点击发送时，通过 AppBridge 调用同一个 Tool。
-- [ ] 两种入口产生相同参数验证、权限确认、队列、状态和结果。
-- [ ] 不使用模拟点击、DOM 选择器或向 iframe 注入自然语言代替 Tool 调用。
+- [ ] native CLI 与 web-wasm 运行同一 Tool Contract Test 套件。
+- [ ] 成功结果 `content` 与 `structuredContent` 语义一致。
+- [ ] 参数校验一致。
+- [ ] 错误码和可重试语义一致。
+- [ ] 权限请求一致。
+- [ ] 队列状态机和取消语义一致。
+- [ ] 数据模型版本和迁移规则一致。
 
-## 6. 全球法布施
+## 8. 安装、更新与回滚
 
-- [ ] 实现 `send`、`status`、`cancel` 和 `logs` 等本地 Web Tool。
-- [ ] 发送逻辑运行于本地 Web Runtime。
-- [ ] Cloudflare 不代理每次本地 Tool 执行。
-- [ ] 无网络时可以查看、编辑和排队任务。
-- [ ] 网络恢复后队列继续执行。
-- [ ] 插件本地状态与账号/授权隔离。
-- [ ] 执行位置显示为“本地网页”。
+- [ ] common 与 selected artifact 在 staging 中完整验证。
+- [ ] 激活是完整构件集合的原子切换。
+- [ ] 不存在 UI 新版本、Runtime 旧版本的意外混合状态。
+- [ ] 更新失败不会破坏当前版本。
+- [ ] 回滚恢复同一旧 Release 的完整构件集合。
+- [ ] 撤销强制构件会阻止该平台继续运行整个 Release。
+- [ ] 运行时不得临时下载 Release 未声明代码。
 
-## 7. 热更新、回滚和撤销
+## 9. 非全平台插件
 
-- [ ] 发布 `1.0.0` 和 `1.1.0` 两个网页包版本。
-- [ ] 更新 UI 或 Tool 逻辑无需发布新的大乘主 App。
-- [ ] 新版本在 staging 沙箱完成 smoke test 后原子切换。
-- [ ] 新版本失败时回滚到旧版本。
-- [ ] 被撤销版本不能重新安装或运行。
-- [ ] 权限、CSP 或网络域名扩大时必须重新确认。
+- [ ] 插件可以只提供部分平台构件。
+- [ ] ChatGPT 自动确认可以只提供 desktop native artifact。
+- [ ] 缺少 web-wasm 时移动/Web 明确显示不支持。
+- [ ] 不会伪造移动或云端执行。
 
-## 8. Android
+## 10. 市场与发布安全
 
-- [ ] 从 App 私有存储加载网页包。
-- [ ] 使用 WebViewAssetLoader/InternalStoragePathHandler 或等价安全实现。
-- [ ] 禁用 `file://` 跨域和任意文件访问。
-- [ ] 安装、更新和功能在 Play 审核说明中透明可见。
-- [ ] 不通过动态代码隐藏审核时未披露的功能。
+- [ ] 一个发布者可以拥有多个插件。
+- [ ] plugin ID 和版本不可覆盖。
+- [ ] GitHub Actions OIDC、provenance 和市场签名完整。
+- [ ] CLI/Host 验证父 manifest 与每个构件哈希。
+- [ ] 权限扩大必须重新确认。
+- [ ] 支持审核、撤销、封禁、升级和回滚。
+- [ ] 禁止 R2。
+- [ ] 市场不永久代理安装包字节。
 
-## 9. iOS
+## 11. 旧路径删除
 
-- [ ] 从 App 私有存储加载网页包。
-- [ ] 使用 WKURLSchemeHandler、受控 loopback 或等价安全实现。
-- [ ] 提供完整小程序索引、元数据和 universal/deep links。
-- [ ] 每插件隐私权限逐次明确同意。
-- [ ] 不向下载的小程序暴露未经 Apple 允许的任意原生 API。
-- [ ] App Review 可访问市场、插件和测试账号。
+- [ ] 不存在生产 `Mcp-Session-Id`。
+- [ ] 不存在旧 GET/SSE/DELETE Session。
+- [ ] 不存在 SDK v1 Server。
+- [ ] 不存在 `createLegacyMcpHandler`、`McpAgent` 或 `WorkerTransport` 生产路径。
+- [ ] 不存在 `mcp-2025-06-18` fallback。
+- [ ] 不存在大乘自定义 iframe bridge。
+- [ ] 新 Host 不运行未迁移旧插件。
 
-## 10. 普通 Web/PWA
+## 12. GitHub Actions 与真实证据
 
-- [ ] Service Worker 或等价机制提供本地离线资源。
-- [ ] Cache Storage、IndexedDB 或 OPFS 保存包和状态。
-- [ ] 浏览器清理存储后可从签名版本恢复。
-- [ ] 同一 Tool 契约与移动端一致。
-- [ ] 浏览器能力不足时明确显示限制，不伪装成功。
+- [ ] Actions 构建所有 declared native 和 web-wasm artifacts。
+- [ ] Actions 生成并签署构件图。
+- [ ] 每个平台安装测试证明只下载匹配构件。
+- [ ] Tool Contract Test 在 native 与 WASM 全部通过。
+- [ ] 真实移动端、桌面端和 Web 端 E2E 通过。
+- [ ] 构件篡改、架构错误、平台不兼容和撤销均被拒绝。
+- [ ] 日志记录 plugin ID、version、artifact ID、SHA、platform 和执行位置。
 
-## 11. 主 App 更新边界
-
-- [ ] HTML/CSS/JavaScript/WASM、Tool 流程、Skills 和普通 HTTPS 更新无需主 App 更新。
-- [ ] 新原生受限能力被正确阻止或要求主 App 更新/平台批准。
-- [ ] 主 App 不包含每个插件的专属发送逻辑。
-- [ ] Host 只提供通用、最小、可审计能力。
-
-## 12. 其他 Runtime
-
-- [ ] ChatGPT 自动确认继续使用 `desktop-stdio`，未被错误改造成纯网页 Runtime。
-- [ ] local-web 插件不被强制提供 Cloudflare MCP endpoint。
-- [ ] 存在 remote-edge 时使用 SDK v2、`createMcpHandler` 和 `legacy: "reject"`。
-
-## 13. 旧实现删除
-
-- [ ] 自定义 iframe bridge 已删除。
-- [ ] `Mcp-Session-Id` 已删除。
-- [ ] 旧 GET/SSE/DELETE Session 已删除。
-- [ ] SDK v1 Server 和旧 Host fallback 已删除。
-- [ ] 新 Host 不运行未迁移插件。
-
-## 14. 真实证据
+## 13. 完成报告
 
 最终报告必须列出：
 
-- PR、合并提交和 Actions Run；
-- 全球法布施两个签名版本及 SHA；
-- iOS、Android、桌面 WebView 和 Web/PWA 的安装与运行证据；
-- 聊天 Tool 与页面 Tool 的同一调用证据；
-- 本地离线、网络恢复和队列证据；
-- 热更新不更新主 App 的证据；
-- 原子切换、回滚和撤销证据；
-- CSP、Origin、权限和 Secret 隔离证据；
-- iOS/Android 审核材料和合规测试；
-- 无 R2、无永久市场代理、无旧 MCP 运行路径的证据。
+- PR、合并提交和 Actions runs；
+- plugin ID/version 与父 Release Manifest；
+- 全部构件 ID、平台、URL、SHA 和 provenance；
+- 各平台实际下载的最小构件集合；
+- 全球法布施 native CLI 与 web-wasm 运行证据；
+- 跨构件 Tool Contract Test；
+- MCP Apps UI、CSP、权限与执行位置；
+- 安装、更新、原子切换、回滚和撤销；
+- 旧 Runtime 删除证据。
 
 缺少任一强制项时状态必须为 `incomplete`。
