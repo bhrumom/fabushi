@@ -978,8 +978,8 @@ async fn marketplace_plugins(request: Request, context: RouteContext<()>) -> Res
             let platforms =
                 serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
             let source = serde_json::from_str::<Value>(&row.source_json).unwrap_or(Value::Null);
-            let release_manifest = serde_json::from_str::<Value>(&row.release_manifest_json)
-                .unwrap_or(Value::Null);
+            let release_manifest =
+                serde_json::from_str::<Value>(&row.release_manifest_json).unwrap_or(Value::Null);
             json!({
                 "pluginId": row.plugin_id,
                 "displayName": row.display_name,
@@ -1144,8 +1144,7 @@ async fn marketplace_release_publish(
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
     let release_manifest_json = serde_json::to_string(&release_manifest)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    let release_manifest_sha256 =
-        format!("{:x}", Sha256::digest(release_manifest_json.as_bytes()));
+    let release_manifest_sha256 = format!("{:x}", Sha256::digest(release_manifest_json.as_bytes()));
     let package = match form.get("package") {
         Some(FormEntry::File(file)) => file.bytes().await?,
         _ => {
@@ -1319,9 +1318,7 @@ async fn marketplace_release_metadata(
         return error_response(
             410,
             "release_revoked",
-            &format!(
-                "Release {plugin_id}@{version} was revoked at {revoked_at:?}: {reason}."
-            ),
+            &format!("Release {plugin_id}@{version} was revoked at {revoked_at:?}: {reason}."),
         );
     }
     if row.release_status != "approved" {
@@ -1333,8 +1330,8 @@ async fn marketplace_release_metadata(
     }
     let platforms = serde_json::from_str::<Vec<String>>(&row.platforms_json).unwrap_or_default();
     let source = serde_json::from_str::<Value>(&row.source_json).unwrap_or(Value::Null);
-    let release_manifest = serde_json::from_str::<Value>(&row.release_manifest_json)
-        .unwrap_or(Value::Null);
+    let release_manifest =
+        serde_json::from_str::<Value>(&row.release_manifest_json).unwrap_or(Value::Null);
     let Some(package_size) = exact_nonnegative_i64(row.package_size) else {
         return error_response(
             503,
@@ -1401,9 +1398,7 @@ async fn marketplace_plugin_download(
         return error_response(
             410,
             "release_revoked",
-            &format!(
-                "Release {plugin_id}@{version} was revoked at {revoked_at:?}: {reason}."
-            ),
+            &format!("Release {plugin_id}@{version} was revoked at {revoked_at:?}: {reason}."),
         );
     }
     if release.release_status != "approved" {
@@ -2705,8 +2700,7 @@ async fn verified_marketplace_site_package(
         256 * 1024,
     )
     .await?;
-    let actual_release_manifest_sha256 =
-        format!("{:x}", Sha256::digest(&release_manifest_bytes));
+    let actual_release_manifest_sha256 = format!("{:x}", Sha256::digest(&release_manifest_bytes));
     if !actual_release_manifest_sha256.eq_ignore_ascii_case(expected_release_manifest_sha256) {
         return Err(
             "Cloudflare release manifest SHA-256 does not match the release request.".into(),
@@ -2755,9 +2749,10 @@ fn validate_github_source_identity(source: &Value) -> std::result::Result<(), St
         return Err("source.repositoryId must be a positive GitHub repository ID".into());
     }
     let default_branch = json_string(source, "defaultBranch")?;
-    if default_branch.bytes().any(|byte| {
-        !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
-    }) {
+    if default_branch
+        .bytes()
+        .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/')))
+    {
         return Err("source.defaultBranch is invalid".into());
     }
     let commit = json_string(source, "commit")?;
@@ -2766,9 +2761,10 @@ fn validate_github_source_identity(source: &Value) -> std::result::Result<(), St
         return Err("source commit and treeHash must be 40-character Git object IDs".into());
     }
     let license = json_string(source, "license")?;
-    if license.bytes().any(|byte| {
-        !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-'))
-    }) {
+    if license
+        .bytes()
+        .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-')))
+    {
         return Err("source.license must be an SPDX identifier".into());
     }
     if source.get("visibility").and_then(Value::as_str) != Some("public") {
@@ -2811,8 +2807,7 @@ fn validate_multi_artifact_release_manifest(
         .and_then(Value::as_object)
         .ok_or_else(|| "release manifest common artifact is required".to_string())?;
     if common.get("id").and_then(Value::as_str) != Some("common")
-        || common.get("packagePath").and_then(Value::as_str)
-            != Some("/mahayana/plugin.tar.gz")
+        || common.get("packagePath").and_then(Value::as_str) != Some("/mahayana/plugin.tar.gz")
         || !common
             .get("sha256")
             .and_then(Value::as_str)

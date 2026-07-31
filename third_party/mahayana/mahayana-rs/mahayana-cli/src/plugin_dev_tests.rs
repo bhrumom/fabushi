@@ -173,7 +173,11 @@ fn plugin_site_distribution_is_served_by_the_generated_worker() {
         "/mahayana/release-manifest.json"
     );
     assert!(distribution.join("mahayana/source.json").is_file());
-    assert!(distribution.join("mahayana/release-manifest.json").is_file());
+    assert!(
+        distribution
+            .join("mahayana/release-manifest.json")
+            .is_file()
+    );
 
     fs::remove_dir_all(repository).expect("remove test repository");
 }
