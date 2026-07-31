@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const controller = readFileSync(
@@ -14,10 +14,6 @@ const inbox = JSON.parse(readFileSync(
   new URL('../tasks/actions-inbox.json', import.meta.url),
   'utf8',
 ));
-const specification = readFileSync(
-  new URL('../tasks/DYNAMIC_TASK_SPEC.md', import.meta.url),
-  'utf8',
-);
 
 test('persistent Actions runner polls the main-branch task control file', () => {
   assert.match(workflow, /run-dynamic-actions-controller\.mjs/);
@@ -35,7 +31,7 @@ test('goal versions are idempotent and updates replace only stale versions', () 
   assert.match(controller, /native\('queue_enqueue'/);
   assert.match(controller, /runtimeIdsByLogicalId/);
   assert.match(controller, /dependsOn:[\s\S]*runtimeIdsByLogicalId\.get/);
-  assert.equal(inbox.schemaVersion, 2);
+  assert.equal(inbox.schemaVersion, 3);
   assert.equal(inbox.keepAlive, true);
   assert.ok(inbox.maxConcurrent >= 2);
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.goalVersion)));
@@ -48,14 +44,39 @@ test('every dispatched work Chat receives a complete machine report contract', (
   assert.match(controller, /next_task 必须为空字符串/);
 });
 
-test('task specifications are injected as repository files and online links', () => {
-  assert.match(controller, /specificationFiles/);
-  assert.match(controller, /specificationURLs/);
-  assert.deepEqual(inbox.specificationFiles, [
-    '.agents/plugins/plugins/chatgpt-auto-confirm/tasks/DYNAMIC_TASK_SPEC.md',
+test('each task sends one document folder path and link without document bodies', () => {
+  assert.match(controller, /task\.documentDirectory/);
+  assert.match(controller, /\/tree\/\$\{controlRef\}\/\$\{directory\}/);
+  assert.match(controller, /只在消息中提供目录路径和文件夹链接/);
+  assert.doesNotMatch(controller, /specificationFiles|specificationURLs/);
+  assert.ok(inbox.tasks.every(task => typeof task.documentDirectory === 'string'));
+
+  for (const task of inbox.tasks) {
+    const relative = task.documentDirectory.replace(
+      '.agents/plugins/plugins/chatgpt-auto-confirm/',
+      '../',
+    );
+    const directoryURL = new URL(relative.endsWith('/') ? relative : `${relative}/`, import.meta.url);
+    const files = readdirSync(directoryURL).sort();
+    assert.ok(files.length >= 2, `${task.id} should have multiple documents`);
+    assert.ok(files.includes('README.md'));
+    assert.ok(files.includes('PRD.md'));
+  }
+});
+
+test('document folders can contain PRD, technical, UI and acceptance files', () => {
+  const task = inbox.tasks[0];
+  const relative = task.documentDirectory.replace(
+    '.agents/plugins/plugins/chatgpt-auto-confirm/',
+    '../',
+  );
+  const directoryURL = new URL(`${relative}/`, import.meta.url);
+  const files = readdirSync(directoryURL).sort();
+  assert.deepEqual(files, [
+    'ACCEPTANCE.md',
+    'PRD.md',
+    'README.md',
+    'TECHNICAL_DESIGN.md',
+    'UI_UX.md',
   ]);
-  assert.equal(inbox.specificationURLs.length, 1);
-  assert.match(specification, /每 30 秒读取/);
-  assert.match(specification, /goalVersion/);
-  assert.match(specification, /动态新增任务/);
 });
