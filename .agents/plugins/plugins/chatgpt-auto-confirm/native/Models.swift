@@ -63,6 +63,9 @@ struct PluginState: Codable {
 
 struct AutomationTaskReport: Codable {
   var protocolName: String
+  var taskId: String?
+  var appliedTaskRevision: Int?
+  var appliedSpecDigest: String?
   var status: String
   var summary: String
   var completed: [String]
@@ -82,6 +85,9 @@ struct AutomationTaskReport: Codable {
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
+    case taskId = "task_id"
+    case appliedTaskRevision = "applied_task_revision"
+    case appliedSpecDigest = "applied_spec_digest"
     case status, summary, completed, remaining, blockers, verification
     case nextTask = "next_task"
     case waitSeconds = "wait_seconds"
@@ -90,11 +96,33 @@ struct AutomationTaskReport: Codable {
   }
 }
 
+struct AutomationTaskUpdate: Codable {
+  var id: String
+  var revision: Int
+  var createdAt: String
+  var source: String
+  var directive: String
+  var specDigest: String
+  var applyMode: String
+}
+
 struct AutomationTask: Codable {
   var id: String
   var title: String
   var prompt: String
+  var originalPrompt: String?
   var promptTemplate: String
+  var currentRevision: Int?
+  var appliedRevision: Int?
+  var pendingRevision: Int?
+  var specSources: [String]?
+  var specSnapshot: String?
+  var specDigest: String?
+  var appliedSpecDigest: String?
+  var pendingDirective: String?
+  var applyMode: String?
+  var taskUpdates: [AutomationTaskUpdate]?
+  var specUpdatedAt: String?
   var connector: String
   var dependsOn: [String]
   var resourceLocks: [String]

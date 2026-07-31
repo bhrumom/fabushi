@@ -293,12 +293,26 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   });
   assert.equal(retried.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.queue-retry');
+  const updated = await call('update_task', {
+    taskId: 'release', revision: 2, expectedRevision: 1,
+    specSources: ['docs/plugin-marketplace.md'],
+    specSnapshot: 'updated marketplace requirements',
+    specDigest: 'sha256:updated',
+    directive: 'Use the latest marketplace architecture',
+    applyMode: 'interrupt', source: 'miniapp-ui',
+  });
+  assert.equal(updated.result.structuredContent.hostRequest.capability,
+    'desktop.chatgpt-approvals.queue-update');
+  assert.equal(updated.result.structuredContent.hostRequest.params.revision, 2);
+  assert.equal(updated.result.structuredContent.hostRequest.params.applyMode, 'interrupt');
+  assert.equal(updated.result.structuredContent.hostRequest.params.source, 'miniapp-ui');
   assert.equal(retried.result.structuredContent.hostRequest.params.connector, 'GitHub');
   const actionsRunner = await call('start_actions_runner', {});
   assert.equal(actionsRunner.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.actions-runner-start');
   assert.equal(actionsRunner.result.structuredContent.hostRequest.approval, 'required');
   assert.match(nativeSource, /case "queue_retry"/);
+  assert.match(nativeSource, /case "queue_update"/);
   assert.match(nativeSource, /case "start_actions_runner"/);
   assert.match(nativeSource, /case "queue_watchdog"/);
   assert.match(nativeSource, /github_actions_watchdog_recovery/);

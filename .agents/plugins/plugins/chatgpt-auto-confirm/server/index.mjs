@@ -14,7 +14,8 @@ const nativeCommands = new Map([
   ['send_and_watch', 'send_and_watch'], ['add_connector', 'add_connector'],
   ['get_reply', 'get_reply'], ['chat_status', 'chat_status'],
   ['enqueue_tasks', 'queue_enqueue'], ['start_queue', 'queue_start'],
-  ['queue_status', 'queue_status'], ['wait_for_review', 'queue_wait_review'],
+  ['queue_status', 'queue_status'], ['update_task', 'queue_update'],
+  ['wait_for_review', 'queue_wait_review'],
   ['start_actions_runner', 'start_actions_runner'],
   ['review_task', 'queue_review'], ['pause_queue', 'queue_pause'],
   ['resume_queue', 'queue_resume'], ['retry_task', 'queue_retry'],
@@ -30,7 +31,7 @@ function runNativeTool(rpc) {
   if (tool === 'scan_once' || tool === 'relaunch_and_confirm') args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   if (tool === 'audit_log') args.push(String(rpc.params?.arguments?.limit ?? 20));
   if (tool === 'send_and_watch' || tool === 'add_connector' || [
-    'enqueue_tasks', 'start_queue', 'wait_for_review', 'review_task', 'retry_task',
+    'enqueue_tasks', 'start_queue', 'update_task', 'wait_for_review', 'review_task', 'retry_task',
     'cancel_task',
   ].includes(tool)) args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   const timeoutMs = tool === 'send_and_watch'

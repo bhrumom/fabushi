@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +24,47 @@ const maxSameFailureRecoveries = Math.max(
   1,
   Number(process.env.ACTION_MAX_SAME_FAILURE_RECOVERIES || 3),
 );
+const taskRefreshIntervalMs = Math.max(
+  testMode ? 10 : 15_000,
+  Number(process.env.ACTION_TASK_REFRESH_INTERVAL_MS || 60_000),
+);
+const taskInboxPath = process.env.CHATGPT_AUTO_CONFIRM_TASK_INBOX_PATH?.trim() ||
+  '.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json';
+const taskInboxRef = process.env.CHATGPT_AUTO_CONFIRM_TASK_INBOX_REF?.trim() ||
+  process.env.GITHUB_REF_NAME?.trim();
+const githubRepository = process.env.GITHUB_REPOSITORY?.trim();
+const githubToken = process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim();
+const githubApiUrl = process.env.GITHUB_API_URL?.trim() || 'https://api.github.com';
+const remoteTaskRefreshEnabled = Boolean(
+  githubRepository && githubToken && taskInboxRef && process.env.ACTION_DISABLE_TASK_REFRESH !== 'true',
+);
+
+const encodeRepoPath = value => value.split('/').map(encodeURIComponent).join('/');
+
+const fetchRepositoryText = async (filePath) => {
+  const normalized = String(filePath || '').trim().replace(/^\/+/, '');
+  if (!normalized || normalized.split('/').includes('..')) {
+    throw new Error(`Invalid repository task source: ${filePath}`);
+  }
+  const url =
+    `${githubApiUrl}/repos/${githubRepository}/contents/${encodeRepoPath(normalized)}` +
+    `?ref=${encodeURIComponent(taskInboxRef)}`;
+  const response = await fetch(url, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${githubToken}`,
+      'x-github-api-version': '2022-11-28',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub contents ${normalized} returned ${response.status}`);
+  }
+  const payload = await response.json();
+  if (payload.type !== 'file' || typeof payload.content !== 'string') {
+    throw new Error(`GitHub contents ${normalized} did not return a file`);
+  }
+  return Buffer.from(payload.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+};
 
 const run = (command, params = undefined) => {
   const args = [command];
@@ -42,6 +84,56 @@ const run = (command, params = undefined) => {
   return payload;
 };
 
+const remoteTaskDigests = new Map();
+const refreshDynamicTaskDefinitions = async () => {
+  if (!remoteTaskRefreshEnabled) return { enabled: false, updated: [] };
+  const inboxText = await fetchRepositoryText(taskInboxPath);
+  const inbox = JSON.parse(inboxText);
+  const tasks = Array.isArray(inbox.tasks) ? inbox.tasks : [];
+  const updated = [];
+  for (const task of tasks) {
+    if (!task?.id) continue;
+    const revision = Math.max(1, Number(task.revision || 1));
+    const specSources = Array.isArray(task.specSources) ? task.specSources : [];
+    const specSections = [];
+    for (const source of specSources) {
+      const content = (await fetchRepositoryText(source)).trim();
+      specSections.push(`## ${source}\n${content}`);
+    }
+    const specSnapshot = specSections.join('\n\n').trim();
+    if (specSnapshot.length > 60_000) {
+      throw new Error(`Task ${task.id} spec snapshot exceeds 60000 characters`);
+    }
+    const specDigest = specSnapshot
+      ? `sha256:${createHash('sha256').update(specSnapshot).digest('hex')}`
+      : null;
+    const updateDigest = createHash('sha256').update(JSON.stringify({
+      revision,
+      title: task.title || '',
+      prompt: task.prompt || '',
+      directive: task.directive || '',
+      specSources,
+      specDigest,
+    })).digest('hex');
+    if (remoteTaskDigests.get(task.id) === updateDigest) continue;
+    const result = run('queue_update', {
+      taskId: task.id,
+      revision,
+      title: task.title,
+      prompt: task.prompt,
+      directive: task.directive,
+      specSources,
+      specSnapshot,
+      specDigest,
+      applyMode: task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat',
+      source: 'actions-controller',
+    });
+    remoteTaskDigests.set(task.id, updateDigest);
+    if (result.updateApplied === true) updated.push(task.id);
+  }
+  return { enabled: true, updated };
+};
+
 const recognitionDiagnostics = task => {
   if (!task.replyDiagnostics) return null;
   const { pageSnapshot: _pageSnapshot, ...recognition } = task.replyDiagnostics;
@@ -55,6 +147,10 @@ const taskDiagnostics = (queue) => (Array.isArray(queue?.tasks) ? queue.tasks : 
     attempts: task.attempts,
     continuationDepth: task.continuationDepth ?? null,
     maxTaskContinuations: task.maxTaskContinuations ?? null,
+    currentRevision: task.currentRevision ?? 1,
+    appliedRevision: task.appliedRevision ?? null,
+    pendingRevision: task.pendingRevision ?? null,
+    specDigest: task.specDigest || null,
     conversationId: task.conversationId || null,
     lastError: task.lastError || null,
     hiddenWorkerLastError: task.hiddenWorkerLastError || null,
@@ -186,7 +282,23 @@ let lastRecovery = 0;
 let lastQueueFingerprint = '';
 let lastFailureFingerprint = '';
 let sameFailureRecoveries = 0;
+let lastTaskRefresh = 0;
 while (Date.now() < deadline) {
+  if (Date.now() - lastTaskRefresh >= taskRefreshIntervalMs) {
+    try {
+      const refresh = await refreshDynamicTaskDefinitions();
+      if (refresh.updated.length > 0) {
+        process.stdout.write(`TASK_DEFINITIONS_UPDATED ${JSON.stringify(refresh)}\n`);
+      }
+    } catch (error) {
+      process.stdout.write(`TASK_DEFINITION_REFRESH_WARNING ${JSON.stringify({
+        message: error instanceof Error ? error.message : String(error),
+        ref: taskInboxRef || null,
+        path: taskInboxPath,
+      })}\n`);
+    }
+    lastTaskRefresh = Date.now();
+  }
   const queue = run('queue_status');
   const tasks = Array.isArray(queue.tasks) ? queue.tasks : [];
   const fingerprint = queueFingerprint(queue);
