@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mahayana-cloud-marketplace-e2e
@@ -31,77 +31,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: codex/mahayana-marketplace-parallel-20260726-r16
-          fetch-depth: 0
           submodules: recursive
-
-      # BEGIN MARKETPLACE PERSISTENCE BOOTSTRAP
-      - name: Persist marketplace diagnostics and remove bootstrap
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          product = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
-          source = product.read_text(encoding='utf-8')
-          old = '''    let message = serde_json::from_str::<Value>(&body)
-              .ok()
-              .and_then(|value| {
-                  value
-                      .get("error")
-                      .or_else(|| value.get("message"))
-                      .and_then(Value::as_str)
-                      .map(str::to_string)
-              })
-              .unwrap_or(body);
-          '''
-          new = '''    let message = serde_json::from_str::<Value>(&body)
-              .ok()
-              .and_then(|value| {
-                  let code = value.get("error").and_then(Value::as_str);
-                  let detail = value.get("message").and_then(Value::as_str);
-                  match (code, detail) {
-                      (Some(code), Some(detail)) if code != detail => {
-                          Some(format!("{code}: {detail}"))
-                      }
-                      (Some(code), _) => Some(code.to_string()),
-                      (_, Some(detail)) => Some(detail.to_string()),
-                      _ => None,
-                  }
-              })
-              .unwrap_or(body);
-          '''
-          if source.count(old) != 1:
-              raise SystemExit('unexpected product error decoder')
-          product.write_text(source.replace(old, new, 1), encoding='utf-8')
-
-          workflow = Path('.github/workflows/mahayana-cloud-marketplace-e2e.yml')
-          source = workflow.read_text(encoding='utf-8')
-          patch_marker = "          python3 - <<'PY'\n          from pathlib import Path\n\n          path = Path(\"third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs\")\n"
-          patch_start = source.index(patch_marker)
-          patch_end = source.index("          PY\n", patch_start) + len("          PY\n")
-          source = source[:patch_start] + source[patch_end:]
-          bootstrap_start = source.index('      # BEGIN MARKETPLACE PERSISTENCE BOOTSTRAP\n')
-          bootstrap_end = source.index('      # END MARKETPLACE PERSISTENCE BOOTSTRAP\n', bootstrap_start) + len('      # END MARKETPLACE PERSISTENCE BOOTSTRAP\n')
-          source = source[:bootstrap_start] + source[bootstrap_end:]
-          source = source.replace('permissions:\n  contents: write\n', 'permissions:\n  contents: read\n', 1)
-          source = source.replace('          ref: codex/mahayana-marketplace-parallel-20260726-r16\n          fetch-depth: 0\n', '', 1)
-          workflow.write_text(source, encoding='utf-8')
-
-          wrapper = Path('.github/workflows/plugin-marketplace-contract.yml')
-          source = wrapper.read_text(encoding='utf-8')
-          wrapper.write_text(source.replace('permissions:\n  contents: write\n', 'permissions:\n  contents: read\n', 1), encoding='utf-8')
-          PY
-          cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all
-          git rm -- .github/workflows/temporary-marketplace-finalize.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -- .github/workflows/mahayana-cloud-marketplace-e2e.yml .github/workflows/plugin-marketplace-contract.yml third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
-          git diff --cached --check
-          git commit -m "Persist marketplace API diagnostics"
-          git push origin HEAD:codex/mahayana-marketplace-parallel-20260726-r16
-      # END MARKETPLACE PERSISTENCE BOOTSTRAP
 
       - name: Configure runner paths
         shell: bash
@@ -171,7 +101,7 @@ jobs:
 
       - name: Deploy Mahayana platform Worker
         id: platform
-        working-directory: $ {{ env.PLATFORM_WORKER_DIR }}
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
         shell: bash
         run: |
           set -euo pipefail
