@@ -1,175 +1,108 @@
-# 迁移计划：从市场 v1 到混合可信市场 v2
+# 迁移计划：全面切换到 MCP Apps
 
-## 1. 迁移原则
+## 1. 原则
 
-- 不推倒现有官方市场和动态发布接口；
-- 新能力以追加字段、新表和新 API 落地；
-- 先让客户端理解 v2，再切换发布默认；
-- legacy 版本不能伪装成已签名 v2 版本；
-- 任一阶段都能回退到上一稳定版本；
-- 数据库迁移、客户端兼容和 Cloudflare 发布必须分别可验证。
+- 不运行期双栈；
+- 不保留 legacy production lane；
+- 先在隔离环境完成全部迁移，再一次性切换；
+- 允许保留数据转换、静态扫描和升级提示工具；
+- 不允许保留运行旧插件的代码；
+- 切换失败时回滚整个新版本部署，而不是重新启用旧 MCP 通道。
 
-## 2. 当前状态
+## 2. 当前基线
 
-### 官方市场
+需要移除的旧实现包括：
 
-- `.agents/plugins/marketplace.json` 为内置清单；
-- 公共 `.well-known/mahayana/marketplace.json` 为发现入口；
-- 平台构件目前主要从 GitHub Releases 下载；
-- 安装脚本验证 `.sha256` 并检查插件契约。
+- `mcp-2025-06-18`；
+- 服务 session 初始化与 `Mcp-Session-Id`；
+- GET/SSE listener；
+- DELETE session；
+- SDK v1 server/WorkerTransport/McpAgent；
+- 大乘自定义 iframe bridge；
+- 旧插件 manifest 与 UI 入口；
+- 允许 legacy 请求的 Cloudflare endpoint。
 
-### 动态市场
+## 3. 阶段 0：冻结与审计
 
-- 发布者提交 plugin ID、version、deployment URL、SHA、大小和平台；
-- 市场从 `<deploymentUrl>/mahayana/plugin.tar.gz` 读取并校验；
-- `pluginId + version` 已禁止重复；
-- 普通发布者 pending，管理员可 approved；
-- 浏览返回直接部署 URL；
-- 下载端点 307 跳转。
+- 冻结新增旧格式插件；
+- 搜索所有旧协议代码、依赖、测试和部署；
+- 列出全部官方插件和已发布第三方插件；
+- 建立迁移状态表；
+- 固化现有市场、安装和插件行为证据，仅用于对比，不作为新运行时兼容要求；
+- 建隔离 preview 环境和测试命名空间。
 
-这是一条有价值的 v1 纵向链路，迁移应复用认证、审核、数据库和直连下载方向。
+退出条件：旧实现和插件清单完整。
 
-## 3. 阶段 0：契约和测试保护
+## 4. 阶段 1：共享 MCP Apps Host core
 
-在修改生产逻辑前：
+实现可被 Web、桌面、移动和 CLI 复用的 Host core：
 
-- 固化现有 v1 浏览、发布、审核和 307 行为测试；
-- 为官方清单、安装脚本和 Flutter registry 增加兼容快照；
-- 建立数据库迁移测试夹具；
-- 建立真实 Cloudflare 测试插件和专用测试命名空间；
-- 确认所有生产 Secret 只在 GitHub environment/Cloudflare 平台中使用。
+- AppBridge；
+- sandbox/CSP；
+- `ui://` resource；
+- host context；
+- tool visibility；
+- permission broker；
+- display modes；
+- teardown；
+- structured/text result；
+- 统一审计和错误码。
 
-退出条件：现有行为有自动回归保护。
+旧 Host 仍只存在于当前 production 分支；新代码分支不提供 runtime fallback。
 
-## 4. 阶段 1：数据模型扩展
+退出条件：参考 MCP App 在所有新 Host 中运行。
 
-新增或扩展：
+## 5. 阶段 2：Cloudflare SDK v2 runtime
 
-- publisher namespaces；
-- internal plugin UUID；
-- deployment mode 和 Cloudflare project mapping；
-- immutable package URL；
-- permissions、provenance、metadataVersion 和 expiresAt；
-- signature、review、revocation、production history 和 audit 表。
+建立唯一插件 Worker 模板：
 
-旧记录迁移：
+```text
+createMcpHandler
++ @modelcontextprotocol/server v2
++ legacy: "reject"
++ allowed Host/Origin
++ OAuth/AuthInfo
++ explicit business state
+```
 
-- 保留 `package_key`；
-- 标记为 legacy release；
-- 为插件生成 UUID；
-- 不生成伪造 provenance 或签名；
-- review state 和 latest version 保持原值。
+退出条件：
 
-退出条件：旧数据和新数据均可读取，迁移幂等。
+- 正常 MCP Apps 调用成功；
+- 旧请求被拒绝；
+- 跨边缘实例连续调用成功；
+- 无 session ID、sticky routing 或 transport store。
 
-## 5. 阶段 2：v2 只读市场
+## 6. 阶段 3：迁移所有官方插件
 
-实现：
+对每个官方插件：
 
-- v2 browse/detail/release metadata；
-- 规范化 release JSON；
-- 市场签名和根公钥；
-- review tier、permissions、source、revocation 字段；
-- legacy release 明确标识；
-- v1 API 保持不变。
+1. 转换 Tool schema；
+2. 注册 `ui://` resources；
+3. 使用 MCP Apps View SDK；
+4. 删除自定义 bridge；
+5. 配置 CSP；
+6. 配置 model/app tool visibility；
+7. 返回 text + structured result；
+8. 部署 SDK v2 Worker；
+9. 生成不可变包和 provenance；
+10. 在所有大乘 Host 中验收。
 
-客户端先支持：
+退出条件：官方插件迁移率 100%。
 
-- 解析 v2；
-- 验证签名；
-- 显示 legacy/v2 信任差异；
-- 遇到未知附加字段不崩溃。
+## 7. 阶段 4：插件模板与市场准入
 
-退出条件：新客户端可浏览 v2，旧客户端仍可浏览 v1。
+- `plugin init` 只生成 MCP Apps；
+- `plugin test` 验证 Apps、SDK v2、CSP、visibility 和 legacy rejection；
+- 市场 release schema 增加 runtime/ui 合规字段；
+- 市场拒绝旧 manifest、旧 bridge、SDK v1 和 legacy endpoint；
+- 未迁移插件标记 `migration_required`；
+- 新版本不能绕过准入。
 
-## 6. 阶段 3：不可变自托管发布
+退出条件：无法通过任何正式入口发布旧格式插件。
 
-先升级现有动态发布链路：
+## 8. 阶段 5：真实第三方示例插件
 
-- 新版本必须使用 version+SHA 不可变路径；
-- 验证 Cloudflare hostname 和所有权；
-- 验证 manifest、permissions、provenance；
-- 市场签名元数据；
-- 支持 revoke/blocked；
-- 固定 `/mahayana/plugin.tar.gz` 只允许 legacy 兼容，不能创建新正式 release。
-
-这样可以在平台托管发布完成前验证完整的 v2 下载、安装和信任链。
-
-退出条件：真实自托管示例插件完成两版本发布、安装、升级、回滚和撤销。
-
-## 7. 阶段 4：OIDC 托管发布
-
-实现：
-
-- publish intent；
-- GitHub Actions OIDC claims 验证；
-- 短期、单插件、单版本、单阶段发布 token；
-- nonce 防重放；
-- 平台创建/绑定每插件独立 Cloudflare 项目；
-- Worker version/Pages deployment；
-- stage、审核、production promotion；
-- provenance 和 release receipt。
-
-退出条件：普通测试发布者不配置 Cloudflare Token 即可完成发布。
-
-## 8. 阶段 5：CLI 安全安装
-
-升级 CLI：
-
-- 获取签名 v2 元数据；
-- 验证签名、过期、撤销和 anti-rollback；
-- 验证 Cloudflare 域名和不可变路径；
-- 流式大小限制和 SHA；
-- provenance 和权限一致性；
-- 安全解包和原子安装；
-- 权限扩大重新确认；
-- 版本化安装目录和 current 指针；
-- 回滚和审计。
-
-退出条件：干净环境完成真实 E2E 和攻击测试。
-
-## 9. 阶段 6：UI 与发布者控制台
-
-- 市场信任等级和权限展示；
-- 发布阶段和审核反馈；
-- provenance、Actions run 和部署详情；
-- 版本历史、production、rollback 和 revoke；
-- 已安装插件的安全状态；
-- CLI、Flutter 和 Web 状态语义一致。
-
-退出条件：关键状态和错误可被普通用户理解。
-
-## 10. 阶段 7：默认切换和旧接口退役策略
-
-切换条件：
-
-- v2 发布和安装稳定；
-- 官方插件也有 v2 元数据或明确兼容状态；
-- 旧客户端占比和错误率可接受；
-- rollback 演练成功；
-- 安全运营具备撤销能力。
-
-切换步骤：
-
-1. 新 CLI 默认请求 v2；
-2. 新发布默认托管模式；
-3. v1 发布接口返回 deprecation 警告；
-4. 固定包路径不再接受新正式版本；
-5. v1 浏览继续只读一段兼容期；
-6. 根据遥测和版本支持策略决定退役时间。
-
-## 11. 数据和 API 回滚
-
-- 数据库迁移必须可向前修复，避免删除列；
-- 新表失败时 v1 查询仍可用；
-- v2 发布失败不更新 production；
-- 客户端可以在服务器 v2 暂时不可用时读取缓存的最后可信元数据，但必须检查过期时间；
-- 市场签名故障时停止新安装，不得降级成无签名信任；
-- Cloudflare promotion 失败时保持原 production deployment。
-
-## 12. 真实验收插件
-
-建立专用测试插件：
+插件：
 
 ```text
 io.mahayana.test.hello
@@ -177,18 +110,97 @@ io.mahayana.test.hello
 
 版本：
 
-- `1.0.0`：基础主页、MCP 健康检查、最小权限；
-- `1.1.0`：功能升级并增加一个可控权限，用于权限 diff。
+- `1.0.0`：基础 MCP App、最小权限；
+- `1.1.0`：增加一个受控权限和第二 display mode。
 
-此插件用于贯穿所有阶段，不得使用只存在本地的 mock 替代。
+验证：
 
-## 13. 迁移完成定义
+- 大乘托管发布；
+- Cloudflare stateless Worker；
+- MCP Apps UI；
+- app/model visibility；
+- CSP 拒绝；
+- 权限 diff；
+- 另一个合规 MCP Apps Host；
+- 不可变安装和回滚。
 
-- 新普通发布者默认走托管 OIDC；
-- 新正式版本全部不可变且有市场签名和 provenance；
-- CLI 默认直连插件服务并执行完整校验；
-- v1 旧客户端仍在承诺窗口内可用；
-- R2 未被用于插件包或静态资源；
-- 市场没有成为下载字节瓶颈；
-- 回滚、撤销和密钥轮换完成演练；
-- 所有验收证据来自 GitHub Actions 和真实 Cloudflare 服务。
+## 9. 阶段 6：安装与本地状态迁移
+
+新客户端升级时：
+
+- 扫描已安装插件；
+- MCP Apps 版本可继续；
+- 旧版本标记 `migration_required`；
+- 自动查找已批准的新版本；
+- 用户可升级或卸载；
+- 不允许以兼容模式启动；
+- 保留旧数据备份和插件业务数据迁移工具，但不运行旧代码。
+
+## 10. 阶段 7：删除旧代码
+
+删除：
+
+- SDK v1 生产依赖；
+- legacy handler；
+- session transport/storage；
+- `Mcp-Session-Id`；
+- GET/DELETE session endpoints；
+- 长期 session SSE；
+- 自定义 iframe bridge；
+- 旧 manifest parser 的执行路径；
+- 旧协议正向测试。
+
+保留：
+
+- 负向测试，证明旧请求被拒绝；
+- 静态迁移检测；
+- 升级错误文案；
+- 历史数据备份读取工具。
+
+## 11. 阶段 8：硬切换前置门槛
+
+全部满足后才允许切换：
+
+- 官方插件迁移 100%；
+- Web/Desktop/Mobile/CLI Host 全通过；
+- 市场只接受 MCP Apps；
+- preview production 配置 `legacy:"reject"`；
+- 真实第三方插件双版本 E2E 通过；
+- 外部合规 Host 验证通过；
+- 旧客户端升级错误通过；
+- 数据迁移和回滚演练通过；
+- GitHub Actions 与 Cloudflare 证据完整。
+
+## 12. Production cutover
+
+一次性发布：
+
+1. 发布新 Host；
+2. 发布全部官方 MCP Apps；
+3. 启用 MCP Apps-only 市场准入；
+4. 提升新 Cloudflare Worker versions；
+5. 旧客户端返回升级错误；
+6. 监控错误、CSP、权限和 edge traces。
+
+不得同时重新启用旧 endpoint。
+
+## 13. 回滚策略
+
+出现严重故障时：
+
+- 回滚整个大乘新版本和对应 MCP Apps Worker version；
+- 回滚到同样是 MCP Apps-only 的上一候选版本；
+- 不回滚到旧 MCP runtime；
+- 已迁移业务数据必须有向前修复或备份恢复方案；
+- 安全签名、撤销和不可变发布物保持有效。
+
+## 14. 完成定义
+
+- Production 只运行 MCP Apps + SDK v2；
+- `legacy:"reject"` 已验证；
+- 所有官方插件完成迁移；
+- 旧插件不能启动；
+- 旧客户端不能调用工具；
+- 仓库无旧运行分支；
+- 市场无旧发布入口；
+- 全平台和真实 Cloudflare 验收完成。
