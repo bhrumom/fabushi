@@ -208,7 +208,8 @@ jobs:
         run: |
           set -euo pipefail
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
-          "$cli" marketplace browse | tee "$RUNNER_TEMP/browse.json"
+          "$cli" marketplace browse \
+            2> >(tee "$RUNNER_TEMP/browse.stderr" >&2) | tee "$RUNNER_TEMP/browse.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" --arg deployment "${{ steps.publish.outputs.deployment_url }}" '
             any(.plugins[];
               .pluginId == $id and .latestVersion == $version and
@@ -219,7 +220,8 @@ jobs:
           ' "$RUNNER_TEMP/browse.json" >/dev/null
 
           archive="$RUNNER_TEMP/$PLUGIN_ID-$PLUGIN_VERSION.tar.gz"
-          "$cli" marketplace download "$PLUGIN_ID" --version "$PLUGIN_VERSION" --output "$archive" | tee "$RUNNER_TEMP/download.json"
+          "$cli" marketplace download "$PLUGIN_ID" --version "$PLUGIN_VERSION" --output "$archive" \
+            2> >(tee "$RUNNER_TEMP/download.stderr" >&2) | tee "$RUNNER_TEMP/download.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
             .downloaded == true and .pluginId == $id and .version == $version
           ' "$RUNNER_TEMP/download.json" >/dev/null
@@ -228,7 +230,8 @@ jobs:
 
           install_repo="$RUNNER_TEMP/installed-repository"
           mkdir -p "$install_repo"
-          "$cli" marketplace install "$PLUGIN_ID" --version "$PLUGIN_VERSION" --repository "$install_repo" | tee "$RUNNER_TEMP/install.json"
+          "$cli" marketplace install "$PLUGIN_ID" --version "$PLUGIN_VERSION" --repository "$install_repo" \
+            2> >(tee "$RUNNER_TEMP/install.stderr" >&2) | tee "$RUNNER_TEMP/install.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
             .installed == true and .pluginId == $id and .version == $version and
             .source == "independent-pages-or-worker" and .validation.valid == true
@@ -245,7 +248,8 @@ jobs:
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
           install_repo="$RUNNER_TEMP/installed-repository"
           cd "$install_repo"
-          "$cli" plugin run "$PLUGIN_ID" hello --json '{"name":"Actions"}' | tee "$RUNNER_TEMP/run.txt"
+          "$cli" plugin run "$PLUGIN_ID" hello --json '{"name":"Actions"}' \
+            2> >(tee "$RUNNER_TEMP/run.stderr" >&2) | tee "$RUNNER_TEMP/run.txt"
           grep -F 'Hello, Actions!' "$RUNNER_TEMP/run.txt"
           grep -F 'cloud-market-hello' "$RUNNER_TEMP/run.txt"
 
@@ -265,6 +269,10 @@ jobs:
             ${{ runner.temp }}/plugin-site.json
             ${{ runner.temp }}/site-plugin.tar.gz
             ${{ runner.temp }}/browse.json
+            ${{ runner.temp }}/browse.stderr
             ${{ runner.temp }}/download.json
+            ${{ runner.temp }}/download.stderr
             ${{ runner.temp }}/install.json
+            ${{ runner.temp }}/install.stderr
             ${{ runner.temp }}/run.txt
+            ${{ runner.temp }}/run.stderr
