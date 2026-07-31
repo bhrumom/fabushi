@@ -1,215 +1,184 @@
-# PRD：大乘 MCP Apps 小程序市场与可信发布
+# PRD：大乘本地优先 MCP Apps 小程序市场与可信发布
 
 ## 1. 产品目标
 
-大乘小程序统一升级为官方 MCP Apps。小程序不再分为“大乘自定义 iframe 小程序”和“标准 MCP 插件”，而是统一为：
+大乘小程序统一为可安装的官方 MCP Apps：
 
 ```text
-MCP SDK v2 Server
+signed installable package
 + MCP Apps ui:// resources
-+ AppBridge Host
-+ Cloudflare stateless edge runtime
-+ signed immutable marketplace release
++ runtime profiles
++ shared Mahayana Host Core
++ local-first execution
++ optional stateless edge runtime
 ```
 
-生产系统不运行旧 MCP 插件，不保留旧协议回退。
+MCP Apps 统一 UI、Tool、resource 和 Host 通信；它不要求业务逻辑运行在云端。全球法布施、ChatGPT 自动确认等依赖本机数据、桌面应用或系统能力的小程序必须本地执行。
 
-## 2. 核心产品原则
+## 2. 核心原则
 
-- 一个发布者可以拥有多个插件；
-- 一个插件拥有稳定、不可抢占的完整 ID；
-- 一个插件对应独立 Cloudflare 逻辑服务边界；
-- 一个版本对应不可变部署与不可变安装包；
-- 所有小程序 UI 使用 MCP Apps；
-- 所有远程服务使用无状态 MCP SDK v2；
-- 市场负责身份、审核、签名、权限、撤销和审计；
-- CLI 直接从插件 Cloudflare 不可变 URL 下载；
-- 普通发布者默认不接触 Cloudflare Token；
-- 发布使用 GitHub Actions OIDC 短期凭证与 provenance；
-- 生产设置 `legacy: "reject"`；
-- 旧客户端只能升级，不能继续运行旧插件。
+- 小程序可以从市场下载安装到本地；
+- 已安装小程序在桌面端可以独立窗口运行；
+- 桌面/CLI 优先使用本地 stdio MCP Server；
+- 移动端使用 App 内置 Rust Mahayana Core 提供本地能力；
+- 大乘 App 内的 WebView 加载本地 MCP App UI；
+- 普通桌面浏览器通过 Mahayana Local Agent 调用本机 Runtime；
+- local-only 插件不需要远程 MCP endpoint；
+- Cloudflare 负责市场、签名包、下载更新和可选远程 Runtime；
+- 本地 Profile 可用时不得静默转到云端；
+- 用户始终能看到执行位置；
+- 不保留旧 MCP Session 协议和自定义 iframe bridge。
 
-## 3. 用户角色
+## 3. 小程序类型
 
-### 普通发布者
+市场支持：
 
-使用：
+```text
+local-only   只在本机/设备执行
+local-first  默认本地，部分能力可远程
+hybrid       本地和远程能力都属于正式产品功能
+remote-only  无本地执行需求
+```
+
+不同类型仍使用同一 MCP Apps UI 契约和同一签名发布体系。
+
+## 4. Runtime Profiles
+
+每个版本声明平台绑定，例如：
+
+- `desktop-stdio`：macOS/Windows/Linux/CLI；
+- `mobile-embedded`：iOS/Android，调用 Mahayana Core capabilities；
+- `web-local-agent`：桌面浏览器连接本地代理；
+- `remote-edge`：可选 Cloudflare SDK v2 无状态 Runtime。
+
+Host Runtime Resolver 按本地 stdio、移动嵌入式、Local Agent、可选远程的顺序选择。
+
+## 5. 桌面独立运行
+
+安装后用户可以：
 
 ```bash
-mahayana login
-mahayana plugin init
-mahayana plugin test
-mahayana plugin publish --stage
-mahayana plugin release
+mahayana plugin run global-dharma
 ```
 
-平台自动生成 MCP Apps 项目、构建 UI resource、部署无状态 Worker、生成不可变发布物、签名并提交审核。
-
-### 高级发布者
-
-可以自托管自己的 Cloudflare Worker，但必须：
-
-- 使用 SDK v2；
-- 使用 `createMcpHandler`；
-- 设置 `legacy: "reject"`；
-- 提供 MCP Apps manifest 和 `ui://` resources；
-- 通过所有权、CSP、权限、签名、来源和审核检查。
-
-### 安装用户
-
-能够查看：
-
-- 发布者与插件身份；
-- MCP Apps 合规状态；
-- 版本、权限、CSP、来源和审核等级；
-- 安装、升级、撤销、回滚和安全状态。
-
-### 审核人员
-
-能够检查：
-
-- MCP Apps 规范合规；
-- SDK v2 和 stateless runtime；
-- production 是否拒绝 legacy；
-- UI resource、CSP 和 tool visibility；
-- OIDC provenance、扫描、权限和不可变发布物。
-
-## 4. 插件身份与部署
-
-完整 ID 示例：
+系统启动：
 
 ```text
-io.mahayana.bhrum.hello
+Local Runtime Supervisor
+→ local MCP stdio server
+→ MCP Apps Host Window
+→ local ui:// View
 ```
 
-要求：
+独立窗口与聊天内嵌模式必须共用同一 UI、Tool、权限、数据目录和审计。
 
-- 发布后不可被其他账号占用；
-- 同一 `pluginId + version` 永远不可覆盖；
-- 一个插件绑定一个稳定 Cloudflare Worker/Pages 服务；
-- 版本通过 Worker version/deployment 或 Pages deployment 表达；
-- 不为每个版本创建永久新项目；
-- 插件之间不共享写 Secret、数据库、部署凭证或写权限。
+## 6. 移动端产品模型
 
-## 5. MCP Apps 产品契约
+移动端插件包下载 UI、manifest、Tool schema、工作流、Skills 和静态资源；不下载执行任意第三方原生二进制。
 
-每个正式插件必须：
+本地系统能力由大乘 App 内置 Core 提供，例如：
 
-- 声明扩展 `io.modelcontextprotocol/ui`；
-- 注册至少一个 `ui://` resource；
-- 使用 `text/html;profile=mcp-app`；
-- Tool 使用 `_meta.ui.resourceUri` 关联 UI；
-- View 使用官方 MCP Apps SDK；
-- Host 使用 AppBridge 或规范一致实现；
-- iframe sandbox；
-- CSP 最小权限；
-- Tool visibility 区分 `model` 与 `app`；
-- 提供有意义的 `content` 和 `structuredContent`；
-- 支持新标准的 `ui/initialize`、host context、display mode 和 teardown。
+- `share.send`；
+- `local.queue`；
+- `local.database`；
+- 通知；
+- 账号和会话；
+- 已批准网络访问；
+- 平台分享入口。
 
-不得发布：
+新插件需要新的系统级能力时，先通过大乘 App 更新增加 capability，再由插件声明使用。
 
-- 自定义 iframe message bridge；
-- 依赖 `Mcp-Session-Id` 的插件；
-- SDK v1 server；
-- legacy handler；
-- 只返回旧 HTML 入口而无 MCP Apps resource 的小程序。
+## 7. Web 产品模型
 
-## 6. 市场准入
+### App 内 WebView
 
-正式 release 元数据必须包含：
+`ui://` 资源从本地安装目录加载，Tool 通过 AppBridge 交给本机 Mahayana Core，属于完整本地运行。
 
-- `runtime.kind = mcp-app`；
-- `runtime.mcpSdk = v2`；
-- `runtime.transport = stateless-http`；
-- `runtime.legacy = false`；
-- MCP Apps extension；
-- `ui://` resource 清单；
-- CSP 与外部域名；
-- tool visibility；
-- 权限；
-- immutable package URL、SHA-256 和大小；
-- OIDC provenance；
-- 市场签名；
-- 审核、撤销和过期状态。
+### 普通浏览器
 
-未通过 MCP Apps 校验的版本只能显示 `migration_required`，不能进入公开等级或 production。
+桌面 Web 必须安装 Mahayana Local Agent 或浏览器扩展，使用安全 loopback/native messaging 连接本机 Runtime。手机浏览器需要深链打开大乘 App。
 
-## 7. 发布与安装
+没有本地代理时不能假装本地发送、文件或桌面自动化能力可用。
 
-发布链路：
+## 8. 全球法布施
 
-```text
-源码
-→ GitHub Actions OIDC
-→ MCP Apps build/test
-→ SDK v2 stateless Worker deploy
-→ legacy rejection test
-→ immutable package
-→ provenance + signature
-→ review
-→ production
-```
+- 桌面/CLI：随包 Runtime 在本机处理发送队列、账号状态、日志和数据；
+- 桌面独立窗口：使用本地 MCP Apps Shell；
+- 移动端：本地 WebView UI 调用内置 Rust Core 的发送能力；
+- 桌面 Web：通过 Local Agent；
+- Cloudflare：市场、签名包、更新、可选同步，不承载必须本地执行的数据发送。
 
-安装链路：
+## 9. ChatGPT 自动确认
 
-```text
-CLI → 市场签名元数据
-CLI → 插件 Cloudflare URL 直连下载
-CLI → 校验签名、哈希、来源、权限、撤销和 anti-rollback
-CLI → 原子安装
-Host → 仅以 MCP Apps 运行
-```
+该插件是 `desktop-local-only`：
 
-## 8. 硬切换
+- 本机 Runtime 操作本机 ChatGPT renderer/辅助功能/后台页面；
+- MCP App UI 管理启动、停止、任务、日志和授权；
+- 移动/Web 只能查看或控制已配对桌面；
+- 执行位置必须明确显示为目标桌面设备；
+- 不允许宣称在手机或云端直接完成桌面自动确认。
 
-采用单次 production cutover：
+## 10. MCP Apps 契约
 
-1. 先完成所有 Host；
-2. 迁移所有官方插件；
-3. 新模板和市场准入只接受 MCP Apps；
-4. 全平台和真实 Cloudflare 验收；
-5. 切换 production；
-6. 删除旧 SDK、旧路由、旧 bridge 和旧测试；
-7. 旧客户端显示强制升级。
+所有版本必须：
 
-不允许运行期双栈。
+- `io.modelcontextprotocol/ui`；
+- `ui://` resource；
+- `text/html;profile=mcp-app`；
+- `_meta.ui.resourceUri`；
+- AppBridge；
+- sandbox 和最小 CSP；
+- model/app Tool visibility；
+- 有意义的 `content` 和 `structuredContent`；
+- 声明 Runtime Profiles、权限和平台支持。
 
-## 9. 审核等级
+## 11. 市场与发布
 
-支持：
+市场仍必须实现：
 
-```text
-private
-unlisted
-community
-verified
-official
-blocked
-migration_required
-```
+- 稳定插件身份和命名空间；
+- 不可变版本+SHA 安装包 URL；
+- GitHub Actions OIDC 短期发布凭证；
+- provenance 和市场签名；
+- 权限、CSP、Runtime Profile、平台支持；
+- 审核、撤销、封禁、升级和回滚；
+- CLI 直连下载、安全解包和原子安装；
+- 禁止 R2；
+- 不永久代理安装包字节。
 
-`community`、`verified`、`official` 必须满足 MCP Apps-only 准入。
+对于 local-only/local-first 插件，市场验证本地 stdio、移动 Capability Contract 和 Local Agent 安全；只有存在 remote-edge Profile 时才要求 Cloudflare MCP Runtime conformance。
 
-## 10. 非目标
+## 12. 权限
 
-- 不保留旧 MCP 客户端兼容执行；
-- 不保留旧插件 runtime；
-- 不使用 R2 分发安装包或静态资源；
-- 不让市场 Worker 永久代理全部下载字节；
-- 不为每个版本创建独立虚拟机或永久 Worker 项目；
-- 不以自定义 UI bridge 替代 MCP Apps。
+至少支持：
 
-## 11. 成功标准
+- 本地文件和数据库；
+- 后台进程；
+- 桌面辅助功能；
+- 浏览器自动化；
+- 发送能力；
+- 网络域名；
+- 命名 Secret；
+- 通知；
+- 配对设备控制。
 
-至少一个真实第三方 MCP App 发布两个版本，并完成：
+默认拒绝，安装时展示，高风险能力首次使用再次确认，权限扩大必须重新确认。
 
-```text
-init → test → stage → release → review → discover
-→ render in Mahayana Host → render in another compliant Host
-→ direct download → verify → install → run
-→ permission diff → upgrade → rollback → revoke
-→ reject legacy client → reject tampered package
-```
+## 13. 硬切换
 
-同时所有官方小程序均完成 MCP Apps 迁移，生产依赖树和路由中不存在旧 MCP 运行代码。
+1. 完成共享 MCP Apps Host Core 和 Runtime Resolver；
+2. 完成本地安装/Supervisor、移动 Core Provider 和 Web Local Agent；
+3. 迁移全球法布施、ChatGPT 自动确认及所有官方插件；
+4. 市场和模板只接受新 MCP Apps Runtime Profiles；
+5. 全平台真实验收；
+6. 一次性切换 production；
+7. 删除旧 SDK、旧 session、旧 bridge 和旧测试。
+
+## 14. 成功标准
+
+- 全球法布施可本地安装、桌面独立运行、移动本地执行、Web 经 Local Agent 执行；
+- ChatGPT 自动确认在桌面本机真实运行，移动/Web 正确控制配对设备；
+- 第三方 local-first MCP App 发布两个版本并完成安装、升级、回滚和撤销；
+- Cloudflare 中断不影响已安装 local-only 插件打开 UI 和读取本地状态；
+- 所有官方小程序均完成 MCP Apps 迁移；
+- 生产代码不存在旧 MCP Session 和自定义 iframe 运行路径。
