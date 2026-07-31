@@ -1403,11 +1403,14 @@ fn decode_response(
     let message = serde_json::from_str::<Value>(&body)
         .ok()
         .and_then(|value| {
-            value
-                .get("error")
-                .or_else(|| value.get("message"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
+            let code = value.get("error").and_then(Value::as_str);
+            let detail = value.get("message").and_then(Value::as_str);
+            match (code, detail) {
+                (Some(code), Some(detail)) if code != detail => Some(format!("{code}: {detail}")),
+                (Some(code), _) => Some(code.to_string()),
+                (_, Some(detail)) => Some(detail.to_string()),
+                _ => None,
+            }
         })
         .unwrap_or(body);
     Err(ProductError::HttpStatus {
