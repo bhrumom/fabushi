@@ -1,159 +1,81 @@
-# API 契约：大乘小程序市场 v2
+# API 契约：MCP Apps-only 大乘市场 v2
 
-## 1. 通用约定
+## 1. 通用规则
 
 - 基础路径：`/v2/marketplace`。
-- JSON 响应必须包含稳定 `errorCode`，不能只返回中文错误文本。
-- 时间使用 RFC 3339 UTC。
-- plugin ID 和 version 放入 URL 时必须逐段编码和规范化。
-- 所有写操作要求大乘账号认证；发布凭证交换还要求 GitHub Actions OIDC。
-- 版本元数据的安全字段必须规范化后签名。
-- v1 接口在迁移期保留，新客户端优先 v2。
+- 写操作要求大乘账号认证；发布凭证交换要求 GitHub Actions OIDC。
+- 所有正式版本元数据规范化后签名。
+- 所有新发布接口只接受 MCP Apps + SDK v2 + stateless runtime。
+- 不提供旧 MCP 发布 API、运行代理或 legacy negotiation。
+- 旧客户端访问 MCP runtime 时由插件 endpoint 返回 `MCP_APPS_HOST_UPGRADE_REQUIRED`。
 
-## 2. 创建插件身份
+## 2. 创建插件
 
 ### `POST /v2/marketplace/plugins`
-
-请求：
 
 ```json
 {
   "namespace": "io.mahayana.bhrum",
   "slug": "hello",
   "displayName": "Hello",
-  "description": "示例插件",
   "deploymentMode": "managed",
   "visibility": "private"
 }
 ```
 
-响应：
-
-```json
-{
-  "pluginId": "io.mahayana.bhrum.hello",
-  "pluginUuid": "...",
-  "publisherId": "...",
-  "deploymentMode": "managed",
-  "visibility": "private",
-  "reviewTier": "unlisted",
-  "createdAt": "..."
-}
-```
-
-错误：
-
-- `namespace_not_owned`
-- `plugin_id_taken`
-- `invalid_plugin_identity`
-- `deployment_mode_not_allowed`
+返回稳定 `pluginId` 和内部 UUID。完整 ID 发布后不可被其他账号占用。
 
 ## 3. 创建发布意图
 
 ### `POST /v2/marketplace/plugins/{pluginId}/publish-intents`
-
-请求：
 
 ```json
 {
   "version": "1.0.0",
   "stage": "stage",
   "repository": "bhrum/example-plugin",
-  "workflow": "mahayana-plugin-release.yml",
+  "workflow": ".github/workflows/mahayana-plugin-release.yml",
   "commitSha": "...",
   "deploymentMode": "managed"
 }
 ```
 
-响应：
+同一 `pluginId + version` 已存在时返回 `version_already_exists`。
 
-```json
-{
-  "publishIntentId": "...",
-  "nonce": "...",
-  "audience": "mahayana-plugin-publish",
-  "expiresAt": "...",
-  "requiredClaims": {
-    "repository": "bhrum/example-plugin",
-    "workflow": "mahayana-plugin-release.yml",
-    "commitSha": "..."
-  }
-}
-```
-
-同一 `pluginId + version` 已存在时立即返回 `version_already_exists`。
-
-## 4. OIDC 交换短期发布凭证
+## 4. OIDC 交换
 
 ### `POST /v2/marketplace/publish-tokens/exchange`
 
-请求头：
+验证：issuer、audience、repository、workflow、commit、environment、actor、plugin owner、intent expiry 和 nonce。
 
-```text
-Authorization: Bearer <GitHub Actions OIDC JWT>
-```
+返回短期、单插件、单版本、单阶段 token。
 
-请求：
-
-```json
-{
-  "publishIntentId": "...",
-  "nonce": "..."
-}
-```
-
-服务端验证：
-
-- issuer；
-- audience；
-- repository owner/name；
-- workflow ref；
-- commit SHA；
-- environment；
-- actor 和 repository visibility 策略；
-- publish intent 未过期；
-- nonce 未使用；
-- plugin ID 仍属于该发布者。
-
-响应：
-
-```json
-{
-  "accessToken": "short-lived-token",
-  "tokenType": "Bearer",
-  "expiresIn": 600,
-  "scope": [
-    "plugin:io.mahayana.bhrum.hello",
-    "version:1.0.0",
-    "stage:stage"
-  ]
-}
-```
-
-错误：
-
-- `oidc_invalid`
-- `oidc_claim_mismatch`
-- `publish_intent_expired`
-- `publish_nonce_replayed`
-- `plugin_owner_mismatch`
-
-## 5. 提交 stage 构建结果
+## 5. 提交 stage
 
 ### `POST /v2/marketplace/plugins/{pluginId}/releases/stage`
-
-使用短期发布 token。
-
-请求：
 
 ```json
 {
   "version": "1.0.0",
-  "deploymentMode": "managed",
   "cloudflare": {
     "projectId": "internal-reference",
     "versionId": "...",
-    "previewUrl": "https://..."
+    "previewUrl": "https://...",
+    "mcpUrl": "https://.../mcp"
+  },
+  "runtime": {
+    "kind": "mcp-app",
+    "mcpSdk": "v2",
+    "transport": "stateless-http",
+    "legacy": false,
+    "extension": "io.modelcontextprotocol/ui"
+  },
+  "ui": {
+    "resources": ["ui://io.mahayana.bhrum.hello/main"],
+    "mimeTypes": ["text/html;profile=mcp-app"],
+    "displayModes": ["inline", "fullscreen"],
+    "csp": {},
+    "toolVisibility": {}
   },
   "package": {
     "url": "https://.../mahayana/releases/1.0.0/<sha>/plugin.tar.gz",
@@ -163,14 +85,7 @@ Authorization: Bearer <GitHub Actions OIDC JWT>
   },
   "manifestUrl": "https://.../plugin.json",
   "provenanceUrl": "https://.../provenance.json",
-  "permissions": {
-    "network": [],
-    "filesystem": [],
-    "secrets": [],
-    "commands": false,
-    "mcpTools": [],
-    "uiSurfaces": ["chatPanel"]
-  },
+  "permissions": {},
   "source": {
     "repository": "https://github.com/bhrum/example-plugin",
     "commitSha": "...",
@@ -180,223 +95,160 @@ Authorization: Bearer <GitHub Actions OIDC JWT>
 }
 ```
 
-服务端必须重新获取 manifest、包和 provenance，验证 URL、大小、SHA、gzip、插件 ID、版本、权限和来源，不信任客户端声明。
+服务端必须自行完成：
 
-响应：
+1. 拉取 package/manifest/provenance；
+2. 验证 URL、size、SHA、pluginId、version 和 permissions；
+3. 验证 SDK v2 manifest；
+4. 调用 `/mcp` 执行 MCP Apps conformance；
+5. 读取全部 `ui://` resources；
+6. 验证 MIME、CSP 和 tool visibility；
+7. 验证 production/preview endpoint 拒绝 legacy 请求；
+8. 验证 sandbox browser smoke；
+9. 验证 provenance。
 
-```json
-{
-  "releaseId": "...",
-  "status": "staged",
-  "reviewState": "pending",
-  "immutableMetadataUrl": "https://market.../v2/.../metadata",
-  "verification": {
-    "packageVerified": true,
-    "provenanceVerified": true,
-    "permissionsVerified": true
-  }
-}
-```
+任一失败不得创建可审核 release。
 
-## 6. 提交正式 release
+## 6. Promote
 
 ### `POST /v2/marketplace/plugins/{pluginId}/releases/{version}/promote`
 
-请求：
+只有 stage 全部通过、审核批准且 `legacyRejected = true` 时才能提升 production。
 
-```json
-{
-  "releaseId": "...",
-  "target": "production",
-  "releaseNotes": "..."
-}
-```
-
-行为：
-
-- stage 验证未通过时拒绝；
-- 普通发布者进入 `unlisted + pending`；
-- 管理员/自动策略批准后才更新生产别名；
-- 创建市场签名版本元数据；
-- 写入审计事件。
-
-## 7. 浏览和详情
+## 7. 浏览与详情
 
 ### `GET /v2/marketplace/plugins`
 
-查询：
-
-```text
-?q=&platform=&reviewTier=&publisher=&cursor=&limit=
-```
-
-默认只返回可公开发现且获批准的插件。`unlisted` 不能出现在普通搜索中。
+仅返回获批准且 MCP Apps 合规的公开版本。
 
 ### `GET /v2/marketplace/plugins/{pluginId}`
 
-返回展示资料、发布者、信任等级、生产版本、权限摘要、源码和安全状态。
+返回：
+
+- publisher/review tier；
+- production version；
+- MCP Apps compliance；
+- SDK v2/stateless/legacy rejected；
+- UI resources、display modes、CSP、tool visibility；
+- permissions、source、signature、revocation。
 
 ### `GET /v2/marketplace/plugins/{pluginId}/releases/{version}`
 
-返回签名版本元数据。建议响应结构：
+签名主体至少包含：
 
 ```json
 {
-  "signed": {
-    "schemaVersion": 2,
-    "protocol": "mahayana.plugin-release.v2",
-    "metadataVersion": 1,
-    "pluginId": "...",
-    "version": "1.0.0",
-    "status": "approved",
-    "reviewTier": "community",
-    "package": {
-      "url": "https://.../<sha>/plugin.tar.gz",
-      "sha256": "...",
-      "size": 12345,
-      "contentType": "application/gzip"
-    },
-    "permissions": {},
-    "source": {},
-    "provenanceUrl": "...",
-    "publishedAt": "...",
-    "expiresAt": "..."
+  "schemaVersion": 2,
+  "protocol": "mahayana.plugin-release.v2",
+  "pluginId": "...",
+  "version": "1.0.0",
+  "runtime": {
+    "kind": "mcp-app",
+    "mcpSdk": "v2",
+    "transport": "stateless-http",
+    "legacy": false,
+    "extension": "io.modelcontextprotocol/ui"
   },
-  "signatures": [
-    {
-      "keyId": "marketplace-2026-01",
-      "algorithm": "ed25519",
-      "signature": "base64url"
-    }
-  ]
+  "ui": {
+    "resources": ["ui://..."],
+    "mimeTypes": ["text/html;profile=mcp-app"],
+    "csp": {},
+    "toolVisibility": {}
+  },
+  "package": {},
+  "permissions": {},
+  "source": {},
+  "publishedAt": "...",
+  "expiresAt": "...",
+  "metadataVersion": 1
 }
 ```
 
-动态统计、评价和下载次数不得放入被签名的不可变 release 主体。
-
-## 8. 下载兼容端点
+## 8. 下载
 
 ### `GET /v2/marketplace/plugins/{pluginId}/releases/{version}/download`
 
-允许两种兼容行为：
+只允许：
 
-- 返回 `307` 到签名元数据中的不可变 Cloudflare URL；或
-- 返回包含直接 URL、SHA、大小和签名元数据 URL 的 JSON。
+- `307` 到签名元数据中的不可变 Cloudflare URL；或
+- 返回直接 URL、SHA、size 和签名 metadata URL。
 
-禁止市场 Worker读取并持续转发安装包正文。
+市场不得长期代理包正文。
 
 ## 9. 审核
 
 ### `POST /v2/marketplace/plugins/{pluginId}/releases/{version}/reviews`
 
-请求：
+审核 checks 必须包括：
 
 ```json
 {
-  "decision": "approve",
-  "reviewTier": "community",
-  "notes": "...",
-  "checks": {
-    "manifest": "passed",
-    "packageSafety": "passed",
-    "permissions": "passed",
-    "provenance": "passed",
-    "runtimeSmoke": "passed"
-  }
+  "mcpApps": "passed",
+  "sdkV2": "passed",
+  "stateless": "passed",
+  "legacyRejected": "passed",
+  "uiResources": "passed",
+  "csp": "passed",
+  "toolVisibility": "passed",
+  "packageSafety": "passed",
+  "permissions": "passed",
+  "provenance": "passed",
+  "runtimeSmoke": "passed"
 }
 ```
 
-只有具备审核权限的账号可调用。每次审核写入不可变审计记录。
+## 10. 回滚、撤销和封禁
 
-## 10. 回滚
+- rollback 只能指向已批准的 MCP Apps 版本；
+- revoke 阻止该版本新安装和升级；
+- blocked 阻止插件整体安装、升级和启动；
+- 不允许回滚到旧 MCP runtime 版本。
 
-### `POST /v2/marketplace/plugins/{pluginId}/rollbacks`
+## 11. 旧插件状态
 
-请求：
+旧插件元数据可以被迁移工具读取，但 API 返回：
 
 ```json
 {
-  "fromVersion": "1.1.0",
-  "toVersion": "1.0.0",
-  "reason": "production regression"
+  "migrationState": "migration_required",
+  "installable": false,
+  "runnable": false,
+  "requiredRuntime": "mcp-app"
 }
 ```
 
-要求：
+不提供兼容执行 URL。
 
-- 目标版本仍存在且未 blocked；
-- 不修改目标版本内容；
-- 创建新的 deployment 记录；
-- 更新 production alias；
-- 写审计事件；
-- 返回当前生产版本和 Cloudflare deployment ID。
+## 12. 稳定错误码
 
-## 11. 撤销和封禁
-
-### `POST /v2/marketplace/plugins/{pluginId}/releases/{version}/revoke`
-
-请求：
-
-```json
-{
-  "reasonCode": "malware_detected",
-  "message": "...",
-  "replacementVersion": "1.0.2"
-}
-```
-
-### `POST /v2/marketplace/plugins/{pluginId}/block`
-
-插件整体 blocked 后：
-
-- 不出现在普通搜索；
-- 新安装和升级被拒绝；
-- 已安装客户端获得安全状态；
-- 管理员可以查看审计和证据。
-
-## 12. 自托管所有权
-
-### `POST /v2/marketplace/plugins/{pluginId}/deployment-challenges`
-
-响应 challenge path/token。
-
-### `POST /v2/marketplace/plugins/{pluginId}/deployment-challenges/verify`
-
-市场从 HTTPS Cloudflare URL读取 challenge，验证后记录 hostname、账户/项目证据和有效期。
-
-## 13. 稳定错误码
-
-至少实现：
+至少包括：
 
 ```text
-invalid_request
-unauthenticated
-forbidden
-namespace_not_owned
-plugin_id_taken
+mcp_apps_required
+mcp_apps_extension_missing
+ui_resource_missing
+ui_mime_invalid
+app_bridge_conformance_failed
+csp_invalid
+tool_visibility_invalid
+sdk_v2_required
+stateless_runtime_required
+legacy_runtime_rejected
+legacy_endpoint_still_enabled
+host_upgrade_required
+plugin_migration_required
 version_already_exists
-invalid_deployment_url
-deployment_not_cloudflare
-deployment_ownership_failed
-mutable_release_url
 oidc_invalid
 oidc_claim_mismatch
-publish_intent_expired
 publish_nonce_replayed
-package_fetch_failed
-package_too_large
-package_format_invalid
-package_size_mismatch
 package_hash_mismatch
 manifest_mismatch
 permission_mismatch
 provenance_invalid
 signature_invalid
 metadata_expired
-rollback_rejected
 release_revoked
 plugin_blocked
-review_required
 ```
 
-CLI、Web 和 Flutter UI 必须将错误码映射为一致、可操作的文案。
+CLI、Web、Flutter 和 Cloudflare logs 使用一致错误码。
