@@ -78,6 +78,7 @@ class MiniAppHostCapabilityBridge {
       'queue-enqueue' => ['queue_enqueue', jsonEncode(params)],
       'queue-start' => ['queue_start', jsonEncode(params)],
       'queue-status' => const ['queue_status'],
+      'queue-update' => ['queue_update', jsonEncode(params)],
       'queue-wait-review' => ['queue_wait_review', jsonEncode(params)],
       'queue-review' => ['queue_review', jsonEncode(params)],
       'queue-pause' => const ['queue_pause'],

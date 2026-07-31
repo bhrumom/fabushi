@@ -1,13 +1,43 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 const statePath = process.env.CHATGPT_AUTO_CONFIRM_QUEUE_STATE;
 const inboxPath = process.env.CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE?.trim();
+const workspace = path.resolve(process.env.GITHUB_WORKSPACE || process.cwd());
 if (!statePath) throw new Error('CHATGPT_AUTO_CONFIRM_QUEUE_STATE is required');
 if (!inboxPath) throw new Error('CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE is required');
 
 const inbox = JSON.parse(readFileSync(inboxPath, 'utf8'));
-const incoming = Array.isArray(inbox.tasks) ? inbox.tasks : [];
+const incomingRaw = Array.isArray(inbox.tasks) ? inbox.tasks : [];
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
+
+const readSpecSnapshot = (task) => {
+  const sources = Array.isArray(task.specSources) ? task.specSources : [];
+  if (sources.length === 0) return { specSnapshot: '', specDigest: null };
+  const sections = sources.map((source) => {
+    if (typeof source !== 'string' || !source.trim()) {
+      throw new Error(`Task ${task.id} contains an invalid spec source`);
+    }
+    const resolved = path.resolve(workspace, source);
+    if (resolved !== workspace && !resolved.startsWith(`${workspace}${path.sep}`)) {
+      throw new Error(`Task ${task.id} spec source escapes workspace: ${source}`);
+    }
+    return `## ${source}\n${readFileSync(resolved, 'utf8').trim()}`;
+  });
+  const specSnapshot = sections.join('\n\n').trim();
+  if (specSnapshot.length > 60_000) {
+    throw new Error(`Task ${task.id} spec snapshot exceeds 60000 characters`);
+  }
+  const specDigest = `sha256:${createHash('sha256').update(specSnapshot).digest('hex')}`;
+  return { specSnapshot, specDigest };
+};
+
+const incoming = incomingRaw.map((task) => ({
+  ...task,
+  revision: Math.max(1, Number(task?.revision || 1)),
+  ...readSpecSnapshot(task),
+}));
 const incomingIds = new Set(incoming.map(task => task?.id).filter(Boolean));
 const originalTasks = Array.isArray(state.automationTasks) ? state.automationTasks : [];
 const removed = [];
@@ -22,6 +52,7 @@ const knownTasks = new Map(tasks.map(task => [task.id, task]));
 const now = new Date().toISOString();
 const appended = [];
 const requeued = [];
+const revised = [];
 
 const resetExecution = (task) => {
   task.attempts = 0;
@@ -35,7 +66,12 @@ const resetExecution = (task) => {
   task.workerProfilePath = null;
   task.resultPath = null;
   task.conversationId = null;
+  task.reviewConversationId = null;
+  task.reviewStatus = null;
+  task.reviewReport = null;
   task.chatURL = null;
+  task.report = null;
+  task.lastResultJSON = null;
   task.lastActivitySignature = null;
   task.lastProgressAt = null;
   task.hiddenWorkerLastHeartbeatAt = null;
@@ -50,6 +86,8 @@ for (const task of incoming) {
   if (!task?.id) continue;
   const existing = knownTasks.get(task.id);
   if (existing) {
+    const previousRevision = Math.max(1, Number(existing.currentRevision || 1));
+    const specChanged = task.revision > previousRevision || task.specDigest !== existing.specDigest;
     for (const field of [
       'title', 'prompt', 'promptTemplate', 'connector', 'dependsOn',
       'resourceLocks', 'priority', 'timeout', 'maxTaskContinuations',
@@ -57,7 +95,20 @@ for (const task of incoming) {
     ]) {
       if (task[field] !== undefined) existing[field] = task[field];
     }
-    if (['failed', 'blocked'].includes(existing.status)) {
+    existing.currentRevision = task.revision;
+    existing.specSources = task.specSources || [];
+    existing.specSnapshot = task.specSnapshot || '';
+    existing.specDigest = task.specDigest;
+    existing.pendingDirective = task.directive || null;
+    existing.specUpdatedAt = now;
+    existing.pendingRevision = specChanged ? task.revision : existing.pendingRevision;
+    existing.updatedAt = now;
+    if (specChanged && existing.status !== 'cancelled') {
+      existing.reviewFeedback =
+        `任务规范已更新到 revision ${task.revision}；旧修订完成结果无效。`;
+      if (existing.status !== 'running') resetExecution(existing);
+      revised.push(existing.id);
+    } else if (['failed', 'blocked'].includes(existing.status)) {
       resetExecution(existing);
       requeued.push(existing.id);
     }
@@ -68,6 +119,15 @@ for (const task of incoming) {
     title: task.title,
     prompt: task.prompt,
     promptTemplate: task.promptTemplate || 'continue-to-complete',
+    currentRevision: task.revision,
+    appliedRevision: null,
+    pendingRevision: task.revision,
+    specSources: task.specSources || [],
+    specSnapshot: task.specSnapshot || '',
+    specDigest: task.specDigest,
+    appliedSpecDigest: null,
+    pendingDirective: task.directive || null,
+    specUpdatedAt: now,
     connector: task.connector || 'GitHub',
     dependsOn: task.dependsOn || [],
     resourceLocks: task.resourceLocks || [],
@@ -122,7 +182,9 @@ state.queueMaxConcurrent = Math.min(4, Math.max(2,
 state.queueReviewGate = inbox.reviewGate ?? false;
 writeFileSync(statePath, `${JSON.stringify(state)}\n`, { mode: 0o600 });
 process.stdout.write(
-  `Imported ${appended.length} new queued task(s); requeued ${requeued.length} failed task(s).` +
+  `Imported ${appended.length} new queued task(s); revised ${revised.length}; ` +
+  `requeued ${requeued.length} failed task(s).` +
+  `${revised.length ? ` Revised: ${revised.join(', ')}.` : ''}` +
   `${requeued.length ? ` Requeued: ${requeued.join(', ')}.` : ''}` +
   `${removed.length ? ` Removed stale tasks: ${removed.join(', ')}.` : ''}\n`,
 );
