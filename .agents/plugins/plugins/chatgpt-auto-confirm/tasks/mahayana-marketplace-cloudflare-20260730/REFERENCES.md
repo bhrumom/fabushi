@@ -1,6 +1,6 @@
 # 参考资料
 
-本文件只保存任务设计依据。实施时仍应以当前官方文档和仓库实际代码为准。
+本文件保存市场、发布和软件更新安全方面的任务设计依据。MCP `2026-07-28` 协议与 Cloudflare 边缘迁移的专门官方资料见 `MCP_2026_07_28_REFERENCES.md`。实施时仍应以当前官方文档和仓库实际代码为准。
 
 ## 1. 当前仓库
 
@@ -13,6 +13,8 @@
 - 本地插件发现：`fabushi/lib/services/codex_plugin_catalog_io.dart`
 - 官方安装脚本：`scripts/install-official-plugin.sh`、`scripts/install-official-plugin.ps1`
 - 官方插件打包：`scripts/package-official-plugin-release.py`
+- MCP 最新边缘升级设计：`MCP_2026_07_28_EDGE.md`
+- MCP 最新官方资料：`MCP_2026_07_28_REFERENCES.md`
 
 ## 2. MCP Registry
 
@@ -130,6 +132,8 @@ TUF 为软件更新定义 root、targets、snapshot、timestamp 等角色，防�
 + 中央签名可信元数据
 + 托管/自托管两种发布模式
 + CLI 直连下载和本地安全验证
++ MCP 2026-07-28 无状态边缘服务
++ 标准 MCP Apps、Tasks 与 MRTR
 ```
 
 这既适用于网页和远程 MCP，也适用于 CLI 本地 Runtime 和混合插件。
