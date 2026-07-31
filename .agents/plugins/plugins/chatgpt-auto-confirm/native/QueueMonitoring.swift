@@ -195,12 +195,15 @@ func automationTaskRevisionIsCurrent(
   report: AutomationTaskReport?
 ) -> Bool {
   let currentRevision = max(1, task.currentRevision ?? 1)
-  let appliedRevision = max(1, report?.appliedTaskRevision ?? task.appliedRevision ?? 1)
-  guard currentRevision == appliedRevision else { return false }
-  if let reportTaskId = report?.taskId, reportTaskId != task.id { return false }
   let currentDigest = task.specDigest ?? ""
-  let appliedDigest = report?.appliedSpecDigest ?? task.appliedSpecDigest ?? ""
-  return currentDigest == appliedDigest
+  if let report {
+    guard report.taskId == task.id,
+          let appliedRevision = report.appliedTaskRevision,
+          let appliedDigest = report.appliedSpecDigest else { return false }
+    return currentRevision == appliedRevision && currentDigest == appliedDigest
+  }
+  return currentRevision == max(1, task.appliedRevision ?? 1)
+    && currentDigest == (task.appliedSpecDigest ?? "")
 }
 
 func monitorAutomationTask(

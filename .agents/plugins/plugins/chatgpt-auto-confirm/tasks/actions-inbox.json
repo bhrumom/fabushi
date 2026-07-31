@@ -19,12 +19,13 @@
         "service:mahayana-marketplace"
       ],
       "prompt": "在 fabushi 仓库内完善大乘 CLI 云端插件市场（小程序系统市场）。实现官方小程序在大乘 CLI 中的顺利下载安装。请使用 GitHub secrets 中提供的测试账号登录大乘 CLI 并完成开发与测试工作。检查并完善云端市场浏览、插件包下载、校验、安全安装等环节；要求创建一个可从市场安装的真实小程序，并用大乘 CLI 完成发布、浏览、下载、安装和运行的端到端验证，确保整个流程畅通。特别注意架构要求：大乘 CLI 市场的每一个插件小程序都必须部署到 Cloudflare Pages 或 Cloudflare Worker 上，作为一个独立的网页提供服务；绝对不要把插件包放到 R2 存储中；如果插件涉及需要下载的静态资源，也必须直接从其对应的 Cloudflare Page 页面中下载。",
-      "revision": 2,
+      "revision": 3,
       "applyMode": "next_chat",
       "specSources": [
+        ".mahayana/tasks/mahayana-marketplace-cloudflare-20260730.yaml",
         "docs/plugin-marketplace.md"
       ],
-      "directive": "采用动态任务修订机制：Action 运行期间持续读取本任务最新 revision 和规范文件；当前 Chat 不强行改变上下文，下一轮新 Chat 必须注入最新规范，并拒绝旧 revision 的完成或验收结果。市场实现以 docs/plugin-marketplace.md 中的目标架构和验收标准为准。"
+      "directive": "采用任务版本控制平面：Action 只绑定稳定 task_id，每轮新 Chat 和独立验收前读取 revision 3 的完整规范快照；原始目标不可变，更新历史可审计；旧 revision 或 digest 的完成结果必须自动拒绝并续作。"
     }
   ]
 }

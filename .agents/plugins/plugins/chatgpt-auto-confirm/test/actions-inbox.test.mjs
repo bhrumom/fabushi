@@ -67,6 +67,8 @@ test('Actions inbox refreshes and requeues an existing failed task', () => {
         workerPid: 123,
         workerTargetId: 'stale-target',
         conversationId: 'stale-conversation',
+        currentRevision: 1,
+        originalPrompt: 'Original target',
         lastError: 'new_chat_prepare_failed',
       }],
     }));
@@ -74,6 +76,7 @@ test('Actions inbox refreshes and requeues an existing failed task', () => {
       maxConcurrent: 2,
       tasks: [{
         id: 'marketplace-parallel',
+        revision: 2,
         title: 'Updated title',
         prompt: 'Updated prompt',
         maxRuntimeRetries: 4,
@@ -86,6 +89,9 @@ test('Actions inbox refreshes and requeues an existing failed task', () => {
     assert.equal(state.automationTasks.length, 1);
     assert.equal(task.title, 'Updated title');
     assert.equal(task.prompt, 'Updated prompt');
+    assert.equal(task.originalPrompt, 'Original target');
+    assert.equal(task.currentRevision, 2);
+    assert.equal(task.taskUpdates.length, 1);
     assert.equal(task.maxRuntimeRetries, 4);
     assert.equal(task.status, 'queued');
     assert.equal(task.attempts, 0);
@@ -186,6 +192,35 @@ test('Actions inbox promotes a newer task revision with a hashed spec snapshot',
     assert.match(task.specSnapshot, /immutable Cloudflare releases/);
     assert.match(task.specDigest, /^sha256:[a-f0-9]{64}$/);
     assert.match(task.reviewFeedback, /revision 2/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('Actions inbox rejects changed content without a revision increment', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-conflict-'));
+  const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
+  const script = fileURLToPath(
+    new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
+  const env = {
+    ...process.env,
+    CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
+  };
+  try {
+    writeFileSync(statePath, JSON.stringify({ automationTasks: [{
+      id: 'versioned-task', title: 'Task', prompt: 'Revision one',
+      originalPrompt: 'Revision one', currentRevision: 1, status: 'queued',
+    }] }));
+    writeFileSync(inboxPath, JSON.stringify({ tasks: [{
+      id: 'versioned-task', revision: 1, title: 'Task', prompt: 'Changed without bump',
+    }] }));
+    assert.throws(
+      () => execFileSync(process.execPath, [script], { env, stdio: 'pipe' }),
+      /revision 1 changed without incrementing revision/,
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

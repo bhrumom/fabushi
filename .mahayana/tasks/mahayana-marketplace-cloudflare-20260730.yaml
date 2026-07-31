@@ -1,0 +1,34 @@
+schema_version: 1
+task_id: mahayana-marketplace-cloudflare-20260730
+revision: 3
+title: 完善大乘 CLI 云端小程序市场
+repository:
+  owner: bhrumom
+  name: fabushi
+  pull_request: 1753
+  branch: codex/mahayana-marketplace-parallel-20260726-r16
+goal:
+  summary: 实现普通发布者可使用、可安全安装和运行的大乘 CLI 云端小程序市场。
+specifications:
+  - docs/plugin-marketplace.md
+requirements:
+  - 每个小程序是独立的 Cloudflare Pages 或 Worker 部署单元
+  - 每个版本对应不可变安装包
+  - 禁止将插件包存入 R2
+  - CLI 从小程序自己的 Cloudflare 站点直接下载
+  - 市场只负责身份、审核、索引、签名和撤销
+  - 普通用户默认使用平台托管发布
+  - 发布使用 GitHub Actions OIDC 和短期凭证
+  - 安装必须校验签名、SHA-256、大小、版本和权限
+acceptance:
+  - 使用真实测试账号登录
+  - 发布真实小程序
+  - 市场浏览可发现
+  - CLI 直连下载成功
+  - 安全校验成功
+  - 安装后能够运行
+  - 重复版本不同内容必须失败
+  - 撤销版本必须无法安装
+update_policy:
+  apply_mode: next_chat
+  interrupt_running_chat: false

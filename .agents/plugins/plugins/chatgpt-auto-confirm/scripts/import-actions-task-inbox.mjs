@@ -88,7 +88,15 @@ for (const task of incoming) {
   if (existing) {
     const previousRevision = Math.max(1, Number(existing.currentRevision || 1));
     const previousSpecDigest = existing.specDigest || null;
-    const specChanged = task.revision > previousRevision || task.specDigest !== previousSpecDigest;
+    const contentChanged = task.specDigest !== previousSpecDigest
+      || (task.prompt !== undefined && task.prompt !== existing.prompt)
+      || (task.title !== undefined && task.title !== existing.title)
+      || (task.directive || null) !== (existing.pendingDirective || null);
+    if (task.revision < previousRevision) continue;
+    if (task.revision === previousRevision && contentChanged) {
+      throw new Error(`Task ${task.id} revision ${task.revision} changed without incrementing revision`);
+    }
+    const specChanged = task.revision > previousRevision;
     for (const field of [
       'title', 'prompt', 'promptTemplate', 'connector', 'dependsOn',
       'resourceLocks', 'priority', 'timeout', 'maxTaskContinuations',
@@ -96,11 +104,26 @@ for (const task of incoming) {
     ]) {
       if (task[field] !== undefined) existing[field] = task[field];
     }
+    existing.originalPrompt ||= existing.prompt;
     existing.currentRevision = task.revision;
     existing.specSources = task.specSources || [];
     existing.specSnapshot = task.specSnapshot || '';
     existing.specDigest = task.specDigest;
     existing.pendingDirective = task.directive || null;
+    existing.applyMode = task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat';
+    existing.taskUpdates ||= [];
+    if (specChanged) {
+      existing.taskUpdates.push({
+        id: `inbox-${task.revision}-${Date.now()}`,
+        revision: task.revision,
+        createdAt: now,
+        source: 'actions-inbox',
+        directive: task.directive || '',
+        specDigest: task.specDigest || '',
+        applyMode: existing.applyMode,
+      });
+      existing.taskUpdates = existing.taskUpdates.slice(-100);
+    }
     existing.specUpdatedAt = now;
     existing.pendingRevision = specChanged ? task.revision : existing.pendingRevision;
     existing.updatedAt = now;
@@ -119,6 +142,7 @@ for (const task of incoming) {
     id: task.id,
     title: task.title,
     prompt: task.prompt,
+    originalPrompt: task.prompt,
     promptTemplate: task.promptTemplate || 'continue-to-complete',
     currentRevision: task.revision,
     appliedRevision: null,
@@ -128,6 +152,8 @@ for (const task of incoming) {
     specDigest: task.specDigest,
     appliedSpecDigest: null,
     pendingDirective: task.directive || null,
+    applyMode: task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat',
+    taskUpdates: [],
     specUpdatedAt: now,
     connector: task.connector || 'GitHub',
     dependsOn: task.dependsOn || [],

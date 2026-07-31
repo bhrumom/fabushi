@@ -43,7 +43,8 @@ const queuedTaskSchema = {
     revision: { type: 'integer', minimum: 1, default: 1 },
     specSources: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 512 }, default: [] },
     directive: { type: 'string', maxLength: 10000, default: '' },
-    applyMode: { type: 'string', enum: ['next_chat'], default: 'next_chat' },
+    applyMode: { type: 'string', enum: ['next_chat', 'interrupt'], default: 'next_chat' },
+      source: { type: 'string', maxLength: 160 },
     connector: { type: 'string', minLength: 1, maxLength: 256, default: 'bhrum2', description: '本地工作区选 bhrum2；云端 GitHub/PR/Actions 选 GitHub' },
     dependsOn: { type: 'array', maxItems: 50, items: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }, default: [] },
     resourceLocks: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 256 }, default: [] },
@@ -162,7 +163,8 @@ const tools = [
       specSources: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 512 }, default: [] },
       specSnapshot: { type: 'string', maxLength: 60000 },
       specDigest: { type: 'string', maxLength: 80 },
-      applyMode: { type: 'string', enum: ['next_chat'], default: 'next_chat' },
+      applyMode: { type: 'string', enum: ['next_chat', 'interrupt'], default: 'next_chat' },
+      source: { type: 'string', maxLength: 160 },
     },
   } },
   { name: 'start_actions_runner', description: '把当前队列的最小续作状态和 ChatGPT 登录凭证安全刷新到 GitHub Secrets，并启动最长六小时的 GitHub Actions 持续运行器；未完成时 Action 自动启动下一轮', annotations: {
@@ -330,7 +332,8 @@ export default {
           specSources: Array.isArray(args.specSources) ? args.specSources.slice(0, 20) : [],
           specSnapshot: args.specSnapshot ? String(args.specSnapshot).slice(0, 60000) : null,
           specDigest: args.specDigest ? String(args.specDigest).slice(0, 80) : null,
-          applyMode: 'next_chat',
+          applyMode: ['next_chat', 'interrupt'].includes(args.applyMode) ? args.applyMode : 'next_chat',
+          source: args.source ? String(args.source).slice(0, 160) : 'operator',
         }, 'required');
       if (name === 'start_actions_runner') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-start', {}, 'required');

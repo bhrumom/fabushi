@@ -250,10 +250,13 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
     specSnapshot: 'updated marketplace requirements',
     specDigest: 'sha256:updated',
     directive: 'Use the latest marketplace architecture',
+    applyMode: 'interrupt', source: 'miniapp-ui',
   });
   assert.equal(updated.result.structuredContent.hostRequest.capability,
     'desktop.chatgpt-approvals.queue-update');
   assert.equal(updated.result.structuredContent.hostRequest.params.revision, 2);
+  assert.equal(updated.result.structuredContent.hostRequest.params.applyMode, 'interrupt');
+  assert.equal(updated.result.structuredContent.hostRequest.params.source, 'miniapp-ui');
   assert.equal(retried.result.structuredContent.hostRequest.params.connector, 'GitHub');
   const actionsRunner = await call('start_actions_runner', {});
   assert.equal(actionsRunner.result.structuredContent.hostRequest.capability,

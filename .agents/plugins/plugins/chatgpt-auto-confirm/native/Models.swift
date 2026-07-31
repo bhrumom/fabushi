@@ -96,10 +96,21 @@ struct AutomationTaskReport: Codable {
   }
 }
 
+struct AutomationTaskUpdate: Codable {
+  var id: String
+  var revision: Int
+  var createdAt: String
+  var source: String
+  var directive: String
+  var specDigest: String
+  var applyMode: String
+}
+
 struct AutomationTask: Codable {
   var id: String
   var title: String
   var prompt: String
+  var originalPrompt: String?
   var promptTemplate: String
   var currentRevision: Int?
   var appliedRevision: Int?
@@ -109,6 +120,8 @@ struct AutomationTask: Codable {
   var specDigest: String?
   var appliedSpecDigest: String?
   var pendingDirective: String?
+  var applyMode: String?
+  var taskUpdates: [AutomationTaskUpdate]?
   var specUpdatedAt: String?
   var connector: String
   var dependsOn: [String]
