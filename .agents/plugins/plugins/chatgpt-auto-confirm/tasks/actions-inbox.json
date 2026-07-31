@@ -1,11 +1,20 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "revision": "2026-07-31.1",
+  "keepAlive": true,
   "authoritative": true,
-  "maxConcurrent": 1,
+  "maxConcurrent": 2,
   "reviewGate": false,
+  "specificationFiles": [
+    ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/DYNAMIC_TASK_SPEC.md"
+  ],
+  "specificationURLs": [
+    "https://github.com/bhrumom/fabushi/blob/main/.agents/plugins/plugins/chatgpt-auto-confirm/tasks/DYNAMIC_TASK_SPEC.md"
+  ],
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
+      "goalVersion": 1,
       "title": "完善大乘 CLI 云端插件市场",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
