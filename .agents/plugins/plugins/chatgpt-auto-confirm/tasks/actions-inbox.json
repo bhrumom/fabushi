@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-07-31.4",
+  "revision": "2026-07-31.5",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,11 +8,11 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 4,
-      "title": "实现基于 MCP 2026-07-28 的大乘小程序边缘混合市场与可信发布链路",
+      "goalVersion": 5,
+      "title": "全面迁移大乘小程序至 MCP Apps 与无状态边缘运行时",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
-      "priority": 65,
+      "priority": 70,
       "timeout": 7200,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
@@ -21,11 +21,11 @@
         "worktree:mahayana-marketplace",
         "service:mahayana-marketplace",
         "service:mahayana-plugin-publishing",
-        "protocol:mcp-2026-07-28",
-        "runtime:cloudflare-edge-mcp"
+        "extension:mcp-apps-2026-01-26",
+        "runtime:cloudflare-stateless-mcp-v2"
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
-      "prompt": "在 fabushi 仓库中把现有大乘 CLI 云端插件市场和小程序 MCP 运行时升级为基于 MCP 2026-07-28 的边缘混合市场与可信发布系统。开始前必须阅读任务文档目录中的全部文件，尤其是 MCP_2026_07_28_EDGE.md，并以其中的 PRD、技术设计、协议迁移、API、数据模型、安全模型、发布流程、迁移计划、UI/UX 和验收标准为唯一实施依据。市场架构必须做到：一个发布者可拥有多个插件；每个插件具有不可抢占的稳定命名空间、独立权限和独立 Cloudflare 逻辑服务边界；一个插件对应一个稳定 Worker/Pages 项目或服务，而不是每个版本永久创建一个新服务；每个版本对应不可变部署和包含版本及 SHA-256 的不可变安装包 URL；生产别名指向当前版本并支持保留旧版本、回滚、下架、撤销和审计。大乘市场作为控制平面管理账号、身份、命名空间、审核、搜索、版本索引、权限、签名、来源证明、撤销和安全状态；插件自己的 Cloudflare 服务作为数据与运行平面承载主页、远程 MCP Runtime、安装包和静态资源。默认实现普通用户无需接触 Cloudflare Token 的平台托管发布模式，并保留验证所有权后的高级自托管模式。发布链路使用 GitHub Actions OIDC 交换短期发布凭证并记录 provenance；不得把生产发布建立在长期测试账号或长期写 Token 上。大乘 CLI 浏览市场后直接从插件获批的 Cloudflare 不可变 URL 下载，不让市场 Worker 永久代理包字节；安装前验证市场签名元数据、批准域名、大小、SHA-256、版本防回退、撤销状态、来源证明和权限清单，安全解包并原子安装，权限扩大时必须重新确认。禁止使用 R2 作为插件包或插件静态资源分发源，禁止所有第三方插件共享同一个大 Worker、Secret、数据库或写权限。实现 private、unlisted、community、verified、official、blocked 等发布和审核等级，并保持现有官方插件清单、动态市场接口及旧客户端的兼容迁移。协议和边缘运行时必须升级到 MCP 2026-07-28：新插件 Worker 默认使用无状态 MCP 路径和 Cloudflare createMcpHandler，不依赖 initialize、Mcp-Session-Id、sticky session、共享 transport session store 或长期 GET/SSE；大乘宿主优先通过 server/discover 自动协商 2026-07-28，并为旧服务保留 initialize 回退；每个请求携带必要 _meta，网关使用 MCP-Protocol-Version、Mcp-Method、Mcp-Name 做路由、限流和审计；工具清单和 UI 资源使用 ttlMs/cacheScope；传播 W3C Trace Context。把现有大乘自定义 iframe UI 桥接迁移为官方 MCP Apps：使用 ui:// 资源、_meta.ui.resourceUri、标准 AppBridge、sandbox、CSP、host context、tool visibility、inline/fullscreen/pip 和文本降级。把 elicitation 迁移为 MRTR input_required/requestState 流程，把构建、扫描、Cloudflare 部署、审核和其他长时间工作接入正式 Tasks 扩展并实现 tasks/get、tasks/update、tasks/cancel 的身份权限隔离。Tool schema 和宿主表单支持完整 JSON Schema 2020-12；Roots、Sampling、Logging 和旧 HTTP+SSE 只作为迁移期兼容能力，不作为新插件模板默认值。必须创建真实第三方示例小程序和至少两个版本，完成 init、test、stage、release、审核、浏览、server/discover、无状态工具调用、标准 MCP App 渲染、文本降级、MRTR 确认、Tasks 长任务、直连下载、校验、安装、运行、升级、权限变化确认、回滚、撤销、篡改拒绝、旧协议回退和跨边缘实例验证。所有构建、部署和验收以 GitHub Actions 日志、Cloudflare 生产部署、市场响应、OpenTelemetry trace 和 CLI/宿主真实结果为证据。不要只更新文档、只升级依赖、只替换版本字符串、只写 mock 或只做接口单测；持续实现、修复和验证，直到任务目录中的全部强制验收项满足。"
+      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场准入和 Cloudflare 运行时全面迁移到官方 MCP Apps 稳定规范 2026-01-26 与 Cloudflare 无状态 MCP SDK v2。开始前必须阅读任务目录全部文件，其中 MCP_APPS_ONLY.md 为最高优先级约束；其他文档与其冲突时以该文件为准。不得实现运行期双栈、旧协议回退或 legacy production lane。所有插件 Worker 必须使用 agents/mcp/server 的 createMcpHandler、SDK v2 server factory，并在生产设置 legacy: \"reject\"；禁止 createLegacyMcpHandler、McpAgent、WorkerTransport、SDK v1 server、Mcp-Session-Id、sticky session、GET/DELETE MCP session、长期 session SSE 和 transport session store。业务状态只能通过认证后的显式 ID、resource URI、task handle、D1/KV/Durable Object/Queue/Workflow 表达，不得伪装成 MCP 会话。Web、桌面、移动和 CLI 必须统一使用共享 MCP Apps Host core，采用官方 AppBridge 或规范一致实现；使用 io.modelcontextprotocol/ui、ui://、text/html;profile=mcp-app、_meta.ui.resourceUri、标准 JSON-RPC postMessage、sandbox、CSP、host context、tool visibility、inline/fullscreen/picture-in-picture 和资源 teardown。ui/initialize 是 MCP Apps View 与 Host 的新标准握手，必须实现；不得与旧 MCP 服务 session 初始化混淆。删除大乘自定义 iframe bridge 和旧 hostApiVersion fallback。所有官方插件、真实第三方验收插件和新插件模板必须转换成 MCP Apps；未迁移版本不得进入 community、verified、official 或 production。市场发布必须校验 MCP Apps extension、ui:// resources、MIME、SDK v2、stateless transport、legacy=false、CSP、权限和不可变发布物；旧 MCP 插件只允许被迁移工具识别并提示升级，不能在新 Host 中运行。旧客户端访问时返回 MCP_APPS_HOST_UPGRADE_REQUIRED，不提供兼容执行。采用先完成全部迁移和全平台验收、再一次性切换 production 的硬切换方案；切换后删除旧路由、旧依赖、旧 bridge 和旧测试。市场与可信发布仍须实现每插件独立 Cloudflare 逻辑服务、不可变版本 URL、OIDC 短期发布、provenance、市场签名、权限、审核、撤销、回滚、CLI 直连下载、安全安装和禁止 R2。必须创建至少两个版本的真实 MCP App，完成托管发布、审核、市场发现、MCP Apps 渲染、app/model tool visibility、CSP 拒绝、权限确认、无状态跨边缘实例调用、长任务/多轮输入、直连下载、安装、升级、回滚、撤销和篡改拒绝；并证明同一 MCP App 能在大乘 Host 和至少一个其他合规 MCP Apps Host 中运行。所有证据来自 GitHub Actions、真实 Cloudflare production、市场响应和客户端运行结果。不要只更新文档、只升级依赖、只保留兼容层、只写 mock 或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
     }
   ]
 }
