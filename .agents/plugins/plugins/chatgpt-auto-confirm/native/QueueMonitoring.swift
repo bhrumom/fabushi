@@ -49,9 +49,13 @@ func traceQueueApproval(
           || result["error"] as? String != nil else { return }
   let candidates = jsonString([
     "labels": result["candidateLabels"] ?? [],
+    "menuTriggerLabel": result["menuTriggerLabel"] ?? "",
+    "sessionScopeLabel": result["sessionScopeLabel"] ?? "",
+    "menuCandidates": result["menuCandidates"] ?? [],
   ]) ?? "{\"labels\":[]}"
   queueTrace(
-    "task=\(taskId) stage=approval-\(stage) strategy=per-card "
+    "task=\(taskId) stage=approval-\(stage) "
+      + "strategy=\(result["strategy"] as? String ?? "per-card") "
       + "clicked=\(result["clicked"] as? Bool == true) "
       + "confirmed=\(result["confirmed"] as? Bool == true) "
       + "label=\(result["label"] as? String ?? "none") "
@@ -95,7 +99,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
     expression: autoApproveDedicatedAuthorizationJS(),
-    timeout: 4.0
+    timeout: 8.0
   )
   traceQueueApproval(
     result,
@@ -112,7 +116,8 @@ func approveDedicatedAuthorizationWithDiagnostics(
       label: "approval-\(safeTask)-\(safeStage)-after"
     )
     queueTrace(
-      "task=\(taskId) stage=approval-\(stage)-unconfirmed strategy=per-card "
+      "task=\(taskId) stage=approval-\(stage)-unconfirmed "
+        + "strategy=\(result?["strategy"] as? String ?? "per-card") "
         + "beforeScreenshot=\(screenshotPath ?? "none") "
         + "afterScreenshot=\(afterPath ?? "none") "
         + "error=\(result?["error"] as? String ?? "none")"

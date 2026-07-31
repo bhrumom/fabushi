@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const controller = fileURLToPath(
   new URL('../scripts/run-actions-controller.mjs', import.meta.url));
 
-test('Actions controller reports repeated terminal failures without chaining for six hours', () => {
+test('Actions controller yields repeated recoverable failures to the next workflow run', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-controller-'));
   const runtimePath = path.join(directory, 'fake-runtime.mjs');
   const resultPath = path.join(directory, 'action-result.json');
@@ -24,6 +24,8 @@ test('Actions controller reports repeated terminal failures without chaining for
 const command = process.argv[2];
 if (command === 'queue_watchdog') {
   console.log(JSON.stringify({ ok: true, recovered: true }));
+} else if (command === 'queue_retry') {
+  console.log(JSON.stringify({ ok: true, retriedTask: { status: 'queued' } }));
 } else if (command === 'queue_status') {
   console.log(JSON.stringify({
     ok: true,
@@ -66,12 +68,12 @@ if (command === 'queue_watchdog') {
         ACTION_MAX_SAME_FAILURE_RECOVERIES: '1',
       },
     });
-    assert.equal(result.status, 1);
-    assert.match(result.stdout, /WATCHDOG_RECOVERY/);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /QUEUE_RETRY_RECOVERY/);
     assert.match(result.stdout, /ACTION_RESULT/);
     const report = JSON.parse(readFileSync(resultPath, 'utf8'));
-    assert.equal(report.status, 'failed');
-    assert.equal(report.reason, 'repeated_terminal_task_failure');
+    assert.equal(report.status, 'incomplete');
+    assert.equal(report.reason, 'repeated_recoverable_task_failure');
     assert.deepEqual(report.counts, { failed: 1 });
     assert.equal(report.tasks[0].id, 'broken-task');
     assert.equal(report.tasks[0].lastError, 'new_chat_prepare_failed');
@@ -82,6 +84,59 @@ if (command === 'queue_watchdog') {
     assert.match(result.stdout, /最终结果/);
     assert.doesNotMatch(result.stdout, /QUEUE_PAGE \[/);
     assert.ok(result.stdout.split('\n').every(line => line.length < 4_096));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Actions controller retries transient connector-selection failures', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-connector-'));
+  const runtimePath = path.join(directory, 'fake-runtime.mjs');
+  const resultPath = path.join(directory, 'action-result.json');
+  try {
+    writeFileSync(runtimePath, `#!/usr/bin/env node
+const command = process.argv[2];
+if (command === 'queue_watchdog') {
+  console.log(JSON.stringify({ ok: true, recovered: false }));
+} else if (command === 'queue_retry') {
+  console.log(JSON.stringify({ ok: true, retriedTask: { status: 'queued' } }));
+} else if (command === 'queue_status') {
+  console.log(JSON.stringify({
+    ok: true,
+    counts: { failed: 1 },
+    tasks: [{
+      id: 'connector-task',
+      status: 'failed',
+      attempts: 18,
+      lastError: '页面发送失败（connector_confirmation: connector_selection_not_confirmed）',
+      hiddenWorkerLastError: null,
+    }],
+  }));
+} else {
+  console.log(JSON.stringify({ ok: false, message: 'unexpected command' }));
+  process.exitCode = 1;
+}
+`);
+    chmodSync(runtimePath, 0o755);
+    const result = spawnSync(process.execPath, [controller], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        CHATGPT_AUTO_CONFIRM_NATIVE: runtimePath,
+        ACTION_RESULT_PATH: resultPath,
+        ACTION_SESSION_SECONDS: '2',
+        ACTION_POLL_INTERVAL_MS: '10',
+        ACTION_RECOVERY_INTERVAL_MS: '10',
+        ACTION_MAX_SAME_FAILURE_RECOVERIES: '1',
+      },
+    });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /QUEUE_RETRY_RECOVERY/);
+    const report = JSON.parse(readFileSync(resultPath, 'utf8'));
+    assert.equal(report.status, 'incomplete');
+    assert.equal(report.reason, 'repeated_recoverable_task_failure');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -128,7 +183,7 @@ if (command === 'queue_watchdog') {
       },
     });
     assert.equal(result.status, 1);
-    assert.doesNotMatch(result.stdout, /WATCHDOG_RECOVERY/);
+    assert.doesNotMatch(result.stdout, /WATCHDOG_RECOVERY|QUEUE_RETRY_RECOVERY/);
     const report = JSON.parse(readFileSync(resultPath, 'utf8'));
     assert.equal(report.status, 'failed');
     assert.equal(report.reason, 'terminal_task_failure');
