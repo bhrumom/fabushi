@@ -45,7 +45,7 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
   }
 });
 
-test('Actions inbox refreshes and requeues an existing failed task', () => {
+test('Actions inbox promotes and requeues an existing failed task revision', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-retry-'));
   const statePath = path.join(directory, 'state.json');
   const inboxPath = path.join(directory, 'actions-inbox.json');
@@ -85,7 +85,7 @@ test('Actions inbox refreshes and requeues an existing failed task', () => {
     const output = execFileSync(process.execPath, [script], { env, encoding: 'utf8' });
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     const task = state.automationTasks[0];
-    assert.match(output, /requeued 1 failed task/);
+    assert.match(output, /revised 1/);
     assert.equal(state.automationTasks.length, 1);
     assert.equal(task.title, 'Updated title');
     assert.equal(task.prompt, 'Updated prompt');
@@ -119,13 +119,17 @@ test('authoritative Actions inbox removes stale tasks from restored initial stat
     writeFileSync(statePath, JSON.stringify({
       automationTasks: [
         { id: 'autonomous-pr-manager-001', status: 'queued', attempts: 1519 },
-        { id: 'marketplace-current', status: 'failed', attempts: 4 },
+        {
+          id: 'marketplace-current', title: 'Previous marketplace task',
+          prompt: 'Previous work', currentRevision: 1, status: 'failed', attempts: 4,
+        },
       ],
     }));
     writeFileSync(inboxPath, JSON.stringify({
       authoritative: true,
       tasks: [{
         id: 'marketplace-current',
+        revision: 2,
         title: 'Current marketplace task',
         prompt: 'Continue current work',
       }],
