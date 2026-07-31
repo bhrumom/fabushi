@@ -63,32 +63,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs")
-          source = path.read_text(encoding="utf-8")
-          start = source.index('    let message = serde_json::from_str::<Value>(&body)')
-          end = source.index('    Err(ProductError::HttpStatus {', start)
-          replacement = '''    let message = serde_json::from_str::<Value>(&body)
-              .ok()
-              .and_then(|value| {
-                  let code = value.get("error").and_then(Value::as_str);
-                  let detail = value.get("message").and_then(Value::as_str);
-                  match (code, detail) {
-                      (Some(code), Some(detail)) if code != detail => {
-                          Some(format!("{code}: {detail}"))
-                      }
-                      (Some(code), _) => Some(code.to_string()),
-                      (_, Some(detail)) => Some(detail.to_string()),
-                      _ => None,
-                  }
-              })
-              .unwrap_or(body);
-          '''
-          path.write_text(source[:start] + replacement + source[end:], encoding="utf-8")
-          PY
-          cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all
           cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
           cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client
           cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
