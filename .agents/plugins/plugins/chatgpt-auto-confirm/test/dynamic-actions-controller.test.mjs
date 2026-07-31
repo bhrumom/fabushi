@@ -25,7 +25,7 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(controller, /pollSeconds \* 1_000/);
 });
 
-test('goal versions are idempotent and updates replace only stale versions', () => {
+test('goal versions are idempotent and dependencies use desired runtime ids', () => {
   assert.match(controller, /\$\{task\.id\}--v\$\{/);
   assert.match(controller, /native\('queue_cancel'/);
   assert.match(controller, /native\('queue_enqueue'/);
@@ -35,6 +35,33 @@ test('goal versions are idempotent and updates replace only stale versions', () 
   assert.equal(inbox.keepAlive, true);
   assert.ok(inbox.maxConcurrent >= 2);
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.goalVersion)));
+});
+
+test('task updates never cancel the currently running Chat', () => {
+  assert.match(controller, /const running = managed\.filter\(isRunning\)/);
+  assert.match(controller, /if \(running\.length > 0\) \{[\s\S]*deferred\.push/);
+  assert.match(controller, /A task update is never allowed to stop the Chat/);
+  assert.doesNotMatch(
+    controller,
+    /if \(staleVersion && !\['cancelled', 'completed'\]\.includes\(current\.status\)\)/,
+  );
+});
+
+test('every new Chat is dispatched only after a fresh control read', () => {
+  assert.match(controller, /const dispatchFreshRound = async reason =>/);
+  assert.match(controller, /native\('queue_pause'\);[\s\S]*const control = fetchControl\(\)/);
+  assert.match(controller, /start: false/);
+  assert.match(controller, /native\('queue_resume'/);
+  assert.match(controller, /await sleep\(1_000\);\n\s+native\('queue_pause'\)/);
+  assert.match(controller, /runningEnded[\s\S]*previous_chat_finished/);
+  assert.match(controller, /queued_chat_boundary/);
+});
+
+test('unchanged tasks continue while changed tasks replace only at the boundary', () => {
+  assert.match(controller, /if \(managed\.some\(current => current\.id === desiredId\)\) continue/);
+  assert.match(controller, /staleVersion && !isTerminal\(current\)/);
+  assert.match(controller, /action: 'resume_after_fresh_control_read'/);
+  assert.match(controller, /queue_pause does not interrupt running Chats/);
 });
 
 test('every dispatched work Chat receives a complete machine report contract', () => {
