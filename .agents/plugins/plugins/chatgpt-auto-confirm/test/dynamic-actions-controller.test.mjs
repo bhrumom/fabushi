@@ -26,7 +26,7 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /Import dynamic parallel task inbox\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
   assert.match(controller, /spawnSync\('gh'/);
   assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{controlPath\}/);
-  assert.match(controller, /setTimeout\(resolve, pollSeconds/);
+  assert.match(controller, /pollSeconds \* 1_000/);
 });
 
 test('goal versions are idempotent and updates replace only stale versions', () => {
