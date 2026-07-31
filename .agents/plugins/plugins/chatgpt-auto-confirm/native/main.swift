@@ -27,6 +27,7 @@ let nativeCommandSummaries: [String: String] = [
   "queue_start": "启动任务队列；默认等待下一个待验收任务。",
   "queue_resume": "恢复已暂停的任务队列，不默认阻塞等待验收。",
   "queue_status": "查看任务队列、隐藏 worker、网络等待和任务状态。",
+  "queue_update": "在不停止长期 Action 的情况下更新任务修订和规范，并在下一轮 Chat 生效。",
   "queue_attach": "把已有 ChatGPT conversationId 绑定到指定队列任务。",
   "queue_wait_review": "等待下一个待验收、阻塞或失败的任务。",
   "queue_review": "接受任务验收，或携带 feedback 退回重新执行。",
@@ -50,7 +51,7 @@ func nativeCommandUsage(_ command: String, executable: String) -> String {
     return "\(executable) audit [limit]"
   case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
        "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
-       "queue_review", "queue_retry", "queue_cancel", "queue_watchdog",
+       "queue_review", "queue_update", "queue_retry", "queue_cancel", "queue_watchdog",
        "start_actions_runner", "send_message",
        "add_connector", "get_reply", "chat_status", "send_and_watch":
     return "\(executable) \(command) ['{...JSON...}']"
@@ -73,6 +74,8 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
     return "\(executable) queue_start '{\"waitForReview\":false,\"maxConcurrent\":2}'"
   case "queue_review":
     return "\(executable) queue_review '{\"taskId\":\"task-1\",\"accepted\":true}'"
+  case "queue_update":
+    return "\(executable) queue_update '{\"taskId\":\"task-1\",\"revision\":2,\"specSources\":[\"docs/spec.md\"],\"specDigest\":\"sha256:...\",\"directive\":\"采用更新后的规范\"}'"
   case "queue_retry":
     return "\(executable) queue_retry '{\"taskId\":\"task-1\",\"connector\":\"devspace1\",\"feedback\":\"从当前 checkout 继续\"}'"
   case "queue_watchdog":
@@ -143,6 +146,7 @@ ChatGPT 自动确认 macOS 原生运行时
   queue_start [JSON]     启动队列并可等待验收
   queue_resume [JSON]    恢复队列
   queue_status           查看队列状态
+  queue_update JSON      动态更新任务修订和规范
   queue_attach JSON      绑定已有 conversationId
   queue_wait_review JSON 等待待验收任务
   queue_review JSON      提交验收结果
@@ -435,6 +439,15 @@ case "queue_enqueue":
           title: title,
           prompt: prompt,
           promptTemplate: raw["promptTemplate"] as? String ?? "continue-to-complete",
+          currentRevision: max(1, raw["revision"] as? Int ?? 1),
+          appliedRevision: nil,
+          pendingRevision: nil,
+          specSources: raw["specSources"] as? [String] ?? [],
+          specSnapshot: raw["specSnapshot"] as? String,
+          specDigest: raw["specDigest"] as? String,
+          appliedSpecDigest: nil,
+          pendingDirective: raw["directive"] as? String,
+          specUpdatedAt: now,
           connector: raw["connector"] as? String ?? "devspace1",
           dependsOn: raw["dependsOn"] as? [String] ?? [],
           resourceLocks: raw["resourceLocks"] as? [String] ?? [],
@@ -522,6 +535,116 @@ case "queue_start", "queue_resume":
   }
 case "queue_status":
   output(queueStatusPayload(loadQueueState()))
+case "queue_update":
+  let params = commandJSONParams()
+  let taskId = normalizedTaskId(params["taskId"] as? String)
+  let revision = params["revision"] as? Int ?? 0
+  let expectedRevision = params["expectedRevision"] as? Int
+  let specSources = params["specSources"] as? [String] ?? []
+  let specSnapshot = (params["specSnapshot"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let specDigest = (params["specDigest"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let directive = (params["directive"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let updatedPrompt = (params["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let updatedTitle = (params["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard let taskId, revision >= 1,
+        specSources.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+        (specSnapshot?.count ?? 0) <= 60_000,
+        (directive?.count ?? 0) <= 10_000,
+        (updatedPrompt?.count ?? 0) <= 10_000,
+        (updatedTitle?.count ?? 0) <= 160 else {
+    output([
+      "ok": false,
+      "errorCode": "invalid_task_update",
+      "message": "taskId、revision 或规范内容无效",
+    ], exitCode: 1)
+  }
+  do {
+    let payload = try withQueueStateLock { state -> [String: Any] in
+      var tasks = state.automationTasks ?? []
+      guard let index = tasks.firstIndex(where: { $0.id == taskId }) else {
+        throw NSError(
+          domain: "chatgpt-auto-confirm",
+          code: 36,
+          userInfo: [NSLocalizedDescriptionKey: "没有找到任务 \(taskId)"]
+        )
+      }
+      let existingRevision = max(1, tasks[index].currentRevision ?? 1)
+      if let expectedRevision, expectedRevision != existingRevision {
+        throw NSError(
+          domain: "chatgpt-auto-confirm",
+          code: 37,
+          userInfo: [NSLocalizedDescriptionKey:
+            "任务 \(taskId) 当前修订为 \(existingRevision)，与 expectedRevision 不一致"]
+        )
+      }
+      let incomingDigest = specDigest.flatMap { $0.isEmpty ? nil : $0 }
+      let changed = revision > existingRevision
+        || incomingDigest != tasks[index].specDigest
+        || specSnapshot != tasks[index].specSnapshot
+        || directive != tasks[index].pendingDirective
+        || (updatedPrompt != nil && updatedPrompt != tasks[index].prompt)
+        || (updatedTitle != nil && updatedTitle != tasks[index].title)
+      if revision < existingRevision || !changed {
+        var result = queueStatusPayload(state)
+        result["updatedTask"] = taskPublicPayload(tasks[index])
+        result["updateApplied"] = false
+        result["updateReason"] = revision < existingRevision ? "stale_revision" : "unchanged"
+        return result
+      }
+      let now = isoFormatter.string(from: Date())
+      tasks[index].currentRevision = revision
+      tasks[index].pendingRevision = revision
+      tasks[index].specSources = specSources
+      tasks[index].specSnapshot = specSnapshot
+      tasks[index].specDigest = incomingDigest
+      tasks[index].pendingDirective = directive
+      if let updatedPrompt, !updatedPrompt.isEmpty { tasks[index].prompt = updatedPrompt }
+      if let updatedTitle, !updatedTitle.isEmpty { tasks[index].title = updatedTitle }
+      tasks[index].specUpdatedAt = now
+      tasks[index].updatedAt = now
+      let updateNotice = "任务规范已动态更新到 revision \(revision)。下一轮必须读取最新规范，旧修订的完成结果无效。"
+      if tasks[index].status == "running" {
+        tasks[index].reviewFeedback = [tasks[index].reviewFeedback, updateNotice]
+          .compactMap { $0 }
+          .filter { !$0.isEmpty }
+          .joined(separator: "\n\n")
+      } else if tasks[index].status != "cancelled" {
+        tasks[index].status = "queued"
+        tasks[index].startedAt = nil
+        tasks[index].finishedAt = nil
+        tasks[index].workerPid = nil
+        tasks[index].workerPort = nil
+        tasks[index].workerTargetId = nil
+        tasks[index].workerStatePath = nil
+        tasks[index].workerProfilePath = nil
+        tasks[index].resultPath = nil
+        tasks[index].report = nil
+        tasks[index].reviewConversationId = nil
+        tasks[index].reviewStatus = nil
+        tasks[index].reviewReport = nil
+        tasks[index].lastError = "task_revision_updated"
+        tasks[index].reviewFeedback = updateNotice
+        tasks[index].waitingUntil = nil
+        tasks[index].waitReason = nil
+      }
+      state.automationTasks = tasks
+      state.queueEnabled = true
+      state.queuePaused = false
+      try startQueueWatcher(&state)
+      var result = queueStatusPayload(state)
+      result["updatedTask"] = taskPublicPayload(tasks[index])
+      result["updateApplied"] = true
+      result["applyMode"] = "next_chat"
+      return result
+    }
+    output(payload)
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "queue_update_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
 case "queue_watchdog":
   let params = commandJSONParams()
   let staleAfterSeconds = min(

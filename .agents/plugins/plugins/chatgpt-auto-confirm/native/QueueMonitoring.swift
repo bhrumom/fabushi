@@ -190,6 +190,19 @@ func queueContinuation(
   task.lastProgressAt = nil
 }
 
+func automationTaskRevisionIsCurrent(
+  _ task: AutomationTask,
+  report: AutomationTaskReport?
+) -> Bool {
+  let currentRevision = max(1, task.currentRevision ?? 1)
+  let appliedRevision = max(1, report?.appliedTaskRevision ?? task.appliedRevision ?? 1)
+  guard currentRevision == appliedRevision else { return false }
+  if let reportTaskId = report?.taskId, reportTaskId != task.id { return false }
+  let currentDigest = task.specDigest ?? ""
+  let appliedDigest = report?.appliedSpecDigest ?? task.appliedSpecDigest ?? ""
+  return currentDigest == appliedDigest
+}
+
 func monitorAutomationTask(
   _ task: inout AutomationTask,
   state: inout PluginState
@@ -564,6 +577,14 @@ func monitorAutomationTask(
   let terminal = reply["done"] as? Bool == true
     || reply["completionCandidate"] as? Bool == true
     || terminalIncomplete
+  if terminal, !automationTaskRevisionIsCurrent(task, report: parsedReport) {
+    let currentRevision = max(1, task.currentRevision ?? 1)
+    let appliedRevision = max(1, parsedReport?.appliedTaskRevision ?? task.appliedRevision ?? 1)
+    closeDedicatedAutomationTarget(task, state: state)
+    queueContinuation(&task, report: nil, reason: "task_revision_superseded")
+    task.reviewFeedback = "上一轮基于 revision \(appliedRevision)，但任务已经更新到 revision \(currentRevision)。请读取最新规范快照，只补做新增或变化的验收要求。"
+    return
+  }
   if terminal {
     let actions = reply["responseActions"] as? [String: Any] ?? [:]
     let actionEvidence = jsonString(actions) ?? "{}"
@@ -632,6 +653,9 @@ func monitorAutomationTask(
     }
     let acceptedResult = AutomationTaskReport(
       protocolName: "mahayana.task-report.v1",
+      taskId: task.id,
+      appliedTaskRevision: task.appliedRevision,
+      appliedSpecDigest: task.appliedSpecDigest,
       status: "complete",
       summary: normalResult,
       completed: [],

@@ -50,3 +50,13 @@ MAHAYANA_TASK_REPORT_V1_END
 Treat a Chat that shows no assistant or tool activity shortly after a verified send as a renderer failure, not as a long-running build. Restart only the queue-owned hidden ChatGPT process and continue from the persisted checkout in a new Chat.
 
 Treat visible GitHub Actions or deployment progress as active work. Do not declare completion merely because a Chat stopped; require the structured report and independently verify the Actions evidence in a separate Chat acceptance pass.
+
+## Update a running task without restarting the Action
+
+The persistent Actions controller treats the task id as stable and the task definition as versioned state. Define `revision`, `specSources`, and an optional `directive` in `tasks/actions-inbox.json`. While the runner is active, it polls the current Git branch for the latest inbox and referenced specification files, computes a SHA-256 specification digest, and applies newer revisions with `queue_update`.
+
+- Increment `revision` whenever the prompt, acceptance criteria, or a referenced specification changes.
+- Use `applyMode: "next_chat"`; the current Chat may finish its turn, but its result cannot complete the task after a newer revision exists.
+- Every new work Chat and independent review receives the latest specification snapshot and digest.
+- Reports based on an older revision or digest are automatically superseded and continued in a fresh Chat.
+- Do not cancel and recreate the long-running workflow merely to update task requirements.

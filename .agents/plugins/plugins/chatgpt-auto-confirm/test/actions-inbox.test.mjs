@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -130,6 +130,62 @@ test('authoritative Actions inbox removes stale tasks from restored initial stat
     assert.deepEqual(state.automationTasks.map(task => task.id), ['marketplace-current']);
     assert.equal(state.automationTasks[0].status, 'queued');
     assert.equal(state.automationTasks[0].attempts, 0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('Actions inbox promotes a newer task revision with a hashed spec snapshot', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-revision-'));
+  const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
+  const specPath = path.join(directory, 'docs', 'marketplace.md');
+  const script = fileURLToPath(
+    new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
+  const env = {
+    ...process.env,
+    GITHUB_WORKSPACE: directory,
+    CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
+  };
+  try {
+    mkdirSync(path.dirname(specPath), { recursive: true });
+    writeFileSync(specPath, '# Marketplace revision 2\nUse immutable Cloudflare releases.');
+    writeFileSync(statePath, JSON.stringify({
+      automationTasks: [{
+        id: 'marketplace-current',
+        title: 'Marketplace',
+        prompt: 'Old target',
+        currentRevision: 1,
+        appliedRevision: 1,
+        specDigest: 'sha256:old',
+        status: 'completed',
+        attempts: 9,
+      }],
+    }));
+    writeFileSync(inboxPath, JSON.stringify({
+      tasks: [{
+        id: 'marketplace-current',
+        title: 'Marketplace',
+        prompt: 'Updated target',
+        revision: 2,
+        specSources: ['docs/marketplace.md'],
+        directive: 'Apply the current architecture',
+      }],
+    }));
+    const output = execFileSync(process.execPath, [script], { env, encoding: 'utf8' });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    const task = state.automationTasks[0];
+    assert.match(output, /revised 1/);
+    assert.equal(task.currentRevision, 2);
+    assert.equal(task.pendingRevision, 2);
+    assert.equal(task.status, 'queued');
+    assert.equal(task.attempts, 0);
+    assert.equal(task.specSources[0], 'docs/marketplace.md');
+    assert.match(task.specSnapshot, /immutable Cloudflare releases/);
+    assert.match(task.specDigest, /^sha256:[a-f0-9]{64}$/);
+    assert.match(task.reviewFeedback, /revision 2/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

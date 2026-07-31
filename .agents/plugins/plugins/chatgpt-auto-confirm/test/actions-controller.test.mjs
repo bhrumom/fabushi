@@ -138,3 +138,13 @@ if (command === 'queue_watchdog') {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Actions controller refreshes task revisions from the active branch', () => {
+  const source = readFileSync(controller, 'utf8');
+  assert.match(source, /ACTION_TASK_REFRESH_INTERVAL_MS/);
+  assert.match(source, /fetchRepositoryText/);
+  assert.match(source, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_PATH/);
+  assert.match(source, /queue_update/);
+  assert.match(source, /TASK_DEFINITIONS_UPDATED/);
+  assert.match(source, /specDigest/);
+});
