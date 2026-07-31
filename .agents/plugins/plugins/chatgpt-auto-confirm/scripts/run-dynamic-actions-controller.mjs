@@ -13,6 +13,9 @@ const controlRef = process.env.CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF || 'main';
 const pollSeconds = Math.max(15, Number(
   process.env.CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS || 30,
 ));
+const boundaryRetrySeconds = Math.max(2, Number(
+  process.env.CHATGPT_AUTO_CONFIRM_TASK_BOUNDARY_RETRY_SECONDS || 5,
+));
 const sessionSeconds = Math.min(
   20_700,
   Math.max(300, Number(process.env.ACTION_SESSION_SECONDS || 20_100)),
@@ -94,26 +97,33 @@ const taskDocumentBlock = task => {
 
 const runtimeId = task => `${task.id}--v${Math.max(1, Number(task.goalVersion || 1))}`;
 const logicalPrefix = task => `${task.id}--v`;
+const managedBy = (current, task) =>
+  current.id === task.id || current.id.startsWith(logicalPrefix(task));
+const isRunning = task => task.status === 'running';
+const isTerminal = task => ['completed', 'cancelled'].includes(task.status);
+
+const taskPrompt = (control, task) => [
+  `动态任务控制版本：${control.revision || control._blobSha}。`,
+  `逻辑任务：${task.id}；目标版本：${Math.max(1, Number(task.goalVersion || 1))}。`,
+  task.prompt,
+  taskDocumentBlock(task),
+  reportContract,
+].filter(Boolean).join('\n\n');
 
 let activeControl = null;
 let lastBlobSha = '';
 
-const syncControl = () => {
-  const control = fetchControl();
+const reconcileControl = control => {
   activeControl = control;
-  if (control._blobSha === lastBlobSha) {
-    return { changed: false, revision: control.revision || control._blobSha };
-  }
-
   const queue = native('queue_status');
   const existing = Array.isArray(queue.tasks) ? queue.tasks : [];
   const desiredTasks = Array.isArray(control.tasks) ? control.tasks : [];
-  const desiredIds = new Set(desiredTasks.map(runtimeId));
   const runtimeIdsByLogicalId = new Map(
     desiredTasks.filter(task => task?.id).map(task => [task.id, runtimeId(task)]),
   );
   const cancelled = [];
   const enqueued = [];
+  const deferred = [];
 
   for (const task of desiredTasks) {
     if (!task?.id || !task?.title || !task?.prompt ||
@@ -126,11 +136,25 @@ const syncControl = () => {
       );
       continue;
     }
+
     const desiredId = runtimeId(task);
-    for (const current of existing) {
-      const staleVersion = current.id === task.id ||
-        (current.id.startsWith(logicalPrefix(task)) && current.id !== desiredId);
-      if (staleVersion && !['cancelled', 'completed'].includes(current.status)) {
+    const managed = existing.filter(current => managedBy(current, task));
+    const running = managed.filter(isRunning);
+
+    // A task update is never allowed to stop the Chat that is currently
+    // working. The new goal is held until that Chat reaches a round boundary.
+    if (running.length > 0) {
+      deferred.push({
+        logicalTaskId: task.id,
+        desiredId,
+        runningIds: running.map(current => current.id),
+      });
+      continue;
+    }
+
+    for (const current of managed) {
+      const staleVersion = current.id !== desiredId;
+      if (staleVersion && !isTerminal(current)) {
         try {
           native('queue_cancel', { taskId: current.id });
           cancelled.push(current.id);
@@ -139,15 +163,8 @@ const syncControl = () => {
         }
       }
     }
-    if (existing.some(current => current.id === desiredId)) continue;
 
-    const prompt = [
-      `动态任务控制版本：${control.revision || control._blobSha}。`,
-      `逻辑任务：${task.id}；目标版本：${Math.max(1, Number(task.goalVersion || 1))}。`,
-      task.prompt,
-      taskDocumentBlock(task),
-      reportContract,
-    ].filter(Boolean).join('\n\n');
+    if (managed.some(current => current.id === desiredId)) continue;
 
     native('queue_enqueue', {
       tasks: [{
@@ -155,9 +172,11 @@ const syncControl = () => {
         id: desiredId,
         dependsOn: (Array.isArray(task.dependsOn) ? task.dependsOn : [])
           .map(dependency => runtimeIdsByLogicalId.get(dependency) || dependency),
-        prompt,
+        prompt: taskPrompt(control, task),
       }],
-      start: true,
+      // Dispatch is opened explicitly only after the latest control file has
+      // been read at the next Chat boundary.
+      start: false,
       maxConcurrent: Math.min(4, Math.max(1, Number(control.maxConcurrent || 2))),
       reviewGate: control.reviewGate ?? false,
     });
@@ -166,31 +185,77 @@ const syncControl = () => {
 
   if (control.authoritative === true) {
     for (const current of existing) {
-      const managed = desiredTasks.some(task =>
-        current.id === task.id || current.id.startsWith(logicalPrefix(task)));
-      if (!managed && !desiredIds.has(current.id) &&
-          !['cancelled', 'completed'].includes(current.status)) {
-        try {
-          native('queue_cancel', { taskId: current.id });
-          cancelled.push(current.id);
-        } catch (error) {
-          process.stderr.write(`TASK_CONTROL_CANCEL_WARNING ${current.id} ${error.message}\n`);
-        }
+      const managed = desiredTasks.some(task => managedBy(current, task));
+      if (managed || isTerminal(current)) continue;
+      if (isRunning(current)) {
+        deferred.push({
+          logicalTaskId: null,
+          desiredId: null,
+          runningIds: [current.id],
+          removal: true,
+        });
+        continue;
+      }
+      try {
+        native('queue_cancel', { taskId: current.id });
+        cancelled.push(current.id);
+      } catch (error) {
+        process.stderr.write(`TASK_CONTROL_CANCEL_WARNING ${current.id} ${error.message}\n`);
       }
     }
   }
 
+  const changed = control._blobSha !== lastBlobSha;
   lastBlobSha = control._blobSha;
   const result = {
-    changed: true,
+    changed,
     revision: control.revision || control._blobSha,
     source: control._source,
     enqueued,
     cancelled,
+    deferred,
     keepAlive: control.keepAlive === true,
   };
   process.stdout.write(`TASK_CONTROL_SYNC ${JSON.stringify(result)}\n`);
   return result;
+};
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const dispatchFreshRound = async reason => {
+  // queue_pause does not interrupt running Chats. It only closes the gate that
+  // creates another Chat, which gives us a deterministic update boundary.
+  native('queue_pause');
+  const control = fetchControl();
+  const sync = reconcileControl(control);
+  const queue = native('queue_status');
+  const tasks = Array.isArray(queue.tasks) ? queue.tasks : [];
+  const queued = tasks.filter(task => task.status === 'queued');
+  const runningCount = tasks.filter(isRunning).length;
+  const maxConcurrent = Math.min(4, Math.max(1, Number(
+    control.maxConcurrent || queue.maxConcurrent || 2,
+  )));
+
+  if (queued.length > 0 && runningCount < maxConcurrent) {
+    process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+      reason,
+      revision: sync.revision,
+      queuedIds: queued.map(task => task.id),
+      runningCount,
+      maxConcurrent,
+      action: 'resume_after_fresh_control_read',
+    })}\n`);
+    native('queue_resume', {
+      maxConcurrent,
+      reviewGate: control.reviewGate ?? false,
+    });
+    // Let the watcher select eligible queued work. If it is already inside
+    // startAutomationTask, queue_pause waits for that locked send to finish and
+    // then closes the gate before any later Chat can be selected.
+    await sleep(1_000);
+    native('queue_pause');
+  }
+  return sync;
 };
 
 const writeIncomplete = reason => {
@@ -212,8 +277,6 @@ const writeIncomplete = reason => {
   process.stdout.write(`ACTION_RESULT ${JSON.stringify(result)}\n`);
 };
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 let child = null;
 let stopping = false;
 const stopChild = () => {
@@ -223,12 +286,14 @@ process.on('SIGTERM', () => { stopping = true; stopChild(); });
 process.on('SIGINT', () => { stopping = true; stopChild(); });
 
 try {
-  syncControl();
+  await dispatchFreshRound('startup');
 } catch (error) {
   process.stderr.write(`TASK_CONTROL_INITIAL_WARNING ${error.message}\n`);
 }
 
-let nextSyncAt = Date.now() + pollSeconds * 1_000;
+let nextControlPollAt = Date.now() + pollSeconds * 1_000;
+let nextBoundaryRetryAt = Date.now();
+let previousRunningIds = new Set();
 while (!stopping && Date.now() < deadline) {
   if (!child || child.exitCode !== null) {
     const remainingSeconds = Math.max(300, Math.ceil((deadline - Date.now()) / 1_000));
@@ -241,10 +306,38 @@ while (!stopping && Date.now() < deadline) {
     });
   }
 
-  if (Date.now() >= nextSyncAt) {
-    try { syncControl(); }
+  let queue = null;
+  try { queue = native('queue_status'); }
+  catch (error) { process.stderr.write(`TASK_QUEUE_STATUS_WARNING ${error.message}\n`); }
+  const tasks = Array.isArray(queue?.tasks) ? queue.tasks : [];
+  const runningIds = new Set(tasks.filter(isRunning).map(task => task.id));
+  const runningEnded = [...previousRunningIds].some(id => !runningIds.has(id));
+  const hasQueued = tasks.some(task => task.status === 'queued');
+  const controlPollDue = Date.now() >= nextControlPollAt;
+  const boundaryRetryDue = hasQueued && Date.now() >= nextBoundaryRetryAt;
+
+  if (runningEnded || controlPollDue || boundaryRetryDue) {
+    const reason = runningEnded
+      ? 'previous_chat_finished'
+      : controlPollDue
+        ? 'periodic_control_refresh'
+        : 'queued_chat_boundary';
+    try { await dispatchFreshRound(reason); }
     catch (error) { process.stderr.write(`TASK_CONTROL_SYNC_WARNING ${error.message}\n`); }
-    nextSyncAt = Date.now() + pollSeconds * 1_000;
+    if (controlPollDue) nextControlPollAt = Date.now() + pollSeconds * 1_000;
+    nextBoundaryRetryAt = Date.now() + boundaryRetrySeconds * 1_000;
+    try {
+      queue = native('queue_status');
+      previousRunningIds = new Set(
+        (Array.isArray(queue.tasks) ? queue.tasks : [])
+          .filter(isRunning)
+          .map(task => task.id),
+      );
+    } catch {
+      previousRunningIds = runningIds;
+    }
+  } else {
+    previousRunningIds = runningIds;
   }
 
   if (child.exitCode !== null) {
