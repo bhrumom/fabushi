@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-07-31.6",
+  "revision": "2026-07-31.7",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,11 +8,11 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 6,
-      "title": "全面迁移大乘小程序至本地优先 MCP Apps 统一运行架构",
+      "goalVersion": 7,
+      "title": "全面迁移大乘小程序至可热安装的本地 Web MCP Apps 运行架构",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
-      "priority": 75,
+      "priority": 80,
       "timeout": 7200,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
@@ -22,11 +22,11 @@
         "service:mahayana-marketplace",
         "service:mahayana-plugin-publishing",
         "extension:mcp-apps-2026-01-26",
-        "runtime:mahayana-local-first-mcp-apps",
+        "runtime:mahayana-local-web-mcp-apps",
         "runtime:cloudflare-stateless-mcp-v2"
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
-      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场准入和安装运行系统全面迁移为本地优先 MCP Apps。开始前必须阅读任务目录全部文件，其中 LOCAL_FIRST_MCP_APPS.md 是运行时最高优先级约束，MCP_APPS_ONLY.md 是 UI、Host 和旧协议删除的最高优先级约束；其他文档与这两份文件冲突时以它们为准。MCP Apps 只负责统一 UI、Tool、resource 和 Host 通信，不得被错误等同为云端 Runtime。所有小程序必须是可签名、可下载、可安装、可回滚的本地插件包，并声明 Runtime Profiles。桌面与 CLI 默认使用本地 stdio MCP Server，由随包 Mahayana CLI/plugin runtime 启动；同一 MCP App 必须既能在聊天内嵌，也能通过 mahayana plugin run <id> 在独立 MCP Apps Shell 窗口运行。移动端不得下载执行任意第三方原生二进制；移动插件安装 MCP Apps UI、manifest、Tool schema、工作流、Skills 和静态资源，实际本地能力由随大乘 App 发布的 Rust Mahayana Core/Flutter FFI Capability Provider 提供。普通浏览器不能直接执行本机 CLI；桌面 Web 必须通过仅监听 loopback、origin-bound、短期配对授权的 Mahayana Local Agent 或浏览器 native messaging 调用本地 Runtime，移动浏览器应深链打开大乘 App。Runtime Resolver 按本地 stdio、移动嵌入式、已配对 Local Agent、插件明确允许的远程边缘 Profile 顺序选择；本地 Profile 可用时不得静默切到云端，并必须显示执行位置。全球法布施必须实现 local-first：桌面/CLI 在本机运行发送队列和数据能力，移动端通过内置 Mahayana Core 执行同一 Tool 契约，普通 Web 通过 Local Agent；Cloudflare 只负责市场、签名包、更新和可选同步。ChatGPT 自动确认必须实现 desktop-local-only：本机后台 Runtime 操作本机 ChatGPT 实例，移动/Web 只能查看或控制已配对桌面，不能伪装为手机或云端执行。所有 UI 采用官方 MCP Apps stable 2026-01-26：io.modelcontextprotocol/ui、ui://、text/html;profile=mcp-app、_meta.ui.resourceUri、AppBridge、sandbox、CSP、host context、tool visibility、display modes 和 teardown。删除大乘自定义 iframe bridge、旧 hostApiVersion fallback、Mcp-Session-Id、旧 GET/DELETE session、长期 session SSE 和 SDK v1 server。远程 Profile 如存在必须使用 Cloudflare createMcpHandler、SDK v2 和 legacy: \"reject\"，但 local-only 插件不得被强制提供远程 MCP endpoint。市场必须支持 local-only、local-first、hybrid、remote-only，签署 Runtime Profiles、平台支持、权限、不可变安装包、OIDC provenance、撤销和回滚状态；禁止 R2，CLI 直连不可变 URL 下载并安全原子安装。必须真实迁移全球法布施和 ChatGPT 自动确认，验证桌面本地 stdio、独立运行、本地 ui://、移动嵌入式能力、Web Local Agent、权限拒绝、执行位置显示、离线基础启动、安装升级回滚撤销和卸载清理；并创建至少一个第三方 local-first MCP App 两版本。所有证据来自 GitHub Actions、真实安装包、桌面/移动/Web 客户端运行和必要的 Cloudflare 市场发布结果。不要只更新文档、只做远程 Worker、只保留兼容层、只写 mock 或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
+      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场准入和安装运行系统全面迁移为可热安装的本地 Web MCP Apps。开始前必须阅读任务目录全部文件，其中 LOCAL_WEB_MCP_RUNTIME.md 是移动端与 Web 端运行方式的最高优先级约束，LOCAL_FIRST_MCP_APPS.md 是总体本地优先约束，MCP_APPS_ONLY.md 是 UI、Host、安全和旧协议删除约束；其他文档与它们冲突时以这三份文件为准。移动端和 Web 端必须尽可能运行同一个可下载、签名、版本化的本地网页小程序包，不得要求每个插件业务能力都预编译进主 App。插件包必须把 MCP Apps View 与 Local Web MCP Runtime 分离：ui/ 提供 io.modelcontextprotocol/ui、ui://、text/html;profile=mcp-app、_meta.ui.resourceUri 和 AppBridge View；runtime/web/ 提供 JavaScript/TypeScript/WASM Tool 实现，运行在 Dedicated Worker、MessagePort 或等价隔离 Web Runtime 中。页面按钮和聊天输入必须调用同一组 MCP tools/call；禁止把自然语言塞入 iframe 后模拟点击。移动端安装后从 App 私有目录通过受控 HTTPS-like Origin、WKURLSchemeHandler、WebViewAssetLoader 或等价本地资源拦截加载，不依赖公网网页，不使用不安全 file:// 通配访问；普通 Web/PWA 使用 Service Worker、Cache Storage、IndexedDB 或 OPFS 保存同一版本包，并处理浏览器存储被清理后的恢复。全球法布施如果其现有网页已能通过标准 Web API 执行发送，则必须采用 local-web Profile：聊天 Host 或 MCP Apps UI 调用 global-dharma.send Tool，本地 Web Runtime 执行网页端发送逻辑、队列、状态和日志；Cloudflare 只负责市场、签名包、更新和可选远程 API，不参与每次本地 Tool 执行。ChatGPT 自动确认仍使用 desktop-stdio，因为普通 Web Runtime 无法直接操作本机 ChatGPT renderer。主 App 只提供通用 MCP Host、安装器、签名校验、沙箱、网络与存储策略，不为每个插件编写专属原生实现；只有新增相机、蓝牙、通讯录、短信、辅助功能、长期后台任务或其他受限原生能力时才允许要求主 App 更新或平台批准。所有网页包更新必须使用版本+SHA 不可变 URL、OIDC provenance、市场签名、权限/CSP/Origin/域名审核、原子安装、回滚、撤销和用户可见更新；不得把热更新做成绕过 App Store 或 Google Play 审核的任意代码下载器。iOS/Android 市场索引、隐私、内容分级、逐插件同意和审核访问必须完整。仍须删除大乘自定义 iframe bridge、旧 hostApiVersion fallback、Mcp-Session-Id、旧 GET/DELETE session、长期 session SSE、SDK v1 server 和旧插件兼容执行。远程 Profile 如存在必须使用 Cloudflare createMcpHandler、SDK v2 和 legacy: \"reject\"，但 local-web 或 local-only 插件不得被强制提供远程 MCP endpoint。必须真实迁移全球法布施，证明同一个签名包和 runtime/web Tool 代码在 Android、iOS WebView、桌面 WebView 和普通 Web/PWA 中运行；验证页面按钮与聊天指令调用同一 Tool、离线打开、网络恢复续作、本地队列、热更新无需主 App 更新、原子切换、回滚、撤销、CSP/Origin/权限拒绝和 Secret 隔离。所有证据来自 GitHub Actions、真实安装包和真实平台运行结果。不要只更新文档、只加载远程网页、只模拟点击、只写 mock 或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
     }
   ]
 }
