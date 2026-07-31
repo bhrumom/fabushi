@@ -87,7 +87,8 @@ for (const task of incoming) {
   const existing = knownTasks.get(task.id);
   if (existing) {
     const previousRevision = Math.max(1, Number(existing.currentRevision || 1));
-    const specChanged = task.revision > previousRevision || task.specDigest !== existing.specDigest;
+    const previousSpecDigest = existing.specDigest || null;
+    const specChanged = task.revision > previousRevision || task.specDigest !== previousSpecDigest;
     for (const field of [
       'title', 'prompt', 'promptTemplate', 'connector', 'dependsOn',
       'resourceLocks', 'priority', 'timeout', 'maxTaskContinuations',
