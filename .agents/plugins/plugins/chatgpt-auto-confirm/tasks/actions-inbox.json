@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-07-31.2",
+  "revision": "2026-07-31.9",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,21 +8,27 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 2,
-      "title": "完善大乘 CLI 云端插件市场",
+      "goalVersion": 9,
+      "title": "全面迁移大乘小程序至 GitHub 原生共创的多构件 MCP Apps 架构",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
-      "priority": 50,
+      "priority": 90,
       "timeout": 7200,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
       "dependsOn": [],
       "resourceLocks": [
         "worktree:mahayana-marketplace",
-        "service:mahayana-marketplace"
+        "service:mahayana-marketplace",
+        "service:mahayana-plugin-publishing",
+        "extension:mcp-apps-2026-01-26",
+        "source:github-native-mcp-app-collaboration",
+        "runtime:mahayana-multi-artifact-mcp-apps",
+        "runtime:mahayana-local-web-mcp-apps",
+        "runtime:cloudflare-stateless-mcp-v2"
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
-      "prompt": "在 fabushi 仓库内完善大乘 CLI 云端插件市场（小程序系统市场）。实现官方小程序在大乘 CLI 中的顺利下载安装。请使用 GitHub secrets 中提供的测试账号登录大乘 CLI 并完成开发与测试工作。检查并完善云端市场浏览、插件包下载、校验、安全安装等环节；要求创建一个可从市场安装的真实小程序，并用大乘 CLI 完成发布、浏览、下载、安装和运行的端到端验证，确保整个流程畅通。特别注意架构要求：大乘 CLI 市场的每一个插件小程序都必须部署到 Cloudflare Pages 或 Cloudflare Worker 上，作为一个独立的网页提供服务；绝对不要把插件包放到 R2 存储中；如果插件涉及需要下载的静态资源，也必须直接从其对应的 Cloudflare Page 页面中下载。"
+      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场、源码协作、发布和安装运行系统全面迁移为 GitHub 原生共创的单一身份多构件 MCP Apps 架构。开始前必须阅读任务目录全部文件，其中 GITHUB_NATIVE_MCP_APP_COLLABORATION.md 是源码仓库、Fork、Pull Request、AI 修复、派生发布和供应链安全的最高优先级约束，MULTI_ARTIFACT_MCP_APP.md 是构件、安装和平台选择约束，LOCAL_WEB_MCP_RUNTIME.md 是移动/Web 运行约束，LOCAL_FIRST_MCP_APPS.md 是本地优先约束，MCP_APPS_ONLY.md 是 UI、Host、安全和旧协议删除约束；其他文档与它们冲突时以这五份文件为准。每个正式小程序必须绑定可验证 GitHub repository ID、owner/name、默认分支、精确 source commit、tree hash、许可证和可选 monorepo subdirectory；市场版本、provenance、父级 Release Manifest、native CLI/web-wasm 构件和 artifact attestations 必须绑定同一 source commit。开源小程序必须提供标准仓库模板、CONTRIBUTING、SECURITY、LICENSE、CODEOWNERS、Issue/PR 模板、无密钥 Fork PR CI、受信任 main/release workflow、Tool Contract、MCP Apps conformance、多构件构建、SBOM 和 attestation。市场和客户端必须提供查看源码、报告问题、让 AI 诊断、让 AI 修复、Fork 并自定义、创建上游 Draft PR、发布为派生 App、同步上游和比较差异。AI 只能在用户 Fork 或获授权分支修改，必须运行测试、关联 Issue、报告权限/Tool Contract/构件差异，未经用户确认不得公开 Issue/PR，不得提交敏感日志，不得直接推送上游受保护分支或自动合并。来自 Fork 的代码必须使用 pull_request 无 Secret、只读 GITHUB_TOKEN 和隔离 runner 测试；禁止使用具有 Secret/写权限的 pull_request_target checkout、构建或执行 Fork 代码，也不得把不受信任构件带入特权 workflow。PR 合并不等于发布；正式更新只能由受保护上游默认分支、受保护 tag/release 和可信 reusable workflow 触发，使用 OIDC 短期凭证、SBOM、artifact attestations、source commit 绑定、市场签名和人工/环境审批。仓库必须使用 ruleset、必需检查、CODEOWNERS、stale approval dismissal、工作流/权限/发布清单敏感路径审批和受保护发布标签。Fork 用户可把修改贡献回上游，也可独立发布派生 App，但必须更换 plugin ID 和发布者命名空间，使用自己的签名/OIDC/更新通道，遵守 SPDX license、NOTICE 和商标要求，并在市场记录 upstream plugin/repository/commit、fork repository、差异、权限变化和同步状态；不得复用上游官方身份、徽章或签名。无明确许可证的源码可见仓库不得提供一键公开派生发布。现有单一 plugin ID/version/Tool Contract/MCP Apps UI + common/native CLI/web-wasm 多构件模型保持不变：全球法布施同一 Release 提供桌面 native CLI 和移动/Web web-wasm，平台安装器只下载最小兼容构件；ChatGPT 自动确认可仅支持 desktop native。所有 UI 采用 MCP Apps stable 2026-01-26；仍须删除旧 session、SDK v1、自定义 iframe bridge 和旧插件兼容执行。必须创建真实公开测试小程序仓库并完成：市场绑定源码；用户 Fork；AI 根据真实 Issue 修复；无 Secret PR CI；创建上游 Draft PR；CODEOWNERS/ruleset 阻止未审批合并；上游审核合并；可信 release workflow 发布新多构件版本；Fork 更换 plugin ID 独立发布派生 App；市场展示来源、许可证、派生关系和差异；AI 同步上游并解决冲突；恶意 Fork PR 无法读取 Secret、写上游、污染发布或生成正式构件。所有证据来自 GitHub 仓库、Pull Requests、Actions、attestations、真实市场响应和真实安装包。不要只更新文档、只做仓库链接、只写 mock、允许 PR 自动发布、允许 Fork 复用原 plugin ID，或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
     }
   ]
 }
