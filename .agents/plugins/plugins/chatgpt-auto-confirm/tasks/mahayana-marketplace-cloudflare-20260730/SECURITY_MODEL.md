@@ -1,253 +1,164 @@
-# 安全模型：大乘小程序市场
+# 安全模型：MCP Apps-only 大乘小程序市场
 
 ## 1. 安全目标
 
 系统必须保证：
 
-- 用户安装的是自己选择的插件和版本；
-- 安装包来自已认证发布者和获批准发布流程；
-- 发布后内容不能被静默替换；
-- 市场、镜像、网络或插件服务被部分攻破时，客户端能检测异常；
-- 单个插件不能获得其他插件的 Secret、数据或写权限；
-- 权限扩大必须被用户看见；
-- 被撤销、封禁或过期的版本不能继续作为安全更新分发；
-- 密钥和凭证泄露的影响范围尽可能小。
+- 只运行已批准的 MCP Apps 版本；
+- 生产 endpoint 不接受旧 MCP 协议；
+- View 只能在 Host sandbox 和 CSP 内运行；
+- Tool visibility、权限和插件身份不能被绕过；
+- 发布物不可变、可签名验证、可撤销、可回滚；
+- 单插件泄露不扩散到其他插件；
+- OIDC、provenance 和审计可复核。
 
-## 2. 威胁主体
+## 2. 主要威胁
 
-考虑：
+- 恶意或被接管的发布者；
+- 被修改的 Actions workflow；
+- 伪造 provenance；
+- 被攻破的插件 Worker；
+- 旧客户端尝试走 legacy lane；
+- View 绕过 Host 直接调用外部网络或 Tool；
+- CSP 过宽、iframe sandbox 逃逸、顶层导航；
+- app-only Tool 被模型调用；
+- model-only Tool 被 View 调用；
+- 跨插件 resource/Tool 调用；
+- MCP session fixation、sticky routing 或 session store 复活；
+- 包篡改、回退、冻结、路径穿越和压缩炸弹。
 
-- 恶意发布者；
-- 被接管的发布者 GitHub 账号；
-- 泄露的长期 Token；
-- 被修改的 GitHub Actions workflow；
-- 被攻破的插件 Cloudflare 服务；
-- 被攻破或错误配置的市场 API；
-- 网络中间人和恶意重定向；
-- 旧元数据重放、冻结、回退和混搭；
-- 压缩炸弹、路径穿越、链接逃逸和超大包；
-- 权限声明与包内实际能力不一致；
-- 插件间 Secret、数据库和写权限串用；
-- 恶意管理员或错误审核操作。
+## 3. MCP Apps Host 安全
 
-## 3. 信任根
+Host 必须：
 
-CLI 必须内置或通过受保护升级获得市场根公钥。根信任负责授权在线元数据签名密钥，而不是直接承担每次自动发布。
+- 使用 sandboxed iframe；
+- 按 resource 声明构造 CSP；
+- CSP 缺失时使用限制性默认策略；
+- 不允许未声明域名；
+- 验证 resource URI、plugin ID、version 和 content hash；
+- View 只能通过 AppBridge 与 Host 通信；
+- Tool 调用经过 visibility、权限和风险确认；
+- `ui/open-link` 经过 URL 和用户策略；
+- teardown 后关闭 bridge、事件和授权上下文；
+- 记录 CSP、Tool、权限和链接操作审计。
 
-最低结构：
+禁止注入 access token、Secret、原生对象或无限制网络能力到 View。
 
-```text
-root key（离线或高保护）
-  └── 授权 online targets key
-        └── 签署版本、撤销和安全状态元数据
-```
+## 4. Tool visibility
 
-要求：
+- `visibility: ["model"]`：仅模型可见；
+- `visibility: ["app"]`：仅同一插件 View 可调用；
+- `visibility: ["model", "app"]`：两者可调用；
+- Host 必须拒绝越权调用；
+- app-only Tool 不得进入模型 tool list；
+- 跨服务器 app-only Tool 永远禁止。
 
-- 公钥有稳定 key ID；
-- 支持 `active / retiring / revoked`；
-- 根和在线密钥用途分离；
-- 在线密钥泄露时可以轮换和撤销；
-- CLI 不只依赖 TLS 或 DNS 作为最终信任。
+## 5. 无状态 runtime
 
-## 4. OIDC 可信发布
+Production 必须使用 SDK v2 `createMcpHandler` 与 `legacy:"reject"`。
 
-GitHub Actions OIDC 用于证明“哪个仓库、哪个 workflow、哪个 commit 正在发布哪个插件版本”。
+禁止：
 
-必须验证：
+- `Mcp-Session-Id`；
+- `WorkerTransport`；
+- SDK v1 server；
+- sticky session；
+- transport session store；
+- GET/DELETE session；
+- legacy route。
 
-- `iss` 是允许的 GitHub issuer；
-- `aud` 是大乘发布服务；
-- repository 与插件配置一致；
-- workflow 文件和 ref 一致；
-- commit SHA 与 publish intent 一致；
-- environment 和分支/标签策略满足发布要求；
-- token 未过期；
-- nonce 未使用；
-- plugin ID 属于该发布者；
-- stage token 不能执行 production release。
+业务状态必须使用认证后的显式句柄。Durable Object 只能表示业务对象，不能表示 MCP transport session。
 
-交换得到的发布 token：
+## 6. Host、Origin 与 OAuth
 
-- 最长只存活数分钟；
-- 只允许一个 plugin ID 和 version；
-- 只允许 stage 或 release 中的一种；
-- 使用后记录 jti 摘要；
-- 不允许重放；
-- 不写入日志。
+Cloudflare endpoint 必须：
 
-生产发布流程不能把测试账号登录或长期写 Token 作为唯一认证方式。
+- 校验 Host allowlist；
+- 校验浏览器 Origin；
+- 拒绝 opaque/malformed Origin；
+- CORS 不作为认证；
+- 校验 OAuth access token、issuer、audience、scope 和 resource；
+- AuthInfo 绑定插件、用户和 Tool 权限；
+- 不记录 token 或敏感 claims。
 
-## 5. Provenance
+## 7. OIDC 可信发布
 
-来源证明至少绑定：
+GitHub Actions OIDC 验证：
 
-- 源码仓库；
-- commit SHA；
-- workflow 文件和 ref；
-- Actions run ID；
-- 构建者/runner 身份；
-- 构件 SHA-256；
-- 部署 URL 和 Cloudflare version ID；
-- 生成时间。
+- issuer/audience；
+- repository/workflow/commit；
+- environment/ref；
+- plugin owner；
+- intent expiry；
+- nonce 防重放；
+- stage/release scope。
 
-provenance 证明来源，不证明代码无恶意，因此仍需审核、扫描和权限控制。
+短期发布 token 只允许一个插件、版本和阶段，且不得写日志。
 
-市场必须验证 provenance 与 OIDC claims、提交的包哈希和实际 Actions run 一致。
+## 8. Provenance 与不可变发布
 
-## 6. 不可变发布
+provenance 绑定：仓库、commit、workflow、run、builder、artifact SHA、Cloudflare version/deployment。
 
-正式包 URL 必须包含 version 和内容哈希。服务端和市场共同保证：
+正式 URL 包含 version 和 SHA；同一版本不可覆盖；`latest` 只作为指针；回滚只切 deployment，不改旧字节。
 
-- 同一 version 不能重新提交；
-- 同一路径不能返回不同内容；
-- URL 中 SHA 与包 SHA 一致；
-- 正式包使用不可变缓存语义；
-- `latest` 只作为指针；
-- 撤销不删除历史内容和审计记录；
-- 回滚只切换生产 deployment，不覆盖旧包。
+## 9. 市场签名和更新安全
 
-## 7. 签名元数据
+签名覆盖：
 
-被签名字段至少包括：
+- plugin ID/version；
+- MCP Apps runtime contract；
+- UI resources/MIME/CSP/visibility；
+- package URL/SHA/size；
+- permissions/source/provenance；
+- review/revocation/expiry/metadata version。
 
-- protocol/schema version；
-- metadata version；
-- plugin ID 和 version；
-- package URL、SHA、size、content type；
-- manifest/provenance URL；
-- permissions；
-- source identity；
-- review tier 和安全状态；
-- published/expiry time；
-- revocation/replacement 信息。
+客户端实施根信任、过期、防回退、防冻结、密钥轮换和撤销。
 
-签名采用确定性规范化编码。客户端必须先验证签名，再信任下载 URL 和哈希。
+## 10. 包和安装安全
 
-## 8. TUF 核心原则
+- 只接受批准的 Cloudflare HTTPS 域名；
+- 限制重定向、大小和时间；
+- 校验内容类型、大小和 SHA；
+- 拒绝绝对路径、`..`、链接逃逸、设备文件、压缩炸弹、重复路径；
+- staging 验证后原子切换；
+- 包内 MCP Apps manifest 必须与签名元数据一致。
 
-本任务采用 TUF 思想而非只做 SHA：
+## 11. 旧客户端和旧插件
 
-- `root`：可信公钥和轮换；
-- `targets`：插件包哈希、大小和自定义权限/来源元数据；
-- `snapshot` 思想：元数据版本一致性，防混搭；
-- `timestamp` 思想：过期时间和最新状态，防冻结；
-- consistent snapshot：可唯一寻址的版本+哈希路径；
-- anti-rollback：拒绝低于本地最高已知安全版本；
-- key compromise containment：在线密钥权限有限，可撤销和轮换。
+旧客户端：
 
-数据格式应允许未来升级为完整 TUF，而不要求本轮一次实现全部委托角色。
+- 返回 `MCP_APPS_HOST_UPGRADE_REQUIRED`；
+- 不创建 session；
+- 不执行 Tool；
+- 不返回旧 UI。
 
-## 9. 域名和网络
+旧插件：
 
-CLI 和市场只接受：
+- 标记 `migration_required`；
+- 不可安装、不可运行、不可成为 production；
+- 只能由迁移工具读取静态信息。
 
-- HTTPS；
-- 无用户名和密码；
-- 无 localhost、私网或 loopback；
-- 托管模式下由平台登记的 Cloudflare hostname；
-- 自托管模式下已完成所有权验证的 Cloudflare hostname；
-- 有限、可验证的重定向链；
-- 最终地址仍属于获批 hostname 和不可变路径。
+## 12. 强制攻击测试
 
-DNS 和 TLS 成功不能替代市场签名。
+必须证明拒绝：
 
-## 10. 下载限制
+- legacy 请求；
+- SDK v1/legacy handler；
+- 缺失或伪造 MCP Apps extension；
+- 非 `ui://` resource；
+- 错误 MIME；
+- CSP 未声明域名；
+- sandbox 逃逸和顶层导航；
+- Tool visibility 越权；
+- 跨插件调用；
+- OIDC claims 不匹配和 nonce 重放；
+- 包/签名/provenance/权限篡改；
+- 回退、冻结、撤销版本；
+- 路径穿越和压缩炸弹；
+- 插件访问其他插件 Secret 或数据。
 
-- 在下载前检查声明大小上限；
-- 流式下载仍执行硬上限，不能只信 Content-Length；
-- 限制连接、重定向和总超时；
-- 验证内容类型和文件头；
-- 下载到隔离临时目录；
-- 完成大小和 SHA 验证前不向安装器暴露文件；
-- 失败后清理临时数据。
+## 13. 审计
 
-## 11. 解包安全
+记录：插件、版本、Host、resource URI、Tool、visibility、CSP、permission decision、OIDC 摘要、provenance、Cloudflare deployment、legacy rejection、升级要求、安装/撤销/回滚。
 
-必须拒绝：
-
-- 绝对路径；
-- `..` 路径穿越；
-- 符号链接或硬链接逃逸；
-- 设备文件；
-- 超大文件数量；
-- 超大解压后体积；
-- 重复路径和大小写冲突；
-- 覆盖 CLI、其他插件或用户任意文件；
-- manifest 外的可执行入口。
-
-安装在 staging 目录验证完毕后原子切换 `current` 指针。
-
-## 12. 权限和运行隔离
-
-默认拒绝未声明能力。权限包括：
-
-- 网络域名；
-- 文件系统范围与读写级别；
-- Secret 名称；
-- 系统命令；
-- MCP tools；
-- UI surfaces。
-
-规则：
-
-- 市场元数据与包内 manifest 必须一致；
-- 权限扩大需要重新确认；
-- 插件不能读取别的插件 Secret；
-- 插件的数据库、KV、Durable Object 和日志绑定按插件隔离；
-- 不因 official 身份自动授予无限权限；
-- 高风险权限触发更严格审核和运行沙箱。
-
-## 13. 审核与撤销
-
-自动审核无法替代人工审核。系统必须支持：
-
-- pending/rejected/approved；
-- community/verified/official；
-- 单版本 revoked；
-- 插件整体 blocked；
-- replacement version；
-- 安全公告；
-- 已安装客户端状态同步。
-
-被撤销版本不能新安装或升级。已安装用户应看到原因和安全替代版本。
-
-## 14. 审计
-
-所有敏感操作写入追加式审计日志：
-
-- 命名空间和插件身份；
-- publish intent；
-- OIDC 交换结果；
-- 构建和扫描；
-- Cloudflare version/deployment；
-- 版本提交和签名；
-- 审核、提升、回滚、撤销和封禁；
-- 密钥轮换；
-- 客户端安装失败的匿名摘要。
-
-日志禁止包含：
-
-- JWT 原文；
-- Cloudflare Token；
-- 市场短期 token；
-- 用户 Secret；
-- 安装包正文。
-
-## 15. 强制攻击测试
-
-必须证明系统拒绝：
-
-- OIDC issuer/audience/repository/workflow/commit 不匹配；
-- nonce 重放；
-- 同版本覆盖；
-- 可变包 URL；
-- 非批准域名和异常重定向；
-- 包大小或 SHA 篡改；
-- 签名字段篡改；
-- 过期、冻结、混搭和回退元数据；
-- provenance 与包或 workflow 不一致；
-- 权限清单不一致；
-- 路径穿越、链接逃逸和压缩炸弹；
-- revoked/blocked 版本安装；
-- 插件访问其他插件 Secret 或数据绑定。
+禁止记录 token、Secret、敏感输入和包正文。
