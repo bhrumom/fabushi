@@ -17,14 +17,15 @@
 1. `PRD.md`：产品目标、用户、范围、功能需求和非目标。
 2. `TECHNICAL_DESIGN.md`：目标架构、组件边界、部署模型、下载和安装链路。
 3. `MCP_2026_07_28_EDGE.md`：MCP 最新无状态协议、MCP Apps、Tasks、MRTR、边缘部署和兼容迁移设计。
-4. `API_CONTRACT.md`：市场、发布、审核、下载、回滚和撤销 API 契约。
-5. `DATA_MODEL.md`：发布者、插件、版本、部署、权限、签名和审计数据模型。
-6. `SECURITY_MODEL.md`：威胁模型、OIDC、签名、provenance、权限和 TUF 思想。
-7. `PUBLISHING_WORKFLOW.md`：托管模式、自托管模式和 CLI 发布体验。
-8. `UI_UX.md`：CLI、桌面/移动市场和发布者界面的交互要求。
-9. `MIGRATION_PLAN.md`：从当前 v1 市场迁移到目标架构的兼容步骤。
-10. `ACCEPTANCE.md`：强制验收矩阵和真实端到端证据。
-11. `REFERENCES.md`：行业和官方技术资料。
+4. `MCP_2026_07_28_REFERENCES.md`：MCP 和 Cloudflare 的官方发布、SDK 与迁移资料。
+5. `API_CONTRACT.md`：市场、发布、审核、下载、回滚和撤销 API 契约。
+6. `DATA_MODEL.md`：发布者、插件、版本、部署、权限、签名和审计数据模型。
+7. `SECURITY_MODEL.md`：威胁模型、OIDC、签名、provenance、权限和 TUF 思想。
+8. `PUBLISHING_WORKFLOW.md`：托管模式、自托管模式和 CLI 发布体验。
+9. `UI_UX.md`：CLI、桌面/移动市场和发布者界面的交互要求。
+10. `MIGRATION_PLAN.md`：从当前 v1 市场迁移到目标架构的兼容步骤。
+11. `ACCEPTANCE.md`：强制验收矩阵和真实端到端证据。
+12. `REFERENCES.md`：市场、发布和更新安全的行业与官方资料。
 
 所有文档共同构成实施约束；其中 `MCP_2026_07_28_EDGE.md` 的协议和边缘迁移要求为强制项，不能以“市场功能已完成”为由跳过。
 
