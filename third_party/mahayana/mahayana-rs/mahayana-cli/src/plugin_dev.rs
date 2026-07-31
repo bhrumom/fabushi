@@ -37,7 +37,10 @@ fn git_output(plugin_path: &Path, arguments: &[&str]) -> Result<String, String> 
     }
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if value.is_empty() {
-        return Err(format!("git {} returned an empty value", arguments.join(" ")));
+        return Err(format!(
+            "git {} returned an empty value",
+            arguments.join(" ")
+        ));
     }
     Ok(value)
 }
@@ -89,9 +92,10 @@ pub fn github_source_identity(plugin_path: &Path) -> Result<Value, String> {
         .ok_or_else(|| ".mahayana/source.json requires a positive repositoryId".to_string())?;
     let default_branch = source_string(&configured, "defaultBranch")?;
     let license = source_string(&configured, "license")?;
-    if license.bytes().any(|byte| {
-        !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-'))
-    }) {
+    if license
+        .bytes()
+        .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-')))
+    {
         return Err("source license must be an SPDX identifier".into());
     }
     let subdirectory = source_string(&configured, "subdirectory")?;
@@ -110,7 +114,7 @@ pub fn github_source_identity(plugin_path: &Path) -> Result<Value, String> {
     }
     let commit = match env::var("GITHUB_SHA") {
         Ok(value) if is_git_object_id(&value) => value,
-        _ => git_output(plugin_path, &["rev-parse", "HEAD"])?
+        _ => git_output(plugin_path, &["rev-parse", "HEAD"])?,
     };
     if !is_git_object_id(&commit) {
         return Err("source commit must be a 40-character Git object ID".into());
