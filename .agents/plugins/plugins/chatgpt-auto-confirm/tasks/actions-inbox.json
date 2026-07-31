@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-07-31.5",
+  "revision": "2026-07-31.6",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,11 +8,11 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 5,
-      "title": "全面迁移大乘小程序至 MCP Apps 与无状态边缘运行时",
+      "goalVersion": 6,
+      "title": "全面迁移大乘小程序至本地优先 MCP Apps 统一运行架构",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
-      "priority": 70,
+      "priority": 75,
       "timeout": 7200,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
@@ -22,10 +22,11 @@
         "service:mahayana-marketplace",
         "service:mahayana-plugin-publishing",
         "extension:mcp-apps-2026-01-26",
+        "runtime:mahayana-local-first-mcp-apps",
         "runtime:cloudflare-stateless-mcp-v2"
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
-      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场准入和 Cloudflare 运行时全面迁移到官方 MCP Apps 稳定规范 2026-01-26 与 Cloudflare 无状态 MCP SDK v2。开始前必须阅读任务目录全部文件，其中 MCP_APPS_ONLY.md 为最高优先级约束；其他文档与其冲突时以该文件为准。不得实现运行期双栈、旧协议回退或 legacy production lane。所有插件 Worker 必须使用 agents/mcp/server 的 createMcpHandler、SDK v2 server factory，并在生产设置 legacy: \"reject\"；禁止 createLegacyMcpHandler、McpAgent、WorkerTransport、SDK v1 server、Mcp-Session-Id、sticky session、GET/DELETE MCP session、长期 session SSE 和 transport session store。业务状态只能通过认证后的显式 ID、resource URI、task handle、D1/KV/Durable Object/Queue/Workflow 表达，不得伪装成 MCP 会话。Web、桌面、移动和 CLI 必须统一使用共享 MCP Apps Host core，采用官方 AppBridge 或规范一致实现；使用 io.modelcontextprotocol/ui、ui://、text/html;profile=mcp-app、_meta.ui.resourceUri、标准 JSON-RPC postMessage、sandbox、CSP、host context、tool visibility、inline/fullscreen/picture-in-picture 和资源 teardown。ui/initialize 是 MCP Apps View 与 Host 的新标准握手，必须实现；不得与旧 MCP 服务 session 初始化混淆。删除大乘自定义 iframe bridge 和旧 hostApiVersion fallback。所有官方插件、真实第三方验收插件和新插件模板必须转换成 MCP Apps；未迁移版本不得进入 community、verified、official 或 production。市场发布必须校验 MCP Apps extension、ui:// resources、MIME、SDK v2、stateless transport、legacy=false、CSP、权限和不可变发布物；旧 MCP 插件只允许被迁移工具识别并提示升级，不能在新 Host 中运行。旧客户端访问时返回 MCP_APPS_HOST_UPGRADE_REQUIRED，不提供兼容执行。采用先完成全部迁移和全平台验收、再一次性切换 production 的硬切换方案；切换后删除旧路由、旧依赖、旧 bridge 和旧测试。市场与可信发布仍须实现每插件独立 Cloudflare 逻辑服务、不可变版本 URL、OIDC 短期发布、provenance、市场签名、权限、审核、撤销、回滚、CLI 直连下载、安全安装和禁止 R2。必须创建至少两个版本的真实 MCP App，完成托管发布、审核、市场发现、MCP Apps 渲染、app/model tool visibility、CSP 拒绝、权限确认、无状态跨边缘实例调用、长任务/多轮输入、直连下载、安装、升级、回滚、撤销和篡改拒绝；并证明同一 MCP App 能在大乘 Host 和至少一个其他合规 MCP Apps Host 中运行。所有证据来自 GitHub Actions、真实 Cloudflare production、市场响应和客户端运行结果。不要只更新文档、只升级依赖、只保留兼容层、只写 mock 或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
+      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场准入和安装运行系统全面迁移为本地优先 MCP Apps。开始前必须阅读任务目录全部文件，其中 LOCAL_FIRST_MCP_APPS.md 是运行时最高优先级约束，MCP_APPS_ONLY.md 是 UI、Host 和旧协议删除的最高优先级约束；其他文档与这两份文件冲突时以它们为准。MCP Apps 只负责统一 UI、Tool、resource 和 Host 通信，不得被错误等同为云端 Runtime。所有小程序必须是可签名、可下载、可安装、可回滚的本地插件包，并声明 Runtime Profiles。桌面与 CLI 默认使用本地 stdio MCP Server，由随包 Mahayana CLI/plugin runtime 启动；同一 MCP App 必须既能在聊天内嵌，也能通过 mahayana plugin run <id> 在独立 MCP Apps Shell 窗口运行。移动端不得下载执行任意第三方原生二进制；移动插件安装 MCP Apps UI、manifest、Tool schema、工作流、Skills 和静态资源，实际本地能力由随大乘 App 发布的 Rust Mahayana Core/Flutter FFI Capability Provider 提供。普通浏览器不能直接执行本机 CLI；桌面 Web 必须通过仅监听 loopback、origin-bound、短期配对授权的 Mahayana Local Agent 或浏览器 native messaging 调用本地 Runtime，移动浏览器应深链打开大乘 App。Runtime Resolver 按本地 stdio、移动嵌入式、已配对 Local Agent、插件明确允许的远程边缘 Profile 顺序选择；本地 Profile 可用时不得静默切到云端，并必须显示执行位置。全球法布施必须实现 local-first：桌面/CLI 在本机运行发送队列和数据能力，移动端通过内置 Mahayana Core 执行同一 Tool 契约，普通 Web 通过 Local Agent；Cloudflare 只负责市场、签名包、更新和可选同步。ChatGPT 自动确认必须实现 desktop-local-only：本机后台 Runtime 操作本机 ChatGPT 实例，移动/Web 只能查看或控制已配对桌面，不能伪装为手机或云端执行。所有 UI 采用官方 MCP Apps stable 2026-01-26：io.modelcontextprotocol/ui、ui://、text/html;profile=mcp-app、_meta.ui.resourceUri、AppBridge、sandbox、CSP、host context、tool visibility、display modes 和 teardown。删除大乘自定义 iframe bridge、旧 hostApiVersion fallback、Mcp-Session-Id、旧 GET/DELETE session、长期 session SSE 和 SDK v1 server。远程 Profile 如存在必须使用 Cloudflare createMcpHandler、SDK v2 和 legacy: \"reject\"，但 local-only 插件不得被强制提供远程 MCP endpoint。市场必须支持 local-only、local-first、hybrid、remote-only，签署 Runtime Profiles、平台支持、权限、不可变安装包、OIDC provenance、撤销和回滚状态；禁止 R2，CLI 直连不可变 URL 下载并安全原子安装。必须真实迁移全球法布施和 ChatGPT 自动确认，验证桌面本地 stdio、独立运行、本地 ui://、移动嵌入式能力、Web Local Agent、权限拒绝、执行位置显示、离线基础启动、安装升级回滚撤销和卸载清理；并创建至少一个第三方 local-first MCP App 两版本。所有证据来自 GitHub Actions、真实安装包、桌面/移动/Web 客户端运行和必要的 Cloudflare 市场发布结果。不要只更新文档、只做远程 Worker、只保留兼容层、只写 mock 或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
     }
   ]
 }
