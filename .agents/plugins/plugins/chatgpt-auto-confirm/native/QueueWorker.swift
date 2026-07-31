@@ -1351,7 +1351,7 @@ func startAutomationTask(
   task.workerTargetId = nil
   task.workerProfilePath = nil
   queueTrace("task=\(task.id) stage=create-worker begin")
-  guard let worker = createIndependentQueueWorkerTarget(&state) else {
+  guard var worker = createIndependentQueueWorkerTarget(&state) else {
     let detail = state.lastError ?? "unknown"
     throw NSError(
       domain: "chatgpt-auto-confirm",
@@ -1370,12 +1370,13 @@ func startAutomationTask(
       "task=\(task.id) stage=prepare-continuation begin "
         + "previousConversation=\(previousConversationId)"
     )
-    let navigationSucceeded = navigateHiddenConversation(
+    let restoration = restoreHiddenConversation(
       port: worker.port,
       targetId: worker.targetId,
       conversationId: previousConversationId
     )
-    if navigationSucceeded {
+    let restorationSucceeded = restoration["ok"] as? Bool == true
+    if restorationSucceeded {
       prepared = cdpValue(
         port: worker.port,
         targetId: worker.targetId,
@@ -1385,14 +1386,18 @@ func startAutomationTask(
     } else {
       prepared = [
         "ok": false,
-        "error": "continuation_navigation_failed",
+        "error": restoration["error"] as? String
+          ?? "continuation_conversation_click_failed",
         "conversationId": previousConversationId,
       ]
     }
     queueTrace(
       "task=\(task.id) stage=prepare-continuation "
-        + "navigated=\(navigationSucceeded) "
+        + "restored=\(restorationSucceeded) "
+        + "strategy=\(restoration["strategy"] as? String ?? "none") "
+        + "conversationClick=\(restoration["clickStrategy"] as? String ?? "none") "
         + "clicked=\(prepared?["continuationClicked"] as? Bool == true) "
+        + "continuationLabel=\(prepared?["continuationLabel"] as? String ?? "none") "
         + "newConversation=\(prepared?["conversationId"] as? String ?? "none") "
         + "error=\(prepared?["error"] as? String ?? "none")"
     )
@@ -1409,16 +1414,43 @@ func startAutomationTask(
           + "reason=\(continuationError) "
           + "screenshot=\(screenshot ?? "none")"
       )
-      if var fallback = prepareNewChatTarget(
-        port: worker.port,
-        targetId: worker.targetId,
-        timeout: 4.0,
-        allowBlankConversationReuse: true
-      ) {
-        fallback["continuationFallback"] = true
-        fallback["continuationFailure"] = continuationError
-        fallback["previousConversationId"] = previousConversationId
-        prepared = fallback
+      let staleTargetId = worker.targetId
+      let stalePort = worker.port
+      let staleClosed = CDPClient.closeTarget(staleTargetId, portOverride: stalePort)
+      queueTrace(
+        "task=\(task.id) stage=prepare-continuation fallback=recreate-worker "
+          + "begin staleTarget=\(staleTargetId) closed=\(staleClosed)"
+      )
+      port = nil
+      targetId = nil
+      workerProfilePath = nil
+      if let replacement = createIndependentQueueWorkerTarget(&state) {
+        worker = replacement
+        port = replacement.port
+        targetId = replacement.targetId
+        workerProfilePath = replacement.profilePath
+        queueTrace(
+          "task=\(task.id) stage=prepare-continuation fallback=recreate-worker "
+            + "complete target=\(replacement.targetId)"
+        )
+        if var fallback = prepareNewChatTarget(
+          port: replacement.port,
+          targetId: replacement.targetId,
+          timeout: 4.0,
+          allowBlankConversationReuse: true
+        ) {
+          fallback["continuationFallback"] = true
+          fallback["continuationFailure"] = continuationError
+          fallback["previousConversationId"] = previousConversationId
+          fallback["replacementTarget"] = true
+          prepared = fallback
+        } else {
+          preparationFailure = "continuation_fallback_new_chat_failed"
+          prepared = nil
+        }
+      } else {
+        preparationFailure = "continuation_fallback_worker_create_failed"
+        prepared = nil
       }
     }
   } else {
