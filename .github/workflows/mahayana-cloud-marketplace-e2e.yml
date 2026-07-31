@@ -172,11 +172,33 @@ jobs:
             https://*.workers.dev|https://*.pages.dev) ;;
             *) echo "Plugin deployment is not an independent Cloudflare Pages/Worker site: $deployment_url" >&2; exit 1 ;;
           esac
-          jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
+          source_tree="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          jq -e \
+            --arg id "$PLUGIN_ID" \
+            --arg version "$PLUGIN_VERSION" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --argjson repository_id "$GITHUB_REPOSITORY_ID" \
+            --arg commit "$GITHUB_SHA" \
+            --arg tree_hash "$source_tree" '
             .published == true and .approved == true and
+            .releaseStatus == "approved" and
             .pluginId == $id and .version == $version and
             (.packageSha256 | test("^[0-9a-f]{64}$")) and
-            (.packageSize > 0)
+            (.packageSize > 0) and
+            .source.provider == "github" and
+            .source.repository == $repository and
+            .source.repositoryId == $repository_id and
+            .source.defaultBranch == "main" and
+            .source.commit == $commit and
+            .source.treeHash == $tree_hash and
+            .source.license == "Apache-2.0" and
+            .source.visibility == "public" and
+            .source.subdirectory == "examples/mahayana-cloud-marketplace/hello-market-plugin" and
+            .releaseManifest.protocol == "mahayana.multi-artifact-release.v1" and
+            .releaseManifest.pluginId == $id and
+            .releaseManifest.version == $version and
+            .releaseManifest.source == .source and
+            (.releaseManifestSha256 | test("^[0-9a-f]{64}$"))
           ' "$RUNNER_TEMP/publish.json" >/dev/null
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
 
@@ -188,18 +210,103 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$DEPLOYMENT_URL/" > "$RUNNER_TEMP/plugin-index.html"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$DEPLOYMENT_URL/mahayana/plugin.json" > "$RUNNER_TEMP/plugin-site.json"
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$DEPLOYMENT_URL/mahayana/source.json" > "$RUNNER_TEMP/plugin-source.json"
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$DEPLOYMENT_URL/mahayana/release-manifest.json" > "$RUNNER_TEMP/release-manifest.json"
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$DEPLOYMENT_URL/mahayana/plugin.tar.gz" > "$RUNNER_TEMP/site-plugin.tar.gz"
-          jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
-            .schemaVersion == 1 and .pluginId == $id and .version == $version and
+          source_tree="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          jq -e \
+            --arg id "$PLUGIN_ID" \
+            --arg version "$PLUGIN_VERSION" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --argjson repository_id "$GITHUB_REPOSITORY_ID" \
+            --arg commit "$GITHUB_SHA" \
+            --arg tree_hash "$source_tree" '
+            .schemaVersion == 2 and .pluginId == $id and .version == $version and
             .packagePath == "/mahayana/plugin.tar.gz" and
-            .runtime == "independent-worker-or-pages"
+            .runtime == "independent-worker-or-pages" and
+            .source.provider == "github" and
+            .source.repository == $repository and
+            .source.repositoryId == $repository_id and
+            .source.commit == $commit and
+            .source.treeHash == $tree_hash and
+            .source.license == "Apache-2.0" and
+            .releaseManifestPath == "/mahayana/release-manifest.json" and
+            (.releaseManifestSha256 | test("^[0-9a-f]{64}$"))
           ' "$RUNNER_TEMP/plugin-site.json" >/dev/null
+          jq -e --slurpfile site "$RUNNER_TEMP/plugin-site.json" \
+            '. == $site[0].source' "$RUNNER_TEMP/plugin-source.json" >/dev/null
           expected_sha="$(jq -r '.packageSha256' "$RUNNER_TEMP/plugin-site.json")"
           expected_size="$(jq -r '.packageSize' "$RUNNER_TEMP/plugin-site.json")"
           actual_sha="$(sha256sum "$RUNNER_TEMP/site-plugin.tar.gz" | awk '{print $1}')"
           actual_size="$(stat -c '%s' "$RUNNER_TEMP/site-plugin.tar.gz")"
+          release_manifest_sha="$(sha256sum "$RUNNER_TEMP/release-manifest.json" | awk '{print $1}')"
           [ "$actual_sha" = "$expected_sha" ]
           [ "$actual_size" = "$expected_size" ]
+          [ "$release_manifest_sha" = "$(jq -r '.releaseManifestSha256' "$RUNNER_TEMP/plugin-site.json")" ]
+          jq -e \
+            --arg id "$PLUGIN_ID" \
+            --arg version "$PLUGIN_VERSION" \
+            --arg package_sha "$actual_sha" \
+            --argjson package_size "$actual_size" \
+            --arg commit "$GITHUB_SHA" \
+            --arg tree_hash "$source_tree" \
+            --slurpfile source "$RUNNER_TEMP/plugin-source.json" '
+            .schemaVersion == 1 and
+            .protocol == "mahayana.multi-artifact-release.v1" and
+            .pluginId == $id and .version == $version and
+            .source == $source[0] and
+            .common.id == "common" and
+            .common.packagePath == "/mahayana/plugin.tar.gz" and
+            .common.sha256 == $package_sha and
+            .common.size == $package_size and
+            .common.sourceCommit == $commit and
+            .common.sourceTreeHash == $tree_hash and
+            (.artifacts | length) > 0 and
+            all(.artifacts[];
+              .packagePath == "/mahayana/plugin.tar.gz" and
+              .sha256 == $package_sha and .size == $package_size and
+              .sourceCommit == $commit and .sourceTreeHash == $tree_hash)
+          ' "$RUNNER_TEMP/release-manifest.json" >/dev/null
+
+      - name: Reject immutable plugin version overwrite
+        shell: bash
+        env:
+          PLATFORM_URL: ${{ steps.platform.outputs.url }}
+        run: |
+          set -euo pipefail
+          duplicate="$RUNNER_TEMP/duplicate-version.tar.gz"
+          cp "$RUNNER_TEMP/site-plugin.tar.gz" "$duplicate"
+          printf '\nchanged-content\n' >> "$duplicate"
+          duplicate_sha="$(sha256sum "$duplicate" | awk '{print $1}')"
+          duplicate_size="$(stat -c '%s' "$duplicate")"
+          original_sha="$(jq -r '.packageSha256' "$RUNNER_TEMP/publish.json")"
+          [ "$duplicate_sha" != "$original_sha" ]
+          deployment_url="$(jq -r '.deploymentUrl' "$RUNNER_TEMP/publish.json")"
+          source_json="$(jq -c '.source' "$RUNNER_TEMP/publish.json")"
+          release_manifest_json="$(jq -c \
+            --arg sha "$duplicate_sha" \
+            --argjson size "$duplicate_size" '
+              .releaseManifest
+              | .common.sha256 = $sha
+              | .common.size = $size
+              | .artifacts |= map(.sha256 = $sha | .size = $size)
+            ' "$RUNNER_TEMP/publish.json")"
+          status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/duplicate-version-response.json" \
+            --write-out '%{http_code}' \
+            --request POST "$PLATFORM_URL/v1/marketplace/releases" \
+            --header "Authorization: Bearer $TEST_ACCOUNT_TOKEN" \
+            --form-string "pluginId=$PLUGIN_ID" \
+            --form-string "version=$PLUGIN_VERSION" \
+            --form-string "deploymentUrl=$deployment_url" \
+            --form-string "packageSha256=$duplicate_sha" \
+            --form-string "packageSize=$duplicate_size" \
+            --form-string 'platforms=["cli","desktop","mobile","web"]' \
+            --form-string "source=$source_json" \
+            --form-string "releaseManifest=$release_manifest_json" \
+            --form "package=@$duplicate;type=application/gzip")"
+          [ "$status" = "409" ]
+          jq -e '.error == "version_already_exists"' "$RUNNER_TEMP/duplicate-version-response.json" >/dev/null
 
       - name: Browse, download, and safely install through Mahayana CLI
         shell: bash
@@ -213,10 +320,17 @@ jobs:
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" --arg deployment "${{ steps.publish.outputs.deployment_url }}" '
             any(.plugins[];
               .pluginId == $id and .latestVersion == $version and
+              .releaseStatus == "approved" and
               .deploymentUrl == $deployment and
               (.platforms | index("cli")) != null and
               (.packageSha256 | test("^[0-9a-f]{64}$")) and
-              (.packageSize > 0))
+              (.packageSize > 0) and
+              .source.provider == "github" and
+              .source.repository == env.GITHUB_REPOSITORY and
+              .source.repositoryId == (env.GITHUB_REPOSITORY_ID | tonumber) and
+              .source.commit == env.GITHUB_SHA and
+              .releaseManifest.source == .source and
+              (.releaseManifestSha256 | test("^[0-9a-f]{64}$")))
           ' "$RUNNER_TEMP/browse.json" >/dev/null
 
           archive="$RUNNER_TEMP/$PLUGIN_ID-$PLUGIN_VERSION.tar.gz"
@@ -253,6 +367,63 @@ jobs:
           grep -F 'Hello, Actions!' "$RUNNER_TEMP/run.txt"
           grep -F 'cloud-market-hello' "$RUNNER_TEMP/run.txt"
 
+      - name: Revoke release and reject browse download and install
+        shell: bash
+        env:
+          PLATFORM_URL: ${{ steps.platform.outputs.url }}
+          MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
+        run: |
+          set -euo pipefail
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          curl --fail --silent --show-error \
+            --request POST "$PLATFORM_URL/v1/marketplace/plugins/$PLUGIN_ID/releases/$PLUGIN_VERSION/revoke" \
+            --header "Authorization: Bearer $TEST_ACCOUNT_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data '{"reason":"actions_revocation_test"}' \
+            | tee "$RUNNER_TEMP/revoke.json"
+          jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
+            .revoked == true and .pluginId == $id and .version == $version and
+            .releaseStatus == "revoked" and .reason == "actions_revocation_test"
+          ' "$RUNNER_TEMP/revoke.json" >/dev/null
+
+          "$cli" marketplace browse \
+            2> >(tee "$RUNNER_TEMP/after-revoke-browse.stderr" >&2) \
+            | tee "$RUNNER_TEMP/after-revoke-browse.json"
+          jq -e --arg id "$PLUGIN_ID" 'all(.plugins[]; .pluginId != $id)' \
+            "$RUNNER_TEMP/after-revoke-browse.json" >/dev/null
+
+          metadata_status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/after-revoke-metadata.json" \
+            --write-out '%{http_code}' \
+            "$PLATFORM_URL/v1/marketplace/plugins/$PLUGIN_ID/releases/$PLUGIN_VERSION")"
+          [ "$metadata_status" = "410" ]
+          jq -e '.error == "release_revoked"' "$RUNNER_TEMP/after-revoke-metadata.json" >/dev/null
+
+          download_status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/after-revoke-download.json" \
+            --write-out '%{http_code}' \
+            "$PLATFORM_URL/v1/marketplace/plugins/$PLUGIN_ID/releases/$PLUGIN_VERSION/download")"
+          [ "$download_status" = "410" ]
+          jq -e '.error == "release_revoked"' "$RUNNER_TEMP/after-revoke-download.json" >/dev/null
+
+          revoked_archive="$RUNNER_TEMP/revoked-$PLUGIN_ID-$PLUGIN_VERSION.tar.gz"
+          set +e
+          "$cli" marketplace download "$PLUGIN_ID" --version "$PLUGIN_VERSION" --output "$revoked_archive" \
+            >"$RUNNER_TEMP/after-revoke-cli-download.stdout" \
+            2>"$RUNNER_TEMP/after-revoke-cli-download.stderr"
+          cli_download_status="$?"
+          revoked_install_repo="$RUNNER_TEMP/revoked-install-repository"
+          mkdir -p "$revoked_install_repo"
+          "$cli" marketplace install "$PLUGIN_ID" --version "$PLUGIN_VERSION" --repository "$revoked_install_repo" \
+            >"$RUNNER_TEMP/after-revoke-cli-install.stdout" \
+            2>"$RUNNER_TEMP/after-revoke-cli-install.stderr"
+          cli_install_status="$?"
+          set -e
+          [ "$cli_download_status" -ne 0 ]
+          [ "$cli_install_status" -ne 0 ]
+          [ ! -e "$revoked_archive" ]
+          [ ! -e "$revoked_install_repo/.agents/plugins/plugins/$PLUGIN_ID" ]
+
       - name: Record end-to-end evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -267,6 +438,8 @@ jobs:
             ${{ runner.temp }}/publish.json
             ${{ runner.temp }}/plugin-index.html
             ${{ runner.temp }}/plugin-site.json
+            ${{ runner.temp }}/plugin-source.json
+            ${{ runner.temp }}/release-manifest.json
             ${{ runner.temp }}/site-plugin.tar.gz
             ${{ runner.temp }}/browse.json
             ${{ runner.temp }}/browse.stderr
@@ -276,3 +449,14 @@ jobs:
             ${{ runner.temp }}/install.stderr
             ${{ runner.temp }}/run.txt
             ${{ runner.temp }}/run.stderr
+            ${{ runner.temp }}/duplicate-version.tar.gz
+            ${{ runner.temp }}/duplicate-version-response.json
+            ${{ runner.temp }}/revoke.json
+            ${{ runner.temp }}/after-revoke-browse.json
+            ${{ runner.temp }}/after-revoke-browse.stderr
+            ${{ runner.temp }}/after-revoke-metadata.json
+            ${{ runner.temp }}/after-revoke-download.json
+            ${{ runner.temp }}/after-revoke-cli-download.stdout
+            ${{ runner.temp }}/after-revoke-cli-download.stderr
+            ${{ runner.temp }}/after-revoke-cli-install.stdout
+            ${{ runner.temp }}/after-revoke-cli-install.stderr
