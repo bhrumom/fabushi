@@ -125,7 +125,8 @@ const refreshDynamicTaskDefinitions = async () => {
       specSources,
       specSnapshot,
       specDigest,
-      applyMode: task.applyMode || 'next_chat',
+      applyMode: task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat',
+      source: 'actions-controller',
     });
     remoteTaskDigests.set(task.id, updateDigest);
     if (result.updateApplied === true) updated.push(task.id);

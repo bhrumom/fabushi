@@ -56,7 +56,9 @@ Treat visible GitHub Actions or deployment progress as active work. Do not decla
 The persistent Actions controller treats the task id as stable and the task definition as versioned state. Define `revision`, `specSources`, and an optional `directive` in `tasks/actions-inbox.json`. While the runner is active, it polls the current Git branch for the latest inbox and referenced specification files, computes a SHA-256 specification digest, and applies newer revisions with `queue_update`.
 
 - Increment `revision` whenever the prompt, acceptance criteria, or a referenced specification changes.
-- Use `applyMode: "next_chat"`; the current Chat may finish its turn, but its result cannot complete the task after a newer revision exists.
+- Use `applyMode: "next_chat"` by default; the current Chat may finish its turn, but its result cannot complete the task after a newer revision exists.
+- Use `applyMode: "interrupt"` only for urgent safety or architecture corrections. The queue stops only its hidden task-owned response, preserves the checkout, and immediately creates a fresh Chat on the new revision.
+- The original task goal is immutable. Current prompts, directives, specification digests, sources, and the last 100 updates are versioned in queue state.
 - Every new work Chat and independent review receives the latest specification snapshot and digest.
 - Reports based on an older revision or digest are automatically superseded and continued in a fresh Chat.
 - Do not cancel and recreate the long-running workflow merely to update task requirements.

@@ -438,6 +438,7 @@ case "queue_enqueue":
           id: id,
           title: title,
           prompt: prompt,
+          originalPrompt: prompt,
           promptTemplate: raw["promptTemplate"] as? String ?? "continue-to-complete",
           currentRevision: max(1, raw["revision"] as? Int ?? 1),
           appliedRevision: nil,
@@ -447,6 +448,8 @@ case "queue_enqueue":
           specDigest: raw["specDigest"] as? String,
           appliedSpecDigest: nil,
           pendingDirective: raw["directive"] as? String,
+          applyMode: "next_chat",
+          taskUpdates: [],
           specUpdatedAt: now,
           connector: raw["connector"] as? String ?? "devspace1",
           dependsOn: raw["dependsOn"] as? [String] ?? [],
@@ -546,7 +549,10 @@ case "queue_update":
   let directive = (params["directive"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
   let updatedPrompt = (params["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
   let updatedTitle = (params["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let applyMode = (params["applyMode"] as? String) ?? "next_chat"
+  let updateSource = ((params["source"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "operator"
   guard let taskId, revision >= 1,
+        ["next_chat", "interrupt"].contains(applyMode),
         specSources.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
         (specSnapshot?.count ?? 0) <= 60_000,
         (directive?.count ?? 0) <= 10_000,
@@ -578,10 +584,27 @@ case "queue_update":
         )
       }
       let incomingDigest = specDigest.flatMap { $0.isEmpty ? nil : $0 }
+      if revision == existingRevision,
+         (incomingDigest != tasks[index].specDigest
+           || specSnapshot != tasks[index].specSnapshot
+           || specSources != (tasks[index].specSources ?? [])
+           || directive != tasks[index].pendingDirective
+           || applyMode != (tasks[index].applyMode ?? "next_chat")
+           || (updatedPrompt != nil && updatedPrompt != tasks[index].prompt)
+           || (updatedTitle != nil && updatedTitle != tasks[index].title)) {
+        throw NSError(
+          domain: "chatgpt-auto-confirm",
+          code: 38,
+          userInfo: [NSLocalizedDescriptionKey:
+            "任务 \(taskId) 的 revision \(revision) 已存在且内容不同；必须递增 revision"]
+        )
+      }
       let changed = revision > existingRevision
         || incomingDigest != tasks[index].specDigest
         || specSnapshot != tasks[index].specSnapshot
+        || specSources != (tasks[index].specSources ?? [])
         || directive != tasks[index].pendingDirective
+        || applyMode != (tasks[index].applyMode ?? "next_chat")
         || (updatedPrompt != nil && updatedPrompt != tasks[index].prompt)
         || (updatedTitle != nil && updatedTitle != tasks[index].title)
       if revision < existingRevision || !changed {
@@ -592,23 +615,49 @@ case "queue_update":
         return result
       }
       let now = isoFormatter.string(from: Date())
+      tasks[index].originalPrompt = tasks[index].originalPrompt ?? tasks[index].prompt
       tasks[index].currentRevision = revision
       tasks[index].pendingRevision = revision
       tasks[index].specSources = specSources
       tasks[index].specSnapshot = specSnapshot
       tasks[index].specDigest = incomingDigest
       tasks[index].pendingDirective = directive
+      tasks[index].applyMode = applyMode
+      var updates = tasks[index].taskUpdates ?? []
+      updates.append(AutomationTaskUpdate(
+        id: UUID().uuidString.lowercased(),
+        revision: revision,
+        createdAt: now,
+        source: updateSource,
+        directive: directive ?? "",
+        specDigest: incomingDigest ?? "",
+        applyMode: applyMode
+      ))
+      tasks[index].taskUpdates = Array(updates.suffix(100))
       if let updatedPrompt, !updatedPrompt.isEmpty { tasks[index].prompt = updatedPrompt }
       if let updatedTitle, !updatedTitle.isEmpty { tasks[index].title = updatedTitle }
       tasks[index].specUpdatedAt = now
       tasks[index].updatedAt = now
       let updateNotice = "任务规范已动态更新到 revision \(revision)。下一轮必须读取最新规范，旧修订的完成结果无效。"
-      if tasks[index].status == "running" {
+      if tasks[index].status == "running", applyMode == "next_chat" {
         tasks[index].reviewFeedback = [tasks[index].reviewFeedback, updateNotice]
           .compactMap { $0 }
           .filter { !$0.isEmpty }
           .joined(separator: "\n\n")
       } else if tasks[index].status != "cancelled" {
+        if tasks[index].status == "running", applyMode == "interrupt" {
+          let port = tasks[index].workerPort ?? state.queueWorkerPort
+          let targetId = tasks[index].workerTargetId ?? state.queueWorkerTargetId
+          if let port, let targetId, queueTargetIsHidden(port: port, targetId: targetId) {
+            _ = cdpValue(
+              port: port,
+              targetId: targetId,
+              expression: stopCurrentResponseJS(),
+              timeout: 12.0
+            )
+          }
+          closeDedicatedAutomationTarget(tasks[index], state: state)
+        }
         tasks[index].status = "queued"
         tasks[index].startedAt = nil
         tasks[index].finishedAt = nil
@@ -634,7 +683,7 @@ case "queue_update":
       var result = queueStatusPayload(state)
       result["updatedTask"] = taskPublicPayload(tasks[index])
       result["updateApplied"] = true
-      result["applyMode"] = "next_chat"
+      result["applyMode"] = applyMode
       return result
     }
     output(payload)
