@@ -1,139 +1,91 @@
-# 大乘本地优先 MCP Apps 小程序市场与可信发布任务
+# 大乘可热安装本地 Web MCP Apps 任务
 
 任务 ID：`mahayana-marketplace-cloudflare-20260730`  
-目标版本：`goalVersion = 6`  
+目标版本：`goalVersion = 7`  
 文档状态：等待产品审核，尚未合并到 `main`，不得启动实施 Action。
 
 ## 一句话目标
 
-> 把大乘小程序统一为可下载安装到本地的标准 MCP Apps：桌面/CLI 默认本地 stdio 执行并可独立窗口运行，移动端由内置 Rust Mahayana Core 提供本地能力，普通桌面 Web 通过安全 Local Agent 调用本机 Runtime；Cloudflare 负责市场、签名包、更新和可选远程能力，不强制承载每个插件的业务执行。
+> 把大乘小程序统一为可签名下载、安装到本地、通过网页热更新、由 MCP Tool 驱动的标准 MCP Apps；移动端、桌面 WebView 和普通 Web/PWA 尽可能复用同一套本地网页包与 Web Runtime，不要求每个插件能力都预编译进主 App。
 
-## 两个最高优先级文档
+## 最高优先级设计
 
-1. `LOCAL_FIRST_MCP_APPS.md`：本地安装、Runtime Profiles、桌面独立运行、移动内嵌 Core、Web Local Agent 和两个关键插件的运行要求。
-2. `MCP_APPS_ONLY.md`：MCP Apps UI、Host、安全桥接、旧协议删除和硬切换要求。
+1. `LOCAL_WEB_MCP_RUNTIME.md`：移动端和 Web 端共用可下载本地网页包、Local Web MCP Runtime、热安装、热更新和聊天 Tool 调用。
+2. `LOCAL_FIRST_MCP_APPS.md`：本地优先、桌面 stdio、独立运行和 Runtime Profiles。
+3. `MCP_APPS_ONLY.md`：MCP Apps UI、AppBridge、sandbox、CSP、tool visibility 和旧协议删除。
 
-其他文档与这两份文件冲突时，以它们为准。
+其他文档与以上文件冲突时，以以上顺序为准。
 
-## 核心架构
-
-```text
-Cloudflare/Marketplace
-  → signed immutable package
-  → install locally
-
-Installed MCP App
-  ├── ui:// View
-  ├── permissions
-  └── runtime profiles
-        ├── desktop/CLI stdio
-        ├── mobile embedded Mahayana Core
-        ├── desktop Web Local Agent
-        └── optional remote-edge
-```
-
-MCP Apps 是 UI 与 Host 通信标准，不等于云端 Runtime。
-
-## Runtime 类型
-
-市场支持：
-
-- `local-only`；
-- `local-first`；
-- `hybrid`；
-- `remote-only`。
-
-Host Resolver 优先级：
+## 核心结构
 
 ```text
-本地 stdio
-→ 移动端内嵌 Core
-→ 已配对 Local Agent
-→ 插件明确允许的远程 Edge
+签名 MCP App 包
+├── ui/                 MCP Apps View
+├── runtime/web/        本地 JavaScript/WASM Tool Runtime
+├── tools.json
+├── permissions
+├── skills/workflows
+└── provenance/signature
 ```
 
-本地 Profile 可用时不得静默切换到云端，用户必须看到执行位置。
+移动端安装后，从 App 私有目录通过安全本地 Origin 加载；普通 Web/PWA 从浏览器本地存储和 Service Worker 加载。同一 Tool 逻辑在不同网页宿主复用。
+
+## 聊天与页面统一调用
+
+聊天输入：
+
+```text
+用户指令 → Host 选择 MCP Tool → Local Web Runtime 执行 → UI 显示结果
+```
+
+页面按钮：
+
+```text
+MCP Apps View → AppBridge tools/call → Local Web Runtime
+```
+
+禁止依赖模拟点击网页按钮。
 
 ## 全球法布施
 
-- 桌面/CLI：本机 stdio Runtime，发送队列、账号、日志和数据在本机；
-- 桌面：可通过 `mahayana plugin run global-dharma` 独立窗口运行；
-- 移动端：本地 WebView MCP App UI 调用 App 内置 Rust Core 的发送、队列和数据库能力；
-- 桌面 Web：通过 Mahayana Local Agent；
-- Cloudflare：市场、签名包、更新和可选同步，不替代本地发送执行。
+如果现有网页已能通过标准 Web API 完成发送，则全球法布施采用 `local-web`：
 
-## ChatGPT 自动确认
+- 同一网页包安装到 iOS、Android、桌面和 Web；
+- 本地 Worker 执行 `send/status/cancel/logs` Tool；
+- 本地保存队列和状态；
+- Cloudflare 只负责市场、签名包、更新和网页需要调用的可选远程 API；
+- 更新网页 Runtime 不要求发布新的大乘主 App。
 
-- 类型：`desktop-local-only`；
-- 本机 Runtime 操作本机 ChatGPT renderer/辅助功能/后台页面；
-- MCP App UI 管理启动、停止、任务和日志；
-- 移动/Web 只能控制已配对桌面并明确显示执行设备；
-- 不允许宣称在手机或云端直接完成桌面自动确认。
+## 主 App 更新边界
 
-## MCP Apps 基线
+HTML/CSS/JavaScript/WASM、Tool 流程、表单、规则、Skills 和普通 HTTPS 能力可以随插件更新。
 
-- 稳定规范：`2026-01-26`；
-- extension：`io.modelcontextprotocol/ui`；
-- UI：`ui://` + `text/html;profile=mcp-app`；
-- Tool：`_meta.ui.resourceUri`；
-- Host：AppBridge、sandbox、CSP、host context、display modes、tool visibility；
-- `ui/initialize` 是新 View–Host 握手，不是旧 MCP Session。
+新增相机、蓝牙、通讯录、短信、辅助功能、长期后台任务或其他受限原生能力时，仍可能需要主 App 更新或平台批准。
 
-## 明确删除
+## 商店合规
 
-- `Mcp-Session-Id`；
-- 旧 GET/SSE/DELETE MCP Session；
-- SDK v1 Server；
-- `createLegacyMcpHandler`、`McpAgent`、`WorkerTransport`；
-- `mcp-2025-06-18` fallback；
+热更新必须是受管理的 HTML5/JavaScript 小程序市场，而不是任意代码下载器：
+
+- 完整市场索引、插件元数据和深链；
+- 签名、来源、权限、隐私、内容和恶意代码审核；
+- 用户逐插件安装与授权；
+- 商店说明和审核账号完整；
+- 不向下载的小程序任意暴露原生平台 API。
+
+## 仍须删除
+
 - 大乘自定义 iframe bridge；
+- `mcp-2025-06-18` fallback；
+- `Mcp-Session-Id`；
+- 旧 GET/SSE/DELETE session；
+- SDK v1 server；
 - 运行旧插件的兼容路径。
 
-本地 stdio 是标准 MCP transport，不属于旧兼容层。
+## 队列配置
 
-## 市场和可信发布
-
-继续要求：
-
-- 稳定 plugin ID 和命名空间；
-- 版本+SHA 不可变安装包；
-- GitHub Actions OIDC 短期发布凭证；
-- provenance 和市场签名；
-- Runtime Profiles、平台、权限、CSP 和执行位置；
-- 审核、撤销、封禁、升级和回滚；
-- CLI 直连下载、安全解包和原子安装；
-- 禁止 R2；
-- 市场不永久代理安装包字节。
-
-local-only 插件不得因没有远程 MCP endpoint 而发布失败。只有声明 remote-edge Profile 时才要求 Cloudflare SDK v2、无状态 Runtime 和 `legacy: "reject"`。
-
-## 必读顺序
-
-1. `LOCAL_FIRST_MCP_APPS.md`
-2. `MCP_APPS_ONLY.md`
-3. `MCP_APPS_REFERENCES.md`
-4. `PRD.md`
-5. `TECHNICAL_DESIGN.md`
-6. `API_CONTRACT.md`
-7. `DATA_MODEL.md`
-8. `SECURITY_MODEL.md`
-9. `PUBLISHING_WORKFLOW.md`
-10. `UI_UX.md`
-11. `MIGRATION_PLAN.md`
-12. `ACCEPTANCE.md`
-13. `REFERENCES.md`
-
-## 硬切换原则
-
-1. 完成共享 MCP Apps Host Core 和 Runtime Resolver；
-2. 完成桌面 stdio Supervisor、独立 App Shell、移动 Core Provider 和 Web Local Agent；
-3. 迁移全球法布施、ChatGPT 自动确认和全部官方插件；
-4. 市场与模板只接受新 MCP Apps Runtime Profiles；
-5. 全平台真实验收；
-6. 一次性切换 production；
-7. 删除旧路由、旧依赖、旧 bridge 和旧测试。
-
-不允许运行旧协议双栈，但允许同一个新 MCP App 声明多个新 Runtime Profile。
+- revision：`2026-07-31.7`
+- goalVersion：`7`
+- 标题：`全面迁移大乘小程序至可热安装的本地 Web MCP Apps 运行架构`
 
 ## 审核状态
 
@@ -142,4 +94,4 @@ local-only 插件不得因没有远程 MCP endpoint 而发布失败。只有声�
 - 不合并到 `main`；
 - 不启用自动合并；
 - 不启动新的持续 Action；
-- 不影响当前队列任务。
+- 不影响当前运行中的任务。
