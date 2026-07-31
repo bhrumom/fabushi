@@ -1479,6 +1479,9 @@ func startAutomationTask(
     "task=\(task.id) stage=\(previousConversationId == nil ? "prepare-new-chat" : "prepare-continuation") complete"
   )
   let attempt = task.attempts + 1
+  task.appliedRevision = max(1, task.currentRevision ?? 1)
+  task.appliedSpecDigest = task.specDigest
+  task.pendingRevision = nil
   let outbound = messageWithTaskReportContract(automationTaskMessage(task))
   queueTrace("task=\(task.id) stage=send begin")
   guard let sendResult = cdpValue(

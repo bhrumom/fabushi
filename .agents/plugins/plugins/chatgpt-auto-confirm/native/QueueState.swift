@@ -326,6 +326,9 @@ func chatOnlyInstruction(_ value: String) -> String {
 }
 
 func automationTaskMessage(_ task: AutomationTask) -> String {
+  let revision = max(1, task.appliedRevision ?? task.currentRevision ?? 1)
+  let digest = task.appliedSpecDigest ?? task.specDigest ?? ""
+  let originalGoal = task.originalPrompt ?? task.prompt
   var sections = [
     taskPromptPrefix(task.promptTemplate),
     "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 High。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
@@ -336,8 +339,25 @@ func automationTaskMessage(_ task: AutomationTask) -> String {
     "持续执行规则：不要在说明『下一步要做什么』后停止，也不要只汇报阶段性进度。没有完成目标不要停，一直工作下去直到实现目标！直接执行所有可行步骤，持续处理失败、评审意见、Actions、部署和构件检查，直到原始目标真正完成。",
     "等待规则：对于 GitHub Actions、部署、发布审核、网络恢复或其他需要时间跑的异步操作，Chat 会话必须自己运行 bash `sleep` 睡眠命令（例如执行 `sleep 60`）。睡眠之后起来看是否完成，还没有完成就继续执行 sleep 睡眠等待直到有结果，然后立刻继续；绝对不要用回复等待秒数、预计时间或让用户稍后再来结束本轮。",
     "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。只有出现当前权限与工具确实无法绕过的真实阻塞，或平台硬性终止本次会话时，才允许结束未完成任务，并在未完成续作模板中准确列出具体所需权限、账号、工具、环境变量、具体命令或外部恢复条件。",
-    task.prompt
+    "原始任务目标（不可变）：\n\(originalGoal)"
   ]
+  if task.prompt != originalGoal {
+    sections.append("当前任务目标摘要（revision \(revision)）：\n\(task.prompt)")
+  }
+  sections.append("当前动态任务修订：revision \(revision)。本轮只能按该修订及其规范完成任务；如果控制器发现更新修订，会在下一轮新 Chat 自动注入。")
+  if !digest.isEmpty {
+    sections.append("当前规范摘要指纹：\(digest)")
+  }
+  if let sources = task.specSources, !sources.isEmpty {
+    sections.append("当前规范来源：\(sources.joined(separator: ", "))")
+  }
+  if let directive = task.pendingDirective, !directive.isEmpty {
+    sections.append("本修订追加指令：\n\(directive)")
+  }
+  if let snapshot = task.specSnapshot, !snapshot.isEmpty {
+    sections.append("当前规范快照（以此内容为准）：\n\(snapshot)")
+  }
+  sections.append("未完成机器报告必须额外包含 task_id=\(task.id)、applied_task_revision=\(revision) 和 applied_spec_digest=\(digest)。旧修订报告不会被接受为完成。")
   sections.append("任务发送轮次：\(task.attempts + 1)。")
   if let rawFeedback = task.reviewFeedback {
     let feedback = chatOnlyInstruction(rawFeedback)
@@ -359,8 +379,19 @@ func automationReviewMessage(
   return """
   这是任务 \(task.id) 的独立验收 Chat。请在当前 checkout 中只做复核，不要凭上一轮 Chat 的自报结果认定完成，也不要覆盖或重置任何改动。验收必须在 Chat 页面完成，不要进入 Work 页面。
 
-  原任务：
+  原始任务目标（不可变）：
+  \(task.originalPrompt ?? task.prompt)
+
+  当前任务目标摘要：
   \(task.prompt)
+
+  当前任务修订：\(max(1, task.currentRevision ?? 1))
+  当前规范指纹：\(task.specDigest ?? "")
+  被验收结果应用修订：\(report.appliedTaskRevision ?? task.appliedRevision ?? 1)
+  被验收结果规范指纹：\(report.appliedSpecDigest ?? task.appliedSpecDigest ?? "")
+
+  最新规范快照：
+  \(task.specSnapshot ?? "（无外部规范快照）")
 
   验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)
 
@@ -484,7 +515,17 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
     "id": task.id,
     "title": task.title,
     "status": task.status,
+    "originalPrompt": task.originalPrompt ?? task.prompt,
     "promptTemplate": task.promptTemplate,
+    "currentRevision": task.currentRevision ?? 1,
+    "appliedRevision": task.appliedRevision as Any,
+    "pendingRevision": task.pendingRevision as Any,
+    "specSources": task.specSources ?? [],
+    "specDigest": task.specDigest as Any,
+    "appliedSpecDigest": task.appliedSpecDigest as Any,
+    "applyMode": task.applyMode ?? "next_chat",
+    "taskUpdateCount": task.taskUpdates?.count ?? 0,
+    "specUpdatedAt": task.specUpdatedAt as Any,
     "connector": task.connector,
     "dependsOn": task.dependsOn,
     "resourceLocks": task.resourceLocks,
@@ -517,6 +558,11 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
     "waitingUntil": task.waitingUntil as Any,
     "waitReason": task.waitReason as Any,
   ]
+  if let updates = task.taskUpdates,
+     let updatesData = try? encoder.encode(updates),
+     let updatesObject = try? JSONSerialization.jsonObject(with: updatesData) {
+    payload["taskUpdates"] = updatesObject
+  }
   if let report = task.report,
      let reportData = try? encoder.encode(report),
      let reportObject = try? JSONSerialization.jsonObject(with: reportData) {

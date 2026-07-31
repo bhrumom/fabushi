@@ -1,0 +1,13 @@
+{
+  "name": "@mahayana/cloud-market-hello",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "deploy": "node --input-type=module --eval \"import fs from 'node:fs'; import { spawnSync } from 'node:child_process'; const manifest = JSON.parse(fs.readFileSync('.mahayana-distribution/mahayana/plugin.json', 'utf8')); const name = 'mahayana-cloud-market-hello-' + manifest.packageSha256.slice(0, 12); const result = spawnSync('npx', ['--yes', 'wrangler@4', 'deploy', '--name', name], { stdio: 'inherit', shell: process.platform === 'win32' }); process.exit(result.status ?? 1);\""
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

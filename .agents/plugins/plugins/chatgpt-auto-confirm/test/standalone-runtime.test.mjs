@@ -89,7 +89,33 @@ test('native task queue persists queued work without starting ChatGPT', async t 
     assert.equal(queued.executionMode, 'parallel-chat-windows');
     const status = JSON.parse((await execFileAsync(runtimePath, ['queue_status'], { env })).stdout);
     assert.equal(status.tasks[0].resourceLocks[0], 'test:queue');
+    assert.equal(status.tasks[0].currentRevision, 1);
     assert.equal(status.recoverable, true);
+    const updated = JSON.parse((await execFileAsync(
+      runtimePath,
+      ['queue_update', JSON.stringify({
+        taskId: 'queue-contract',
+        revision: 2,
+        specSources: ['docs/task.md'],
+        specSnapshot: '## docs/task.md\nUpdated acceptance criteria',
+        specDigest: 'sha256:updated',
+        directive: 'Apply the updated criteria in the next Chat',
+        applyMode: 'interrupt',
+        source: 'test-operator',
+      })],
+      { env },
+    )).stdout);
+    assert.equal(updated.updateApplied, true);
+    assert.equal(updated.updatedTask.currentRevision, 2);
+    assert.equal(updated.updatedTask.pendingRevision, 2);
+    assert.equal(updated.applyMode, 'interrupt');
+    assert.equal(updated.updatedTask.originalPrompt, '验证队列持久化');
+    assert.equal(updated.updatedTask.taskUpdateCount, 1);
+    assert.equal(updated.updatedTask.taskUpdates[0].source, 'test-operator');
+    const updatedStatus = JSON.parse((await execFileAsync(
+      runtimePath, ['queue_status'], { env })).stdout);
+    assert.equal(updatedStatus.tasks[0].specDigest, 'sha256:updated');
+    assert.equal(updatedStatus.tasks[0].status, 'queued');
     const watchdog = JSON.parse((await execFileAsync(
       runtimePath,
       ['queue_watchdog', JSON.stringify({

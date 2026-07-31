@@ -2,7 +2,7 @@
 
 任务 ID：`mahayana-marketplace-cloudflare-20260730`  
 目标版本：`goalVersion = 9`  
-文档状态：等待产品审核，尚未合并到 `main`，不得启动实施 Action。
+文档状态：已完成产品审核，批准全面实施与验收。
 
 ## 一句话目标
 
@@ -40,9 +40,9 @@
 
 ## 审核状态
 
-本分支和 Draft PR 只用于任务方案审核。收到明确“审核通过”之前：
+本任务方案已经产品审核通过，自 `goalVersion = 9` 起进入全面实施与验收：
 
-- 不合并到 `main`；
-- 不启用自动合并；
-- 不启动新的持续 Action；
-- 不影响当前队列任务。
+- 按受保护分支、Pull Request、CODEOWNERS 和 ruleset 流程推进实现与合并；
+- 启动并持续执行所需 GitHub Actions、真实发布和跨平台验收；
+- 所有正式 Release 继续遵守可信工作流、OIDC、SBOM、artifact attestations、provenance 和人工/环境审批；
+- 只有全部强制验收项均取得可复核真实证据后，任务状态才可报告为完成。
