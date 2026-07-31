@@ -198,7 +198,7 @@ fn build_runtime(create: RuntimeCreateConfig) -> Result<MahayanaRuntime, String>
             .ok_or_else(|| "Dacheng Responses base URL is required".to_string())?;
         let settings = CodexAgentConfig {
             codex_home,
-            bundled_plugin_marketplace: create.bundled_plugin_marketplace,
+            bundled_plugin_marketplace: create.bundled_plugin_marketplace.clone(),
             bundled_plugin_ids: bundled_marketplace_plugin_ids(
                 create.bundled_plugin_marketplace.as_deref(),
                 &mini_apps,
