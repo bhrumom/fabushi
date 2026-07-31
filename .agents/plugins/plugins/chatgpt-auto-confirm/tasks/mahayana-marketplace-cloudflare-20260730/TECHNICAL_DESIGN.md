@@ -1,275 +1,368 @@
-# 技术设计：MCP Apps-only 大乘小程序市场
+# 技术设计：本地优先 MCP Apps 大乘小程序系统
 
-## 1. 目标架构
+## 1. 总体架构
 
 ```text
-                         大乘市场控制平面
-┌───────────────────────────────────────────────────────────┐
-│ Identity / Namespace / Review / Trust / Signing / Audit  │
-│ OIDC / Provenance / Revocation / Rollback / Permission   │
-└──────────────────────────┬────────────────────────────────┘
-                           │ signed immutable metadata
-                           ▼
-┌───────────────────────────────────────────────────────────┐
-│ 每插件独立 Cloudflare Worker                              │
-│ createMcpHandler + SDK v2 + legacy:"reject"              │
-│ Tools / Resources / ui:// MCP Apps / explicit state      │
-│ immutable package + homepage + static assets              │
-└───────────────┬───────────────────────────────┬───────────┘
-                │ MCP Apps protocol             │ direct download
-                ▼                               ▼
-┌──────────────────────────────┐   ┌────────────────────────┐
-│ 大乘共享 MCP Apps Host core  │   │ 大乘 CLI installer     │
-│ AppBridge / sandbox / CSP    │   │ signature/hash/source  │
-│ Web/Desktop/Mobile/CLI       │   │ permission/atomic      │
-└──────────────────────────────┘   └────────────────────────┘
+                     大乘市场与可信发布控制平面
+┌────────────────────────────────────────────────────────────┐
+│ Identity / Review / OIDC / Provenance / Signing / Update  │
+│ Runtime Profiles / Permissions / Revocation / Rollback    │
+└─────────────────────────────┬──────────────────────────────┘
+                              │ signed immutable package
+                              ▼
+┌────────────────────────────────────────────────────────────┐
+│ 本地安装的 Mahayana MCP App                                │
+│ ui:// resources / manifests / skills / runtime profiles   │
+└─────────────────────────────┬──────────────────────────────┘
+                              ▼
+┌────────────────────────────────────────────────────────────┐
+│ 共享 MCP Apps Host Core                                    │
+│ AppBridge / sandbox / CSP / permission broker             │
+│ runtime resolver / local data isolation / audit           │
+└───────┬─────────────────┬──────────────────┬───────────────┘
+        │                 │                  │
+        ▼                 ▼                  ▼
+ desktop/CLI stdio   mobile in-process   Web Local Agent
+ local CLI runtime   Mahayana Rust Core  loopback/native msg
+        │                 │                  │
+        └─────────────────┴──────────────────┘
+                    optional remote-edge
+             createMcpHandler + SDK v2 + legacy reject
 ```
 
-## 2. 运行时唯一实现
+MCP Apps 统一 UI 与 Host 通信；Runtime 可以本地或远程。默认本地优先。
 
-### 服务端
+## 2. 安装包格式
 
-```ts
-import { createMcpHandler } from "agents/mcp/server";
-import { McpServer } from "@modelcontextprotocol/server";
-
-const handler = createMcpHandler(createServer, {
-  route: "/mcp",
-  legacy: "reject",
-  responseMode: "json",
-  allowedHostnames: ["<plugin-host>"],
-  allowedOriginHostnames: ["<approved-host>"],
-});
+```text
+<plugin>/
+├── .codex-plugin/plugin.json
+├── .mcp.json
+├── mahayana.runtime.json
+├── mahayana.permissions.json
+├── ui/
+├── runtime/
+│   ├── cli/
+│   ├── workflows/
+│   └── resources/
+├── skills/
+├── provenance.json
+└── signatures/
 ```
 
 要求：
 
-- 使用 SDK v2 factory；
-- 每个请求创建独立 server；
-- 不使用 global mutable server；
-- 不使用 SDK v1 transport；
-- 不保存 MCP session；
-- 不提供 legacy 路由；
-- OAuth/AuthInfo、Host、Origin、scope 和插件身份在 handler 前或 handler context 中验证；
-- 业务状态使用显式 ID 和持久层。
+- UI resource 与 Runtime 可独立版本化但必须同一 release 签名；
+- package manifest 声明 Runtime Profiles、平台和优先级；
+- 本地二进制按平台/架构列出并校验哈希；
+- 移动端 Profile 不能引用下载的任意原生二进制；
+- 所有资源从已验证版本目录读取。
 
-### 客户端/宿主
+## 3. MCP Apps Host Core
 
-Web、桌面、移动和 CLI 共用同一 Host core：
+共享核心负责：
 
-- MCP Apps extension capability；
+- `io.modelcontextprotocol/ui` capability；
+- `ui://` resource discovery/read/cache；
 - AppBridge；
-- sandboxed iframe；
-- declarative CSP；
-- host context；
-- tool visibility；
-- standard JSON-RPC over postMessage；
-- permission broker；
-- audit logger；
-- versioned UI resource cache。
+- `ui/initialize`、tool input/result、open-link、teardown；
+- sandbox、CSP、Origin、导航、下载策略；
+- model/app Tool visibility；
+- Runtime Resolver；
+- 权限 broker；
+- local data directory；
+- process lifecycle；
+- execution-location UI；
+- audit events。
 
-旧 session 客户端实现必须删除。
+平台 Adapter：
 
-## 3. MCP Apps 资源模型
+- Desktop：原生窗口/WebView、stdio process supervisor；
+- CLI：headless Host 或独立 App Shell；
+- Mobile：Flutter WebView + Rust Core FFI；
+- Web：browser Host + Local Agent connector。
 
-Tool：
+## 4. Runtime Resolver
+
+输入：
+
+- 当前平台；
+- 已安装 Profile；
+- Host capabilities；
+- 用户授权；
+- Local Agent 配对状态；
+- 网络状态；
+- 插件策略。
+
+选择顺序：
+
+```text
+desktop/CLI local stdio
+→ mobile embedded Mahayana Core
+→ paired Local Agent
+→ explicitly allowed remote-edge
+→ unsupported
+```
+
+规则：
+
+- 本地 Profile 可用时不得静默选择远程；
+- Profile 切换必须写审计；
+- 用户可禁止 remote fallback；
+- UI 显示“本机/移动内核/配对设备/云端”；
+- local-only 不允许 remote fallback。
+
+## 5. 桌面 stdio Runtime
+
+现有插件已经以 `.mcp.json` 声明 `type: stdio` 并调用随包 CLI，应保留并升级为标准 MCP Apps。
+
+生命周期：
+
+```text
+install
+→ verify executable/hash/platform
+→ spawn with minimal environment
+→ MCP stdio initialize/capability negotiation
+→ tools/resources
+→ AppBridge View
+→ graceful stop/forced cleanup
+```
+
+安全：
+
+- command 必须位于版本目录并在 manifest 中签名；
+- 禁止任意 shell 拼接；
+- 工作目录固定为插件目录；
+- Secret 通过按需 broker 注入；
+- stdout 仅 MCP；
+- stderr 日志脱敏；
+- 后台进程 PID、版本、权限和状态可审计；
+- 卸载和撤销必须停止进程。
+
+## 6. 独立 App Shell
+
+`mahayana plugin run <id>` 启动轻量 MCP Apps Host 窗口：
+
+- 不需要进入聊天；
+- 使用同一 Host Core；
+- 连接同一本地 Runtime；
+- 共享插件数据和权限；
+- 支持托盘、后台运行和深链；
+- 关闭窗口不一定终止后台任务，由插件生命周期策略决定。
+
+## 7. 移动端内嵌 Core
+
+移动端 Runtime 由大乘 App 内置 Rust Core 实现，插件只安装 MCP Apps UI、声明式逻辑与资源。
+
+建议 Capability Provider 接口：
+
+```text
+share.send
+share.prepare
+local.queue.create
+local.queue.status
+local.database.query
+notifications.schedule
+network.fetchApproved
+account.getSession
+files.readScoped
+pairedDevice.call
+```
+
+实现：
+
+- Flutter 通过 FFI 调用 Rust Core；
+- Core 暴露 MCP Tool adapter；
+- Host 与 Core 可使用 in-process transport，但保持同一 JSON-RPC Tool/Resource 语义；
+- 每个插件独立 data root、Secret namespace 和权限；
+- 下载包不得注入新的原生动态库。
+
+## 8. Web Local Agent
+
+### 连接方式
+
+```text
+Web MCP Apps Host
+→ pairing challenge
+→ http://127.0.0.1:<random>/mcp or browser native messaging
+→ Mahayana Local Agent
+→ local Runtime Supervisor
+```
+
+安全：
+
+- 只监听 loopback；
+- 随机端口或注册 native host；
+- origin allowlist，不允许 `*` CORS；
+- 用户在本机确认配对；
+- 短期 token 与设备密钥；
+- 校验 origin、插件 ID、用户、Profile 和权限；
+- 防 DNS rebinding、CSRF、恶意网页扫描和端口劫持；
+- 连接断开时撤销临时授权。
+
+移动浏览器无 Local Agent 时深链大乘 App。
+
+## 9. 可选 Remote Edge Profile
+
+只有声明 remote-edge 的插件才部署业务 MCP Runtime：
+
+```ts
+createMcpHandler(createServer, {
+  route: "/mcp",
+  legacy: "reject",
+  responseMode: "json"
+})
+```
+
+要求：
+
+- SDK v2；
+- 无旧 Session；
+- 显式业务状态；
+- 每请求独立 server；
+- Origin/Host/OAuth scope 验证；
+- 不替代必须本地执行的 Tool。
+
+Cloudflare 仍可托管市场页面、不可变包和更新元数据，即使插件没有远程 Runtime。
+
+## 10. Runtime Manifest
+
+示例：
 
 ```json
 {
-  "name": "show_dashboard",
-  "inputSchema": {"type":"object"},
-  "_meta": {
-    "ui": {
-      "resourceUri": "ui://io.mahayana.publisher.plugin/dashboard"
+  "schemaVersion": 1,
+  "kind": "local-first",
+  "extension": "io.modelcontextprotocol/ui",
+  "profiles": [
+    {
+      "id": "desktop-stdio",
+      "platforms": ["macos-arm64", "macos-x64", "windows-x64", "linux-x64"],
+      "transport": "stdio",
+      "command": "runtime/cli/mahayana-plugin",
+      "args": ["--plugin", "global-dharma", "mcp-serve"],
+      "priority": 300
+    },
+    {
+      "id": "mobile-embedded",
+      "platforms": ["ios", "android"],
+      "transport": "in-process",
+      "provider": "mahayana-core",
+      "requiredCapabilities": ["share.send", "local.queue"],
+      "priority": 250
+    },
+    {
+      "id": "web-local-agent",
+      "platforms": ["web-desktop"],
+      "transport": "loopback-http",
+      "requiresCompanion": true,
+      "priority": 200
     }
-  }
+  ]
 }
 ```
 
-Resource：
+## 11. 市场准入
 
-```json
-{
-  "uri": "ui://io.mahayana.publisher.plugin/dashboard",
-  "mimeType": "text/html;profile=mcp-app",
-  "text": "<!doctype html>..."
-}
-```
+市场签名元数据新增：
 
-约束：
+- runtime kind；
+- profiles；
+- platform/architecture；
+- executable hashes；
+- required capabilities；
+- local data policy；
+- background policy；
+- remote fallback policy；
+- minimum Host/Core version；
+- UI resources/CSP/visibility。
 
-- UI resource 必须可枚举、可审计、可缓存；
-- resource URI 绑定插件 ID、版本和内容哈希；
-- CSP 只允许声明的 connect/img/media/font 域名；
-- 默认 CSP 保持最小权限；
-- app-only tools 只能由同一 server 的 App 调用；
-- model-only tools 不向 App 暴露；
-- 所有工具返回文本与结构化数据，UI 不承载唯一业务结果。
+验证矩阵：
 
-## 4. Host 安全模型
+- stdio conformance 与 process cleanup；
+- mobile capability contract；
+- Web Local Agent pairing/security；
+- remote stateless conformance（如存在）；
+- MCP Apps UI；
+- package signature/hash/provenance；
+- permission diff；
+- install/upgrade/rollback/uninstall。
 
-Host 必须：
-
-- iframe sandbox 默认禁用顶层导航、弹窗、下载和任意 origin；
-- 根据资源声明构造 CSP；
-- 不允许 UI 自行绕过 Host 调用工具；
-- 校验 View 来源、resource identity 和 plugin version；
-- 将工具调用映射到安装权限与运行时权限；
-- 对 destructive/open-world/write 操作重新确认；
-- 审计 `ui/open-link`、tools/call、权限拒绝和 CSP 违规；
-- teardown 后撤销 bridge 和事件监听；
-- 防止跨插件 tool call 和 resource access。
-
-## 5. 插件发布物
+## 12. 全球法布施映射
 
 ```text
-/
-/mcp
-/mahayana/latest/plugin.json
-/mahayana/releases/<version>/<sha>/plugin.json
-/mahayana/releases/<version>/<sha>/plugin.tar.gz
-/mahayana/releases/<version>/<sha>/provenance.json
+Desktop/CLI:
+local stdio Runtime → local send queue/account/logs
+
+Mobile App:
+local MCP App UI → Mahayana Core share.send/local.queue
+
+Desktop Web:
+MCP App UI → Local Agent → local Runtime
 ```
 
-`plugin.json` 必须包含：
+基础 UI、配置和队列查看应可离线；真正发送按目标平台网络状态执行。
 
-```json
-{
-  "runtime": {
-    "kind": "mcp-app",
-    "mcpSdk": "v2",
-    "transport": "stateless-http",
-    "legacy": false,
-    "extension": "io.modelcontextprotocol/ui"
-  },
-  "ui": {
-    "resources": ["ui://..."],
-    "mimeTypes": ["text/html;profile=mcp-app"]
-  }
-}
-```
-
-市场必须从 production endpoint 实际探测 legacy 请求被拒绝，而不是只信任声明。
-
-## 6. 市场数据与准入
-
-新增或确认字段：
-
-- `runtime_kind`；
-- `mcp_sdk_major`；
-- `transport_mode`；
-- `legacy_allowed`；
-- `mcp_apps_extension`；
-- `ui_resources_json`；
-- `ui_mime_types_json`；
-- `csp_json`；
-- `tool_visibility_json`；
-- `host_min_version`；
-- `migration_state`。
-
-发布校验流程：
-
-1. 验证 plugin ID/version 所有权与不可变性；
-2. 验证 OIDC/provenance；
-3. 验证 package hash/size；
-4. 验证 MCP Apps manifest；
-5. 调用 `/mcp` 执行 SDK v2 合规测试；
-6. 验证 legacy 请求被拒绝；
-7. 读取 `ui://` resources；
-8. 验证 MIME、CSP、tool visibility 和 structured result；
-9. 运行 sandbox/browser tests；
-10. 签署 release metadata；
-11. 进入审核。
-
-## 7. 业务状态
-
-允许：
-
-- D1：关系数据、任务、审计；
-- KV：可缓存元数据；
-- Durable Object：确实需要强一致协调的业务对象；
-- Queue/Workflow：长时间构建、扫描、部署；
-- 显式 `taskId`、`draftId`、`workspaceId`、`deploymentId`。
-
-禁止：
-
-- 用 Durable Object 模拟 MCP transport session；
-- 用 cookie/session ID 隐藏业务连续性；
-- 依赖同一 Worker isolate；
-- 依赖 sticky routing。
-
-## 8. 硬切换实现顺序
-
-1. 建共享 Host core；
-2. 编写旧 bridge 到 MCP Apps 的代码迁移工具；
-3. 迁移所有官方插件；
-4. 迁移 Flutter/Web/Desktop/CLI Host；
-5. 将新模板改为 MCP Apps-only；
-6. 将市场准入改为 MCP Apps-only；
-7. 在 preview 上验证 `legacy:"reject"`；
-8. 全平台 E2E；
-9. 一次性切换 production；
-10. 删除旧 SDK、旧 session、旧 bridge、旧 route 和旧测试。
-
-不允许在 production 同时提供新旧 endpoint。
-
-## 9. 旧客户端处理
-
-旧客户端连接时返回明确错误：
-
-- 错误码：`MCP_APPS_HOST_UPGRADE_REQUIRED`；
-- 最低 Host 版本；
-- 升级链接；
-- 不创建 session；
-- 不执行 Tool；
-- 不返回旧 UI。
-
-## 10. 安装和更新安全
-
-CLI 按顺序验证：
-
-1. 市场根信任与签名；
-2. metadata version/expiry/revocation；
-3. plugin ID/version/anti-rollback；
-4. Cloudflare approved hostname；
-5. immutable URL；
-6. size/SHA/content type；
-7. provenance；
-8. MCP Apps manifest；
-9. permissions/CSP/tool visibility；
-10. 安全解包和原子安装。
-
-旧插件包不得因已安装而被新 Host 继续执行；升级后标记 `migration_required` 并阻止启动。
-
-## 11. 可观测性
-
-必须记录：
-
-- plugin ID/version；
-- tool/resource URI；
-- Host version；
-- MCP Apps capability；
-- CSP policy/result；
-- permission decision；
-- Cloudflare request/trace；
-- release/provenance/action run；
-- legacy rejection count；
-- upgrade-required count。
-
-不得记录 access token、Secret 或敏感表单内容。
-
-## 12. 删除完成标准
-
-仓库生产代码搜索不得再出现可执行的：
+## 13. ChatGPT 自动确认映射
 
 ```text
+Desktop only:
+MCP App UI → local stdio Runtime → local ChatGPT renderer/accessibility
+
+Mobile/Web:
+MCP App UI → paired-device control → selected desktop Runtime
+```
+
+必须显示执行设备。没有配对桌面时不显示虚假的可执行状态。
+
+## 14. 本地数据与升级
+
+目录：
+
+```text
+plugins/<pluginId>/
+├── versions/<version>/<sha>/
+├── current
+├── data/
+├── logs/
+└── runtime-state.json
+```
+
+- 版本目录不可变；
+- data 与版本分离；
+- 升级前执行显式数据迁移；
+- 失败回滚 current；
+- 后台 Runtime 切换前停止旧版本；
+- 撤销版本禁止新启动；
+- 卸载按用户选择保留或删除数据。
+
+## 15. 旧实现删除
+
+仍必须删除：
+
+```text
+Mcp-Session-Id
+旧 GET/SSE/DELETE session
+SDK v1 server
 createLegacyMcpHandler
 McpAgent
 WorkerTransport
-Mcp-Session-Id
-mcp-2025-06-18
-legacy MCP route
 custom iframe bridge
+mcp-2025-06-18 fallback
 ```
 
-允许出现在迁移说明、负向测试和升级错误文案中，但不能存在可运行分支。
+本地 stdio 是标准 MCP transport，不属于旧 Session 兼容层。
+
+## 16. 实施顺序
+
+1. 定义 Runtime Manifest/Profile schema；
+2. 建共享 Host Core 和 Resolver；
+3. 建 desktop stdio Supervisor 与独立 App Shell；
+4. 建 mobile Mahayana Core capability adapter；
+5. 建 Web Local Agent 与配对协议；
+6. 迁移全球法布施；
+7. 迁移 ChatGPT 自动确认；
+8. 迁移其他官方插件；
+9. 更新市场、发布器、模板和安装器；
+10. 完成跨平台 E2E；
+11. 硬切换并删除旧实现。
