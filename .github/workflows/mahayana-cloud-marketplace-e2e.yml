@@ -59,14 +59,54 @@ jobs:
       - name: Install Cloudflare Worker build tool
         run: cargo install worker-build --locked
 
-      - name: Validate and build marketplace code
+      - name: Prepare marketplace validation diagnostics
+        shell: bash
+        run: mkdir -p artifacts/marketplace-validation
+
+      - name: Check Mahayana Rust formatting
         shell: bash
         run: |
-          set -euo pipefail
-          cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
-          cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client
-          cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
-          cargo build --locked --release --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli
+          set -uo pipefail
+          log="artifacts/marketplace-validation/rustfmt-check.log"
+          set +e
+          cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all
+            git diff -- third_party/mahayana/mahayana-rs > artifacts/marketplace-validation/rustfmt.patch
+          fi
+          exit "$status"
+
+      - name: Test Mahayana marketplace packages
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
+            | tee artifacts/marketplace-validation/cargo-test.log
+
+      - name: Check Mahayana platform Worker
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker 2>&1 \
+            | tee artifacts/marketplace-validation/platform-worker-check.log
+
+      - name: Build Mahayana CLI release binary
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --locked --release --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
+            | tee artifacts/marketplace-validation/mahayana-cli-build.log
+
+      - name: Upload marketplace validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-marketplace-validation-diagnostics
+          path: artifacts/marketplace-validation
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Apply marketplace database migrations
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
