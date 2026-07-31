@@ -30,4 +30,5 @@ test('cloud market hello returns stable mini app result', async () => {
   const body = await response.json();
   assert.equal(body.result.structuredContent.pluginId, 'cloud-market-hello');
   assert.equal(body.result.structuredContent.message, 'Hello, Contract!');
+  assert.equal(body.result.content[0].text, 'Hello, Contract! [cloud-market-hello]');
 });

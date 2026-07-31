@@ -21,6 +21,7 @@ test('stdio MCP exposes and runs hello', () => {
     params: { name: 'hello', arguments: { name: 'Market' } },
   });
   assert.equal(called.result.structuredContent.message, 'Hello, Market!');
+  assert.equal(called.result.content[0].text, 'Hello, Market! [cloud-market-hello]');
 });
 
 test('Cloudflare Worker serves the same MCP tool', async () => {

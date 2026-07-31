@@ -42,7 +42,7 @@ export default {
       if (params?.name === 'hello') {
         const result = hello(params.arguments?.name);
         return reply(message.id, {
-          content: [{ type: 'text', text: result.message }],
+          content: [{ type: 'text', text: `${result.message} [${result.pluginId}]` }],
           structuredContent: result,
           isError: false,
         });
