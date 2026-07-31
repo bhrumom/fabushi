@@ -1,0 +1,41 @@
+name: PR 1766 Rustfmt Fix
+
+on:
+  push:
+    branches:
+      - codex/mahayana-marketplace-v9-followup-20260731
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt-fix:
+    if: github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-v9-followup-20260731'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: codex/mahayana-marketplace-v9-followup-20260731
+          fetch-depth: 0
+      - name: Install stable Rustfmt
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Apply formatting and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
+          rm .github/workflows/pr1766-rustfmt-fix.yml
+          git add third_party/mahayana/mahayana-rs/mahayana-cli/src/plugin_dev.rs
+          git add third_party/mahayana/mahayana-rs/mahayana-cli/src/plugin_dev_tests.rs
+          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
+          git add .github/workflows/pr1766-rustfmt-fix.yml
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'style: apply Rust formatting'
+          git push origin HEAD:codex/mahayana-marketplace-v9-followup-20260731
