@@ -28,7 +28,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   patch-installed-runtime:
@@ -54,11 +53,12 @@ jobs:
                   &mini_apps,
               )?,
           '''
-          if text.count(old_line) != 1:
+          if old_line in text:
+              text = text.replace(old_line, replacement, 1)
+          elif 'bundled_marketplace_plugin_ids(' not in text:
               raise SystemExit('unexpected bundled plugin id assignment')
-          text = text.replace(old_line, replacement, 1)
 
-          marker = 'fn discover_mini_apps(client: &MahayanaProductClient) -> Option<Vec<MiniAppDefinition>> {'
+          helper_marker = 'fn discover_mini_apps(client: &MahayanaProductClient) -> Option<Vec<MiniAppDefinition>> {'
           helper = '''fn bundled_marketplace_plugin_ids(
               marketplace_root: Option<&std::path::Path>,
               mini_apps: &[MiniAppDefinition],
@@ -89,11 +89,12 @@ jobs:
           }
 
           '''
-          if text.count(marker) != 1:
-              raise SystemExit('unexpected discover_mini_apps marker')
-          text = text.replace(marker, helper + marker, 1)
+          if 'fn bundled_marketplace_plugin_ids(' not in text:
+              if text.count(helper_marker) != 1:
+                  raise SystemExit('unexpected discover_mini_apps marker')
+              text = text.replace(helper_marker, helper + helper_marker, 1)
 
-          marker = '    #[test]\n    fn lifecycle_abi_creates_executes_receives_and_closes() {'
+          test_marker = '    #[test]\n    fn lifecycle_abi_creates_executes_receives_and_closes() {'
           regression = '''    #[test]
               fn bundled_marketplace_enables_only_plugins_present_on_disk() {
                   let unique = std::time::SystemTime::now()
@@ -128,92 +129,23 @@ jobs:
               }
 
           '''
-          if text.count(marker) != 1:
-              raise SystemExit('unexpected lifecycle test marker')
-          ffi.write_text(text.replace(marker, regression + marker, 1), encoding='utf-8')
+          if 'fn bundled_marketplace_enables_only_plugins_present_on_disk()' not in text:
+              if text.count(test_marker) != 1:
+                  raise SystemExit('unexpected lifecycle test marker')
+              text = text.replace(test_marker, regression + test_marker, 1)
 
-          e2e = Path('.github/workflows/mahayana-cloud-marketplace-e2e.yml')
-          text = e2e.read_text(encoding='utf-8')
-          old = 'cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client'
-          if text.count(old) != 1:
-              raise SystemExit('unexpected marketplace cargo test command')
-          e2e.write_text(text.replace(old, old + ' --package mahayana-ffi', 1), encoding='utf-8')
-
-          contract = Path('.github/workflows/plugin-marketplace-contract.yml')
-          contract.write_text('''name: Plugin Marketplace Contract
-
-          on:
-            pull_request:
-              paths:
-                - '.agents/plugins/**'
-                - 'frontend/apps/web/public/.well-known/mahayana/**'
-                - 'scripts/check-official-plugin-marketplace.py'
-                - 'third_party/mahayana/mahayana-rs/mahayana-cli/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-ffi/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
-                - 'examples/mahayana-cloud-marketplace/**'
-                - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-                - '.github/workflows/plugin-marketplace-contract.yml'
-            push:
-              branches: [main]
-              paths:
-                - '.agents/plugins/**'
-                - 'frontend/apps/web/public/.well-known/mahayana/**'
-                - 'scripts/check-official-plugin-marketplace.py'
-                - 'third_party/mahayana/mahayana-rs/mahayana-cli/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-ffi/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
-                - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
-                - 'examples/mahayana-cloud-marketplace/**'
-                - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-                - '.github/workflows/plugin-marketplace-contract.yml'
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          jobs:
-            contract:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                - name: Validate official marketplace contract
-                  run: python3 scripts/check-official-plugin-marketplace.py
-
-            cloud-marketplace-e2e:
-              uses: ./.github/workflows/mahayana-cloud-marketplace-e2e.yml
-              secrets: inherit
-          '''.replace('          ', ''), encoding='utf-8')
+          ffi.write_text(text, encoding='utf-8')
           PY
           git diff --check
-      - name: Commit focused fix and remove bootstrap workflow
+      - name: Commit source-only fix
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add third_party/mahayana/mahayana-rs/mahayana-ffi/src/lib.rs
-          git add .github/workflows/mahayana-cloud-marketplace-e2e.yml
-          git add .github/workflows/plugin-marketplace-contract.yml
-          if test -f .github/workflows/mahayana-marketplace-round24-patch.yml; then
-            git rm .github/workflows/mahayana-marketplace-round24-patch.yml
-          fi
           git commit -m "Fix installed marketplace plugin runtime"
           git push origin HEAD:codex/mahayana-marketplace-parallel-20260726-r16
-      - name: Dispatch fixed marketplace verification
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail-with-body \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/plugin-marketplace-contract.yml/dispatches \
-            -d '{"ref":"codex/mahayana-marketplace-parallel-20260726-r16"}'
 
   contract:
     runs-on: ubuntu-latest
