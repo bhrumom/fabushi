@@ -70,20 +70,26 @@ MAHAYANA_TASK_REPORT_V1_END
 任务全部完成时 status 必须为 complete，remaining、blockers 必须为空数组，next_task 必须为空字符串。不得仅用自然语言声称完成。
 `;
 
-const specificationBlock = (control, task) => {
-  const files = [...new Set([
-    ...(Array.isArray(control.specificationFiles) ? control.specificationFiles : []),
-    ...(Array.isArray(task.specificationFiles) ? task.specificationFiles : []),
-  ])];
-  const urls = [...new Set([
-    ...(Array.isArray(control.specificationURLs) ? control.specificationURLs : []),
-    ...(Array.isArray(task.specificationURLs) ? task.specificationURLs : []),
-  ])];
-  if (files.length === 0 && urls.length === 0) return '';
-  return `\n\n任务规范（开始工作前必须读取；与旧聊天冲突时以当前 goalVersion 和这些规范为准）：\n` +
-    files.map(value => `- 仓库文件：${value}`).concat(
-      urls.map(value => `- 在线链接：${value}`),
-    ).join('\n');
+const normalizedDirectory = value => String(value || '')
+  .trim()
+  .replace(/^\/+|\/+$/g, '');
+
+const taskDocumentBlock = task => {
+  const directory = normalizedDirectory(task.documentDirectory);
+  if (!directory) return '';
+  const directoryURL = `https://github.com/${repository}/tree/${controlRef}/${directory}`;
+  const additionalURLs = Array.isArray(task.documentURLs)
+    ? task.documentURLs.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const links = [directoryURL, ...additionalURLs];
+  return [
+    '任务文档目录（开始工作前必须打开并阅读目录中的全部相关文档）：',
+    `- 仓库目录：${directory}`,
+    ...links.map(value => `- 文件夹链接：${value}`),
+    '只在消息中提供目录路径和文件夹链接，不在提示词中复制文档正文。',
+    '目录中可以包含 PRD、技术设计、架构说明、UI/UX、接口契约、验收标准和其他任务资料。',
+    '当前 goalVersion 对应的目录资料优先于旧 Chat 中的任务描述。',
+  ].join('\n');
 };
 
 const runtimeId = task => `${task.id}--v${Math.max(1, Number(task.goalVersion || 1))}`;
@@ -110,7 +116,16 @@ const syncControl = () => {
   const enqueued = [];
 
   for (const task of desiredTasks) {
-    if (!task?.id || !task?.title || !task?.prompt) continue;
+    if (!task?.id || !task?.title || !task?.prompt ||
+        !normalizedDirectory(task.documentDirectory)) {
+      process.stderr.write(
+        `TASK_CONTROL_INVALID_TASK ${JSON.stringify({
+          id: task?.id || null,
+          reason: 'id_title_prompt_and_documentDirectory_are_required',
+        })}\n`,
+      );
+      continue;
+    }
     const desiredId = runtimeId(task);
     for (const current of existing) {
       const staleVersion = current.id === task.id ||
@@ -130,7 +145,7 @@ const syncControl = () => {
       `动态任务控制版本：${control.revision || control._blobSha}。`,
       `逻辑任务：${task.id}；目标版本：${Math.max(1, Number(task.goalVersion || 1))}。`,
       task.prompt,
-      specificationBlock(control, task),
+      taskDocumentBlock(task),
       reportContract,
     ].filter(Boolean).join('\n\n');
 
