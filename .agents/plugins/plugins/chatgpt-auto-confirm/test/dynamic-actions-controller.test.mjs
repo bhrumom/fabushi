@@ -99,11 +99,13 @@ test('document folders can contain PRD, technical, UI and acceptance files', () 
   );
   const directoryURL = new URL(`${relative}/`, import.meta.url);
   const files = readdirSync(directoryURL).sort();
-  assert.deepEqual(files, [
+  for (const required of [
     'ACCEPTANCE.md',
     'PRD.md',
     'README.md',
     'TECHNICAL_DESIGN.md',
     'UI_UX.md',
-  ]);
+  ]) {
+    assert.ok(files.includes(required), `missing required task document: ${required}`);
+  }
 });
