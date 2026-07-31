@@ -103,6 +103,7 @@ jobs:
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
 
       - name: Import dynamic parallel task inbox
+        if: ${{ inputs.parallel_queue_smoke }}
         env:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: ${{ github.workspace }}/.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json
@@ -163,7 +164,7 @@ jobs:
           CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/verify-parallel-actions-queue.mjs
 
-      - name: Run persistent task queue
+      - name: Run dynamic persistent task queue
         if: ${{ !inputs.smoke_only && !inputs.parallel_queue_smoke }}
         id: controller
         continue-on-error: true
@@ -172,9 +173,12 @@ jobs:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
           CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
+          CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF: main
+          CHATGPT_AUTO_CONFIRM_TASK_CONTROL_PATH: .agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json
+          CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"
           ACTION_SESSION_SECONDS: "20100"
           ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
-        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-actions-controller.mjs
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-dynamic-actions-controller.mjs
 
       - name: Record successful hosted verification
         if: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
