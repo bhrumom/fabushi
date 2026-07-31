@@ -2,50 +2,68 @@
 
 ## 文档地位
 
-本文件是任务 `mahayana-marketplace-cloudflare-20260730` 的最高优先级协议约束。任何其他任务文档与本文件冲突时，以本文件为准。
+本文件是任务 `mahayana-marketplace-cloudflare-20260730` 的最高优先级 MCP Apps、Host 与旧协议删除约束。运行位置、安装包和跨平台 Runtime Profile 以 `LOCAL_FIRST_MCP_APPS.md` 为最高优先级依据。
 
-目标不是兼容旧 MCP 小程序，而是把大乘小程序、宿主、插件模板、市场准入和 Cloudflare 运行时全面迁移到官方 MCP Apps 与无状态 MCP SDK v2。生产环境不得保留旧协议运行通道。
+目标是把大乘小程序全部迁移到官方 MCP Apps，同时保留并强化本地安装、本地执行和独立运行能力。MCP Apps 不是云端运行要求；Server 可以由本地 stdio、移动端内嵌 Core、Web Local Agent 或可选远程无状态 HTTP 提供。
 
-## 1. 唯一技术基线
-
-### MCP Apps
+## 1. 唯一 UI 技术基线
 
 采用官方 MCP Apps 稳定规范 `2026-01-26`：
 
 - 扩展标识：`io.modelcontextprotocol/ui`；
-- UI 资源使用 `ui://` URI；
-- MIME 类型使用 `text/html;profile=mcp-app`；
+- UI 资源：`ui://`；
+- MIME：`text/html;profile=mcp-app`；
 - Tool 通过 `_meta.ui.resourceUri` 关联 UI；
 - View 与 Host 使用标准 MCP JSON-RPC over `postMessage`；
-- Host 使用 AppBridge 或完全符合规范的实现；
-- iframe 必须 sandbox；
-- CSP 必须按资源声明生成并强制执行；
-- Tool visibility 必须区分 `model` 与 `app`；
-- 支持 host context、display modes、资源 teardown 和可审计工具调用；
-- Tool 仍返回有意义的 `content` 与 `structuredContent`，这是 MCP Apps 标准的渐进呈现能力，不是旧协议兼容。
+- Host 使用 AppBridge 或规范一致实现；
+- iframe/WebView 必须 sandbox；
+- CSP 必须按资源声明生成并执行；
+- Tool visibility 区分 `model` 与 `app`；
+- 支持 host context、display modes、resource teardown 和审计；
+- Tool 返回有意义的 `content` 和 `structuredContent`。
 
-### Cloudflare MCP 服务
+## 2. 支持的 Runtime Profiles
 
-每个插件 Worker 使用：
+### 桌面与 CLI 本地 Runtime
+
+```text
+MCP Apps Host
+→ 启动已安装插件目录中的签名 CLI/runtime
+→ MCP stdio
+→ resources/read(ui://...)
+→ AppBridge 渲染
+```
+
+要求：
+
+- 本地 stdio 是桌面/CLI 本地能力型插件的首选；
+- stdout 只输出 MCP JSON-RPC，日志走 stderr；
+- Runtime 从已验证版本目录启动；
+- 子进程环境和权限最小化；
+- 可通过 `mahayana plugin run <id>` 在独立 MCP Apps Shell 中运行；
+- 聊天内嵌和独立窗口使用相同 UI、Tool、权限与审计。
+
+### 移动端内嵌 Runtime
+
+移动插件安装 UI、manifest、Tool schema、工作流和静态资源；系统级能力由随大乘 App 发布的 Rust Mahayana Core/Flutter FFI Provider 提供。移动端不得默认下载执行任意第三方原生二进制。
+
+### Web Local Agent
+
+普通桌面浏览器通过 origin-bound、仅 loopback、短期配对授权的 Mahayana Local Agent 或浏览器 native messaging 调用本机 MCP Runtime。没有 Local Agent 时不得假装本地能力可用。
+
+### 可选远程 Runtime
+
+远程 Profile 如存在必须使用 SDK v2 无状态 HTTP。Cloudflare 推荐：
 
 ```text
 agents/mcp/server createMcpHandler
-@modelcontextprotocol/server 2.x SDK v2 server factory
+@modelcontextprotocol/server 2.x factory
 legacy: "reject"
 ```
 
-实施时按当前 Cloudflare Agents SDK 文档锁定精确兼容版本，不使用浮动 `latest`。
+local-only 插件不得被强制提供远程 endpoint。
 
-必须：
-
-- 每个 HTTP 请求创建独立 SDK v2 server；
-- 任意边缘实例可以处理任意请求；
-- 业务状态通过认证后的显式 ID、resource URI、task handle 或数据库主键表达；
-- 需要强一致业务状态时可使用 D1、KV、Durable Object、Queue 或 Workflow，但不得用于恢复 MCP transport session；
-- 浏览器 Origin、Host、OAuth scope 和插件身份必须校验；
-- 生产入口设置 `legacy: "reject"`。
-
-## 2. 明确禁止的旧实现
+## 3. 明确禁止的旧实现
 
 生产代码、模板、部署、市场准入和验收中禁止：
 
@@ -56,15 +74,15 @@ legacy: "reject"
 - MCP transport session store；
 - `Mcp-Session-Id`；
 - sticky session；
-- 通过 HTTP GET/DELETE 管理 MCP 会话；
-- 为旧协议维持长期 SSE session；
-- legacy route 或 legacy compatibility lane；
-- 旧 `mcp-2025-06-18` 主机版本；
+- HTTP GET/DELETE 管理 MCP 会话；
+- 旧长期 session SSE；
+- legacy production route；
+- 旧 `mcp-2025-06-18` Host fallback；
 - 大乘自定义 iframe ready/tool/result 消息方言；
-- 为旧客户端保留 production fallback；
-- 市场继续接受只含旧 MCP manifest 的新版本。
+- 为旧客户端保留兼容执行；
+- 市场接受只含旧 MCP manifest 的新版本。
 
-旧客户端访问新服务时必须收到稳定、可诊断的升级错误，例如：
+旧客户端收到：
 
 ```json
 {
@@ -74,89 +92,80 @@ legacy: "reject"
 }
 ```
 
-## 3. 新架构边界
+## 4. 统一架构边界
 
 ```text
-大乘 App / Web / Desktop / CLI Host
-        │
-        ├── MCP SDK v2 client
-        ├── MCP Apps AppBridge
-        ├── sandbox + CSP + permission broker
-        └── no legacy session transport
-        │
-        ▼
-每插件独立 Cloudflare Worker
-        │
-        ├── createMcpHandler({ legacy: "reject" })
-        ├── Tools / Resources / Prompts
-        ├── ui:// MCP App resources
-        ├── OAuth/OIDC authorization
-        ├── explicit business-state handles
-        └── immutable release resources
+Cloudflare/Marketplace Control Plane
+  ├── signed immutable package
+  ├── identity/review/provenance/revocation
+  └── optional remote edge profile
+
+Installed Mahayana MCP App
+  ├── ui:// MCP Apps View
+  ├── runtime profiles
+  ├── permissions
+  └── local data/resources
+
+Shared MCP Apps Host Core
+  ├── AppBridge/sandbox/CSP
+  ├── permission broker
+  ├── runtime resolver
+  └── Web/Desktop/Mobile/CLI adapters
+
+Execution
+  ├── desktop/CLI stdio
+  ├── mobile in-process Mahayana Core
+  ├── desktop web Local Agent
+  └── optional remote stateless HTTP
 ```
 
-## 4. Host 全量迁移
+## 5. Host 全量迁移
 
-必须删除现有 Web、Flutter、桌面和 CLI 中的旧 MCP host 路径，并统一为共享 MCP Apps host core。
-
-Host 必须实现：
+Web、桌面、移动和 CLI 必须统一为共享 MCP Apps Host Core，至少实现：
 
 - MCP Apps extension capability；
 - AppBridge；
-- `ui/initialize` 与 `ui/notifications/initialized`；
+- `ui/initialize` 和 initialized 通知；
 - `tools/call`、`resources/read`、`notifications/message`；
-- `ui/open-link`；
-- `ui/resource-teardown`；
-- host context：主题、locale、timezone、平台、尺寸；
-- inline、fullscreen、picture-in-picture 能力；
-- model/app tool visibility；
-- sandbox、CSP、Origin 和导航策略；
-- 安装权限与运行时工具权限的统一确认和审计；
-- UI 资源按插件版本与内容哈希缓存。
+- `ui/open-link`、`ui/resource-teardown`；
+- theme、locale、timezone、platform、viewport；
+- inline、fullscreen、picture-in-picture；
+- model/app visibility；
+- sandbox、CSP、Origin、导航和下载策略；
+- 权限确认和审计；
+- 版本化 UI resource cache；
+- Runtime Resolver 和执行位置提示。
 
-注意：`ui/initialize` 是 MCP Apps View 与 Host 的标准握手，必须保留；它不等同于旧 MCP 服务端 session 初始化。
+`ui/initialize` 是 MCP Apps View 与 Host 的标准握手，不等于旧 MCP transport session 初始化。
 
-必须删除：
+必须删除旧 session client、长期 GET/SSE listener、DELETE session、自定义 iframe schema 和旧 hostApiVersion fallback。
 
-- 保存和发送 `Mcp-Session-Id`；
-- 旧服务端 `initialize`/session 分支；
-- 长期 GET/SSE listener；
-- DELETE session；
-- 自定义 iframe message schema；
-- 旧 hostApiVersion fallback。
+## 6. 插件全量迁移
 
-## 5. 插件全量迁移
+所有官方插件和验收插件必须：
 
-所有官方插件和验收插件必须转换成真正 MCP App：
-
-1. Tool 注册包含 `_meta.ui.resourceUri`；
+1. Tool 注册 `_meta.ui.resourceUri`；
 2. 注册对应 `ui://` resource；
-3. resource MIME 为 `text/html;profile=mcp-app`；
-4. View 使用官方 `@modelcontextprotocol/ext-apps`；
-5. Host 使用 AppBridge；
-6. CSP 和外部域名最小化声明；
-7. app-only tools 不暴露给模型；
-8. model-only tools 不允许 View 调用；
-9. Tool 返回文本、结构化数据和 UI 资源关联；
-10. 不再打包或发布旧 bridge runtime。
+3. 使用 `text/html;profile=mcp-app`；
+4. View 使用官方 MCP Apps SDK；
+5. 通过 Host/AppBridge 调用 Tool；
+6. 最小 CSP；
+7. 正确区分 app-only/model-only Tool；
+8. 返回文本和结构化结果；
+9. 声明 Runtime Profiles、平台、权限和执行位置；
+10. 不发布旧 bridge runtime。
 
-未完成迁移的插件版本：
+未迁移版本标记 `migration_required`，不能进入 `community`、`verified`、`official` 或 production，也不能被新 Host 执行。
 
-- 不得进入 `community`、`verified` 或 `official`；
-- 不得成为 production；
-- 市场详情显示 `migration_required`；
-- 用户只能升级到 MCP Apps 版本或卸载，不能在新 Host 中继续运行旧版本。
+## 7. 市场准入契约
 
-## 6. 市场准入契约
-
-每个正式版本必须声明：
+正式版本必须声明：
 
 ```json
 {
   "runtime": {
-    "kind": "mcp-app",
-    "mcpSdk": "v2",
-    "transport": "stateless-http",
+    "kind": "local-only | local-first | hybrid | remote-only",
+    "profiles": [],
     "legacy": false,
     "extension": "io.modelcontextprotocol/ui"
   },
@@ -168,58 +177,44 @@ Host 必须实现：
 }
 ```
 
-市场发布校验必须拒绝：
+市场按 Profile 验证：
 
-- `legacy: true`；
-- SDK v1 server；
-- 无 `ui://` 资源；
-- 无 MCP Apps extension 声明；
-- 不安全或过宽 CSP；
-- 自定义 iframe bridge；
-- 依赖 MCP session ID；
-- production endpoint 允许 legacy 请求。
+- desktop stdio conformance；
+- mobile embedded capability contract；
+- Web Local Agent loopback security；
+- remote SDK v2/stateless/legacy rejection（仅存在远程 Profile 时）；
+- UI resource、MIME、CSP、visibility、权限、签名和不可变发布物。
 
-## 7. 长任务与用户输入
+拒绝：旧 SDK、无 `ui://`、自定义 bridge、依赖 MCP Session ID、过宽 CSP、未声明本地能力或 production 远程入口允许 legacy。
 
-长时间构建、扫描、部署、审核和插件工具工作必须使用新 SDK v2 支持的显式 task/workflow 状态，不使用旧 transport session 保持请求。
+## 8. 业务状态与长任务
 
-需要用户输入或授权时使用无状态多轮请求：
+业务状态使用显式 `taskId`、`draftId`、`workspaceId`、`deviceId`、resource URI 或本地数据库主键。可以使用本地数据库、D1、KV、Durable Object、Queue 或 Workflow，但不得用于恢复旧 MCP transport session。
 
-- 返回 `input_required`；
-- 携带完整性保护的 `requestState`；
-- Host 收集输入后重新提交；
-- 任意边缘实例可继续；
-- 超时、取消、重复提交和篡改必须可验证处理。
+需要用户输入时使用显式无状态多轮请求和完整性保护的 `requestState`；长任务使用明确 task/workflow 生命周期。
 
-## 8. 硬切换策略
+## 9. 硬切换策略
 
-采用“先全部迁移，后一次切换”，而不是运行期双栈：
+1. 建共享 MCP Apps Host Core 和 Runtime Resolver；
+2. 建本地安装、Supervisor、移动 Capability Provider 和 Web Local Agent；
+3. 迁移全球法布施、ChatGPT 自动确认及全部官方插件；
+4. 新模板和市场只接受 MCP Apps Runtime Profiles；
+5. 完成桌面、移动、Web、CLI 与必要 Cloudflare 验收；
+6. 一次性切换 production；
+7. 删除旧 SDK、旧 session、旧 bridge、旧 route 和旧测试；
+8. 旧客户端只返回升级错误。
 
-1. 在隔离环境完成共享 Host core；
-2. 迁移所有官方插件；
-3. 迁移示例第三方插件；
-4. 市场校验器只接受 MCP Apps；
-5. 全平台测试通过；
-6. Cloudflare preview 验证 `legacy: "reject"`；
-7. 一次性切换 production；
-8. 删除旧路由、旧 SDK、旧 bridge 和旧测试；
-9. 旧客户端只返回升级错误。
+不允许运行旧 MCP 协议的双栈，但允许同一新 MCP App 声明多个新 Runtime Profile。
 
-可保留数据迁移脚本和静态分析器来识别旧插件，但不得保留运行旧插件的代码。
+## 10. 完成定义
 
-## 9. 完成定义
-
-任务只有在以下条件全部满足时才算完成：
-
+- 所有官方小程序均为可安装 MCP Apps；
+- 全球法布施在桌面 stdio、移动嵌入式和 Web Local Agent 场景真实运行；
+- ChatGPT 自动确认在桌面本机运行，移动/Web 仅控制配对桌面；
+- 新插件模板支持 local-only/local-first/hybrid/remote-only；
+- 已安装插件可独立窗口运行；
+- Cloudflare 中断不影响已安装 local-only 插件基础启动；
+- 市场不强制本地插件提供远程 endpoint；
 - 新 Host 不包含旧 session transport；
-- 所有官方小程序均为 MCP Apps；
-- 新插件模板只生成 MCP Apps；
-- 市场拒绝旧 MCP 插件；
-- Cloudflare production 使用 `createMcpHandler` 和 `legacy: "reject"`；
-- 依赖树不再包含生产用途的 SDK v1；
-- 自定义 iframe bridge 已删除；
-- 旧 GET/SSE/DELETE session 路由已删除；
-- 旧客户端得到明确升级错误；
-- Web、桌面、移动和 CLI 均通过真实 MCP Apps E2E；
-- 一个 MCP App 能在大乘 Host 和至少一个其他合规 Host 中运行；
-- GitHub Actions 和真实 Cloudflare 证据完整。
+- 自定义 iframe bridge 和旧运行路由已删除；
+- GitHub Actions、真实安装包和跨平台运行证据完整。
