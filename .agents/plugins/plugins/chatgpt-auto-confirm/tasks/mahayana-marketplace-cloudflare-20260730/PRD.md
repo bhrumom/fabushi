@@ -1,184 +1,211 @@
-# PRD：大乘本地优先 MCP Apps 小程序市场与可信发布
+# PRD：可热安装的本地 Web MCP Apps 小程序市场
 
 ## 1. 产品目标
 
-大乘小程序统一为可安装的官方 MCP Apps：
+大乘小程序统一为可签名下载、安装到本地、独立版本更新和回滚的 MCP Apps。
+
+移动端、桌面 WebView 和普通 Web/PWA 尽可能运行同一套本地网页包：
 
 ```text
-signed installable package
-+ MCP Apps ui:// resources
-+ runtime profiles
-+ shared Mahayana Host Core
-+ local-first execution
-+ optional stateless edge runtime
+MCP Apps View
++ Local Web MCP Runtime
++ signed immutable package
++ local installation
++ hot update
 ```
 
-MCP Apps 统一 UI、Tool、resource 和 Host 通信；它不要求业务逻辑运行在云端。全球法布施、ChatGPT 自动确认等依赖本机数据、桌面应用或系统能力的小程序必须本地执行。
+MCP Apps 负责统一 UI、Tool、Resource 和 Host 通信；小程序业务逻辑可以运行在本地 JavaScript/TypeScript/WASM Runtime 中，不要求所有插件逻辑都预编译进大乘主 App，也不要求部署到 Cloudflare Runtime。
 
-## 2. 核心原则
+## 2. 产品原则
 
-- 小程序可以从市场下载安装到本地；
-- 已安装小程序在桌面端可以独立窗口运行；
-- 桌面/CLI 优先使用本地 stdio MCP Server；
-- 移动端使用 App 内置 Rust Mahayana Core 提供本地能力；
-- 大乘 App 内的 WebView 加载本地 MCP App UI；
-- 普通桌面浏览器通过 Mahayana Local Agent 调用本机 Runtime；
-- local-only 插件不需要远程 MCP endpoint；
-- Cloudflare 负责市场、签名包、下载更新和可选远程 Runtime；
-- 本地 Profile 可用时不得静默转到云端；
-- 用户始终能看到执行位置；
-- 不保留旧 MCP Session 协议和自定义 iframe bridge。
+- 一个小程序一个稳定插件 ID；
+- 一个版本一个签名、不可变的本地安装包；
+- 移动端和 Web 共用同一网页 UI 与 Web Runtime；
+- 页面按钮和聊天输入调用同一组 MCP Tool；
+- 小程序网页包可以独立热更新，不要求每次更新主 App；
+- 主 App 只提供通用 Host、安装器、沙箱、签名校验和政策允许的通用能力；
+- Cloudflare 负责市场、包分发、签名元数据、撤销、更新和可选远程 API；
+- 不用远程网页替代已经安装的本地网页；
+- 不通过模拟网页点击实现聊天调用；
+- 不把热更新做成绕过应用商店审核的任意代码下载器。
 
-## 3. 小程序类型
-
-市场支持：
+## 3. 一个插件包
 
 ```text
-local-only   只在本机/设备执行
-local-first  默认本地，部分能力可远程
-hybrid       本地和远程能力都属于正式产品功能
-remote-only  无本地执行需求
+plugin package
+├── plugin.json
+├── runtime.json
+├── permissions.json
+├── tools.json
+├── ui/
+├── runtime/web/
+├── skills/
+├── provenance.json
+└── signatures/
 ```
 
-不同类型仍使用同一 MCP Apps UI 契约和同一签名发布体系。
+### `ui/`
 
-## 4. Runtime Profiles
-
-每个版本声明平台绑定，例如：
-
-- `desktop-stdio`：macOS/Windows/Linux/CLI；
-- `mobile-embedded`：iOS/Android，调用 Mahayana Core capabilities；
-- `web-local-agent`：桌面浏览器连接本地代理；
-- `remote-edge`：可选 Cloudflare SDK v2 无状态 Runtime。
-
-Host Runtime Resolver 按本地 stdio、移动嵌入式、Local Agent、可选远程的顺序选择。
-
-## 5. 桌面独立运行
-
-安装后用户可以：
-
-```bash
-mahayana plugin run global-dharma
-```
-
-系统启动：
-
-```text
-Local Runtime Supervisor
-→ local MCP stdio server
-→ MCP Apps Host Window
-→ local ui:// View
-```
-
-独立窗口与聊天内嵌模式必须共用同一 UI、Tool、权限、数据目录和审计。
-
-## 6. 移动端产品模型
-
-移动端插件包下载 UI、manifest、Tool schema、工作流、Skills 和静态资源；不下载执行任意第三方原生二进制。
-
-本地系统能力由大乘 App 内置 Core 提供，例如：
-
-- `share.send`；
-- `local.queue`；
-- `local.database`；
-- 通知；
-- 账号和会话；
-- 已批准网络访问；
-- 平台分享入口。
-
-新插件需要新的系统级能力时，先通过大乘 App 更新增加 capability，再由插件声明使用。
-
-## 7. Web 产品模型
-
-### App 内 WebView
-
-`ui://` 资源从本地安装目录加载，Tool 通过 AppBridge 交给本机 Mahayana Core，属于完整本地运行。
-
-### 普通浏览器
-
-桌面 Web 必须安装 Mahayana Local Agent 或浏览器扩展，使用安全 loopback/native messaging 连接本机 Runtime。手机浏览器需要深链打开大乘 App。
-
-没有本地代理时不能假装本地发送、文件或桌面自动化能力可用。
-
-## 8. 全球法布施
-
-- 桌面/CLI：随包 Runtime 在本机处理发送队列、账号状态、日志和数据；
-- 桌面独立窗口：使用本地 MCP Apps Shell；
-- 移动端：本地 WebView UI 调用内置 Rust Core 的发送能力；
-- 桌面 Web：通过 Local Agent；
-- Cloudflare：市场、签名包、更新、可选同步，不承载必须本地执行的数据发送。
-
-## 9. ChatGPT 自动确认
-
-该插件是 `desktop-local-only`：
-
-- 本机 Runtime 操作本机 ChatGPT renderer/辅助功能/后台页面；
-- MCP App UI 管理启动、停止、任务、日志和授权；
-- 移动/Web 只能查看或控制已配对桌面；
-- 执行位置必须明确显示为目标桌面设备；
-- 不允许宣称在手机或云端直接完成桌面自动确认。
-
-## 10. MCP Apps 契约
-
-所有版本必须：
+标准 MCP Apps View：
 
 - `io.modelcontextprotocol/ui`；
-- `ui://` resource；
+- `ui://`；
 - `text/html;profile=mcp-app`；
 - `_meta.ui.resourceUri`；
 - AppBridge；
-- sandbox 和最小 CSP；
-- model/app Tool visibility；
-- 有意义的 `content` 和 `structuredContent`；
-- 声明 Runtime Profiles、权限和平台支持。
+- sandbox；
+- CSP；
+- model/app Tool visibility。
 
-## 11. 市场与发布
+### `runtime/web/`
 
-市场仍必须实现：
+本地 Web MCP Runtime：
 
-- 稳定插件身份和命名空间；
-- 不可变版本+SHA 安装包 URL；
-- GitHub Actions OIDC 短期发布凭证；
-- provenance 和市场签名；
-- 权限、CSP、Runtime Profile、平台支持；
-- 审核、撤销、封禁、升级和回滚；
-- CLI 直连下载、安全解包和原子安装；
-- 禁止 R2；
-- 不永久代理安装包字节。
+- JavaScript/TypeScript/WASM；
+- 运行于 Dedicated Worker、MessagePort 或等价隔离执行环境；
+- 实现 `tools/list`、`tools/call` 和本地 workflow；
+- 只能访问声明并获批的网络和存储；
+- 不直接读取 Host Secret；
+- 不直接操作宿主界面。
 
-对于 local-only/local-first 插件，市场验证本地 stdio、移动 Capability Contract 和 Local Agent 安全；只有存在 remote-edge Profile 时才要求 Cloudflare MCP Runtime conformance。
+## 4. 安装体验
 
-## 12. 权限
+```text
+市场浏览
+→ 用户点击安装
+→ 下载版本+SHA 不可变包
+→ 验证签名、来源、权限、CSP 和哈希
+→ 安装到本地插件目录
+→ 注册 UI、Tool 和 Runtime
+→ 本地打开
+```
 
-至少支持：
+用户应看到：
 
-- 本地文件和数据库；
-- 后台进程；
-- 桌面辅助功能；
-- 浏览器自动化；
-- 发送能力；
+- 插件身份；
+- 版本；
+- 发布者；
+- 执行位置：本地网页；
 - 网络域名；
-- 命名 Secret；
-- 通知；
-- 配对设备控制。
+- 数据与隐私权限；
+- 是否支持离线；
+- 更新和回滚状态。
 
-默认拒绝，安装时展示，高风险能力首次使用再次确认，权限扩大必须重新确认。
+## 5. 移动端
 
-## 13. 硬切换
+移动端从 App 私有目录加载已安装网页包，通过安全本地 Origin 渲染 WebView。
 
-1. 完成共享 MCP Apps Host Core 和 Runtime Resolver；
-2. 完成本地安装/Supervisor、移动 Core Provider 和 Web Local Agent；
-3. 迁移全球法布施、ChatGPT 自动确认及所有官方插件；
-4. 市场和模板只接受新 MCP Apps Runtime Profiles；
-5. 全平台真实验收；
-6. 一次性切换 production；
-7. 删除旧 SDK、旧 session、旧 bridge 和旧测试。
+```text
+本地插件包
+→ 本地 WebView
+→ MCP Apps AppBridge
+→ MCP Host
+→ Local Web MCP Runtime Worker
+```
 
-## 14. 成功标准
+移动端不需要为每个插件预编译专属业务逻辑。只要功能可以通过标准 Web API、JavaScript/WASM 和获准网络请求完成，就可以随插件包更新。
 
-- 全球法布施可本地安装、桌面独立运行、移动本地执行、Web 经 Local Agent 执行；
-- ChatGPT 自动确认在桌面本机真实运行，移动/Web 正确控制配对设备；
-- 第三方 local-first MCP App 发布两个版本并完成安装、升级、回滚和撤销；
-- Cloudflare 中断不影响已安装 local-only 插件打开 UI 和读取本地状态；
-- 所有官方小程序均完成 MCP Apps 迁移；
-- 生产代码不存在旧 MCP Session 和自定义 iframe 运行路径。
+## 6. Web 端
+
+普通 Web/PWA 使用同一网页包与 Runtime：
+
+- Service Worker；
+- Cache Storage；
+- IndexedDB/OPFS；
+- 本地版本清单；
+- 重新下载与恢复策略。
+
+浏览器存储可能被系统清理，因此 Web 端必须支持重新拉取签名版本和恢复插件状态。
+
+## 7. 聊天驱动
+
+用户在聊天框发送指令时：
+
+```text
+Host/Agent 解析意图
+→ 调用插件公开的 MCP Tool
+→ Local Web Runtime 执行
+→ 返回 structuredContent
+→ UI 展示进度和结果
+```
+
+页面按钮也调用相同 Tool。不得为聊天模式维护第二套业务逻辑。
+
+## 8. 全球法布施
+
+如果全球法布施现有网页已经可以完成发送，则它必须作为首个 `local-web` 官方插件迁移：
+
+- iOS、Android、桌面和 Web 共用同一个包；
+- `send/status/cancel/logs` 由本地 Web Runtime 实现；
+- 发送队列和状态保存在插件本地存储；
+- 页面点击与聊天指令调用同一 Tool；
+- 无网络时能打开 UI、查看队列和编辑任务；
+- 网络恢复后继续执行；
+- 更新网页功能不发布新主 App。
+
+## 9. 主 App 需要更新的情况
+
+以下通常可以独立更新：
+
+- UI；
+- Web Tool 逻辑；
+- 表单和规则；
+- Skills；
+- 普通 HTTPS 请求；
+- JavaScript/WASM；
+- 插件私有数据迁移。
+
+以下可能要求更新主 App 或获得平台许可：
+
+- 新原生平台 API；
+- 相机、蓝牙、通讯录、短信等受限能力；
+- 辅助功能或进程控制；
+- 长期后台执行；
+- 越过 Web 沙箱的文件和系统访问。
+
+## 10. 桌面特殊插件
+
+ChatGPT 自动确认无法仅靠普通网页 Runtime 操作本机 ChatGPT renderer，因此继续采用 `desktop-stdio`。
+
+同一市场允许：
+
+- `local-web`；
+- `desktop-stdio`；
+- `hybrid`；
+- `remote-edge`。
+
+但移动/Web 默认优先 `local-web`。
+
+## 11. 商店合规
+
+大乘必须把该能力公开描述为 HTML5/JavaScript 小程序市场，并提供：
+
+- 完整软件索引；
+- 插件元数据与深链；
+- 发布审核；
+- 隐私和权限逐插件同意；
+- 内容分级；
+- 举报和封禁；
+- 审核账号；
+- 签名、撤销和恶意代码处置。
+
+不得允许插件下载后获得未经批准的任意原生平台 API，也不得通过远程更新隐藏商店审核时未披露的功能。
+
+## 12. 成功标准
+
+全球法布施必须证明：
+
+```text
+同一网页包
+→ iOS 本地安装运行
+→ Android 本地安装运行
+→ 桌面 WebView 本地运行
+→ 普通 Web/PWA 本地运行
+→ 聊天 Tool 调用
+→ 页面 Tool 调用
+→ 热更新
+→ 回滚
+→ 撤销
+```
+
+并且更新小程序网页功能时不需要发布新的大乘主 App。
