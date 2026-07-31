@@ -103,6 +103,9 @@ const syncControl = () => {
   const existing = Array.isArray(queue.tasks) ? queue.tasks : [];
   const desiredTasks = Array.isArray(control.tasks) ? control.tasks : [];
   const desiredIds = new Set(desiredTasks.map(runtimeId));
+  const runtimeIdsByLogicalId = new Map(
+    desiredTasks.filter(task => task?.id).map(task => [task.id, runtimeId(task)]),
+  );
   const cancelled = [];
   const enqueued = [];
 
@@ -135,6 +138,8 @@ const syncControl = () => {
       tasks: [{
         ...task,
         id: desiredId,
+        dependsOn: (Array.isArray(task.dependsOn) ? task.dependsOn : [])
+          .map(dependency => runtimeIdsByLogicalId.get(dependency) || dependency),
         prompt,
       }],
       start: true,
