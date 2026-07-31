@@ -36,9 +36,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Validate official marketplace contract
         run: python3 scripts/check-official-plugin-marketplace.py
 
+  untrusted-fork-pr-security:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout untrusted pull request without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prove secretless read-only pull request boundaries
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [ "$EVENT_NAME" = "pull_request" ]
+          [ -n "$HEAD_REPOSITORY" ]
+          [ -n "$BASE_REPOSITORY" ]
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]
+          [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]
+          ! grep -R --line-number --fixed-strings 'pull_request_target:' \
+            .github/workflows/plugin-marketplace-contract.yml \
+            .github/workflows/mahayana-cloud-marketplace-e2e.yml
+          python3 scripts/check-official-plugin-marketplace.py
+
   cloud-marketplace-e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/mahayana-cloud-marketplace-e2e.yml
     secrets: inherit
