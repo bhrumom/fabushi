@@ -25,7 +25,7 @@ const expectedTools = {
     'home', 'start', 'stop', 'status', 'scan_once', 'relaunch_and_confirm',
     'audit_log', 'diagnose', 'send_and_watch', 'add_connector', 'get_reply',
     'chat_status', 'prompt_templates', 'enqueue_tasks', 'start_queue',
-    'queue_status', 'wait_for_review', 'review_task', 'pause_queue',
+    'queue_status', 'update_task', 'wait_for_review', 'review_task', 'pause_queue',
     'resume_queue', 'retry_task', 'cancel_task',
   ],
 };
