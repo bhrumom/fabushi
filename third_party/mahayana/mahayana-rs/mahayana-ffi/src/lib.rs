@@ -200,9 +200,9 @@ fn build_runtime(create: RuntimeCreateConfig) -> Result<MahayanaRuntime, String>
             codex_home,
             bundled_plugin_marketplace: create.bundled_plugin_marketplace,
             bundled_plugin_ids: bundled_marketplace_plugin_ids(
-        create.bundled_plugin_marketplace.as_deref(),
-        &mini_apps,
-    )?,
+                create.bundled_plugin_marketplace.as_deref(),
+                &mini_apps,
+            )?,
             inherit_installed_plugins: create.inherit_installed_plugins.unwrap_or(
                 matches!(runtime_config.build_profile, BuildProfile::DesktopFull) && !cfg!(test),
             ),
@@ -624,8 +624,8 @@ mod tests {
                 pinned: false,
             },
         ];
-        let plugin_ids = bundled_marketplace_plugin_ids(Some(&root), &mini_apps)
-            .expect("bundled plugin ids");
+        let plugin_ids =
+            bundled_marketplace_plugin_ids(Some(&root), &mini_apps).expect("bundled plugin ids");
         assert_eq!(plugin_ids, vec!["cloud-market-hello"]);
         std::fs::remove_dir_all(root).expect("remove plugin tree");
     }
