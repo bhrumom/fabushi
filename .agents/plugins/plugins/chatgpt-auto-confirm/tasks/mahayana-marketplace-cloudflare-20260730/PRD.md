@@ -1,139 +1,39 @@
-# PRD：大乘小程序混合市场与可信发布
+# PRD：大乘 MCP Apps 小程序市场与可信发布
 
-## 1. 背景
+## 1. 产品目标
 
-大乘小程序既可能是本地安装的插件包，也可能包含网页、远程 MCP 服务、静态资源和持续在线的云端能力。单纯复制 npm 的中心包仓库会让平台承担全部存储和带宽；单纯采用开发者自托管又会把 Cloudflare、凭证和部署复杂度暴露给普通用户。
-
-当前实现已经支持发布者提交独立部署地址、校验固定路径安装包、登记 SHA-256 和大小、审核后通过市场发现与直连下载。它证明了“中央目录 + 插件独立部署”的基本方向，但还缺少不可变版本、稳定插件身份、托管发布、签名、来源证明、权限、撤销、回滚和完整生命周期。
-
-## 2. 产品原则
-
-最终产品采用混合架构：
+大乘小程序统一升级为官方 MCP Apps。小程序不再分为“大乘自定义 iframe 小程序”和“标准 MCP 插件”，而是统一为：
 
 ```text
-大乘市场控制平面
-  ├── 发布者账号与命名空间
-  ├── 插件身份、审核、搜索和分类
-  ├── 版本索引、权限、签名和 provenance
-  ├── 下架、撤销、封禁、回滚和审计
-  └── 评分、统计和安全公告
-
-插件独立数据/运行平面
-  ├── 稳定主页
-  ├── 远程 MCP Runtime（可选）
-  ├── 不可变版本安装包
-  ├── 静态资源
-  └── 独立日志、配额、Secret 和数据绑定
+MCP SDK v2 Server
++ MCP Apps ui:// resources
++ AppBridge Host
++ Cloudflare stateless edge runtime
++ signed immutable marketplace release
 ```
 
-核心标准：
+生产系统不运行旧 MCP 插件，不保留旧协议回退。
 
-> 一个插件一个稳定身份和逻辑隔离服务；一个版本一个不可变发布物；中央市场负责身份、发现、审核和信任；CLI 直连插件 Cloudflare 服务下载并验证可信元数据。
+## 2. 核心产品原则
+
+- 一个发布者可以拥有多个插件；
+- 一个插件拥有稳定、不可抢占的完整 ID；
+- 一个插件对应独立 Cloudflare 逻辑服务边界；
+- 一个版本对应不可变部署与不可变安装包；
+- 所有小程序 UI 使用 MCP Apps；
+- 所有远程服务使用无状态 MCP SDK v2；
+- 市场负责身份、审核、签名、权限、撤销和审计；
+- CLI 直接从插件 Cloudflare 不可变 URL 下载；
+- 普通发布者默认不接触 Cloudflare Token；
+- 发布使用 GitHub Actions OIDC 短期凭证与 provenance；
+- 生产设置 `legacy: "reject"`；
+- 旧客户端只能升级，不能继续运行旧插件。
 
 ## 3. 用户角色
 
-### 3.1 普通发布者
+### 普通发布者
 
-- 只拥有大乘账号和源码仓库；
-- 希望通过 CLI 初始化、测试和发布；
-- 不需要理解 Cloudflare Worker、Pages、Wrangler、D1、域名和 Token；
-- 默认使用平台托管模式。
-
-### 3.2 高级或企业发布者
-
-- 希望使用自己的 Cloudflare 账户、域名和数据边界；
-- 可以选择自托管模式；
-- 必须验证域名或部署所有权，并满足相同发布、安全和审核契约。
-
-### 3.3 安装用户
-
-- 在 CLI 或图形市场浏览插件；
-- 能看到发布者、审核等级、版本、权限、来源和安全状态；
-- 安装时获得明确权限提示；
-- 能安全升级、回滚、卸载和查看审计记录。
-
-### 3.4 市场审核与安全运营人员
-
-- 审核新插件和权限变化；
-- 查看构建来源、扫描结果和运行证据；
-- 下架、撤销、封禁或恢复插件；
-- 发布安全公告并追踪受影响版本。
-
-## 4. 插件身份模型
-
-一个发布者账号可以拥有多个插件。每个插件必须拥有一个发布后不可被其他账号占用的完整 ID，例如：
-
-```text
-publisher namespace: io.mahayana.bhrum
-plugin slug: hello
-plugin ID: io.mahayana.bhrum.hello
-```
-
-要求：
-
-- 命名空间绑定大乘账号及已验证 GitHub 账号或域名；
-- 插件 ID 发布后不可转移，除非经过显式管理员迁移流程；
-- 同一 `pluginId + version` 永远不可覆盖复用；
-- 标题和描述可以更新，但不能改变插件身份；
-- 市场、CLI、UI、部署、日志和审计统一使用完整插件 ID。
-
-## 5. 部署模型
-
-### 5.1 一个插件一个逻辑服务边界
-
-每个插件拥有一个稳定 Cloudflare Worker/Pages 项目或等价服务，例如：
-
-```text
-io.mahayana.bhrum.hello
-  → mahayana-bhrum-hello.workers.dev
-```
-
-插件之间默认不得共享：
-
-- 写权限；
-- Secret；
-- KV、D1、Durable Object 等数据绑定；
-- 部署凭证；
-- 日志写入范围；
-- 运行配额。
-
-### 5.2 一个版本一个不可变发布物
-
-版本产物必须使用不可变 URL：
-
-```text
-/mahayana/releases/1.0.0/<sha256>/plugin.tar.gz
-/mahayana/releases/1.0.0/<sha256>/plugin.json
-/mahayana/releases/1.0.0/<sha256>/provenance.json
-```
-
-允许存在：
-
-```text
-/mahayana/latest/plugin.json
-```
-
-但它只能是指向当前版本的元数据指针，不能作为安装包的唯一正式地址。
-
-### 5.3 稳定服务，不永久膨胀
-
-一个插件项目可以包含多个 Cloudflare Worker 版本或 Pages 部署：
-
-```text
-插件项目
-├── version 1.0.0
-├── version 1.1.0
-├── version 1.2.0
-└── production deployment → 1.2.0
-```
-
-不允许每个版本永久创建一个新的 Worker 项目名称。旧版本按保留策略保存，用于回滚、审计和已安装客户端重新获取。
-
-## 6. 发布模式
-
-### 6.1 托管模式（默认）
-
-用户体验：
+使用：
 
 ```bash
 mahayana login
@@ -143,165 +43,173 @@ mahayana plugin publish --stage
 mahayana plugin release
 ```
 
-平台自动完成：
+平台自动生成 MCP Apps 项目、构建 UI resource、部署无状态 Worker、生成不可变发布物、签名并提交审核。
 
-1. 创建或确认插件身份；
-2. 创建或绑定独立 Cloudflare 项目；
-3. 触发受信任 GitHub Actions；
-4. 构建、扫描和测试；
-5. 生成不可变安装包；
-6. 部署网页、MCP Runtime 和静态资源；
-7. 生成 SHA-256、签名和来源证明；
-8. 提交审核；
-9. 审核通过后公开并更新生产别名。
+### 高级发布者
 
-普通发布者不得被要求提交 Cloudflare API Token。
+可以自托管自己的 Cloudflare Worker，但必须：
 
-### 6.2 自托管模式（高级）
+- 使用 SDK v2；
+- 使用 `createMcpHandler`；
+- 设置 `legacy: "reject"`；
+- 提供 MCP Apps manifest 和 `ui://` resources；
+- 通过所有权、CSP、权限、签名、来源和审核检查。
 
-发布者自行部署 Cloudflare 服务，然后向市场登记：
+### 安装用户
 
-- 部署根 URL；
-- 所有权证明；
-- 不可变版本元数据 URL；
-- 包哈希、大小、权限和 provenance；
-- 可选发布者签名。
+能够查看：
 
-市场必须验证 HTTPS、批准域名、所有权、不可变路径、包内容、哈希、权限和来源后才能进入审核。
+- 发布者与插件身份；
+- MCP Apps 合规状态；
+- 版本、权限、CSP、来源和审核等级；
+- 安装、升级、撤销、回滚和安全状态。
 
-## 7. 市场控制平面需求
+### 审核人员
 
-市场必须管理：
+能够检查：
 
-- 发布者账号和命名空间；
-- 插件 ID 和展示资料；
-- 托管/自托管模式；
-- 版本与不可变发布元数据；
-- Cloudflare 项目和部署映射；
-- 权限清单与权限差异；
-- SHA-256、大小和内容类型；
-- 市场签名、发布者证明和 provenance；
-- 审核等级和生命周期状态；
-- 撤销、下架、封禁和安全公告；
-- 生产别名和回滚目标；
-- 下载、安装和失败统计；
-- 完整审计日志。
+- MCP Apps 规范合规；
+- SDK v2 和 stateless runtime；
+- production 是否拒绝 legacy；
+- UI resource、CSP 和 tool visibility；
+- OIDC provenance、扫描、权限和不可变发布物。
 
-## 8. 审核和可见性等级
+## 4. 插件身份与部署
 
-必须支持：
+完整 ID 示例：
 
 ```text
-private    仅发布者可见
-unlisted   持链接或 ID 可访问，不参与公开搜索
-community  自动扫描通过的社区插件
-verified   经过身份和人工审核的发布者/插件
-official   大乘官方维护
-blocked    已封禁，不允许新安装和更新
+io.mahayana.bhrum.hello
 ```
 
-普通用户首次发布后默认进入：
+要求：
 
-```text
-unlisted + pending review
-```
+- 发布后不可被其他账号占用；
+- 同一 `pluginId + version` 永远不可覆盖；
+- 一个插件绑定一个稳定 Cloudflare Worker/Pages 服务；
+- 版本通过 Worker version/deployment 或 Pages deployment 表达；
+- 不为每个版本创建永久新项目；
+- 插件之间不共享写 Secret、数据库、部署凭证或写权限。
 
-权限扩大、所有权变化、来源变化或重大安全风险必须重新审核。
+## 5. MCP Apps 产品契约
 
-## 9. CLI 发现、下载和安装需求
+每个正式插件必须：
 
-### 9.1 浏览
+- 声明扩展 `io.modelcontextprotocol/ui`；
+- 注册至少一个 `ui://` resource；
+- 使用 `text/html;profile=mcp-app`；
+- Tool 使用 `_meta.ui.resourceUri` 关联 UI；
+- View 使用官方 MCP Apps SDK；
+- Host 使用 AppBridge 或规范一致实现；
+- iframe sandbox；
+- CSP 最小权限；
+- Tool visibility 区分 `model` 与 `app`；
+- 提供有意义的 `content` 和 `structuredContent`；
+- 支持新标准的 `ui/initialize`、host context、display mode 和 teardown。
 
-CLI 从市场读取签名元数据，展示：
+不得发布：
 
-- 插件 ID、名称、发布者；
-- 当前版本、兼容平台；
-- 审核等级和安全状态；
+- 自定义 iframe message bridge；
+- 依赖 `Mcp-Session-Id` 的插件；
+- SDK v1 server；
+- legacy handler；
+- 只返回旧 HTML 入口而无 MCP Apps resource 的小程序。
+
+## 6. 市场准入
+
+正式 release 元数据必须包含：
+
+- `runtime.kind = mcp-app`；
+- `runtime.mcpSdk = v2`；
+- `runtime.transport = stateless-http`；
+- `runtime.legacy = false`；
+- MCP Apps extension；
+- `ui://` resource 清单；
+- CSP 与外部域名；
+- tool visibility；
 - 权限；
-- 源码、构建和部署来源；
-- 安装、升级或撤销状态。
+- immutable package URL、SHA-256 和大小；
+- OIDC provenance；
+- 市场签名；
+- 审核、撤销和过期状态。
 
-### 9.2 下载
+未通过 MCP Apps 校验的版本只能显示 `migration_required`，不能进入公开等级或 production。
 
-推荐链路：
+## 7. 发布与安装
+
+发布链路：
 
 ```text
-CLI → 大乘市场：获取可信版本元数据
-CLI → 插件 Cloudflare URL：直接下载安装包
-CLI → 本地：验证并安装
+源码
+→ GitHub Actions OIDC
+→ MCP Apps build/test
+→ SDK v2 stateless Worker deploy
+→ legacy rejection test
+→ immutable package
+→ provenance + signature
+→ review
+→ production
 ```
 
-市场不得作为所有安装包字节的长期反向代理。兼容下载端点可以返回 307 或元数据，但最终下载地址必须是插件获批的 Cloudflare 不可变 URL。
+安装链路：
 
-### 9.3 安装验证
+```text
+CLI → 市场签名元数据
+CLI → 插件 Cloudflare URL 直连下载
+CLI → 校验签名、哈希、来源、权限、撤销和 anti-rollback
+CLI → 原子安装
+Host → 仅以 MCP Apps 运行
+```
 
-CLI 必须验证：
+## 8. 硬切换
 
-1. 市场元数据签名；
-2. 元数据版本和过期时间；
-3. 插件与版本是否被撤销；
-4. 下载域名是否获批；
-5. URL 是否为不可变版本路径；
-6. 包大小和内容类型；
-7. SHA-256；
-8. 来源证明和发布者身份绑定；
-9. 权限清单；
-10. 是否发生版本回退；
-11. 插件包内部 manifest 与市场元数据是否一致；
-12. 安全解包、目录边界和原子安装。
+采用单次 production cutover：
 
-权限扩大时必须要求用户重新确认；静默升级只能用于权限不变且信任状态未降低的版本。
+1. 先完成所有 Host；
+2. 迁移所有官方插件；
+3. 新模板和市场准入只接受 MCP Apps；
+4. 全平台和真实 Cloudflare 验收；
+5. 切换 production；
+6. 删除旧 SDK、旧路由、旧 bridge 和旧测试；
+7. 旧客户端显示强制升级。
 
-## 10. 安全发布需求
+不允许运行期双栈。
 
-- 使用 GitHub Actions OIDC 交换短期、工作流限定的发布凭证；
-- 生产发布不得依赖长期市场写 Token 或测试账号；
-- provenance 至少记录源码仓库、commit SHA、workflow、Actions run、构建者、构件 SHA 和部署地址；
-- 市场签署规范化版本元数据；
-- 支持密钥轮换、撤销列表、元数据版本、过期时间和防回退；
-- SHA-256 只是完整性基础，不能代替身份签名和来源证明；
-- 发布失败不能留下半公开版本或可被覆盖的正式 URL。
+## 9. 审核等级
 
-## 11. UI/UX 需求
+支持：
 
-- 普通发布者默认只看到“托管发布”；自托管放在高级选项；
-- 发布过程显示构建、扫描、部署、签名、审核等阶段；
-- 市场卡片展示 `community / verified / official / blocked` 等信任标识；
-- 安装前展示权限和来源；
-- 升级时突出新增权限；
-- 撤销或封禁必须在已安装插件页面显示风险和处置建议；
-- 回滚必须明确目标版本、原因和影响。
+```text
+private
+unlisted
+community
+verified
+official
+blocked
+migration_required
+```
 
-## 12. 兼容要求
+`community`、`verified`、`official` 必须满足 MCP Apps-only 准入。
 
-- 保留现有官方内置清单和公共 `.well-known` 清单；
-- 动态市场 v1 客户端在迁移期继续可用；
-- 现有固定 `/mahayana/plugin.tar.gz` 发布只作为受限兼容输入，不能用于新架构正式版本；
-- 新客户端优先使用 v2 签名版本元数据；
-- 旧客户端不得因为新字段而崩溃；
-- 迁移不得破坏已安装官方插件。
+## 10. 非目标
 
-## 13. 非目标
+- 不保留旧 MCP 客户端兼容执行；
+- 不保留旧插件 runtime；
+- 不使用 R2 分发安装包或静态资源；
+- 不让市场 Worker 永久代理全部下载字节；
+- 不为每个版本创建独立虚拟机或永久 Worker 项目；
+- 不以自定义 UI bridge 替代 MCP Apps。
 
-本轮不要求：
+## 11. 成功标准
 
-- 为每个插件或版本创建虚拟机；
-- 建立通用云厂商市场；
-- 使用 R2 分发插件；
-- 让市场 Worker 代理所有下载流量；
-- 一次实现完整商业结算、广告或复杂推荐算法；
-- 复制完整 TUF 实现库的所有角色和委托层级；但必须实现其关键安全原则和可升级元数据结构；
-- 允许任意非 Cloudflare 下载源进入托管模式。
-
-## 14. 成功标准
-
-至少有一个真实第三方示例插件完成：
+至少一个真实第三方 MCP App 发布两个版本，并完成：
 
 ```text
 init → test → stage → release → review → discover
+→ render in Mahayana Host → render in another compliant Host
 → direct download → verify → install → run
-→ publish next version → permission diff → upgrade
-→ rollback → revoke → reject tampered package
+→ permission diff → upgrade → rollback → revoke
+→ reject legacy client → reject tampered package
 ```
 
-并且全部过程有 GitHub Actions、Cloudflare 部署、市场 API、CLI 输出和审计数据可复核。
+同时所有官方小程序均完成 MCP Apps 迁移，生产依赖树和路由中不存在旧 MCP 运行代码。
