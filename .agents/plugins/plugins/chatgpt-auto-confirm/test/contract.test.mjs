@@ -33,6 +33,10 @@ const nativeServer = readFileSync(
   new URL('../server/index.mjs', import.meta.url),
   'utf8',
 );
+const nativeSource = readFileSync(
+  new URL('../native/main.swift', import.meta.url),
+  'utf8',
+);
 const workerSource = readFileSync(
   new URL('../worker/src/index.ts', import.meta.url),
   'utf8',
@@ -146,11 +150,17 @@ test('worker exposes the interactive login sync command', async () => {
   assert.equal(tool.inputSchema.properties.start.default, true);
   assert.equal(tool.inputSchema.properties.waitSeconds.default, 600);
   assert.match(nativeServer, /\['login_and_sync_actions', 'login_and_sync_actions'\]/);
-  assert.match(nativeServer, /'cancel_task', 'login_and_sync_actions'/);
+  assert.match(nativeServer, /'cancel_task', 'sync_actions_credentials', 'login_and_sync_actions'/);
   const credentialTool = tools.find(item => item.name === 'sync_actions_credentials');
   assert.ok(credentialTool);
   assert.equal(credentialTool.inputSchema.properties.start.default, false);
   assert.match(workerSource, /actions-runner-credential-sync/);
+  assert.match(nativeServer, /\['sync_actions_credentials', 'sync_actions_credentials'\]/);
+  assert.match(nativeSource, /case "sync_actions_credentials"/);
+  assert.match(nativeSource, /CDPClient\.allCookies/);
+  assert.match(nativeSource, /authenticationDeadline/);
+  assert.match(nativeSource, /loginLabels\.has\(label\)/);
+  assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
   assert.match(nativeServer, /-OpenLogin/);
   assert.match(nativeServer, /-WaitSeconds/);
   const webTool = tools.find(item => item.name === 'web_login_and_sync_actions');
