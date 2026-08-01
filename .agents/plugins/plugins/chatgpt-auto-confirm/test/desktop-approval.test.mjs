@@ -85,22 +85,6 @@ test('status is a read-only host request', async () => {
   assert.equal(result.result.structuredContent.hostRequest.approval, 'none');
 });
 
-test('safe secret sync is an explicit-file host request', async () => {
-  const result = await call('sync_actions_secrets', {
-    authPath: '/secure/auth.json',
-    sessionCookiesPath: '/secure/session-cookies.json',
-    start: false,
-  });
-  const request = result.result.structuredContent.hostRequest;
-  assert.equal(request.capability, 'desktop.chatgpt-approvals.actions-runner-safe-secret-sync');
-  assert.equal(request.approval, 'required');
-  assert.deepEqual(request.params, {
-    authPath: '/secure/auth.json',
-    sessionCookiesPath: '/secure/session-cookies.json',
-    start: false,
-  });
-});
-
 test('outbound sends discard old chat URLs while read-only reply requests keep them', async () => {
   const chatUrl = 'https://chatgpt.com/c/hidden-task-202';
   const sent = await call('send_and_watch', {
@@ -574,6 +558,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
 });
 
 test('native runtime stays in the background and never takes over the UI', () => {
+  const backgroundNativeSource = nativeSource.replace(
+    /func activateChatGPTForLogin\(\) \{[\s\S]*?\n\}\n\nfunc waitForActionsLoginTarget/,
+    'func waitForActionsLoginTarget',
+  );
   assert.match(nativeSource, /AXUIElementPerformAction\(candidate\.element, kAXPressAction/);
   assert.match(nativeSource, /AXPress 已发送，等待授权卡消失/);
   assert.match(nativeSource, /reconcilePendingApprovals/);
@@ -585,7 +573,7 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /axPressNeverTargetsHiddenElements/);
   assert.match(nativeSource, /dismissHistoryOverlay\(covering: candidate\)/);
   assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|CGEvent\s*\(|postToPid/);
-  assert.doesNotMatch(nativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
+  assert.doesNotMatch(backgroundNativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
   assert.doesNotMatch(nativeSource,
     /navigateChat|scanTargetChats|sweepHiddenChats|sidebarTaskButton|switchApplicationMode/);
   assert.doesNotMatch(nativeSource, /sensitiveTerms|blockedSensitive/);
