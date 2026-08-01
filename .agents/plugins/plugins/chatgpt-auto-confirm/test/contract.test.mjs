@@ -160,7 +160,7 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /CDPClient\.allCookies/);
   assert.match(nativeSource, /authenticationDeadline/);
   assert.match(nativeSource, /loginLabels\.has\(label\)/);
-  assert.match(nativeSource, /!url\.contains\("\/avatar-overlay"\)/);
+  assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
   assert.match(nativeServer, /-OpenLogin/);
   assert.match(nativeServer, /-WaitSeconds/);
   const webTool = tools.find(item => item.name === 'web_login_and_sync_actions');
