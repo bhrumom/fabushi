@@ -91,7 +91,7 @@ def verify_web_account(cookies, identity):
                 raise ExtractionError("ChatGPT web session verification returned a non-success status")
             session = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as error:
-        raise ExtractionError("ChatGPT web session could not be verified for the same account") from error
+        raise ExtractionError("ChatGPT desktop session could not be reached or parsed") from error
 
     observed_ids = set()
     user = session.get("user") if isinstance(session, dict) else None
@@ -104,9 +104,11 @@ def verify_web_account(cookies, identity):
         value = session.get(key) if isinstance(session, dict) else None
         if value:
             observed_ids.add(str(value))
+    if not observed_ids:
+        raise ExtractionError("ChatGPT desktop session did not return an account identity")
     expected_ids = {str(identity["userId"]), str(identity["accountId"])}
     if not observed_ids.intersection(expected_ids):
-        raise ExtractionError("ChatGPT web session belongs to a different account or is not signed in")
+        raise ExtractionError("ChatGPT desktop session belongs to a different account")
 
 
 def browser_profiles(browser_name):
@@ -114,18 +116,15 @@ def browser_profiles(browser_name):
     if not local_app_data:
         local_app_data = ""
     if browser_name == "codex":
-        installed = []
+        installed = set()
         if local_app_data:
             packages = Path(local_app_data) / "Packages"
-            installed = sorted(
-                cookie_db for package in packages.glob("OpenAI.Codex_*")
-                for cookie_db in (
-                    package / "LocalCache/Roaming/Codex/Network/Cookies",
-                    *package.glob("LocalCache/Roaming/Codex/web/*/Default/Network/Cookies"),
-                )
-                if cookie_db.is_file()
-            )
-        return installed
+            for package in packages.glob("OpenAI.Codex_*"):
+                root = package / "LocalCache/Roaming/Codex"
+                if not root.is_dir():
+                    continue
+                installed.update(root.glob("**/Cookies"))
+        return sorted(cookie_db for cookie_db in installed if cookie_db.is_file())
     if not local_app_data:
         return []
     vendor = "Google\\Chrome" if browser_name == "chrome" else "Microsoft\\Edge"
@@ -264,7 +263,7 @@ def extract(
                     # not stop extraction from the other profile or browser.
                     continue
         if source_count:
-            browser_sources.append(browser_name)
+            browser_sources.append("desktop-app" if browser_name == "codex" else browser_name)
 
     if not cookies:
         formats = ",".join(sorted(item for item in encrypted_prefixes if item)) or "none"

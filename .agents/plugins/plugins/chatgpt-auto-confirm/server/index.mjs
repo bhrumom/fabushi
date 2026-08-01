@@ -57,7 +57,7 @@ function runWindowsCredentialTool(rpc) {
     ));
   }
   if (tool === 'web_login_and_sync_actions') {
-    args.push('-WebLogin', '-WaitSeconds', String(
+    args.push('-OpenLogin', '-WaitSeconds', String(
       Math.min(1800, Math.max(30, Number(rpc.params?.arguments?.waitSeconds ?? 600))),
     ));
   }
