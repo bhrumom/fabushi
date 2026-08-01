@@ -160,6 +160,25 @@ async function collectCookies(targets) {
   return [...cookies.values()];
 }
 
+async function refreshChatGptSessionPage(targets) {
+  const target = targets.find(item =>
+    /(?:chatgpt\.com|auth\.openai\.com|localhost)/i.test(String(item.url || ''))
+  ) || targets[0];
+  if (!target) return;
+  let connection;
+  try {
+    connection = await connect(target);
+    await connection.call('Page.navigate', { url: 'https://chatgpt.com/' });
+    // The OAuth callback can finish before the ChatGPT session cookie is
+    // materialized. Give the authenticated web shell a bounded refresh window.
+    await sleep(8_000);
+  } catch {
+    // Cookie collection below still provides a useful, bounded failure reason.
+  } finally {
+    try { connection?.socket.close(); } catch {}
+  }
+}
+
 function observedIdentity(session) {
   const ids = new Set();
   const emails = new Set();
@@ -209,6 +228,8 @@ async function main() {
   }
   const auth = JSON.parse(await readFile(authPath, 'utf8'));
   const identity = identityFromAuth(auth);
+  const initialTargets = await waitForTargets();
+  await refreshChatGptSessionPage(initialTargets);
   const targets = await waitForTargets();
   const cookies = await collectCookies(targets);
   await verifyAccount(cookies, identity);

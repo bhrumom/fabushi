@@ -80,9 +80,10 @@ function Get-FreeTcpPort {
 
 function New-LoopbackCallbackListener {
   foreach ($port in @(1455, 1457)) {
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback, $port)
+    # Chrome on Windows resolves localhost to IPv4 for this callback. Keep the
+    # listener loopback-only while matching the OAuth redirect URI allow-list.
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
     try {
-      $listener.Server.DualMode = $true
       $listener.Start()
       return [pscustomobject]@{ Listener = $listener; Port = $port }
     } catch {
