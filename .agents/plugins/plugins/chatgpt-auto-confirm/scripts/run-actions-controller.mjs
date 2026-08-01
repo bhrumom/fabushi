@@ -262,7 +262,7 @@ const failureDetail = task => [task.lastError, task.hiddenWorkerLastError]
   .join(' ')
   .replace(/\s+/g, ' ');
 const isNonRecoverableFailure = task =>
-  /model_selection\s*:|model_picker_not_found|quick_chat_thinking_not_selected|reasoning_high_not_selected|target_model_not_selected|task_continuation_limit_reached|dependency_not_completed/.test(
+  /model_selection\s*:|model_picker_not_found|quick_chat_thinking_not_selected|reasoning_high_not_selected|target_model_not_selected|hosted_chat_login_required|chatgpt_web_login_required|task_continuation_limit_reached|dependency_not_completed/.test(
     failureDetail(task),
   );
 const watchdogDiagnostics = result => ({

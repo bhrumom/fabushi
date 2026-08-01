@@ -25,6 +25,10 @@ const windowsCookieExtractor = readFileSync(
   new URL('../scripts/extract-windows-chatgpt-cookies.py', import.meta.url),
   'utf8',
 );
+const macOSCookieExtractor = readFileSync(
+  new URL('../scripts/extract-macos-chatgpt-cookies.py', import.meta.url),
+  'utf8',
+);
 const dynamicController = readFileSync(
   new URL('../scripts/run-dynamic-actions-controller.mjs', import.meta.url),
   'utf8',
@@ -113,6 +117,7 @@ test('login sync uploads both credential forms without printing values', () => {
   assert.match(dispatchActionsScript, /CHATGPT_AUTO_CONFIRM_DISPATCH/);
   assert.doesNotMatch(dispatchActionsScript, /echo .*CHATGPT_(CODEX_AUTH|SESSION_COOKIES)_B64/);
   assert.match(dynamicController, /status === 'failed'/);
+  assert.match(dynamicController, /await handleFinishedChild\(\)[\s\S]*if \(!child\)/);
 });
 test('Windows credential sync keeps secrets out of logs and supports optional dispatch', () => {
   assert.match(nativeServer, /sync-actions-credentials\.ps1/);
@@ -139,6 +144,10 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.match(windowsCookieExtractor, /OpenAI\.Codex_/);
   assert.match(windowsCookieExtractor, /desktop-app/);
   assert.doesNotMatch(windowsCookieExtractor, /B64_START/);
+  assert.match(macOSCookieExtractor, /Chrome Safe Storage/);
+  assert.match(macOSCookieExtractor, /__Secure-next-auth\.session-token/);
+  assert.match(macOSCookieExtractor, /https:\/\/chatgpt\.com\/api\/auth\/session/);
+  assert.match(macOSCookieExtractor, /ChatGPT web session belongs to a different account/);
 });
 test('worker exposes the interactive login sync command', async () => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -159,6 +168,10 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /case "sync_actions_credentials"/);
   assert.match(nativeSource, /CDPClient\.allCookies/);
   assert.match(nativeSource, /authenticationDeadline/);
+  assert.match(nativeSource, /actionsLoginTarget\(requireWeb: true\)/);
+  assert.match(nativeSource, /fetch\('\/api\/auth\/session'/);
+  assert.match(nativeSource, /webSessionAuthenticated/);
+  assert.match(nativeSource, /extractVerifiedMacOSBrowserCookies/);
   assert.match(nativeSource, /loginLabels\.has\(label\)/);
   assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
   assert.match(nativeServer, /-OpenLogin/);

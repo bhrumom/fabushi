@@ -372,6 +372,7 @@ func openBackgroundQueueWindow(
     // A newly created visible web renderer can expose its document before
     // ChatGPT has mounted the composer. Let the page finish loading before
     // the caller performs mode selection and surface detection.
+    var hostedLoaded = false
     for _ in 0..<240 {
       let loaded = cdpValue(
         port: port,
@@ -382,9 +383,31 @@ func openBackgroundQueueWindow(
       let ready = loaded?["ready"] as? String
       let hasInput = (loaded?["input"] as? NSNumber)?.boolValue == true
       let bodyLength = (loaded?["bodyLength"] as? NSNumber)?.intValue ?? 0
-      if ready == "complete" && (hasInput || bodyLength > 50) { break }
+      if ready == "complete" && (hasInput || bodyLength > 50) {
+        hostedLoaded = true
+        break
+      }
       Thread.sleep(forTimeInterval: 0.25)
     }
+    guard hostedLoaded,
+          let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+            $0["id"] as? String == targetId
+          }),
+          let wsURL = target["webSocketDebuggerUrl"] as? String,
+          let url = target["url"] as? String,
+          let loginState = actionsLoginState(ActionsLoginTarget(
+            port: port,
+            targetId: targetId,
+            wsURL: wsURL,
+            url: url
+          )),
+          loginState["authenticated"] as? Bool == true else {
+      failure = "hosted_chat_login_required"
+      queueTrace("worker-create stage=hosted-authentication failed")
+      _ = CDPClient.closeTarget(targetId, portOverride: port)
+      return nil
+    }
+    queueTrace("worker-create stage=hosted-authentication complete target=\(targetId)")
     return targetId
   }
   let reset = cdpValue(

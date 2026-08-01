@@ -213,20 +213,57 @@ struct ActionsLoginTarget {
   let port: Int
   let targetId: String
   let wsURL: String
+  let url: String
 }
 
-func actionsLoginTarget() -> ActionsLoginTarget? {
+func actionsLoginTarget(requireWeb: Bool = false) -> ActionsLoginTarget? {
   let port = CDPClient.port()
-  let target = CDPClient.fetchTargets(portOverride: port).first { target in
+  let targets = CDPClient.fetchTargets(portOverride: port).filter { target in
     guard isLoadedApprovalRendererTarget(target),
           let url = target["url"] as? String else { return false }
     return !url.contains("avatar-overlay")
       && (url.hasPrefix("app://-/index.html") || url.contains("chatgpt.com"))
   }
+  let webTarget = targets.first { target in
+    let url = target["url"] as? String ?? ""
+    return url.hasPrefix("https://chatgpt.com/")
+  }
+  let target: [String: Any]? = requireWeb ? webTarget : (webTarget ?? targets.first)
   guard let target,
         let targetId = target["id"] as? String,
-        let wsURL = target["webSocketDebuggerUrl"] as? String else { return nil }
-  return ActionsLoginTarget(port: port, targetId: targetId, wsURL: wsURL)
+        let wsURL = target["webSocketDebuggerUrl"] as? String,
+        let url = target["url"] as? String else { return nil }
+  return ActionsLoginTarget(port: port, targetId: targetId, wsURL: wsURL, url: url)
+}
+
+func createActionsWebLoginTarget() -> ActionsLoginTarget? {
+  guard let controller = actionsLoginTarget(),
+        let contextId = CDPClient.targetInfo(
+          targetId: controller.targetId,
+          portOverride: controller.port
+        )?["browserContextId"] as? String,
+        let targetId = CDPClient.createTarget(
+          url: "https://chatgpt.com/",
+          browserContextId: contextId,
+          background: false,
+          portOverride: controller.port
+        ) else { return nil }
+  let deadline = Date().addingTimeInterval(15)
+  while Date() < deadline {
+    if let target = CDPClient.fetchTargets(portOverride: controller.port).first(where: {
+      $0["id"] as? String == targetId
+    }), let wsURL = target["webSocketDebuggerUrl"] as? String,
+       let url = target["url"] as? String {
+      return ActionsLoginTarget(
+        port: controller.port,
+        targetId: targetId,
+        wsURL: wsURL,
+        url: url
+      )
+    }
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  return nil
 }
 
 func activateChatGPTForLogin() {
@@ -255,7 +292,7 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
     port: target.port,
     targetId: target.targetId,
     expression: #"""
-    (() => {
+    (async () => {
       const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
       const bodyText = normalize(document.body?.innerText).slice(0, 12000);
       const loginLabels = new Set(['log in', 'login', 'sign up', '登录', '登入', '注册', '註冊']);
@@ -277,11 +314,30 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
       )].some(element => /account|profile|账户|帳戶/i.test(
         element.getAttribute('aria-label') || ''
       ));
+      const webOrigin = location.protocol === 'https:' &&
+        (location.hostname === 'chatgpt.com' || location.hostname.endsWith('.chatgpt.com'));
+      let webSessionAuthenticated = false;
+      let webSessionStatus = 0;
+      if (webOrigin) {
+        try {
+          const response = await fetch('/api/auth/session', {
+            credentials: 'include', cache: 'no-store'
+          });
+          webSessionStatus = response.status;
+          const session = response.ok ? await response.json() : null;
+          webSessionAuthenticated = !!(session && session.user && (
+            session.user.id || session.user.account_id || session.user.user_id
+          ));
+        } catch {}
+      }
       return {
-        authenticated: !loginPrompt && hasComposer,
+        authenticated: webOrigin && webSessionAuthenticated && !loginPrompt && hasComposer,
         loginPrompt,
         hasComposer,
         hasAccountControl,
+        webOrigin,
+        webSessionAuthenticated,
+        webSessionStatus,
         bodyLength: bodyText.length,
         url: location.href,
         readyState: document.readyState
@@ -290,6 +346,27 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
     """#,
     timeout: 5.0
   )
+}
+
+func verifiedActionsWebLogin(
+  timeout: TimeInterval,
+  createIfMissing: Bool = true
+) -> (target: ActionsLoginTarget, state: [String: Any])? {
+  let deadline = Date().addingTimeInterval(timeout)
+  var target = actionsLoginTarget(requireWeb: true)
+  if target == nil && createIfMissing {
+    target = createActionsWebLoginTarget()
+  }
+  while Date() < deadline {
+    if let current = target,
+       let state = actionsLoginState(current),
+       state["authenticated"] as? Bool == true {
+      return (current, state)
+    }
+    target = actionsLoginTarget(requireWeb: true) ?? target
+    Thread.sleep(forTimeInterval: 1)
+  }
+  return nil
 }
 
 func clickChatGPTLogin(_ target: ActionsLoginTarget) {
@@ -382,6 +459,56 @@ func actionsRunnerScriptURL() -> URL {
     .deletingLastPathComponent()
     .appendingPathComponent("scripts")
     .appendingPathComponent("dispatch-actions-runner.sh")
+}
+
+func macOSCookieExtractorURL() -> URL {
+  actionsRunnerScriptURL().deletingLastPathComponent()
+    .appendingPathComponent("extract-macos-chatgpt-cookies.py")
+}
+
+func extractVerifiedMacOSBrowserCookies() -> (ok: Bool, message: String, cookieCount: Int) {
+  let scriptURL = macOSCookieExtractorURL()
+  let authURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".codex/auth.json")
+  let outputURL = actionsSessionCookiesURL()
+  guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+    return (false, "macos_cookie_extractor_missing", 0)
+  }
+  guard FileManager.default.fileExists(atPath: authURL.path) else {
+    return (false, "codex_auth_missing", 0)
+  }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+  process.arguments = [
+    scriptURL.path,
+    "--output", outputURL.path,
+    "--auth", authURL.path,
+  ]
+  let stdout = Pipe()
+  let stderr = Pipe()
+  process.standardOutput = stdout
+  process.standardError = stderr
+  do {
+    try process.run()
+    process.waitUntilExit()
+    let outputText = String(
+      data: stdout.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard let line = outputText.split(separator: "\n").last,
+          let data = String(line).data(using: .utf8),
+          let summary = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return (false, "macos_cookie_extractor_response_invalid", 0)
+    }
+    let ok = process.terminationStatus == 0 && summary["ok"] as? Bool == true
+    return (
+      ok,
+      summary["message"] as? String ?? (ok ? "Chrome web session verified" : "cookie extraction failed"),
+      summary["cookieCount"] as? Int ?? 0
+    )
+  } catch {
+    return (false, error.localizedDescription, 0)
+  }
 }
 
 func runActionsRunnerDispatch(
@@ -950,8 +1077,9 @@ case "queue_watchdog":
 case "verify_chatgpt_login":
   let authenticationDeadline = Date().addingTimeInterval(120)
   var lastLoginState: [String: Any] = [:]
+  var webTarget = actionsLoginTarget(requireWeb: true) ?? createActionsWebLoginTarget()
   while Date() < authenticationDeadline {
-    if let target = actionsLoginTarget(),
+    if let target = webTarget,
        let loginState = actionsLoginState(target) {
       lastLoginState = loginState
       if loginState["authenticated"] as? Bool == true {
@@ -967,6 +1095,7 @@ case "verify_chatgpt_login":
         ])
       }
     }
+    webTarget = actionsLoginTarget(requireWeb: true) ?? webTarget
     Thread.sleep(forTimeInterval: 2)
   }
   output([
@@ -986,18 +1115,28 @@ case "verify_chatgpt_login":
 case "sync_actions_credentials":
   let params = commandJSONParams()
   let startRunner = params["start"] as? Bool ?? false
-  guard let target = actionsLoginTarget(),
-        let loginState = actionsLoginState(target),
-        loginState["authenticated"] as? Bool == true else {
-    output([
-      "ok": false,
-      "errorCode": "chatgpt_login_required",
-      "message": "当前 ChatGPT 桌面会话未登录；请先运行 login_and_sync_actions。",
-    ], exitCode: 1)
-  }
-  let cookies = CDPClient.allCookies(wsURLString: target.wsURL, timeout: 8.0)
   do {
-    let cookieURL = try writeActionsSessionCookies(cookies)
+    let cookieURL: URL
+    let cookieCount: Int
+    let credentialSource: String
+    if let verified = verifiedActionsWebLogin(timeout: 20) {
+      let cookies = CDPClient.allCookies(wsURLString: verified.target.wsURL, timeout: 8.0)
+      cookieURL = try writeActionsSessionCookies(cookies)
+      cookieCount = cookies.count
+      credentialSource = "chatgpt-web-renderer"
+    } else {
+      let extraction = extractVerifiedMacOSBrowserCookies()
+      guard extraction.ok else {
+        output([
+          "ok": false,
+          "errorCode": "chatgpt_web_login_required",
+          "message": extraction.message,
+        ], exitCode: 1)
+      }
+      cookieURL = actionsSessionCookiesURL()
+      cookieCount = extraction.cookieCount
+      credentialSource = "chrome"
+    }
     let dispatch = runActionsRunnerDispatch(
       sessionCookiesPath: cookieURL.path,
       startRunner: startRunner
@@ -1007,13 +1146,14 @@ case "sync_actions_credentials":
         "ok": false,
         "errorCode": "github_cli_failed",
         "message": dispatch.message,
-        "cookieCount": cookies.count,
+        "cookieCount": cookieCount,
       ], exitCode: 1)
     }
     output([
       "ok": true,
       "credentialsSynchronized": true,
-      "cookieCount": cookies.count,
+      "cookieCount": cookieCount,
+      "credentialSource": credentialSource,
       "started": startRunner,
       "secrets": ["CHATGPT_CODEX_AUTH_B64", "CHATGPT_SESSION_COOKIES_B64"],
       "repository": "bhrumom/fabushi",
@@ -1031,7 +1171,8 @@ case "login_and_sync_actions":
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
   activateChatGPTForLogin()
-  guard var target = waitForActionsLoginTarget() else {
+  guard var target = actionsLoginTarget(requireWeb: true)
+    ?? createActionsWebLoginTarget() else {
     output([
       "ok": false,
       "errorCode": "chatgpt_cdp_unavailable",
@@ -1049,7 +1190,7 @@ case "login_and_sync_actions":
       authenticatedState = state
       break
     }
-    if let refreshedTarget = actionsLoginTarget() {
+    if let refreshedTarget = actionsLoginTarget(requireWeb: true) {
       target = refreshedTarget
       if let state = actionsLoginState(target), state["loginPrompt"] as? Bool == true {
         clickChatGPTLogin(target)
@@ -1058,7 +1199,7 @@ case "login_and_sync_actions":
     Thread.sleep(forTimeInterval: 2.0)
   }
   guard authenticatedState != nil,
-        let refreshedTarget = actionsLoginTarget() ?? Optional(target) else {
+        let refreshedTarget = actionsLoginTarget(requireWeb: true) ?? Optional(target) else {
     output([
       "ok": false,
       "errorCode": "chatgpt_login_required",
