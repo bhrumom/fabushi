@@ -121,7 +121,7 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.doesNotMatch(windowsSyncScript, /Write-Output .*encoded/);
   assert.match(windowsSyncScript, /shell:AppsFolder/);
   assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
-  assert.match(windowsSyncScript, /--source', 'desktop'/);
+  assert.match(windowsSyncScript, /--source', \$source/);
   assert.match(windowsSyncScript, /--verify-account/);
   assert.doesNotMatch(windowsSyncScript, /remote-debugging-port/);
   assert.doesNotMatch(windowsSyncScript, /load-extension/);
@@ -158,8 +158,11 @@ test('worker exposes the interactive login sync command', async () => {
   assert.equal(webTool.inputSchema.properties.start.default, false);
   assert.equal(webTool.inputSchema.properties.waitSeconds.default, 600);
   assert.match(workerSource, /actions-runner-web-login-sync/);
-  assert.match(nativeServer, /-OpenLogin/);
+  assert.match(nativeServer, /-WebLogin/);
   assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
+  assert.match(windowsSyncScript, /https:\/\/chatgpt\.com\/auth\/login/);
+  assert.match(windowsSyncScript, /\$cookieSource/);
+  assert.match(windowsSyncScript, /'browser'/);
   assert.match(windowsSyncScript, /credentialSource/);
 });
 // test('continuous Actions inbox contains independent work for real parallel dispatch', () => {
