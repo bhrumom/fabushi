@@ -51,26 +51,24 @@ function Start-ChatGptDesktopApp {
   Start-Process -FilePath ('shell:AppsFolder\' + $appId) | Out-Null
 }
 
-function Get-PythonCommand {
-  $command = Get-Command py.exe -ErrorAction SilentlyContinue
-  if ($command) { return [pscustomobject]@{ Command = $command; Prefix = @('-3', $script:HelperPath) } }
-  $command = Get-Command python.exe -ErrorAction SilentlyContinue
-  if (-not $command) { $command = Get-Command python -ErrorAction SilentlyContinue }
-  if (-not $command) { throw 'Python 3 was not found; install pywin32 and pycryptodome for desktop credential extraction' }
-  return [pscustomobject]@{ Command = $command; Prefix = @($script:HelperPath) }
+function Get-NodeCommand {
+  $command = Get-Command node.exe -ErrorAction SilentlyContinue
+  if (-not $command) { $command = Get-Command node -ErrorAction SilentlyContinue }
+  if (-not $command) { throw 'Node.js was not found; it is required for live ChatGPT renderer export' }
+  return $command
 }
 
-function Get-DesktopCookieSummary([string]$authPath, [string]$cookiePath) {
+function Get-LiveRendererCookieSummary([string]$authPath, [string]$cookiePath) {
   if (Test-Path -LiteralPath $cookiePath) {
     [IO.File]::Delete($cookiePath)
   }
-  $arguments = $script:Python.Prefix + @(
+  $arguments = @(
+    $script:HelperPath,
     '--output', $cookiePath,
     '--auth', $authPath,
-    '--source', 'desktop',
-    '--verify-account'
+    '--port', $(if ($env:CHATGPT_CDP_PORT) { [string]$env:CHATGPT_CDP_PORT } else { '9324' })
   )
-  $extractOutput = @(& $script:Python.Command.Source @arguments 2>&1)
+  $extractOutput = @(& $script:Node.Source @arguments 2>&1)
   $extractExitCode = $LASTEXITCODE
   $summaryLine = ($extractOutput | ForEach-Object { [string]$_ } |
     Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
@@ -113,12 +111,12 @@ try {
     throw 'the local Codex auth.json is empty'
   }
 
-  $stage = 'desktop_cookie_extract'
-  $script:HelperPath = Join-Path $scriptDirectory 'extract-windows-chatgpt-cookies.py'
+  $stage = 'live_renderer_export'
+  $script:HelperPath = Join-Path $scriptDirectory 'export-live-chatgpt-session.mjs'
   if (-not (Test-Path -LiteralPath $script:HelperPath -PathType Leaf)) {
-    throw 'the Windows desktop cookie extractor is missing'
+    throw 'the live ChatGPT renderer exporter is missing'
   }
-  $script:Python = Get-PythonCommand
+  $script:Node = Get-NodeCommand
   $cookiePath = Join-Path $temporaryDirectory 'session-cookies.json'
   $summary = $null
 
@@ -128,10 +126,10 @@ try {
 
   $deadline = (Get-Date).AddSeconds([Math]::Min(1800, [Math]::Max(30, $WaitSeconds)))
   do {
-    $summary = Get-DesktopCookieSummary $authPath $cookiePath
+    $summary = Get-LiveRendererCookieSummary $authPath $cookiePath
     if ($summary) { break }
     if (-not $desktopLoginRequested -or (Get-Date) -ge $deadline) {
-      throw 'the ChatGPT desktop app session is unavailable or belongs to a different account; sign in to the desktop app and retry'
+      throw 'the live ChatGPT desktop app renderer is unavailable; expose the desktop app CDP port, sign in, and retry'
     }
     Start-Sleep -Seconds 3
   } while ($true)
@@ -178,8 +176,7 @@ try {
     ok = $true
     credentialsSynchronized = $true
     cookieCount = [int]$summary.cookieCount
-    credentialSource = 'desktop-app'
-    browserSources = @($summary.browserSources)
+    credentialSource = 'live-desktop-renderer'
     accountVerified = [bool]$summary.accountVerified
     repository = $Repository
     secretsUploaded = $uploadedSecrets
@@ -192,7 +189,7 @@ try {
   $messages = @{
     preflight = 'Windows desktop credential sync preflight failed'
     auth = 'the local Codex credential file is unavailable'
-    desktop_cookie_extract = 'no verified same-account ChatGPT desktop session was found'
+    live_renderer_export = 'no verified same-account live ChatGPT renderer was found'
     upload = 'GitHub Secrets upload failed'
     state = 'the local Action queue state is unavailable'
     state_key = 'the GitHub Action state key could not be prepared'

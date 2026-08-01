@@ -71,7 +71,7 @@ const tools = [
       start: { type: 'boolean', default: false },
     },
   } },
-  { name: 'sync_actions_credentials', description: 'Capture the live authenticated ChatGPT web renderer from the desktop app, verify it matches local Codex, then upload both credentials to GitHub Secrets.', annotations: {
+  { name: 'sync_actions_credentials', description: 'Export the live authenticated app:// renderer session from an already-open ChatGPT desktop instance over CDP, validate local Codex auth, then upload both credentials to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
