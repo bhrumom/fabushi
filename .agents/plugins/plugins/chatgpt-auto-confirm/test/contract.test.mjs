@@ -171,6 +171,8 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /fetch\('\/api\/auth\/session'/);
   assert.match(nativeSource, /webSessionAuthenticated/);
   assert.match(nativeSource, /webSessionIdentifiers/);
+  assert.match(nativeSource, /actionsLoginPorts/);
+  assert.match(nativeSource, /ports\.append\(9324\)/);
   assert.match(nativeSource, /actionsWebSessionMatchesCodex/);
   assert.match(nativeSource, /syncLiveActionsCredentials/);
   assert.match(nativeSource, /credentialSource": "live-chat-renderer"/);
