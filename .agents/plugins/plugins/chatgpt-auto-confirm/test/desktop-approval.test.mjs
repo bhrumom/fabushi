@@ -85,6 +85,22 @@ test('status is a read-only host request', async () => {
   assert.equal(result.result.structuredContent.hostRequest.approval, 'none');
 });
 
+test('safe secret sync is an explicit-file host request', async () => {
+  const result = await call('sync_actions_secrets', {
+    authPath: '/secure/auth.json',
+    sessionCookiesPath: '/secure/session-cookies.json',
+    start: false,
+  });
+  const request = result.result.structuredContent.hostRequest;
+  assert.equal(request.capability, 'desktop.chatgpt-approvals.actions-runner-safe-secret-sync');
+  assert.equal(request.approval, 'required');
+  assert.deepEqual(request.params, {
+    authPath: '/secure/auth.json',
+    sessionCookiesPath: '/secure/session-cookies.json',
+    start: false,
+  });
+});
+
 test('outbound sends discard old chat URLs while read-only reply requests keep them', async () => {
   const chatUrl = 'https://chatgpt.com/c/hidden-task-202';
   const sent = await call('send_and_watch', {

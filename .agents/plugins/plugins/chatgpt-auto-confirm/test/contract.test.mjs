@@ -13,6 +13,14 @@ const restoreSessionScript = readFileSync(
   new URL('../scripts/restore-session-cookies.mjs', import.meta.url),
   'utf8',
 );
+const safeSecretSyncScript = readFileSync(
+  new URL('../scripts/sync-actions-secrets.sh', import.meta.url),
+  'utf8',
+);
+const actionsDispatchScript = readFileSync(
+  new URL('../scripts/dispatch-actions-runner.sh', import.meta.url),
+  'utf8',
+);
 const dispatchActionsScript = readFileSync(
   new URL('../scripts/dispatch-actions-runner.sh', import.meta.url),
   'utf8',
@@ -102,6 +110,38 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
 });
+test('safe secret sync requires explicit protected files and never reads desktop state', async () => {
+  assert.match(safeSecretSyncScript, /authPath/);
+  assert.match(safeSecretSyncScript, /sessionCookiesPath/);
+  assert.match(safeSecretSyncScript, /CHATGPT_CODEX_AUTH_B64/);
+  assert.match(safeSecretSyncScript, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.match(safeSecretSyncScript, /CHATGPT_AUTO_CONFIRM_SKIP_CREDENTIAL_SYNC/);
+  assert.match(actionsDispatchScript, /CHATGPT_AUTO_CONFIRM_SKIP_CREDENTIAL_SYNC/);
+  assert.doesNotMatch(safeSecretSyncScript, /Network\.getAllCookies/);
+  assert.doesNotMatch(safeSecretSyncScript, /auth\.openai\.com\/oauth/);
+  assert.doesNotMatch(safeSecretSyncScript, /CHATGPT_SESSION_MODE/);
+  const response = await worker.fetch(new Request('https://example.test/mcp', {
+    method: 'POST', body: JSON.stringify({
+      jsonrpc: '2.0', id: 10, method: 'tools/call', params: {
+        name: 'sync_actions_secrets',
+        arguments: {
+          authPath: '/secure/auth.json',
+          sessionCookiesPath: '/secure/session-cookies.json',
+          start: true,
+        },
+      },
+    }),
+  }));
+  const payload = await response.json();
+  const request = payload.result.structuredContent.hostRequest;
+  assert.equal(request.capability, 'desktop.chatgpt-approvals.actions-runner-safe-secret-sync');
+  assert.deepEqual(request.params, {
+    authPath: '/secure/auth.json',
+    sessionCookiesPath: '/secure/session-cookies.json',
+    start: true,
+  });
+  assert.equal(request.approval, 'required');
+});
 test('login sync uploads both credential forms without printing values', () => {
   assert.match(dispatchActionsScript, /CHATGPT_SESSION_COOKIES_PATH/);
   assert.match(dispatchActionsScript, /CHATGPT_CODEX_AUTH_B64/);
@@ -161,6 +201,13 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeServer, /-OpenLogin/);
   assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
   assert.match(windowsSyncScript, /credentialSource/);
+  const safeTool = tools.find(item => item.name === 'sync_actions_secrets');
+  assert.ok(safeTool);
+  assert.deepEqual(safeTool.inputSchema.required, ['authPath', 'sessionCookiesPath']);
+  assert.equal(safeTool.inputSchema.properties.start.default, false);
+  assert.match(nativeServer, /\['sync_actions_secrets', 'sync_actions_secrets'\]/);
+  assert.match(nativeServer, /actions-runner-safe-secret-sync/);
+  assert.match(nativeSource, /case "sync_actions_secrets"/);
 });
 // test('continuous Actions inbox contains independent work for real parallel dispatch', () => {
 //   assert.ok(actionsInbox.maxConcurrent >= 2);
