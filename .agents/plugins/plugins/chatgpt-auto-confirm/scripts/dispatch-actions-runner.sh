@@ -22,30 +22,28 @@ if [ ! -s "$STATE_PATH" ]; then
   echo "没有可上传的任务队列状态：$STATE_PATH" >&2
   exit 1
 fi
-if [ "${CHATGPT_AUTO_CONFIRM_SKIP_CREDENTIAL_SYNC:-false}" != "true" ]; then
-  if [ ! -s "$AUTH_PATH" ]; then
-    echo "没有可上传的 ChatGPT 登录凭证：$AUTH_PATH" >&2
-    exit 1
-  fi
-  if [ ! -s "$SESSION_COOKIES_PATH" ]; then
-    echo "没有可上传的 ChatGPT 会话凭证：$SESSION_COOKIES_PATH；请先运行 login_and_sync_actions 完成登录。" >&2
-    exit 1
-  fi
-  AUTH_SIZE=$(base64 < "$AUTH_PATH" | wc -c | tr -d ' ')
-  if [ "$AUTH_SIZE" -ge 47000 ]; then
-    echo "ChatGPT 登录凭证超过 GitHub Secret 大小限制。" >&2
-    exit 1
-  fi
-  SESSION_COOKIES_SIZE=$(base64 < "$SESSION_COOKIES_PATH" | wc -c | tr -d ' ')
-  if [ "$SESSION_COOKIES_SIZE" -ge 47000 ]; then
-    echo "ChatGPT 会话凭证超过 GitHub Secret 大小限制。" >&2
-    exit 1
-  fi
-  base64 < "$AUTH_PATH" |
-    "$GH_CLI" secret set CHATGPT_CODEX_AUTH_B64 --repo "$REPOSITORY"
-  base64 < "$SESSION_COOKIES_PATH" |
-    "$GH_CLI" secret set CHATGPT_SESSION_COOKIES_B64 --repo "$REPOSITORY"
+if [ ! -s "$AUTH_PATH" ]; then
+  echo "没有可上传的 ChatGPT 登录凭证：$AUTH_PATH" >&2
+  exit 1
 fi
+if [ ! -s "$SESSION_COOKIES_PATH" ]; then
+  echo "没有可上传的 ChatGPT 会话凭证：${SESSION_COOKIES_PATH}；请先运行 login_and_sync_actions 完成登录。" >&2
+  exit 1
+fi
+AUTH_SIZE=$(base64 < "$AUTH_PATH" | wc -c | tr -d ' ')
+if [ "$AUTH_SIZE" -ge 47000 ]; then
+  echo "ChatGPT 登录凭证超过 GitHub Secret 大小限制。" >&2
+  exit 1
+fi
+SESSION_COOKIES_SIZE=$(base64 < "$SESSION_COOKIES_PATH" | wc -c | tr -d ' ')
+if [ "$SESSION_COOKIES_SIZE" -ge 47000 ]; then
+  echo "ChatGPT 会话凭证超过 GitHub Secret 大小限制。" >&2
+  exit 1
+fi
+base64 < "$AUTH_PATH" |
+  "$GH_CLI" secret set CHATGPT_CODEX_AUTH_B64 --repo "$REPOSITORY"
+base64 < "$SESSION_COOKIES_PATH" |
+  "$GH_CLI" secret set CHATGPT_SESSION_COOKIES_B64 --repo "$REPOSITORY"
 
 INITIAL_STATE=$(CHATGPT_AUTO_CONFIRM_QUEUE_STATE="$STATE_PATH" \
   node "$SCRIPT_DIR/export-action-state.mjs")
