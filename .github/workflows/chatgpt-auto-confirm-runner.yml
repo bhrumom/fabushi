@@ -148,15 +148,21 @@ jobs:
           open -na /Applications/ChatGPT.app --args \
             --user-data-dir="$PROFILE_DIR" \
             --remote-debugging-port="$CHATGPT_CDP_PORT"
-          # Bootstrap only: persist cookies and request one bounded renderer reload.
+          # Bootstrap only: persist cookies and request one bounded renderer reload
+          # in persistent mode; parallel smoke seeds the shared app context. The
+          # parallel smoke verifier creates the real Chat renderers itself;
+          # forcing a controller reload here can leave hosted macOS blank.
           # The native queue owns authenticated Chat creation and verification. Making
           # the visible controller pass Runtime.evaluate here can stall hosted macOS
           # before the real hidden-Chat queue gets a chance to start.
-          CHATGPT_SESSION_MODE=restore \
+          # CHATGPT_SESSION_MODE=restore remains the persistent-runner default;
+          # parallel smoke uses seed so its queue can create the real renderer.
+          CHATGPT_SESSION_MODE=${{ inputs.parallel_queue_smoke && 'seed' || 'restore' }} \
             node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
 
       - name: Verify authenticated ChatGPT session
         id: auth_verify
+        continue-on-error: ${{ inputs.parallel_queue_smoke }}
         timeout-minutes: 3
         env:
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
@@ -238,7 +244,7 @@ jobs:
           AUTHENTICATION_VERIFIED: ${{ steps.auth_verify.outcome == 'success' }}
         run: |
           set -euo pipefail
-          if [[ "$AUTHENTICATION_VERIFIED" != "true" ]]; then
+          if [[ "$AUTHENTICATION_VERIFIED" != "true" && "$VERIFICATION_ONLY" != "true" ]]; then
             echo "::error::ChatGPT authentication preflight failed; no continuation was dispatched."
             exit 1
           fi
