@@ -4,7 +4,6 @@ param(
   [int]$WaitSeconds = 600,
   [switch]$OpenLogin,
   [switch]$DesktopLogin,
-  # Kept as a compatibility alias. It now opens the ChatGPT desktop app too.
   [switch]$WebLogin,
   [switch]$Start
 )
@@ -51,23 +50,32 @@ function Start-ChatGptDesktopApp {
   Start-Process -FilePath ('shell:AppsFolder\' + $appId) | Out-Null
 }
 
+function Start-ChatGptWebLogin {
+  $loginUrl = if ($env:CHATGPT_WEB_LOGIN_URL) {
+    [string]$env:CHATGPT_WEB_LOGIN_URL
+  } else {
+    'https://chatgpt.com/auth/login'
+  }
+  Start-Process -FilePath $loginUrl | Out-Null
+}
+
 function Get-PythonCommand {
   $command = Get-Command py.exe -ErrorAction SilentlyContinue
   if ($command) { return [pscustomobject]@{ Command = $command; Prefix = @('-3', $script:HelperPath) } }
   $command = Get-Command python.exe -ErrorAction SilentlyContinue
   if (-not $command) { $command = Get-Command python -ErrorAction SilentlyContinue }
-  if (-not $command) { throw 'Python 3 was not found; install pywin32 and pycryptodome for desktop credential extraction' }
+  if (-not $command) { throw 'Python 3 was not found; install pywin32 and pycryptodome for ChatGPT credential extraction' }
   return [pscustomobject]@{ Command = $command; Prefix = @($script:HelperPath) }
 }
 
-function Get-DesktopCookieSummary([string]$authPath, [string]$cookiePath) {
+function Get-SessionCookieSummary([string]$authPath, [string]$cookiePath, [string]$source) {
   if (Test-Path -LiteralPath $cookiePath) {
     [IO.File]::Delete($cookiePath)
   }
   $arguments = $script:Python.Prefix + @(
     '--output', $cookiePath,
     '--auth', $authPath,
-    '--source', 'desktop',
+    '--source', $source,
     '--verify-account'
   )
   $extractOutput = @(& $script:Python.Command.Source @arguments 2>&1)
@@ -94,9 +102,10 @@ try {
   & $script:GitHubCli.Source auth status *> $null
   if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI is not authenticated; run gh auth login first' }
 
-  $desktopLoginRequested = $OpenLogin -or $DesktopLogin -or $WebLogin
-  if ((@($OpenLogin, $DesktopLogin, $WebLogin) | Where-Object { $_ }).Count -gt 1) {
-    throw 'desktop login was requested more than once'
+  $desktopLoginRequested = $OpenLogin -or $DesktopLogin
+  $webLoginRequested = $WebLogin
+  if ((@($desktopLoginRequested, $webLoginRequested) | Where-Object { $_ }).Count -gt 1) {
+    throw 'desktop and web login were requested together'
   }
 
   $authPath = if ($env:CHATGPT_CODEX_AUTH_PATH) {
@@ -113,7 +122,7 @@ try {
     throw 'the local Codex auth.json is empty'
   }
 
-  $stage = 'desktop_cookie_extract'
+  $stage = 'cookie_extract'
   $script:HelperPath = Join-Path $scriptDirectory 'extract-windows-chatgpt-cookies.py'
   if (-not (Test-Path -LiteralPath $script:HelperPath -PathType Leaf)) {
     throw 'the Windows desktop cookie extractor is missing'
@@ -122,16 +131,22 @@ try {
   $cookiePath = Join-Path $temporaryDirectory 'session-cookies.json'
   $summary = $null
 
+  $cookieSource = if ($webLoginRequested) { 'browser' } else { 'desktop' }
+  $credentialSource = if ($webLoginRequested) { 'browser' } else { 'desktop-app' }
+
   if ($desktopLoginRequested) {
     Start-ChatGptDesktopApp
+  }
+  if ($webLoginRequested) {
+    Start-ChatGptWebLogin
   }
 
   $deadline = (Get-Date).AddSeconds([Math]::Min(1800, [Math]::Max(30, $WaitSeconds)))
   do {
-    $summary = Get-DesktopCookieSummary $authPath $cookiePath
+    $summary = Get-SessionCookieSummary $authPath $cookiePath $cookieSource
     if ($summary) { break }
-    if (-not $desktopLoginRequested -or (Get-Date) -ge $deadline) {
-      throw 'the ChatGPT desktop app session is unavailable or belongs to a different account; sign in to the desktop app and retry'
+    if (-not ($desktopLoginRequested -or $webLoginRequested) -or (Get-Date) -ge $deadline) {
+      throw "the ChatGPT $cookieSource session is unavailable or belongs to a different account; sign in and retry"
     }
     Start-Sleep -Seconds 3
   } while ($true)
@@ -178,7 +193,7 @@ try {
     ok = $true
     credentialsSynchronized = $true
     cookieCount = [int]$summary.cookieCount
-    credentialSource = 'desktop-app'
+    credentialSource = $credentialSource
     browserSources = @($summary.browserSources)
     accountVerified = [bool]$summary.accountVerified
     repository = $Repository
@@ -192,7 +207,7 @@ try {
   $messages = @{
     preflight = 'Windows desktop credential sync preflight failed'
     auth = 'the local Codex credential file is unavailable'
-    desktop_cookie_extract = 'no verified same-account ChatGPT desktop session was found'
+    cookie_extract = 'no verified same-account ChatGPT browser or desktop session was found'
     upload = 'GitHub Secrets upload failed'
     state = 'the local Action queue state is unavailable'
     state_key = 'the GitHub Action state key could not be prepared'
