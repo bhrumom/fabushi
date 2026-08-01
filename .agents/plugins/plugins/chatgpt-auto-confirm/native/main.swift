@@ -86,7 +86,7 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
   case "start_actions_runner":
     return "\(executable) start_actions_runner"
   case "sync_actions_credentials":
-    return "\(executable) sync_actions_credentials '{\"start\":true}'"
+    return "\(executable) sync_actions_credentials '{\"waitSeconds\":600,\"start\":true}'"
   case "login_and_sync_actions":
     return "\(executable) login_and_sync_actions '{\"waitSeconds\":600,\"start\":true}'"
   case "send_message":
@@ -318,6 +318,7 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
         (location.hostname === 'chatgpt.com' || location.hostname.endsWith('.chatgpt.com'));
       let webSessionAuthenticated = false;
       let webSessionStatus = 0;
+      const webSessionIdentifiers = [];
       if (webOrigin) {
         try {
           const response = await fetch('/api/auth/session', {
@@ -325,9 +326,17 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
           });
           webSessionStatus = response.status;
           const session = response.ok ? await response.json() : null;
-          webSessionAuthenticated = !!(session && session.user && (
-            session.user.id || session.user.account_id || session.user.user_id
-          ));
+          const collect = object => {
+            if (!object || typeof object !== 'object') return;
+            for (const key of [
+              'id', 'user_id', 'account_id', 'chatgpt_user_id', 'chatgpt_account_id'
+            ]) {
+              if (object[key]) webSessionIdentifiers.push(String(object[key]));
+            }
+          };
+          collect(session);
+          collect(session?.user);
+          webSessionAuthenticated = webSessionIdentifiers.length > 0;
         } catch {}
       }
       return {
@@ -338,6 +347,7 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
         webOrigin,
         webSessionAuthenticated,
         webSessionStatus,
+        webSessionIdentifiers: [...new Set(webSessionIdentifiers)],
         bodyLength: bodyText.length,
         url: location.href,
         readyState: document.readyState
@@ -346,6 +356,46 @@ func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
     """#,
     timeout: 5.0
   )
+}
+
+func base64URLDecodedData(_ value: String) -> Data? {
+  var normalized = value.replacingOccurrences(of: "-", with: "+")
+    .replacingOccurrences(of: "_", with: "/")
+  let remainder = normalized.count % 4
+  if remainder > 0 {
+    normalized.append(String(repeating: "=", count: 4 - remainder))
+  }
+  return Data(base64Encoded: normalized)
+}
+
+func codexChatGPTIdentifiers() -> Set<String> {
+  let authURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".codex/auth.json")
+  guard let data = try? Data(contentsOf: authURL),
+        let auth = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let tokens = auth["tokens"] as? [String: Any],
+        let accountId = tokens["account_id"] as? String,
+        let idToken = tokens["id_token"] as? String else { return [] }
+  var identifiers = Set([accountId])
+  let parts = idToken.split(separator: ".", omittingEmptySubsequences: false)
+  guard parts.count >= 2,
+        let payloadData = base64URLDecodedData(String(parts[1])),
+        let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
+        let claims = payload["https://api.openai.com/auth"] as? [String: Any] else {
+    return identifiers
+  }
+  for key in ["chatgpt_account_id", "chatgpt_user_id"] {
+    if let value = claims[key] as? String, !value.isEmpty {
+      identifiers.insert(value)
+    }
+  }
+  return identifiers
+}
+
+func actionsWebSessionMatchesCodex(_ state: [String: Any]) -> Bool {
+  let expected = codexChatGPTIdentifiers()
+  let observed = Set(state["webSessionIdentifiers"] as? [String] ?? [])
+  return !expected.isEmpty && !observed.isDisjoint(with: expected)
 }
 
 func verifiedActionsWebLogin(
@@ -360,7 +410,8 @@ func verifiedActionsWebLogin(
   while Date() < deadline {
     if let current = target,
        let state = actionsLoginState(current),
-       state["authenticated"] as? Bool == true {
+       state["authenticated"] as? Bool == true,
+       actionsWebSessionMatchesCodex(state) {
       return (current, state)
     }
     target = actionsLoginTarget(requireWeb: true) ?? target
@@ -551,6 +602,101 @@ func runActionsRunnerDispatch(
     )
   } catch {
     return (false, error.localizedDescription)
+  }
+}
+
+func syncLiveActionsCredentials(
+  waitSeconds: Int,
+  startRunner: Bool
+) -> Never {
+  guard !codexChatGPTIdentifiers().isEmpty else {
+    output([
+      "ok": false,
+      "errorCode": "codex_auth_missing",
+      "message": "本机 Codex 凭证不存在或不完整，请先登录 ChatGPT。",
+    ], exitCode: 1)
+  }
+  activateChatGPTForLogin()
+  guard var target = actionsLoginTarget(requireWeb: true)
+    ?? createActionsWebLoginTarget() else {
+    output([
+      "ok": false,
+      "errorCode": "chatgpt_cdp_unavailable",
+      "message": "找不到 ChatGPT 网页会话；请确认 ChatGPT 已安装并正在运行。",
+    ], exitCode: 1)
+  }
+  let deadline = Date().addingTimeInterval(TimeInterval(waitSeconds))
+  var lastState: [String: Any] = [:]
+  var verifiedTarget: ActionsLoginTarget?
+  while Date() < deadline {
+    if let state = actionsLoginState(target) {
+      lastState = state
+      if state["authenticated"] as? Bool == true {
+        guard actionsWebSessionMatchesCodex(state) else {
+          output([
+            "ok": false,
+            "errorCode": "chatgpt_account_mismatch",
+            "message": "ChatGPT 网页会话与当前 Codex 账号不一致；没有上传任何凭证。",
+          ], exitCode: 1)
+        }
+        verifiedTarget = target
+        break
+      }
+      if state["loginPrompt"] as? Bool == true {
+        clickChatGPTLogin(target)
+      }
+    }
+    target = actionsLoginTarget(requireWeb: true) ?? target
+    Thread.sleep(forTimeInterval: 2)
+  }
+  guard let verifiedTarget else {
+    output([
+      "ok": false,
+      "errorCode": lastState.isEmpty
+        ? "chatgpt_login_state_unavailable"
+        : "chatgpt_login_required",
+      "message": "请在 ChatGPT 网页登录页完成当前 Codex 账号登录后重试；没有上传任何凭证。",
+    ], exitCode: 1)
+  }
+  let cookies = CDPClient.allCookies(wsURLString: verifiedTarget.wsURL, timeout: 8.0)
+  do {
+    let cookieURL = try writeActionsSessionCookies(cookies)
+    let dispatch = runActionsRunnerDispatch(
+      sessionCookiesPath: cookieURL.path,
+      startRunner: startRunner
+    )
+    guard dispatch.ok else {
+      output([
+        "ok": false,
+        "errorCode": "github_cli_failed",
+        "message": dispatch.message,
+        "cookieCount": cookies.count,
+      ], exitCode: 1)
+    }
+    output([
+      "ok": true,
+      "credentialsSynchronized": true,
+      "accountVerified": true,
+      "cookieCount": cookies.count,
+      "credentialSource": "live-chat-renderer",
+      "started": startRunner,
+      "secrets": [
+        "CHATGPT_CODEX_AUTH_B64",
+        "CHATGPT_SESSION_COOKIES_B64",
+        "CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64",
+      ],
+      "repository": "bhrumom/fabushi",
+      "workflow": startRunner ? "chatgpt-auto-confirm-runner.yml" : "",
+      "message": startRunner
+        ? "已验证并同步当前 ChatGPT 网页会话，GitHub Actions 已启动。"
+        : "已验证并同步当前 ChatGPT 网页会话。",
+    ])
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "actions_credentials_sync_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
   }
 }
 
@@ -1082,7 +1228,8 @@ case "verify_chatgpt_login":
     if let target = webTarget,
        let loginState = actionsLoginState(target) {
       lastLoginState = loginState
-      if loginState["authenticated"] as? Bool == true {
+      if loginState["authenticated"] as? Bool == true,
+         actionsWebSessionMatchesCodex(loginState) {
         output([
           "ok": true,
           "authenticated": true,
@@ -1114,131 +1261,14 @@ case "verify_chatgpt_login":
   ], exitCode: 1)
 case "sync_actions_credentials":
   let params = commandJSONParams()
+  let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? false
-  do {
-    // This command is the repeatable cloud-refresh path: use the credentials
-    // already saved by the miniapp instead of re-capturing a browser renderer.
-    // Login-and-sync remains available when those local files are missing.
-    let authURL = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".codex/auth.json")
-    let cookieURL = actionsSessionCookiesURL()
-    guard FileManager.default.fileExists(atPath: authURL.path) else {
-      output(["ok": false, "errorCode": "codex_auth_missing",
-              "message": "本机 Codex 凭证不存在，请先登录 ChatGPT。"], exitCode: 1)
-    }
-    guard FileManager.default.fileExists(atPath: cookieURL.path) else {
-      output(["ok": false, "errorCode": "session_cookies_missing",
-              "message": "本机 ChatGPT 会话凭证不存在，请先使用登录同步命令。"], exitCode: 1)
-    }
-    let cookieCount: Int = {
-      guard let data = try? Data(contentsOf: cookieURL),
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let cookies = object["cookies"] as? [[String: Any]] else { return 0 }
-      return cookies.count
-    }()
-    guard cookieCount > 0 else {
-      output(["ok": false, "errorCode": "session_cookies_empty",
-              "message": "本机 ChatGPT 会话凭证为空，请先登录同步。"], exitCode: 1)
-    }
-    let dispatch = runActionsRunnerDispatch(
-      sessionCookiesPath: cookieURL.path,
-      startRunner: startRunner
-    )
-    guard dispatch.ok else {
-      output([
-        "ok": false,
-        "errorCode": "github_cli_failed",
-        "message": dispatch.message,
-        "cookieCount": cookieCount,
-      ], exitCode: 1)
-    }
-    output([
-      "ok": true,
-      "credentialsSynchronized": true,
-      "cookieCount": cookieCount,
-      "credentialSource": "local-files",
-      "started": startRunner,
-      "secrets": ["CHATGPT_CODEX_AUTH_B64", "CHATGPT_SESSION_COOKIES_B64"],
-      "repository": "bhrumom/fabushi",
-      "message": startRunner ? "凭证已同步，GitHub Actions 已启动。" : "凭证已同步。",
-    ])
-  } catch {
-    output([
-      "ok": false,
-      "errorCode": "actions_credentials_sync_failed",
-      "message": error.localizedDescription,
-    ], exitCode: 1)
-  }
+  syncLiveActionsCredentials(waitSeconds: waitSeconds, startRunner: startRunner)
 case "login_and_sync_actions":
   let params = commandJSONParams()
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
-  activateChatGPTForLogin()
-  guard var target = actionsLoginTarget(requireWeb: true)
-    ?? createActionsWebLoginTarget() else {
-    output([
-      "ok": false,
-      "errorCode": "chatgpt_cdp_unavailable",
-      "message": "找不到 ChatGPT 窗口；请确认 ChatGPT 已安装并正在运行",
-    ], exitCode: 1)
-  }
-  if let initialState = actionsLoginState(target),
-     initialState["loginPrompt"] as? Bool == true {
-    clickChatGPTLogin(target)
-  }
-  let deadline = Date().addingTimeInterval(TimeInterval(waitSeconds))
-  var authenticatedState: [String: Any]?
-  while Date() < deadline {
-    if let state = actionsLoginState(target), state["authenticated"] as? Bool == true {
-      authenticatedState = state
-      break
-    }
-    if let refreshedTarget = actionsLoginTarget(requireWeb: true) {
-      target = refreshedTarget
-      if let state = actionsLoginState(target), state["loginPrompt"] as? Bool == true {
-        clickChatGPTLogin(target)
-      }
-    }
-    Thread.sleep(forTimeInterval: 2.0)
-  }
-  guard authenticatedState != nil,
-        let refreshedTarget = actionsLoginTarget(requireWeb: true) ?? Optional(target) else {
-    output([
-      "ok": false,
-      "errorCode": "chatgpt_login_required",
-      "message": "请在 ChatGPT 窗口完成登录后重试；没有上传任何凭证",
-    ], exitCode: 1)
-  }
-  let cookies = CDPClient.allCookies(wsURLString: refreshedTarget.wsURL, timeout: 8.0)
-  do {
-    let cookieURL = try writeActionsSessionCookies(cookies)
-    let dispatch = runActionsRunnerDispatch(
-      sessionCookiesPath: cookieURL.path,
-      startRunner: startRunner
-    )
-    guard dispatch.ok else {
-      output([
-        "ok": false,
-        "errorCode": "github_cli_failed",
-        "message": dispatch.message,
-        "cookieCount": cookies.count,
-      ], exitCode: 1)
-    }
-    output([
-      "ok": true,
-      "credentialsSynchronized": true,
-      "cookieCount": cookies.count,
-      "repository": "bhrumom/fabushi",
-      "workflow": startRunner ? "chatgpt-auto-confirm-runner.yml" : "",
-      "message": startRunner ? "登录凭证已同步，GitHub Actions 已启动" : "登录凭证已同步",
-    ])
-  } catch {
-    output([
-      "ok": false,
-      "errorCode": "actions_credentials_sync_failed",
-      "message": error.localizedDescription,
-    ], exitCode: 1)
-  }
+  syncLiveActionsCredentials(waitSeconds: waitSeconds, startRunner: startRunner)
 case "start_actions_runner":
   let executableURL = URL(
     fileURLWithPath: CommandLine.arguments[0]

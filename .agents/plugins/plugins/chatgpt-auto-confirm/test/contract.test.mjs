@@ -71,15 +71,13 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
-  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore/);
+  assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
   assert.match(actionsWorkflow, /Verify authenticated ChatGPT session/);
   assert.match(actionsWorkflow, /verify_chatgpt_login/);
   assert.match(actionsWorkflow, /AUTHENTICATION_VERIFIED/);
   assert.match(actionsWorkflow, /no continuation was dispatched/);
-  assert.match(actionsWorkflow, /Bootstrap only: persist cookies and request one bounded renderer reload/);
-  assert.match(actionsWorkflow, /native queue owns authenticated Chat creation and verification/);
-  assert.doesNotMatch(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
-  assert.doesNotMatch(actionsWorkflow, /Authenticated Chat shell attempt/);
+  assert.match(actionsWorkflow, /for attempt in 1 2/);
+  assert.match(actionsWorkflow, /Authenticated Chat shell attempt/);
   assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.match(restoreSessionScript, /Page\.reload/);
@@ -87,7 +85,7 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.doesNotMatch(restoreSessionScript, /call\([^\n]*['"]Page\.setWebLifecycleState['"]/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
-  assert.match(actionsWorkflow, /Launch authenticated desktop shell\r?\n\s+timeout-minutes: 4/);
+  assert.match(actionsWorkflow, /Launch authenticated desktop shell\r?\n\s+timeout-minutes: 6/);
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
   assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
@@ -163,6 +161,7 @@ test('worker exposes the interactive login sync command', async () => {
   const credentialTool = tools.find(item => item.name === 'sync_actions_credentials');
   assert.ok(credentialTool);
   assert.equal(credentialTool.inputSchema.properties.start.default, false);
+  assert.equal(credentialTool.inputSchema.properties.waitSeconds.default, 600);
   assert.match(workerSource, /actions-runner-credential-sync/);
   assert.match(nativeServer, /\['sync_actions_credentials', 'sync_actions_credentials'\]/);
   assert.match(nativeSource, /case "sync_actions_credentials"/);
@@ -171,6 +170,11 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /actionsLoginTarget\(requireWeb: true\)/);
   assert.match(nativeSource, /fetch\('\/api\/auth\/session'/);
   assert.match(nativeSource, /webSessionAuthenticated/);
+  assert.match(nativeSource, /webSessionIdentifiers/);
+  assert.match(nativeSource, /actionsWebSessionMatchesCodex/);
+  assert.match(nativeSource, /syncLiveActionsCredentials/);
+  assert.match(nativeSource, /credentialSource": "live-chat-renderer"/);
+  assert.doesNotMatch(nativeSource, /credentialSource": "local-files"/);
   assert.match(nativeSource, /extractVerifiedMacOSBrowserCookies/);
   assert.match(nativeSource, /loginLabels\.has\(label\)/);
   assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
