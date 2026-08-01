@@ -1,6 +1,6 @@
 export const HOME = {
   "schema": "mahayana.miniapp.home.v1",
-  "revision": "315e1667043213e080fd00fb7b4a962d0d9516423cf4627e4455d33b4684b022",
+  "revision": "80476b5cee1598f69960703790a92f75291b20411f59597b1d08d7ddbb558b5c",
   "app": {
     "id": "chatgpt-auto-confirm",
     "title": "ChatGPT 自动确认",
@@ -18,6 +18,16 @@ export const HOME = {
     }
   ],
   "quickReplies": [
+    {
+      "id": "web-login-and-sync-actions",
+      "label": "Web login and sync Action credentials",
+      "aliases": [],
+      "action": {
+        "type": "tool",
+        "name": "web_login_and_sync_actions",
+        "arguments": {}
+      }
+    },
     {
       "id": "sync-actions-credentials",
       "label": "同步已登录凭证",

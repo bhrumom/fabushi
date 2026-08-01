@@ -3,6 +3,7 @@ param(
   [string]$Repository = $(if ($env:CHATGPT_AUTO_CONFIRM_REPOSITORY) { $env:CHATGPT_AUTO_CONFIRM_REPOSITORY } else { 'bhrumom/fabushi' }),
   [int]$WaitSeconds = 600,
   [switch]$OpenLogin,
+  [switch]$WebLogin,
   [switch]$Start
 )
 
@@ -50,26 +51,53 @@ try {
     throw 'GitHub CLI is not authenticated; run gh auth login first'
   }
 
+  if ($OpenLogin -and $WebLogin) {
+    throw 'desktop login and web login cannot be requested together'
+  }
+
   $authPath = if ($env:CHATGPT_CODEX_AUTH_PATH) {
     $env:CHATGPT_CODEX_AUTH_PATH
   } else {
     Join-Path $env:USERPROFILE '.codex\auth.json'
   }
+  if ($WebLogin) {
+    $stage = 'web_login'
+    $codex = Get-Command codex.exe -ErrorAction SilentlyContinue
+    if (-not $codex) { $codex = Get-Command codex.cmd -ErrorAction SilentlyContinue }
+    if (-not $codex) { $codex = Get-Command codex -ErrorAction SilentlyContinue }
+    if (-not $codex) {
+      $packageRoots = Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles 'WindowsApps') -Directory -Filter 'OpenAI.Codex_*' -ErrorAction SilentlyContinue
+      $codex = $packageRoots |
+        ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'app\Codex.exe') -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+    }
+    if (-not $codex) {
+      throw 'Codex CLI was not found; install the official Codex CLI, then run this web-login command again'
+    }
+    $codexPath = if ($codex.Source) { $codex.Source } else { $codex.FullName }
+    $loginProcess = Start-Process -FilePath $codexPath -ArgumentList @('--login') -Wait -PassThru -WindowStyle Normal
+    if ($loginProcess.ExitCode -ne 0) {
+      throw 'the Codex web login was cancelled or did not complete'
+    }
+  }
+
   if (-not (Test-Path -LiteralPath $authPath -PathType Leaf)) {
     $stage = 'auth'
-    throw 'the local Codex auth.json was not found'
+    throw 'the local Codex auth.json was not found after login'
   }
   if ((Get-Item -LiteralPath $authPath).Length -eq 0) {
     $stage = 'auth'
-    throw 'the local Codex auth.json is empty'
+    throw 'the local Codex auth.json is empty after login'
   }
 
   $stage = 'cookie_extract'
   $cookiePath = Join-Path $temporaryDirectory 'session-cookies.json'
   $helperPath = Join-Path $scriptDirectory 'extract-windows-chatgpt-cookies.py'
   $python = Get-Command py.exe -ErrorAction SilentlyContinue
+  $cookieSource = if ($WebLogin) { 'browser' } else { 'desktop' }
+  $verifyAccountArgument = if ($WebLogin) { @('--verify-account') } else { @() }
   if ($python) {
-    $pythonArguments = @('-3', $helperPath, '--output', $cookiePath, '--auth', $authPath, '--source', 'desktop')
+    $pythonArguments = @('-3', $helperPath, '--output', $cookiePath, '--auth', $authPath, '--source', $cookieSource) + $verifyAccountArgument
   } else {
     $python = Get-Command python.exe -ErrorAction SilentlyContinue
     if (-not $python) {
@@ -78,7 +106,7 @@ try {
     if (-not $python) {
       throw 'Python 3 was not found; install Python, pywin32, and pycryptodome for desktop credential extraction'
     }
-    $pythonArguments = @($helperPath, '--output', $cookiePath, '--auth', $authPath, '--source', 'desktop')
+    $pythonArguments = @($helperPath, '--output', $cookiePath, '--auth', $authPath, '--source', $cookieSource) + $verifyAccountArgument
   }
   if ($OpenLogin) {
     Start-Process 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App' | Out-Null
@@ -95,7 +123,10 @@ try {
         break
       }
     }
-    if (-not $OpenLogin -or (Get-Date) -ge $deadline) {
+    if (-not ($OpenLogin -or $WebLogin) -or (Get-Date) -ge $deadline) {
+      if ($WebLogin) {
+        throw 'no usable same-account ChatGPT browser session was found after web login; finish login in Edge or Chrome and retry'
+      }
       throw 'no usable ChatGPT desktop session cookies were found; close the desktop app after login and retry so its locked profile can be read'
     }
     if (Test-Path -LiteralPath $cookiePath) {
@@ -153,6 +184,7 @@ try {
     cookieCount = [int]$summary.cookieCount
     credentialSource = [string]$summary.credentialSource
     browserSources = @($summary.browserSources)
+    accountVerified = [bool]$summary.accountVerified
     repository = $Repository
     secretsUploaded = $uploadedSecrets
     started = [bool]$Start
@@ -162,6 +194,7 @@ try {
   $messages = @{
     preflight = 'Windows credential sync preflight failed'
     auth = 'the local Codex credential file is unavailable'
+    web_login = 'the official Codex web login could not be completed'
     cookie_extract = 'no usable ChatGPT browser session was found'
     upload = 'GitHub Secrets upload failed'
     state = 'the local Action queue state is unavailable'

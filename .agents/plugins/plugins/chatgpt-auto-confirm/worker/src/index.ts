@@ -63,6 +63,14 @@ const tools = [
       start: { type: 'boolean', default: true },
     },
   } },
+  { name: 'web_login_and_sync_actions', description: 'Open the official Codex web login in the browser, verify the ChatGPT browser session is the same account, then upload both credentials to GitHub Secrets without requiring the desktop app.', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
+      start: { type: 'boolean', default: false },
+    },
+  } },
   { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT browser session and local Codex credentials, then upload both to GitHub Secrets; Windows is supported directly.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
@@ -356,6 +364,11 @@ export default {
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-login-sync', {
           waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
           start: args.start !== false,
+        }, 'required');
+      if (name === 'web_login_and_sync_actions') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-web-login-sync', {
+          waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
+          start: args.start === true,
         }, 'required');
       if (name === 'sync_actions_credentials') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-credential-sync', {

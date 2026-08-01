@@ -15,6 +15,8 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -64,6 +66,47 @@ def validate_desktop_auth(auth_path):
     claims = payload.get("https://api.openai.com/auth") or {}
     if claims.get("chatgpt_account_id") != account_id:
         raise ExtractionError("desktop auth bundle account identifiers do not match")
+    user_id = claims.get("chatgpt_user_id")
+    if not user_id:
+        raise ExtractionError("desktop auth bundle is missing the ChatGPT user identifier")
+    return {"accountId": account_id, "userId": user_id}
+
+
+def verify_web_account(cookies, identity):
+    """Verify browser cookies belong to the same ChatGPT identity as auth.json."""
+    cookie_header = "; ".join(
+        f"{cookie['name']}={cookie['value']}" for cookie in cookies
+    )
+    request = urllib.request.Request(
+        "https://chatgpt.com/api/auth/session",
+        headers={
+            "Accept": "application/json",
+            "Cookie": cookie_header,
+            "User-Agent": "Mozilla/5.0 Fabushi credential sync",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status != 200:
+                raise ExtractionError("ChatGPT web session verification returned a non-success status")
+            session = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as error:
+        raise ExtractionError("ChatGPT web session could not be verified for the same account") from error
+
+    observed_ids = set()
+    user = session.get("user") if isinstance(session, dict) else None
+    if isinstance(user, dict):
+        for key in ("id", "user_id", "account_id"):
+            value = user.get(key)
+            if value:
+                observed_ids.add(str(value))
+    for key in ("user_id", "chatgpt_user_id", "account_id", "chatgpt_account_id"):
+        value = session.get(key) if isinstance(session, dict) else None
+        if value:
+            observed_ids.add(str(value))
+    expected_ids = {str(identity["userId"]), str(identity["accountId"])}
+    if not observed_ids.intersection(expected_ids):
+        raise ExtractionError("ChatGPT web session belongs to a different account or is not signed in")
 
 
 def browser_profiles(browser_name):
@@ -118,14 +161,14 @@ def normalize_cookie(cookie):
     }
 
 
-def extract(output_path: Path, auth_path: Path, source: str):
+def extract(output_path: Path, auth_path: Path, source: str, verify_account: bool = False):
     try:
         import win32crypt  # noqa: F401 - dependency check for the DPAPI path
         from Cryptodome.Cipher import AES  # noqa: F401 - dependency check for AES-GCM
     except ImportError as error:
         raise RuntimeError("pywin32 and pycryptodome are required for Windows browser extraction") from error
 
-    validate_desktop_auth(auth_path)
+    identity = validate_desktop_auth(auth_path)
     cookies = {}
     browser_sources = []
     candidate_rows = 0
@@ -219,6 +262,9 @@ def extract(output_path: Path, auth_path: Path, source: str):
             f"no usable ChatGPT/OpenAI cookies found; candidate rows={candidate_rows}; formats={formats}"
         )
 
+    if verify_account:
+        verify_web_account(list(cookies.values()), identity)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps({"cookies": list(cookies.values())}, ensure_ascii=False, separators=(",", ":")),
@@ -236,22 +282,25 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--auth", required=True)
     parser.add_argument("--source", choices=("desktop", "browser", "auto"), default="desktop")
+    parser.add_argument("--verify-account", action="store_true")
     args = parser.parse_args()
     try:
         count, sources = extract(
             Path(args.output).resolve(),
             Path(args.auth).resolve(),
             args.source,
+            args.verify_account,
         )
         print(json.dumps({
             "ok": True,
             "cookieCount": count,
             "credentialSource": args.source,
             "browserSources": sources,
+            "accountVerified": bool(args.verify_account),
         }, separators=(",", ":")))
         return 0
     except ImportError:
-        message = "browser-cookie3 is required for Windows browser extraction"
+        message = "pywin32 and pycryptodome are required for Windows browser extraction"
         print(json.dumps({
             "ok": False,
             "errorCode": "chatgpt_cookie_extraction_dependency_missing",
