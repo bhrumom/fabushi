@@ -55,6 +55,29 @@ const queuedTaskSchema = {
   },
 };
 const tools = [
+  { name: 'login_and_sync_actions', description: 'Open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then sync both to GitHub Secrets and optionally start the Action.', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
+      start: { type: 'boolean', default: true },
+    },
+  } },
+  { name: 'web_login_and_sync_actions', description: 'Compatibility command: open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then upload both credentials to GitHub Secrets.', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
+      start: { type: 'boolean', default: false },
+    },
+  } },
+  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT desktop-app session and local Codex credentials, verify they belong to the same account, then upload both to GitHub Secrets.', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      start: { type: 'boolean', default: false, description: 'After syncing, optionally start the GitHub Actions runner.' },
+    },
+  } },
   { name: 'home', description: '加载插件首页', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       surface: { type: 'string' }, locale: { type: 'string' }, cursor: { type: 'string' },
@@ -337,6 +360,20 @@ export default {
         }, 'required');
       if (name === 'start_actions_runner') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-start', {}, 'required');
+      if (name === 'login_and_sync_actions') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-login-sync', {
+          waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
+          start: args.start !== false,
+        }, 'required');
+      if (name === 'web_login_and_sync_actions') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-web-login-sync', {
+          waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
+          start: args.start === true,
+        }, 'required');
+      if (name === 'sync_actions_credentials') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-credential-sync', {
+          start: args.start === true,
+        }, 'required');
       if (name === 'wait_for_review') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.queue-wait-review', {
           timeout: Math.min(7200, Math.max(1, args.timeout ?? 3600)),

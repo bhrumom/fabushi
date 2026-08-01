@@ -155,6 +155,13 @@ jobs:
           CHATGPT_SESSION_MODE=restore \
             node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/restore-session-cookies.mjs
 
+      - name: Verify authenticated ChatGPT session
+        id: auth_verify
+        timeout-minutes: 3
+        env:
+          CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+        run: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login
+
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.parallel_queue_smoke }}
         env:
@@ -228,8 +235,13 @@ jobs:
         env:
           RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
           VERIFICATION_ONLY: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
+          AUTHENTICATION_VERIFIED: ${{ steps.auth_verify.outcome == 'success' }}
         run: |
           set -euo pipefail
+          if [[ "$AUTHENTICATION_VERIFIED" != "true" ]]; then
+            echo "::error::ChatGPT authentication preflight failed; no continuation was dispatched."
+            exit 1
+          fi
           status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
           if [[ "$status" == "complete" ]]; then
             echo "All queued tasks completed; no continuation was dispatched."

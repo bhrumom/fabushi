@@ -36,6 +36,8 @@ let nativeCommandSummaries: [String: String] = [
   "queue_cancel": "取消指定任务并停止其隐藏 worker。",
   "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
+  "login_and_sync_actions": "打开 ChatGPT 登录页，等待登录完成后同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
+  "verify_chatgpt_login": "只读验证当前 ChatGPT 网页会话是否仍处于登录状态。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
   "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
   "get_reply": "读取隐藏 Chat 页面中的最新回复。",
@@ -52,7 +54,7 @@ func nativeCommandUsage(_ command: String, executable: String) -> String {
   case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
        "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
        "queue_review", "queue_update", "queue_retry", "queue_cancel", "queue_watchdog",
-       "start_actions_runner", "send_message",
+       "start_actions_runner", "login_and_sync_actions", "verify_chatgpt_login", "send_message",
        "add_connector", "get_reply", "chat_status", "send_and_watch":
     return "\(executable) \(command) ['{...JSON...}']"
   default:
@@ -82,6 +84,8 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
     return "\(executable) queue_watchdog '{\"staleAfterSeconds\":21600,\"force\":false}'"
   case "start_actions_runner":
     return "\(executable) start_actions_runner"
+  case "login_and_sync_actions":
+    return "\(executable) login_and_sync_actions '{\"waitSeconds\":600,\"start\":true}'"
   case "send_message":
     return "\(executable) send_message '{\"message\":\"检查当前状态\",\"connector\":\"devspace1\"}'"
   case "send_and_watch":
@@ -118,6 +122,8 @@ func nativeHelpText(topic: String? = nil) -> (text: String, known: Bool) {
   }
 
   let text = """
+  login_and_sync_actions JSON  login to ChatGPT, sync both Action credentials, and start the runner
+
 ChatGPT 自动确认 macOS 原生运行时
 
 用途：
@@ -197,6 +203,215 @@ func printNativeHelp(_ topic: String? = nil) -> Never {
   let help = nativeHelpText(topic: topic)
   FileHandle.standardOutput.write(Data(help.text.utf8))
   Foundation.exit(help.known ? 0 : 2)
+}
+
+struct ActionsLoginTarget {
+  let port: Int
+  let targetId: String
+  let wsURL: String
+}
+
+func actionsLoginTarget() -> ActionsLoginTarget? {
+  let port = CDPClient.port()
+  let target = CDPClient.fetchTargets(portOverride: port).first { target in
+    guard isLoadedApprovalRendererTarget(target),
+          let url = target["url"] as? String else { return false }
+    return url.hasPrefix("app://-/index.html") || url.contains("chatgpt.com")
+  }
+  guard let target,
+        let targetId = target["id"] as? String,
+        let wsURL = target["webSocketDebuggerUrl"] as? String else { return nil }
+  return ActionsLoginTarget(port: port, targetId: targetId, wsURL: wsURL)
+}
+
+func activateChatGPTForLogin() {
+  if let application = runningChatGptApplications().first {
+    _ = application.activate(options: [.activateIgnoringOtherApps])
+    return
+  }
+  let applicationURL = URL(fileURLWithPath: "/Applications/ChatGPT.app")
+  guard FileManager.default.fileExists(atPath: applicationURL.path) else { return }
+  let configuration = NSWorkspace.OpenConfiguration()
+  configuration.arguments = ["--remote-debugging-port=\(CDPClient.port())"]
+  NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) { _, _ in }
+}
+
+func waitForActionsLoginTarget(timeout: TimeInterval = 30.0) -> ActionsLoginTarget? {
+  let deadline = Date().addingTimeInterval(timeout)
+  while Date() < deadline {
+    if let target = actionsLoginTarget() { return target }
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  return actionsLoginTarget()
+}
+
+func actionsLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
+  cdpValue(
+    port: target.port,
+    targetId: target.targetId,
+    expression: #"""
+    (() => {
+      const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
+      const bodyText = normalize(document.body?.innerText).slice(0, 12000);
+      const loginPrompt = /\b(log in|login|sign up)\b/i.test(bodyText)
+        || /(登录|登入|注册|註冊)/i.test(bodyText)
+        || /welcome back.{0,160}choose an account/i.test(bodyText);
+      const hasComposer = !!document.querySelector(
+        '#prompt-textarea, [contenteditable="true"], [data-codex-composer="true"]'
+      );
+      const hasAccountControl = [...document.querySelectorAll(
+        'button, [role="button"], [aria-label]'
+      )].some(element => /account|profile|账户|帳戶/i.test(
+        element.getAttribute('aria-label') || ''
+      ));
+      return {
+        authenticated: !loginPrompt && hasComposer,
+        loginPrompt,
+        hasComposer,
+        hasAccountControl,
+        bodyLength: bodyText.length,
+        url: location.href,
+        readyState: document.readyState
+      };
+    })()
+    """#,
+    timeout: 5.0
+  )
+}
+
+func clickChatGPTLogin(_ target: ActionsLoginTarget) {
+  _ = cdpValue(
+    port: target.port,
+    targetId: target.targetId,
+    expression: #"""
+    (() => {
+      const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const nodes = [...document.querySelectorAll('button, a, [role="button"]')];
+      const candidate = nodes.find(node => {
+        const labels = [node.innerText, node.textContent, node.getAttribute('aria-label')]
+          .map(normalize).filter(Boolean);
+        return labels.some(label => ['log in', 'login', '登录', '登入'].includes(label));
+      });
+      if (!candidate) return {clicked: false};
+      candidate.click();
+      return {clicked: true};
+    })()
+    """#,
+    timeout: 5.0
+  )
+}
+
+func actionsSessionCookiesURL() -> URL {
+  if let override = ProcessInfo.processInfo.environment["CHATGPT_SESSION_COOKIES_PATH"],
+     !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    return URL(fileURLWithPath: override)
+  }
+  return stateURL().deletingLastPathComponent().appendingPathComponent("session-cookies.json")
+}
+
+func writeActionsSessionCookies(_ cookies: [[String: Any]]) throws -> URL {
+  let normalized = cookies.compactMap { cookie -> [String: Any]? in
+    guard let name = cookie["name"] as? String,
+          let value = cookie["value"] as? String,
+          let domain = cookie["domain"] as? String,
+          !name.isEmpty, !value.isEmpty, !domain.isEmpty else { return nil }
+    let lowerDomain = domain.lowercased()
+    guard lowerDomain.contains("chatgpt.com") || lowerDomain.contains("openai.com") else {
+      return nil
+    }
+    var result: [String: Any] = [
+      "name": name,
+      "value": value,
+      "domain": domain,
+      "path": cookie["path"] as? String ?? "/",
+      "secure": cookie["secure"] as? Bool ?? true,
+      "httpOnly": cookie["httpOnly"] as? Bool ?? false,
+    ]
+    if let sameSite = cookie["sameSite"] as? String, !sameSite.isEmpty {
+      result["sameSite"] = sameSite
+    }
+    if let expires = cookie["expires"] as? NSNumber {
+      result["expires"] = expires
+    }
+    return result
+  }
+  guard !normalized.isEmpty else {
+    throw NSError(
+      domain: "chatgpt-auto-confirm",
+      code: 41,
+      userInfo: [NSLocalizedDescriptionKey: "没有捕获到有效的 ChatGPT 会话凭证"]
+    )
+  }
+  let payload: [String: Any] = ["cookies": normalized]
+  guard JSONSerialization.isValidJSONObject(payload),
+        let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
+    throw NSError(
+      domain: "chatgpt-auto-confirm",
+      code: 42,
+      userInfo: [NSLocalizedDescriptionKey: "ChatGPT 会话凭证无法编码"]
+    )
+  }
+  let url = actionsSessionCookiesURL()
+  try FileManager.default.createDirectory(
+    at: url.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  try data.write(to: url, options: .atomic)
+  try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+  return url
+}
+
+func actionsRunnerScriptURL() -> URL {
+  let executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+  return executableURL
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .appendingPathComponent("scripts")
+    .appendingPathComponent("dispatch-actions-runner.sh")
+}
+
+func runActionsRunnerDispatch(
+  sessionCookiesPath: String? = nil,
+  startRunner: Bool = true
+) -> (ok: Bool, message: String) {
+  let scriptURL = actionsRunnerScriptURL()
+  guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+    return (false, "actions_dispatch_script_missing")
+  }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/sh")
+  process.arguments = [scriptURL.path]
+  var environment = ProcessInfo.processInfo.environment
+  if let sessionCookiesPath {
+    environment["CHATGPT_SESSION_COOKIES_PATH"] = sessionCookiesPath
+  }
+  environment["CHATGPT_AUTO_CONFIRM_DISPATCH"] = startRunner ? "true" : "false"
+  process.environment = environment
+  let stdout = Pipe()
+  let stderr = Pipe()
+  process.standardOutput = stdout
+  process.standardError = stderr
+  do {
+    try process.run()
+    process.waitUntilExit()
+    let outputText = String(
+      data: stdout.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let errorText = String(
+      data: stderr.fileHandleForReading.readDataToEndOfFile(),
+      encoding: .utf8
+    )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return (
+      process.terminationStatus == 0,
+      process.terminationStatus == 0
+        ? (outputText.isEmpty ? "GitHub Actions 已启动" : outputText)
+        : (errorText.isEmpty ? "github_cli_failed" : errorText)
+    )
+  } catch {
+    return (false, error.localizedDescription)
+  }
 }
 
 let commandArguments = Array(CommandLine.arguments.dropFirst())
@@ -716,6 +931,95 @@ case "queue_watchdog":
     output([
       "ok": false,
       "errorCode": "queue_watchdog_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
+case "verify_chatgpt_login":
+  guard let target = actionsLoginTarget(),
+        let loginState = actionsLoginState(target) else {
+    output([
+      "ok": false,
+      "errorCode": "chatgpt_login_state_unavailable",
+      "message": "无法读取 ChatGPT 登录状态",
+    ], exitCode: 1)
+  }
+  let authenticated = loginState["authenticated"] as? Bool ?? false
+  output([
+    "ok": authenticated,
+    "authenticated": authenticated,
+    "loginPrompt": loginState["loginPrompt"] as? Bool ?? false,
+    "hasComposer": loginState["hasComposer"] as? Bool ?? false,
+    "bodyLength": loginState["bodyLength"] as? Int ?? 0,
+    "url": loginState["url"] as? String ?? "",
+    "errorCode": authenticated ? "" : "chatgpt_login_required",
+    "message": authenticated ? "ChatGPT 登录状态有效" : "ChatGPT 登录已过期，请先登录并同步凭证",
+  ], exitCode: authenticated ? 0 : 1)
+case "login_and_sync_actions":
+  let params = commandJSONParams()
+  let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
+  let startRunner = params["start"] as? Bool ?? true
+  activateChatGPTForLogin()
+  guard var target = waitForActionsLoginTarget() else {
+    output([
+      "ok": false,
+      "errorCode": "chatgpt_cdp_unavailable",
+      "message": "找不到 ChatGPT 窗口；请确认 ChatGPT 已安装并正在运行",
+    ], exitCode: 1)
+  }
+  if let initialState = actionsLoginState(target),
+     initialState["loginPrompt"] as? Bool == true {
+    clickChatGPTLogin(target)
+  }
+  let deadline = Date().addingTimeInterval(TimeInterval(waitSeconds))
+  var authenticatedState: [String: Any]?
+  while Date() < deadline {
+    if let state = actionsLoginState(target), state["authenticated"] as? Bool == true {
+      authenticatedState = state
+      break
+    }
+    if let refreshedTarget = actionsLoginTarget() {
+      target = refreshedTarget
+      if let state = actionsLoginState(target), state["loginPrompt"] as? Bool == true {
+        clickChatGPTLogin(target)
+      }
+    }
+    Thread.sleep(forTimeInterval: 2.0)
+  }
+  guard authenticatedState != nil,
+        let refreshedTarget = actionsLoginTarget() ?? Optional(target) else {
+    output([
+      "ok": false,
+      "errorCode": "chatgpt_login_required",
+      "message": "请在 ChatGPT 窗口完成登录后重试；没有上传任何凭证",
+    ], exitCode: 1)
+  }
+  let cookies = CDPClient.allCookies(wsURLString: refreshedTarget.wsURL, timeout: 8.0)
+  do {
+    let cookieURL = try writeActionsSessionCookies(cookies)
+    let dispatch = runActionsRunnerDispatch(
+      sessionCookiesPath: cookieURL.path,
+      startRunner: startRunner
+    )
+    guard dispatch.ok else {
+      output([
+        "ok": false,
+        "errorCode": "github_cli_failed",
+        "message": dispatch.message,
+        "cookieCount": cookies.count,
+      ], exitCode: 1)
+    }
+    output([
+      "ok": true,
+      "credentialsSynchronized": true,
+      "cookieCount": cookies.count,
+      "repository": "bhrumom/fabushi",
+      "workflow": startRunner ? "chatgpt-auto-confirm-runner.yml" : "",
+      "message": startRunner ? "登录凭证已同步，GitHub Actions 已启动" : "登录凭证已同步",
+    ])
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "actions_credentials_sync_failed",
       "message": error.localizedDescription,
     ], exitCode: 1)
   }
