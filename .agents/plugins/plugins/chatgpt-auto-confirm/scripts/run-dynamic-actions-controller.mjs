@@ -282,6 +282,19 @@ let stopping = false;
 const stopChild = () => {
   if (child && child.exitCode === null) child.kill('SIGTERM');
 };
+const handleFinishedChild = async () => {
+  if (!child || child.exitCode === null) return false;
+  const exitCode = child.exitCode;
+  let status = '';
+  try { status = JSON.parse(readFileSync(resultPath, 'utf8')).status || ''; } catch {}
+  if (status === 'failed') process.exit(exitCode || 1);
+  if (activeControl?.keepAlive !== true) {
+    process.exit(exitCode || (status === 'complete' ? 0 : 1));
+  }
+  child = null;
+  await sleep(Math.min(5_000, pollSeconds * 1_000));
+  return true;
+};
 process.on('SIGTERM', () => { stopping = true; stopChild(); });
 process.on('SIGINT', () => { stopping = true; stopChild(); });
 
@@ -295,7 +308,12 @@ let nextControlPollAt = Date.now() + pollSeconds * 1_000;
 let nextBoundaryRetryAt = Date.now();
 let previousRunningIds = new Set();
 while (!stopping && Date.now() < deadline) {
-  if (!child || child.exitCode !== null) {
+  // Consume the terminal result before considering a replacement child. The
+  // previous order could overwrite a just-finished failed child at the top of
+  // the loop, causing a deterministic failure to restart until the six-hour
+  // hosted deadline.
+  if (await handleFinishedChild()) continue;
+  if (!child) {
     const remainingSeconds = Math.max(300, Math.ceil((deadline - Date.now()) / 1_000));
     child = spawn(process.execPath, [controller], {
       env: {
@@ -340,17 +358,8 @@ while (!stopping && Date.now() < deadline) {
     previousRunningIds = runningIds;
   }
 
-  if (child.exitCode !== null) {
-    let status = '';
-    try { status = JSON.parse(readFileSync(resultPath, 'utf8')).status || ''; } catch {}
-    if (status === 'failed') {
-      process.exit(child.exitCode || 1);
-    }
-    if (activeControl?.keepAlive !== true) process.exit(child.exitCode || (status === 'complete' ? 0 : 1));
-    await sleep(Math.min(5_000, pollSeconds * 1_000));
-  } else {
-    await sleep(1_000);
-  }
+  if (await handleFinishedChild()) continue;
+  await sleep(1_000);
 }
 
 stopChild();
