@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import worker from '../worker/src/index.ts';
 import { HOME, RESOURCES } from '../worker/src/content.generated.ts';
@@ -21,12 +21,8 @@ const windowsSyncScript = readFileSync(
   new URL('../scripts/sync-actions-credentials.ps1', import.meta.url),
   'utf8',
 );
-const windowsCookieExtractor = readFileSync(
-  new URL('../scripts/extract-windows-chatgpt-cookies.py', import.meta.url),
-  'utf8',
-);
-const macOSCookieExtractor = readFileSync(
-  new URL('../scripts/extract-macos-chatgpt-cookies.py', import.meta.url),
+const liveSessionExporter = readFileSync(
+  new URL('../scripts/export-live-chatgpt-session.mjs', import.meta.url),
   'utf8',
 );
 const dynamicController = readFileSync(
@@ -118,6 +114,8 @@ test('login sync uploads both credential forms without printing values', () => {
   assert.match(dynamicController, /await handleFinishedChild\(\)[\s\S]*if \(!child\)/);
 });
 test('Windows credential sync keeps secrets out of logs and supports optional dispatch', () => {
+  assert.equal(existsSync(new URL('../scripts/extract-windows-chatgpt-cookies.py', import.meta.url)), false);
+  assert.equal(existsSync(new URL('../scripts/extract-macos-chatgpt-cookies.py', import.meta.url)), false);
   assert.match(nativeServer, /sync-actions-credentials\.ps1/);
   assert.match(nativeServer, /process\.platform !== 'win32'/);
   assert.match(windowsSyncScript, /CHATGPT_CODEX_AUTH_B64/);
@@ -128,24 +126,21 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.doesNotMatch(windowsSyncScript, /Write-Output .*encoded/);
   assert.match(windowsSyncScript, /shell:AppsFolder/);
   assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
-  assert.match(windowsSyncScript, /--source', 'desktop'/);
-  assert.match(windowsSyncScript, /--verify-account/);
+  assert.match(windowsSyncScript, /export-live-chatgpt-session\.mjs/);
+  assert.match(windowsSyncScript, /Get-LiveRendererCookieSummary/);
+  assert.match(windowsSyncScript, /CHATGPT_CDP_PORT/);
   assert.doesNotMatch(windowsSyncScript, /remote-debugging-port/);
   assert.doesNotMatch(windowsSyncScript, /load-extension/);
   assert.doesNotMatch(windowsSyncScript, /chatgpt-cookie-capture-extension/);
   assert.doesNotMatch(windowsSyncScript, /auth\.openai\.com\/oauth/);
   assert.match(windowsSyncScript, /WaitSeconds/);
-  assert.match(windowsCookieExtractor, /validate_auth_bundle/);
-  assert.match(windowsCookieExtractor, /credentialSource/);
-  assert.match(windowsCookieExtractor, /win32crypt/);
-  assert.match(windowsCookieExtractor, /Cryptodome\.Cipher/);
-  assert.match(windowsCookieExtractor, /OpenAI\.Codex_/);
-  assert.match(windowsCookieExtractor, /desktop-app/);
-  assert.doesNotMatch(windowsCookieExtractor, /B64_START/);
-  assert.match(macOSCookieExtractor, /Chrome Safe Storage/);
-  assert.match(macOSCookieExtractor, /__Secure-next-auth\.session-token/);
-  assert.match(macOSCookieExtractor, /https:\/\/chatgpt\.com\/api\/auth\/session/);
-  assert.match(macOSCookieExtractor, /ChatGPT web session belongs to a different account/);
+  assert.match(liveSessionExporter, /Network\.getAllCookies/);
+  assert.match(liveSessionExporter, /Runtime\.evaluate/);
+  assert.match(liveSessionExporter, /app:\/\/-\/index\.html/);
+  assert.match(liveSessionExporter, /electronBridge/);
+  assert.match(liveSessionExporter, /live-desktop-renderer/);
+  assert.doesNotMatch(liveSessionExporter, /api\/auth\/session|https:\/\/chatgpt\.com/);
+  assert.doesNotMatch(liveSessionExporter, /sqlite|Safe Storage|win32crypt|Cryptodome/i);
 });
 test('worker exposes the interactive login sync command', async () => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -167,18 +162,18 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /case "sync_actions_credentials"/);
   assert.match(nativeSource, /CDPClient\.allCookies/);
   assert.match(nativeSource, /authenticationDeadline/);
-  assert.match(nativeSource, /actionsLoginTarget\(requireWeb: true\)/);
-  assert.match(nativeSource, /fetch\('\/api\/auth\/session'/);
-  assert.match(nativeSource, /webSessionAuthenticated/);
-  assert.match(nativeSource, /webSessionIdentifiers/);
+  assert.match(nativeSource, /actionsDesktopTarget\(\)/);
+  assert.match(nativeSource, /actionsDesktopState/);
+  assert.match(nativeSource, /electronBridge/);
   assert.match(nativeSource, /actionsLoginPorts/);
   assert.match(nativeSource, /ports\.append\(9324\)/);
-  assert.match(nativeSource, /actionsWebSessionMatchesCodex/);
+  assert.doesNotMatch(nativeSource, /createActionsWebLoginTarget|actionsWebSessionMatchesCodex/);
+  assert.match(nativeSource, /Credential export never calls this web-only verifier/);
   assert.match(nativeSource, /syncLiveActionsCredentials/);
-  assert.match(nativeSource, /credentialSource": "live-chat-renderer"/);
+  assert.match(nativeSource, /credentialSource": "live-desktop-renderer"/);
   assert.doesNotMatch(nativeSource, /credentialSource": "local-files"/);
-  assert.match(nativeSource, /extractVerifiedMacOSBrowserCookies/);
-  assert.match(nativeSource, /loginLabels\.has\(label\)/);
+  assert.doesNotMatch(nativeSource, /extractVerifiedMacOS|macOSCookieExtractor/);
+  assert.doesNotMatch(nativeSource, /webSessionIdentifiers/);
   assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
   assert.match(nativeServer, /-OpenLogin/);
   assert.match(nativeServer, /-WaitSeconds/);
