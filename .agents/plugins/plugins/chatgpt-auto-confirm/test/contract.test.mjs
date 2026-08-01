@@ -52,6 +52,9 @@ test('home contract', () => {
     'web_login_and_sync_actions', 'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
     'prompt_templates', 'wait_for_review',
   ]);
+  const webLoginReply = HOME.quickReplies.find(item => item.action.name === 'web_login_and_sync_actions');
+  assert.equal(webLoginReply.label, '网页登录并同步 Action 凭证');
+  assert.deepEqual(webLoginReply.aliases, ['网页登录', '同步网页凭证']);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {

@@ -30,7 +30,7 @@ For long-lived release, deployment, marketplace, or CI work, also apply the bund
    - `timeout: 7200` unless the user requests another total limit;
    - `stagnationTimeout: 1200` for 20 minutes without new visible progress;
    - `maxRecoveryAttempts: 5`;
-   - select GPT-5.6 Sol and High reasoning effort for complex implementation tasks when the model selector is available;
+   - select GPT-5.6 Sol and Extra High reasoning effort for complex implementation tasks when the model selector is available;
    - `autoContinueIncomplete: true`;
    - `maxTaskContinuations: 0` (continuous report-driven new-Chat continuation; `0` means no fixed cap);
    - `pollIntervalMs: 500`.
