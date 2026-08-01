@@ -55,7 +55,7 @@ const queuedTaskSchema = {
   },
 };
 const tools = [
-  { name: 'login_and_sync_actions', description: 'Open a browser-only ChatGPT OAuth login link, verify the temporary ChatGPT web session and Codex OAuth credential belong to the same account, then sync both to GitHub Secrets and optionally start the Action.', annotations: {
+  { name: 'login_and_sync_actions', description: 'Open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then sync both to GitHub Secrets and optionally start the Action.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
@@ -63,7 +63,7 @@ const tools = [
       start: { type: 'boolean', default: true },
     },
   } },
-  { name: 'web_login_and_sync_actions', description: 'Open the browser-only ChatGPT OAuth login link (not the ordinary chatgpt.com/auth/login page), verify the temporary ChatGPT web session and Codex OAuth credential belong to the same account, then upload both credentials to GitHub Secrets.', annotations: {
+  { name: 'web_login_and_sync_actions', description: 'Compatibility command: open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then upload both credentials to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
@@ -71,7 +71,7 @@ const tools = [
       start: { type: 'boolean', default: false },
     },
   } },
-  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT browser session and local Codex credentials, verify they belong to the same account, then upload both to GitHub Secrets.', annotations: {
+  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT desktop-app session and local Codex credentials, verify they belong to the same account, then upload both to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
