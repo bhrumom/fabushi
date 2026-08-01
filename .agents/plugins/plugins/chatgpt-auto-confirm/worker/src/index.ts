@@ -71,7 +71,7 @@ const tools = [
       start: { type: 'boolean', default: false },
     },
   } },
-  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT desktop-app session and local Codex credentials, verify they belong to the same account, then upload both to GitHub Secrets.', annotations: {
+  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT desktop-app session and local Codex credentials, then upload both to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {

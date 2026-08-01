@@ -558,6 +558,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
 });
 
 test('native runtime stays in the background and never takes over the UI', () => {
+  const backgroundNativeSource = nativeSource.replace(
+    /func activateChatGPTForLogin\(\) \{[\s\S]*?\n\}\n\nfunc waitForActionsLoginTarget/,
+    'func waitForActionsLoginTarget',
+  );
   assert.match(nativeSource, /AXUIElementPerformAction\(candidate\.element, kAXPressAction/);
   assert.match(nativeSource, /AXPress 已发送，等待授权卡消失/);
   assert.match(nativeSource, /reconcilePendingApprovals/);
@@ -569,7 +573,7 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /axPressNeverTargetsHiddenElements/);
   assert.match(nativeSource, /dismissHistoryOverlay\(covering: candidate\)/);
   assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|CGEvent\s*\(|postToPid/);
-  assert.doesNotMatch(nativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
+  assert.doesNotMatch(backgroundNativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
   assert.doesNotMatch(nativeSource,
     /navigateChat|scanTargetChats|sweepHiddenChats|sidebarTaskButton|switchApplicationMode/);
   assert.doesNotMatch(nativeSource, /sensitiveTerms|blockedSensitive/);

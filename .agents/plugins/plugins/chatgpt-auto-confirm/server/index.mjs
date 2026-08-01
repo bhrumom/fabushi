@@ -24,6 +24,7 @@ const nativeCommands = new Map([
   ['queue_status', 'queue_status'], ['update_task', 'queue_update'],
   ['wait_for_review', 'queue_wait_review'],
   ['start_actions_runner', 'start_actions_runner'],
+  ['sync_actions_credentials', 'sync_actions_credentials'],
   ['login_and_sync_actions', 'login_and_sync_actions'],
   ['review_task', 'queue_review'], ['pause_queue', 'queue_pause'],
   ['resume_queue', 'queue_resume'], ['retry_task', 'queue_retry'],
@@ -102,14 +103,14 @@ function runNativeTool(rpc) {
   if (tool === 'audit_log') args.push(String(rpc.params?.arguments?.limit ?? 20));
   if (tool === 'send_and_watch' || tool === 'add_connector' || [
     'enqueue_tasks', 'start_queue', 'update_task', 'wait_for_review', 'review_task', 'retry_task',
-    'cancel_task', 'login_and_sync_actions',
+    'cancel_task', 'sync_actions_credentials', 'login_and_sync_actions',
   ].includes(tool)) args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   const timeoutMs = tool === 'send_and_watch'
     ? 7_300_000
     : ['start_queue', 'wait_for_review'].includes(tool)
       ? 7_300_000
     : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000
-    : ['start_actions_runner', 'login_and_sync_actions', 'web_login_and_sync_actions'].includes(tool) ? 1_200_000 : 15_000;
+    : ['start_actions_runner', 'sync_actions_credentials', 'login_and_sync_actions', 'web_login_and_sync_actions'].includes(tool) ? 1_200_000 : 15_000;
   const invocation = spawnSync(nativeRuntime, args, {
     encoding: 'utf8', timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024,
     env: process.env,
