@@ -33,6 +33,10 @@ const nativeServer = readFileSync(
   new URL('../server/index.mjs', import.meta.url),
   'utf8',
 );
+const nativeSource = readFileSync(
+  new URL('../native/main.swift', import.meta.url),
+  'utf8',
+);
 const workerSource = readFileSync(
   new URL('../worker/src/index.ts', import.meta.url),
   'utf8',
