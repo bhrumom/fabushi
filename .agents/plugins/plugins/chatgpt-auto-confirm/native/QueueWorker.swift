@@ -395,7 +395,7 @@ func openBackgroundQueueWindow(
           }),
           let wsURL = target["webSocketDebuggerUrl"] as? String,
           let url = target["url"] as? String,
-          let loginState = actionsLoginState(ActionsLoginTarget(
+          let loginState = actionsWebLoginState(ActionsLoginTarget(
             port: port,
             targetId: targetId,
             wsURL: wsURL,
