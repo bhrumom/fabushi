@@ -337,7 +337,7 @@ func sendMessageJS(
     }
 
     const desiredModel = 'GPT-5.6 Sol';
-    const desiredReasoning = 'High';
+    const desiredReasoning = 'Extra High';
     const desiredQuickChatModel = 'Thinking';
     const desiredQuickChatReasoning = 'Extra High';
 
@@ -411,7 +411,7 @@ func sendMessageJS(
 
       // Only use a generic popup as a last resort, and only when its label still
       // looks like a model control. This prevents "Choose project" from opening
-      // the project menu and being misreported as a missing High-reasoning choice.
+      // the project menu and being misreported as a missing Extra High-reasoning choice.
       const popupButton = [...(composer || document).querySelectorAll(
         '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
       )].find(button => visible(button) && button !== send && isModelPickerLabel(button));
@@ -544,7 +544,7 @@ func sendMessageJS(
       // The web Chat shell exposes a workspace/profile trigger beside the
       // composer. Its label can contain words such as "business" and was
       // occasionally selected as the model picker by generic fallbacks.
-      // Prefer the explicit High/model control when that happens.
+      // Prefer the explicit Extra High/model control when that happens.
       if (/workspace|profile|account|business/i.test(pickerBefore)) {
         const explicitModel = [...document.querySelectorAll(
           'button, [role="button"], [role="tab"]'
@@ -555,8 +555,8 @@ func sendMessageJS(
             candidate.getAttribute('aria-label'),
             candidate.getAttribute('title')
           ].filter(Boolean).join(' ')).toLowerCase();
-          return label === 'high'
-            || label === '高'
+          return label === 'extra high'
+            || label === '极高'
             || label.includes(desiredModel.toLowerCase());
         });
         if (explicitModel) picker = explicitModel;
@@ -566,7 +566,7 @@ func sendMessageJS(
       // exposes ChatGPT choices such as Instant/Extra High, not the Codex
       // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
       // before sending, while the task contract separately requires downstream
-      // Codex/devspace execution to use GPT-5.6 Sol / High.
+      // Codex/devspace execution to use GPT-5.6 Sol / Extra High.
       const quickChatModelSurface = !!quickChatRoot()
         || ['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'].some(label =>
           selectedLabel === label || selectedLabel.startsWith(`${label} `)
@@ -637,9 +637,9 @@ func sendMessageJS(
           downstreamReasoning: desiredReasoning
         };
       }
-      let reasoningConfirmed = selectedLabel === 'high'
-        || selectedLabel === '高'
-        || selectedLabel.startsWith('high ');
+      let reasoningConfirmed = selectedLabel === 'extra high'
+        || selectedLabel === '极高'
+        || selectedLabel.startsWith('extra high ');
       let modelConfirmed = pickerBefore.toLowerCase().includes(desiredModel.toLowerCase());
       let modelChoiceClicked = false;
       let highChoiceClicked = false;
@@ -659,8 +659,9 @@ func sendMessageJS(
         }
 
         let highChoice = [
-          ...allExactModelChoices('High'),
-          ...allExactModelChoices('高')
+          ...allExactModelChoices('Extra High'),
+          ...allExactModelChoices('极高'),
+          ...allExactModelChoices('额外高')
         ].find(choice =>
           visibleModelMenus().some(menu => menu.contains(choice))
         ) || null;
@@ -678,8 +679,9 @@ func sendMessageJS(
           }
           await sleep(400);
           highChoice = [
-            ...allExactModelChoices('High'),
-            ...allExactModelChoices('高')
+            ...allExactModelChoices('Extra High'),
+            ...allExactModelChoices('极高'),
+            ...allExactModelChoices('额外高')
           ].find(choice =>
             visibleModelMenus().some(menu => menu.contains(choice))
           ) || null;
@@ -697,9 +699,10 @@ func sendMessageJS(
           picker?.getAttribute('title')
         ].filter(Boolean).join(' '));
         selectedLabel = normalize(picker?.textContent).toLowerCase();
-        reasoningConfirmed = selectedLabel === 'high'
-          || selectedLabel === '高'
-          || selectedLabel.startsWith('high ')
+        reasoningConfirmed = selectedLabel === 'extra high'
+          || selectedLabel === '极高'
+          || selectedLabel === '额外高'
+          || selectedLabel.startsWith('extra high ')
           || selectedChoice(highChoice)
           || highChoiceClicked;
         modelConfirmed = modelConfirmed
@@ -750,6 +753,7 @@ func sendMessageJS(
         selectedLabel,
         pickerEvidence: 'selected_button_state',
         verificationModelSelected: modelConfirmed,
+        submenuExtraHighSelected: highChoiceClicked || reasoningConfirmed,
         submenuHighSelected: highChoiceClicked || reasoningConfirmed
       };
     }
@@ -954,7 +958,7 @@ func sendMessageJS(
     }
 
     // Every task, continuation, and independent review Chat must explicitly
-    // select GPT-5.6 Sol with High reasoning before any connector or message is
+    // select GPT-5.6 Sol with Extra High reasoning before any connector or message is
     // placed in the composer. Fail closed so a default or stale model can never
     // receive an automated instruction.
     const modelSelection = await ensureModelAndReasoning();

@@ -331,7 +331,7 @@ func automationTaskMessage(_ task: AutomationTask) -> String {
   let originalGoal = task.originalPrompt ?? task.prompt
   var sections = [
     taskPromptPrefix(task.promptTemplate),
-    "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 High。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
+    "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 Extra High（极高）。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
     "执行边界：实际工作只允许在 Chat 页面完成；不要点击或进入 Work 页面。",
     "连接器路由：当前新 Chat 选用「\(task.connector)」。已在云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器；不要改用本地 gh 来替代云端证据。本地 checkout、Git/gh 元数据与安全同步必须使用 bhrum2；同步前先读取 status、远端和分支，只允许干净工作树上的 fast-forward，不得覆盖本地改动。若本轮从 bhrum2 推送到云端，最终报告 next_connector 填 GitHub，让小程序为下一新 Chat 切换到 GitHub 连接器。",
     "资源策略：项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions 中执行并以 Actions 日志或构件为准。本机只做 Git/gh 元数据与代码阅读；不要在本机运行任何项目测试、构建、打包、安装、依赖下载或会生成缓存/产物的命令。",

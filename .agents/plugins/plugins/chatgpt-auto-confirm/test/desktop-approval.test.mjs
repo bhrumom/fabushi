@@ -356,6 +356,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /reasoning_high_not_selected/);
   assert.match(nativeSource, /quick_chat_thinking_not_selected/);
   assert.match(nativeSource, /const desiredQuickChatReasoning = 'Extra High'/);
+  assert.match(nativeSource, /const desiredReasoning = 'Extra High'/);
   assert.match(nativeSource, /pickerEvidence: 'quick-chat-extra-high-selection'/);
   assert.match(nativeSource, /submenuExtraHighSelected: true/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
@@ -366,8 +367,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /composer\?\.contains\(left\)/);
   assert.doesNotMatch(nativeSource, /pickerEvidence: 'quick-chat-host-selection'/);
   assert.match(nativeSource, /pickerEvidence: 'selected_button_state'/);
-  assert.match(nativeSource, /selectedLabel === 'high'/);
-  assert.match(nativeSource, /selectedLabel === '高'/);
+  assert.match(nativeSource, /selectedLabel === 'extra high'/);
+  assert.match(nativeSource, /allExactModelChoices\('Extra High'\)/);
+  assert.match(nativeSource, /selectedLabel === '极高'/);
   assert.doesNotMatch(nativeSource, /pickerEvidence: "Bypassed"/);
   assert.match(nativeSource, /createQueueWorkerTarget/);
   assert.match(nativeSource, /queueWorkerProfilePath/);

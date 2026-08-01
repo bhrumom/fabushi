@@ -63,7 +63,7 @@ const tools = [
       start: { type: 'boolean', default: true },
     },
   } },
-  { name: 'web_login_and_sync_actions', description: 'Open the official Codex web login in the browser, verify the ChatGPT browser session is the same account, then upload both credentials to GitHub Secrets without requiring the desktop app.', annotations: {
+  { name: 'web_login_and_sync_actions', description: 'Miniapp CLI command: open the official Codex web login in the browser, verify the ChatGPT browser session is the same account, then upload both credentials to GitHub Secrets without requiring the desktop app.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
