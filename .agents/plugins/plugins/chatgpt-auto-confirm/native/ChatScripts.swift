@@ -339,6 +339,7 @@ func sendMessageJS(
     const desiredModel = 'GPT-5.6 Sol';
     const desiredReasoning = 'High';
     const desiredQuickChatModel = 'Thinking';
+    const desiredQuickChatReasoning = 'Extra High';
 
     function modelPickerButton() {
       const input = findTextarea();
@@ -562,53 +563,53 @@ func sendMessageJS(
       }
       let selectedLabel = normalize(picker.textContent).toLowerCase();
       // Desktop Quick Chat is the authenticated orchestration surface. It
-      // exposes ChatGPT choices such as Instant/Thinking, not the Codex
+      // exposes ChatGPT choices such as Instant/Extra High, not the Codex
       // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
       // before sending, while the task contract separately requires downstream
       // Codex/devspace execution to use GPT-5.6 Sol / High.
       const quickChatModelSurface = !!quickChatRoot()
-        || ['instant', 'thinking', 'pro', 'high', 'medium'].some(label =>
+        || ['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'].some(label =>
           selectedLabel === label || selectedLabel.startsWith(`${label} `)
         );
       if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
-        let quickChatConfirmed = selectedLabel === 'thinking'
-          || selectedLabel === '思考'
-          || selectedLabel.startsWith('thinking ')
-          || selectedLabel === 'high'
-          || selectedLabel === '高'
-          || selectedLabel.startsWith('high ');
+        let quickChatConfirmed = selectedLabel === 'extra high'
+          || selectedLabel === '极高'
+          || selectedLabel.startsWith('extra high ')
+          || selectedLabel === 'extra\\u00a0high'
+          || selectedLabel === '额外高'
+          || selectedLabel.startsWith('extra\\u00a0high ');
         if (!quickChatConfirmed) {
           // The desktop ChatGPT model switcher is a Radix trigger that opens
           // on pointerdown; HTMLElement.click() alone leaves the menu closed.
           dispatchPointerClick(picker);
           await sleep(500);
-          const thinkingChoice = [
-            ...allPrefixedModelChoices('Thinking'),
-            ...allPrefixedModelChoices('思考'),
-            ...allPrefixedModelChoices('High'),
-            ...allPrefixedModelChoices('高')
+          const extraHighChoice = [
+            ...allPrefixedModelChoices('Extra High'),
+            ...allPrefixedModelChoices('极高'),
+            ...allPrefixedModelChoices('Extra\\u00a0High'),
+            ...allPrefixedModelChoices('额外高')
           ][0] || null;
-          if (thinkingChoice) {
-            if (!selectedChoice(thinkingChoice)) thinkingChoice.click();
+          if (extraHighChoice) {
+            if (!selectedChoice(extraHighChoice)) extraHighChoice.click();
             quickChatChoiceClicked = true;
             await sleep(350);
           }
           picker = modelPickerButton();
           selectedLabel = normalize(picker?.textContent).toLowerCase();
-          quickChatConfirmed = selectedLabel === 'thinking'
-            || selectedLabel === '思考'
-            || selectedLabel.startsWith('thinking ')
-            || selectedLabel === 'high'
-            || selectedLabel === '高'
-            || selectedLabel.startsWith('high ');
+          quickChatConfirmed = selectedLabel === 'extra high'
+            || selectedLabel === '极高'
+            || selectedLabel.startsWith('extra high ')
+            || selectedLabel === 'extra\\u00a0high'
+            || selectedLabel === '额外高'
+            || selectedLabel.startsWith('extra\\u00a0high ');
         }
         if (!quickChatConfirmed) {
           return {
             ok: false,
             error: 'quick_chat_thinking_not_selected',
             model: desiredQuickChatModel,
-            reasoning: desiredReasoning,
+            reasoning: desiredQuickChatReasoning,
             modelConfirmed: false,
             reasoningConfirmed: false,
             pickerBefore,
@@ -622,14 +623,15 @@ func sendMessageJS(
         return {
           ok: true,
           model: desiredQuickChatModel,
-          reasoning: desiredReasoning,
+          reasoning: desiredQuickChatReasoning,
           modelConfirmed: true,
           reasoningConfirmed: true,
           pickerBefore,
           selectedLabel,
-          pickerEvidence: 'quick-chat-thinking-selection',
+          pickerEvidence: 'quick-chat-extra-high-selection',
           quickChatChoiceClicked,
           verificationModelSelected: true,
+          submenuExtraHighSelected: true,
           submenuHighSelected: true,
           downstreamModel: desiredModel,
           downstreamReasoning: desiredReasoning

@@ -49,7 +49,7 @@ test('home contract', () => {
   assert.ok(Buffer.byteLength(JSON.stringify(HOME)) <= 32768);
   assert.ok(HOME.feed.items.length <= 10);
   assert.deepEqual(HOME.quickReplies.map(item => item.action.name), [
-    'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
+    'web_login_and_sync_actions', 'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
     'prompt_templates', 'wait_for_review',
   ]);
 });
@@ -142,6 +142,12 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(workerSource, /actions-runner-credential-sync/);
   assert.match(nativeServer, /-OpenLogin/);
   assert.match(nativeServer, /-WaitSeconds/);
+  const webTool = tools.find(item => item.name === 'web_login_and_sync_actions');
+  assert.ok(webTool);
+  assert.equal(webTool.inputSchema.properties.start.default, false);
+  assert.equal(webTool.inputSchema.properties.waitSeconds.default, 600);
+  assert.match(workerSource, /actions-runner-web-login-sync/);
+  assert.match(nativeServer, /-WebLogin/);
 });
 // test('continuous Actions inbox contains independent work for real parallel dispatch', () => {
 //   assert.ok(actionsInbox.maxConcurrent >= 2);
