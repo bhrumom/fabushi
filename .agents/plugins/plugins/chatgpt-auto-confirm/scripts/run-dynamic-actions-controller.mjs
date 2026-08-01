@@ -343,6 +343,9 @@ while (!stopping && Date.now() < deadline) {
   if (child.exitCode !== null) {
     let status = '';
     try { status = JSON.parse(readFileSync(resultPath, 'utf8')).status || ''; } catch {}
+    if (status === 'failed') {
+      process.exit(child.exitCode || 1);
+    }
     if (activeControl?.keepAlive !== true) process.exit(child.exitCode || (status === 'complete' ? 0 : 1));
     await sleep(Math.min(5_000, pollSeconds * 1_000));
   } else {

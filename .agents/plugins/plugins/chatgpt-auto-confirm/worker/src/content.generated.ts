@@ -1,6 +1,6 @@
 export const HOME = {
   "schema": "mahayana.miniapp.home.v1",
-  "revision": "5db36c76940a18b8b3b571895f3b421514c4cf654908c839dece5bce5faf239f",
+  "revision": "7ef18f9ff25af9d7baf651d730a11fb7f72084d876fc683c9b99ae8edc73b839",
   "app": {
     "id": "chatgpt-auto-confirm",
     "title": "ChatGPT 自动确认",
@@ -18,6 +18,39 @@ export const HOME = {
     }
   ],
   "quickReplies": [
+    {
+      "id": "web-login-and-sync-actions",
+      "label": "浏览器登录并同步 Action 凭证",
+      "aliases": [
+        "浏览器登录",
+        "同步网页凭证"
+      ],
+      "action": {
+        "type": "tool",
+        "name": "web_login_and_sync_actions",
+        "arguments": {}
+      }
+    },
+    {
+      "id": "sync-actions-credentials",
+      "label": "同步已登录凭证",
+      "aliases": [],
+      "action": {
+        "type": "tool",
+        "name": "sync_actions_credentials",
+        "arguments": {}
+      }
+    },
+    {
+      "id": "login-and-sync-actions",
+      "label": "登录并同步 Action 凭证",
+      "aliases": [],
+      "action": {
+        "type": "tool",
+        "name": "login_and_sync_actions",
+        "arguments": {}
+      }
+    },
     {
       "id": "queue-status",
       "label": "查看任务队列",

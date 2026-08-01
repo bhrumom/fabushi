@@ -238,6 +238,17 @@ struct CDPClient {
     )
   }
 
+  static func allCookies(wsURLString: String, timeout: TimeInterval = 5.0) -> [[String: Any]] {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Network.getAllCookies",
+      paramsJSON: "{}",
+      timeout: timeout
+    ), let result = response["result"] as? [String: Any],
+       let cookies = result["cookies"] as? [[String: Any]] else { return [] }
+    return cookies
+  }
+
   static func captureScreenshot(wsURLString: String, outputURL: URL) -> Bool {
     guard let response = sendCommand(
       wsURLString: wsURLString,

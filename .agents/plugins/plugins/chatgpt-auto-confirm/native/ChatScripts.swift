@@ -337,8 +337,9 @@ func sendMessageJS(
     }
 
     const desiredModel = 'GPT-5.6 Sol';
-    const desiredReasoning = 'High';
+    const desiredReasoning = 'Extra High';
     const desiredQuickChatModel = 'Thinking';
+    const desiredQuickChatReasoning = 'Extra High';
 
     function modelPickerButton() {
       const input = findTextarea();
@@ -410,7 +411,7 @@ func sendMessageJS(
 
       // Only use a generic popup as a last resort, and only when its label still
       // looks like a model control. This prevents "Choose project" from opening
-      // the project menu and being misreported as a missing High-reasoning choice.
+      // the project menu and being misreported as a missing Extra High-reasoning choice.
       const popupButton = [...(composer || document).querySelectorAll(
         '[aria-haspopup], [aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'
       )].find(button => visible(button) && button !== send && isModelPickerLabel(button));
@@ -543,7 +544,7 @@ func sendMessageJS(
       // The web Chat shell exposes a workspace/profile trigger beside the
       // composer. Its label can contain words such as "business" and was
       // occasionally selected as the model picker by generic fallbacks.
-      // Prefer the explicit High/model control when that happens.
+      // Prefer the explicit Extra High/model control when that happens.
       if (/workspace|profile|account|business/i.test(pickerBefore)) {
         const explicitModel = [...document.querySelectorAll(
           'button, [role="button"], [role="tab"]'
@@ -554,61 +555,61 @@ func sendMessageJS(
             candidate.getAttribute('aria-label'),
             candidate.getAttribute('title')
           ].filter(Boolean).join(' ')).toLowerCase();
-          return label === 'high'
-            || label === '高'
+          return label === 'extra high'
+            || label === '极高'
             || label.includes(desiredModel.toLowerCase());
         });
         if (explicitModel) picker = explicitModel;
       }
       let selectedLabel = normalize(picker.textContent).toLowerCase();
       // Desktop Quick Chat is the authenticated orchestration surface. It
-      // exposes ChatGPT choices such as Instant/Thinking, not the Codex
+      // exposes ChatGPT choices such as Instant/Extra High, not the Codex
       // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
       // before sending, while the task contract separately requires downstream
-      // Codex/devspace execution to use GPT-5.6 Sol / High.
+      // Codex/devspace execution to use GPT-5.6 Sol / Extra High.
       const quickChatModelSurface = !!quickChatRoot()
-        || ['instant', 'thinking', 'pro', 'high', 'medium'].some(label =>
+        || ['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'].some(label =>
           selectedLabel === label || selectedLabel.startsWith(`${label} `)
         );
       if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
-        let quickChatConfirmed = selectedLabel === 'thinking'
-          || selectedLabel === '思考'
-          || selectedLabel.startsWith('thinking ')
-          || selectedLabel === 'high'
-          || selectedLabel === '高'
-          || selectedLabel.startsWith('high ');
+        let quickChatConfirmed = selectedLabel === 'extra high'
+          || selectedLabel === '极高'
+          || selectedLabel.startsWith('extra high ')
+          || selectedLabel === 'extra\\u00a0high'
+          || selectedLabel === '额外高'
+          || selectedLabel.startsWith('extra\\u00a0high ');
         if (!quickChatConfirmed) {
           // The desktop ChatGPT model switcher is a Radix trigger that opens
           // on pointerdown; HTMLElement.click() alone leaves the menu closed.
           dispatchPointerClick(picker);
           await sleep(500);
-          const thinkingChoice = [
-            ...allPrefixedModelChoices('Thinking'),
-            ...allPrefixedModelChoices('思考'),
-            ...allPrefixedModelChoices('High'),
-            ...allPrefixedModelChoices('高')
+          const extraHighChoice = [
+            ...allPrefixedModelChoices('Extra High'),
+            ...allPrefixedModelChoices('极高'),
+            ...allPrefixedModelChoices('Extra\\u00a0High'),
+            ...allPrefixedModelChoices('额外高')
           ][0] || null;
-          if (thinkingChoice) {
-            if (!selectedChoice(thinkingChoice)) thinkingChoice.click();
+          if (extraHighChoice) {
+            if (!selectedChoice(extraHighChoice)) extraHighChoice.click();
             quickChatChoiceClicked = true;
             await sleep(350);
           }
           picker = modelPickerButton();
           selectedLabel = normalize(picker?.textContent).toLowerCase();
-          quickChatConfirmed = selectedLabel === 'thinking'
-            || selectedLabel === '思考'
-            || selectedLabel.startsWith('thinking ')
-            || selectedLabel === 'high'
-            || selectedLabel === '高'
-            || selectedLabel.startsWith('high ');
+          quickChatConfirmed = selectedLabel === 'extra high'
+            || selectedLabel === '极高'
+            || selectedLabel.startsWith('extra high ')
+            || selectedLabel === 'extra\\u00a0high'
+            || selectedLabel === '额外高'
+            || selectedLabel.startsWith('extra\\u00a0high ');
         }
         if (!quickChatConfirmed) {
           return {
             ok: false,
             error: 'quick_chat_thinking_not_selected',
             model: desiredQuickChatModel,
-            reasoning: desiredReasoning,
+            reasoning: desiredQuickChatReasoning,
             modelConfirmed: false,
             reasoningConfirmed: false,
             pickerBefore,
@@ -622,22 +623,23 @@ func sendMessageJS(
         return {
           ok: true,
           model: desiredQuickChatModel,
-          reasoning: desiredReasoning,
+          reasoning: desiredQuickChatReasoning,
           modelConfirmed: true,
           reasoningConfirmed: true,
           pickerBefore,
           selectedLabel,
-          pickerEvidence: 'quick-chat-thinking-selection',
+          pickerEvidence: 'quick-chat-extra-high-selection',
           quickChatChoiceClicked,
           verificationModelSelected: true,
+          submenuExtraHighSelected: true,
           submenuHighSelected: true,
           downstreamModel: desiredModel,
           downstreamReasoning: desiredReasoning
         };
       }
-      let reasoningConfirmed = selectedLabel === 'high'
-        || selectedLabel === '高'
-        || selectedLabel.startsWith('high ');
+      let reasoningConfirmed = selectedLabel === 'extra high'
+        || selectedLabel === '极高'
+        || selectedLabel.startsWith('extra high ');
       let modelConfirmed = pickerBefore.toLowerCase().includes(desiredModel.toLowerCase());
       let modelChoiceClicked = false;
       let highChoiceClicked = false;
@@ -657,8 +659,9 @@ func sendMessageJS(
         }
 
         let highChoice = [
-          ...allExactModelChoices('High'),
-          ...allExactModelChoices('高')
+          ...allExactModelChoices('Extra High'),
+          ...allExactModelChoices('极高'),
+          ...allExactModelChoices('额外高')
         ].find(choice =>
           visibleModelMenus().some(menu => menu.contains(choice))
         ) || null;
@@ -676,8 +679,9 @@ func sendMessageJS(
           }
           await sleep(400);
           highChoice = [
-            ...allExactModelChoices('High'),
-            ...allExactModelChoices('高')
+            ...allExactModelChoices('Extra High'),
+            ...allExactModelChoices('极高'),
+            ...allExactModelChoices('额外高')
           ].find(choice =>
             visibleModelMenus().some(menu => menu.contains(choice))
           ) || null;
@@ -695,9 +699,10 @@ func sendMessageJS(
           picker?.getAttribute('title')
         ].filter(Boolean).join(' '));
         selectedLabel = normalize(picker?.textContent).toLowerCase();
-        reasoningConfirmed = selectedLabel === 'high'
-          || selectedLabel === '高'
-          || selectedLabel.startsWith('high ')
+        reasoningConfirmed = selectedLabel === 'extra high'
+          || selectedLabel === '极高'
+          || selectedLabel === '额外高'
+          || selectedLabel.startsWith('extra high ')
           || selectedChoice(highChoice)
           || highChoiceClicked;
         modelConfirmed = modelConfirmed
@@ -748,6 +753,7 @@ func sendMessageJS(
         selectedLabel,
         pickerEvidence: 'selected_button_state',
         verificationModelSelected: modelConfirmed,
+        submenuExtraHighSelected: highChoiceClicked || reasoningConfirmed,
         submenuHighSelected: highChoiceClicked || reasoningConfirmed
       };
     }
@@ -952,7 +958,7 @@ func sendMessageJS(
     }
 
     // Every task, continuation, and independent review Chat must explicitly
-    // select GPT-5.6 Sol with High reasoning before any connector or message is
+    // select GPT-5.6 Sol with Extra High reasoning before any connector or message is
     // placed in the composer. Fail closed so a default or stale model can never
     // receive an automated instruction.
     const modelSelection = await ensureModelAndReasoning();
