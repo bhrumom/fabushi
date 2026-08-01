@@ -71,10 +71,11 @@ const tools = [
       start: { type: 'boolean', default: false },
     },
   } },
-  { name: 'sync_actions_credentials', description: 'Extract the already signed-in ChatGPT desktop-app session and local Codex credentials, then upload both to GitHub Secrets.', annotations: {
+  { name: 'sync_actions_credentials', description: 'Capture the live authenticated ChatGPT web renderer from the desktop app, verify it matches local Codex, then upload both credentials to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
+      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
       start: { type: 'boolean', default: false, description: 'After syncing, optionally start the GitHub Actions runner.' },
     },
   } },
