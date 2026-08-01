@@ -39,6 +39,8 @@ for (const [folder, kind] of kinds) {
 items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id));
 const source = JSON.stringify({ welcome, tips, items, resources });
 const quickReplies = [
+  { id: 'sync-actions-credentials', label: '同步已登录凭证', aliases: [], action: { type: 'tool', name: 'sync_actions_credentials', arguments: {} } },
+  { id: 'login-and-sync-actions', label: '登录并同步 Action 凭证', aliases: [], action: { type: 'tool', name: 'login_and_sync_actions', arguments: {} } },
   { id: 'queue-status', label: '查看任务队列', aliases: [], action: { type: 'tool', name: 'queue_status', arguments: {} } },
   { id: 'start-actions-runner', label: '启动 6 小时 Action', aliases: [], action: { type: 'tool', name: 'start_actions_runner', arguments: {} } },
   { id: 'prompt-templates', label: '内置任务提示词', aliases: [], action: { type: 'tool', name: 'prompt_templates', arguments: {} } },
