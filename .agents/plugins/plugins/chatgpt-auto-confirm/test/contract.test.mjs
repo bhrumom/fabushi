@@ -25,10 +25,6 @@ const windowsCookieExtractor = readFileSync(
   new URL('../scripts/extract-windows-chatgpt-cookies.py', import.meta.url),
   'utf8',
 );
-const browserCookieCapture = readFileSync(
-  new URL('../scripts/capture-browser-chatgpt-cookies.mjs', import.meta.url),
-  'utf8',
-);
 const dynamicController = readFileSync(
   new URL('../scripts/run-dynamic-actions-controller.mjs', import.meta.url),
   'utf8',
@@ -123,23 +119,22 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.match(windowsSyncScript, /ConvertTo-Json -Compress/);
   assert.doesNotMatch(windowsSyncScript, /Write-Host .*encoded/);
   assert.doesNotMatch(windowsSyncScript, /Write-Output .*encoded/);
-  assert.match(windowsSyncScript, /remote-debugging-port/);
-  assert.match(windowsSyncScript, /app_EMoamEEZ73f0CkXaXp7hrann/);
-  assert.match(windowsSyncScript, /'http:\/\/localhost:' \+ \$callback\.Port \+ '\/auth\/callback'/);
-  assert.match(windowsSyncScript, /chatgpt\.com\/codex\/desktop-auth\?authorize_url/);
-  assert.doesNotMatch(windowsSyncScript, /Get-AppxPackage/);
-  assert.doesNotMatch(windowsSyncScript, /Start-Process ['"]https?:/);
-  assert.doesNotMatch(windowsSyncScript, /codex.*--login/);
+  assert.match(windowsSyncScript, /shell:AppsFolder/);
+  assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
+  assert.match(windowsSyncScript, /--source', 'desktop'/);
+  assert.match(windowsSyncScript, /--verify-account/);
+  assert.doesNotMatch(windowsSyncScript, /remote-debugging-port/);
+  assert.doesNotMatch(windowsSyncScript, /load-extension/);
+  assert.doesNotMatch(windowsSyncScript, /chatgpt-cookie-capture-extension/);
+  assert.doesNotMatch(windowsSyncScript, /auth\.openai\.com\/oauth/);
   assert.match(windowsSyncScript, /WaitSeconds/);
   assert.match(windowsCookieExtractor, /validate_auth_bundle/);
   assert.match(windowsCookieExtractor, /credentialSource/);
   assert.match(windowsCookieExtractor, /win32crypt/);
   assert.match(windowsCookieExtractor, /Cryptodome\.Cipher/);
   assert.match(windowsCookieExtractor, /OpenAI\.Codex_/);
+  assert.match(windowsCookieExtractor, /desktop-app/);
   assert.doesNotMatch(windowsCookieExtractor, /B64_START/);
-  assert.match(browserCookieCapture, /Network\.getAllCookies/);
-  assert.match(browserCookieCapture, /api\/auth\/session/);
-  assert.doesNotMatch(browserCookieCapture, /process\.stdout\.write\([^\n]*(?:cookie|token|value)/i);
 });
 test('worker exposes the interactive login sync command', async () => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -163,8 +158,8 @@ test('worker exposes the interactive login sync command', async () => {
   assert.equal(webTool.inputSchema.properties.start.default, false);
   assert.equal(webTool.inputSchema.properties.waitSeconds.default, 600);
   assert.match(workerSource, /actions-runner-web-login-sync/);
-  assert.match(nativeServer, /-WebLogin/);
-  assert.match(windowsSyncScript, /desktop-auth\?authorize_url/);
+  assert.match(nativeServer, /-OpenLogin/);
+  assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
   assert.match(windowsSyncScript, /credentialSource/);
 });
 // test('continuous Actions inbox contains independent work for real parallel dispatch', () => {

@@ -569,7 +569,9 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /axPressNeverTargetsHiddenElements/);
   assert.match(nativeSource, /dismissHistoryOverlay\(covering: candidate\)/);
   assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|CGEvent\s*\(|postToPid/);
-  assert.doesNotMatch(nativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
+  // The explicit macOS login command may foreground ChatGPT to complete login;
+  // the background approval loop itself must still avoid UI takeover.
+  assert.doesNotMatch(nativeSource, /postToPid|kAXFocusedAttribute/);
   assert.doesNotMatch(nativeSource,
     /navigateChat|scanTargetChats|sweepHiddenChats|sidebarTaskButton|switchApplicationMode/);
   assert.doesNotMatch(nativeSource, /sensitiveTerms|blockedSensitive/);
