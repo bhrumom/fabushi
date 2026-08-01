@@ -36,7 +36,7 @@ let nativeCommandSummaries: [String: String] = [
   "queue_cancel": "取消指定任务并停止其隐藏 worker。",
   "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
-  "sync_actions_credentials": "自动读取当前 Codex 凭证与已登录的 ChatGPT 桌面会话，并同步到 GitHub Secrets。",
+  "sync_actions_credentials": "实时验证桌面端 Chat 网页会话与 Codex 为同一账号，再同步到 GitHub Secrets。",
   "login_and_sync_actions": "打开 ChatGPT 登录页，等待登录完成后同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
   "verify_chatgpt_login": "只读验证当前 ChatGPT 网页会话是否仍处于登录状态。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
@@ -216,24 +216,45 @@ struct ActionsLoginTarget {
   let url: String
 }
 
+func actionsLoginPorts() -> [Int] {
+  let state = loadState()
+  var ports = [CDPClient.port()]
+  if let backgroundPort = state.backgroundAppPort {
+    ports.append(backgroundPort)
+  }
+  ports.append(9324)
+  var seen = Set<Int>()
+  return ports.filter { seen.insert($0).inserted }
+}
+
 func actionsLoginTarget(requireWeb: Bool = false) -> ActionsLoginTarget? {
-  let port = CDPClient.port()
-  let targets = CDPClient.fetchTargets(portOverride: port).filter { target in
-    guard isLoadedApprovalRendererTarget(target),
-          let url = target["url"] as? String else { return false }
-    return !url.contains("avatar-overlay")
-      && (url.hasPrefix("app://-/index.html") || url.contains("chatgpt.com"))
+  var fallback: ActionsLoginTarget?
+  for port in actionsLoginPorts() {
+    let targets = CDPClient.fetchTargets(portOverride: port).filter { target in
+      guard isLoadedApprovalRendererTarget(target),
+            let url = target["url"] as? String else { return false }
+      return !url.contains("avatar-overlay")
+        && (url.hasPrefix("app://-/index.html") || url.contains("chatgpt.com"))
+    }
+    for target in targets {
+      guard let targetId = target["id"] as? String,
+            let wsURL = target["webSocketDebuggerUrl"] as? String,
+            let url = target["url"] as? String else { continue }
+      let resolved = ActionsLoginTarget(
+        port: port,
+        targetId: targetId,
+        wsURL: wsURL,
+        url: url
+      )
+      if url.hasPrefix("https://chatgpt.com/") {
+        return resolved
+      }
+      if fallback == nil {
+        fallback = resolved
+      }
+    }
   }
-  let webTarget = targets.first { target in
-    let url = target["url"] as? String ?? ""
-    return url.hasPrefix("https://chatgpt.com/")
-  }
-  let target: [String: Any]? = requireWeb ? webTarget : (webTarget ?? targets.first)
-  guard let target,
-        let targetId = target["id"] as? String,
-        let wsURL = target["webSocketDebuggerUrl"] as? String,
-        let url = target["url"] as? String else { return nil }
-  return ActionsLoginTarget(port: port, targetId: targetId, wsURL: wsURL, url: url)
+  return requireWeb ? nil : fallback
 }
 
 func createActionsWebLoginTarget() -> ActionsLoginTarget? {
