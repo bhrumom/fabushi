@@ -220,7 +220,7 @@ func actionsLoginTarget() -> ActionsLoginTarget? {
   let target = CDPClient.fetchTargets(portOverride: port).first { target in
     guard isLoadedApprovalRendererTarget(target),
           let url = target["url"] as? String else { return false }
-    return !url.contains("/avatar-overlay")
+    return !url.contains("avatar-overlay")
       && (url.hasPrefix("app://-/index.html") || url.contains("chatgpt.com"))
   }
   guard let target,
