@@ -19,7 +19,7 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /run-dynamic-actions-controller\.mjs/);
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF: main/);
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"/);
-  assert.match(workflow, /Import dynamic parallel task inbox\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
+  assert.match(workflow, /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
   assert.match(controller, /spawnSync\('gh'/);
   assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{controlPath\}/);
   assert.match(controller, /pollSeconds \* 1_000/);
@@ -52,7 +52,7 @@ test('every new Chat is dispatched only after a fresh control read', () => {
   assert.match(controller, /native\('queue_pause'\);[\s\S]*const control = fetchControl\(\)/);
   assert.match(controller, /start: false/);
   assert.match(controller, /native\('queue_resume'/);
-  assert.match(controller, /await sleep\(1_000\);\n\s+native\('queue_pause'\)/);
+  assert.match(controller, /await sleep\(1_000\);\r?\n\s+native\('queue_pause'\)/);
   assert.match(controller, /runningEnded[\s\S]*previous_chat_finished/);
   assert.match(controller, /queued_chat_boundary/);
 });
