@@ -53,22 +53,22 @@ def browser_key(key_file):
     return win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
 
 
-def validate_desktop_auth(auth_path):
+def validate_auth_bundle(auth_path):
     auth = json.loads(auth_path.read_text(encoding="utf-8"))
     tokens = auth.get("tokens") or {}
     account_id = auth.get("tokens", {}).get("account_id")
     id_token = tokens.get("id_token", "")
     if not account_id or not id_token or len(id_token.split(".")) < 2:
-        raise ExtractionError("desktop auth bundle is incomplete")
+        raise ExtractionError("Codex auth bundle is incomplete")
     encoded_payload = id_token.split(".")[1]
     encoded_payload += "=" * ((4 - len(encoded_payload) % 4) % 4)
     payload = json.loads(base64.urlsafe_b64decode(encoded_payload))
     claims = payload.get("https://api.openai.com/auth") or {}
     if claims.get("chatgpt_account_id") != account_id:
-        raise ExtractionError("desktop auth bundle account identifiers do not match")
+        raise ExtractionError("Codex auth bundle account identifiers do not match")
     user_id = claims.get("chatgpt_user_id")
     if not user_id:
-        raise ExtractionError("desktop auth bundle is missing the ChatGPT user identifier")
+        raise ExtractionError("Codex auth bundle is missing the ChatGPT user identifier")
     return {"accountId": account_id, "userId": user_id}
 
 
@@ -112,17 +112,22 @@ def verify_web_account(cookies, identity):
 def browser_profiles(browser_name):
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     if not local_app_data:
-        return []
+        local_app_data = ""
     if browser_name == "codex":
-        packages = Path(local_app_data) / "Packages"
-        return sorted(
-            cookie_db for package in packages.glob("OpenAI.Codex_*")
-            for cookie_db in (
-                package / "LocalCache/Roaming/Codex/Network/Cookies",
-                *package.glob("LocalCache/Roaming/Codex/web/*/Default/Network/Cookies"),
+        installed = []
+        if local_app_data:
+            packages = Path(local_app_data) / "Packages"
+            installed = sorted(
+                cookie_db for package in packages.glob("OpenAI.Codex_*")
+                for cookie_db in (
+                    package / "LocalCache/Roaming/Codex/Network/Cookies",
+                    *package.glob("LocalCache/Roaming/Codex/web/*/Default/Network/Cookies"),
+                )
+                if cookie_db.is_file()
             )
-            if cookie_db.is_file()
-        )
+        return installed
+    if not local_app_data:
+        return []
     vendor = "Google\\Chrome" if browser_name == "chrome" else "Microsoft\\Edge"
     user_data = Path(local_app_data) / vendor / "User Data"
     if not user_data.is_dir():
@@ -161,14 +166,19 @@ def normalize_cookie(cookie):
     }
 
 
-def extract(output_path: Path, auth_path: Path, source: str, verify_account: bool = False):
+def extract(
+    output_path: Path,
+    auth_path: Path,
+    source: str,
+    verify_account: bool = False,
+):
     try:
         import win32crypt  # noqa: F401 - dependency check for the DPAPI path
         from Cryptodome.Cipher import AES  # noqa: F401 - dependency check for AES-GCM
     except ImportError as error:
         raise RuntimeError("pywin32 and pycryptodome are required for Windows browser extraction") from error
 
-    identity = validate_desktop_auth(auth_path)
+    identity = validate_auth_bundle(auth_path)
     cookies = {}
     browser_sources = []
     candidate_rows = 0
@@ -318,7 +328,7 @@ def main():
         print(json.dumps({
             "ok": False,
             "errorCode": "chatgpt_cookie_extraction_failed",
-            "message": "no usable ChatGPT desktop session cookies were found",
+            "message": "no usable ChatGPT browser session cookies were found",
             "errorType": type(error).__name__,
         }, separators=(",", ":")))
         return 1

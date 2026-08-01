@@ -39,7 +39,7 @@ for (const [folder, kind] of kinds) {
 items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id));
 const source = JSON.stringify({ welcome, tips, items, resources });
 const quickReplies = [
-  { id: 'web-login-and-sync-actions', label: '网页登录并同步 Action 凭证', aliases: ['网页登录', '同步网页凭证'], action: { type: 'tool', name: 'web_login_and_sync_actions', arguments: {} } },
+  { id: 'web-login-and-sync-actions', label: '浏览器登录并同步 Action 凭证', aliases: ['浏览器登录', '同步网页凭证'], action: { type: 'tool', name: 'web_login_and_sync_actions', arguments: {} } },
   { id: 'sync-actions-credentials', label: '同步已登录凭证', aliases: [], action: { type: 'tool', name: 'sync_actions_credentials', arguments: {} } },
   { id: 'login-and-sync-actions', label: '登录并同步 Action 凭证', aliases: [], action: { type: 'tool', name: 'login_and_sync_actions', arguments: {} } },
   { id: 'queue-status', label: '查看任务队列', aliases: [], action: { type: 'tool', name: 'queue_status', arguments: {} } },
