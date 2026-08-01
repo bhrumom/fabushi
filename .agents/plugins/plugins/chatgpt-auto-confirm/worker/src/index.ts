@@ -78,6 +78,15 @@ const tools = [
       start: { type: 'boolean', default: false, description: 'After syncing, optionally start the GitHub Actions runner.' },
     },
   } },
+  { name: 'sync_actions_secrets', description: '从用户明确指定的两个受保护文件读取凭证并更新 GitHub Secrets；不会读取、导出或检查 ChatGPT 桌面端会话。', annotations: {
+    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
+  }, inputSchema: {
+    type: 'object', additionalProperties: false, required: ['authPath', 'sessionCookiesPath'], properties: {
+      authPath: { type: 'string', minLength: 1, maxLength: 4096, description: '本机权限为 600 或更严格的凭证文件绝对路径' },
+      sessionCookiesPath: { type: 'string', minLength: 1, maxLength: 4096, description: '本机权限为 600 或更严格的会话凭证文件绝对路径' },
+      start: { type: 'boolean', default: false, description: '同步后是否启动 GitHub Actions runner' },
+    },
+  } },
   { name: 'home', description: '加载插件首页', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       surface: { type: 'string' }, locale: { type: 'string' }, cursor: { type: 'string' },
@@ -372,6 +381,12 @@ export default {
         }, 'required');
       if (name === 'sync_actions_credentials') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-credential-sync', {
+          start: args.start === true,
+        }, 'required');
+      if (name === 'sync_actions_secrets') return hostResult(
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-safe-secret-sync', {
+          authPath: String(args.authPath || ''),
+          sessionCookiesPath: String(args.sessionCookiesPath || ''),
           start: args.start === true,
         }, 'required');
       if (name === 'wait_for_review') return hostResult(

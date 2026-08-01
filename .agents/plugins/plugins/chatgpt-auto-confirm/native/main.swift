@@ -36,6 +36,7 @@ let nativeCommandSummaries: [String: String] = [
   "queue_cancel": "取消指定任务并停止其隐藏 worker。",
   "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
+  "sync_actions_secrets": "从用户明确指定的受保护文件同步两份凭证到 GitHub Secrets；不会读取 ChatGPT 桌面端会话。",
   "login_and_sync_actions": "打开 ChatGPT 登录页，等待登录完成后同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
   "verify_chatgpt_login": "只读验证当前 ChatGPT 网页会话是否仍处于登录状态。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
@@ -54,7 +55,7 @@ func nativeCommandUsage(_ command: String, executable: String) -> String {
   case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
        "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
        "queue_review", "queue_update", "queue_retry", "queue_cancel", "queue_watchdog",
-       "start_actions_runner", "login_and_sync_actions", "verify_chatgpt_login", "send_message",
+       "start_actions_runner", "sync_actions_secrets", "login_and_sync_actions", "verify_chatgpt_login", "send_message",
        "add_connector", "get_reply", "chat_status", "send_and_watch":
     return "\(executable) \(command) ['{...JSON...}']"
   default:
@@ -84,6 +85,8 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
     return "\(executable) queue_watchdog '{\"staleAfterSeconds\":21600,\"force\":false}'"
   case "start_actions_runner":
     return "\(executable) start_actions_runner"
+  case "sync_actions_secrets":
+    return "\(executable) sync_actions_secrets '{\"authPath\":\"/secure/path/auth.json\",\"sessionCookiesPath\":\"/secure/path/session-cookies.json\",\"start\":true}'"
   case "login_and_sync_actions":
     return "\(executable) login_and_sync_actions '{\"waitSeconds\":600,\"start\":true}'"
   case "send_message":
@@ -161,6 +164,7 @@ ChatGPT 自动确认 macOS 原生运行时
   queue_cancel JSON      取消任务
   queue_watchdog JSON    检查超时并安全恢复队列
   start_actions_runner   启动六小时 GitHub Actions 持续运行器
+  sync_actions_secrets JSON  从指定的受保护文件同步两份凭证，可选启动 Actions
 
 隐藏 Chat：
   send_message JSON      发送消息
@@ -954,6 +958,78 @@ case "verify_chatgpt_login":
     "errorCode": authenticated ? "" : "chatgpt_login_required",
     "message": authenticated ? "ChatGPT 登录状态有效" : "ChatGPT 登录已过期，请先登录并同步凭证",
   ], exitCode: authenticated ? 0 : 1)
+case "sync_actions_secrets":
+  let params = commandJSONParams()
+  func secureCredentialInputPath(_ value: Any?) -> String? {
+    guard let raw = value as? String else { return nil }
+    let expanded = (raw.trimmingCharacters(in: .whitespacesAndNewlines) as NSString)
+      .expandingTildeInPath
+    guard expanded.hasPrefix("/"),
+          FileManager.default.isReadableFile(atPath: expanded),
+          let attributes = try? FileManager.default.attributesOfItem(atPath: expanded),
+          let permissions = attributes[.posixPermissions] as? NSNumber,
+          (permissions.intValue & 0o077) == 0 else { return nil }
+    return expanded
+  }
+  guard let authPath = secureCredentialInputPath(params["authPath"]),
+        let sessionCookiesPath = secureCredentialInputPath(params["sessionCookiesPath"]) else {
+    output([
+      "ok": false,
+      "errorCode": "invalid_secure_credential_paths",
+      "message": "authPath 和 sessionCookiesPath 必须是绝对路径、可读、非空且不可被群组或其他用户读取的文件。",
+    ], exitCode: 1)
+  }
+  let startRunner = params["start"] as? Bool ?? false
+  let executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+  let pluginDirectory = executableURL
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+  let scriptURL = pluginDirectory
+    .appendingPathComponent("scripts")
+    .appendingPathComponent("sync-actions-secrets.sh")
+  guard FileManager.default.fileExists(atPath: scriptURL.path) else {
+    output([
+      "ok": false,
+      "errorCode": "secure_secret_sync_script_missing",
+      "message": "安装包缺少安全凭证同步脚本。",
+    ], exitCode: 1)
+  }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/sh")
+  process.arguments = [scriptURL.path, authPath, sessionCookiesPath, startRunner ? "true" : "false"]
+  process.environment = ProcessInfo.processInfo.environment
+  let stdout = Pipe()
+  let stderr = Pipe()
+  process.standardOutput = stdout
+  process.standardError = stderr
+  do {
+    try process.run()
+    process.waitUntilExit()
+    _ = stdout.fileHandleForReading.readDataToEndOfFile()
+    _ = stderr.fileHandleForReading.readDataToEndOfFile()
+    guard process.terminationStatus == 0 else {
+      output([
+        "ok": false,
+        "errorCode": "secure_secret_sync_failed",
+        "message": "GitHub Secrets 同步失败；凭证值不会显示在输出中。",
+      ], exitCode: 1)
+    }
+    output([
+      "ok": true,
+      "credentialsSynchronized": true,
+      "started": startRunner,
+      "secrets": ["CHATGPT_CODEX_AUTH_B64", "CHATGPT_SESSION_COOKIES_B64"],
+      "repository": ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_REPOSITORY"] ?? "bhrumom/fabushi",
+      "message": startRunner ? "凭证已同步，GitHub Actions 已启动。" : "凭证已同步。",
+    ])
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "secure_secret_sync_launch_failed",
+      "message": "无法启动安全凭证同步脚本。",
+    ], exitCode: 1)
+  }
 case "login_and_sync_actions":
   let params = commandJSONParams()
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
