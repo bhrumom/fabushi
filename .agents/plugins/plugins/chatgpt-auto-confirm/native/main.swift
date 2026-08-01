@@ -1116,26 +1116,29 @@ case "sync_actions_credentials":
   let params = commandJSONParams()
   let startRunner = params["start"] as? Bool ?? false
   do {
-    let cookieURL: URL
-    let cookieCount: Int
-    let credentialSource: String
-    if let verified = verifiedActionsWebLogin(timeout: 20) {
-      let cookies = CDPClient.allCookies(wsURLString: verified.target.wsURL, timeout: 8.0)
-      cookieURL = try writeActionsSessionCookies(cookies)
-      cookieCount = cookies.count
-      credentialSource = "chatgpt-web-renderer"
-    } else {
-      let extraction = extractVerifiedMacOSBrowserCookies()
-      guard extraction.ok else {
-        output([
-          "ok": false,
-          "errorCode": "chatgpt_web_login_required",
-          "message": extraction.message,
-        ], exitCode: 1)
-      }
-      cookieURL = actionsSessionCookiesURL()
-      cookieCount = extraction.cookieCount
-      credentialSource = "chrome"
+    // This command is the repeatable cloud-refresh path: use the credentials
+    // already saved by the miniapp instead of re-capturing a browser renderer.
+    // Login-and-sync remains available when those local files are missing.
+    let authURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/auth.json")
+    let cookieURL = actionsSessionCookiesURL()
+    guard FileManager.default.fileExists(atPath: authURL.path) else {
+      output(["ok": false, "errorCode": "codex_auth_missing",
+              "message": "本机 Codex 凭证不存在，请先登录 ChatGPT。"], exitCode: 1)
+    }
+    guard FileManager.default.fileExists(atPath: cookieURL.path) else {
+      output(["ok": false, "errorCode": "session_cookies_missing",
+              "message": "本机 ChatGPT 会话凭证不存在，请先使用登录同步命令。"], exitCode: 1)
+    }
+    let cookieCount: Int = {
+      guard let data = try? Data(contentsOf: cookieURL),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let cookies = object["cookies"] as? [[String: Any]] else { return 0 }
+      return cookies.count
+    }()
+    guard cookieCount > 0 else {
+      output(["ok": false, "errorCode": "session_cookies_empty",
+              "message": "本机 ChatGPT 会话凭证为空，请先登录同步。"], exitCode: 1)
     }
     let dispatch = runActionsRunnerDispatch(
       sessionCookiesPath: cookieURL.path,
@@ -1153,7 +1156,7 @@ case "sync_actions_credentials":
       "ok": true,
       "credentialsSynchronized": true,
       "cookieCount": cookieCount,
-      "credentialSource": credentialSource,
+      "credentialSource": "local-files",
       "started": startRunner,
       "secrets": ["CHATGPT_CODEX_AUTH_B64", "CHATGPT_SESSION_COOKIES_B64"],
       "repository": "bhrumom/fabushi",
