@@ -1749,6 +1749,11 @@ func ensureHiddenChatTarget(
         "--user-data-dir=\(profilePath)",
         "--remote-debugging-port=\(port)",
       ]
+      if let codexHomePath = state.backgroundCodexHomePath {
+        var environment = ProcessInfo.processInfo.environment
+        environment["CODEX_HOME"] = codexHomePath
+        launcher.environment = environment
+      }
       launcher.standardInput = FileHandle.nullDevice
       launcher.standardOutput = FileHandle.nullDevice
       launcher.standardError = FileHandle.nullDevice
