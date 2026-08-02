@@ -2,14 +2,7 @@ ALTER TABLE marketplace_plugins ADD COLUMN production_version TEXT;
 ALTER TABLE marketplace_plugins ADD COLUMN migration_state TEXT NOT NULL DEFAULT 'ready'
   CHECK (migration_state IN ('ready','migration_required','blocked'));
 
-ALTER TABLE plugin_releases ADD COLUMN source_json TEXT NOT NULL DEFAULT '{}';
-ALTER TABLE plugin_releases ADD COLUMN release_manifest_json TEXT NOT NULL DEFAULT '{}';
-ALTER TABLE plugin_releases ADD COLUMN release_manifest_sha256 TEXT NOT NULL DEFAULT '';
-ALTER TABLE plugin_releases ADD COLUMN release_status TEXT NOT NULL DEFAULT 'staged'
-  CHECK (release_status IN ('staged','pending','approved','rejected','revoked','deprecated'));
 ALTER TABLE plugin_releases ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 3;
-ALTER TABLE plugin_releases ADD COLUMN revoked_at INTEGER;
-ALTER TABLE plugin_releases ADD COLUMN revocation_reason TEXT;
 
 CREATE TABLE IF NOT EXISTS plugin_release_artifacts (
   plugin_id TEXT NOT NULL,
