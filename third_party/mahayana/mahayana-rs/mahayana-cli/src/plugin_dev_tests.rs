@@ -174,11 +174,7 @@ fn plugin_site_distribution_is_served_by_the_generated_worker() {
     );
     let cloudflare_assets = plugin_root.join("mahayana-cloudflare-assets");
     assert!(cloudflare_assets.join("index.html").is_file());
-    assert!(
-        cloudflare_assets
-            .join("mahayana/plugin.tar.gz")
-            .is_file()
-    );
+    assert!(cloudflare_assets.join("mahayana/plugin.tar.gz").is_file());
     assert!(cloudflare_assets.join("mahayana/plugin.json").is_file());
     assert!(distribution.join("mahayana/source.json").is_file());
     assert!(
