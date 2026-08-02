@@ -357,7 +357,7 @@ func automationTaskMessage(_ task: AutomationTask) -> String {
   if let snapshot = task.specSnapshot, !snapshot.isEmpty {
     sections.append("当前规范快照（以此内容为准）：\n\(snapshot)")
   }
-  sections.append("未完成机器报告必须额外包含 task_id=\(task.id)、applied_task_revision=\(revision) 和 applied_spec_digest=\(digest)。旧修订报告不会被接受为完成。")
+  sections.append("完成和未完成机器报告都必须包含 task_id=\(task.id)、applied_task_revision=\(revision) 和 applied_spec_digest=\(digest)。缺少这些字段或使用旧修订的报告都不会被接受。")
   sections.append("任务发送轮次：\(task.attempts + 1)。")
   if let rawFeedback = task.reviewFeedback {
     let feedback = chatOnlyInstruction(rawFeedback)

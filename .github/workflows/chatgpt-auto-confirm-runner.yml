@@ -17,6 +17,10 @@ on:
         required: false
         default: false
         type: boolean
+      cancel_task_id:
+        description: Remove one logical task from restored persistent state without launching Chat
+        required: false
+        type: string
 
 permissions:
   actions: write
@@ -100,14 +104,23 @@ jobs:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
 
+      - name: Cancel persisted task without launching Chat
+        if: ${{ inputs.cancel_task_id != '' }}
+        env:
+          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_AUTO_CONFIRM_CANCEL_TASK_ID: ${{ inputs.cancel_task_id }}
+          ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/cancel-persisted-task.mjs
+
       - name: Import dynamic parallel task inbox
-        if: ${{ inputs.parallel_queue_smoke }}
+        if: ${{ inputs.cancel_task_id == '' && inputs.parallel_queue_smoke }}
         env:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: ${{ github.workspace }}/.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/import-actions-task-inbox.mjs
 
       - name: Restore ChatGPT login credentials
+        if: ${{ inputs.cancel_task_id == '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +130,7 @@ jobs:
           chmod 600 "$HOME/.codex/auth.json"
 
       - name: Install official ChatGPT desktop app
+        if: ${{ inputs.cancel_task_id == '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -132,10 +146,12 @@ jobs:
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
 
       - name: Build native queue runtime
+        if: ${{ inputs.cancel_task_id == '' }}
         shell: bash
         run: sh .agents/plugins/plugins/chatgpt-auto-confirm/scripts/build-macos-runtime.sh
 
       - name: Launch authenticated desktop shell
+        if: ${{ inputs.cancel_task_id == '' }}
         timeout-minutes: 6
         shell: bash
         env:
@@ -158,6 +174,7 @@ jobs:
           test "$shell_ready" = true
 
       - name: Verify authenticated ChatGPT session
+        if: ${{ inputs.cancel_task_id == '' }}
         id: auth_verify
         timeout-minutes: 3
         env:
@@ -165,7 +182,7 @@ jobs:
         run: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login
 
       - name: Verify dynamic parallel task queue
-        if: ${{ inputs.parallel_queue_smoke }}
+        if: ${{ inputs.cancel_task_id == '' && inputs.parallel_queue_smoke }}
         env:
           CHATGPT_AUTO_CONFIRM_PARALLEL_STATE: ${{ steps.paths.outputs.runtime_dir }}/parallel-smoke-state.json
           CHATGPT_AUTO_CONFIRM_PARALLEL_EVIDENCE: ${{ steps.paths.outputs.runtime_dir }}/parallel-queue-evidence.json
@@ -174,7 +191,7 @@ jobs:
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/verify-parallel-actions-queue.mjs
 
       - name: Run dynamic persistent task queue
-        if: ${{ !inputs.smoke_only && !inputs.parallel_queue_smoke }}
+        if: ${{ inputs.cancel_task_id == '' && !inputs.smoke_only && !inputs.parallel_queue_smoke }}
         id: controller
         continue-on-error: true
         env:
@@ -190,7 +207,7 @@ jobs:
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-dynamic-actions-controller.mjs
 
       - name: Record successful hosted verification
-        if: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
+        if: ${{ inputs.cancel_task_id == '' && (inputs.smoke_only || inputs.parallel_queue_smoke) }}
         shell: bash
         env:
           VERIFICATION_REASON: ${{ inputs.parallel_queue_smoke && 'dynamic_parallel_queue_verified' || 'chatgpt_login_smoke_verified' }}
@@ -238,13 +255,20 @@ jobs:
           RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
           VERIFICATION_ONLY: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
           AUTHENTICATION_VERIFIED: ${{ steps.auth_verify.outcome == 'success' }}
+          CANCELLATION_ONLY: ${{ inputs.cancel_task_id != '' }}
         run: |
           set -euo pipefail
+          status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
+          if [[ "$CANCELLATION_ONLY" == "true" ]]; then
+            [[ "$status" == "complete" ]]
+            jq '{status, reason, requestedTaskId, cancelledTaskIds, remainingTaskIds}' "$RESULT_PATH"
+            echo "Persisted task cancellation completed; no Chat was launched and no continuation was dispatched."
+            exit 0
+          fi
           if [[ "$AUTHENTICATION_VERIFIED" != "true" ]]; then
             echo "::error::ChatGPT authentication preflight failed; no continuation was dispatched."
             exit 1
           fi
-          status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
           if [[ "$status" == "complete" ]]; then
             echo "All queued tasks completed; no continuation was dispatched."
             exit 0

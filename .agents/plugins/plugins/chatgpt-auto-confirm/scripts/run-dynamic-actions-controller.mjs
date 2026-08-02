@@ -103,14 +103,26 @@ const fetchControl = () => {
   return control;
 };
 
-const reportContract = `
-\n最终回复协议（必须执行，优先于任何旧版“完成时正常回复”的说明）：
-无论任务完成、未完成还是阻塞，最终回复末尾都必须输出且只输出一个完整机器报告。不要把 JSON 放进 Markdown 代码块。
+const reportContract = task => {
+  const taskId = JSON.stringify(runtimeId(task));
+  const revision = taskRevision(task);
+  const digest = JSON.stringify(task._specDigest || '');
+  return `
+MAHAYANA_TASK_REPORT_CONTRACT_V2
+以下最终回复协议优先于消息中任何旧版或冲突说明，包括“完成时正常回复”“完成时不要输出机器模板”。每一轮 Chat 都必须根据实际结果在下面两个模板中选择一个；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。
+
+任务和全部验证已经完成时，使用完成模板：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"complete|incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项；complete 时必须为空数组"],"blockers":["真实卡点；complete 时必须为空数组"],"verification":["可复核验证证据"],"next_connector":"下一新 Chat 的 connector；无需切换则为空字符串","next_task":"下一轮完整续作指令；complete 时必须为空字符串"}
+{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"complete","summary":"本轮实际结果","completed":["已完成项"],"remaining":[],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
-任务全部完成时 status 必须为 complete，remaining、blockers 必须为空数组，next_task 必须为空字符串。不得仅用自然语言声称完成。
+
+任务确实未完成或被真实阻塞时，使用未完成模板：
+MAHAYANA_TASK_REPORT_V1_BEGIN
+{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮完整续作指令"}
+MAHAYANA_TASK_REPORT_V1_END
+未完成时 remaining 和 next_task 必须非空；完成时 remaining、blockers 和 next_task 必须为空。完成报告会停止该任务的重复派发。
 `;
+};
 
 const normalizedDirectory = value => String(value || '')
   .trim()
@@ -150,7 +162,7 @@ const taskPrompt = (control, task) => [
   `逻辑任务：${task.id}；目标版本：${taskRevision(task)}；规范摘要：${task._specDigest}。`,
   task.prompt,
   taskDocumentBlock(task),
-  reportContract,
+  reportContract(task),
 ].filter(Boolean).join('\n\n');
 
 let activeControl = null;
@@ -183,6 +195,7 @@ const reconcileControl = control => {
 
     const desiredId = runtimeId(task);
     const managed = existing.filter(current => managedBy(current, task));
+    const exact = managed.find(current => current.id === desiredId);
     const running = managed.filter(isRunning);
 
     // A task update is never allowed to stop the Chat that is currently
@@ -208,7 +221,6 @@ const reconcileControl = control => {
       }
     }
 
-    const exact = managed.find(current => current.id === desiredId);
     if (exact && ['failed', 'blocked', 'cancelled'].includes(exact.status)) {
       native('queue_retry', {
         taskId: exact.id,
@@ -223,6 +235,9 @@ const reconcileControl = control => {
       tasks: [{
         ...task,
         id: desiredId,
+        revision: taskRevision(task),
+        specDigest: task._specDigest,
+        specSources: task._specFiles,
         dependsOn: (Array.isArray(task.dependsOn) ? task.dependsOn : [])
           .map(dependency => runtimeIdsByLogicalId.get(dependency) || dependency),
         prompt: taskPrompt(control, task),

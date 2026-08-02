@@ -91,6 +91,11 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
   assert.match(actionsWorkflow, /parallel_queue_smoke/);
+  assert.match(actionsWorkflow, /cancel_task_id/);
+  assert.match(actionsWorkflow, /Cancel persisted task without launching Chat/);
+  assert.match(actionsWorkflow, /cancel-persisted-task\.mjs/);
+  assert.match(actionsWorkflow, /Persisted task cancellation completed/);
+  assert.match(actionsWorkflow, /inputs\.cancel_task_id == ''/);
   assert.match(actionsWorkflow, /chatgpt-auto-confirm-parallel-smoke/);
   assert.match(actionsWorkflow, /verify-parallel-actions-queue\.mjs/);
   assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
