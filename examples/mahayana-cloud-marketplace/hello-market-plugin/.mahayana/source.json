@@ -1,0 +1,9 @@
+{
+  "provider": "github",
+  "repository": "bhrumom/fabushi",
+  "repositoryId": 1037709914,
+  "defaultBranch": "main",
+  "license": "Apache-2.0",
+  "visibility": "public",
+  "subdirectory": "examples/mahayana-cloud-marketplace/hello-market-plugin"
+}
