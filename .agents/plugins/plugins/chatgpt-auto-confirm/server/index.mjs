@@ -14,6 +14,10 @@ const windowsCredentialTools = new Set([
   'login_and_sync_actions',
 ]);
 const nativeCommands = new Map([
+  ['account_list', 'account_list'], ['account_add', 'account_add'],
+  ['account_login_link', 'account_login_link'], ['account_switch', 'account_switch'],
+  ['account_rename', 'account_rename'], ['account_status', 'account_status'],
+  ['account_sync', 'account_sync'], ['account_remove', 'account_remove'],
   ['start', 'start'], ['stop', 'stop'], ['status', 'status'],
   ['scan_once', 'scan'], ['relaunch_and_confirm', 'relaunch_and_confirm'],
   ['audit_log', 'audit'], ['diagnose', 'diagnose'],
@@ -96,15 +100,17 @@ function runNativeTool(rpc) {
   if (tool === 'scan_once' || tool === 'relaunch_and_confirm') args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   if (tool === 'audit_log') args.push(String(rpc.params?.arguments?.limit ?? 20));
   if (tool === 'send_and_watch' || tool === 'add_connector' || [
+    'account_add', 'account_login_link', 'account_switch', 'account_rename',
+    'account_status', 'account_sync', 'account_remove',
     'enqueue_tasks', 'start_queue', 'update_task', 'wait_for_review', 'review_task', 'retry_task',
-    'cancel_task', 'sync_actions_credentials', 'login_and_sync_actions',
+    'cancel_task', 'sync_actions_credentials', 'login_and_sync_actions', 'start_actions_runner',
   ].includes(tool)) args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   const timeoutMs = tool === 'send_and_watch'
     ? 7_300_000
     : ['start_queue', 'wait_for_review'].includes(tool)
       ? 7_300_000
     : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000
-    : ['start_actions_runner', 'sync_actions_credentials', 'login_and_sync_actions'].includes(tool) ? 1_200_000 : 15_000;
+    : ['account_add', 'account_sync', 'login_and_sync_actions', 'start_actions_runner', 'sync_actions_credentials'].includes(tool) ? 2_000_000 : 15_000;
   const invocation = spawnSync(nativeRuntime, args, {
     encoding: 'utf8', timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024,
     env: process.env,

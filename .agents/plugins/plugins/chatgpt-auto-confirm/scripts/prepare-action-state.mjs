@@ -3,6 +3,19 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const statePath = process.env.CHATGPT_AUTO_CONFIRM_QUEUE_STATE;
 if (!statePath) throw new Error('CHATGPT_AUTO_CONFIRM_QUEUE_STATE is required');
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
+const accountId = String(process.env.CHATGPT_ACCOUNT_ID || '').trim();
+if (accountId) {
+  if (state.accountId && state.accountId !== accountId) {
+    throw new Error('queue state account mismatch');
+  }
+  state.accountId = accountId;
+  for (const task of state.automationTasks || []) {
+    if (task.accountId && task.accountId !== accountId) {
+      throw new Error('queue task account mismatch');
+    }
+    task.accountId ||= accountId;
+  }
+}
 state.enabled = true;
 state.approveAll = true;
 state.watcherPid = null;

@@ -1,0 +1,44 @@
+name: ChatGPT account credential keepalive
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: chatgpt-auto-confirm-keepalive
+  cancel-in-progress: false
+
+jobs:
+  dispatch-account-smokes:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACCOUNT_IDS_JSON: ${{ vars.CHATGPT_AUTO_CONFIRM_ACCOUNT_IDS_JSON }}
+    steps:
+      - name: Dispatch one smoke run per registered account
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${ACCOUNT_IDS_JSON:-[]}"
+          if ! jq -e 'type == "array" and length <= 10 and all(.[]; type == "string" and test("^acct_[0-9a-f]{12}$"))' >/dev/null <<< "$raw"; then
+            echo 'CHATGPT_AUTO_CONFIRM_ACCOUNT_IDS_JSON is invalid; no account smoke was dispatched.' >&2
+            exit 1
+          fi
+          mapfile -t account_ids < <(jq -r '.[]' <<< "$raw")
+          if [[ "${#account_ids[@]}" -eq 0 ]]; then
+            echo 'No registered accounts yet; keepalive is idle.'
+            exit 0
+          fi
+          for account_id in "${account_ids[@]}"; do
+            gh workflow run chatgpt-auto-confirm-runner.yml \
+              --repo "$GITHUB_REPOSITORY" --ref main \
+              -f account_id="$account_id" \
+              -f smoke_only=true \
+              -f restore_latest_credentials=true
+            echo "Dispatched account smoke for $account_id."
+          done

@@ -108,6 +108,10 @@ struct AutomationTaskUpdate: Codable {
 
 struct AutomationTask: Codable {
   var id: String
+  // The account is captured when a task is enqueued.  It is intentionally
+  // optional for backwards-compatible decoding of pre-multi-account queue
+  // snapshots; new tasks always receive the current default account id.
+  var accountId: String?
   var title: String
   var prompt: String
   var originalPrompt: String?
