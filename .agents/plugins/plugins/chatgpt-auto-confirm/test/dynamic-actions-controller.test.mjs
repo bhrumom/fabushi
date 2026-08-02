@@ -21,7 +21,8 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"/);
   assert.match(workflow, /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
   assert.match(controller, /spawnSync\('gh'/);
-  assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{controlPath\}/);
+  assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{repositoryPath\}/);
+  assert.match(controller, /fetchRepositoryContent\(controlPath\)/);
   assert.match(controller, /task\._specDigest/);
   assert.match(controller, /entry\.sha/);
   assert.match(controller, /createHash\('sha256'\)/);
