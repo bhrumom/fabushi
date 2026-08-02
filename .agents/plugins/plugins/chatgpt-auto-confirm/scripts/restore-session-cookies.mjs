@@ -22,6 +22,8 @@ if (mode !== 'verify') {
 const sleep = milliseconds =>
   new Promise(resolve => setTimeout(resolve, milliseconds));
 
+const appRootURL = 'app://-/index.html?initialRoute=%2F';
+
 const listTargets = async () =>
   fetch(`http://127.0.0.1:${port}/json/list`, {
     signal: AbortSignal.timeout(5_000),
@@ -29,7 +31,9 @@ const listTargets = async () =>
 
 const findTarget = async (timeoutMs, label) => {
   const deadline = Date.now() + timeoutMs;
+  const avatarOverlayFallbackDeadline = Date.now() + Math.min(10_000, timeoutMs);
   let lastTargets = [];
+  let avatarOverlayTarget;
   while (Date.now() < deadline) {
     try {
       lastTargets = await listTargets();
@@ -40,9 +44,23 @@ const findTarget = async (timeoutMs, label) => {
         && !String(item.url || '').includes('/avatar-overlay')
       );
       if (target) return target;
+      avatarOverlayTarget = lastTargets.find(item =>
+        item.type === 'page'
+        && item.webSocketDebuggerUrl
+        && String(item.url || '').startsWith('app://-/index.html')
+        && String(item.url || '').includes('/avatar-overlay')
+      ) || avatarOverlayTarget;
+      // The desktop app can expose only its startup avatar overlay while the
+      // normal renderer is being bootstrapped. It is still a valid CDP page;
+      // recover it to the app root after connecting instead of waiting for a
+      // renderer that the app will not create on its own.
+      if (avatarOverlayTarget && Date.now() >= avatarOverlayFallbackDeadline) {
+        return avatarOverlayTarget;
+      }
     } catch {}
     await sleep(1_000);
   }
+  if (avatarOverlayTarget) return avatarOverlayTarget;
   const safeTargets = lastTargets.map(item => ({
     type: item.type,
     url: String(item.url || '').slice(0, 160),
@@ -123,6 +141,21 @@ const connect = async target => {
   return { socket, call };
 };
 
+const restoreAppRootIfNeeded = async call => {
+  let currentURL = '';
+  try {
+    const evaluation = await call('Runtime.evaluate', {
+      expression: 'location.href',
+      returnByValue: true,
+    }, 5_000);
+    currentURL = String(evaluation.result?.value || '');
+  } catch {}
+  if (!currentURL.includes('/avatar-overlay')) return false;
+  const navigated = await optionalCall(call, 'Page.navigate', { url: appRootURL }, 10_000);
+  if (navigated) await sleep(1_000);
+  return navigated;
+};
+
 const optionalCall = async (call, method, params = {}, timeoutMs = 5_000) => {
   try {
     await call(method, params, timeoutMs);
@@ -164,10 +197,16 @@ if (mode !== 'verify') {
   }
 }
 
+// A fresh hosted desktop launch can land on the internal avatar overlay
+// instead of the normal app shell. The overlay is blank but remains a live
+// renderer, so navigate that same target back to the authenticated app root.
+await restoreAppRootIfNeeded(call);
+
 if (mode === 'restore' || mode === 'restore-and-verify') {
   // Page.reload is a bounded request and is more reliable than evaluating
   // location.reload() inside a renderer that may still be suspended.
   await optionalCall(call, 'Page.reload', { ignoreCache: true }, 10_000);
+  await restoreAppRootIfNeeded(call);
 }
 await activate(call);
 
@@ -189,6 +228,7 @@ let verified = false;
 let lastState = {};
 while (Date.now() < verificationDeadline) {
   await sleep(2_000);
+  await restoreAppRootIfNeeded(call);
   let evaluation;
   try {
     evaluation = await call('Runtime.evaluate', {

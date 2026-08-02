@@ -75,6 +75,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.match(restoreSessionScript, /Page\.reload/);
+  assert.match(restoreSessionScript, /Page\.navigate/);
+  assert.match(restoreSessionScript, /avatar-overlay/);
+  assert.match(restoreSessionScript, /initialRoute=%2F/);
   assert.match(restoreSessionScript, /Optional CDP command/);
   assert.doesNotMatch(restoreSessionScript, /call\([^\n]*['"]Page\.setWebLifecycleState['"]/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
