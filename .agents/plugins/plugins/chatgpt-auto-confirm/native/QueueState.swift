@@ -399,7 +399,7 @@ func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若 Actions、部署、发布审核或网络恢复仍在进行，必须留在这个验收 Chat 内自行等待并轮询，拿到结果后继续验收，不得回复等待时间后退出。重复卡点不能只照抄旧错误，应诊断并换可行路径。只有全部目标可复核且验证通过时，最后单独输出一行 `MAHAYANA_REVIEW_ACCEPTED`；不要输出完成态 JSON。若验收不通过，输出未完成续作模板，准确写出 remaining、blockers、verification 和 next_task，供小程序新建工作 Chat 继续；只有真实不可绕过的阻塞才可使用 blocked。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若 Actions、部署、发布审核或网络恢复仍在进行，必须留在这个验收 Chat 内自行等待并轮询，拿到结果后继续验收，不得回复等待时间后退出。重复卡点不能只照抄旧错误，应诊断并换可行路径。验收全部通过时，必须按消息末尾的完成模板输出同一任务修订的 `status=complete` 报告；验收不通过时，必须按未完成模板输出 `status=incomplete` 或 `status=blocked` 报告。`MAHAYANA_REVIEW_ACCEPTED` 可以作为辅助证据，但不是完成识别的唯一条件。
   """
 }
 
@@ -417,7 +417,12 @@ func startAutomationReview(
   ), prepared["ok"] as? Bool == true else {
     return false
   }
-  let outbound = messageWithTaskReportContract(automationReviewMessage(task, report: report))
+  let outbound = messageWithTaskReportContract(
+    automationReviewMessage(task, report: report),
+    taskId: task.id,
+    appliedRevision: task.currentRevision,
+    appliedDigest: task.specDigest
+  )
   guard let sendResult = cdpValue(
     port: port,
     targetId: targetId,

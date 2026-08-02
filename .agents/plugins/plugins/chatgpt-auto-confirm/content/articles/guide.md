@@ -1,6 +1,6 @@
 ---
 id: guide
-revision: '5'
+revision: '6'
 title: 使用指南
 publishedAt: 2026-07-19
 summary: 在同一实例中创建隐藏任务队列、后台确认会话、自动续作并独立验收。
@@ -12,8 +12,8 @@ tags: [指南, 任务队列, 自动续作]
 
 1. 用「内置任务提示词」选择实现、诊断、审查或持续完成模板。
 2. 用 `enqueue_tasks` 一次加入多个任务。任务会进入持久队列，并与通用确认共用同一个已登录的 ChatGPT 实例。每个运行中任务使用独立的隐藏预热页面；无依赖且资源锁不冲突的任务按 `maxConcurrent` 并行执行。
-3. 每个 Chat 的最终回答必须包含 `mahayana.task-report.v1` 总结。若状态为 `incomplete` 或 `blocked`，小程序会根据 `remaining`、`blockers` 和 `next_task` 自动新建 Chat 续作。
-4. 完成项会由程序自动在同一实例的隐藏页面中新建 Chat 独立验收；验收 Chat 返回 `complete` 后直接启动下一项，不向用户索要确认。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。
+3. 每个 Chat 的最终回答必须包含 `mahayana.task-report.v1` 总结。全部完成时必须返回 `status=complete`，并把 `remaining`、`blockers`、`next_task` 设为空数组或空字符串；未完成时返回 `status=incomplete` 或 `blocked`，小程序会根据 `remaining`、`blockers` 和 `next_task` 自动新建 Chat 续作。
+4. 完成报告会由程序自动在同一实例的隐藏页面中新建 Chat 独立验收；验收 Chat 返回同一任务修订的 `status=complete` 报告后，任务进入终态，不会再次派发。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。
 
 ## 中断恢复
 
