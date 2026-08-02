@@ -8,7 +8,7 @@ ALTER TABLE plugin_releases
 ADD COLUMN release_manifest_sha256 TEXT NOT NULL DEFAULT '';
 
 ALTER TABLE plugin_releases
-ADD COLUMN release_status TEXT NOT NULL DEFAULT 'approved'
+ADD COLUMN release_status TEXT NOT NULL DEFAULT 'staged'
 CHECK (release_status IN ('staged', 'pending', 'approved', 'rejected', 'revoked', 'deprecated'));
 
 ALTER TABLE plugin_releases

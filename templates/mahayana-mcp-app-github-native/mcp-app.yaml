@@ -1,0 +1,8 @@
+schemaVersion: 1
+extension: io.modelcontextprotocol/ui
+mcpAppsVersion: 2026-01-26
+mime: text/html;profile=mcp-app
+artifacts:
+  - common
+  - native-cli
+  - web-wasm

@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible MCP App problem without sensitive data.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version and source commit
+    validations:
+      required: true
+  - type: input
+    id: artifact
+    attributes:
+      label: Platform and artifact ID
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Do not include tokens, cookies, secrets, private content, or user data.

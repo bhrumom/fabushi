@@ -1,0 +1,8 @@
+* @publisher/maintainers
+/.github/workflows/ @publisher/security
+/.github/CODEOWNERS @publisher/security
+/mcp-app.yaml @publisher/maintainers
+/permissions.json @publisher/security
+/tools.json @publisher/maintainers
+/tool-contract.json @publisher/maintainers
+/scripts/create-release-manifest.mjs @publisher/security

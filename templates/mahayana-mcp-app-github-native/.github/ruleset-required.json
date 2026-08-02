@@ -1,0 +1,14 @@
+{
+  "name": "protected-default-and-release",
+  "target": "branch-and-tag",
+  "required": {
+    "pullRequest": true,
+    "approvals": 1,
+    "codeOwners": true,
+    "dismissStaleApprovals": true,
+    "requiredChecks": ["Untrusted contract tests", "Trusted main contract"],
+    "blockForcePush": true,
+    "blockDeletion": true,
+    "protectReleaseTags": true
+  }
+}
