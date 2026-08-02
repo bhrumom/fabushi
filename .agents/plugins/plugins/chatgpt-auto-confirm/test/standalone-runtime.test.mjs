@@ -109,6 +109,8 @@ test('native task queue persists queued work without starting ChatGPT', async t 
     assert.equal(updated.updatedTask.currentRevision, 2);
     assert.equal(updated.updatedTask.pendingRevision, 2);
     assert.equal(updated.applyMode, 'interrupt');
+    assert.equal(updated.enabled, false);
+    assert.equal(updated.running, false);
     assert.equal(updated.updatedTask.originalPrompt, '验证队列持久化');
     assert.equal(updated.updatedTask.taskUpdateCount, 1);
     assert.equal(updated.updatedTask.taskUpdates[0].source, 'test-operator');
