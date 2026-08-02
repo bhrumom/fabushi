@@ -79,6 +79,14 @@
       "description": "核验动态入队、真实任务重叠和隐藏 Chat 隔离",
       "homepage": "https://fabushi.ombhrum.com/miniapps/parallel-queue-probe/",
       "platforms": ["cli", "desktop"]
+    },
+    {
+      "id": "wechat-article-downloader",
+      "version": "0.1.0",
+      "title": "微信公众号归档器",
+      "description": "从任意公开文章链接归档同一公众号公开可访问的文章",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/wechat-article-downloader/",
+      "platforms": ["cli", "desktop"]
     }
   ],
   "artifacts": {
