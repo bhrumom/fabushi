@@ -562,6 +562,11 @@ jobs:
             /fabushi/web/**
             /fabushi/lib/**
             !/fabushi/web/assets/built_in/**
+            /templates/mahayana-mcp-app-github-native/**
+            /frontend/apps/web/src/app/miniapps/**
+            /frontend/packages/mcp-app-sdk/**
+            /ai-backend/src/official_mcp_apps.js
+            /native/global-dharma/crates/global-dharma-mcp/src/main.rs
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
