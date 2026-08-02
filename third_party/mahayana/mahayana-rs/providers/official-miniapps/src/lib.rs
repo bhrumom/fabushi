@@ -1528,6 +1528,7 @@ fn wechat_article_downloader_tools() -> Vec<Value> {
         "outputDir":{"type":"string","default":"wechat-articles"},
         "searchPages":{"type":"integer","minimum":0,"maximum":10,"default":10},
         "delayMs":{"type":"integer","minimum":100,"maximum":5000,"default":450},
+        "articleRetries":{"type":"integer","minimum":1,"maximum":10,"default":5,"description":"临时验证页或空页面的退避重试次数"},
         "maxArticles":{"type":"integer","minimum":0,"default":0},
         "maxAlbums":{"type":"integer","minimum":1,"maximum":2000,"default":250},
         "allowSogou":{"type":"boolean","default":true},

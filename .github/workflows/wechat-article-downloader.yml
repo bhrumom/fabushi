@@ -134,7 +134,7 @@ jobs:
             --argjson search "$search_pages" \
             --argjson max "$max_articles" \
             --argjson images "$download_images" \
-            '{url:$url,outputDir:$output,searchPages:$search,maxArticles:$max,downloadImages:$images,delayMs:150,strict:false}')"
+            '{url:$url,outputDir:$output,searchPages:$search,maxArticles:$max,downloadImages:$images,delayMs:300,articleRetries:7,strict:false}')"
           "$PLUGIN_BINARY" --plugin wechat-article-downloader download --json "$args" | tee artifacts/download-result.json
           echo "kind=$archive_kind" >> "$GITHUB_OUTPUT"
 

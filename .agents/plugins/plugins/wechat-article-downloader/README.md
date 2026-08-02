@@ -32,4 +32,4 @@ fabushi-plugin-cli --plugin wechat-article-downloader download --json '{
 - `articles/.../metadata.json`：文章元数据。
 - `articles/.../images/`：启用 `downloadImages` 时的本地图片。
 
-`maxArticles: 0` 表示不设置文章数量上限。`strict: true` 会在存在失败项时让命令返回失败。
+`maxArticles: 0` 表示不设置文章数量上限。`articleRetries` 默认是 5，遇到微信临时验证页或空页面时按 1/2/4/8 秒退避重试；若正文链接带有明确锚文本，重试仍失败时会按“公众号名 + 精确标题”查询搜狗公开索引并刷新分享签名。明确显示删除或违规的页面不会反复请求，也不会尝试绕过平台限制。`strict: true` 会在存在失败项时让命令返回失败。
