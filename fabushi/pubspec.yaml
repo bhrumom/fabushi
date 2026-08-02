@@ -174,7 +174,8 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_scene_importer: ^0.9.0-0
+  # 0.11.0 replaced the broken tinygltf/CMake native hook with a pure-Dart importer.
+  flutter_scene_importer: 0.11.0
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0

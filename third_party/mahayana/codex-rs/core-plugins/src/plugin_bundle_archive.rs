@@ -114,6 +114,7 @@ fn should_exclude_plugin_archive_path(relative_path: &Path) -> bool {
     const PRIVATE_OR_GENERATED_DIRECTORIES: &[&str] = &[
         ".git",
         ".mahayana-distribution",
+        "mahayana-cloudflare-assets",
         ".mahayana-state",
         ".wrangler",
         "node_modules",

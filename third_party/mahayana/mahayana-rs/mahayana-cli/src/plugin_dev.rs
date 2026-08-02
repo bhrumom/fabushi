@@ -21,6 +21,7 @@ use std::process::Command;
 pub use super::plugin_dev_template::PluginTemplate;
 
 const SITE_DISTRIBUTION_DIR: &str = ".mahayana-distribution";
+const CLOUDFLARE_ASSET_DIR: &str = "mahayana-cloudflare-assets";
 
 fn git_output(plugin_path: &Path, arguments: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
@@ -298,9 +299,9 @@ pub fn prepare_site_distribution(
 ) -> Result<PathBuf, String> {
     let wrangler = fs::read_to_string(plugin_path.join("wrangler.toml"))
         .map_err(|_| "插件必须包含 wrangler.toml 才能作为独立 Worker/Pages 发布".to_string())?;
-    if !wrangler.contains(SITE_DISTRIBUTION_DIR) {
+    if !wrangler.contains(CLOUDFLARE_ASSET_DIR) {
         return Err(format!(
-            "wrangler.toml 必须声明 [assets] directory = \"{SITE_DISTRIBUTION_DIR}\""
+            "wrangler.toml 必须声明 [assets] directory = \"{CLOUDFLARE_ASSET_DIR}\""
         ));
     }
     let distribution = plugin_path.join(SITE_DISTRIBUTION_DIR);
@@ -350,6 +351,15 @@ pub fn prepare_site_distribution(
         "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>{title} · 大乘插件</title><main style=\"font:16px system-ui;max-width:680px;margin:12vh auto;padding:24px\"><h1>{title}</h1><p>独立部署的大乘插件，版本 {version}。</p><p><a href=\"/mahayana/plugin.tar.gz\">下载并安装插件内容</a></p><p><a href=\"/mahayana/plugin.json\">查看可验证清单</a></p></main>"
     );
     fs::write(distribution.join("index.html"), html).map_err(|error| error.to_string())?;
+
+    // Wrangler ignores hidden static-asset directories. Keep the canonical, private
+    // release payload in `.mahayana-distribution`, then mirror it into a visible,
+    // generated-only directory used exclusively for the Cloudflare upload.
+    let cloudflare_assets = plugin_path.join(CLOUDFLARE_ASSET_DIR);
+    if cloudflare_assets.exists() {
+        fs::remove_dir_all(&cloudflare_assets).map_err(|error| error.to_string())?;
+    }
+    copy_site_tree(&distribution, &cloudflare_assets)?;
     Ok(distribution)
 }
 
