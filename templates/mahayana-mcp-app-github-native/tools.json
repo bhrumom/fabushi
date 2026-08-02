@@ -1,4 +1,40 @@
 {
   "schemaVersion": 1,
-  "tools": []
+  "tools": [
+    {
+      "name": "send",
+      "description": "Queue a message for local processing.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {"text": {"type": "string", "minLength": 1}},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "status",
+      "description": "Read a queued task state.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": {"taskId": {"type": "string", "minLength": 1}},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel",
+      "description": "Cancel a queued task.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["taskId"],
+        "properties": {"taskId": {"type": "string", "minLength": 1}},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "logs",
+      "description": "Read local non-sensitive runtime logs.",
+      "inputSchema": {"type": "object", "additionalProperties": false}
+    }
+  ]
 }

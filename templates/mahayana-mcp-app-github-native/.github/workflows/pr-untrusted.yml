@@ -1,13 +1,79 @@
-name: Untrusted PR CI
+name: Untrusted PR
 on:
   pull_request:
+
 permissions:
   contents: read
+
+concurrency:
+  group: untrusted-pr-${{ github.event.pull_request.number }}-${{ github.sha }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  contract:
+    name: contract
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout untrusted merge commit without credentials
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: echo "run secretless checks only"
+      - name: Use Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: false
+      - name: Verify repository and workflow boundaries
+        run: bash scripts/verify-repository.sh
+      - name: Run shared Tool Contract unit tests
+        run: go test ./...
+      - name: Build isolated native and web-wasm test runtimes
+        run: bash scripts/build-test-runtimes.sh
+      - name: Run the identical Tool Contract against native CLI
+        run: node tests/native-contract.mjs
+      - name: Run the identical Tool Contract against web-wasm
+        run: node tests/web-wasm-contract.mjs
+      - name: Verify MCP Apps UI, CSP and source contract
+        run: node tests/mcp-apps-conformance.mjs
+      - name: Verify permission and Tool Contract diffs are reviewable
+        run: node tests/review-diff-report.mjs
+
+  adversarial-boundaries:
+    name: adversarial boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prove no secret or OIDC publishing identity is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_TOKEN_PERMISSIONS:-read-only}" != write
+          test -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+          test -z "${MARKETPLACE_RELEASE_TOKEN:-}"
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+      - name: Prove an untrusted checkout cannot push upstream
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          git config user.name untrusted-probe
+          git config user.email untrusted-probe@example.invalid
+          git commit --allow-empty -m 'untrusted write probe'
+          if git push origin HEAD:refs/heads/untrusted-write-probe; then
+            echo 'untrusted pull request unexpectedly wrote to upstream' >&2
+            exit 1
+          fi
+      - name: Prove the workflow cannot publish or export official artifacts
+        run: bash scripts/verify-untrusted-workflow.sh

@@ -1,13 +1,111 @@
 name: Trusted Release
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing protected v* tag to publish
+        required: true
+
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
+
+concurrency:
+  group: trusted-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_COMMIT: ${{ github.sha }}
+
 jobs:
   release:
+    name: build-attest-release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/attest-build-provenance@v2
+      - name: Checkout exact protected tag source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Use Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: false
+      - name: Verify the tag targets the checked-out source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$SOURCE_COMMIT"
+      - name: Run trusted contract suite before release
+        run: |
+          bash scripts/verify-repository.sh
+          go test ./...
+          bash scripts/build-test-runtimes.sh
+          node tests/native-contract.mjs
+          node tests/web-wasm-contract.mjs
+          node tests/mcp-apps-conformance.mjs
+          node tests/review-diff-report.mjs
+      - name: Build immutable multi-artifact release
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: bash scripts/build-artifacts.sh
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .release-stage
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+          upload-artifact: false
+      - name: Create source-bound parent Release Manifest
+        env:
+          VERSION: ${{ github.ref_name }}
+          GITHUB_DEFAULT_BRANCH: main
+        run: |
+          export VERSION="${VERSION#v}"
+          export SOURCE_TREE_HASH="$(git rev-parse HEAD^{tree})"
+          node scripts/create-release-manifest.mjs
+      - name: Install keyless signer
+        uses: sigstore/cosign-installer@v3
+      - name: Sign the parent Release Manifest with GitHub OIDC
+        run: cosign sign-blob --yes --bundle dist/release-manifest.sigstore.json dist/release-manifest.json
+      - name: Attest all release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/common.tar.gz
+            dist/native-macos-arm64.tar.gz
+            dist/native-macos-x64.tar.gz
+            dist/native-windows-x64.tar.gz
+            dist/native-linux-x64.tar.gz
+            dist/native-linux-arm64.tar.gz
+            dist/web-wasm.tar.gz
+      - name: Attest the signed parent Release Manifest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release-manifest.json
+      - name: Publish immutable assets to the protected tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
+          fi

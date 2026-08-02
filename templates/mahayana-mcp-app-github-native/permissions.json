@@ -1,3 +1,8 @@
 {
-  "permissions": []
+  "schemaVersion": 1,
+  "permissions": [
+    {"id": "storage.local", "required": true, "reason": "Persist the local queue and runtime state."}
+  ],
+  "network": {"allow": []},
+  "secrets": {"embedded": false, "hostBrokerRequired": true}
 }

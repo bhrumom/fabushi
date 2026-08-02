@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "io.mahayana.example.github-native-app",
+  "version": "0.1.0",
+  "extension": "io.modelcontextprotocol/ui",
+  "mcpAppsVersion": "2026-01-26",
+  "uiResource": "ui://io.mahayana.example.github-native-app/main"
+}

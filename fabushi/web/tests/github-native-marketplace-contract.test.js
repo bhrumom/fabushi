@@ -1,20 +1,29 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
+  normalizeAiContributionPlan,
   normalizeReleaseManifest,
+  selectMinimalArtifacts,
+  validateRepositoryTemplate,
   validateTrustedReleaseWorkflow,
   validateUntrustedPullRequestWorkflow,
 } from '../src/marketplace/github-native-contract.js';
 
 const SHA1 = 'a'.repeat(40);
 const SHA256 = 'b'.repeat(64);
+const TREE_SHA1 = 'c'.repeat(40);
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
 function artifact(overrides = {}) {
   return {
     id: 'common',
     kind: 'common',
     sourceCommit: SHA1,
+    sourceTreeHash: TREE_SHA1,
     url: 'https://github.com/example/app/releases/download/v1/common.tar.gz',
     sha256: SHA256,
     size: 1024,
@@ -37,7 +46,7 @@ function manifest(overrides = {}) {
       repository: 'example/app',
       defaultBranch: 'main',
       commit: SHA1,
-      treeHash: 'c'.repeat(40),
+      treeHash: TREE_SHA1,
       licenseSpdx: 'Apache-2.0',
       visibility: 'public',
       subdirectory: '.',
@@ -127,6 +136,7 @@ test('derived release must use a new plugin ID and fork repository', () => {
       upstreamRepository: 'upstream/app',
       upstreamCommit: SHA1,
       syncBaseCommit: SHA1,
+      forkRepository: 'example/app',
       permissionDiffSha256: SHA256,
       toolContractDiffSha256: SHA256,
       artifactDiffSha256: SHA256,
@@ -154,6 +164,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: npm test
 `;
   assert.deepEqual(validateUntrustedPullRequestWorkflow(safe), { valid: true, failures: [] });
@@ -179,9 +191,84 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: production
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: \${{ github.sha }}
+      - run: cosign sign-blob --yes release-manifest.json
       - uses: actions/attest-build-provenance@v2
 `;
   assert.deepEqual(validateTrustedReleaseWorkflow(workflow), { valid: true, failures: [] });
   assert.equal(validateTrustedReleaseWorkflow(workflow.replace('id-token: write', 'id-token: read')).valid, false);
+});
+
+
+test('rejects an artifact built from a different source tree', () => {
+  const value = manifest();
+  value.artifacts[1].sourceTreeHash = 'd'.repeat(40);
+  assert.throws(() => normalizeReleaseManifest(value), (error) => {
+    assert.equal(error.code, 'source_tree_mismatch');
+    return true;
+  });
+});
+
+test('selects only common plus the minimal compatible platform artifact', () => {
+  const value = manifest();
+  const desktop = selectMinimalArtifacts(value, {
+    platform: 'desktop',
+    os: 'linux',
+    architecture: 'x64',
+    hostVersion: '1.0.0',
+    capabilities: [],
+  });
+  assert.equal(desktop.executionLocation, 'local-native');
+  assert.deepEqual(desktop.artifacts.map((item) => item.id), ['common', 'native-linux-x64']);
+
+  const mobile = selectMinimalArtifacts(value, {
+    platform: 'ios',
+    hostVersion: '1.0.0',
+    capabilities: [],
+  });
+  assert.equal(mobile.executionLocation, 'local-web');
+  assert.deepEqual(mobile.artifacts.map((item) => item.id), ['common', 'web-wasm']);
+});
+
+test('the checked-in repository template is executable and supply-chain protected', () => {
+  const templateRoot = path.join(REPOSITORY_ROOT, 'templates', 'mahayana-mcp-app-github-native');
+  const files = {};
+  const collect = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        collect(absolute);
+      } else {
+        files[path.relative(templateRoot, absolute).split(path.sep).join('/')] = fs.readFileSync(absolute, 'utf8');
+      }
+    }
+  };
+  collect(templateRoot);
+  assert.deepEqual(validateRepositoryTemplate(files), { valid: true, failures: [] });
+});
+
+test('AI contribution plans are confined to a confirmed fork branch and Draft PR', () => {
+  const value = normalizeAiContributionPlan({
+    upstreamRepository: 'publisher/app',
+    forkRepository: 'alice/app',
+    branch: 'ai/fix-real-issue',
+    issueUrl: 'https://github.com/publisher/app/issues/42',
+    draftPullRequest: true,
+    userConfirmedPublicAction: true,
+    tests: ['Untrusted PR / contract', 'Untrusted PR / adversarial boundaries'],
+    permissionDiffSha256: SHA256,
+    toolContractDiffSha256: SHA256,
+    artifactDiffSha256: SHA256,
+  });
+  assert.equal(value.forkRepository, 'alice/app');
+  assert.equal(value.draftPullRequest, true);
+  assert.throws(() => normalizeAiContributionPlan({ ...value, forkRepository: value.upstreamRepository }), (error) => {
+    assert.equal(error.code, 'ai_target_invalid');
+    return true;
+  });
 });
