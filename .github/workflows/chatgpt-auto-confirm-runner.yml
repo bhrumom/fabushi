@@ -36,11 +36,9 @@ jobs:
     timeout-minutes: 355
     env:
       CHATGPT_CDP_PORT: "9324"
-      CHATGPT_AUTO_CONFIRM_HOSTED: "true"
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
       CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
-      CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64: ${{ secrets.CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64 }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout trusted runner implementation
@@ -90,10 +88,10 @@ jobs:
                 "$(dirname "$STATE_PATH")/diagnostics"
             fi
           else
-            test -n "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64"
-            printf '%s' "$CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64" |
-              base64 --decode |
-              gzip -dc > "$STATE_PATH"
+            # Task goals live in the versioned inbox and task documents. A
+            # fresh runner starts from empty execution state and lets the
+            # dynamic controller reconcile the current repository definition.
+            printf '%s\n' '{"automationTasks":[]}' > "$STATE_PATH"
           fi
           chmod 600 "$STATE_PATH"
 

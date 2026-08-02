@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const runtime = process.env.CHATGPT_AUTO_CONFIRM_NATIVE ||
@@ -40,10 +42,10 @@ const native = (command, params = undefined) => {
   return payload;
 };
 
-const fetchControl = () => {
+const fetchRepositoryContent = repositoryPath => {
   const result = spawnSync('gh', [
     'api', '--method', 'GET',
-    `repos/${repository}/contents/${controlPath}`,
+    `repos/${repository}/contents/${repositoryPath}`,
     '-f', `ref=${controlRef}`,
   ], {
     encoding: 'utf8',
@@ -52,12 +54,49 @@ const fetchControl = () => {
     maxBuffer: 10 * 1024 * 1024,
   });
   if (result.status !== 0) {
-    throw new Error(`task control fetch failed: ${result.stderr || result.stdout}`);
+    throw new Error(`repository content fetch failed for ${repositoryPath}: ${result.stderr || result.stdout}`);
   }
-  const envelope = JSON.parse(result.stdout);
+  return JSON.parse(result.stdout);
+};
+
+const fetchControl = () => {
+  const envelope = fetchRepositoryContent(controlPath);
   const raw = Buffer.from(String(envelope.content || '').replace(/\s+/g, ''), 'base64')
     .toString('utf8');
   const control = JSON.parse(raw);
+  const directoryCache = new Map();
+  const directoryEntries = directory => {
+    if (!directoryCache.has(directory)) {
+      const entries = fetchRepositoryContent(directory);
+      if (!Array.isArray(entries)) throw new Error(`task document path is not a directory: ${directory}`);
+      directoryCache.set(directory, entries.filter(entry => entry?.type === 'file'));
+    }
+    return directoryCache.get(directory);
+  };
+  control.tasks = (Array.isArray(control.tasks) ? control.tasks : []).map(task => {
+    const sources = Array.isArray(task.specSources) && task.specSources.length > 0
+      ? task.specSources.map(source => String(source || '').replace(/^\/+/, ''))
+      : directoryEntries(normalizedDirectory(task.documentDirectory)).map(entry => entry.path);
+    const files = sources.map(source => {
+      const directory = path.posix.dirname(source);
+      const entry = directoryEntries(directory).find(candidate => candidate.path === source);
+      if (!entry?.sha) throw new Error(`task specification source is missing: ${source}`);
+      return { path: source, sha: entry.sha };
+    });
+    const digestInput = JSON.stringify({
+      id: task.id,
+      revision: Math.max(1, Number(task.revision || task.goalVersion || 1)),
+      title: task.title,
+      prompt: task.prompt,
+      directive: task.directive || '',
+      files,
+    });
+    return {
+      ...task,
+      _specFiles: files.map(file => file.path),
+      _specDigest: `sha256:${createHash('sha256').update(digestInput).digest('hex')}`,
+    };
+  });
   control._blobSha = envelope.sha;
   control._source = envelope.html_url ||
     `https://github.com/${repository}/blob/${controlRef}/${controlPath}`;
@@ -92,10 +131,14 @@ const taskDocumentBlock = task => {
     '只在消息中提供目录路径和文件夹链接，不在提示词中复制文档正文。',
     '目录中可以包含 PRD、技术设计、架构说明、UI/UX、接口契约、验收标准和其他任务资料。',
     '当前 goalVersion 对应的目录资料优先于旧 Chat 中的任务描述。',
+    `当前规范摘要：${task._specDigest || 'unavailable'}。`,
+    `规范文件：${(task._specFiles || []).join('、') || directory}`,
   ].join('\n');
 };
 
-const runtimeId = task => `${task.id}--v${Math.max(1, Number(task.goalVersion || 1))}`;
+const taskRevision = task => Math.max(1, Number(task.revision || task.goalVersion || 1));
+const runtimeId = task =>
+  `${task.id}--v${taskRevision(task)}--s${String(task._specDigest || '').replace('sha256:', '').slice(0, 12)}`;
 const logicalPrefix = task => `${task.id}--v`;
 const managedBy = (current, task) =>
   current.id === task.id || current.id.startsWith(logicalPrefix(task));
@@ -104,7 +147,7 @@ const isTerminal = task => ['completed', 'cancelled'].includes(task.status);
 
 const taskPrompt = (control, task) => [
   `动态任务控制版本：${control.revision || control._blobSha}。`,
-  `逻辑任务：${task.id}；目标版本：${Math.max(1, Number(task.goalVersion || 1))}。`,
+  `逻辑任务：${task.id}；目标版本：${taskRevision(task)}；规范摘要：${task._specDigest}。`,
   task.prompt,
   taskDocumentBlock(task),
   reportContract,
@@ -123,6 +166,7 @@ const reconcileControl = control => {
   );
   const cancelled = [];
   const enqueued = [];
+  const requeued = [];
   const deferred = [];
 
   for (const task of desiredTasks) {
@@ -164,7 +208,16 @@ const reconcileControl = control => {
       }
     }
 
-    if (managed.some(current => current.id === desiredId)) continue;
+    const exact = managed.find(current => current.id === desiredId);
+    if (exact && ['failed', 'blocked', 'cancelled'].includes(exact.status)) {
+      native('queue_retry', {
+        taskId: exact.id,
+        feedback: `仓库动态任务定义 ${task._specDigest} 仍要求继续执行。`,
+      });
+      requeued.push(exact.id);
+      continue;
+    }
+    if (exact) continue;
 
     native('queue_enqueue', {
       tasks: [{
@@ -212,6 +265,7 @@ const reconcileControl = control => {
     revision: control.revision || control._blobSha,
     source: control._source,
     enqueued,
+    requeued,
     cancelled,
     deferred,
     keepAlive: control.keepAlive === true,
