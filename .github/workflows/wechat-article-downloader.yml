@@ -1,0 +1,182 @@
+name: WeChat Article Downloader
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/marketplace.json'
+      - '.agents/plugins/plugins/wechat-article-downloader/**'
+      - 'frontend/apps/web/public/.well-known/mahayana/marketplace.json'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
+      - '.github/workflows/wechat-article-downloader.yml'
+  workflow_dispatch:
+    inputs:
+      seed_url:
+        description: Public WeChat article URL
+        required: true
+        type: string
+        default: https://mp.weixin.qq.com/s/qhuAA1GduPwC6VM-kFohyg
+      full_archive:
+        description: Crawl without an article-count limit
+        required: true
+        type: boolean
+        default: true
+      download_images:
+        description: Download article images for offline viewing
+        required: true
+        type: boolean
+        default: false
+      search_pages:
+        description: Sogou public index pages (0-10)
+        required: true
+        type: string
+        default: '10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wechat-article-downloader-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+env:
+  MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
+  PLUGIN_PACKAGE: fabushi-official-miniapps
+  PLUGIN_BINARY: third_party/mahayana/mahayana-rs/target/release/fabushi-plugin-cli
+  TARGET_SEED: https://mp.weixin.qq.com/s/qhuAA1GduPwC6VM-kFohyg
+
+jobs:
+  validate-and-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs
+
+      - name: Validate marketplace contract
+        run: python3 scripts/check-official-plugin-marketplace.py
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
+
+      - name: Test Rust downloader
+        run: cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
+
+      - name: Build release CLI
+        run: cargo build --locked --release --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
+
+      - name: Validate plugin manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PLUGIN_BINARY" --plugin wechat-article-downloader --dump-manifest > plugin-manifest.json
+          jq -e '
+            .plugin.name == "wechat-article-downloader" and
+            ([.tools[].name] | index("inspect") != null) and
+            ([.tools[].name] | index("discover") != null) and
+            ([.tools[].name] | index("download") != null)
+          ' plugin-manifest.json >/dev/null
+
+      - name: Inspect real target article
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PLUGIN_BINARY" --plugin wechat-article-downloader inspect --json "$(jq -nc --arg url "$TARGET_SEED" '{url:$url,searchPages:0,delayMs:100}')" > inspect.json
+          jq -e '
+            .ok == true and
+            .account.biz == "MzA5NDcyMDcxNA==" and
+            .account.nickname == "紫竹林中莲花开" and
+            .article.mid == "2650956568" and
+            (.article.bodyBytes > 1000)
+          ' inspect.json >/dev/null
+
+      - name: Archive public articles
+        id: archive
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SEED: ${{ inputs.seed_url }}
+          FULL_ARCHIVE: ${{ inputs.full_archive }}
+          DOWNLOAD_IMAGES: ${{ inputs.download_images }}
+          SEARCH_PAGES: ${{ inputs.search_pages }}
+        run: |
+          set -euo pipefail
+          seed="$TARGET_SEED"
+          max_articles=20
+          search_pages=2
+          download_images=false
+          archive_kind=smoke
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            seed="${DISPATCH_SEED:-$TARGET_SEED}"
+            search_pages="${SEARCH_PAGES:-10}"
+            download_images="${DOWNLOAD_IMAGES:-false}"
+            if [ "${FULL_ARCHIVE:-true}" = true ]; then
+              max_articles=0
+              archive_kind=full
+            fi
+          fi
+          mkdir -p artifacts
+          args="$(jq -nc \
+            --arg url "$seed" \
+            --arg output "$GITHUB_WORKSPACE/artifacts/wechat-archive" \
+            --argjson search "$search_pages" \
+            --argjson max "$max_articles" \
+            --argjson images "$download_images" \
+            '{url:$url,outputDir:$output,searchPages:$search,maxArticles:$max,downloadImages:$images,delayMs:300,articleRetries:7,strict:false}')"
+          "$PLUGIN_BINARY" --plugin wechat-article-downloader download --json "$args" | tee artifacts/download-result.json
+          echo "kind=$archive_kind" >> "$GITHUB_OUTPUT"
+
+      - name: Verify archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=artifacts/wechat-archive/manifest.json
+          test -s "$manifest"
+          jq -e '
+            .account.biz == "MzA5NDcyMDcxNA==" and
+            .account.nickname == "紫竹林中莲花开" and
+            (.stats.articles >= 20) and
+            any(.articles[]; .mid == "2650956568" and .title == "龙吟声威初探——宇贺神将的西方白金体")
+          ' "$manifest" >/dev/null
+          actual="$(find artifacts/wechat-archive/articles -mindepth 2 -maxdepth 2 -name index.html | wc -l | tr -d ' ')"
+          expected="$(jq -r '.stats.articles' "$manifest")"
+          test "$actual" = "$expected"
+          jq '{account,stats,albumCount:(.albums|length),warnings,failures}' "$manifest" | tee artifacts/archive-summary.json
+
+      - name: Compress archive
+        if: always()
+        shell: bash
+        run: |
+          if [ -d artifacts/wechat-archive ]; then
+            tar -C artifacts -czf artifacts/wechat-archive.tar.gz wechat-archive
+            sha256sum artifacts/wechat-archive.tar.gz > artifacts/wechat-archive.tar.gz.sha256
+          fi
+
+      - name: Upload archive and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wechat-article-archive-${{ steps.archive.outputs.kind || 'failed' }}-${{ github.run_id }}
+          path: |
+            plugin-manifest.json
+            inspect.json
+            artifacts/download-result.json
+            artifacts/archive-summary.json
+            artifacts/wechat-archive/manifest.json
+            artifacts/wechat-archive/index.html
+            artifacts/wechat-archive.tar.gz
+            artifacts/wechat-archive.tar.gz.sha256
+          if-no-files-found: warn
+          retention-days: 14
