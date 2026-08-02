@@ -12,9 +12,9 @@ func legacyTaskReportContract(
   appliedRevision: Int? = nil,
   appliedDigest: String? = nil
 ) -> String {
-  let reportTaskId = jsonStringLiteral(taskId ?? "CURRENT_TASK_ID")
-  let reportRevision = String(appliedRevision ?? 1)
-  let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
+  _ = taskId
+  _ = appliedRevision
+  _ = appliedDigest
   return """
 
 // Retained only as a compatibility symbol; all outbound task messages use taskReportContract below.
