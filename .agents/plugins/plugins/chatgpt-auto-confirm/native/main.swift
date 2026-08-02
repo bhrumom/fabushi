@@ -252,7 +252,15 @@ func actionsDesktopTarget() -> ActionsLoginTarget? {
 }
 
 func ensureChatGPTDesktopRunning() {
-  if !runningChatGptApplications().isEmpty { return }
+  if actionsDesktopTarget() != nil { return }
+  let runningApplications = runningChatGptApplications()
+  for application in runningApplications {
+    application.terminate()
+  }
+  Thread.sleep(forTimeInterval: 1.0)
+  for application in runningApplications where !application.isTerminated {
+    application.forceTerminate()
+  }
   let applicationURL = URL(fileURLWithPath: "/Applications/ChatGPT.app")
   guard FileManager.default.fileExists(atPath: applicationURL.path) else { return }
   let configuration = NSWorkspace.OpenConfiguration()
