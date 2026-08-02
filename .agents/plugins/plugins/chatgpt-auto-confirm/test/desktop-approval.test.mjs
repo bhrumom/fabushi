@@ -107,6 +107,9 @@ test('every task Chat receives complete and unfinished report templates', () => 
   assert.match(nativeSource, /appliedRevision: task\.currentRevision/);
   assert.match(nativeSource, /let reportSource = \[/);
   assert.match(nativeSource, /reportMissing/);
+  assert.match(nativeSource, /terminal_reply_missing_task_report/);
+  assert.doesNotMatch(nativeSource, /let acceptedResult = AutomationTaskReport\(/);
+  assert.doesNotMatch(nativeSource, /let normalResult = reportText/);
 });
 
 test('initial outbound messages create a new Chat and same-task continuations use the reply action', async () => {

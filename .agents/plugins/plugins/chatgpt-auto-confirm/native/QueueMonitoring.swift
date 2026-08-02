@@ -648,62 +648,14 @@ func monitorAutomationTask(
     return
   }
   if terminal {
-    if terminalIncomplete {
-      closeDedicatedAutomationTarget(task, state: state)
-      queueContinuation(&task, report: nil, reason: "unfinished_reply_missing_continuation_report")
-      return
-    }
-    let normalResult = reportText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalResult.isEmpty else {
-      closeDedicatedAutomationTarget(task, state: state)
-      queueContinuation(&task, report: nil, reason: "empty_terminal_reply")
-      return
-    }
-    let acceptedResult = AutomationTaskReport(
-      protocolName: "mahayana.task-report.v1",
-      taskId: task.id,
-      appliedTaskRevision: task.appliedRevision,
-      appliedSpecDigest: task.appliedSpecDigest,
-      status: "complete",
-      summary: normalResult,
-      completed: [],
-      remaining: [],
-      blockers: [],
-      verification: [],
-      nextTask: "",
-      waitSeconds: 0,
-      waitReason: "",
-      nextConnector: nil
-    )
-    if monitoringReview {
-      guard normalResult.contains("MAHAYANA_REVIEW_ACCEPTED") else {
-        closeDedicatedAutomationTarget(task, state: state)
-        queueContinuation(&task, report: nil, reason: "review_result_missing_acceptance_marker")
-        return
-      }
-      task.reviewReport = acceptedResult
-      task.reviewStatus = "complete"
-      task.status = "completed"
-      task.lastError = nil
-      task.finishedAt = now
-      task.reviewedAt = now
-      return
-    }
-    task.report = acceptedResult
-    guard startAutomationReview(
+    closeDedicatedAutomationTarget(task, state: state)
+    queueContinuation(
       &task,
-      report: acceptedResult,
-      port: port,
-      targetId: targetId
-    ) else {
-      task.status = "blocked"
-      task.lastError = "chat_review_start_failed"
-      task.finishedAt = now
-      return
-    }
-    task.status = "running"
-    task.lastError = nil
-    task.finishedAt = nil
+      report: nil,
+      reason: terminalIncomplete
+        ? "unfinished_reply_missing_continuation_report"
+        : "terminal_reply_missing_task_report"
+    )
     return
   }
 
