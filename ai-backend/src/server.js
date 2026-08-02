@@ -4,8 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
 import Database from 'better-sqlite3';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -13,7 +13,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import pino from 'pino';
-import { z } from 'zod';
+import * as z from 'zod/v4';
 
 import { registerPlatformApi } from './platform_api.js';
 import {
@@ -69,7 +69,7 @@ const corsOrigin =
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
-  exposedHeaders: ['mcp-session-id', 'mcp-protocol-version'],
+  exposedHeaders: ['mcp-protocol-version'],
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(
@@ -4156,11 +4156,11 @@ function createLibreChatMcpServer() {
       title: 'Search dharma resources',
       description:
         'Search for legally shareable Buddhist scripture, text, web, or audio resources that can be prepared for Fabushi sharing.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().min(2).max(200),
         limit: z.number().int().min(1).max(12).optional(),
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         query: z.string(),
         items: z.array(
           z.object({
@@ -4174,7 +4174,7 @@ function createLibreChatMcpServer() {
             juan: z.number().optional(),
           }),
         ),
-      },
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -4196,22 +4196,22 @@ function createLibreChatMcpServer() {
       title: 'Download dharma resource',
       description:
         'Download and extract a selected resource. Use the url/work/juan returned by search_dharma_resources whenever possible.',
-      inputSchema: {
+      inputSchema: z.object({
         url: z.string().min(1).max(1000),
         title: z.string().max(300).optional(),
         sourceName: z.string().max(120).optional(),
         work: z.string().max(40).optional(),
         juan: z.number().int().min(1).optional(),
         identifier: z.string().max(300).optional(),
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         title: z.string(),
         sourceName: z.string(),
         url: z.string(),
         fileName: z.string(),
         downloadId: z.string(),
         contentText: z.string(),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -4242,17 +4242,17 @@ function createLibreChatMcpServer() {
       title: 'Prepare dharma sharing text',
       description:
         'Prepare a text payload for the Fabushi app to confirm and add to global dharma sharing. This returns a clientAction; it does not start sending.',
-      inputSchema: {
+      inputSchema: z.object({
         title: z.string().min(1).max(120),
         text: z.string().min(1).max(20000),
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         clientAction: z.object({
           type: z.literal('prepare_dharma_share_text'),
           title: z.string(),
           text: z.string(),
         }),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -4275,19 +4275,19 @@ function createLibreChatMcpServer() {
       title: 'Prepare practice book item',
       description:
         'Prepare a scripture, chant, or practice item for the Fabushi app practice book. This returns a clientAction; it does not mutate the app by itself.',
-      inputSchema: {
+      inputSchema: z.object({
         title: z.string().min(1).max(120),
         sourceName: z.string().max(120).optional(),
         text: z.string().min(1).max(20000),
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         clientAction: z.object({
           type: z.literal('prepare_practice_book_item'),
           title: z.string(),
           sourceName: z.string(),
           text: z.string(),
         }),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -4308,31 +4308,39 @@ function createLibreChatMcpServer() {
   return server;
 }
 
-async function handleMcpRequest(req, res) {
-  const server = createLibreChatMcpServer();
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-
-  res.on('close', () => {
-    transport.close();
-    server.close();
-  });
-
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-}
+const libreChatMcpHandler = createMcpHandler(
+  () => createLibreChatMcpServer(),
+  { legacy: 'reject', responseMode: 'json' },
+);
+const libreChatMcpNodeHandler = toNodeHandler(libreChatMcpHandler);
 
 app.all('/mcp', async (req, res) => {
+  if (req.method !== 'POST') {
+    res.set('Allow', 'POST');
+    res.status(405).json({
+      jsonrpc: '2.0',
+      id: req.body?.id ?? null,
+      error: { code: -32004, message: 'MCP endpoint accepts stateless POST only' },
+    });
+    return;
+  }
+  if (req.headers['mcp-session-id'] || req.headers['last-event-id']) {
+    res.status(400).json({
+      jsonrpc: '2.0',
+      id: req.body?.id ?? null,
+      error: { code: -32005, message: 'Legacy MCP sessions and event replay are not supported' },
+    });
+    return;
+  }
   try {
-    await handleMcpRequest(req, res);
+    await libreChatMcpNodeHandler(req, res, req.body);
   } catch (error) {
     logger.error({ error: error.stack || String(error) }, 'MCP request failed');
     if (!res.headersSent) {
       res.status(500).json({
-        error: 'MCP request failed',
-        message: publicAiErrorMessage(error),
+        jsonrpc: '2.0',
+        id: req.body?.id ?? null,
+        error: { code: -32603, message: publicAiErrorMessage(error) },
       });
     }
   }

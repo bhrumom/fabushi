@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-const PROTOCOL_VERSION: &str = "2025-06-18";
+const PROTOCOL_VERSION: &str = "2025-11-25";
 const UI_URI: &str = "ui://fabushi/global-dharma/home-v1.html";
 const APP_MIME: &str = "text/html;profile=mcp-app";
 
@@ -187,7 +187,7 @@ fn tool(
         }
     });
     if with_ui {
-        value["_meta"] = json!({"ui/resourceUri": UI_URI});
+        value["_meta"] = json!({"ui/resourceUri": UI_URI, "ui/visibility": ["app", "model"]});
     }
     value
 }
@@ -235,11 +235,79 @@ fn read_resource(request: &Value) -> Result<Value, (i64, String)> {
     if uri != UI_URI {
         return Err((-32002, format!("resource not found: {uri}")));
     }
-    Ok(json!({"contents": [{"uri": UI_URI, "mimeType": APP_MIME, "text": home_html()}]}))
+    Ok(json!({"contents": [{
+        "uri": UI_URI,
+        "mimeType": APP_MIME,
+        "text": home_html(),
+        "_meta": {"ui": {"csp": {
+            "connectDomains": [],
+            "resourceDomains": [],
+            "frameDomains": [],
+            "baseUriDomains": []
+        }}}
+    }]}))
 }
 
 fn home_html() -> &'static str {
-    r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'"><style>body{font:15px system-ui;background:#101722;color:#eef4ff;padding:20px}button{margin:4px;padding:9px 12px;border-radius:9px;border:1px solid #476080;background:#1a2a40;color:inherit}pre{white-space:pre-wrap}</style></head><body><h1>全球法布施</h1><p>命令与数据全部通过 MCP。</p><div id="tools"><button data-tool="status">/status</button><button data-tool="start">/start</button><button data-tool="stop">/stop</button><button data-tool="loop">/loop</button><button data-tool="logs">/logs</button></div><pre id="out">已连接</pre><script>(()=>{let id=0;const pending=new Map();const out=document.querySelector('#out');addEventListener('message',event=>{const m=event.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id!==undefined&&pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}if(m.method==='ui/notifications/tool-result')out.textContent=JSON.stringify(m.params,null,2)});function call(name){const requestId=++id;return new Promise(resolve=>{pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name,arguments:{}}},'*')})}document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=async()=>{out.textContent='执行中…';const response=await call(button.dataset.tool);out.textContent=JSON.stringify(response.result??response.error,null,2)})})()</script></body></html>"#
+    r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <style>body{font:15px system-ui;background:#101722;color:#eef4ff;padding:20px}button{margin:4px;padding:9px 12px;border-radius:9px;border:1px solid #476080;background:#1a2a40;color:inherit}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+  <h1>全球法布施</h1>
+  <p>命令与数据全部通过 MCP Apps Tool 调用。</p>
+  <div id="tools"><button data-tool="status">/status</button><button data-tool="start">/start</button><button data-tool="stop">/stop</button><button data-tool="loop">/loop</button><button data-tool="logs">/logs</button></div>
+  <pre id="out">正在初始化 MCP App…</pre>
+  <script>(()=>{
+    const SPEC='2026-01-26';
+    let nextId=1;
+    const pending=new Map();
+    const out=document.querySelector('#out');
+    const send=message=>parent.postMessage(message,'*');
+    const request=(method,params={})=>new Promise((resolve,reject)=>{
+      const id=nextId++;
+      pending.set(id,{resolve,reject});
+      send({jsonrpc:'2.0',id,method,params});
+    });
+    addEventListener('message',event=>{
+      if(event.source!==parent||event.origin!=='null')return;
+      const message=event.data;
+      if(!message||message.jsonrpc!=='2.0')return;
+      if(message.id!==undefined&&pending.has(message.id)){
+        const operation=pending.get(message.id);
+        pending.delete(message.id);
+        if(message.error)operation.reject(new Error(message.error.message||'MCP Apps request failed'));
+        else operation.resolve(message.result);
+      }
+      if(message.method==='ui/notifications/tool-input')out.textContent='执行中…';
+      if(message.method==='ui/resource-teardown'){
+        for(const operation of pending.values())operation.reject(new Error('MCP App closed'));
+        pending.clear();
+      }
+    });
+    const call=async name=>{
+      out.textContent='执行中…';
+      try{out.textContent=JSON.stringify(await request('tools/call',{name,arguments:{}}),null,2)}
+      catch(error){out.textContent=String(error?.message||error)}
+    };
+    (async()=>{
+      await request('ui/initialize',{
+        protocolVersion:SPEC,
+        appInfo:{name:'global-dharma',version:'1.0.0'},
+        appCapabilities:{tools:{},logging:{}}
+      });
+      send({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}});
+      document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>call(button.dataset.tool));
+      out.textContent='已连接';
+      send({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:document.documentElement.scrollHeight}});
+    })().catch(error=>{out.textContent=String(error?.message||error)});
+  })()</script>
+</body>
+</html>"#
 }
 
 fn run_ctl(action: &str, args: Option<&Value>) -> Result<String, String> {

@@ -7,6 +7,16 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - 'templates/mahayana-mcp-app-github-native/**'
+      - 'ai-backend/src/official_mcp_apps.js'
+      - 'ai-backend/src/server.js'
+      - 'ai-backend/test/official_mcp_apps.test.js'
+      - 'fabushi/lib/services/mini_app_registry_service.dart'
+      - 'fabushi/web/src/config/constants.js'
+      - 'fabushi/web/tests/dacheng-ai-handler.test.js'
+      - 'fabushi/web/tests/mcp-apps-only-source-contract.test.js'
+      - 'frontend/apps/web/src/app/miniapps/[id]/McpPluginApp.tsx'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'native/global-dharma/crates/global-dharma-mcp/**'
   push:
     branches:
       - codex/mahayana-marketplace-cloudflare-v10
@@ -15,6 +25,16 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - 'templates/mahayana-mcp-app-github-native/**'
+      - 'ai-backend/src/official_mcp_apps.js'
+      - 'ai-backend/src/server.js'
+      - 'ai-backend/test/official_mcp_apps.test.js'
+      - 'fabushi/lib/services/mini_app_registry_service.dart'
+      - 'fabushi/web/src/config/constants.js'
+      - 'fabushi/web/tests/dacheng-ai-handler.test.js'
+      - 'fabushi/web/tests/mcp-apps-only-source-contract.test.js'
+      - 'frontend/apps/web/src/app/miniapps/[id]/McpPluginApp.tsx'
+      - 'frontend/packages/mcp-app-sdk/**'
+      - 'native/global-dharma/crates/global-dharma-mcp/**'
 
 permissions:
   contents: read
@@ -37,3 +57,30 @@ jobs:
 
       - name: Run contract tests
         run: node --test fabushi/web/tests/github-native-marketplace-contract.test.js
+
+
+  mcp-apps-only:
+    name: Stateless MCP Apps host and runtime contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+
+      - name: Install AI backend dependencies from lockfile
+        run: npm ci --prefix ai-backend
+
+      - name: Verify MCP Apps-only source contract
+        run: node --test fabushi/web/tests/mcp-apps-only-source-contract.test.js fabushi/web/tests/dacheng-ai-handler.test.js
+
+      - name: Verify stateless official MCP Apps server
+        run: npm test --prefix ai-backend

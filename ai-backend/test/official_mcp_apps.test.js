@@ -4,8 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import express from 'express';
 
 import {
@@ -151,7 +150,7 @@ test('global dharma chat handles quick replies and returns typed host requests',
   }
 });
 
-test('Streamable HTTP keeps one isolated MCP session until DELETE', async () => {
+test('modern HTTP is per-request POST-only and rejects legacy sessions', async () => {
   const app = express();
   app.use(express.json());
   app.all('/mcp/:id', (req, res) => handleOfficialMcpRequest(
@@ -165,69 +164,89 @@ test('Streamable HTTP keeps one isolated MCP session until DELETE', async () => 
   });
   const address = listener.address();
   const endpoint = `http://127.0.0.1:${address.port}/mcp/global-dharma`;
+  const headers = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    'mcp-protocol-version': '2026-07-28',
+  };
+  const modernParams = (params = {}) => ({
+    ...params,
+    _meta: {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientInfo': { name: 'http-contract-test', version: '2.0.0' },
+      'io.modelcontextprotocol/clientCapabilities': {
+        extensions: {
+          'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
+        },
+      },
+    },
+  });
   try {
-    const initialized = await fetch(endpoint, {
+    const listed = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      headers,
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'http-contract-test', version: '1.0.0' },
-        },
+        method: 'tools/list',
+        params: modernParams(),
       }),
     });
-    assert.equal(initialized.status, 200);
-    const sessionId = initialized.headers.get('mcp-session-id');
-    assert.ok(sessionId);
-
-    const noSession = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
-    });
-    assert.equal(noSession.status, 400);
-
-    const sessionHeaders = {
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      'mcp-session-id': sessionId,
-      'mcp-protocol-version': '2025-06-18',
-    };
-    const listed = await fetch(endpoint, {
-      method: 'POST',
-      headers: sessionHeaders,
-      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }),
-    });
     assert.equal(listed.status, 200);
+    assert.equal(listed.headers.get('mcp-session-id'), null);
     const listedPayload = await listed.json();
     assert.deepEqual(listedPayload.result.tools.map((tool) => tool.name), expectedTools['global-dharma']);
 
-    const wrongPlugin = await fetch(endpoint.replace('global-dharma', 'platform-publish'), {
+    const home = await fetch(endpoint, {
       method: 'POST',
-      headers: sessionHeaders,
-      body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} }),
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: modernParams({ name: 'home', arguments: { surface: 'web', limit: 10 } }),
+      }),
     });
-    assert.equal(wrongPlugin.status, 404);
+    assert.equal(home.status, 200);
+    const homePayload = await home.json();
+    assert.equal(homePayload.result.structuredContent.schema, 'mahayana.miniapp.home.v1');
 
-    const wrongAccount = await fetch(endpoint, {
-      method: 'POST',
-      headers: { ...sessionHeaders, 'x-test-scope': 'scope-b' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} }),
-    });
-    assert.equal(wrongAccount.status, 403);
+    for (const method of ['GET', 'DELETE']) {
+      const rejected = await fetch(endpoint, { method, headers });
+      assert.equal(rejected.status, 405);
+      assert.equal(rejected.headers.get('allow'), 'POST');
+    }
 
-    const deleted = await fetch(endpoint, { method: 'DELETE', headers: sessionHeaders });
-    assert.ok(deleted.status >= 200 && deleted.status < 300);
-    const afterDelete = await fetch(endpoint, {
+    const session = await fetch(endpoint, {
       method: 'POST',
-      headers: sessionHeaders,
-      body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/list', params: {} }),
+      headers: { ...headers, 'mcp-session-id': 'legacy-session' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: modernParams() }),
     });
-    assert.equal(afterDelete.status, 404);
+    assert.equal(session.status, 400);
+    const sessionPayload = await session.json();
+    assert.equal(sessionPayload.error.code, -32005);
+
+    const legacy = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2025-11-25',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'legacy-client', version: '1.0.0' },
+        },
+      }),
+    });
+    assert.notEqual(legacy.status, 200);
+    const legacyPayload = await legacy.json();
+    assert.equal(legacyPayload.error.code, -32020);
   } finally {
     await new Promise((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
   }
