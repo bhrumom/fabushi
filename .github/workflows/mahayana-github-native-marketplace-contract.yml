@@ -7,6 +7,8 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - 'templates/mahayana-mcp-app-github-native/**'
+      - 'ai-backend/package.json'
+      - 'ai-backend/package-lock.json'
       - 'ai-backend/src/official_mcp_apps.js'
       - 'ai-backend/src/server.js'
       - 'ai-backend/test/official_mcp_apps.test.js'
@@ -25,6 +27,8 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - 'templates/mahayana-mcp-app-github-native/**'
+      - 'ai-backend/package.json'
+      - 'ai-backend/package-lock.json'
       - 'ai-backend/src/official_mcp_apps.js'
       - 'ai-backend/src/server.js'
       - 'ai-backend/test/official_mcp_apps.test.js'
@@ -40,6 +44,42 @@ permissions:
   contents: read
 
 jobs:
+  refresh-ai-backend-lock:
+    name: Refresh AI backend lockfile in trusted branch
+    if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/mahayana-marketplace-cloudflare-v10
+          persist-credentials: true
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate lockfile without running dependency scripts
+        run: npm install --prefix ai-backend --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Commit only the generated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- ai-backend/package-lock.json; then
+            echo 'Lockfile is already synchronized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ai-backend/package-lock.json
+          git commit -m 'chore: refresh AI backend lockfile'
+          git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
+
   contract:
     name: GitHub-native MCP App contract
     runs-on: ubuntu-latest
@@ -57,7 +97,6 @@ jobs:
 
       - name: Run contract tests
         run: node --test fabushi/web/tests/github-native-marketplace-contract.test.js
-
 
   mcp-apps-only:
     name: Stateless MCP Apps host and runtime contract
