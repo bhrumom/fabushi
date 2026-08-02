@@ -82,7 +82,10 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.doesNotMatch(restoreSessionScript, /call\([^\n]*['"]Page\.setWebLifecycleState['"]/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
   assert.match(actionsWorkflow, /Launch authenticated desktop shell/);
-  assert.match(actionsWorkflow, /Launch authenticated desktop shell\r?\n\s+timeout-minutes: 6/);
+  assert.match(
+    actionsWorkflow,
+    /Launch authenticated desktop shell\r?\n\s+if: \$\{\{ inputs\.cancel_task_id == '' \}\}\r?\n\s+timeout-minutes: 6/,
+  );
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
   assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
