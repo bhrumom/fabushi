@@ -21,6 +21,15 @@ on:
         description: Remove one logical task from restored persistent state without launching Chat
         required: false
         type: string
+      account_id:
+        description: Opaque account id captured by the local account registry; empty keeps legacy repo secrets
+        required: false
+        type: string
+      restore_latest_credentials:
+        description: Restore the latest authenticated credential bundle for account_id before falling back to Environment secrets
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   actions: write
@@ -30,20 +39,23 @@ concurrency:
   # Parallel smoke creates its own ephemeral queue state, so it can validate
   # the hosted Chat surface without waiting behind the persistent runner.
   # Persistent runners keep the shared-state serialization guard.
-  group: ${{ inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}', github.ref) || 'chatgpt-auto-confirm-fix-test-runner' }}
+  group: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-account-{0}', inputs.account_id) || (inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}', github.ref) || 'chatgpt-auto-confirm-fix-test-runner') }}
   cancel-in-progress: false
 
 jobs:
   run:
-    name: Run ChatGPT auto-confirm for up to six hours
+    name: Run ChatGPT auto-confirm for up to six hours${{ inputs.account_id != '' && format(' ({0})', inputs.account_id) || '' }}
     runs-on: macos-15
     timeout-minutes: 355
+    environment:
+      name: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-{0}', inputs.account_id) || 'chatgpt-auto-confirm-legacy' }}
     env:
       CHATGPT_CDP_PORT: "9324"
       CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
       CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
       CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       GH_TOKEN: ${{ github.token }}
+      CHATGPT_ACCOUNT_ID: ${{ inputs.account_id }}
     steps:
       - name: Checkout trusted runner implementation
         uses: actions/checkout@v5
@@ -65,6 +77,7 @@ jobs:
             echo "runtime_dir=$runtime_dir"
             echo "profile_dir=$profile_dir"
             echo "state_path=$state_path"
+            echo "account_id=${CHATGPT_ACCOUNT_ID:-}"
           } >> "$GITHUB_OUTPUT"
           mkdir -p "$runtime_dir/diagnostics"
           touch "$runtime_dir/diagnostics/.keep"
@@ -74,6 +87,7 @@ jobs:
         env:
           PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
           STATE_PATH: ${{ steps.paths.outputs.state_path }}
+          STATE_ARTIFACT_NAME: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-state-{0}', inputs.account_id) || 'chatgpt-auto-confirm-state' }}
         run: |
           set -euo pipefail
           if [[ -n "$PREVIOUS_RUN_ID" ]]; then
@@ -81,7 +95,7 @@ jobs:
             mkdir -p "$RUNNER_TEMP/previous-state"
             gh run download "$PREVIOUS_RUN_ID" \
               --repo "$GITHUB_REPOSITORY" \
-              --name chatgpt-auto-confirm-state \
+              --name "$STATE_ARTIFACT_NAME" \
               --dir "$RUNNER_TEMP/previous-state"
             openssl enc -d -aes-256-cbc -pbkdf2 \
               -pass env:CHATGPT_AUTO_CONFIRM_STATE_KEY \
@@ -99,9 +113,44 @@ jobs:
           fi
           chmod 600 "$STATE_PATH"
 
+      - name: Restore latest account credential bundle
+        if: ${{ inputs.cancel_task_id == '' && inputs.account_id != '' && inputs.restore_latest_credentials }}
+        shell: bash
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
+          RUNTIME_DIR: ${{ steps.paths.outputs.runtime_dir }}
+        run: |
+          set -euo pipefail
+          [[ "$ACCOUNT_ID" =~ ^acct_[0-9a-f]{12}$ ]]
+          if [[ -z "$STATE_KEY" ]]; then
+            echo 'Account state key is not configured yet; using Environment seed secrets.'
+            exit 0
+          fi
+          mkdir -p "$RUNTIME_DIR/latest-credential"
+          artifact_id=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=chatgpt-auto-confirm-credentials-$ACCOUNT_ID&per_page=100" \
+            --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last // empty | .id')
+          if [[ -n "$artifact_id" ]]; then
+            gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNTIME_DIR/latest-credential/bundle.zip"
+            ditto -x -k "$RUNTIME_DIR/latest-credential/bundle.zip" "$RUNTIME_DIR/latest-credential/unpacked"
+            bundle=$(find "$RUNTIME_DIR/latest-credential/unpacked" -type f -name '*.enc.json' -print -quit)
+            if [[ -n "$bundle" ]]; then
+              node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/credential-bundle.mjs unpack \
+                --account-id "$ACCOUNT_ID" --state-key "$STATE_KEY" --input "$bundle" \
+                --auth-output "$RUNTIME_DIR/latest-credential/auth.json" \
+                --cookies-output "$RUNTIME_DIR/latest-credential/cookies.json"
+              printf 'CHATGPT_CODEX_AUTH_B64=%s\n' "$(base64 < "$RUNTIME_DIR/latest-credential/auth.json" | tr -d '\\n')" >> "$GITHUB_ENV"
+              printf 'CHATGPT_SESSION_COOKIES_B64=%s\n' "$(base64 < "$RUNTIME_DIR/latest-credential/cookies.json" | tr -d '\\n')" >> "$GITHUB_ENV"
+              echo 'Restored latest authenticated account bundle.'
+            fi
+          else
+            echo 'No rolling credential bundle found; using Environment or legacy repository secrets.'
+          fi
+
       - name: Remove stale local worker bindings
         env:
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_ACCOUNT_ID: ${{ inputs.account_id }}
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/prepare-action-state.mjs
 
       - name: Cancel persisted task without launching Chat
@@ -128,6 +177,19 @@ jobs:
           mkdir -p "$HOME/.codex"
           printf '%s' "$CHATGPT_CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
           chmod 600 "$HOME/.codex/auth.json"
+
+      - name: Record account-scoped runtime metadata
+        if: ${{ inputs.cancel_task_id == '' && inputs.account_id != '' }}
+        shell: bash
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          STATE_PATH: ${{ steps.paths.outputs.state_path }}
+        run: |
+          set -euo pipefail
+          [[ "$ACCOUNT_ID" =~ ^acct_[0-9a-f]{12}$ ]]
+          jq --arg accountId "$ACCOUNT_ID" '.accountId = $accountId' "$STATE_PATH" > "$STATE_PATH.tmp"
+          mv "$STATE_PATH.tmp" "$STATE_PATH"
+          chmod 600 "$STATE_PATH"
 
       - name: Install official ChatGPT desktop app
         if: ${{ inputs.cancel_task_id == '' }}
@@ -199,6 +261,42 @@ jobs:
           CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
         run: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login
 
+      - name: Export and encrypt refreshed account credentials
+        if: ${{ inputs.cancel_task_id == '' && inputs.account_id != '' && steps.auth_verify.outcome == 'success' }}
+        id: credential_bundle
+        shell: bash
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
+          RUNTIME_DIR: ${{ steps.paths.outputs.runtime_dir }}
+          AUTH_PATH: ${{ github.workspace }}/.codex/action-auth.json
+          CHATGPT_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNTIME_DIR/refreshed-credential" "$(dirname "$AUTH_PATH")"
+          cp "$HOME/.codex/auth.json" "$AUTH_PATH"
+          chmod 600 "$AUTH_PATH"
+          node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/export-live-chatgpt-session.mjs \
+            --output "$RUNTIME_DIR/refreshed-credential/cookies.json" \
+            --auth "$AUTH_PATH" --port "$CHATGPT_CDP_PORT"
+          node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/credential-bundle.mjs pack \
+            --account-id "$ACCOUNT_ID" --state-key "$STATE_KEY" \
+            --auth "$AUTH_PATH" --cookies "$RUNTIME_DIR/refreshed-credential/cookies.json" \
+            --output "$RUNTIME_DIR/chatgpt-auto-confirm-credentials-$ACCOUNT_ID.enc.json"
+          rm -f "$AUTH_PATH" "$RUNTIME_DIR/refreshed-credential/cookies.json"
+          echo "bundle=$RUNTIME_DIR/chatgpt-auto-confirm-credentials-$ACCOUNT_ID.enc.json" >> "$GITHUB_OUTPUT"
+
+      - name: Mark account authentication failure
+        if: ${{ always() && inputs.cancel_task_id == '' && inputs.account_id != '' && steps.auth_verify.outcome != 'success' }}
+        shell: bash
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          RUNTIME_DIR: ${{ steps.paths.outputs.runtime_dir }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "{\"accountId\":\"$ACCOUNT_ID\",\"status\":\"needs_login\",\"recordedAt\":\"$(date -u +%FT%TZ)\"}" \
+            > "$RUNTIME_DIR/account-health.json"
+
       - name: Verify dynamic parallel task queue
         if: ${{ inputs.cancel_task_id == '' && inputs.parallel_queue_smoke }}
         env:
@@ -255,9 +353,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: chatgpt-auto-confirm-state
+          name: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-state-{0}', inputs.account_id) || 'chatgpt-auto-confirm-state' }}
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 30
           path: |
             ${{ steps.paths.outputs.runtime_dir }}/queue-state.enc
             ${{ steps.paths.outputs.runtime_dir }}/action-result.json
@@ -265,6 +363,24 @@ jobs:
             ${{ steps.paths.outputs.runtime_dir }}/*-screenshot.png
             ${{ steps.paths.outputs.runtime_dir }}/task-queue/watcher-trace.log
             ${{ steps.paths.outputs.runtime_dir }}/diagnostics
+
+      - name: Upload rolling account credential bundle
+        if: ${{ inputs.cancel_task_id == '' && inputs.account_id != '' && steps.credential_bundle.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: chatgpt-auto-confirm-credentials-${{ inputs.account_id }}
+          if-no-files-found: error
+          retention-days: 30
+          path: ${{ steps.credential_bundle.outputs.bundle }}
+
+      - name: Upload account health evidence
+        if: ${{ always() && inputs.cancel_task_id == '' && inputs.account_id != '' && steps.auth_verify.outcome != 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: chatgpt-auto-confirm-health-${{ inputs.account_id }}
+          if-no-files-found: error
+          retention-days: 30
+          path: ${{ steps.paths.outputs.runtime_dir }}/account-health.json
 
       - name: Continue incomplete work or report terminal failure
         if: success() || failure()
@@ -274,6 +390,7 @@ jobs:
           VERIFICATION_ONLY: ${{ inputs.smoke_only || inputs.parallel_queue_smoke }}
           AUTHENTICATION_VERIFIED: ${{ steps.auth_verify.outcome == 'success' }}
           CANCELLATION_ONLY: ${{ inputs.cancel_task_id != '' }}
+          ACCOUNT_ID: ${{ inputs.account_id }}
         run: |
           set -euo pipefail
           status=$(jq -r '.status // "incomplete"' "$RESULT_PATH")
@@ -304,5 +421,7 @@ jobs:
           gh workflow run chatgpt-auto-confirm-runner.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF_NAME" \
-            -f previous_run_id="$GITHUB_RUN_ID"
+            -f previous_run_id="$GITHUB_RUN_ID" \
+            -f account_id="$ACCOUNT_ID" \
+            -f restore_latest_credentials=true
           echo "Dispatched continuation from run $GITHUB_RUN_ID."

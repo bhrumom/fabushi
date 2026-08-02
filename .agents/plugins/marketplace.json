@@ -88,7 +88,7 @@
     },
     {
       "name": "chatgpt-auto-confirm",
-      "version": "1.0.0+codex.20260723053507",
+      "version": "1.0.0+codex.20260802193301",
       "source": {
         "source": "local",
         "path": "./plugins/chatgpt-auto-confirm"

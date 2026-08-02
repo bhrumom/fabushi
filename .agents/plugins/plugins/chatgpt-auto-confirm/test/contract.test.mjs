@@ -25,6 +25,14 @@ const liveSessionExporter = readFileSync(
   new URL('../scripts/export-live-chatgpt-session.mjs', import.meta.url),
   'utf8',
 );
+const credentialBundle = readFileSync(
+  new URL('../scripts/credential-bundle.mjs', import.meta.url),
+  'utf8',
+);
+const keepaliveWorkflow = readFileSync(
+  new URL('../../../../../.github/workflows/chatgpt-auto-confirm-keepalive.yml', import.meta.url),
+  'utf8',
+);
 const dynamicController = readFileSync(
   new URL('../scripts/run-dynamic-actions-controller.mjs', import.meta.url),
   'utf8',
@@ -53,10 +61,12 @@ test('home contract', () => {
   assert.ok(Buffer.byteLength(JSON.stringify(HOME)) <= 32768);
   assert.ok(HOME.feed.items.length <= 10);
   assert.deepEqual(HOME.quickReplies.map(item => item.action.name), [
+    'account_list', 'account_add', 'account_login_link', 'account_status',
     'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
     'prompt_templates', 'wait_for_review',
   ]);
   assert.equal(HOME.quickReplies.some(item => item.action.name === 'web_login_and_sync_actions'), false);
+  assert.equal(HOME.quickReplies.some(item => item.action.name === 'account_list'), true);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
@@ -131,6 +141,14 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /jq '\{status, reason, counts, tasks\}'/);
   assert.doesNotMatch(actionsWorkflow, /pull_request:/);
   assert.doesNotMatch(actionsWorkflow, /push:/);
+  assert.match(actionsWorkflow, /account_id:/);
+  assert.match(actionsWorkflow, /chatgpt-auto-confirm-credentials-/);
+  assert.match(actionsWorkflow, /aes-256-gcm/);
+  assert.match(actionsWorkflow, /retention-days: 30/);
+  assert.match(actionsWorkflow, /restore_latest_credentials/);
+  assert.match(keepaliveWorkflow, /cron: '17 \*\/6 \* \* \*'/);
+  assert.match(keepaliveWorkflow, /CHATGPT_AUTO_CONFIRM_ACCOUNT_IDS_JSON/);
+  assert.match(keepaliveWorkflow, /smoke_only=true/);
 });
 test('login sync uploads both credential forms without printing values', () => {
   assert.match(dispatchActionsScript, /CHATGPT_SESSION_COOKIES_PATH/);
@@ -139,6 +157,10 @@ test('login sync uploads both credential forms without printing values', () => {
   assert.doesNotMatch(dispatchActionsScript, /CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64|export-action-state/);
   assert.match(dispatchActionsScript, /CHATGPT_AUTO_CONFIRM_DISPATCH/);
   assert.doesNotMatch(dispatchActionsScript, /echo .*CHATGPT_(CODEX_AUTH|SESSION_COOKIES)_B64/);
+  assert.match(dispatchActionsScript, /CHATGPT_ACCOUNT_ID/);
+  assert.match(dispatchActionsScript, /deployment-branch-policies/);
+  assert.match(credentialBundle, /aes-256-gcm/);
+  assert.match(credentialBundle, /credential bundle account mismatch/);
   assert.match(dynamicController, /status === 'failed'/);
   assert.match(dynamicController, /await handleFinishedChild\(\)[\s\S]*if \(!child\)/);
 });

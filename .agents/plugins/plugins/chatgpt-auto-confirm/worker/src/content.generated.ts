@@ -1,14 +1,14 @@
 export const HOME = {
   "schema": "mahayana.miniapp.home.v1",
-  "revision": "83125fe73a9a2085ec542be6831fc1ca11a1496b9941dc6d66e822981998c055",
+  "revision": "ec50fdf76b2fde81795bda7fe5b039cf72cb6928d6f15fafd7cb88ee73fed754",
   "app": {
     "id": "chatgpt-auto-confirm",
     "title": "ChatGPT 自动确认",
-    "version": "1.0.0+codex.20260723053507"
+    "version": "1.0.0+codex.20260802193301"
   },
   "welcome": {
     "id": "welcome",
-    "markdown": "欢迎使用 **ChatGPT 自动确认**。\n\n它既能在后台自动确认 ChatGPT 授权卡，也能编排可恢复的任务队列。自动确认会原地扫描所有已经加载的 ChatGPT 页面，包括隐藏窗口和非当前会话，不激活应用、不抢焦点、不切换侧栏。每个任务都会附带机器可读最终总结；未完成时自动创建新 Chat 续作，完成后会在队列自己的 Chat 页面创建新的验收 Chat。\n\n通用确认和任务队列始终共用同一个已登录的 ChatGPT 实例。队列通过 ChatGPT 自带的 `show:false` 预热机制为每个运行中的任务持有一个从未显示、从不获取焦点的隐藏页面；无依赖且没有资源锁冲突的任务可并行执行，任务、续作和验收仍各自在自己的隐藏页面中完成。它不会新开第二个 ChatGPT 实例，也不会把你刚打开的新聊天切回任务会话。队列、会话引用和审计记录只保存在本机；辅助功能扫描仅作为旧版 ChatGPT 的兼容通道，而且只会处理当前前台窗口中真正可见的授权卡，绝不点击隐藏会话里的辅助功能元素。\n\n需要脱离本机长期运行时，可点「启动 6 小时 Action」。小程序会把最小任务状态和 ChatGPT 登录令牌写入仓库 GitHub Secrets，GitHub 托管 macOS Runner 每轮最多运行约 5 小时 40 分钟；任务未完成时会先加密保存状态，再自动启动下一轮继续。完整浏览器目录、明文登录令牌和未加密任务状态都不会上传为公开构件。"
+    "markdown": "欢迎使用 **ChatGPT 自动确认**。\n\n它既能在后台自动确认 ChatGPT 授权卡，也能编排可恢复的任务队列。自动确认会原地扫描所有已经加载的 ChatGPT 页面，包括隐藏窗口和非当前会话，不激活应用、不抢焦点、不切换侧栏。每个任务都会附带机器可读最终总结；未完成时自动创建新 Chat 续作，完成后会在队列自己的 Chat 页面创建新的验收 Chat。\n\n通用确认和任务队列始终共用同一个已登录的 ChatGPT 实例。队列通过 ChatGPT 自带的 `show:false` 预热机制为每个运行中的任务持有一个从未显示、从不获取焦点的隐藏页面；无依赖且没有资源锁冲突的任务可并行执行，任务、续作和验收仍各自在自己的隐藏页面中完成。它不会新开第二个 ChatGPT 实例，也不会把你刚打开的新聊天切回任务会话。队列、会话引用和审计记录只保存在本机；辅助功能扫描仅作为旧版 ChatGPT 的兼容通道，而且只会处理当前前台窗口中真正可见的授权卡，绝不点击隐藏会话里的辅助功能元素。\n\n现在可以在「账号」中添加最多 10 个 ChatGPT 账号。每个账号使用独立 profile、独立 CODEX_HOME 和 macOS Keychain 条目；任务入队时固定账号，之后切换默认账号只影响新任务。也可以生成只绑定 127.0.0.1、十分钟一次性的登录链接，确认后自动打开隔离登录窗口。\n\n需要脱离本机长期运行时，可点「启动 6 小时 Action」。每个账号使用独立 GitHub Environment 和并发组；Runner 首轮读取 Environment Secret，之后优先恢复最近一次成功 smoke 产生的 AES-256-GCM 加密凭据构件。每 6 小时会为已注册账号运行短 smoke，成功后滚动保存最新 Codex auth.json 和 renderer Cookie；认证失败会暂停该账号，等待本机重新登录。不存在官方永久 ChatGPT 页面 Cookie，仍需按需重新登录。"
   },
   "tips": [
     {
@@ -18,6 +18,56 @@ export const HOME = {
     }
   ],
   "quickReplies": [
+    {
+      "id": "account-list",
+      "label": "查看 ChatGPT 账号",
+      "aliases": [
+        "账号列表",
+        "管理账号"
+      ],
+      "action": {
+        "type": "tool",
+        "name": "account_list",
+        "arguments": {}
+      }
+    },
+    {
+      "id": "account-add",
+      "label": "添加 ChatGPT 账号",
+      "aliases": [
+        "添加账号",
+        "登录新账号"
+      ],
+      "action": {
+        "type": "tool",
+        "name": "account_add",
+        "arguments": {}
+      }
+    },
+    {
+      "id": "account-login-link",
+      "label": "生成一次性登录链接",
+      "aliases": [
+        "登录链接"
+      ],
+      "action": {
+        "type": "tool",
+        "name": "account_login_link",
+        "arguments": {}
+      }
+    },
+    {
+      "id": "account-status",
+      "label": "检查账号凭证状态",
+      "aliases": [
+        "账号健康检查"
+      ],
+      "action": {
+        "type": "tool",
+        "name": "account_status",
+        "arguments": {}
+      }
+    },
     {
       "id": "sync-actions-credentials",
       "label": "一键更新凭证到 GitHub Secrets",
@@ -89,7 +139,7 @@ export const HOME = {
     "items": [
       {
         "id": "guide",
-        "revision": "5",
+        "revision": "6",
         "kind": "article",
         "title": "使用指南",
         "publishedAt": "2026-07-19",
@@ -121,5 +171,5 @@ export const HOME = {
 } as const;
 export const RESOURCES: Record<string,string> = {
   "mahayana://chatgpt-auto-confirm/content/announcements/launch": "# 小程序上线\n\n这里是首条公告。",
-  "mahayana://chatgpt-auto-confirm/content/articles/guide": "# 使用指南\n\n## 快速开始\n\n1. 用「内置任务提示词」选择实现、诊断、审查或持续完成模板。\n2. 用 `enqueue_tasks` 一次加入多个任务。任务会进入持久队列，并与通用确认共用同一个已登录的 ChatGPT 实例。每个运行中任务使用独立的隐藏预热页面；无依赖且资源锁不冲突的任务按 `maxConcurrent` 并行执行。\n3. 每个 Chat 的最终回答必须包含 `mahayana.task-report.v1` 总结。若状态为 `incomplete` 或 `blocked`，小程序会根据 `remaining`、`blockers` 和 `next_task` 自动新建 Chat 续作。\n4. 完成项会由程序自动在同一实例的隐藏页面中新建 Chat 独立验收；验收 Chat 返回 `complete` 后直接启动下一项，不向用户索要确认。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。\n\n## 中断恢复\n\n任务、隐藏页面引用、会话引用和结果文件都写入本机持久状态。重新调用 `resume_queue` 后，小程序会先接管仍存活的隐藏页面，再处理尚未入账的结果，不会从头重复发送。\n\n## GitHub Actions 持续运行\n\n点「启动 6 小时 Action」会用本机已登录的 `gh` 刷新三个仓库 Secret：ChatGPT 登录令牌、加密状态密钥和压缩后的初始任务状态。工作流只从 `main` 读取可信实现，在 GitHub 托管的 macOS Runner 安装官方 ChatGPT 应用、恢复登录并继续队列。\n\n每轮在 GitHub 的六小时硬限制前主动停止，使用 AES-256 加密任务状态并上传短期 artifact。若任务尚未完成，本轮使用 `workflow_dispatch` 启动下一轮并传递上一轮 Run ID；完成后停止续作。Action 日志只显示登录恢复结果和任务状态，不输出登录令牌、加密密钥或任务 Secret。\n\n## 单进程并行队列安全\n\n用 `dependsOn` 表示先后关系，用 `resourceLocks` 表示不能同时修改的仓库、发布环境或外部资源。队列状态会同时返回请求并发数、有效并发数、每个活动隐藏页面和执行模式 `single-authenticated-process-multi-hidden-window-parallel`；默认验收门会阻止新一批任务在上一批尚未验收时启动。\n\n## 前台会话不受干扰\n\n自动确认会扫描每个已经加载的 ChatGPT 页面，包括隐藏页面和非当前会话，并直接在原页面处理授权卡。扫描不会选中会话、切换侧栏或激活 ChatGPT。队列的会话恢复、续作和验收只允许发生在同一实例内从未显示的隐藏页面中，不能回退到用户正在输入的页面。"
+  "mahayana://chatgpt-auto-confirm/content/articles/guide": "# 使用指南\n\n## 快速开始\n\n1. 用「内置任务提示词」选择实现、诊断、审查或持续完成模板。\n2. 用 `enqueue_tasks` 一次加入多个任务。任务会进入持久队列，并与通用确认共用同一个已登录的 ChatGPT 实例。每个运行中任务使用独立的隐藏预热页面；无依赖且资源锁不冲突的任务按 `maxConcurrent` 并行执行。\n3. 每个 Chat 的最终回答必须包含 `mahayana.task-report.v1` 总结。全部完成时必须返回 `status=complete`，并把 `remaining`、`blockers`、`next_task` 设为空数组或空字符串；未完成时返回 `status=incomplete` 或 `blocked`，小程序会根据 `remaining`、`blockers` 和 `next_task` 自动新建 Chat 续作。\n4. 完成报告会由程序自动在同一实例的隐藏页面中新建 Chat 独立验收；验收 Chat 返回同一任务修订的 `status=complete` 报告后，任务进入终态，不会再次派发。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。\n\n## 中断恢复\n\n任务、隐藏页面引用、会话引用和结果文件都写入本机持久状态。重新调用 `resume_queue` 后，小程序会先接管仍存活的隐藏页面，再处理尚未入账的结果，不会从头重复发送。\n\n## GitHub Actions 持续运行\n\n点「启动 6 小时 Action」会用本机已登录的 `gh` 刷新三个仓库 Secret：ChatGPT 登录令牌、加密状态密钥和压缩后的初始任务状态。工作流只从 `main` 读取可信实现，在 GitHub 托管的 macOS Runner 安装官方 ChatGPT 应用、恢复登录并继续队列。\n\n每轮在 GitHub 的六小时硬限制前主动停止，使用 AES-256 加密任务状态并上传短期 artifact。若任务尚未完成，本轮使用 `workflow_dispatch` 启动下一轮并传递上一轮 Run ID；完成后停止续作。Action 日志只显示登录恢复结果和任务状态，不输出登录令牌、加密密钥或任务 Secret。\n\n## 单进程并行队列安全\n\n用 `dependsOn` 表示先后关系，用 `resourceLocks` 表示不能同时修改的仓库、发布环境或外部资源。队列状态会同时返回请求并发数、有效并发数、每个活动隐藏页面和执行模式 `single-authenticated-process-multi-hidden-window-parallel`；默认验收门会阻止新一批任务在上一批尚未验收时启动。\n\n## 前台会话不受干扰\n\n自动确认会扫描每个已经加载的 ChatGPT 页面，包括隐藏页面和非当前会话，并直接在原页面处理授权卡。扫描不会选中会话、切换侧栏或激活 ChatGPT。队列的会话恢复、续作和验收只允许发生在同一实例内从未显示的隐藏页面中，不能回退到用户正在输入的页面。"
 };

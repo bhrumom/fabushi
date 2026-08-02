@@ -230,7 +230,7 @@ func monitorAutomationTask(
   var workerPort = task.workerPort ?? state.queueWorkerPort
   var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
   if workerPort == nil || workerTargetId == nil {
-    if let recoveredWorker = createIndependentQueueWorkerTarget(&state) {
+    if let recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) {
       workerPort = recoveredWorker.port
       workerTargetId = recoveredWorker.targetId
       task.workerPort = recoveredWorker.port
@@ -284,7 +284,7 @@ func monitorAutomationTask(
     // show:false prewarm BrowserWindow, and verify hidden Chat again.
     let failedRuntimeState = queueTargetRuntimeStateName(runtimeState)
     closeDedicatedAutomationTarget(task, state: state)
-    guard let recoveredWorker = createIndependentQueueWorkerTarget(&state) else {
+    guard let recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) else {
       task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
       task.lastError = task.hiddenWorkerLastError
       task.updatedAt = isoFormatter.string(from: Date())
