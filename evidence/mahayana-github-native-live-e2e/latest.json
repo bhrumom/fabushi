@@ -1,15 +1,61 @@
 {
   "protocol": "mahayana.github-native-live-e2e.bootstrap.v1",
-  "generatedAt": "2026-08-02T11:29:44.859Z",
-  "status": "failed",
-  "errorCode": "github_native_bootstrap_failed",
-  "message": "The trusted bootstrap failed. Inspect the referenced GitHub Actions run; no token or sensitive stderr is persisted.",
+  "generatedAt": "2026-08-02T11:34:48.516Z",
+  "actor": {
+    "login": "bhrum",
+    "id": 222737880
+  },
+  "upstream": {
+    "id": 1320090998,
+    "fullName": "bhrumom/mahayana-mcp-app-collaboration-v10",
+    "url": "https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10",
+    "visibility": "public",
+    "defaultBranch": "main",
+    "sourceCommit": "17a40f9129e6f83183ab7edc81a81f352f5b047b",
+    "sourceTreeHash": "5afc466e00c2b7769034460d0d1735b23d32029c",
+    "pluginId": "io.mahayana.test.github-native-collaboration",
+    "version": "1.0.0",
+    "licenseSpdx": "Apache-2.0"
+  },
+  "fork": {
+    "id": 1320116283,
+    "fullName": "bhrum/mahayana-mcp-app-collaboration-v10",
+    "url": "https://github.com/bhrum/mahayana-mcp-app-collaboration-v10",
+    "parentId": 1320090998,
+    "parentFullName": "bhrumom/mahayana-mcp-app-collaboration-v10",
+    "mainCommit": "17a40f9129e6f83183ab7edc81a81f352f5b047b",
+    "sync": {
+      "message": "This branch is not behind the upstream bhrumom:main.",
+      "merge_type": "none",
+      "base_branch": "bhrumom:main"
+    }
+  },
+  "rulesets": [
+    {
+      "id": 20232868,
+      "name": "protect-main",
+      "target": "branch",
+      "enforcement": "active"
+    },
+    {
+      "id": 20232869,
+      "name": "protect-release-tags",
+      "target": "tag",
+      "enforcement": "active"
+    }
+  ],
+  "trust": {
+    "forkPullRequestWorkflow": "pull_request with contents:read and no secrets or id-token",
+    "officialReleaseWorkflow": "protected tag plus production environment, OIDC, SBOM, signature, and attestations",
+    "pullRequestMergePublishes": false
+  },
+  "status": "success",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30745803358",
+    "runId": "30745907313",
     "runAttempt": "1",
-    "sourceCommit": "8c249a1ed2e6e5db99039ee55d8397437eadd0f8",
+    "sourceCommit": "6a45faf9a3f2fd1239236161acea113dfc1bef49",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30745803358"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30745907313"
   }
 }
