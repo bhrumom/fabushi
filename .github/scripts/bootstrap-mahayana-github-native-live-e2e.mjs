@@ -171,10 +171,33 @@ async function ensureRepository() {
   return repository;
 }
 
+async function initializeEmptyRepository(repository) {
+  const readme = listFiles(templateRoot).find((file) => file.relative === 'README.md');
+  if (!readme) throw new Error(`template README.md does not exist: ${templateRoot}`);
+  const content = customize(readme.relative, fs.readFileSync(readme.absolute, 'utf8'));
+  await api(`/repos/${repository.full_name}/contents/README.md`, {
+    method: 'PUT',
+    expected: [201],
+    body: {
+      message: 'chore: initialize GitHub-native MCP App acceptance repository',
+      content: Buffer.from(content, 'utf8').toString('base64'),
+      branch: 'main',
+    },
+  });
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const currentRef = await optional(`/repos/${repository.full_name}/git/ref/heads/main`, { allowEmptyRepository: true });
+    if (currentRef) return currentRef;
+    await sleep(1000);
+  }
+  throw new Error(`initialized repository did not expose refs/heads/main: ${repository.full_name}`);
+}
+
 async function writeTemplate(repository) {
-  const currentRef = await optional(`/repos/${repository.full_name}/git/ref/heads/main`, { allowEmptyRepository: true });
-  const parentSha = currentRef?.object?.sha || null;
-  const parentCommit = parentSha ? await api(`/repos/${repository.full_name}/git/commits/${parentSha}`) : null;
+  let currentRef = await optional(`/repos/${repository.full_name}/git/ref/heads/main`, { allowEmptyRepository: true });
+  if (!currentRef) currentRef = await initializeEmptyRepository(repository);
+  const parentSha = currentRef.object.sha;
+  const parentCommit = await api(`/repos/${repository.full_name}/git/commits/${parentSha}`);
   const elements = [];
   for (const file of listFiles(templateRoot)) {
     const text = customize(file.relative, fs.readFileSync(file.absolute, 'utf8'));
@@ -212,24 +235,16 @@ async function writeTemplate(repository) {
     method: 'POST',
     expected: [201],
     body: {
-      message: parentSha ? 'chore: refresh GitHub-native MCP App acceptance repository' : 'feat: initialize GitHub-native MCP App acceptance repository',
+      message: 'chore: refresh GitHub-native MCP App acceptance repository',
       tree: tree.sha,
-      parents: parentSha ? [parentSha] : [],
+      parents: [parentSha],
     },
   });
-  if (currentRef) {
-    await api(`/repos/${repository.full_name}/git/refs/heads/main`, {
-      method: 'PATCH',
-      expected: [200],
-      body: { sha: commit.sha, force: false },
-    });
-  } else {
-    await api(`/repos/${repository.full_name}/git/refs`, {
-      method: 'POST',
-      expected: [201],
-      body: { ref: 'refs/heads/main', sha: commit.sha },
-    });
-  }
+  await api(`/repos/${repository.full_name}/git/refs/heads/main`, {
+    method: 'PATCH',
+    expected: [200],
+    body: { sha: commit.sha, force: false },
+  });
   await api(`/repos/${repository.full_name}`, {
     method: 'PATCH',
     expected: [200],
