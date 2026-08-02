@@ -246,9 +246,13 @@ test('modern HTTP is per-request POST-only and rejects legacy sessions', async (
         },
       }),
     });
-    assert.notEqual(legacy.status, 200);
+    assert.equal(legacy.status, 426);
     const legacyPayload = await legacy.json();
     assert.equal(legacyPayload.error.code, -32020);
+    assert.equal(legacyPayload.error.message, 'MCP_APPS_HOST_UPGRADE_REQUIRED');
+    assert.equal(legacyPayload.error.data.requestedProtocol, '2025-11-25');
+    assert.equal(legacyPayload.error.data.requiredProtocol, '2026-07-28');
+    assert.equal(legacyPayload.error.data.minimumHostVersion, '2026-01-26');
   } finally {
     await new Promise((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
   }
