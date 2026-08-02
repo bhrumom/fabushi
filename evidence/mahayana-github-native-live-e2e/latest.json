@@ -1,15 +1,15 @@
 {
   "protocol": "mahayana.github-native-live-e2e.bootstrap.v1",
-  "generatedAt": "2026-08-02T11:08:06.648Z",
+  "generatedAt": "2026-08-02T11:29:44.859Z",
   "status": "failed",
   "errorCode": "github_native_bootstrap_failed",
   "message": "The trusted bootstrap failed. Inspect the referenced GitHub Actions run; no token or sensitive stderr is persisted.",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30745055549",
+    "runId": "30745803358",
     "runAttempt": "1",
-    "sourceCommit": "ae0bf6d401f4428cb1ee8e07e154b6ae24c432f2",
+    "sourceCommit": "8c249a1ed2e6e5db99039ee55d8397437eadd0f8",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30745055549"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30745803358"
   }
 }
