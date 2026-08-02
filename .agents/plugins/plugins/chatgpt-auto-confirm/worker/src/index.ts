@@ -315,6 +315,7 @@ export default {
             protocol: 'mahayana.task-report.v1',
             markers: ['MAHAYANA_TASK_REPORT_V1_BEGIN', 'MAHAYANA_TASK_REPORT_V1_END'],
             statuses: ['complete', 'incomplete', 'blocked'],
+            completion: 'status=complete requires remaining=[], blockers=[], next_task=""',
             fields: ['task_id', 'applied_task_revision', 'applied_spec_digest', 'summary', 'completed', 'remaining', 'blockers', 'verification', 'wait_seconds', 'wait_reason', 'next_connector', 'next_task'],
           },
         },
