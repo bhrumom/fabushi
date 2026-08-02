@@ -32,6 +32,7 @@ struct PluginState: Codable {
   var backgroundAppPort: Int?
   var backgroundChatTargetId: String?
   var backgroundProfilePath: String?
+  var backgroundCodexHomePath: String?
   var backgroundConversationId: String?
   var intervalMs = 750
   var watcherPid: Int32?
