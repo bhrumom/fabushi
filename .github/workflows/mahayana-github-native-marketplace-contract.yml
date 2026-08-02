@@ -9,7 +9,7 @@ on:
       - 'templates/mahayana-mcp-app-github-native/**'
   push:
     branches:
-      - codex/mahayana-marketplace-cloudflare-20260730-v9
+      - codex/mahayana-marketplace-cloudflare-v10
     paths:
       - 'fabushi/web/src/marketplace/github-native-contract.js'
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
