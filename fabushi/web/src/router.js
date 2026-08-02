@@ -43,6 +43,9 @@ import {
   handleMarketplaceBrowse,
   handleMarketplaceDownload,
   handleMarketplacePublish,
+  handleMarketplaceV2Stage,
+  handleMarketplaceV2Release,
+  handleMarketplaceV2Resolve,
 } from './handlers/marketplace.js';
 import { routeAuthRequest } from './routes/auth-routes.js';
 import { routeMembershipRequest } from './routes/membership-routes.js';
@@ -106,6 +109,16 @@ export async function route(request, env, db, ctx) {
 
   if (pathname === '/health') {
     return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
+  }
+
+  if (method === 'POST' && /^\/v2\/marketplace\/plugins\/[^/]+\/releases\/stage$/.test(pathname)) {
+    return await handleMarketplaceV2Stage(request, env, db);
+  }
+  if (method === 'GET' && /^\/v2\/marketplace\/plugins\/[^/]+\/releases\/[^/]+\/download$/.test(pathname)) {
+    return await handleMarketplaceV2Resolve(request, env);
+  }
+  if (method === 'GET' && /^\/v2\/marketplace\/plugins\/[^/]+\/releases\/[^/]+$/.test(pathname)) {
+    return await handleMarketplaceV2Release(request, env);
   }
 
   if (pathname === '/v1/marketplace/plugins' && method === 'GET') {
