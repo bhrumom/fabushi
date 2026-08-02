@@ -6,6 +6,7 @@ on:
       - 'fabushi/web/src/marketplace/github-native-contract.js'
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
+      - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -26,6 +27,7 @@ on:
       - 'fabushi/web/src/marketplace/github-native-contract.js'
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
+      - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -79,6 +81,52 @@ jobs:
           git add ai-backend/package-lock.json
           git commit -m 'chore: refresh AI backend lockfile'
           git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
+
+
+  bootstrap-live-collaboration:
+    name: Bootstrap public upstream, fork, rulesets, and trusted boundaries
+    if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_ADMIN_TOKEN: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
+      UPSTREAM_OWNER: bhrumom
+      FORK_OWNER: bhrum
+      TEST_REPOSITORY: mahayana-mcp-app-collaboration-v10
+      TEMPLATE_ROOT: templates/mahayana-mcp-app-github-native
+      EVIDENCE_PATH: live-e2e-bootstrap-evidence.json
+    steps:
+      - name: Checkout exact trusted source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: false
+
+      - name: Require the protected GitHub administration token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_ADMIN_TOKEN" || {
+            echo 'OFFICIAL_SITE_RELEASE_PAT is required to create the public acceptance repository, fork, and rulesets.' >&2
+            exit 1
+          }
+
+      - name: Bootstrap real public GitHub collaboration topology
+        run: node .github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs
+
+      - name: Upload immutable bootstrap evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-github-native-live-e2e-bootstrap-${{ github.sha }}
+          path: live-e2e-bootstrap-evidence.json
+          if-no-files-found: error
+          retention-days: 30
 
   contract:
     name: GitHub-native MCP App contract
