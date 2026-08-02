@@ -37,7 +37,7 @@ let nativeCommandSummaries: [String: String] = [
   "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
   "sync_actions_credentials": "从已打开的 ChatGPT 桌面 app renderer 实时导出会话并同步到 GitHub Secrets。",
-  "login_and_sync_actions": "打开 ChatGPT 登录页，等待登录完成后同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
+  "login_and_sync_actions": "按需打开 ChatGPT 桌面应用，等待 app renderer 登录完成后实时同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
   "verify_chatgpt_login": "只读验证当前 ChatGPT 桌面 app renderer 是否仍处于登录状态。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
   "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
@@ -125,7 +125,7 @@ func nativeHelpText(topic: String? = nil) -> (text: String, known: Bool) {
   }
 
   let text = """
-  login_and_sync_actions JSON  login to ChatGPT, sync both Action credentials, and start the runner
+  login_and_sync_actions JSON  open the ChatGPT desktop app, sync both live credentials, and start the runner
 
 ChatGPT 自动确认 macOS 原生运行时
 
@@ -164,7 +164,8 @@ ChatGPT 自动确认 macOS 原生运行时
   queue_cancel JSON      取消任务
   queue_watchdog JSON    检查超时并安全恢复队列
   start_actions_runner   启动六小时 GitHub Actions 持续运行器
-  sync_actions_credentials JSON  自动抓取当前两份登录凭证并同步，可选启动 Actions
+  sync_actions_credentials JSON  从已打开的桌面 app renderer 实时抓取当前两份登录凭证并同步，可选启动 Actions
+  login_and_sync_actions JSON    按需打开桌面应用后使用相同实时抓取方式同步凭证
 
 隐藏 Chat：
   send_message JSON      发送消息
@@ -356,8 +357,14 @@ func writeActionsSessionCookies(_ cookies: [[String: Any]]) throws -> URL {
           let value = cookie["value"] as? String,
           let domain = cookie["domain"] as? String,
           !name.isEmpty, !value.isEmpty, !domain.isEmpty else { return nil }
-    let lowerDomain = domain.lowercased()
-    guard lowerDomain.contains("chatgpt.com") || lowerDomain.contains("openai.com") else {
+    let lowerDomain = domain.lowercased().hasPrefix(".")
+      ? String(domain.lowercased().dropFirst())
+      : domain.lowercased()
+    let allowedDomain = lowerDomain == "chatgpt.com"
+      || lowerDomain.hasSuffix(".chatgpt.com")
+      || lowerDomain == "openai.com"
+      || lowerDomain.hasSuffix(".openai.com")
+    guard allowedDomain else {
       return nil
     }
     var result: [String: Any] = [
@@ -493,7 +500,8 @@ func finishActionsCredentialSync(
 
 func syncLiveActionsCredentials(
   waitSeconds: Int,
-  startRunner: Bool
+  startRunner: Bool,
+  openDesktopIfNeeded: Bool = false
 ) -> Never {
   guard !codexChatGPTIdentifiers().isEmpty else {
     output([
@@ -506,7 +514,7 @@ func syncLiveActionsCredentials(
   var lastState: [String: Any] = [:]
   var verifiedTarget: ActionsLoginTarget?
   var target = actionsDesktopTarget()
-  if target == nil {
+  if target == nil && openDesktopIfNeeded {
     ensureChatGPTDesktopRunning()
   }
   while Date() < deadline {
@@ -1109,12 +1117,20 @@ case "sync_actions_credentials":
   let params = commandJSONParams()
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? false
-  syncLiveActionsCredentials(waitSeconds: waitSeconds, startRunner: startRunner)
+  syncLiveActionsCredentials(
+    waitSeconds: waitSeconds,
+    startRunner: startRunner,
+    openDesktopIfNeeded: false
+  )
 case "login_and_sync_actions":
   let params = commandJSONParams()
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
-  syncLiveActionsCredentials(waitSeconds: waitSeconds, startRunner: startRunner)
+  syncLiveActionsCredentials(
+    waitSeconds: waitSeconds,
+    startRunner: startRunner,
+    openDesktopIfNeeded: true
+  )
 case "start_actions_runner":
   let executableURL = URL(
     fileURLWithPath: CommandLine.arguments[0]

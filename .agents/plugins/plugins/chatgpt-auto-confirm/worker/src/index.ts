@@ -55,20 +55,12 @@ const queuedTaskSchema = {
   },
 };
 const tools = [
-  { name: 'login_and_sync_actions', description: 'Open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then sync both to GitHub Secrets and optionally start the Action.', annotations: {
+  { name: 'login_and_sync_actions', description: 'Open the ChatGPT desktop app when needed, validate its signed-in app:// renderer and local Codex auth, then export the live renderer session over CDP and sync both credentials to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
       start: { type: 'boolean', default: true },
-    },
-  } },
-  { name: 'web_login_and_sync_actions', description: 'Compatibility command: open the ChatGPT desktop app, wait for its signed-in session, verify it matches the Codex credential, then upload both credentials to GitHub Secrets.', annotations: {
-    readOnlyHint: false, destructiveHint: false, openWorldHint: true,
-  }, inputSchema: {
-    type: 'object', additionalProperties: false, properties: {
-      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
-      start: { type: 'boolean', default: false },
     },
   } },
   { name: 'sync_actions_credentials', description: 'Export the live authenticated app:// renderer session from an already-open ChatGPT desktop instance over CDP, validate local Codex auth, then upload both credentials to GitHub Secrets.', annotations: {
@@ -365,11 +357,6 @@ export default {
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-login-sync', {
           waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
           start: args.start !== false,
-        }, 'required');
-      if (name === 'web_login_and_sync_actions') return hostResult(
-        rpc.id, 'desktop.chatgpt-approvals.actions-runner-web-login-sync', {
-          waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
-          start: args.start === true,
         }, 'required');
       if (name === 'sync_actions_credentials') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-credential-sync', {
