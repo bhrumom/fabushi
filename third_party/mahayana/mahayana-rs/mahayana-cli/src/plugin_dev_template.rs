@@ -221,7 +221,7 @@ fn add_runtime_files(
     files.insert(
         "wrangler.toml".into(),
         format!(
-            "name = \"{name}-mcp\"\nmain = \"worker/src/index.ts\"\ncompatibility_date = \"2026-07-19\"\n\n[assets]\ndirectory = \".mahayana-distribution\"\nrun_worker_first = [\"/mcp\", \"/mcp/*\"]\n"
+            "name = \"{name}-mcp\"\nmain = \"worker/src/index.ts\"\ncompatibility_date = \"2026-07-19\"\n\n[assets]\ndirectory = \"mahayana-cloudflare-assets\"\nrun_worker_first = [\"/mcp\", \"/mcp/*\"]\n"
         ),
     );
     files.insert(
