@@ -19,7 +19,10 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /run-dynamic-actions-controller\.mjs/);
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_REF: main/);
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"/);
-  assert.match(workflow, /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
+  assert.match(
+    workflow,
+    /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.cancel_task_id == '' && inputs\.parallel_queue_smoke \}\}/,
+  );
   assert.match(controller, /spawnSync\('gh'/);
   assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{repositoryPath\}/);
   assert.match(controller, /fetchRepositoryContent\(controlPath\)/);
@@ -34,6 +37,8 @@ test('goal versions are idempotent and dependencies use desired runtime ids', ()
   assert.match(controller, /native\('queue_cancel'/);
   assert.match(controller, /native\('queue_enqueue'/);
   assert.match(controller, /runtimeIdsByLogicalId/);
+  assert.match(controller, /specDigest: task\._specDigest/);
+  assert.match(controller, /specSources: task\._specFiles/);
   assert.match(controller, /dependsOn:[\s\S]*runtimeIdsByLogicalId\.get/);
   assert.equal(inbox.schemaVersion, 3);
   assert.equal(inbox.keepAlive, true);
@@ -72,10 +77,11 @@ test('unchanged tasks continue while changed tasks replace only at the boundary'
 });
 
 test('every dispatched work Chat receives a complete machine report contract', () => {
-  assert.match(controller, /status":"complete\|incomplete\|blocked/);
-  assert.match(controller, /不得仅用自然语言声称完成/);
-  assert.match(controller, /remaining、blockers 必须为空数组/);
-  assert.match(controller, /next_task 必须为空字符串/);
+  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V2/);
+  assert.match(controller, /"status":"complete"/);
+  assert.match(controller, /"status":"incomplete\|blocked"/);
+  assert.match(controller, /"task_id":\$\{taskId\}/);
+  assert.match(controller, /完成报告会停止该任务的重复派发/);
 });
 
 test('each task sends one document folder path and link without document bodies', () => {

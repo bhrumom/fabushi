@@ -98,6 +98,7 @@ test('outbound sends discard old chat URLs while read-only reply requests keep t
 
 test('every task Chat receives complete and unfinished report templates', () => {
   assert.match(chatScriptsSource, /func taskReportContract\(/);
+  assert.match(chatScriptsSource, /MAHAYANA_TASK_REPORT_CONTRACT_V2/);
   assert.match(chatScriptsSource, /"status":"complete"/);
   assert.match(chatScriptsSource, /"remaining":\[\],"blockers":\[\]/);
   assert.match(chatScriptsSource, /"next_task":""/);
@@ -107,6 +108,9 @@ test('every task Chat receives complete and unfinished report templates', () => 
   assert.match(nativeSource, /appliedRevision: task\.currentRevision/);
   assert.match(nativeSource, /let reportSource = \[/);
   assert.match(nativeSource, /reportMissing/);
+  assert.match(nativeSource, /message\.contains\("MAHAYANA_TASK_REPORT_CONTRACT_V2"\)/);
+  assert.doesNotMatch(nativeSource, /message\.contains\("MAHAYANA_TASK_REPORT_V1_BEGIN"\)/);
+  assert.doesNotMatch(nativeSource, /func legacyTaskReportContract/);
   assert.match(nativeSource, /terminal_reply_missing_task_report/);
   assert.doesNotMatch(nativeSource, /let acceptedResult = AutomationTaskReport\(/);
   assert.doesNotMatch(nativeSource, /let normalResult = reportText/);

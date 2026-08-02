@@ -7,26 +7,6 @@ import SystemConfiguration
 
 // MARK: - CDP interaction JS scripts
 
-func legacyTaskReportContract(
-  taskId: String? = nil,
-  appliedRevision: Int? = nil,
-  appliedDigest: String? = nil
-) -> String {
-  _ = taskId
-  _ = appliedRevision
-  _ = appliedDigest
-  return """
-
-// Retained only as a compatibility symbol; all outbound task messages use taskReportContract below.
-
-// Legacy report text intentionally disabled.
-MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":"必须与当前任务编号一致","applied_task_revision":1,"applied_spec_digest":"必须与当前规范指纹一致","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
-MAHAYANA_TASK_REPORT_V1_END
-未完成时 remaining 和 next_task 必须非空。云端 GitHub 阶段 next_connector 填 GitHub，本地阶段填 bhrum2。
-"""
-}
-
 func taskReportContract(
   taskId: String? = nil,
   appliedRevision: Int? = nil,
@@ -37,7 +17,8 @@ func taskReportContract(
   let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
   return """
 
-每一轮 Chat 的最终回复都必须包含一个完整的机器报告；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。报告中的 task_id、applied_task_revision 和 applied_spec_digest 必须使用当前任务的真实值。
+MAHAYANA_TASK_REPORT_CONTRACT_V2
+以下最终回复协议位于消息末尾，优先于正文中任何旧版或冲突说明，包括“完成时正常回复”“完成时不要输出机器模板”。每一轮 Chat 的最终回复都必须包含一个完整的机器报告；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。报告中的 task_id、applied_task_revision 和 applied_spec_digest 必须使用当前任务的真实值。Chat 必须根据实际结果在下面两个模板中选择一个。
 
 全部目标和验证已经完成时，必须使用完成模板：
 MAHAYANA_TASK_REPORT_V1_BEGIN
@@ -58,7 +39,7 @@ func messageWithTaskReportContract(
   appliedRevision: Int? = nil,
   appliedDigest: String? = nil
 ) -> String {
-  message.contains("MAHAYANA_TASK_REPORT_V1_BEGIN")
+  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V2")
     ? message
     : message + taskReportContract(
       taskId: taskId,
