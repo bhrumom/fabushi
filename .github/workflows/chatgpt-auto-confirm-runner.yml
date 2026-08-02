@@ -190,9 +190,13 @@ jobs:
       - name: Verify authenticated ChatGPT session
         if: ${{ inputs.cancel_task_id == '' }}
         id: auth_verify
-        timeout-minutes: 3
+        timeout-minutes: 6
         env:
+          CHATGPT_AUTO_CONFIRM_STATE: ${{ steps.paths.outputs.state_path }}
+          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_BACKGROUND_PORT: ${{ env.CHATGPT_CDP_PORT }}
+          CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
         run: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login
 
       - name: Verify dynamic parallel task queue
