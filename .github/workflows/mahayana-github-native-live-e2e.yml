@@ -1,0 +1,64 @@
+name: Mahayana GitHub Native Live E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/mahayana-marketplace-cloudflare-v10
+    paths:
+      - '.github/workflows/mahayana-github-native-live-e2e.yml'
+      - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
+      - 'templates/mahayana-mcp-app-github-native/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mahayana-github-native-live-e2e-v10
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-public-collaboration:
+    name: Bootstrap public upstream, fork, rulesets, and trusted boundaries
+    if: github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_ADMIN_TOKEN: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
+      UPSTREAM_OWNER: bhrumom
+      FORK_OWNER: bhrum
+      TEST_REPOSITORY: mahayana-mcp-app-collaboration-v10
+      TEMPLATE_ROOT: templates/mahayana-mcp-app-github-native
+      EVIDENCE_PATH: live-e2e-bootstrap-evidence.json
+    steps:
+      - name: Checkout exact trusted source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: false
+
+      - name: Require the protected GitHub administration token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_ADMIN_TOKEN" || {
+            echo 'OFFICIAL_SITE_RELEASE_PAT is required to create the public acceptance repository, fork, and rulesets.' >&2
+            exit 1
+          }
+
+      - name: Bootstrap real public GitHub collaboration topology
+        run: node .github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs
+
+      - name: Upload immutable bootstrap evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-github-native-live-e2e-bootstrap-${{ github.sha }}
+          path: live-e2e-bootstrap-evidence.json
+          if-no-files-found: error
+          retention-days: 30
