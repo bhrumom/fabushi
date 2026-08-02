@@ -12,7 +12,6 @@ const windowsCredentialScript = fileURLToPath(new URL(
 const windowsCredentialTools = new Set([
   'sync_actions_credentials',
   'login_and_sync_actions',
-  'web_login_and_sync_actions',
 ]);
 const nativeCommands = new Map([
   ['start', 'start'], ['stop', 'stop'], ['status', 'status'],
@@ -53,12 +52,7 @@ function runWindowsCredentialTool(rpc) {
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsCredentialScript,
   ];
   if (tool === 'login_and_sync_actions') {
-    args.push('-OpenLogin', '-WaitSeconds', String(
-      Math.min(1800, Math.max(30, Number(rpc.params?.arguments?.waitSeconds ?? 600))),
-    ));
-  }
-  if (tool === 'web_login_and_sync_actions') {
-    args.push('-OpenLogin', '-WaitSeconds', String(
+    args.push('-DesktopLogin', '-WaitSeconds', String(
       Math.min(1800, Math.max(30, Number(rpc.params?.arguments?.waitSeconds ?? 600))),
     ));
   }
@@ -110,7 +104,7 @@ function runNativeTool(rpc) {
     : ['start_queue', 'wait_for_review'].includes(tool)
       ? 7_300_000
     : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000
-    : ['start_actions_runner', 'sync_actions_credentials', 'login_and_sync_actions', 'web_login_and_sync_actions'].includes(tool) ? 1_200_000 : 15_000;
+    : ['start_actions_runner', 'sync_actions_credentials', 'login_and_sync_actions'].includes(tool) ? 1_200_000 : 15_000;
   const invocation = spawnSync(nativeRuntime, args, {
     encoding: 'utf8', timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024,
     env: process.env,
