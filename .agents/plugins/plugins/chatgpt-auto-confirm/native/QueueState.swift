@@ -518,6 +518,7 @@ func decodeLastJSONLine(at path: String?) -> (String, [String: Any])? {
 func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [String: Any] {
   var payload: [String: Any] = [
     "id": task.id,
+    "accountId": task.accountId as Any,
     "title": task.title,
     "status": task.status,
     "originalPrompt": task.originalPrompt ?? task.prompt,
