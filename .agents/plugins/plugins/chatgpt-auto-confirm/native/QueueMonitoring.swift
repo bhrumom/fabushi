@@ -268,8 +268,7 @@ func monitorAutomationTask(
       refreshLifecycle: true
     )
   }
-  let hostedReady = queueUsesHostedRenderer() && runtimeState == .visible
-  if runtimeState != .hidden && !hostedReady {
+  if runtimeState != .hidden {
     if runtimeState == .visible {
       // Safety is fail-closed only for a genuinely visible page. Never close,
       // navigate, confirm, stop, or type in a page the user may be operating.
@@ -312,11 +311,12 @@ func monitorAutomationTask(
       return
     }
 
-    let restored = navigateHiddenConversation(
+    let restoration = restoreHiddenConversation(
       port: port,
       targetId: targetId,
       conversationId: conversationId
     )
+    let restored = restoration["ok"] as? Bool == true
     runtimeState = queueTargetRuntimeState(
       port: port,
       targetId: targetId,

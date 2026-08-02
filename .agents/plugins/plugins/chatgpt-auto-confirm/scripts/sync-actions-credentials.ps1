@@ -140,24 +140,6 @@ try {
   $uploadedSecrets = @('CHATGPT_CODEX_AUTH_B64', 'CHATGPT_SESSION_COOKIES_B64')
 
   if ($Start) {
-    $stage = 'state'
-    $stateCandidates = @(
-      $env:CHATGPT_AUTO_CONFIRM_QUEUE_STATE,
-      (Join-Path $env:LOCALAPPDATA 'Mahayana\plugins\chatgpt-auto-confirm\queue-state.json'),
-      (Join-Path $env:APPDATA 'Mahayana\plugins\chatgpt-auto-confirm\queue-state.json')
-    ) | Where-Object { $_ }
-    $statePath = $stateCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-    if (-not $statePath) { throw 'start was requested but the local queue-state.json was not found' }
-    $node = Get-Command node.exe -ErrorAction SilentlyContinue
-    if (-not $node) { $node = Get-Command node -ErrorAction SilentlyContinue }
-    if (-not $node) { throw 'Node.js was not found; it is required to export the Action queue state' }
-    $env:CHATGPT_AUTO_CONFIRM_QUEUE_STATE = $statePath
-    $initialState = [string]::Join('', @(& $node.Source (Join-Path $scriptDirectory 'export-action-state.mjs')))
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($initialState)) { throw 'the local Action queue state could not be exported' }
-    if ($initialState.Length -ge 47000) { throw 'the Action queue state exceeds the GitHub secret size budget' }
-    Set-GitHubSecretFromValue 'CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64' $initialState
-    $uploadedSecrets += 'CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64'
-
     $stage = 'state_key'
     $secretNames = @(& $script:GitHubCli.Source secret list --repo $Repository --json name --jq '.[].name')
     if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI could not list repository secrets' }

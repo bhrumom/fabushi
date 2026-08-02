@@ -134,7 +134,7 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /blankConversationReused/);
   assert.match(nativeSource, /fallback=new-chat/);
   assert.match(nativeSource, /continuationFallback/);
-  assert.match(nativeSource, /case \.visible:[\s\S]*queueUsesHostedRenderer\(\)/);
+  assert.doesNotMatch(nativeSource, /queueUsesHostedRenderer|CHATGPT_AUTO_CONFIRM_HOSTED/);
   assert.doesNotMatch(nativeSource, /无法恢复上一轮会话，未点击/);
 });
 
@@ -446,8 +446,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /prewarm_hidden_target_not_chat/);
   assert.match(nativeSource, /entryScripts/);
   assert.match(nativeSource, /prewarmCreationFailure/);
-  assert.match(nativeSource, /hosted_chat_login_required/);
-  assert.match(nativeSource, /stage=hosted-authentication complete/);
+  assert.doesNotMatch(nativeSource, /hosted_chat_login_required|actionsWebLoginState/);
+  assert.doesNotMatch(nativeSource, /CDPClient\.createTarget\([\s\S]{0,300}https:\/\/chatgpt\.com/);
+  assert.match(nativeSource, /desktop_prewarm_reset_failed/);
   assert.match(nativeSource, /conversation_changed_before_send/);
   assert.match(nativeSource, /conversation_changed_during_send/);
   assert.match(nativeSource, /conversation_changed_before_dispatch/);
@@ -536,6 +537,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /durable_conversation_id_pending/);
   assert.doesNotMatch(nativeSource, /selectBackgroundConversationJS\(resolvedConversationId\)/);
   assert.match(nativeSource, /navigateHiddenConversation/);
+  assert.match(nativeSource, /restoreHiddenConversation/);
   assert.match(nativeSource, /backgroundConversationURL/);
   assert.match(nativeSource, /initialRoute/);
   assert.match(nativeSource, /云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器/);

@@ -301,12 +301,7 @@ func navigateHiddenConversation(
       return false
     }
   case .visible:
-    // GitHub-hosted verification deliberately reuses an authenticated visible
-    // web renderer. Treat it as a valid dedicated queue surface instead of
-    // requiring Electron's show:false visibility contract.
-    guard queueUsesHostedRenderer() else { return false }
-    _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
-    _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+    return false
   case .missing, .suspended:
     return false
   }
@@ -321,7 +316,7 @@ func navigateHiddenConversation(
     case .hidden, .hiddenNonChat:
       break
     case .visible:
-      guard queueUsesHostedRenderer() else { return false }
+      return false
     case .missing, .suspended:
       return false
     }
@@ -370,15 +365,6 @@ func restoreHiddenConversation(
 
   let sidebarError = sidebar?["error"] as? String
     ?? "continuation_sidebar_selection_failed"
-  if queueUsesHostedRenderer() {
-    return [
-      "ok": false,
-      "error": sidebarError,
-      "strategy": "sidebar",
-      "conversationId": conversationId,
-    ]
-  }
-
   let navigated = navigateHiddenConversation(
     port: port,
     targetId: targetId,

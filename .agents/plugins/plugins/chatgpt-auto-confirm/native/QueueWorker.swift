@@ -14,10 +14,6 @@ let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 // `Process` can tear down the child before its CDP endpoint is ready.
 var dedicatedQueueChatLaunchers: [Int: Process] = [:]
 
-func queueUsesHostedRenderer() -> Bool {
-  ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_HOSTED"] == "true"
-}
-
 enum QueueTargetRuntimeState {
   case missing
   case hidden
@@ -64,8 +60,7 @@ func queueTargetRuntimeState(
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
-    const webChat = location.protocol === 'https:' && location.hostname === 'chatgpt.com';
-    const chatMode = (!!quickChatRoot || chatModel || webChat || currentChatGPTMode)
+    const chatMode = (!!quickChatRoot || chatModel || currentChatGPTMode)
       && !!textarea && !workComposer;
     return {
       bridge: !!window.electronBridge,
@@ -86,13 +81,6 @@ func queueTargetRuntimeState(
   if initial?["visibility"] as? String == "visible" {
     return .visible
   }
-  // Hosted runs use a normal authenticated web renderer. Its Chat surface is
-  // live even when Electron reports a non-visible document state.
-  if queueUsesHostedRenderer(),
-     (initial?["chatMode"] as? NSNumber)?.boolValue == true,
-     (initial?["href"] as? String)?.hasPrefix("https://chatgpt.com/") == true {
-    return .visible
-  }
   if refreshLifecycle {
     _ = wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL)
   }
@@ -108,7 +96,7 @@ func queueTargetRuntimeState(
   let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
     ?? Double.greatestFiniteMagnitude
   if bridge && visibility == "hidden"
-      && (href.hasPrefix("app://-/index.html") || href.hasPrefix("https://chatgpt.com/"))
+      && href.hasPrefix("app://-/index.html")
       && eventLoopDelayMs < 2_500 {
     let chatMode = (probe?["chatMode"] as? NSNumber)?.boolValue ?? false
     let surface = probe?["surface"] as? String ?? "not-chat"
@@ -352,64 +340,6 @@ func openBackgroundQueueWindow(
     failure = "prewarm_controller_target_missing"
     return nil
   }
-  // Hosted Actions do not need an invisible Quick Chat window. Prefer a
-  // normal active renderer in the authenticated browser context so Electron
-  // does not suspend the page or leave it on the sign-in prewarm shell.
-  if ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_HOSTED"] == "true",
-    let controllerContextId = CDPClient.targetInfo(
-       targetId: controllerTargetId,
-       portOverride: port
-     )?["browserContextId"] as? String,
-     let targetId = CDPClient.createTarget(
-       url: "https://chatgpt.com/",
-       browserContextId: controllerContextId,
-       background: false,
-       portOverride: port
-     ) {
-    queueTrace(
-      "worker-create stage=hosted-active-renderer target=\(targetId)"
-    )
-    // A newly created visible web renderer can expose its document before
-    // ChatGPT has mounted the composer. Let the page finish loading before
-    // the caller performs mode selection and surface detection.
-    var hostedLoaded = false
-    for _ in 0..<240 {
-      let loaded = cdpValue(
-        port: port,
-        targetId: targetId,
-        expression: "(() => ({ready: document.readyState, input: !!document.querySelector('#prompt-textarea, [contenteditable=\\\"true\\\"]'), bodyLength: (document.body?.innerText || '').length}))()",
-        timeout: 3.0
-      )
-      let ready = loaded?["ready"] as? String
-      let hasInput = (loaded?["input"] as? NSNumber)?.boolValue == true
-      let bodyLength = (loaded?["bodyLength"] as? NSNumber)?.intValue ?? 0
-      if ready == "complete" && (hasInput || bodyLength > 50) {
-        hostedLoaded = true
-        break
-      }
-      Thread.sleep(forTimeInterval: 0.25)
-    }
-    guard hostedLoaded,
-          let target = CDPClient.fetchTargets(portOverride: port).first(where: {
-            $0["id"] as? String == targetId
-          }),
-          let wsURL = target["webSocketDebuggerUrl"] as? String,
-          let url = target["url"] as? String,
-          let loginState = actionsWebLoginState(ActionsLoginTarget(
-            port: port,
-            targetId: targetId,
-            wsURL: wsURL,
-            url: url
-          )),
-          loginState["authenticated"] as? Bool == true else {
-      failure = "hosted_chat_login_required"
-      queueTrace("worker-create stage=hosted-authentication failed")
-      _ = CDPClient.closeTarget(targetId, portOverride: port)
-      return nil
-    }
-    queueTrace("worker-create stage=hosted-authentication complete target=\(targetId)")
-    return targetId
-  }
   let reset = cdpValue(
     port: port,
     targetId: controllerTargetId,
@@ -417,25 +347,7 @@ func openBackgroundQueueWindow(
     timeout: 8.0
   )
   guard reset?["ok"] as? Bool == true else {
-    // Hosted accounts may not expose the Quick Chat RPC. Create a normal
-    // authenticated renderer through CDP and let the caller prepare Chat.
-    if reset?["error"] as? String == "quick_chat_service_not_found",
-       let controllerContextId = CDPClient.targetInfo(
-         targetId: controllerTargetId,
-         portOverride: port
-       )?["browserContextId"] as? String,
-       let targetId = CDPClient.createTarget(
-         url: "https://chatgpt.com/",
-         browserContextId: controllerContextId,
-         background: false,
-         portOverride: port
-       ) {
-      queueTrace(
-        "worker-create stage=prewarm-fallback-normal-target target=\(targetId)"
-      )
-      return targetId
-    }
-    failure = "prewarm_reset_failed:\(reset?["error"] as? String ?? "no_result")"
+    failure = "desktop_prewarm_reset_failed:\(reset?["error"] as? String ?? "no_result")"
     return nil
   }
   queueTrace("worker-create stage=prewarm-reset complete")
@@ -979,8 +891,7 @@ func createDedicatedParallelQueueWorkerTarget(
       targetId: targetId,
       refreshLifecycle: true
     )
-    let hostedReady = queueUsesHostedRenderer() && runtimeState == .visible
-    if prepared?["ok"] as? Bool == true, (runtimeState == .hidden || hostedReady) {
+    if prepared?["ok"] as? Bool == true, runtimeState == .hidden {
       state.queueWorkerPort = port
       state.queueWorkerTargetId = targetId
       state.queueWorkerProfilePath = profilePath
@@ -1084,7 +995,7 @@ func createQueueWorkerTarget(
     return (port, targetId, profilePath)
   }
 
-  // A fresh hosted runner normally has only ChatGPT's visible primary window.
+  // A fresh runner normally has only ChatGPT's visible primary window.
   // Ask that authenticated renderer's official quick-chat service to create
   // the show:false prewarm BrowserWindow, then turn it into the queue-owned
   // hidden Chat surface. Previously this implementation existed but was never
@@ -1282,8 +1193,8 @@ func createQueueWorkerTarget(
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // Reuse the authenticated ChatGPT process and create a fresh renderer in
-  // it. Hosted Actions do not need a second Electron process or profile copy.
+  // Reuse the authenticated ChatGPT desktop process and ask its official
+  // prewarm service to create a fresh hidden app renderer.
   guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
     return nil
   }

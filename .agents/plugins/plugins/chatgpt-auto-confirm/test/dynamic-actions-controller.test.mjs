@@ -22,6 +22,9 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.parallel_queue_smoke \}\}/);
   assert.match(controller, /spawnSync\('gh'/);
   assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{controlPath\}/);
+  assert.match(controller, /task\._specDigest/);
+  assert.match(controller, /entry\.sha/);
+  assert.match(controller, /createHash\('sha256'\)/);
   assert.match(controller, /pollSeconds \* 1_000/);
 });
 
@@ -35,6 +38,8 @@ test('goal versions are idempotent and dependencies use desired runtime ids', ()
   assert.equal(inbox.keepAlive, true);
   assert.ok(inbox.maxConcurrent >= 2);
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.goalVersion)));
+  assert.ok(inbox.tasks.every(task => Number.isInteger(task.revision)));
+  assert.ok(inbox.tasks.every(task => Array.isArray(task.specSources) && task.specSources.length > 0));
 });
 
 test('task updates never cancel the currently running Chat', () => {
@@ -58,8 +63,9 @@ test('every new Chat is dispatched only after a fresh control read', () => {
 });
 
 test('unchanged tasks continue while changed tasks replace only at the boundary', () => {
-  assert.match(controller, /if \(managed\.some\(current => current\.id === desiredId\)\) continue/);
+  assert.match(controller, /if \(exact\) continue/);
   assert.match(controller, /staleVersion && !isTerminal\(current\)/);
+  assert.match(controller, /native\('queue_retry'/);
   assert.match(controller, /action: 'resume_after_fresh_control_read'/);
   assert.match(controller, /queue_pause does not interrupt running Chats/);
 });
