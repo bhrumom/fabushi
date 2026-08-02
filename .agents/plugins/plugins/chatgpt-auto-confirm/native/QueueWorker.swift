@@ -1416,7 +1416,12 @@ func startAutomationTask(
   task.appliedRevision = max(1, task.currentRevision ?? 1)
   task.appliedSpecDigest = task.specDigest
   task.pendingRevision = nil
-  let outbound = messageWithTaskReportContract(automationTaskMessage(task))
+  let outbound = messageWithTaskReportContract(
+    automationTaskMessage(task),
+    taskId: task.id,
+    appliedRevision: task.appliedRevision,
+    appliedDigest: task.appliedSpecDigest
+  )
   queueTrace("task=\(task.id) stage=send begin")
   guard let sendResult = cdpValue(
     port: port,

@@ -2115,20 +2115,21 @@ case "send_and_watch":
 
   var resultPayload: [String: Any] = [:]
   let terminalIncomplete = finalReply["terminalIncomplete"] as? Bool ?? false
-  let taskReport = parseTaskReport(replyContent)
+  let reportSource = [
+    replyContent,
+    finalReply["completedActivity"] as? String ?? "",
+  ].joined(separator: "\n")
+  let taskReport = parseTaskReport(reportSource)
   let taskStatus = taskReport?["status"] as? String
   let finalChatStatus = cdpEvaluateOnChatGPT(chatStatusJS(), preferredURL: activeChatURL) ?? [:]
   let finalConversationId = finalChatStatus["conversationId"] as? String
     ?? state.backgroundConversationId
   let finalChatURL = finalChatStatus["chatUrl"] as? String
   let explicitlyIncomplete = finalReply["explicitlyIncomplete"] as? Bool ?? false
-  let normalCompletion = !resumeExisting && !surfaceDrift && !stalled && !timedOut
-    && finalReply["done"] as? Bool == true && taskReport == nil
-    && !terminalIncomplete && !explicitlyIncomplete
-  let effectiveTaskStatus = taskStatus ?? (normalCompletion ? "complete" : nil)
+  let effectiveTaskStatus = taskStatus
   let reportMissing = !resumeExisting && !surfaceDrift && !stalled && !timedOut
     && finalReply["done"] as? Bool == true && taskReport == nil
-    && !normalCompletion
+    && !terminalIncomplete && !explicitlyIncomplete
   resultPayload["ok"] = !stalled && !timedOut && !surfaceDrift && !terminalIncomplete
     && !reportMissing && effectiveTaskStatus == "complete" && (finalReply["done"] as? Bool == true)
   resultPayload["sent"] = resumeExisting ? false : (sendResult["messageConfirmed"] as? Bool ?? false)
