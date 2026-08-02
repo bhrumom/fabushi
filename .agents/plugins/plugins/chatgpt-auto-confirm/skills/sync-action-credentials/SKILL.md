@@ -9,13 +9,14 @@ description: 从已经打开并登录的 ChatGPT 桌面应用 app:// renderer �
 
 ## 流程
 
-1. 调用 `sync_actions_credentials`。需要同步后立即启动云端运行器时传入 `{ "start": true, "waitSeconds": 600 }`；只更新密钥时传入 `{ "start": false, "waitSeconds": 600 }`。
-2. 命令只复用已经打开的 ChatGPT 桌面应用 `app://-/index.html` renderer；不得新建、打开或依赖 `https://chatgpt.com` 网页 renderer，也不得使用外部浏览器。
-3. 通过桌面 renderer 的 `electronBridge`、登录提示、模式控件和 composer 状态验证桌面实例已经登录；同时验证 `~/.codex/auth.json` 结构完整。未登录时停止，不上传任何凭证。
-4. 验证成功后，立即通过该桌面 renderer 的 CDP `Network.getAllCookies` 实时导出 Cookie，规范化后原子写入本机私有 `session-cookies.json`。禁止读取、复制或解密任何浏览器、Codex 或 ChatGPT 桌面资料库中的 Cookie 数据库。
-5. 使用 `base64` 管道向 `gh secret set` 同步 Codex 凭证和刚抓取的 ChatGPT 会话；不得读取或上传本地任务队列状态，也不得复用未验证的旧 Cookie 文件。
-6. 任务目标与任务文档只来自仓库内的 `tasks/actions-inbox.json`、`documentDirectory` 和 `specSources`。运行器启动后持续读取这些可动态更新的文件；不得用 Secret 固化任务定义。
-7. 仅返回非敏感摘要：是否成功、仓库、写入的 Secret 名称、Cookie 数量和账号已验证状态；绝不返回 token、Cookie、auth 文件内容、账号 ID 或 Base64 值。
+1. 已有打开且登录的桌面实例时，调用 `sync_actions_credentials`。需要同步后立即启动云端运行器时传入 `{ "start": true, "waitSeconds": 600 }`；只更新密钥时传入 `{ "start": false, "waitSeconds": 600 }`。
+2. `sync_actions_credentials` 只复用已经打开的 ChatGPT 桌面应用 `app://-/index.html` renderer；找不到时必须失败，不得隐式打开其他实例。只有用户明确要求打开桌面应用并等待登录时才调用 `login_and_sync_actions`，且打开后仍必须使用完全相同的 `app://` + CDP 实时导出流程。
+3. 不得提供或调用任何名为“web login”或“browser login”的兼容入口；不得新建、打开或依赖 `https://chatgpt.com` 网页 renderer，也不得使用外部浏览器。
+4. 通过桌面 renderer 的 `electronBridge`、登录提示、模式控件和 composer 状态验证桌面实例已经登录；同时验证 `~/.codex/auth.json` 结构完整。未登录时停止，不上传任何凭证。
+5. 验证成功后，立即通过该桌面 renderer 的 CDP `Network.getAllCookies` 实时导出 Cookie，规范化后原子写入本机私有 `session-cookies.json`。禁止读取、复制或解密任何浏览器、Codex 或 ChatGPT 桌面资料库中的 Cookie 数据库。
+6. 使用 `base64` 管道向 `gh secret set` 同步 Codex 凭证和刚抓取的 ChatGPT 会话；不得读取或上传本地任务队列状态，也不得复用未验证的旧 Cookie 文件。
+7. 任务目标与任务文档只来自仓库内的 `tasks/actions-inbox.json`、`documentDirectory` 和 `specSources`。运行器启动后持续读取这些可动态更新的文件；不得用 Secret 固化任务定义。
+8. 仅返回非敏感摘要：是否成功、仓库、写入的 Secret 名称、Cookie 数量和账号已验证状态；绝不返回 token、Cookie、auth 文件内容、账号 ID 或 Base64 值。
 
 ## 目标 Secrets
 
