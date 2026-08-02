@@ -272,7 +272,7 @@ test('send_and_watch streams visible thinking and uses bounded same-task recover
   assert.match(nativeSource, /liveSurface\["chatMode"\]/);
   assert.match(nativeSource, /never approve or type on Work/);
   assert.match(nativeSource, /explicitFinalResult/);
-  assert.match(nativeSource, /&& !explicitlyIncomplete\s*&& explicitFinalResult/);
+  assert.match(nativeSource, /&& !explicitlyIncomplete\s*&& \(explicitFinalResult \|\| structuredComplete\)/);
   assert.match(nativeSource, /尚未\.\{0,12\}完成/);
   assert.match(nativeSource, /Date\(\)\.timeIntervalSince\(candidateSince\) >= 4\.0/);
   assert.doesNotMatch(nativeSource,
