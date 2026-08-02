@@ -32,15 +32,15 @@ Do not repeat the same failed command or connector path. Diagnose the cause firs
 
 Do not stop a task just because an external operation is slow. Keep the active Chat working and poll normal asynchronous operations (Actions, deployments, releases, network recovery, remote checks) whenever possible. Do not ask the user to wait and do not return a wait countdown for normal waiting. Only emit an unfinished report when the current execution cannot continue due to a real blocker or the platform requires a handoff.
 
-Use the task report only for unfinished handoff cases. A completed task returns a normal final result and then a separate acceptance Chat verifies it. Do not include the machine report in every successful completion.
+Every work and acceptance Chat must end with the machine report. A completed work Chat returns `status=complete` and then a separate acceptance Chat verifies it; the acceptance Chat also returns a same-revision `status=complete` report before the queue marks the task terminal. Do not rely on a natural-language completion or a standalone acceptance marker.
 
 ```text
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","status":"incomplete|blocked","summary":"...","completed":["..."],"remaining":["..."],"blockers":["..."],"verification":["..."],"wait_seconds":0,"wait_reason":"","next_connector":"GitHub|bhrum2|","next_task":"..."}
+{"protocol":"mahayana.task-report.v1","task_id":"current task id","applied_task_revision":1,"applied_spec_digest":"current spec digest","status":"complete|incomplete|blocked","summary":"...","completed":["..."],"remaining":[],"blockers":[],"verification":["..."],"wait_seconds":0,"wait_reason":"","next_connector":"GitHub|bhrum2|","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
 ```
 
-- For completed work, do not output this machine report; send the result to a separate acceptance Chat.
+- For completed work, output the complete machine report; the queue then sends the result to a separate acceptance Chat.
 - For unfinished work, use `incomplete` or `blocked`, keep `wait_seconds` as `0`, and provide a concrete `next_task` for the next Chat.
 - Normal Actions/deployment/network polling is not a reason to end the Chat.
 - For a real unsolved blocker, state exactly what is needed: permission, account, tool, environment variable, command, or external service recovery condition.

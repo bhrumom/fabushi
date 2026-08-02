@@ -96,6 +96,19 @@ test('outbound sends discard old chat URLs while read-only reply requests keep t
   assert.equal(reply.result.structuredContent.hostRequest.params.chatUrl, chatUrl);
 });
 
+test('every task Chat receives complete and unfinished report templates', () => {
+  assert.match(chatScriptsSource, /func taskReportContract\(/);
+  assert.match(chatScriptsSource, /"status":"complete"/);
+  assert.match(chatScriptsSource, /"remaining":\[\],"blockers":\[\]/);
+  assert.match(chatScriptsSource, /"next_task":""/);
+  assert.match(chatScriptsSource, /"status":"incomplete\|blocked"/);
+  assert.doesNotMatch(chatScriptsSource, /不要输出完成态 JSON/);
+  assert.match(nativeSource, /taskId: task\.id/);
+  assert.match(nativeSource, /appliedRevision: task\.currentRevision/);
+  assert.match(nativeSource, /let reportSource = \[/);
+  assert.match(nativeSource, /reportMissing/);
+});
+
 test('initial outbound messages create a new Chat and same-task continuations use the reply action', async () => {
   const conversationId = '6a5f93ae-5118-83e8-a96a-2a7f321dd0e8';
   const sent = await call('send_and_watch', {
