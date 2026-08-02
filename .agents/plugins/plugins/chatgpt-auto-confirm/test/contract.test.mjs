@@ -57,8 +57,8 @@ test('home contract', () => {
     'prompt_templates', 'wait_for_review',
   ]);
   const webLoginReply = HOME.quickReplies.find(item => item.action.name === 'web_login_and_sync_actions');
-  assert.equal(webLoginReply.label, '浏览器登录并同步 Action 凭证');
-  assert.deepEqual(webLoginReply.aliases, ['浏览器登录', '同步网页凭证']);
+  assert.equal(webLoginReply.label, '桌面端登录并同步 Action 凭证');
+  assert.deepEqual(webLoginReply.aliases, ['桌面端登录', '同步桌面凭证']);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
@@ -85,6 +85,8 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
   assert.match(actionsWorkflow, /Build native queue runtime/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
+  assert.doesNotMatch(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64/);
+  assert.match(actionsWorkflow, /\{"automationTasks":\[\]\}/);
   assert.match(actionsWorkflow, /queue-state\.enc/);
   assert.match(actionsWorkflow, /previous_run_id="\$GITHUB_RUN_ID"/);
   assert.match(actionsWorkflow, /parallel_queue_smoke/);
@@ -108,6 +110,7 @@ test('login sync uploads both credential forms without printing values', () => {
   assert.match(dispatchActionsScript, /CHATGPT_SESSION_COOKIES_PATH/);
   assert.match(dispatchActionsScript, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(dispatchActionsScript, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.doesNotMatch(dispatchActionsScript, /CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64|export-action-state/);
   assert.match(dispatchActionsScript, /CHATGPT_AUTO_CONFIRM_DISPATCH/);
   assert.doesNotMatch(dispatchActionsScript, /echo .*CHATGPT_(CODEX_AUTH|SESSION_COOKIES)_B64/);
   assert.match(dynamicController, /status === 'failed'/);
@@ -120,6 +123,7 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.match(nativeServer, /process\.platform !== 'win32'/);
   assert.match(windowsSyncScript, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(windowsSyncScript, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.doesNotMatch(windowsSyncScript, /CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64|export-action-state/);
   assert.match(windowsSyncScript, /\$Start/);
   assert.match(windowsSyncScript, /ConvertTo-Json -Compress/);
   assert.doesNotMatch(windowsSyncScript, /Write-Host .*encoded/);
@@ -168,7 +172,7 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /actionsLoginPorts/);
   assert.match(nativeSource, /ports\.append\(9324\)/);
   assert.doesNotMatch(nativeSource, /createActionsWebLoginTarget|actionsWebSessionMatchesCodex/);
-  assert.match(nativeSource, /Credential export never calls this web-only verifier/);
+  assert.doesNotMatch(nativeSource, /actionsWebLoginState|api\/auth\/session/);
   assert.match(nativeSource, /syncLiveActionsCredentials/);
   assert.match(nativeSource, /credentialSource": "live-desktop-renderer"/);
   assert.doesNotMatch(nativeSource, /credentialSource": "local-files"/);

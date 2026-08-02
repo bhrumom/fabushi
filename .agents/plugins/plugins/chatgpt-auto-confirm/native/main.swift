@@ -308,37 +308,6 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
   )
 }
 
-// Hosted queue workers still operate a Chat web surface after credentials have
-// been restored. Credential export never calls this web-only verifier.
-func actionsWebLoginState(_ target: ActionsLoginTarget) -> [String: Any]? {
-  cdpValue(
-    port: target.port,
-    targetId: target.targetId,
-    expression: #"""
-    (async () => {
-      const webOrigin = location.protocol === 'https:' &&
-        (location.hostname === 'chatgpt.com' || location.hostname.endsWith('.chatgpt.com'));
-      if (!webOrigin) return {authenticated: false};
-      try {
-        const response = await fetch('/api/auth/session', {
-          credentials: 'include', cache: 'no-store'
-        });
-        const session = response.ok ? await response.json() : null;
-        const objects = [session, session?.user].filter(Boolean);
-        const authenticated = objects.some(object =>
-          ['id', 'user_id', 'account_id', 'chatgpt_user_id', 'chatgpt_account_id']
-            .some(key => !!object?.[key])
-        );
-        return {authenticated};
-      } catch {
-        return {authenticated: false};
-      }
-    })()
-    """#,
-    timeout: 5.0
-  )
-}
-
 func base64URLDecodedData(_ value: String) -> Data? {
   var normalized = value.replacingOccurrences(of: "-", with: "+")
     .replacingOccurrences(of: "_", with: "/")
@@ -513,7 +482,6 @@ func finishActionsCredentialSync(
     "secrets": [
       "CHATGPT_CODEX_AUTH_B64",
       "CHATGPT_SESSION_COOKIES_B64",
-      "CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64",
     ],
     "repository": "bhrumom/fabushi",
     "workflow": startRunner ? "chatgpt-auto-confirm-runner.yml" : "",

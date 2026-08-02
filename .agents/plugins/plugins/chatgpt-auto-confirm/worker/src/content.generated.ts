@@ -20,10 +20,10 @@ export const HOME = {
   "quickReplies": [
     {
       "id": "web-login-and-sync-actions",
-      "label": "浏览器登录并同步 Action 凭证",
+      "label": "桌面端登录并同步 Action 凭证",
       "aliases": [
-        "浏览器登录",
-        "同步网页凭证"
+        "桌面端登录",
+        "同步桌面凭证"
       ],
       "action": {
         "type": "tool",
