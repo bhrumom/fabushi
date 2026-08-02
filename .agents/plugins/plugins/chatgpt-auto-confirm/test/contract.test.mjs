@@ -53,12 +53,10 @@ test('home contract', () => {
   assert.ok(Buffer.byteLength(JSON.stringify(HOME)) <= 32768);
   assert.ok(HOME.feed.items.length <= 10);
   assert.deepEqual(HOME.quickReplies.map(item => item.action.name), [
-    'web_login_and_sync_actions', 'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
+    'sync_actions_credentials', 'login_and_sync_actions', 'queue_status', 'start_actions_runner',
     'prompt_templates', 'wait_for_review',
   ]);
-  const webLoginReply = HOME.quickReplies.find(item => item.action.name === 'web_login_and_sync_actions');
-  assert.equal(webLoginReply.label, '桌面端登录并同步 Action 凭证');
-  assert.deepEqual(webLoginReply.aliases, ['桌面端登录', '同步桌面凭证']);
+  assert.equal(HOME.quickReplies.some(item => item.action.name === 'web_login_and_sync_actions'), false);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
@@ -138,6 +136,8 @@ test('Windows credential sync keeps secrets out of logs and supports optional di
   assert.doesNotMatch(windowsSyncScript, /chatgpt-cookie-capture-extension/);
   assert.doesNotMatch(windowsSyncScript, /auth\.openai\.com\/oauth/);
   assert.match(windowsSyncScript, /WaitSeconds/);
+  assert.match(windowsSyncScript, /\[switch\]\$DesktopLogin/);
+  assert.doesNotMatch(windowsSyncScript, /\$OpenLogin|\$WebLogin/);
   assert.match(liveSessionExporter, /Network\.getAllCookies/);
   assert.match(liveSessionExporter, /Runtime\.evaluate/);
   assert.match(liveSessionExporter, /app:\/\/-\/index\.html/);
@@ -174,19 +174,20 @@ test('worker exposes the interactive login sync command', async () => {
   assert.doesNotMatch(nativeSource, /createActionsWebLoginTarget|actionsWebSessionMatchesCodex/);
   assert.doesNotMatch(nativeSource, /actionsWebLoginState|api\/auth\/session/);
   assert.match(nativeSource, /syncLiveActionsCredentials/);
+  assert.match(nativeSource, /openDesktopIfNeeded: Bool = false/);
+  assert.match(nativeSource, /startRunner: startRunner,\s+openDesktopIfNeeded: false/);
+  assert.match(nativeSource, /startRunner: startRunner,\s+openDesktopIfNeeded: true/);
   assert.match(nativeSource, /credentialSource": "live-desktop-renderer"/);
   assert.doesNotMatch(nativeSource, /credentialSource": "local-files"/);
   assert.doesNotMatch(nativeSource, /extractVerifiedMacOS|macOSCookieExtractor/);
   assert.doesNotMatch(nativeSource, /webSessionIdentifiers/);
   assert.match(nativeSource, /!url\.contains\("avatar-overlay"\)/);
-  assert.match(nativeServer, /-OpenLogin/);
+  assert.match(nativeServer, /-DesktopLogin/);
   assert.match(nativeServer, /-WaitSeconds/);
   const webTool = tools.find(item => item.name === 'web_login_and_sync_actions');
-  assert.ok(webTool);
-  assert.equal(webTool.inputSchema.properties.start.default, false);
-  assert.equal(webTool.inputSchema.properties.waitSeconds.default, 600);
-  assert.match(workerSource, /actions-runner-web-login-sync/);
-  assert.match(nativeServer, /-OpenLogin/);
+  assert.equal(webTool, undefined);
+  assert.doesNotMatch(workerSource, /web_login_and_sync_actions|actions-runner-web-login-sync/);
+  assert.doesNotMatch(nativeServer, /web_login_and_sync_actions|-OpenLogin|-WebLogin/);
   assert.match(windowsSyncScript, /OpenAI\.Codex_2p2nqsd0c76g0!App/);
   assert.match(windowsSyncScript, /credentialSource/);
 });

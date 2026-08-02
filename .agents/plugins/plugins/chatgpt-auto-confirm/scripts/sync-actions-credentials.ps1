@@ -2,10 +2,7 @@
 param(
   [string]$Repository = $(if ($env:CHATGPT_AUTO_CONFIRM_REPOSITORY) { $env:CHATGPT_AUTO_CONFIRM_REPOSITORY } else { 'bhrumom/fabushi' }),
   [int]$WaitSeconds = 600,
-  [switch]$OpenLogin,
   [switch]$DesktopLogin,
-  # Kept as a compatibility alias. It now opens the ChatGPT desktop app too.
-  [switch]$WebLogin,
   [switch]$Start
 )
 
@@ -92,10 +89,7 @@ try {
   & $script:GitHubCli.Source auth status *> $null
   if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI is not authenticated; run gh auth login first' }
 
-  $desktopLoginRequested = $OpenLogin -or $DesktopLogin -or $WebLogin
-  if ((@($OpenLogin, $DesktopLogin, $WebLogin) | Where-Object { $_ }).Count -gt 1) {
-    throw 'desktop login was requested more than once'
-  }
+  $desktopLoginRequested = $DesktopLogin
 
   $authPath = if ($env:CHATGPT_CODEX_AUTH_PATH) {
     [string]$env:CHATGPT_CODEX_AUTH_PATH
