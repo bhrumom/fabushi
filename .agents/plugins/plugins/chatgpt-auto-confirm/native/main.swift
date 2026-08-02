@@ -1394,7 +1394,7 @@ case "account_status":
 case "account_switch":
   let params = commandJSONParams()
   let requested = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  let records = loadAccounts()
+  var records = loadAccounts()
   guard let index = records.firstIndex(where: { $0.id == requested }) else {
     output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
   }
