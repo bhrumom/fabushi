@@ -361,6 +361,10 @@ export function validateTrustedReleaseWorkflow(workflowText) {
   }
   if (!/environment\s*:\s*production/m.test(text)) failures.push('trusted release requires production environment approval');
   if (!/cosign\s+sign-blob/m.test(text)) failures.push('trusted release must sign the parent Release Manifest with OIDC');
+  if (/--clobber\b/m.test(text)) failures.push('trusted release must never overwrite immutable release assets');
+  if (!/gh\s+release\s+view[\s\S]*already exists[\s\S]*exit\s+1/m.test(text)) {
+    failures.push('trusted release must fail when the protected-tag release already exists');
+  }
   if (!/release\s*:\s*\n\s+types\s*:\s*\[published\]/m.test(text) && !/tags\s*:/m.test(text)) {
     failures.push('workflow must be protected release or tag triggered');
   }

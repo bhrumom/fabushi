@@ -3,11 +3,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing protected v* tag to publish
-        required: true
 
 permissions:
   contents: write
@@ -51,6 +46,16 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
           test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$SOURCE_COMMIT"
+      - name: Refuse to overwrite an existing immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists; immutable assets cannot be replaced" >&2
+            exit 1
+          fi
       - name: Run trusted contract suite before release
         run: |
           bash scripts/verify-repository.sh

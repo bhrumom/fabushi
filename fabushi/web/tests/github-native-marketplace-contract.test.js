@@ -199,9 +199,22 @@ jobs:
           ref: \${{ github.sha }}
       - run: cosign sign-blob --yes release-manifest.json
       - uses: actions/attest-build-provenance@v2
+      - run: |
+          if gh release view "$GITHUB_REF_NAME"; then
+            echo 'release already exists' >&2
+            exit 1
+          fi
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag
 `;
   assert.deepEqual(validateTrustedReleaseWorkflow(workflow), { valid: true, failures: [] });
   assert.equal(validateTrustedReleaseWorkflow(workflow.replace('id-token: write', 'id-token: read')).valid, false);
+  const mutable = workflow.replace(
+    'gh release create "$GITHUB_REF_NAME" dist/* --verify-tag',
+    'gh release upload "$GITHUB_REF_NAME" dist/* --clobber',
+  );
+  const mutableResult = validateTrustedReleaseWorkflow(mutable);
+  assert.equal(mutableResult.valid, false);
+  assert.ok(mutableResult.failures.some((failure) => failure.includes('overwrite immutable')));
 });
 
 
