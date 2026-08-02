@@ -7,6 +7,7 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
+      - '.github/scripts/run-mahayana-github-native-live-e2e.mjs'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -28,6 +29,7 @@ on:
       - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
+      - '.github/scripts/run-mahayana-github-native-live-e2e.mjs'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -197,6 +199,105 @@ jobs:
         shell: bash
         run: exit 1
 
+
+  live-collaboration-e2e:
+    name: Real Fork, Draft PR, protected merge, releases, derivation, and adversarial isolation
+    if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    needs: bootstrap-live-collaboration
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_ADMIN_TOKEN: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
+      UPSTREAM_REPOSITORY: bhrumom/mahayana-mcp-app-collaboration-v10
+      FORK_REPOSITORY: bhrum/mahayana-mcp-app-collaboration-v10
+      EVIDENCE_PATH: live-e2e-collaboration-evidence.json
+      PERSISTED_EVIDENCE_PATH: evidence/mahayana-github-native-live-e2e/collaboration.json
+    steps:
+      - name: Checkout exact trusted source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Execute real GitHub-native collaboration and release acceptance
+        id: live
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_ADMIN_TOKEN:-}" ]; then
+            node - <<'NODE'
+          const fs = require('node:fs');
+          fs.writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({
+            protocol: 'mahayana.github-native-live-e2e.v1',
+            generatedAt: new Date().toISOString(),
+            status: 'blocked',
+            errorCode: 'missing_official_site_release_pat',
+            message: 'The protected OFFICIAL_SITE_RELEASE_PAT Actions secret is not configured for the trusted live collaboration workflow.'
+          }, null, 2) + '\n');
+          NODE
+            exit 78
+          fi
+          node .github/scripts/run-mahayana-github-native-live-e2e.mjs
+
+      - name: Persist sanitized live collaboration evidence on the task branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$EVIDENCE_PATH"
+          mkdir -p "$(dirname "$PERSISTED_EVIDENCE_PATH")"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const source = JSON.parse(fs.readFileSync(process.env.EVIDENCE_PATH, 'utf8'));
+          source.workflow = {
+            repository: process.env.GITHUB_REPOSITORY,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            sourceCommit: process.env.GITHUB_SHA,
+            ref: process.env.GITHUB_REF,
+            url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+          };
+          fs.writeFileSync(process.env.PERSISTED_EVIDENCE_PATH, JSON.stringify(source, null, 2) + '\n');
+          NODE
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$PERSISTED_EVIDENCE_PATH"
+          if git diff --cached --quiet; then
+            echo 'Persisted collaboration evidence is unchanged.'
+            exit 0
+          fi
+          git commit -m 'chore(evidence): persist GitHub collaboration live E2E status'
+          if ! git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10; then
+            git fetch origin codex/mahayana-marketplace-cloudflare-v10
+            git rebase origin/codex/mahayana-marketplace-cloudflare-v10
+            git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
+          fi
+
+      - name: Upload immutable live collaboration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-github-native-live-collaboration-${{ github.sha }}
+          path: |
+            live-e2e-collaboration-evidence.json
+            evidence/mahayana-github-native-live-e2e/collaboration.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail when real collaboration acceptance did not complete
+        if: steps.live.outcome != 'success'
+        shell: bash
+        run: exit 1
+
   contract:
     name: GitHub-native MCP App contract
     runs-on: ubuntu-latest
@@ -214,6 +315,20 @@ jobs:
 
       - name: Run contract tests
         run: node --test fabushi/web/tests/github-native-marketplace-contract.test.js
+
+  cloud-marketplace-e2e:
+    name: Real Cloudflare marketplace publish, install, run, and revoke
+    if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    needs: contract
+    uses: ./.github/workflows/mahayana-cloud-marketplace-e2e.yml
+    secrets: inherit
+
+  android-real-device-e2e:
+    name: Real Android device MCP App host validation
+    if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    needs: contract
+    uses: ./.github/workflows/android-real-device-e2e.yml
+    secrets: inherit
 
   mcp-apps-only:
     name: Stateless MCP Apps host and runtime contract

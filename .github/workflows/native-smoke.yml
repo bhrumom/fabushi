@@ -7,6 +7,18 @@ on:
         description: Commit SHA to test. Leave empty to use the current ref.
         required: false
         type: string
+  push:
+    branches:
+      - codex/mahayana-marketplace-cloudflare-v10
+    paths:
+      - fabushi/android/**
+      - fabushi/ios/**
+      - fabushi/lib/**
+      - fabushi/pubspec.yaml
+      - fabushi/pubspec.lock
+      - native/telegram-*/**
+      - .github/workflows/native-smoke.yml
+      - .github/scripts/native-install-smoke.sh
   pull_request:
     paths:
       - fabushi/android/**
