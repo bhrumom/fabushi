@@ -7,12 +7,19 @@ import SystemConfiguration
 
 // MARK: - CDP interaction JS scripts
 
-func taskReportContract() -> String {
-  """
+func legacyTaskReportContract(
+  taskId: String? = nil,
+  appliedRevision: Int? = nil,
+  appliedDigest: String? = nil
+) -> String {
+  let reportTaskId = jsonStringLiteral(taskId ?? "CURRENT_TASK_ID")
+  let reportRevision = String(appliedRevision ?? 1)
+  let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
+  return """
 
-持续执行要求：不要只描述下一步、不要阶段性收尾、不要回复等待时间。没有完成目标不要停，一直工作下去直到实现目标！需要时间跑的异步任务（如 GitHub Actions）必须自己运行 sleep 睡眠命令，睡眠之后起来检查是否完成，未完成则继续执行 sleep 等待，直到出结果并立刻继续。全部目标完成时直接给出正常最终结果，不要输出机器模板；小程序会把该结果发送到新的独立验收 Chat。
+// Retained only as a compatibility symbol; all outbound task messages use taskReportContract below.
 
-只有出现当前权限和工具确实无法绕过的阻塞，或平台硬性终止本次会话且任务仍未完成时，才在回答末尾输出以下未完成续作模板。不要把 JSON 放进 Markdown 代码块：
+// Legacy report text intentionally disabled.
 MAHAYANA_TASK_REPORT_V1_BEGIN
 {"protocol":"mahayana.task-report.v1","task_id":"必须与当前任务编号一致","applied_task_revision":1,"applied_spec_digest":"必须与当前规范指纹一致","status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"next_connector":"下一新 Chat 要使用的 connector；无需切换则为空字符串","next_task":"给下一个工作 Chat 的完整可执行续作指令"}
 MAHAYANA_TASK_REPORT_V1_END
@@ -20,8 +27,44 @@ MAHAYANA_TASK_REPORT_V1_END
 """
 }
 
-func messageWithTaskReportContract(_ message: String) -> String {
-  message.contains("MAHAYANA_TASK_REPORT_V1_BEGIN") ? message : message + taskReportContract()
+func taskReportContract(
+  taskId: String? = nil,
+  appliedRevision: Int? = nil,
+  appliedDigest: String? = nil
+) -> String {
+  let reportTaskId = jsonStringLiteral(taskId ?? "CURRENT_TASK_ID")
+  let reportRevision = String(appliedRevision ?? 1)
+  let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
+  return """
+
+每一轮 Chat 的最终回复都必须包含一个完整的机器报告；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。报告中的 task_id、applied_task_revision 和 applied_spec_digest 必须使用当前任务的真实值。
+
+全部目标和验证已经完成时，必须使用完成模板：
+MAHAYANA_TASK_REPORT_V1_BEGIN
+{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"complete","summary":"本轮实际结果","completed":["已完成项"],"remaining":[],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
+MAHAYANA_TASK_REPORT_V1_END
+
+只有确实未完成或被真实阻塞时，才使用未完成模板，并且 remaining 和 next_task 必须如实填写：
+MAHAYANA_TASK_REPORT_V1_BEGIN
+{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"给下一个 Chat 的完整可执行续作指令"}
+MAHAYANA_TASK_REPORT_V1_END
+未完成报告会触发新 Chat 续作；完成报告会被小程序标记为完成并停止该任务的重复派发。
+"""
+}
+
+func messageWithTaskReportContract(
+  _ message: String,
+  taskId: String? = nil,
+  appliedRevision: Int? = nil,
+  appliedDigest: String? = nil
+) -> String {
+  message.contains("MAHAYANA_TASK_REPORT_V1_BEGIN")
+    ? message
+    : message + taskReportContract(
+      taskId: taskId,
+      appliedRevision: appliedRevision,
+      appliedDigest: appliedDigest
+    )
 }
 
 func parseTaskReport(_ content: String) -> [String: Any]? {
@@ -37,6 +80,12 @@ func parseTaskReport(_ content: String) -> [String: Any]? {
   guard let data = raw.data(using: .utf8),
         let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         report["protocol"] as? String == "mahayana.task-report.v1",
+        let taskId = report["task_id"] as? String,
+        !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        let appliedRevision = report["applied_task_revision"] as? Int,
+        appliedRevision >= 1,
+        let appliedDigest = report["applied_spec_digest"] as? String,
+        !appliedDigest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
         let status = report["status"] as? String,
         ["complete", "incomplete", "blocked"].contains(status),
         report["summary"] is String,
@@ -92,7 +141,12 @@ func continuationFromTaskReport(
 
 先核实这些修改是否已落盘，再继续剩余实现与验证。只有全部完成后才能报告 complete。
 """
-  return messageWithTaskReportContract(body)
+  return messageWithTaskReportContract(
+    body,
+    taskId: report["task_id"] as? String,
+    appliedRevision: report["applied_task_revision"] as? Int,
+    appliedDigest: report["applied_spec_digest"] as? String
+  )
 }
 
 func relayFreshChatContinuation(_ params: [String: Any]) -> Never {
@@ -1594,7 +1648,7 @@ func getReplyJS() -> String {
       && completedActivity.length > 0
       && !toolOnlyCompletedActivity
       && !explicitlyIncomplete
-      && explicitFinalResult;
+      && (explicitFinalResult || structuredComplete);
     const terminalIncomplete = (!active || hasClosedTaskReport)
       && !waitingForApproval
       && !stopBtn
