@@ -22,6 +22,12 @@ if (mode !== 'verify') {
 const sleep = milliseconds =>
   new Promise(resolve => setTimeout(resolve, milliseconds));
 
+const authenticatedControllerIsReady = state =>
+  !state.asksForLogin
+  && state.bridge
+  && state.readyState === 'complete'
+  && state.bodyLength > 50;
+
 const appRootURL = 'app://-/index.html?initialRoute=%2F';
 
 const listTargets = async () =>
@@ -277,18 +283,7 @@ while (Date.now() < verificationDeadline) {
     continue;
   }
   lastState = evaluation.result?.value || {};
-  if (
-    !lastState.asksForLogin
-    && lastState.bridge
-    && lastState.readyState === 'complete'
-    && lastState.bodyLength > 50
-    && (
-      lastState.currentMode
-      || lastState.workComposer
-      || lastState.hasChat
-      || lastState.hasWork
-    )
-  ) {
+  if (authenticatedControllerIsReady(lastState)) {
     verified = true;
     break;
   }
