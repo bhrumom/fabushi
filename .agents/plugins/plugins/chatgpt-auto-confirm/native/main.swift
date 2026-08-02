@@ -1550,9 +1550,37 @@ case "login_and_sync_actions":
 case "start_actions_runner":
   let runnerParams = commandJSONParams()
   let requestedRunnerAccount = (runnerParams["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-  if let requestedRunnerAccount, !requestedRunnerAccount.isEmpty,
-     resolveAccount(requestedRunnerAccount) == nil {
-    output(["ok": false, "errorCode": "account_not_found", "message": "指定账号不存在。"], exitCode: 1)
+  let resolvedRunnerAccount: AccountRecord?
+  if let requestedRunnerAccount, !requestedRunnerAccount.isEmpty {
+    guard let account = resolveAccount(requestedRunnerAccount) else {
+      output(["ok": false, "errorCode": "account_not_found", "message": "指定账号不存在。"], exitCode: 1)
+    }
+    resolvedRunnerAccount = account
+  } else {
+    resolvedRunnerAccount = resolveAccount(nil)
+  }
+  if let account = resolvedRunnerAccount {
+    guard let credentials = accountCredentialData(account) else {
+      output(["ok": false, "errorCode": "account_credentials_missing", "message": "账号没有可上传的完整凭据，请先重新登录或同步。"], exitCode: 1)
+    }
+    let dispatch = accountDispatch(
+      account,
+      authData: credentials.auth,
+      cookieData: credentials.cookies,
+      startRunner: true
+    )
+    guard dispatch.ok else {
+      output(["ok": false, "errorCode": "github_cli_failed", "accountId": account.id, "message": dispatch.message], exitCode: 1)
+    }
+    output([
+      "ok": true,
+      "dispatched": true,
+      "accountId": account.id,
+      "repository": "bhrumom/fabushi",
+      "workflow": "chatgpt-auto-confirm-runner.yml",
+      "ref": "main",
+      "message": dispatch.message,
+    ])
   }
   let executableURL = URL(
     fileURLWithPath: CommandLine.arguments[0]
@@ -2126,12 +2154,24 @@ case "send_and_watch":
   // the first poll can mistake the previous assistant message for the reply to
   // the new instruction and return immediately.
   var state = loadState()
-  if let requestedAccountId = params["accountId"] as? String {
+  let requestedAccountId = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let selectedAccount: AccountRecord?
+  if let requestedAccountId, !requestedAccountId.isEmpty {
     guard let account = resolveAccount(requestedAccountId) else {
       output(["ok": false, "errorCode": "account_not_found", "message": "指定账号不存在。"], exitCode: 1)
     }
+    selectedAccount = account
+  } else {
+    selectedAccount = resolveAccount(nil)
+  }
+  if let account = selectedAccount {
     state.backgroundProfilePath = account.profilePath
+    state.backgroundCodexHomePath = account.codexHomePath
     state.backgroundAppPort = accountAvailableCDPPort()
+  } else if loadAccounts().isEmpty {
+    state.backgroundProfilePath = nil
+    state.backgroundCodexHomePath = nil
+    state.backgroundAppPort = nil
   }
   let prepared = ensureHiddenChatTarget(
     &state,
