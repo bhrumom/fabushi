@@ -72,6 +72,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /no continuation was dispatched/);
   assert.match(actionsWorkflow, /for attempt in 1 2/);
   assert.match(actionsWorkflow, /Authenticated Chat shell attempt/);
+  assert.match(actionsWorkflow, /restarting the app before retrying/);
+  assert.match(actionsWorkflow, /pkill -f "user-data-dir=\$PROFILE_DIR"/);
+  assert.match(actionsWorkflow, /SingletonLock/);
   assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.match(restoreSessionScript, /Page\.reload/);
