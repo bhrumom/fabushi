@@ -109,7 +109,7 @@ class MiniAppRegistryService {
       schemaVersion: payload['schemaVersion'] is int
           ? payload['schemaVersion'] as int
           : 1,
-      hostApiVersion: 'mcp-2025-06-18',
+      hostApiVersion: 'mcp-apps-2026-01-26',
       bots: bots,
       miniApps: manifests,
       signature: 'mcp:${plugins.map((plugin) => plugin['pluginId']).join(',')}',

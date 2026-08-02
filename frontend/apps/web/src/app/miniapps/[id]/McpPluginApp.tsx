@@ -11,6 +11,10 @@ import {
   type McpToolResult,
 } from "@fabushi/mcp-app-sdk";
 
+const MCP_PROTOCOL_VERSION = "2026-07-28";
+const MCP_APPS_SPECIFICATION = "2026-01-26";
+const MCP_APP_MIME = "text/html;profile=mcp-app";
+
 const TITLES: Record<string, string> = {
   "global-dharma": "全球法布施",
   "faliu-flashcards": "法流记忆卡",
@@ -72,97 +76,46 @@ type ContentState = {
   receipts: Array<{ itemId: string; revision: string; readAt: string }>;
 };
 
-class McpHttpClient {
+class StatelessMcpHttpClient {
   private nextId = 1;
-  private sessionId = "";
 
   constructor(private readonly endpoint: string) {}
 
   async request(method: string, params: Record<string, unknown> = {}): Promise<any> {
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      credentials: "include",
-      headers: this.headers(),
-      body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
-    });
-    this.captureSession(response);
-    if (!response.ok) throw new Error(`MCP ${method} 失败（${response.status}）`);
-    const payload = await response.json();
-    if (payload.error) throw new Error(payload.error.message || `MCP ${method} 失败`);
-    return payload.result;
-  }
-
-  async notify(method: string, params: Record<string, unknown> = {}): Promise<void> {
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      credentials: "include",
-      headers: this.headers(),
-      body: JSON.stringify({ jsonrpc: "2.0", method, params }),
-    });
-    this.captureSession(response);
-    if (!response.ok) throw new Error(`MCP ${method} 通知失败（${response.status}）`);
-  }
-
-  async respond(id: number | string, result: unknown): Promise<void> {
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      credentials: "include",
-      headers: this.headers(),
-      body: JSON.stringify({ jsonrpc: "2.0", id, result }),
-    });
-    if (!response.ok) throw new Error(`MCP 客户端响应失败（${response.status}）`);
-  }
-
-  async listen(onMessage: (message: any) => void, signal: AbortSignal): Promise<void> {
-    let lastEventId = "";
-    while (!signal.aborted && this.sessionId) {
-      try {
-        const headers = this.headers();
-        if (lastEventId) headers["last-event-id"] = lastEventId;
-        const response = await fetch(this.endpoint, { method: "GET", credentials: "include", headers, signal });
-        if (!response.ok || !response.body) throw new Error(`MCP 事件流失败（${response.status}）`);
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (!signal.aborted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-          let boundary = buffer.indexOf("\n\n");
-          while (boundary >= 0) {
-            const frame = buffer.slice(0, boundary);
-            buffer = buffer.slice(boundary + 2);
-            const idLine = frame.split("\n").find((line) => line.startsWith("id:"));
-            if (idLine) lastEventId = idLine.slice(3).trim();
-            const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-            if (data) onMessage(JSON.parse(data));
-            boundary = buffer.indexOf("\n\n");
-          }
-        }
-      } catch (error) {
-        if (signal.aborted) return;
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
-      }
-    }
-  }
-
-  async terminate(): Promise<void> {
-    if (!this.sessionId) return;
-    const response = await fetch(this.endpoint, { method: "DELETE", credentials: "include", headers: this.headers() });
-    if (response.ok) this.sessionId = "";
-  }
-
-  private headers(): Record<string, string> {
-    return {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      ...(this.sessionId ? { "mcp-session-id": this.sessionId, "mcp-protocol-version": "2025-06-18" } : {}),
+    const existingMeta = (params._meta && typeof params._meta === "object")
+      ? params._meta as Record<string, unknown>
+      : {};
+    const requestParams = {
+      ...params,
+      _meta: {
+        ...existingMeta,
+        "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+        "io.modelcontextprotocol/clientInfo": { name: "fabushi-web-mcp-host", version: "2.0.0" },
+        "io.modelcontextprotocol/clientCapabilities": {
+          extensions: {
+            "io.modelcontextprotocol/ui": { mimeTypes: [MCP_APP_MIME] },
+          },
+        },
+      },
     };
-  }
-
-  private captureSession(response: Response): void {
-    const sessionId = response.headers.get("mcp-session-id");
-    if (sessionId) this.sessionId = sessionId;
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-protocol-version": MCP_PROTOCOL_VERSION,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params: requestParams }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const code = payload?.error?.code ?? payload?.error ?? `http_${response.status}`;
+      const message = payload?.error?.message ?? payload?.message ?? `MCP ${method} failed`;
+      throw new Error(`${code}: ${message}`);
+    }
+    if (payload?.error) throw new Error(payload.error.message || `MCP ${method} failed`);
+    return payload?.result;
   }
 }
 
@@ -175,16 +128,18 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
   const pluginInstanceId = OFFICIAL_INSTANCE_IDS[normalizedId] ?? `fabushi-official:${normalizedId}`;
   const contentStateEndpoint = `${backendBase}/api/miniapps/${encodeURIComponent(pluginInstanceId)}/content-state`;
   const messagesEndpoint = `${backendBase}/api/miniapps/${encodeURIComponent(pluginInstanceId)}/messages`;
-  const client = useMemo(() => new McpHttpClient(endpoint), [endpoint]);
+  const client = useMemo(() => new StatelessMcpHttpClient(endpoint), [endpoint]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const appInitializedRef = useRef(false);
+  const viewRequestIdRef = useRef(1);
   const [tools, setTools] = useState<McpTool[]>([]);
   const [uiHtml, setUiHtml] = useState("");
+  const [uiMeta, setUiMeta] = useState<Record<string, unknown>>({});
   const [command, setCommand] = useState("");
   const [output, setOutput] = useState("正在初始化 MCP…");
   const [busy, setBusy] = useState(true);
   const [formTool, setFormTool] = useState<McpTool | null>(null);
   const [formValue, setFormValue] = useState<Record<string, unknown>>({});
-  const [elicitation, setElicitation] = useState<{ id: number | string; message: string; schema: JsonSchema; value: Record<string, unknown> } | null>(null);
   const [conversationId, setConversationId] = useState("");
   const [home, setHome] = useState<HomeDocument | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
@@ -278,39 +233,9 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
 
   useEffect(() => {
     let active = true;
-    const eventStream = new AbortController();
     (async () => {
       try {
-        await client.request("initialize", {
-          protocolVersion: "2025-06-18",
-          capabilities: { roots: { listChanged: false }, elicitation: {} },
-          clientInfo: { name: "fabushi-web-mcp-host", version: "1.0.0" },
-        });
-        await client.notify("notifications/initialized");
         const availableTools = await refreshTools();
-        void client.listen((message) => {
-          if (!active || !message || message.jsonrpc !== "2.0") return;
-          if (message.method === "notifications/tools/list_changed") {
-            void refreshTools();
-          } else if (message.method === "notifications/progress") {
-            const params = message.params ?? {};
-            setOutput(`${params.message ?? "处理中"}${params.total === undefined ? "" : ` ${params.progress ?? 0}/${params.total}`}`);
-          } else if (message.method === "elicitation/create" && message.id !== undefined) {
-            const params = message.params ?? {};
-            if (params.mode === "url") {
-              setOutput(`插件请求在浏览器完成操作：${String(params.url ?? "")}`);
-              void client.respond(message.id, { action: "cancel" });
-            } else {
-              const schema = (params.requestedSchema ?? { type: "object" }) as JsonSchema;
-              setElicitation({
-                id: message.id,
-                message: String(params.message ?? "插件需要补充信息"),
-                schema,
-                value: (schemaDefaults(schema) ?? {}) as Record<string, unknown>,
-              });
-            }
-          }
-        }, eventStream.signal);
         const hasHome = availableTools.some((tool) => tool.name === "home");
         if (hasHome) {
           const homeResult = await client.request("tools/call", {
@@ -385,7 +310,10 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
           if (uri) {
             const resource = await client.request("resources/read", { uri });
             const selected = resource?.contents?.find((item: any) => item.uri === uri);
-            if (selected?.mimeType === "text/html;profile=mcp-app" && selected.text) setUiHtml(String(selected.text));
+            if (selected?.mimeType === MCP_APP_MIME && selected.text) {
+              setUiMeta((selected._meta?.ui ?? {}) as Record<string, unknown>);
+              setUiHtml(String(selected.text));
+            }
           }
         }
         if (active) setOutput(`${title} 已就绪，共 ${availableTools.length} 个 Tools。${hasHome ? "" : " 此插件没有 home，保持普通机器人体验。"}`);
@@ -397,27 +325,131 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     })();
     return () => {
       active = false;
-      eventStream.abort();
-      void client.terminate();
+      appInitializedRef.current = false;
+      const view = iframeRef.current?.contentWindow;
+      if (view) {
+        view.postMessage({
+          jsonrpc: "2.0",
+          id: viewRequestIdRef.current++,
+          method: "ui/resource-teardown",
+          params: { reason: "host_unmounted" },
+        }, "*");
+      }
     };
   }, [client, contentStateEndpoint, messagesEndpoint, pluginInstanceId, refreshTools, title]);
 
   useEffect(() => {
+    const view = iframeRef.current?.contentWindow;
+    if (!view) return;
+
+    const postToView = (message: Record<string, unknown>) => {
+      view.postMessage(message, "*");
+    };
+    const respond = (id: number | string | undefined, result?: unknown, error?: { code: number; message: string }) => {
+      if (id === undefined) return;
+      postToView({ jsonrpc: "2.0", id, ...(error ? { error } : { result: result ?? {} }) });
+    };
     const receive = async (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const request = event.data as JsonRpcRequest;
-      if (!request || request.jsonrpc !== "2.0" || request.method !== "tools/call") return;
+      if (event.source !== view || event.origin !== "null") return;
+      const request = event.data as JsonRpcRequest & { id?: number | string };
+      if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") return;
+
+      if (request.method === "ui/notifications/sandbox-proxy-ready") {
+        postToView({
+          jsonrpc: "2.0",
+          method: "ui/notifications/sandbox-resource-ready",
+          params: { html: applyMcpAppCsp(uiHtml, uiMeta) },
+        });
+        return;
+      }
+      if (request.method === "ui/notifications/initialized") {
+        appInitializedRef.current = true;
+        return;
+      }
+      if (request.method === "ui/notifications/size-changed") {
+        const height = Number(request.params?.height ?? 0);
+        if (Number.isFinite(height) && height > 0 && iframeRef.current) {
+          iframeRef.current.style.height = `${Math.min(Math.max(height, 160), 1200)}px`;
+        }
+        return;
+      }
+      if (request.method === "notifications/message") {
+        console.info("MCP App View", request.params ?? {});
+        return;
+      }
+
       try {
-        const params = request.params ?? {};
-        const result = await callTool(String(params.name ?? ""), (params.arguments ?? {}) as Record<string, unknown>);
-        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id: request.id, result }, "*");
+        if (request.method === "ui/initialize") {
+          appInitializedRef.current = false;
+          respond(request.id, {
+            protocolVersion: MCP_APPS_SPECIFICATION,
+            hostInfo: { name: "fabushi-web-mcp-apps-host", version: "2.0.0" },
+            hostCapabilities: {
+              openLinks: {},
+              serverTools: { listChanged: false },
+              serverResources: { listChanged: false },
+              logging: {},
+              sandbox: { permissions: {} },
+            },
+            hostContext: {
+              theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+              locale: navigator.language,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              platform: "web",
+              displayMode: "inline",
+              availableDisplayModes: ["inline", "fullscreen"],
+              containerDimensions: { maxWidth: iframeRef.current?.clientWidth || 960, maxHeight: 1200 },
+            },
+          });
+          return;
+        }
+        if (!appInitializedRef.current) {
+          throw Object.assign(new Error("MCP App View must initialize before requesting host capabilities"), { code: -32002 });
+        }
+        if (request.method === "tools/call") {
+          const params = request.params ?? {};
+          const name = String(params.name ?? "");
+          const tool = tools.find((candidate) => candidate.name === name);
+          if (!tool || !isAppVisibleTool(tool)) {
+            throw Object.assign(new Error(`Tool ${name || "<missing>"} is not app-visible`), { code: -32601 });
+          }
+          const args = (params.arguments ?? {}) as Record<string, unknown>;
+          postToView({ jsonrpc: "2.0", method: "ui/notifications/tool-input", params: { arguments: args } });
+          const result = await callTool(name, args);
+          respond(request.id, result);
+          return;
+        }
+        if (request.method === "resources/read") {
+          respond(request.id, await client.request("resources/read", request.params ?? {}));
+          return;
+        }
+        if (request.method === "ping") {
+          respond(request.id, {});
+          return;
+        }
+        if (request.method === "ui/open-link") {
+          const url = new URL(String(request.params?.url ?? ""));
+          if (!['http:', 'https:'].includes(url.protocol)) throw new Error("Only HTTP(S) links are allowed");
+          if (!window.confirm(`Open external link?\n\n${url.origin}`)) throw new Error("User denied external link");
+          window.open(url.toString(), "_blank", "noopener,noreferrer");
+          respond(request.id, {});
+          return;
+        }
+        if (request.method === "ui/request-display-mode") {
+          const requested = String(request.params?.mode ?? "inline");
+          respond(request.id, { mode: requested === "fullscreen" ? "fullscreen" : "inline" });
+          return;
+        }
+        throw Object.assign(new Error(`Unsupported MCP Apps method: ${request.method}`), { code: -32601 });
       } catch (error) {
-        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id: request.id, error: { code: -32000, message: error instanceof Error ? error.message : "Tool 调用失败" } }, "*");
+        const code = typeof (error as { code?: unknown })?.code === "number" ? Number((error as { code: number }).code) : -32000;
+        respond(request.id, undefined, { code, message: error instanceof Error ? error.message : "MCP Apps request failed" });
       }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [callTool]);
+  }, [callTool, client, tools, uiHtml, uiMeta]);
+
 
   async function sendCodexFallback(text: string) {
     setBusy(true);
@@ -586,28 +618,6 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
         void callTool(selected.name, formValue);
       }}>调用</button></div>
     </section>}
-    {elicitation && <section className="ma-card">
-      <h2>插件请求补充信息</h2>
-      <p>{elicitation.message}</p>
-      <SchemaField schema={elicitation.schema} value={elicitation.value} required onChange={(value) => setElicitation({ ...elicitation, value: value as Record<string, unknown> })} />
-      <div className="mcp-form-actions">
-        <button className="ma-btn ma-btn-secondary" onClick={() => {
-          const selected = elicitation;
-          setElicitation(null);
-          void client.respond(selected.id, { action: "cancel" });
-        }}>取消</button>
-        <button className="ma-btn" onClick={() => {
-          const errors = validateSchemaValue(elicitation.schema, elicitation.value);
-          if (errors.length > 0) {
-            setOutput(errors.join("\n"));
-            return;
-          }
-          const selected = elicitation;
-          setElicitation(null);
-          void client.respond(selected.id, { action: "accept", content: selected.value });
-        }}>提交</button>
-      </div>
-    </section>}
     <section className="ma-card mcp-timeline" aria-live="polite">
       {timeline.length === 0 ? <p className="ma-header-subtitle">此小程序没有设置欢迎内容，可以直接开始对话。</p> : timeline.map((item) => <article key={item.id} className={`mcp-message mcp-message-${item.role}`}>
         <span className="mcp-message-role">{item.role === "user" ? "你" : item.role === "error" ? "MCP 错误" : item.role === "tool" ? "操作" : title}</span>
@@ -619,8 +629,50 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     </section>
     {article && <section className="ma-card mcp-article-view"><button className="mcp-link-button" onClick={() => setArticle(null)}>返回对话</button><h2>{article.item.title}</h2><p>{article.markdown}</p></section>}
     <details className="ma-card"><summary>MCP 运行状态</summary><pre className="ma-log-box">{output}</pre><button className="mcp-link-button" onClick={() => void resetOnboarding()}>重置新手引导</button></details>
-    {uiHtml ? <iframe ref={iframeRef} className="mcp-ui-frame" sandbox="allow-scripts" srcDoc={uiHtml} title={`${title} MCP UI`} /> : <section className="ma-card">MCP UI 加载失败时仍可使用上方命令。</section>}
+    {uiHtml ? <iframe ref={iframeRef} className="mcp-ui-frame" sandbox="allow-scripts" src={sandboxProxyDataUrl()} title={`${title} MCP App`} /> : <section className="ma-card">MCP App UI unavailable; use the Tool command surface above.</section>}
   </main>;
+}
+
+function isAppVisibleTool(tool: McpTool): boolean {
+  const visibility = tool._meta?.["ui/visibility"];
+  return visibility === undefined || (Array.isArray(visibility) && visibility.includes("app"));
+}
+
+function applyMcpAppCsp(html: string, meta: Record<string, unknown>): string {
+  const uiCsp = (meta.csp ?? {}) as Record<string, unknown>;
+  const origins = (key: string) => Array.isArray(uiCsp[key])
+    ? (uiCsp[key] as unknown[]).map(String).filter((value) => /^https:\/\//.test(value))
+    : [];
+  const connect = origins("connectDomains");
+  const resources = origins("resourceDomains");
+  const frames = origins("frameDomains");
+  const bases = origins("baseUriDomains");
+  const csp = [
+    "default-src 'none'",
+    `script-src 'self' 'unsafe-inline' ${resources.join(" ")}`.trim(),
+    `style-src 'self' 'unsafe-inline' ${resources.join(" ")}`.trim(),
+    `img-src 'self' data: ${resources.join(" ")}`.trim(),
+    `font-src 'self' data: ${resources.join(" ")}`.trim(),
+    `media-src 'self' data: ${resources.join(" ")}`.trim(),
+    connect.length ? `connect-src ${connect.join(" ")}` : "connect-src 'none'",
+    frames.length ? `frame-src ${frames.join(" ")}` : "frame-src 'none'",
+    bases.length ? `base-uri ${bases.join(" ")}` : "base-uri 'self'",
+    "object-src 'none'",
+    "form-action 'none'",
+  ].join("; ");
+  const stripped = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "");
+  const tag = `<meta http-equiv="Content-Security-Policy" content="${csp.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">`;
+  return /<head(?:\s[^>]*)?>/i.test(stripped)
+    ? stripped.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}${tag}`)
+    : `<!doctype html><html><head>${tag}</head><body>${stripped}</body></html>`;
+}
+
+let cachedSandboxProxyUrl = "";
+function sandboxProxyDataUrl(): string {
+  if (cachedSandboxProxyUrl) return cachedSandboxProxyUrl;
+  const proxy = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; frame-src 'self' data:; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'"></head><body style="margin:0"><script>(()=>{let view=null;const send=m=>parent.postMessage(m,'*');addEventListener('message',event=>{if(event.source===parent){const m=event.data;if(m?.method==='ui/notifications/sandbox-resource-ready'){view=document.createElement('iframe');view.setAttribute('sandbox','allow-scripts');view.style.cssText='border:0;width:100%;min-height:160px';view.srcdoc=String(m.params?.html||'');document.body.replaceChildren(view);return}if(view?.contentWindow)view.contentWindow.postMessage(m,'*');return}if(view&&event.source===view.contentWindow&&event.origin==='null')send(event.data)});send({jsonrpc:'2.0',method:'ui/notifications/sandbox-proxy-ready',params:{}})})()<\/script></body></html>`;
+  cachedSandboxProxyUrl = `data:text/html;charset=utf-8,${encodeURIComponent(proxy)}`;
+  return cachedSandboxProxyUrl;
 }
 
 function mcpText(result: McpToolResult): string {

@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import { z } from 'zod';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
+import * as z from 'zod/v4';
 
 const APP_MIME = 'text/html;profile=mcp-app';
 const VERSION = '1.0.0';
@@ -84,7 +83,6 @@ function app(id, title, description) {
 }
 
 const appById = new Map(officialMcpApps.map((item) => [item.id, item]));
-const httpSessions = new Map();
 const stateByScope = new Map();
 
 function stateFor(scopeId) {
@@ -112,11 +110,11 @@ function result(text, structuredContent = {}) {
   };
 }
 
-async function progress(extra, progressValue, total, message) {
-  if (extra.signal.aborted) throw extra.signal.reason ?? new Error('MCP Tool call cancelled');
-  const progressToken = extra._meta?.progressToken;
+async function progress(ctx, progressValue, total, message) {
+  if (ctx.mcpReq.signal.aborted) throw ctx.mcpReq.signal.reason ?? new Error('MCP Tool call cancelled');
+  const progressToken = ctx.mcpReq._meta?.progressToken;
   if (progressToken === undefined) return;
-  await extra.sendNotification({
+  await ctx.mcpReq.notify({
     method: 'notifications/progress',
     params: { progressToken, progress: progressValue, total, message },
   });
@@ -224,12 +222,12 @@ function registerHome(server, appInfo, actionNames) {
     {
       title: '打开首页',
       description: `加载${appInfo.title}首页。`,
-      inputSchema: {
+      inputSchema: z.object({
         surface: z.enum(['cli', 'desktop', 'mobile', 'web']).optional(),
         locale: z.string().optional(),
         cursor: z.string().optional(),
         limit: z.number().int().min(1).max(10).optional(),
-      },
+      }),
       annotations: readOnly,
       _meta: { 'ui/resourceUri': uri },
     },
@@ -258,12 +256,12 @@ function registerGlobalDharma(server, appInfo, state) {
   registerHome(server, appInfo, tools);
   server.registerTool('chat', {
     description: '处理全球法布施对话与快捷回复。',
-    inputSchema: {
+    inputSchema: z.object({
       message: z.string().min(1).max(20_000),
       surface: z.string().optional(),
       locale: z.string().optional(),
       actionId: z.string().nullable().optional(),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ message }) => globalDharmaChat(state.globalDharma, message.trim()));
   server.registerTool('start', { description: '启动全球法布施服务。', annotations: writeExternal }, async () => {
@@ -286,7 +284,7 @@ function registerGlobalDharma(server, appInfo, state) {
   server.registerTool('status', { description: '读取服务状态。', annotations: readOnly }, async () => result('已读取全球法布施状态。', { ...state.globalDharma, logs: undefined }));
   server.registerTool('send', {
     description: '发送一条法布施内容。',
-    inputSchema: { content: z.string().min(1).max(20_000) },
+    inputSchema: z.object({ content: z.string().min(1).max(20_000) }),
     annotations: writeExternal,
   }, async ({ content }, extra) => {
     await progress(extra, 0, 1, '准备发送');
@@ -297,12 +295,12 @@ function registerGlobalDharma(server, appInfo, state) {
   });
   server.registerTool('logs', {
     description: '读取最近日志。',
-    inputSchema: { limit: z.number().int().min(1).max(200).default(50) },
+    inputSchema: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
     annotations: readOnly,
   }, async ({ limit }) => result('已读取日志。', { entries: state.globalDharma.logs.slice(-limit) }));
   server.registerTool('validate_config', {
     description: '验证法布施配置，不执行写入。',
-    inputSchema: { config: z.record(z.unknown()) },
+    inputSchema: z.object({ config: z.record(z.unknown()) }),
     annotations: readOnly,
   }, async ({ config }) => result('配置有效。', { valid: true, keys: Object.keys(config) }));
   server.registerTool('deploy_latest', { description: '部署最新已验证版本。', annotations: writeExternal }, async (extra) => {
@@ -369,7 +367,7 @@ function registerFlashcards(server, appInfo, state) {
   registerHome(server, appInfo, tools);
   server.registerTool('create_deck', {
     description: '创建记忆卡牌组。',
-    inputSchema: { title: z.string().min(1).max(120), cards: z.array(z.object({ front: z.string(), back: z.string() })).default([]) },
+    inputSchema: z.object({ title: z.string().min(1).max(120), cards: z.array(z.object({ front: z.string(), back: z.string() })).default([]) }),
     annotations: writeLocal,
   }, async ({ title, cards }) => {
     const id = crypto.randomUUID();
@@ -377,15 +375,15 @@ function registerFlashcards(server, appInfo, state) {
     return result(`已创建牌组「${title}」。`, { id, title, cardCount: cards.length });
   });
   server.registerTool('list_decks', { description: '列出所有牌组。', annotations: readOnly }, async () => result('已列出牌组。', { decks: [...state.decks.values()].map(({ id, title, cards }) => ({ id, title, cardCount: cards.length })) }));
-  server.registerTool('open_deck', { description: '打开一个牌组。', inputSchema: { deck_id: z.string() }, annotations: readOnly }, async ({ deck_id }) => result('已打开牌组。', { deck: state.decks.get(deck_id) ?? null }));
-  server.registerTool('review_next', { description: '获取下一张复习卡。', inputSchema: { deck_id: z.string() }, annotations: readOnly }, async ({ deck_id }) => {
+  server.registerTool('open_deck', { description: '打开一个牌组。', inputSchema: z.object({ deck_id: z.string() }), annotations: readOnly }, async ({ deck_id }) => result('已打开牌组。', { deck: state.decks.get(deck_id) ?? null }));
+  server.registerTool('review_next', { description: '获取下一张复习卡。', inputSchema: z.object({ deck_id: z.string() }), annotations: readOnly }, async ({ deck_id }) => {
     const deck = state.decks.get(deck_id);
     const card = deck?.cards[deck.cursor % Math.max(deck.cards.length, 1)] ?? null;
     return result(card ? '下一张卡片已就绪。' : '牌组中没有卡片。', { card });
   });
   server.registerTool('submit_review', {
     description: '提交本次复习结果。',
-    inputSchema: { deck_id: z.string(), rating: z.enum(['again', 'hard', 'good', 'easy']) },
+    inputSchema: z.object({ deck_id: z.string(), rating: z.enum(['again', 'hard', 'good', 'easy']) }),
     annotations: writeLocal,
   }, async ({ deck_id, rating }) => {
     const deck = state.decks.get(deck_id);
@@ -401,7 +399,7 @@ function registerPlatformPublish(server, appInfo, state) {
   registerHome(server, appInfo, tools);
   server.registerTool('create_draft', {
     description: '创建平台发布草稿。',
-    inputSchema: { title: z.string().min(1).max(120), content: z.string().default('') },
+    inputSchema: z.object({ title: z.string().min(1).max(120), content: z.string().default('') }),
     annotations: writeLocal,
   }, async ({ title, content }) => {
     const id = crypto.randomUUID();
@@ -410,7 +408,7 @@ function registerPlatformPublish(server, appInfo, state) {
   });
   server.registerTool('save_draft', {
     description: '保存草稿内容。',
-    inputSchema: { draft_id: z.string(), title: z.string().optional(), content: z.string().optional() },
+    inputSchema: z.object({ draft_id: z.string(), title: z.string().optional(), content: z.string().optional() }),
     annotations: writeLocal,
   }, async ({ draft_id, title, content }) => {
     const draft = state.drafts.get(draft_id);
@@ -420,10 +418,10 @@ function registerPlatformPublish(server, appInfo, state) {
     draft.updatedAt = new Date().toISOString();
     return result('草稿已保存。', draft);
   });
-  server.registerTool('open_draft', { description: '打开草稿。', inputSchema: { draft_id: z.string() }, annotations: readOnly }, async ({ draft_id }) => result('已读取草稿。', { draft: state.drafts.get(draft_id) ?? null }));
+  server.registerTool('open_draft', { description: '打开草稿。', inputSchema: z.object({ draft_id: z.string() }), annotations: readOnly }, async ({ draft_id }) => result('已读取草稿。', { draft: state.drafts.get(draft_id) ?? null }));
   server.registerTool('publish', {
     description: '将草稿发布到指定平台。',
-    inputSchema: { draft_id: z.string(), platforms: z.array(z.string()).min(1) },
+    inputSchema: z.object({ draft_id: z.string(), platforms: z.array(z.string()).min(1) }),
     annotations: writeExternal,
   }, async ({ draft_id, platforms }, extra) => {
     await progress(extra, 0, platforms.length, '准备发布');
@@ -434,7 +432,7 @@ function registerPlatformPublish(server, appInfo, state) {
     await progress(extra, platforms.length, platforms.length, '发布任务已提交');
     return result('发布任务已提交。', { draftId: draft_id, platforms, status: draft.status });
   });
-  server.registerTool('status', { description: '读取草稿或发布状态。', inputSchema: { draft_id: z.string() }, annotations: readOnly }, async ({ draft_id }) => result('已读取发布状态。', { draft: state.drafts.get(draft_id) ?? null }));
+  server.registerTool('status', { description: '读取草稿或发布状态。', inputSchema: z.object({ draft_id: z.string() }), annotations: readOnly }, async ({ draft_id }) => result('已读取发布状态。', { draft: state.drafts.get(draft_id) ?? null }));
 }
 
 function registerHermes(server, appInfo, state) {
@@ -451,7 +449,7 @@ function registerHermes(server, appInfo, state) {
     return result(state.hermes.running ? 'Hermes 已启动。' : '请先安装 Hermes。', { ...state.hermes });
   });
   server.registerTool('status', { description: '读取 Hermes 状态。', annotations: readOnly }, async () => result('已读取 Hermes 状态。', { ...state.hermes }));
-  server.registerTool('chat', { description: '向 Hermes 发送消息。', inputSchema: { message: z.string().min(1).max(10_000) }, annotations: writeExternal }, async ({ message }) => {
+  server.registerTool('chat', { description: '向 Hermes 发送消息。', inputSchema: z.object({ message: z.string().min(1).max(10_000) }), annotations: writeExternal }, async ({ message }) => {
     state.hermes.messages += 1;
     return result('Hermes 已接收消息。', { messageId: crypto.randomUUID(), length: message.length });
   });
@@ -501,7 +499,7 @@ function pluginBundle(name, description, profile = 'portable') {
       version: '0.1.0',
       type: 'module',
       scripts: { test: 'node --test test/*.test.js' },
-      dependencies: { '@modelcontextprotocol/sdk': '^1.0.0', zod: '^3.23.0' },
+      dependencies: { '@modelcontextprotocol/server': '2.0.0', zod: '^4.1.13' },
     }, null, 2)}\n`,
     'server/index.js': generatedPluginServerSource(normalized, description),
     'ui/home.html': generatedPluginUi(normalized, description),
@@ -521,24 +519,28 @@ function pluginBundle(name, description, profile = 'portable') {
 
 function generatedPluginServerSource(name, description) {
   return `import fs from 'node:fs/promises';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
-const server = new McpServer({ name: ${JSON.stringify(name)}, version: '0.1.0' });
-const uri = 'ui://${name}/home-v1.html';
-server.registerResource('home-ui', uri, { mimeType: 'text/html;profile=mcp-app' }, async () => ({
-  contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: await fs.readFile(new URL('../ui/home.html', import.meta.url), 'utf8') }],
-}));
-server.registerTool('home', { description: ${JSON.stringify(description)}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }, _meta: { 'ui/resourceUri': uri } }, async () => ({
-  content: [{ type: 'text', text: ${JSON.stringify(`${name} 已就绪。`)} }],
-  _meta: { 'ui/resourceUri': uri },
-}));
-await server.connect(new StdioServerTransport());
+function buildServer() {
+  const server = new McpServer({ name: ${JSON.stringify(name)}, version: '0.1.0' });
+  const uri = 'ui://${name}/home-v1.html';
+  server.registerResource('home-ui', uri, { mimeType: 'text/html;profile=mcp-app' }, async () => ({
+    contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: await fs.readFile(new URL('../ui/home.html', import.meta.url), 'utf8') }],
+  }));
+  server.registerTool('home', { description: ${JSON.stringify(description)}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }, _meta: { 'ui/resourceUri': uri, 'ui/visibility': ['app', 'model'] } }, async () => ({
+    content: [{ type: 'text', text: ${JSON.stringify(`${name} 已就绪。`)} }],
+    _meta: { 'ui/resourceUri': uri },
+  }));
+  return server;
+}
+
+await serveStdio(() => buildServer(), { legacy: 'reject' });
 `;
 }
 
 function generatedPluginUi(name, description) {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>${escapeHtml(name)}</title></head><body><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><button id="home">/home</button><pre id="out"></pre><script>let id=0;const pending=new Map();addEventListener('message',event=>{const message=event.data;if(!message||message.jsonrpc!=='2.0'||message.id===undefined)return;const done=pending.get(message.id);if(done){pending.delete(message.id);done(message)}});document.querySelector('#home').onclick=()=>new Promise(resolve=>{const requestId=++id;pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name:'home',arguments:{}}},'*')}).then(result=>document.querySelector('#out').textContent=JSON.stringify(result,null,2));</script></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>${escapeHtml(name)}</title></head><body><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><button id="home" disabled>/home</button><pre id="out"></pre><script>const APPS_VERSION='2026-01-26';let id=0;let initialized=false;const pending=new Map();function post(message){parent.postMessage(message,'*')}function request(method,params={}){return new Promise((resolve,reject)=>{const requestId=++id;pending.set(requestId,{resolve,reject});post({jsonrpc:'2.0',id:requestId,method,params})})}addEventListener('message',event=>{if(event.source!==parent)return;const message=event.data;if(!message||message.jsonrpc!=='2.0')return;if(message.id!==undefined){const waiter=pending.get(message.id);if(!waiter)return;pending.delete(message.id);if(message.error)waiter.reject(new Error(message.error.message||'MCP Apps request failed'));else waiter.resolve(message.result);return}if(message.method==='ui/resource-teardown'){initialized=false;document.querySelector('#home').disabled=true}});async function initialize(){const result=await request('ui/initialize',{protocolVersion:APPS_VERSION,appInfo:{name:${JSON.stringify(name)},version:'0.1.0'},appCapabilities:{tools:{call:true},notifications:{toolResult:true}}});if(result.protocolVersion!==APPS_VERSION)throw new Error('Unsupported MCP Apps protocol');initialized=true;document.querySelector('#home').disabled=false;post({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}})}document.querySelector('#home').onclick=async()=>{if(!initialized)return;const result=await request('tools/call',{name:'home',arguments:{}});document.querySelector('#out').textContent=JSON.stringify(result,null,2)};initialize().catch(error=>document.querySelector('#out').textContent=String(error));</script></body></html>`;
 }
 
 function generatedPluginTestSource(name) {
@@ -550,11 +552,11 @@ function registerBotFather(server, appInfo, state) {
   registerHome(server, appInfo, tools);
   server.registerTool('create_plugin', {
     description: '创建完整可移植 Codex 插件包。',
-    inputSchema: {
+    inputSchema: z.object({
       name: z.string().min(1).max(64),
       description: z.string().min(1).max(500),
       profile: z.enum(['portable', 'desktop-approval']).default('portable'),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ name, description, profile }) => {
     const id = crypto.randomUUID();
@@ -564,7 +566,7 @@ function registerBotFather(server, appInfo, state) {
   });
   server.registerTool('validate_plugin', {
     description: '验证插件清单、MCP Server、MCP UI、测试和部署文件。',
-    inputSchema: { plugin_id: z.string() },
+    inputSchema: z.object({ plugin_id: z.string() }),
     annotations: readOnly,
   }, async ({ plugin_id }) => {
     const plugin = state.plugins.get(plugin_id);
@@ -582,23 +584,23 @@ function registerBotFather(server, appInfo, state) {
     ['install_plugin', 'installed', writeLocal],
     ['publish_plugin', 'publishing', writeExternal],
   ]) {
-    server.registerTool(name, { description: `${name.replaceAll('_', ' ')}。`, inputSchema: { plugin_id: z.string() }, annotations: annotation }, async ({ plugin_id }) => {
+    server.registerTool(name, { description: `${name.replaceAll('_', ' ')}。`, inputSchema: z.object({ plugin_id: z.string() }), annotations: annotation }, async ({ plugin_id }) => {
       const plugin = state.plugins.get(plugin_id);
       if (!plugin) return { ...result('找不到插件。'), isError: true };
       plugin.status = nextStatus;
       return result(`插件状态已更新为 ${nextStatus}。`, { pluginId: plugin_id, status: nextStatus });
     });
   }
-  server.registerTool('deployment_status', { description: '读取插件部署状态。', inputSchema: { plugin_id: z.string() }, annotations: readOnly }, async ({ plugin_id }) => result('已读取部署状态。', state.plugins.get(plugin_id) ?? { pluginId: plugin_id, status: 'not_found' }));
+  server.registerTool('deployment_status', { description: '读取插件部署状态。', inputSchema: z.object({ plugin_id: z.string() }), annotations: readOnly }, async ({ plugin_id }) => result('已读取部署状态。', state.plugins.get(plugin_id) ?? { pluginId: plugin_id, status: 'not_found' }));
 }
 
 function registerAssistant(server, appInfo) {
   const tools = ['home', 'help', 'list_plugins', 'plugin_status', 'diagnose_plugin'];
   registerHome(server, appInfo, tools);
-  server.registerTool('help', { description: '读取大乘小程序使用帮助。', inputSchema: { topic: z.string().default('小程序') }, annotations: readOnly }, async ({ topic }) => result(`「${topic}」通过 MCP Tools 与 MCP UI 工作；输入 / 可查看当前插件命令。`, { topic }));
+  server.registerTool('help', { description: '读取大乘小程序使用帮助。', inputSchema: z.object({ topic: z.string().default('小程序') }), annotations: readOnly }, async ({ topic }) => result(`「${topic}」通过 MCP Tools 与 MCP UI 工作；输入 / 可查看当前插件命令。`, { topic }));
   server.registerTool('list_plugins', { description: '列出官方 MCP 插件。', annotations: readOnly }, async () => result('已列出官方插件。', { plugins: officialMcpApps }));
-  server.registerTool('plugin_status', { description: '读取插件可用状态。', inputSchema: { plugin_id: z.string() }, annotations: readOnly }, async ({ plugin_id }) => result('已读取插件状态。', { pluginId: plugin_id, available: officialMcpApps.some((item) => item.pluginId === plugin_id || item.id === plugin_id) }));
-  server.registerTool('diagnose_plugin', { description: '诊断插件 MCP 生命周期、Tools 和 UI Resource。', inputSchema: { plugin_id: z.string() }, annotations: readOnly }, async ({ plugin_id }) => result('插件诊断完成。', { pluginId: plugin_id, checks: { initialize: 'ok', toolsList: 'ok', home: 'ok', uiResource: 'ok', secretExposure: 'ok' } }));
+  server.registerTool('plugin_status', { description: '读取插件可用状态。', inputSchema: z.object({ plugin_id: z.string() }), annotations: readOnly }, async ({ plugin_id }) => result('已读取插件状态。', { pluginId: plugin_id, available: officialMcpApps.some((item) => item.pluginId === plugin_id || item.id === plugin_id) }));
+  server.registerTool('diagnose_plugin', { description: '诊断插件 MCP 生命周期、Tools 和 UI Resource。', inputSchema: z.object({ plugin_id: z.string() }), annotations: readOnly }, async ({ plugin_id }) => result('插件诊断完成。', { pluginId: plugin_id, checks: { initialize: 'ok', toolsList: 'ok', home: 'ok', uiResource: 'ok', secretExposure: 'ok' } }));
 }
 
 function registerChatGptAutoConfirm(server, appInfo) {
@@ -651,7 +653,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   });
   server.registerTool('start', {
     description: '启动 ChatGPT 授权卡监听；可用 approveAll 自动确认非敏感卡，也可使用精确规则。',
-    inputSchema: {
+    inputSchema: z.object({
       rules: z.array(rule).max(20).default([]),
       approveAll: z.boolean().default(true),
       chatUrls: z.array(z.string().url().refine(
@@ -659,7 +661,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
         '必须是 ChatGPT 对话地址',
       )).max(20).default([]),
       intervalMs: z.number().int().min(400).max(5000).default(750),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ rules, approveAll, chatUrls, intervalMs }) => {
     // Re-parse at the execution boundary. Some MCP clients only apply the
@@ -689,7 +691,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   }, async () => hostRequest('desktop.chatgpt-approvals.scan-once', {}, 'required'));
   server.registerTool('relaunch_and_confirm', {
     description: '重新启动 ChatGPT 调试通道并立即执行授权卡扫描。',
-    inputSchema: { approveAll: z.boolean().default(true) },
+    inputSchema: z.object({ approveAll: z.boolean().default(true) }),
     annotations: writeLocal,
   }, async ({ approveAll }) => hostRequest(
     'desktop.chatgpt-approvals.relaunch-and-confirm',
@@ -698,7 +700,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('audit_log', {
     description: '读取仅保存在本机的最近审计记录。',
-    inputSchema: { limit: z.number().int().min(1).max(100).default(20) },
+    inputSchema: z.object({ limit: z.number().int().min(1).max(100).default(20) }),
     annotations: readOnly,
   }, async ({ limit }) => hostRequest(
     'desktop.chatgpt-approvals.audit',
@@ -711,7 +713,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   }, async () => hostRequest('desktop.chatgpt-approvals.diagnose', {}, 'none'));
   server.registerTool('send_and_watch', {
     description: '在隐藏的第二个 ChatGPT.app 实例的 Chat 页面中选择应用、发送指令、自动确认授权卡并等待最终回复；不使用当前 Work/worker 页面回退。',
-    inputSchema: {
+    inputSchema: z.object({
       message: z.string().trim().min(1).max(10000),
       connector: z.string().trim().min(1).max(256).optional(),
       conversationId: z.string().regex(/^[A-Za-z0-9-]{8,128}$/).optional(),
@@ -729,7 +731,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
       resumeExisting: z.boolean().default(false),
       approveAll: z.boolean().default(true),
       pollIntervalMs: z.number().int().min(200).max(5000).default(500),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ message, connector, conversationId, chatUrl, newChat, timeout, stagnationTimeout, maxRecoveryAttempts, autoContinueIncomplete, maxTaskContinuations, continuationMessage, resumeExisting, approveAll, pollIntervalMs }) => hostRequest(
     'desktop.chatgpt-approvals.send-and-watch',
@@ -738,14 +740,14 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('add_connector', {
     description: '在 ChatGPT 当前对话的 Apps 菜单中选择指定应用。',
-    inputSchema: {
+    inputSchema: z.object({
       connector: z.string().trim().min(1).max(256),
       conversationId: z.string().regex(/^[A-Za-z0-9-]{8,128}$/).optional(),
       chatUrl: z.string().url().refine(
         (value) => /^https:\/\/chatgpt\.com\/(?:$|c\/)/.test(value),
         '必须是 ChatGPT 对话地址',
       ).optional(),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ connector, conversationId, chatUrl }) => hostRequest(
     'desktop.chatgpt-approvals.add-connector',
@@ -754,13 +756,13 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('get_reply', {
     description: '读取 ChatGPT 最新回复、等待状态和流式状态。',
-    inputSchema: {
+    inputSchema: z.object({
       conversationId: z.string().regex(/^[A-Za-z0-9-]{8,128}$/).optional(),
       chatUrl: z.string().url().refine(
         (value) => /^https:\/\/chatgpt\.com\/(?:$|c\/)/.test(value),
         '必须是 ChatGPT 对话地址',
       ).optional(),
-    },
+    }),
     annotations: readOnly,
   }, async ({ conversationId, chatUrl }) => hostRequest(
     'desktop.chatgpt-approvals.get-reply',
@@ -769,13 +771,13 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('chat_status', {
     description: '读取 ChatGPT 当前对话、已选应用和回复状态。',
-    inputSchema: {
+    inputSchema: z.object({
       conversationId: z.string().regex(/^[A-Za-z0-9-]{8,128}$/).optional(),
       chatUrl: z.string().url().refine(
         (value) => /^https:\/\/chatgpt\.com\/(?:$|c\/)/.test(value),
         '必须是 ChatGPT 对话地址',
       ).optional(),
-    },
+    }),
     annotations: readOnly,
   }, async ({ conversationId, chatUrl }) => hostRequest(
     'desktop.chatgpt-approvals.chat-status',
@@ -796,12 +798,12 @@ function registerChatGptAutoConfirm(server, appInfo) {
   }));
   server.registerTool('enqueue_tasks', {
     description: '把一个或多个任务加入本地持久队列；无依赖且资源锁不冲突的任务可以并发。',
-    inputSchema: {
+    inputSchema: z.object({
       tasks: z.array(queuedTask).min(1).max(50),
       maxConcurrent: z.number().int().min(1).max(4).default(2),
       reviewGate: z.boolean().default(true),
       start: z.boolean().default(true),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ tasks, maxConcurrent, reviewGate, start }) => hostRequest(
     'desktop.chatgpt-approvals.queue-enqueue',
@@ -810,11 +812,11 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('start_queue', {
     description: '启动或恢复持久任务队列；可等待首个需要验收或处理的任务并把结果返回当前 Work。',
-    inputSchema: {
+    inputSchema: z.object({
       maxConcurrent: z.number().int().min(1).max(4).optional(),
       waitForReview: z.boolean().default(true),
       waitTimeout: z.number().int().min(1).max(7200).default(3600),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ maxConcurrent, waitForReview, waitTimeout }) => hostRequest(
     'desktop.chatgpt-approvals.queue-start',
@@ -827,7 +829,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   }, async () => hostRequest('desktop.chatgpt-approvals.queue-status', {}, 'none'));
   server.registerTool('update_task', {
     description: '更新已有任务的 revision 和规范快照；不停止长期 Action，最新要求在下一轮新 Chat 生效。',
-    inputSchema: {
+    inputSchema: z.object({
       taskId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/),
       revision: z.number().int().min(1),
       expectedRevision: z.number().int().min(1).optional(),
@@ -838,7 +840,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
       specSnapshot: z.string().max(60000).optional(),
       specDigest: z.string().max(80).optional(),
       applyMode: z.literal('next_chat').default('next_chat'),
-    },
+    }),
     annotations: writeLocal,
   }, async (params) => hostRequest(
     'desktop.chatgpt-approvals.queue-update',
@@ -847,7 +849,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('wait_for_review', {
     description: '等待队列出现已完成待验收、阻塞或失败的任务，并把总结和 Chat 会话引用返回当前 Work。',
-    inputSchema: { timeout: z.number().int().min(1).max(7200).default(3600) },
+    inputSchema: z.object({ timeout: z.number().int().min(1).max(7200).default(3600) }),
     annotations: readOnly,
   }, async ({ timeout }) => hostRequest(
     'desktop.chatgpt-approvals.queue-wait-review',
@@ -856,11 +858,11 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('review_task', {
     description: '提交验收结论；通过后自动释放后续任务，未通过则带验收意见重新排队。',
-    inputSchema: {
+    inputSchema: z.object({
       taskId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/),
       accepted: z.boolean(),
       feedback: z.string().trim().max(4000).default(''),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ taskId, accepted, feedback }) => hostRequest(
     'desktop.chatgpt-approvals.queue-review',
@@ -877,10 +879,10 @@ function registerChatGptAutoConfirm(server, appInfo) {
   }, async () => hostRequest('desktop.chatgpt-approvals.queue-resume', {}, 'required'));
   server.registerTool('retry_task', {
     description: '保留任务、工作区和落盘进度，立即新建 Chat 从中断处继续。',
-    inputSchema: {
+    inputSchema: z.object({
       taskId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/),
       feedback: z.string().trim().max(4000).default(''),
-    },
+    }),
     annotations: writeLocal,
   }, async ({ taskId, feedback }) => hostRequest(
     'desktop.chatgpt-approvals.queue-retry',
@@ -889,7 +891,7 @@ function registerChatGptAutoConfirm(server, appInfo) {
   ));
   server.registerTool('cancel_task', {
     description: '取消一个排队中或运行中的任务，并关闭它的隐藏 Chat 页面。',
-    inputSchema: { taskId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/) },
+    inputSchema: z.object({ taskId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/) }),
     annotations: destructive,
   }, async ({ taskId }) => hostRequest(
     'desktop.chatgpt-approvals.queue-cancel',
@@ -919,95 +921,36 @@ export async function handleOfficialMcpRequest(id, req, res, scopeId = 'anonymou
     return;
   }
 
-  const suppliedSessionId = req.headers['mcp-session-id'];
-  const sessionKey = suppliedSessionId ? `${id}:${suppliedSessionId}` : '';
-  let session = sessionKey ? httpSessions.get(sessionKey) : null;
-
-  if (session && session.scopeId !== scopeId) {
-    res.status(403).json({
+  if (req.method !== 'POST') {
+    res.set('Allow', 'POST');
+    res.status(405).json({
       jsonrpc: '2.0',
       id: req.body?.id ?? null,
-      error: { code: -32001, message: 'MCP session belongs to a different account scope' },
+      error: { code: -32004, message: 'Official MCP Apps use stateless POST only' },
     });
     return;
   }
 
-  if (!session && req.method === 'POST' && !suppliedSessionId && isInitializeRequest(req.body)) {
-    const server = createOfficialMcpServer(id, scopeId);
-    let transport;
-    transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      enableJsonResponse: true,
-      eventStore: new MemoryEventStore(),
-      onsessioninitialized: (newSessionId) => {
-        const key = `${id}:${newSessionId}`;
-        session = { server, transport, scopeId, touchedAt: Date.now() };
-        httpSessions.set(key, session);
-      },
-    });
-    transport.onclose = () => {
-      if (transport.sessionId) httpSessions.delete(`${id}:${transport.sessionId}`);
-    };
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-    return;
-  }
-
-  if (!session) {
-    res.status(suppliedSessionId ? 404 : 400).json({
+  if (req.headers['mcp-session-id'] || req.headers['last-event-id']) {
+    res.status(400).json({
       jsonrpc: '2.0',
       id: req.body?.id ?? null,
-      error: {
-        code: -32000,
-        message: suppliedSessionId
-          ? 'MCP session not found or does not belong to this plugin'
-          : 'Initialize the MCP session before making this request',
-      },
+      error: { code: -32005, message: 'Legacy MCP sessions and event replay are not supported' },
     });
     return;
   }
 
-  session.touchedAt = Date.now();
-  const transport = session.transport;
-  await transport.handleRequest(req, res, req.body);
-}
-
-class MemoryEventStore {
-  constructor() {
-    this.events = new Map();
-  }
-
-  async storeEvent(streamId, message) {
-    const eventId = `${streamId}_${Date.now()}_${crypto.randomUUID()}`;
-    this.events.set(eventId, { streamId, message });
-    return eventId;
-  }
-
-  async replayEventsAfter(lastEventId, { send }) {
-    const previous = this.events.get(lastEventId);
-    if (!previous) return '';
-    let replay = false;
-    for (const [eventId, event] of this.events) {
-      if (event.streamId !== previous.streamId) continue;
-      if (eventId === lastEventId) {
-        replay = true;
-        continue;
-      }
-      if (replay) await send(eventId, event.message);
-    }
-    return previous.streamId;
+  const handler = createMcpHandler(
+    () => createOfficialMcpServer(id, scopeId),
+    { legacy: 'reject', responseMode: 'json' },
+  );
+  const nodeHandler = toNodeHandler(handler);
+  try {
+    await nodeHandler(req, res, req.body);
+  } finally {
+    await handler.close().catch(() => undefined);
   }
 }
-
-const sessionReaper = setInterval(() => {
-  const cutoff = Date.now() - 30 * 60_000;
-  for (const [key, session] of httpSessions) {
-    if (session.touchedAt >= cutoff) continue;
-    httpSessions.delete(key);
-    void session.transport.close();
-  }
-}, 60_000);
-sessionReaper.unref();
 
 const stateReaper = setInterval(() => {
   const cutoff = Date.now() - 24 * 60 * 60_000;

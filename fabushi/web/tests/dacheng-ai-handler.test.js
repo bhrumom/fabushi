@@ -225,21 +225,21 @@ test('Dacheng AI proxy preserves SSE content type on successful streams', async 
   assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
 });
 
-test('Dacheng AI proxy preserves MCP session headers', async (t) => {
+test('Dacheng AI proxy forwards the stateless MCP protocol without session headers', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
 
   globalThis.fetch = async (_url, init) => {
-    assert.equal(init.headers.get('mcp-session-id'), 'session-1');
-    assert.equal(init.headers.get('mcp-protocol-version'), '2025-06-18');
+    assert.equal(init.headers.get('mcp-session-id'), null);
+    assert.equal(init.headers.get('last-event-id'), null);
+    assert.equal(init.headers.get('mcp-protocol-version'), '2025-11-25');
     return new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [] } }), {
       status: 200,
       headers: {
         'content-type': 'application/json',
-        'mcp-session-id': 'session-1',
-        'mcp-protocol-version': '2025-06-18',
+        'mcp-protocol-version': '2025-11-25',
       },
     });
   };
@@ -249,14 +249,14 @@ test('Dacheng AI proxy preserves MCP session headers', async (t) => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'mcp-session-id': 'session-1',
-        'mcp-protocol-version': '2025-06-18',
+        'mcp-protocol-version': '2025-11-25',
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
     }),
     { DACHENG_AI_BACKEND_URL: 'https://ai.example.test' },
   );
 
-  assert.equal(response.headers.get('mcp-session-id'), 'session-1');
-  assert.match(response.headers.get('access-control-expose-headers') ?? '', /Mcp-Session-Id/i);
+  assert.equal(response.headers.get('mcp-session-id'), null);
+  assert.equal(response.headers.get('mcp-protocol-version'), '2025-11-25');
+  assert.doesNotMatch(response.headers.get('access-control-expose-headers') ?? '', /Mcp-Session-Id/i);
 });
