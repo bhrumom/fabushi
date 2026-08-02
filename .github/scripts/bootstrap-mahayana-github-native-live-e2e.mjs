@@ -262,7 +262,7 @@ async function configureActions(repository) {
   await api(`/repos/${repository.full_name}/actions/permissions/workflow`, {
     method: 'PUT',
     expected: [204],
-    body: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: true },
+    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
   });
   await api(`/repos/${repository.full_name}/environments/production`, {
     method: 'PUT',
