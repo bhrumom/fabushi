@@ -33,6 +33,8 @@ test('official HTTP transport rejects legacy session and event replay paths', ()
   assert.match(source, /responseMode: 'json'/);
   assert.match(source, /Official MCP Apps use stateless POST only/);
   assert.match(source, /Legacy MCP sessions and event replay are not supported/);
+  assert.match(source, /MCP_APPS_HOST_UPGRADE_REQUIRED/);
+  assert.match(source, /requestedProtocol !== MCP_PROTOCOL_VERSION/);
   assert.doesNotMatch(source, /httpSessions|MemoryEventStore|onsessioninitialized|sessionReaper/);
 });
 

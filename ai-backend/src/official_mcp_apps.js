@@ -5,6 +5,8 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 
 const APP_MIME = 'text/html;profile=mcp-app';
+const MCP_PROTOCOL_VERSION = '2026-07-28';
+const MCP_APPS_SPECIFICATION = '2026-01-26';
 const VERSION = '1.0.0';
 
 const chatGptTaskPromptTemplates = [
@@ -936,6 +938,31 @@ export async function handleOfficialMcpRequest(id, req, res, scopeId = 'anonymou
       jsonrpc: '2.0',
       id: req.body?.id ?? null,
       error: { code: -32005, message: 'Legacy MCP sessions and event replay are not supported' },
+    });
+    return;
+  }
+
+  const requestedProtocol = String(
+    req.headers['mcp-protocol-version']
+      ?? req.body?.params?.protocolVersion
+      ?? req.body?.params?._meta?.['io.modelcontextprotocol/protocolVersion']
+      ?? '',
+  ).trim();
+  if (requestedProtocol && requestedProtocol !== MCP_PROTOCOL_VERSION) {
+    res.status(426).json({
+      jsonrpc: '2.0',
+      id: req.body?.id ?? null,
+      error: {
+        code: -32020,
+        message: 'MCP_APPS_HOST_UPGRADE_REQUIRED',
+        data: {
+          error: 'MCP_APPS_HOST_UPGRADE_REQUIRED',
+          requestedProtocol,
+          requiredProtocol: MCP_PROTOCOL_VERSION,
+          minimumHostVersion: MCP_APPS_SPECIFICATION,
+          documentation: 'https://modelcontextprotocol.io/extensions/apps',
+        },
+      },
     });
     return;
   }
