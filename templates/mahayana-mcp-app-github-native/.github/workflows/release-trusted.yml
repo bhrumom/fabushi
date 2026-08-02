@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
+            echo "release $GITHUB_REF_NAME already exists; immutable assets cannot be replaced" >&2
+            exit 1
           fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
