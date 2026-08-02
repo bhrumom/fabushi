@@ -169,7 +169,21 @@ jobs:
               shell_ready=true
               break
             fi
-            echo "::warning::Authenticated Chat shell attempt $attempt failed; retrying in the same app instance."
+            if [[ "$attempt" -lt 2 ]]; then
+              echo "::warning::Authenticated Chat shell attempt $attempt failed; restarting the app before retrying."
+              pkill -f "user-data-dir=$PROFILE_DIR" || true
+              for _ in {1..20}; do
+                pgrep -f "user-data-dir=$PROFILE_DIR" >/dev/null || break
+                sleep 1
+              done
+              rm -f \
+                "$PROFILE_DIR/SingletonCookie" \
+                "$PROFILE_DIR/SingletonLock" \
+                "$PROFILE_DIR/SingletonSocket"
+              open -na /Applications/ChatGPT.app --args \
+                --user-data-dir="$PROFILE_DIR" \
+                --remote-debugging-port="$CHATGPT_CDP_PORT"
+            fi
           done
           test "$shell_ready" = true
 
