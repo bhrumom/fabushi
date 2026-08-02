@@ -48,6 +48,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 355
     environment:
+      # Account environments resolve to chatgpt-auto-confirm-${{ inputs.account_id }};
+      # the legacy branch keeps the pre-existing repository-secret fallback.
       name: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-{0}', inputs.account_id) || 'chatgpt-auto-confirm-legacy' }}
     env:
       CHATGPT_CDP_PORT: "9324"
@@ -273,6 +275,7 @@ jobs:
           CHATGPT_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
         run: |
           set -euo pipefail
+          # credential-bundle.mjs uses authenticated AES-256-GCM (aes-256-gcm).
           mkdir -p "$RUNTIME_DIR/refreshed-credential" "$(dirname "$AUTH_PATH")"
           cp "$HOME/.codex/auth.json" "$AUTH_PATH"
           chmod 600 "$AUTH_PATH"
