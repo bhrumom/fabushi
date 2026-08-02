@@ -167,6 +167,9 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /CDPClient\.allCookies/);
   assert.match(nativeSource, /authenticationDeadline/);
   assert.match(nativeSource, /actionsDesktopTarget\(\)/);
+  assert.match(nativeSource, /if actionsDesktopTarget\(\) != nil \{ return \}/);
+  assert.match(nativeSource, /application\.forceTerminate\(\)/);
+  assert.match(nativeSource, /--remote-debugging-port=\\\(CDPClient\.port\(\)\)/);
   assert.match(nativeSource, /actionsDesktopState/);
   assert.match(nativeSource, /electronBridge/);
   assert.match(nativeSource, /actionsLoginPorts/);
