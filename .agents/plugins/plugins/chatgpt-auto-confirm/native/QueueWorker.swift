@@ -1211,8 +1211,13 @@ func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  if let account = resolveAccount(accountId),
-     FileManager.default.fileExists(atPath: account.profilePath) {
+  if let accountId {
+    guard let account = resolveAccount(accountId),
+          FileManager.default.fileExists(atPath: account.profilePath) else {
+      // A task with an explicit account must never fall back to another
+      // account's renderer or the user's shared ChatGPT process.
+      return nil
+    }
     guard let worker = createDedicatedParallelQueueWorkerTarget(
       &state,
       sourceProfilePath: account.profilePath,
