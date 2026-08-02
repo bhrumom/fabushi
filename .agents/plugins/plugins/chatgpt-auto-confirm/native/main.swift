@@ -1006,7 +1006,7 @@ case "queue_enqueue":
           throw NSError(
             domain: "chatgpt-auto-confirm",
             code: 35,
-            userInfo: [NSLocalizedDescriptionKey: "任务 (id) 引用的账号不存在"]
+            userInfo: [NSLocalizedDescriptionKey: "任务 \(id) 引用的账号不存在"]
           )
         }
         let task = AutomationTask(

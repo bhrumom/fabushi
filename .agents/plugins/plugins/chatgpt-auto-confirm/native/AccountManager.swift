@@ -63,7 +63,7 @@ func accountCodexAuthURL(_ account: AccountRecord) -> URL {
 
 func defaultAccountLabel(_ account: AccountRecord) -> String {
   let trimmed = account.label.trimmingCharacters(in: .whitespacesAndNewlines)
-  return trimmed.isEmpty ? "账号 (account.id.suffix(4))" : String(trimmed.prefix(80))
+  return trimmed.isEmpty ? "账号 \(account.id.suffix(4))" : String(trimmed.prefix(80))
 }
 
 func loadAccounts() -> [AccountRecord] {
@@ -93,7 +93,7 @@ func loadAccounts() -> [AccountRecord] {
 func saveAccounts(_ records: [AccountRecord]) throws {
   guard records.count <= maximumAccountCount else {
     throw NSError(domain: "chatgpt-auto-confirm", code: 701,
-                  userInfo: [NSLocalizedDescriptionKey: "最多支持 (maximumAccountCount) 个账号"])
+                  userInfo: [NSLocalizedDescriptionKey: "最多支持 \(maximumAccountCount) 个账号"])
   }
   var normalized = records
   var defaultIndex: Int?
