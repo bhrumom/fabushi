@@ -284,7 +284,13 @@ func monitorAutomationTask(
     // show:false prewarm BrowserWindow, and verify hidden Chat again.
     let failedRuntimeState = queueTargetRuntimeStateName(runtimeState)
     closeDedicatedAutomationTarget(task, state: state)
-    guard let recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) else {
+    let recoveredWorker: (port: Int, targetId: String, profilePath: String)?
+    if task.accountId == nil {
+      recoveredWorker = createIndependentQueueWorkerTarget(&state)
+    } else {
+      recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId)
+    }
+    guard let recoveredWorker else {
       task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
       task.lastError = task.hiddenWorkerLastError
       task.updatedAt = isoFormatter.string(from: Date())
