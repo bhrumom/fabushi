@@ -1,0 +1,15 @@
+{
+  "protocol": "mahayana.github-native-live-e2e.v1",
+  "generatedAt": "2026-08-02T12:55:24.273Z",
+  "status": "failed",
+  "errorCode": "github_native_live_e2e_failed",
+  "message": "Error: draft pull request was not created for ai/issue-whitespace-send-v10\n    at dispatchDraftPullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:158:9)\n    at async createAiFix (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:348:16)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:496:14)",
+  "workflow": {
+    "repository": "bhrumom/fabushi",
+    "runId": "30748267570",
+    "runAttempt": "1",
+    "sourceCommit": "4dacfaa7c4aa710d947cfb845436b61ae933ba5f",
+    "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30748267570"
+  }
+}
