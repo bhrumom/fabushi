@@ -58,6 +58,17 @@ function manifest(overrides = {}) {
     },
     permissionsSha256: SHA256,
     parentManifestSha256: SHA256,
+    provenance: {
+      repository: 'example/app',
+      sourceCommit: SHA1,
+      workflowRef: '.github/workflows/release.yml@refs/tags/v1.0.0',
+      runId: '123',
+      builderId: 'github-actions',
+      event: 'release',
+      oidc: true,
+      sbomSha256: SHA256,
+      attestationBundleSha256: SHA256,
+    },
     artifacts: [
       artifact(),
       artifact({

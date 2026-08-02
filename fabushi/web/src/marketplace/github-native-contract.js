@@ -209,6 +209,42 @@ function normalizeMcpApps(value) {
   };
 }
 
+function normalizeProvenance(value, source) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    fail('provenance_invalid', 'provenance must be an object');
+  }
+  const repository = requiredString(value.repository, 'provenance.repository', 200);
+  if (repository !== source.repository) {
+    fail('source_commit_mismatch', 'provenance repository must match release source repository');
+  }
+  const sourceCommit = exactSha(value.sourceCommit, SHA1, 'provenance.sourceCommit');
+  if (sourceCommit !== source.commit) {
+    fail('source_commit_mismatch', 'provenance must bind the exact release source commit');
+  }
+  const event = requiredString(value.event, 'provenance.event', 64);
+  if (!['release', 'protected-tag'].includes(event)) {
+    fail('provenance_invalid', 'formal release provenance must come from a protected release or tag');
+  }
+  if (value.oidc !== true) {
+    fail('oidc_required', 'formal release provenance requires GitHub Actions OIDC');
+  }
+  return {
+    repository,
+    sourceCommit,
+    workflowRef: requiredString(value.workflowRef, 'provenance.workflowRef', 512),
+    runId: requiredString(value.runId, 'provenance.runId', 64),
+    builderId: requiredString(value.builderId, 'provenance.builderId', 512),
+    event,
+    oidc: true,
+    sbomSha256: exactSha(value.sbomSha256, SHA256, 'provenance.sbomSha256'),
+    attestationBundleSha256: exactSha(
+      value.attestationBundleSha256,
+      SHA256,
+      'provenance.attestationBundleSha256',
+    ),
+  };
+}
+
 function normalizeDerivation(value, pluginId, source) {
   if (value == null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -266,6 +302,7 @@ export function normalizeReleaseManifest(value) {
     pluginId,
     version,
     source,
+    provenance: normalizeProvenance(value.provenance, source),
     toolContract: normalizeToolContract(value.toolContract),
     mcpApps: normalizeMcpApps(value.mcpApps),
     permissionsSha256: exactSha(value.permissionsSha256, SHA256, 'permissionsSha256'),
@@ -307,4 +344,135 @@ export function validateTrustedReleaseWorkflow(workflowText) {
     failures.push('workflow must be protected release or tag triggered');
   }
   return { valid: failures.length === 0, failures };
+}
+
+function compareSemver(left, right) {
+  const parse = (value) => String(value).split('-', 1)[0].split('.').map((part) => Number(part));
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
+  }
+  return 0;
+}
+
+export function selectMinimalArtifacts(value, target) {
+  const manifest = normalizeReleaseManifest(value);
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    fail('platform_unsupported', 'target platform descriptor is required');
+  }
+  const platform = requiredString(target.platform, 'target.platform', 64).toLowerCase();
+  const hostVersion = requiredString(target.hostVersion, 'target.hostVersion', 64);
+  const capabilities = new Set(Array.isArray(target.capabilities) ? target.capabilities.map(String) : []);
+  const common = manifest.artifacts.find((artifact) => artifact.kind === 'common');
+  let candidates;
+  let executionLocation;
+  if (platform === 'desktop' || platform === 'cli') {
+    const os = requiredString(target.os, 'target.os', 64).toLowerCase();
+    const architecture = requiredString(target.architecture, 'target.architecture', 64).toLowerCase();
+    candidates = manifest.artifacts.filter((artifact) => (
+      artifact.kind === 'native-cli' && artifact.os === os && artifact.architecture === architecture
+    ));
+    executionLocation = 'local-native';
+  } else if (['ios', 'android', 'desktop-webview', 'web', 'pwa'].includes(platform)) {
+    candidates = manifest.artifacts.filter((artifact) => (
+      artifact.kind === 'web-wasm' && artifact.webTargets.includes(platform)
+    ));
+    executionLocation = 'local-web';
+  } else {
+    fail('platform_unsupported', `unsupported target platform: ${platform}`);
+  }
+  candidates = candidates.filter((artifact) => (
+    compareSemver(hostVersion, artifact.minHostVersion) >= 0 &&
+    artifact.requiredCapabilities.every((capability) => capabilities.has(capability))
+  ));
+  if (candidates.length !== 1) {
+    fail(candidates.length === 0 ? 'platform_unsupported' : 'artifact_selector_ambiguous',
+      candidates.length === 0
+        ? 'no compatible executable artifact exists for the target platform'
+        : 'multiple executable artifacts match the target platform');
+  }
+  const artifacts = [common, candidates[0]];
+  return {
+    pluginId: manifest.pluginId,
+    version: manifest.version,
+    executionLocation,
+    artifacts: artifacts.map((artifact) => ({
+      id: artifact.id,
+      kind: artifact.kind,
+      url: artifact.url,
+      sha256: artifact.sha256,
+      size: artifact.size,
+      sourceCommit: artifact.sourceCommit,
+    })),
+    totalSize: artifacts.reduce((total, artifact) => total + artifact.size, 0),
+  };
+}
+
+export function validateRepositoryTemplate(files) {
+  const entries = files && typeof files === 'object' && !Array.isArray(files) ? files : {};
+  const required = [
+    'LICENSE',
+    'CONTRIBUTING.md',
+    'SECURITY.md',
+    'mcp-app.yaml',
+    'tools.json',
+    'permissions.json',
+    '.github/CODEOWNERS',
+    '.github/ISSUE_TEMPLATE/bug.yml',
+    '.github/PULL_REQUEST_TEMPLATE.md',
+    '.github/workflows/pr-untrusted.yml',
+    '.github/workflows/main-trusted.yml',
+    '.github/workflows/release-trusted.yml',
+  ];
+  const failures = required.filter((path) => !String(entries[path] ?? '').trim())
+    .map((path) => `missing required repository file: ${path}`);
+  const codeowners = String(entries['.github/CODEOWNERS'] ?? '');
+  for (const protectedPath of ['/.github/workflows/', '/.github/CODEOWNERS', '/mcp-app.yaml', '/permissions.json', '/tools.json']) {
+    if (!codeowners.includes(protectedPath)) failures.push(`CODEOWNERS must protect ${protectedPath}`);
+  }
+  const untrusted = validateUntrustedPullRequestWorkflow(entries['.github/workflows/pr-untrusted.yml']);
+  failures.push(...untrusted.failures.map((failure) => `pr-untrusted.yml: ${failure}`));
+  const trusted = validateTrustedReleaseWorkflow(entries['.github/workflows/release-trusted.yml']);
+  failures.push(...trusted.failures.map((failure) => `release-trusted.yml: ${failure}`));
+  const manifest = String(entries['mcp-app.yaml'] ?? '');
+  for (const value of [MCP_APPS_STABLE_VERSION, MCP_APPS_EXTENSION, MCP_APPS_MIME, 'common', 'native-cli', 'web-wasm']) {
+    if (!manifest.includes(value)) failures.push(`mcp-app.yaml must declare ${value}`);
+  }
+  return { valid: failures.length === 0, failures };
+}
+
+export function normalizeAiContributionPlan(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    fail('ai_plan_invalid', 'AI contribution plan must be an object');
+  }
+  const upstreamRepository = requiredString(value.upstreamRepository, 'upstreamRepository', 200);
+  const forkRepository = requiredString(value.forkRepository, 'forkRepository', 200);
+  if (!REPOSITORY.test(upstreamRepository) || !REPOSITORY.test(forkRepository) || upstreamRepository === forkRepository) {
+    fail('ai_target_invalid', 'AI changes must target a distinct user fork repository');
+  }
+  const branch = requiredString(value.branch, 'branch', 255);
+  if (!SAFE_BRANCH.test(branch) || ['main', 'master'].includes(branch)) {
+    fail('ai_target_invalid', 'AI changes require a dedicated non-default branch');
+  }
+  const issueUrl = httpsUrl(value.issueUrl, 'issueUrl');
+  if (!issueUrl.includes(`github.com/${upstreamRepository}/issues/`)) {
+    fail('ai_plan_invalid', 'contribution plan must link a real upstream Issue');
+  }
+  if (value.userConfirmedPublicAction !== true || value.draftPullRequest !== true) {
+    fail('user_confirmation_required', 'public contribution requires confirmation and a Draft Pull Request');
+  }
+  const tests = sortedUniqueStrings(value.tests, 'tests');
+  return {
+    upstreamRepository,
+    forkRepository,
+    branch,
+    issueUrl,
+    draftPullRequest: true,
+    userConfirmedPublicAction: true,
+    tests,
+    permissionDiffSha256: exactSha(value.permissionDiffSha256, SHA256, 'permissionDiffSha256'),
+    toolContractDiffSha256: exactSha(value.toolContractDiffSha256, SHA256, 'toolContractDiffSha256'),
+    artifactDiffSha256: exactSha(value.artifactDiffSha256, SHA256, 'artifactDiffSha256'),
+  };
 }
