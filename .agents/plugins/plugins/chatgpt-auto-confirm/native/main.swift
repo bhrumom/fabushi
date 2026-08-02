@@ -931,6 +931,7 @@ case "queue_update":
   do {
     let payload = try withQueueStateLock { state -> [String: Any] in
       var tasks = state.automationTasks ?? []
+      let queueWasEnabled = state.queueEnabled == true
       guard let index = tasks.firstIndex(where: { $0.id == taskId }) else {
         throw NSError(
           domain: "chatgpt-auto-confirm",
@@ -1041,9 +1042,11 @@ case "queue_update":
         tasks[index].waitReason = nil
       }
       state.automationTasks = tasks
-      state.queueEnabled = true
-      state.queuePaused = false
-      try startQueueWatcher(&state)
+      if queueWasEnabled {
+        state.queueEnabled = true
+        state.queuePaused = false
+        try startQueueWatcher(&state)
+      }
       var result = queueStatusPayload(state)
       result["updatedTask"] = taskPublicPayload(tasks[index])
       result["updateApplied"] = true
