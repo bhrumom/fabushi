@@ -38,7 +38,7 @@ let nativeCommandSummaries: [String: String] = [
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
   "sync_actions_credentials": "从已打开的 ChatGPT 桌面 app renderer 实时导出会话并同步到 GitHub Secrets。",
   "login_and_sync_actions": "按需打开 ChatGPT 桌面应用，等待 app renderer 登录完成后实时同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
-  "verify_chatgpt_login": "只读验证当前 ChatGPT 桌面 app renderer 是否仍处于登录状态。",
+  "verify_chatgpt_login": "验证当前 ChatGPT 桌面实例能否创建队列使用的隐藏 Chat renderer。",
   "send_message": "在插件隐藏 Chat 页面中发送一条消息。",
   "add_connector": "在隐藏 Chat 页面中选择一个 ChatGPT connector。",
   "get_reply": "读取隐藏 Chat 页面中的最新回复。",
@@ -315,6 +315,14 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
     """#,
     timeout: 5.0
   )
+}
+
+func actionsControllerShellIsReady(_ state: [String: Any]) -> Bool {
+  (state["appOrigin"] as? Bool ?? false)
+    && (state["bridge"] as? Bool ?? false)
+    && !(state["asksForLogin"] as? Bool ?? false)
+    && state["readyState"] as? String == "complete"
+    && (state["bodyLength"] as? Int ?? 0) > 50
 }
 
 func base64URLDecodedData(_ value: String) -> Data? {
@@ -1087,43 +1095,80 @@ case "queue_watchdog":
     ], exitCode: 1)
   }
 case "verify_chatgpt_login":
-  let authenticationDeadline = Date().addingTimeInterval(120)
-  var lastLoginState: [String: Any] = [:]
+  let authenticationDeadline = Date().addingTimeInterval(45)
+  var lastControllerState: [String: Any] = [:]
+  var controllerVerified = false
   var desktopTarget = actionsDesktopTarget()
   while Date() < authenticationDeadline {
     if let target = desktopTarget,
-       let loginState = actionsDesktopState(target) {
-      lastLoginState = loginState
-      if loginState["authenticated"] as? Bool == true {
-        output([
-          "ok": true,
-          "authenticated": true,
-          "loginPrompt": false,
-          "hasComposer": loginState["workComposer"] as? Bool ?? false,
-          "bodyLength": loginState["bodyLength"] as? Int ?? 0,
-          "url": loginState["url"] as? String ?? "",
-          "errorCode": "",
-          "message": "ChatGPT 桌面实例登录状态有效",
-        ])
+       let controllerState = actionsDesktopState(target) {
+      lastControllerState = controllerState
+      if actionsControllerShellIsReady(controllerState) {
+        controllerVerified = true
+        break
       }
     }
     desktopTarget = actionsDesktopTarget() ?? desktopTarget
     Thread.sleep(forTimeInterval: 2)
   }
+  guard controllerVerified else {
+    let loginPrompt = lastControllerState["asksForLogin"] as? Bool ?? false
+    output([
+      "ok": false,
+      "authenticated": false,
+      "loginPrompt": loginPrompt,
+      "hasComposer": lastControllerState["workComposer"] as? Bool ?? false,
+      "bodyLength": lastControllerState["bodyLength"] as? Int ?? 0,
+      "url": lastControllerState["url"] as? String ?? "",
+      "errorCode": lastControllerState.isEmpty
+        ? "chatgpt_login_state_unavailable"
+        : (loginPrompt ? "chatgpt_login_required" : "chatgpt_controller_shell_unavailable"),
+      "message": lastControllerState.isEmpty
+        ? "无法读取 ChatGPT 桌面实例状态"
+        : (loginPrompt ? "ChatGPT 桌面实例要求重新登录" : "ChatGPT 桌面控制器未完成初始化"),
+    ], exitCode: 1)
+  }
+
+  var queueState = loadState()
+  guard let hiddenChat = createQueueWorkerTarget(&queueState, reuseExisting: true) else {
+    output([
+      "ok": false,
+      "authenticated": false,
+      "loginPrompt": false,
+      "hasComposer": false,
+      "bodyLength": lastControllerState["bodyLength"] as? Int ?? 0,
+      "url": lastControllerState["url"] as? String ?? "",
+      "errorCode": "chatgpt_hidden_chat_unavailable",
+      "reason": queueState.lastError ?? "hidden_chat_verification_failed",
+      "message": "恢复后的 ChatGPT 会话无法创建已认证的隐藏 Chat 页面",
+    ], exitCode: 1)
+  }
+  do {
+    try saveState(queueState)
+  } catch {
+    output([
+      "ok": false,
+      "authenticated": false,
+      "loginPrompt": false,
+      "hasComposer": true,
+      "bodyLength": lastControllerState["bodyLength"] as? Int ?? 0,
+      "url": lastControllerState["url"] as? String ?? "",
+      "errorCode": "chatgpt_hidden_chat_state_persist_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
   output([
-    "ok": false,
-    "authenticated": false,
-    "loginPrompt": lastLoginState["asksForLogin"] as? Bool ?? false,
-    "hasComposer": lastLoginState["workComposer"] as? Bool ?? false,
-    "bodyLength": lastLoginState["bodyLength"] as? Int ?? 0,
-    "url": lastLoginState["url"] as? String ?? "",
-    "errorCode": lastLoginState.isEmpty
-      ? "chatgpt_login_state_unavailable"
-      : "chatgpt_login_required",
-    "message": lastLoginState.isEmpty
-      ? "无法读取 ChatGPT 桌面实例状态"
-      : "ChatGPT 桌面实例登录已过期，请先登录并同步凭证",
-  ], exitCode: 1)
+    "ok": true,
+    "authenticated": true,
+    "loginPrompt": false,
+    "hasComposer": true,
+    "bodyLength": lastControllerState["bodyLength"] as? Int ?? 0,
+    "url": lastControllerState["url"] as? String ?? "",
+    "hiddenChatPort": hiddenChat.port,
+    "hiddenChatTargetId": hiddenChat.targetId,
+    "errorCode": "",
+    "message": "ChatGPT 隐藏 Chat 页面已创建并通过认证预检",
+  ])
 case "sync_actions_credentials":
   let params = commandJSONParams()
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))

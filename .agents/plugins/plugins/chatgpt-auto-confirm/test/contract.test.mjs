@@ -68,6 +68,14 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
   assert.match(actionsWorkflow, /Verify authenticated ChatGPT session/);
   assert.match(actionsWorkflow, /verify_chatgpt_login/);
+  assert.match(
+    actionsWorkflow,
+    /Verify authenticated ChatGPT session\r?\n\s+if: \$\{\{ inputs\.cancel_task_id == '' \}\}\r?\n\s+id: auth_verify\r?\n\s+timeout-minutes: 6/,
+  );
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE: \$\{\{ steps\.paths\.outputs\.state_path \}\}/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_QUEUE_STATE: \$\{\{ steps\.paths\.outputs\.state_path \}\}/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_BACKGROUND_PORT: \$\{\{ env\.CHATGPT_CDP_PORT \}\}/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_PROFILE_PATH: \$\{\{ steps\.paths\.outputs\.profile_dir \}\}/);
   assert.match(actionsWorkflow, /AUTHENTICATION_VERIFIED/);
   assert.match(actionsWorkflow, /no continuation was dispatched/);
   assert.match(actionsWorkflow, /for attempt in 1 2/);
@@ -191,6 +199,10 @@ test('worker exposes the interactive login sync command', async () => {
   assert.match(nativeSource, /application\.forceTerminate\(\)/);
   assert.match(nativeSource, /--remote-debugging-port=\\\(CDPClient\.port\(\)\)/);
   assert.match(nativeSource, /actionsDesktopState/);
+  assert.match(nativeSource, /func actionsControllerShellIsReady/);
+  assert.match(nativeSource, /case "verify_chatgpt_login":[\s\S]*createQueueWorkerTarget\(&queueState, reuseExisting: true\)/);
+  assert.match(nativeSource, /chatgpt_hidden_chat_unavailable/);
+  assert.match(nativeSource, /try saveState\(queueState\)/);
   assert.match(nativeSource, /electronBridge/);
   assert.match(nativeSource, /actionsLoginPorts/);
   assert.match(nativeSource, /ports\.append\(9324\)/);
