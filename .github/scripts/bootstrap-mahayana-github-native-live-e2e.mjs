@@ -49,11 +49,16 @@ async function api(endpoint, { method = 'GET', body, expected = [200] } = {}) {
   return payload;
 }
 
-async function optional(endpoint) {
+function isEmptyGitRepository(error) {
+  return error?.status === 409
+    && String(error?.payload?.message || '').trim().toLowerCase() === 'git repository is empty.';
+}
+
+async function optional(endpoint, { allowEmptyRepository = false } = {}) {
   try {
     return await api(endpoint);
   } catch (error) {
-    if (error.status === 404) return null;
+    if (error.status === 404 || (allowEmptyRepository && isEmptyGitRepository(error))) return null;
     throw error;
   }
 }
@@ -167,7 +172,7 @@ async function ensureRepository() {
 }
 
 async function writeTemplate(repository) {
-  const currentRef = await optional(`/repos/${repository.full_name}/git/ref/heads/main`);
+  const currentRef = await optional(`/repos/${repository.full_name}/git/ref/heads/main`, { allowEmptyRepository: true });
   const parentSha = currentRef?.object?.sha || null;
   const parentCommit = parentSha ? await api(`/repos/${repository.full_name}/git/commits/${parentSha}`) : null;
   const elements = [];
