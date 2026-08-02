@@ -669,7 +669,7 @@ func accountCommitSession(_ session: AccountLoginSession, label: String, startRu
     account = records[existingIndex]
     // A re-login refreshes the existing account rather than creating a
     // duplicate.  Keep its opaque id and GitHub Environment stable.
-    try? copyProfileForDedicatedQueueWorker(
+    _ = copyProfileForDedicatedQueueWorker(
       source: accountProfileURL(session.account).path,
       destination: accountProfileURL(account).path
     )
@@ -740,7 +740,7 @@ func startAccountLoginLink(label: String) -> Never {
   process.standardError = FileHandle.nullDevice
   do {
     try process.run()
-    let data = pipe.fileHandleForReading.read(upToCount: 16_384) ?? Data()
+    let data = (try? pipe.fileHandleForReading.read(upToCount: 16_384)) ?? Data()
     guard let line = String(data: data, encoding: .utf8),
           let first = line.split(whereSeparator: \.isNewline).first,
           let raw = first.data(using: .utf8),
@@ -1394,7 +1394,7 @@ case "account_status":
 case "account_switch":
   let params = commandJSONParams()
   let requested = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  var records = loadAccounts()
+  let records = loadAccounts()
   guard let index = records.firstIndex(where: { $0.id == requested }) else {
     output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
   }
@@ -1431,7 +1431,7 @@ case "account_add":
   let waitSeconds = min(1_800, max(60, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
   let label = (params["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  var records = loadAccounts()
+  let records = loadAccounts()
   guard records.count < maximumAccountCount else {
     output(["ok": false, "errorCode": "account_limit_reached", "message": "最多支持 \(maximumAccountCount) 个账号。"], exitCode: 1)
   }
