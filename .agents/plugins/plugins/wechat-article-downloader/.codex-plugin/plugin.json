@@ -1,0 +1,21 @@
+{
+  "name": "wechat-article-downloader",
+  "version": "0.1.0",
+  "description": "Archive publicly accessible WeChat Official Account articles from any public article link.",
+  "author": { "name": "Fabushi" },
+  "license": "Proprietary",
+  "keywords": ["wechat", "official-account", "archive", "download", "rust", "mcp"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    { "id": "local-cli", "server": "wechat-article-downloader-local", "platforms": ["cli", "desktop"], "priority": 300 }
+  ],
+  "interface": {
+    "displayName": "微信公众号归档器",
+    "shortDescription": "从任意公开文章链接归档公众号公开文章。",
+    "longDescription": "识别公众号，递归展开公开专辑、文章前后链与公开索引，保存正文、元数据、HTML 索引，并可选择下载图片。遇到登录或验证码会停止对应来源，不绕过平台风控。",
+    "developerName": "Fabushi",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Open World"],
+    "defaultPrompt": "归档这个微信公众号公开可访问的全部文章，并给出文章数、专辑数和失败项。"
+  }
+}

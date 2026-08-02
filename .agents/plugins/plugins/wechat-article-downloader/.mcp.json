@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "wechat-article-downloader-local": {
+      "type": "stdio",
+      "command": "./runtime/cli/fabushi-plugin-cli",
+      "args": ["--plugin", "wechat-article-downloader", "mcp-serve"],
+      "cwd": "."
+    }
+  }
+}
