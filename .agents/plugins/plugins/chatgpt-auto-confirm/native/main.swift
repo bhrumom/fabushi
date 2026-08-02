@@ -15,6 +15,14 @@ func commandJSONParams() -> [String: Any] {
 }
 
 let nativeCommandSummaries: [String: String] = [
+  "account_list": "列出本机账号注册表（仅显示不含凭据的元数据）。",
+  "account_add": "在隔离 ChatGPT profile 中登录、验证并上传一个账号。",
+  "account_login_link": "生成仅绑定 127.0.0.1、十分钟一次性的本地登录链接。",
+  "account_switch": "切换默认账号；已经入队的任务保持原账号。",
+  "account_rename": "修改本机账号标签。",
+  "account_status": "检查账号的本机凭据和最近云端验证状态。",
+  "account_sync": "重新导出指定账号的 renderer Cookie，保存并运行 smoke。",
+  "account_remove": "确认后删除账号凭据、profile 和注册表记录。",
   "status": "查看自动确认、ChatGPT、隐藏页面和任务队列的当前状态。",
   "diagnose": "执行只读诊断，检查辅助功能、ChatGPT 进程和调试连接。",
   "start": "启动后台自动确认；第二个参数可传 JSON 配置。",
@@ -52,7 +60,8 @@ func nativeCommandUsage(_ command: String, executable: String) -> String {
     return "\(executable) \(command)"
   case "audit":
     return "\(executable) audit [limit]"
-  case "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
+  case "account_add", "account_login_link", "account_switch", "account_rename", "account_status", "account_sync", "account_remove",
+       "start", "scan", "sweep", "relaunch_and_confirm", "queue_enqueue",
        "queue_start", "queue_resume", "queue_attach", "queue_wait_review",
        "queue_review", "queue_update", "queue_retry", "queue_cancel", "queue_watchdog",
        "start_actions_runner", "sync_actions_credentials", "login_and_sync_actions", "verify_chatgpt_login", "send_message",
@@ -67,6 +76,10 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
   switch command {
   case "start":
     return "\(executable) start '{\"approveAll\":true,\"intervalMs\":750}'"
+  case "account_add":
+    return "\(executable) account_add '{\"label\":\"工作账号\",\"start\":true}'"
+  case "account_login_link":
+    return "\(executable) account_login_link '{\"label\":\"工作账号\"}'"
   case "scan":
     return "\(executable) scan '{\"approveAll\":true}'"
   case "audit":
@@ -437,6 +450,8 @@ func actionsRunnerScriptURL() -> URL {
 
 func runActionsRunnerDispatch(
   sessionCookiesPath: String? = nil,
+  authPath: String? = nil,
+  accountId: String? = nil,
   startRunner: Bool = true
 ) -> (ok: Bool, message: String) {
   let scriptURL = actionsRunnerScriptURL()
@@ -449,6 +464,12 @@ func runActionsRunnerDispatch(
   var environment = ProcessInfo.processInfo.environment
   if let sessionCookiesPath {
     environment["CHATGPT_SESSION_COOKIES_PATH"] = sessionCookiesPath
+  }
+  if let authPath {
+    environment["CHATGPT_CODEX_AUTH_PATH"] = authPath
+  }
+  if let accountId {
+    environment["CHATGPT_ACCOUNT_ID"] = accountId
   }
   environment["CHATGPT_AUTO_CONFIRM_DISPATCH"] = startRunner ? "true" : "false"
   process.environment = environment
@@ -568,6 +589,170 @@ func syncLiveActionsCredentials(
       "errorCode": "actions_credentials_sync_failed",
       "message": error.localizedDescription,
     ], exitCode: 1)
+  }
+}
+
+func accountStatusPayload(_ account: AccountRecord) -> [String: Any] {
+  let hasAuth = accountAuthData(account) != nil
+  let hasCookies = accountCookieData(account) != nil
+  var payload = accountPublicPayload(account)
+  payload["hasCodexCredential"] = hasAuth
+  payload["hasSessionCookies"] = hasCookies
+  if account.status == "active" && (!hasAuth || !hasCookies) {
+    payload["status"] = "needs_login"
+  }
+  return payload
+}
+
+func accountTemporaryCookieURL(_ account: AccountRecord, data: Data) throws -> URL {
+  let url = accountsRootURL().appendingPathComponent(".\(account.id)-cookies-\(UUID().uuidString).json")
+  try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+  try data.write(to: url, options: .atomic)
+  try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+  return url
+}
+
+func accountDispatch(_ account: AccountRecord, authData: Data, cookieData: Data, startRunner: Bool) -> (ok: Bool, message: String) {
+  do {
+    let authURL = accountCodexAuthURL(account)
+    try accountCreateDirectories(account)
+    try authData.write(to: authURL, options: .atomic)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path)
+    let cookieURL = try accountTemporaryCookieURL(account, data: cookieData)
+    defer { try? FileManager.default.removeItem(at: cookieURL) }
+    return runActionsRunnerDispatch(
+      sessionCookiesPath: cookieURL.path,
+      authPath: authURL.path,
+      accountId: account.id,
+      startRunner: startRunner
+    )
+  } catch {
+    return (false, error.localizedDescription)
+  }
+}
+
+func accountCleanupUnregisteredProfile(_ account: AccountRecord) {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+  process.arguments = ["-TERM", "-f", "--user-data-dir=\(accountProfileURL(account).path)"]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = FileHandle.nullDevice
+  process.standardError = FileHandle.nullDevice
+  try? process.run()
+  process.waitUntilExit()
+  try? FileManager.default.removeItem(at: accountsRootURL().appendingPathComponent(account.id, isDirectory: true))
+}
+
+func removeGitHubAccountEnvironment(_ accountId: String) {
+  let script = accountScriptURL("remove-account-environment.sh")
+  guard FileManager.default.fileExists(atPath: script.path) else { return }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/sh")
+  process.arguments = [script.path, accountId]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = FileHandle.nullDevice
+  process.standardError = FileHandle.nullDevice
+  try? process.run()
+  process.waitUntilExit()
+}
+
+func accountCommitSession(_ session: AccountLoginSession, label: String, startRunner: Bool) -> Never {
+  var records = loadAccounts()
+  guard let fingerprint = accountFingerprint(data: session.authData) else {
+    accountCleanupUnregisteredProfile(session.account)
+    output(["ok": false, "errorCode": "account_identity_missing", "message": "登录凭据没有可验证的账号标识；没有保存凭据。"], exitCode: 1)
+  }
+  let now = isoFormatter.string(from: Date())
+  let existingIndex = records.firstIndex(where: { $0.fingerprint == fingerprint })
+  let account: AccountRecord
+  if let existingIndex {
+    account = records[existingIndex]
+    // A re-login refreshes the existing account rather than creating a
+    // duplicate.  Keep its opaque id and GitHub Environment stable.
+    _ = copyProfileForDedicatedQueueWorker(
+      source: accountProfileURL(session.account).path,
+      destination: accountProfileURL(account).path
+    )
+    var updated = account
+    updated.label = label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? account.label : String(label.prefix(80))
+    updated.status = "active"
+    updated.lastLocalVerifiedAt = now
+    records[existingIndex] = updated
+  } else {
+    guard records.count < maximumAccountCount else {
+      accountCleanupUnregisteredProfile(session.account)
+      output(["ok": false, "errorCode": "account_limit_reached", "message": "最多支持 \(maximumAccountCount) 个账号。"], exitCode: 1)
+    }
+    var added = session.account
+    added.label = defaultAccountLabel(AccountRecord(
+      id: added.id, label: label, fingerprint: fingerprint, status: "active",
+      isDefault: records.isEmpty, lastLocalVerifiedAt: now, lastCloudVerifiedAt: nil,
+      githubEnvironment: added.githubEnvironment, latestActionId: nil,
+      profilePath: added.profilePath, codexHomePath: added.codexHomePath
+    ))
+    added.fingerprint = fingerprint
+    added.status = "active"
+    added.isDefault = records.isEmpty
+    added.lastLocalVerifiedAt = now
+    records.append(added)
+    account = added
+  }
+  guard accountHiddenSmoke(session) else {
+    if existingIndex == nil { accountCleanupUnregisteredProfile(account) }
+    output(["ok": false, "errorCode": "account_hidden_chat_unavailable", "message": "账号登录成功，但隐藏 Chat 认证预检未通过；没有保存半套凭据。"], exitCode: 1)
+  }
+  do {
+    try accountStoreCredentials(account, authData: session.authData, cookieData: session.cookieData)
+    try saveAccounts(records)
+  } catch {
+    if existingIndex == nil { accountCleanupUnregisteredProfile(account) }
+    output(["ok": false, "errorCode": "account_store_failed", "message": "账号凭据保存失败；没有完成账号注册。"], exitCode: 1)
+  }
+  let dispatch = accountDispatch(account, authData: session.authData, cookieData: session.cookieData, startRunner: startRunner)
+  guard dispatch.ok else {
+    output(["ok": false, "errorCode": "account_github_sync_failed", "account": accountPublicPayload(account), "message": dispatch.message], exitCode: 1)
+  }
+  var payload = accountStatusPayload(account)
+  payload["ok"] = true
+  payload["credentialsSynchronized"] = true
+  payload["started"] = startRunner
+  payload["message"] = startRunner ? "账号已保存、上传并通过隐藏 Chat smoke。" : "账号已保存并上传。"
+  output(payload)
+}
+
+func accountScriptURL(_ name: String) -> URL {
+  let executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+  return executableURL.deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("scripts").appendingPathComponent(name)
+}
+
+func startAccountLoginLink(label: String) -> Never {
+  let script = accountScriptURL("account-login-link.mjs")
+  guard FileManager.default.fileExists(atPath: script.path) else {
+    output(["ok": false, "errorCode": "account_login_link_script_missing", "message": "登录链接服务不可用。"], exitCode: 1)
+  }
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+  process.arguments = ["node", script.path, "--runtime", URL(fileURLWithPath: CommandLine.arguments[0]).path, "--label", String(label.prefix(80))]
+  let pipe = Pipe()
+  process.standardOutput = pipe
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+    let data = (try? pipe.fileHandleForReading.read(upToCount: 16_384)) ?? Data()
+    guard let line = String(data: data, encoding: .utf8),
+          let first = line.split(whereSeparator: \.isNewline).first,
+          let raw = first.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+          object["ok"] as? Bool == true else {
+      output(["ok": false, "errorCode": "account_login_link_start_failed", "message": "无法启动本地一次性登录链接。"], exitCode: 1)
+    }
+    var payload = object
+    payload["message"] = "登录链接已生成，仅绑定本机 127.0.0.1，十分钟内只能使用一次。"
+    output(payload)
+  } catch {
+    output(["ok": false, "errorCode": "account_login_link_start_failed", "message": "无法启动本地一次性登录链接。"], exitCode: 1)
   }
 }
 
@@ -778,6 +963,14 @@ case "queue_enqueue":
   guard !rawTasks.isEmpty, rawTasks.count <= 50 else {
     output(["ok": false, "errorCode": "invalid_tasks", "message": "tasks 必须包含 1-50 个任务"], exitCode: 1)
   }
+  let accountRecords = loadAccounts()
+  let requestedAccountId = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  if let requestedAccountId,
+     !requestedAccountId.isEmpty,
+     accountById(requestedAccountId, records: accountRecords) == nil {
+    output(["ok": false, "errorCode": "account_not_found", "message": "入队指定的账号不存在。"], exitCode: 1)
+  }
+  let defaultAccountId = resolveAccount(requestedAccountId, records: accountRecords)?.id
   do {
     let payload = try withQueueStateLock { state -> [String: Any] in
       var tasks = state.automationTasks ?? []
@@ -806,8 +999,19 @@ case "queue_enqueue":
             userInfo: [NSLocalizedDescriptionKey: "任务 id 无效或重复：\(requestedId ?? "")"]
           )
         }
+        let taskAccountId = (raw["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+          ?? defaultAccountId
+        if let taskAccountId,
+           accountById(taskAccountId, records: accountRecords) == nil {
+          throw NSError(
+            domain: "chatgpt-auto-confirm",
+            code: 35,
+            userInfo: [NSLocalizedDescriptionKey: "任务 \(id) 引用的账号不存在"]
+          )
+        }
         let task = AutomationTask(
           id: id,
+          accountId: taskAccountId,
           title: title,
           prompt: prompt,
           originalPrompt: prompt,
@@ -1169,8 +1373,153 @@ case "verify_chatgpt_login":
     "errorCode": "",
     "message": "ChatGPT 隐藏 Chat 页面已创建并通过认证预检",
   ])
+case "account_list":
+  let records = loadAccounts()
+  output([
+    "ok": true,
+    "accounts": records.map(accountPublicPayload),
+    "defaultAccountId": records.first(where: { $0.isDefault })?.id as Any,
+    "count": records.count,
+    "max": maximumAccountCount,
+  ])
+case "account_status":
+  let params = commandJSONParams()
+  let records = loadAccounts()
+  if let account = resolveAccount(params["accountId"] as? String, records: records) {
+    var payload = accountStatusPayload(account)
+    payload["ok"] = true
+    output(payload)
+  }
+  output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
+case "account_switch":
+  let params = commandJSONParams()
+  let requested = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  var records = loadAccounts()
+  guard let index = records.firstIndex(where: { $0.id == requested }) else {
+    output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
+  }
+  for item in records.indices { records[item].isDefault = item == index }
+  do {
+    try saveAccounts(records)
+    output(["ok": true, "defaultAccountId": requested, "message": "默认账号已切换；现有任务的账号不变。"])
+  } catch {
+    output(["ok": false, "errorCode": "account_switch_failed", "message": "默认账号保存失败。"], exitCode: 1)
+  }
+case "account_rename":
+  let params = commandJSONParams()
+  let requested = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let label = (params["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  guard !label.isEmpty, label.count <= 80 else {
+    output(["ok": false, "errorCode": "invalid_account_label", "message": "账号名称不能为空且不能超过 80 个字符。"], exitCode: 1)
+  }
+  var records = loadAccounts()
+  guard let index = records.firstIndex(where: { $0.id == requested }) else {
+    output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
+  }
+  records[index].label = label
+  do {
+    try saveAccounts(records)
+    output(["ok": true, "account": accountPublicPayload(records[index])])
+  } catch {
+    output(["ok": false, "errorCode": "account_rename_failed", "message": "账号名称保存失败。"], exitCode: 1)
+  }
+case "account_login_link":
+  let params = commandJSONParams()
+  startAccountLoginLink(label: (params["label"] as? String) ?? "")
+case "account_add":
+  let params = commandJSONParams()
+  let waitSeconds = min(1_800, max(60, params["waitSeconds"] as? Int ?? 600))
+  let startRunner = params["start"] as? Bool ?? true
+  let label = (params["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let records = loadAccounts()
+  guard records.count < maximumAccountCount else {
+    output(["ok": false, "errorCode": "account_limit_reached", "message": "最多支持 \(maximumAccountCount) 个账号。"], exitCode: 1)
+  }
+  let id = randomAccountId(Set(records.map(\.id)))
+  let account = AccountRecord(
+    id: id,
+    label: label.isEmpty ? "账号 \(id.suffix(4))" : String(label.prefix(80)),
+    fingerprint: "pending",
+    status: "needs_login",
+    isDefault: records.isEmpty,
+    lastLocalVerifiedAt: nil,
+    lastCloudVerifiedAt: nil,
+    githubEnvironment: accountEnvironmentName(id),
+    latestActionId: nil,
+    profilePath: accountsRootURL().appendingPathComponent(id, isDirectory: true).appendingPathComponent("profile", isDirectory: true).path,
+    codexHomePath: accountsRootURL().appendingPathComponent(id, isDirectory: true).appendingPathComponent("codex-home", isDirectory: true).path
+  )
+  do {
+    let session = try accountCredentialSession(account, waitSeconds: waitSeconds, openLoginWindow: true)
+    accountCommitSession(session, label: label, startRunner: startRunner)
+  } catch {
+    accountCleanupUnregisteredProfile(account)
+    output(["ok": false, "errorCode": "account_login_failed", "message": "账号登录未完成；没有保存凭据。"], exitCode: 1)
+  }
+case "account_sync":
+  let params = commandJSONParams()
+  let records = loadAccounts()
+  guard let account = resolveAccount(params["accountId"] as? String, records: records) else {
+    output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
+  }
+  let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
+  let startRunner = params["start"] as? Bool ?? true
+  do {
+    guard let storedAuth = accountAuthData(account) else {
+      throw NSError(domain: "chatgpt-auto-confirm", code: 705, userInfo: [NSLocalizedDescriptionKey: "账号没有可恢复的 Codex 凭据，请重新登录。"])
+    }
+    try accountCreateDirectories(account)
+    try storedAuth.write(to: accountCodexAuthURL(account), options: .atomic)
+    let session = try accountCredentialSession(account, waitSeconds: waitSeconds, openLoginWindow: false)
+    accountCommitSession(session, label: account.label, startRunner: startRunner)
+  } catch {
+    output(["ok": false, "errorCode": "account_sync_failed", "message": "账号同步未完成；没有覆盖现有凭据。"], exitCode: 1)
+  }
+case "account_remove":
+  let params = commandJSONParams()
+  let requested = (params["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  guard params["confirm"] as? Bool == true else {
+    output(["ok": false, "errorCode": "confirmation_required", "message": "删除账号必须显式确认。"], exitCode: 1)
+  }
+  var records = loadAccounts()
+  guard let index = records.firstIndex(where: { $0.id == requested }) else {
+    output(["ok": false, "errorCode": "account_not_found", "message": "没有找到指定账号。"], exitCode: 1)
+  }
+  let activeStatuses = Set(["queued", "running", "awaiting_review", "blocked"])
+  if let task = (loadQueueState().automationTasks ?? []).first(where: {
+    ($0.accountId ?? records[index].id) == requested && activeStatuses.contains($0.status)
+  }) {
+    output(["ok": false, "errorCode": "account_in_use", "taskId": task.id, "message": "账号仍有运行中的任务，暂不能删除。"], exitCode: 1)
+  }
+  let removed = records.remove(at: index)
+  if removed.isDefault, !records.isEmpty { records[0].isDefault = true }
+  do {
+    accountRemoveCredentials(removed)
+    try saveAccounts(records)
+    try? FileManager.default.removeItem(at: accountsRootURL().appendingPathComponent(removed.id, isDirectory: true))
+    removeGitHubAccountEnvironment(removed.id)
+    output(["ok": true, "removedAccountId": removed.id, "message": "账号及本机凭据已删除。"])
+  } catch {
+    output(["ok": false, "errorCode": "account_remove_failed", "message": "账号删除失败。"], exitCode: 1)
+  }
 case "sync_actions_credentials":
   let params = commandJSONParams()
+  if let account = resolveAccount(params["accountId"] as? String),
+     !ProcessInfo.processInfo.environment.keys.contains("CHATGPT_AUTO_CONFIRM_FORCE_LEGACY_SYNC") {
+    let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
+    let startRunner = params["start"] as? Bool ?? false
+    do {
+      guard let storedAuth = accountAuthData(account) else {
+        throw NSError(domain: "chatgpt-auto-confirm", code: 705, userInfo: [NSLocalizedDescriptionKey: "默认账号没有可恢复的 Codex 凭据，请重新登录。"])
+      }
+      try accountCreateDirectories(account)
+      try storedAuth.write(to: accountCodexAuthURL(account), options: .atomic)
+      let session = try accountCredentialSession(account, waitSeconds: waitSeconds, openLoginWindow: false)
+      accountCommitSession(session, label: account.label, startRunner: startRunner)
+    } catch {
+      output(["ok": false, "errorCode": "account_sync_failed", "message": "默认账号同步未完成；没有覆盖现有凭据。"], exitCode: 1)
+    }
+  }
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? false
   syncLiveActionsCredentials(
@@ -1180,6 +1529,17 @@ case "sync_actions_credentials":
   )
 case "login_and_sync_actions":
   let params = commandJSONParams()
+  if let account = resolveAccount(params["accountId"] as? String),
+     !ProcessInfo.processInfo.environment.keys.contains("CHATGPT_AUTO_CONFIRM_FORCE_LEGACY_SYNC") {
+    let waitSeconds = min(1_800, max(60, params["waitSeconds"] as? Int ?? 600))
+    let startRunner = params["start"] as? Bool ?? true
+    do {
+      let session = try accountCredentialSession(account, waitSeconds: waitSeconds, openLoginWindow: true)
+      accountCommitSession(session, label: account.label, startRunner: startRunner)
+    } catch {
+      output(["ok": false, "errorCode": "account_login_failed", "message": "默认账号登录未完成；没有保存半套凭据。"], exitCode: 1)
+    }
+  }
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
   syncLiveActionsCredentials(
@@ -1188,6 +1548,12 @@ case "login_and_sync_actions":
     openDesktopIfNeeded: true
   )
 case "start_actions_runner":
+  let runnerParams = commandJSONParams()
+  let requestedRunnerAccount = (runnerParams["accountId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  if let requestedRunnerAccount, !requestedRunnerAccount.isEmpty,
+     resolveAccount(requestedRunnerAccount) == nil {
+    output(["ok": false, "errorCode": "account_not_found", "message": "指定账号不存在。"], exitCode: 1)
+  }
   let executableURL = URL(
     fileURLWithPath: CommandLine.arguments[0]
   ).resolvingSymlinksInPath()
@@ -1212,6 +1578,11 @@ case "start_actions_runner":
   let stderr = Pipe()
   process.standardOutput = stdout
   process.standardError = stderr
+  var runnerEnvironment = ProcessInfo.processInfo.environment
+  if let requestedRunnerAccount, !requestedRunnerAccount.isEmpty {
+    runnerEnvironment["CHATGPT_ACCOUNT_ID"] = requestedRunnerAccount
+  }
+  process.environment = runnerEnvironment
   do {
     try process.run()
     process.waitUntilExit()
@@ -1755,6 +2126,13 @@ case "send_and_watch":
   // the first poll can mistake the previous assistant message for the reply to
   // the new instruction and return immediately.
   var state = loadState()
+  if let requestedAccountId = params["accountId"] as? String {
+    guard let account = resolveAccount(requestedAccountId) else {
+      output(["ok": false, "errorCode": "account_not_found", "message": "指定账号不存在。"], exitCode: 1)
+    }
+    state.backgroundProfilePath = account.profilePath
+    state.backgroundAppPort = accountAvailableCDPPort()
+  }
   let prepared = ensureHiddenChatTarget(
     &state,
     newChat: resumeExisting ? false : newChat,

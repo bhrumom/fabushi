@@ -690,7 +690,11 @@ func copyProfileForDedicatedQueueWorker(
   }
 }
 
-func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
+func launchDedicatedQueueChatProcess(
+  profilePath: String,
+  port: Int,
+  codexHomePath: String? = nil
+) -> Bool {
   do {
     let existingApplicationPids = Set(
       NSWorkspace.shared.runningApplications.compactMap { application -> pid_t? in
@@ -739,6 +743,11 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
+    if let codexHomePath {
+      var environment = ProcessInfo.processInfo.environment
+      environment["CODEX_HOME"] = codexHomePath
+      launcher.environment = environment
+    }
     launcher.standardInput = FileHandle.nullDevice
     launcher.standardOutput = FileHandle.nullDevice
     launcher.standardError = FileHandle.nullDevice
@@ -781,6 +790,11 @@ func launchDedicatedQueueChatProcess(profilePath: String, port: Int) -> Bool {
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
+    if let codexHomePath {
+      var environment = ProcessInfo.processInfo.environment
+      environment["CODEX_HOME"] = codexHomePath
+      fallbackLauncher.environment = environment
+    }
     fallbackLauncher.standardInput = FileHandle.nullDevice
     fallbackLauncher.standardOutput = FileHandle.nullDevice
     fallbackLauncher.standardError = FileHandle.nullDevice
@@ -836,10 +850,13 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
 }
 
 func createDedicatedParallelQueueWorkerTarget(
-  _ state: inout PluginState
+  _ state: inout PluginState,
+  sourceProfilePath: String? = nil,
+  codexHomePath: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
   let general = generalApprovalStateForQueue()
-  let sourceProfile = configuredHiddenChatProfilePath()
+  let sourceProfile = sourceProfilePath
+    ?? configuredHiddenChatProfilePath()
     ?? general?.backgroundProfilePath
     ?? state.backgroundProfilePath
     ?? hiddenChatProfilePath()
@@ -865,7 +882,7 @@ func createDedicatedParallelQueueWorkerTarget(
     return nil
   }
   queueTrace("worker-create stage=dedicated-process-launch begin port=\(port)")
-  guard launchDedicatedQueueChatProcess(profilePath: profilePath, port: port),
+  guard launchDedicatedQueueChatProcess(profilePath: profilePath, port: port, codexHomePath: codexHomePath),
         let targetId = dedicatedQueueChatTarget(port: port) else {
     state.lastError = "dedicated_hidden_chat_process_not_ready"
     terminateDedicatedChatProcess(profilePath: profilePath)
@@ -1191,8 +1208,19 @@ func createQueueWorkerTarget(
 }
 
 func createIndependentQueueWorkerTarget(
-  _ state: inout PluginState
+  _ state: inout PluginState,
+  accountId: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
+  if let account = resolveAccount(accountId),
+     FileManager.default.fileExists(atPath: account.profilePath) {
+    guard let worker = createDedicatedParallelQueueWorkerTarget(
+      &state,
+      sourceProfilePath: account.profilePath,
+      codexHomePath: account.codexHomePath
+    ) else { return nil }
+    state.queueWorkerMode = parallelDedicatedProcessQueueWorkerMode
+    return worker
+  }
   // Reuse the authenticated ChatGPT desktop process and ask its official
   // prewarm service to create a fresh hidden app renderer.
   guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
@@ -1285,7 +1313,7 @@ func startAutomationTask(
   task.workerTargetId = nil
   task.workerProfilePath = nil
   queueTrace("task=\(task.id) stage=create-worker begin")
-  guard var worker = createIndependentQueueWorkerTarget(&state) else {
+  guard var worker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) else {
     let detail = state.lastError ?? "unknown"
     throw NSError(
       domain: "chatgpt-auto-confirm",
@@ -1358,7 +1386,7 @@ func startAutomationTask(
       port = nil
       targetId = nil
       workerProfilePath = nil
-      if let replacement = createIndependentQueueWorkerTarget(&state) {
+      if let replacement = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) {
         worker = replacement
         port = replacement.port
         targetId = replacement.targetId

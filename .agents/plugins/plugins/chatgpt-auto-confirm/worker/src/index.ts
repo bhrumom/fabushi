@@ -37,6 +37,7 @@ const queuedTaskSchema = {
   type: 'object', additionalProperties: false, required: ['title', 'prompt'],
   properties: {
     id: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
+    accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$', description: '固定执行此任务的本机账号；不传时使用入队时的默认账号' },
     title: { type: 'string', minLength: 1, maxLength: 160 },
     prompt: { type: 'string', minLength: 1, maxLength: 10000 },
     promptTemplate: { type: 'string', enum: taskPromptTemplates.map(item => item.id), default: 'continue-to-complete' },
@@ -55,12 +56,57 @@ const queuedTaskSchema = {
   },
 };
 const tools = [
+  { name: 'account_list', description: '列出本机已注册的 ChatGPT 账号（不返回凭证、邮箱或 Cookie）', annotations: annotations(true), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {},
+  } },
+  { name: 'account_add', description: '打开隔离的 ChatGPT 登录窗口，登录后自动保存并验证一个账号', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      label: { type: 'string', minLength: 1, maxLength: 80, description: '本机显示名称' },
+      waitSeconds: { type: 'integer', minimum: 60, maximum: 1800, default: 600 },
+      start: { type: 'boolean', default: true, description: '验证成功后是否启动该账号的 smoke Action' },
+    },
+  } },
+  { name: 'account_login_link', description: '生成仅绑定 127.0.0.1、十分钟内一次有效的登录链接', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      label: { type: 'string', maxLength: 80 },
+    },
+  } },
+  { name: 'account_switch', description: '切换默认账号；已入队或运行中的任务不会改变', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, required: ['accountId'], properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+    },
+  } },
+  { name: 'account_rename', description: '修改本机账号名称', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, required: ['accountId', 'label'], properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+      label: { type: 'string', minLength: 1, maxLength: 80 },
+    },
+  } },
+  { name: 'account_status', description: '检查账号本机凭证、云端最近验证和默认状态', annotations: annotations(true), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+    },
+  } },
+  { name: 'account_sync', description: '从指定账号的隔离 ChatGPT renderer 导出最新 Cookie、保存凭证并启动 smoke Action', annotations: annotations(), inputSchema: {
+    type: 'object', additionalProperties: false, properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+      waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
+      start: { type: 'boolean', default: true },
+    },
+  } },
+  { name: 'account_remove', description: '删除账号及本机凭据；运行中的任务会拒绝删除', annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }, inputSchema: {
+    type: 'object', additionalProperties: false, required: ['accountId'], properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+      confirm: { type: 'boolean', description: '必须显式确认删除' },
+    },
+  } },
   { name: 'login_and_sync_actions', description: 'Open the ChatGPT desktop app when needed, validate its signed-in app:// renderer and local Codex auth, then export the live renderer session over CDP and sync both credentials to GitHub Secrets.', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
     type: 'object', additionalProperties: false, properties: {
       waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
       start: { type: 'boolean', default: true },
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
     },
   } },
   { name: 'sync_actions_credentials', description: 'Export the live authenticated app:// renderer session from an already-open ChatGPT desktop instance over CDP, validate local Codex auth, then upload both credentials to GitHub Secrets.', annotations: {
@@ -69,6 +115,7 @@ const tools = [
     type: 'object', additionalProperties: false, properties: {
       waitSeconds: { type: 'integer', minimum: 30, maximum: 1800, default: 600 },
       start: { type: 'boolean', default: false, description: 'After syncing, optionally start the GitHub Actions runner.' },
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
     },
   } },
   { name: 'home', description: '加载插件首页', annotations: annotations(true), inputSchema: {
@@ -116,6 +163,7 @@ const tools = [
       chatUrl: { type: 'string', pattern: '^https://chatgpt\\.com/(?:$|c/)', description: '精确操作的 ChatGPT 对话地址；界面隐藏后仍会在后台挂载' },
       newChat: { type: 'boolean', default: true, description: '在隐藏 ChatGPT.app 实例中点击「新聊天」并选中 Chat，再选择 connector 并发送' },
       timeout: { type: 'integer', minimum: 10, maximum: 7200, default: 3600, description: '等待最终回复的最大秒数' },
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$', description: '固定此隐藏 Chat 使用的账号' },
       stagnationTimeout: { type: 'integer', minimum: 60, maximum: 3600, default: 1200, description: '可见思考、工具进度和对话页连续无新内容多少秒后自动停止并在新 Chat 续作，默认 20 分钟' },
       maxRecoveryAttempts: { type: 'integer', minimum: 0, maximum: 5, default: 5, description: '停止后在新 Chat 自动发送续作指令的最大次数；超过后截图并报错' },
       autoContinueIncomplete: { type: 'boolean', default: true, description: '按机器可读最终总结识别未完成任务，并自动在全新 Chat 续作' },
@@ -156,6 +204,7 @@ const tools = [
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4, default: 2 },
       reviewGate: { type: 'boolean', default: true },
       start: { type: 'boolean', default: true },
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$', description: '本次入队的默认账号；每个任务会保存固定账号 id' },
     },
   } },
   { name: 'start_queue', description: '启动或恢复队列；工作和自动验收都在专用实例的 Chat 页面完成，Worker 只返回队列状态', annotations: annotations(), inputSchema: {
@@ -186,7 +235,9 @@ const tools = [
   { name: 'start_actions_runner', description: '把当前队列的最小续作状态和 ChatGPT 登录凭证安全刷新到 GitHub Secrets，并启动最长六小时的 GitHub Actions 持续运行器；未完成时 Action 自动启动下一轮', annotations: {
     readOnlyHint: false, destructiveHint: false, openWorldHint: true,
   }, inputSchema: {
-    type: 'object', additionalProperties: false, properties: {},
+    type: 'object', additionalProperties: false, properties: {
+      accountId: { type: 'string', pattern: '^acct_[0-9a-f]{12}$' },
+    },
   } },
   { name: 'wait_for_review', description: '等待队列出现待验收、阻塞或失败任务', annotations: annotations(true), inputSchema: {
     type: 'object', additionalProperties: false, properties: {
@@ -275,6 +326,7 @@ export default {
         const resumeExisting = args.resumeExisting === true;
         return hostResult(rpc.id, 'desktop.chatgpt-approvals.send-and-watch', {
           message: msg,
+          accountId: args.accountId || null,
           connector: args.connector || null,
           conversationId: resumeExisting ? (args.conversationId || null) : null,
           chatUrl: resumeExisting ? (args.chatUrl || null) : null,
@@ -325,6 +377,7 @@ export default {
         if (tasks.length < 1 || tasks.length > 50) return error(rpc.id, -32602, 'tasks 必须包含 1-50 个任务');
         return hostResult(rpc.id, 'desktop.chatgpt-approvals.queue-enqueue', {
           tasks,
+          accountId: args.accountId || null,
           maxConcurrent: Math.min(4, Math.max(1, args.maxConcurrent ?? 2)),
           reviewGate: args.reviewGate !== false,
           start: args.start !== false,
@@ -353,15 +406,26 @@ export default {
           source: args.source ? String(args.source).slice(0, 160) : 'operator',
         }, 'required');
       if (name === 'start_actions_runner') return hostResult(
-        rpc.id, 'desktop.chatgpt-approvals.actions-runner-start', {}, 'required');
+        rpc.id, 'desktop.chatgpt-approvals.actions-runner-start', {
+          accountId: args.accountId || null,
+        }, 'required');
+      if (['account_list', 'account_add', 'account_login_link', 'account_switch', 'account_rename', 'account_status', 'account_sync', 'account_remove'].includes(name)) {
+        const accountParams: Record<string, unknown> = { ...args };
+        if (name === 'account_remove' && args.confirm !== true) {
+          return error(rpc.id, -32602, '删除账号必须显式传入 confirm=true');
+        }
+        return hostResult(rpc.id, `desktop.chatgpt-approvals.${name.replaceAll('_', '-')}`, accountParams, name === 'account_list' || name === 'account_status' ? 'none' : 'required');
+      }
       if (name === 'login_and_sync_actions') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-login-sync', {
           waitSeconds: Math.min(1800, Math.max(30, Number(args.waitSeconds ?? 600))),
           start: args.start !== false,
+          accountId: args.accountId || null,
         }, 'required');
       if (name === 'sync_actions_credentials') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.actions-runner-credential-sync', {
           start: args.start === true,
+          accountId: args.accountId || null,
         }, 'required');
       if (name === 'wait_for_review') return hostResult(
         rpc.id, 'desktop.chatgpt-approvals.queue-wait-review', {

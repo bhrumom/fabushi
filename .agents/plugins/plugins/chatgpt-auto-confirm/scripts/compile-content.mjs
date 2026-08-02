@@ -39,6 +39,10 @@ for (const [folder, kind] of kinds) {
 items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id));
 const source = JSON.stringify({ welcome, tips, items, resources });
 const quickReplies = [
+  { id: 'account-list', label: '查看 ChatGPT 账号', aliases: ['账号列表', '管理账号'], action: { type: 'tool', name: 'account_list', arguments: {} } },
+  { id: 'account-add', label: '添加 ChatGPT 账号', aliases: ['添加账号', '登录新账号'], action: { type: 'tool', name: 'account_add', arguments: {} } },
+  { id: 'account-login-link', label: '生成一次性登录链接', aliases: ['登录链接'], action: { type: 'tool', name: 'account_login_link', arguments: {} } },
+  { id: 'account-status', label: '检查账号凭证状态', aliases: ['账号健康检查'], action: { type: 'tool', name: 'account_status', arguments: {} } },
   { id: 'sync-actions-credentials', label: '一键更新凭证到 GitHub Secrets', aliases: ['同步已登录凭证', '更新 Action 凭证', '一键更新凭证'], action: { type: 'tool', name: 'sync_actions_credentials', arguments: {} } },
   { id: 'login-and-sync-actions', label: '登录并同步 Action 凭证', aliases: [], action: { type: 'tool', name: 'login_and_sync_actions', arguments: {} } },
   { id: 'queue-status', label: '查看任务队列', aliases: [], action: { type: 'tool', name: 'queue_status', arguments: {} } },
