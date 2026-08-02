@@ -1,12 +1,33 @@
-name: Trusted Main CI
+name: Trusted Main
 on:
   push:
     branches: [main]
+
 permissions:
   contents: read
+
 jobs:
-  check:
+  contract:
+    name: contract
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: echo "trusted main checks"
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: false
+      - run: bash scripts/verify-repository.sh
+      - run: go test ./...
+      - run: bash scripts/build-test-runtimes.sh
+      - run: node tests/native-contract.mjs
+      - run: node tests/web-wasm-contract.mjs
+      - run: node tests/mcp-apps-conformance.mjs
+      - run: node tests/review-diff-report.mjs

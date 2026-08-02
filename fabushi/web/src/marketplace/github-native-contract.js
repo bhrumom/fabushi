@@ -113,7 +113,7 @@ export function normalizeGitHubSource(value) {
   };
 }
 
-function normalizeArtifact(value, sourceCommit) {
+function normalizeArtifact(value, sourceCommit, sourceTreeHash) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail('artifact_invalid', 'artifact must be an object');
   }
@@ -127,6 +127,7 @@ function normalizeArtifact(value, sourceCommit) {
     id: requiredString(value.id, 'artifact.id', 160),
     kind,
     sourceCommit: exactSha(value.sourceCommit, SHA1, 'artifact.sourceCommit'),
+    sourceTreeHash: exactSha(value.sourceTreeHash, SHA1, 'artifact.sourceTreeHash'),
     url: httpsUrl(value.url, 'artifact.url'),
     sha256: exactSha(value.sha256, SHA256, 'artifact.sha256'),
     size,
@@ -143,6 +144,13 @@ function normalizeArtifact(value, sourceCommit) {
       artifactId: artifact.id,
       expected: sourceCommit,
       actual: artifact.sourceCommit,
+    });
+  }
+  if (artifact.sourceTreeHash !== sourceTreeHash) {
+    fail('source_tree_mismatch', 'every artifact must bind the exact release source tree hash', {
+      artifactId: artifact.id,
+      expected: sourceTreeHash,
+      actual: artifact.sourceTreeHash,
     });
   }
   if (kind === 'common') {
@@ -261,11 +269,16 @@ function normalizeDerivation(value, pluginId, source) {
   }
   const upstreamCommit = exactSha(value.upstreamCommit, SHA1, 'derivation.upstreamCommit');
   const syncBaseCommit = exactSha(value.syncBaseCommit ?? value.upstreamCommit, SHA1, 'derivation.syncBaseCommit');
+  const forkRepository = requiredString(value.forkRepository ?? source.repository, 'derivation.forkRepository', 200);
+  if (forkRepository !== source.repository) {
+    fail('derivation_invalid', 'derivation.forkRepository must match the release source repository');
+  }
   return {
     upstreamPluginId,
     upstreamRepository,
     upstreamCommit,
     syncBaseCommit,
+    forkRepository,
     permissionDiffSha256: exactSha(value.permissionDiffSha256, SHA256, 'derivation.permissionDiffSha256'),
     toolContractDiffSha256: exactSha(value.toolContractDiffSha256, SHA256, 'derivation.toolContractDiffSha256'),
     artifactDiffSha256: exactSha(value.artifactDiffSha256, SHA256, 'derivation.artifactDiffSha256'),
@@ -285,7 +298,7 @@ export function normalizeReleaseManifest(value) {
   if (!Array.isArray(value.artifacts) || value.artifacts.length < 2) {
     fail('artifact_invalid', 'release requires common plus at least one executable artifact');
   }
-  const artifacts = value.artifacts.map((artifact) => normalizeArtifact(artifact, source.commit));
+  const artifacts = value.artifacts.map((artifact) => normalizeArtifact(artifact, source.commit, source.treeHash));
   const selectors = artifacts.map(artifactSelector);
   if (new Set(selectors).size !== selectors.length) {
     fail('artifact_selector_ambiguous', 'artifact platform selectors must not overlap', { selectors });
@@ -326,7 +339,10 @@ export function validateUntrustedPullRequestWorkflow(workflowText) {
   if (!/permissions\s*:\s*\n(?:\s+[^\n]+\n)*?\s+contents\s*:\s*read/m.test(text)) {
     failures.push('workflow must explicitly set contents: read');
   }
-  if (/gh\s+release\s+create|npm\s+publish|wrangler\s+deploy|actions\/attest|upload-artifact@/m.test(text)) {
+  if (!/persist-credentials\s*:\s*false/m.test(text)) {
+    failures.push('untrusted checkout must disable persisted credentials');
+  }
+  if (/gh\s+release\s+create|npm\s+publish|wrangler\s+deploy|actions\/attest|upload-artifact@|actions\/cache@/m.test(text)) {
     failures.push('untrusted workflow must not publish, deploy, attest, or export reusable artifacts');
   }
   return { valid: failures.length === 0, failures };
@@ -340,6 +356,11 @@ export function validateTrustedReleaseWorkflow(workflowText) {
   if (!/attestations\s*:\s*write/m.test(text)) failures.push('trusted release workflow requires attestations: write');
   if (!/SOURCE_COMMIT\s*:\s*\$\{\{\s*github\.sha\s*\}\}/m.test(text)) failures.push('workflow must bind SOURCE_COMMIT to github.sha');
   if (!/actions\/attest-build-provenance@/m.test(text)) failures.push('workflow must create GitHub artifact attestations');
+  if (!/persist-credentials\s*:\s*false/m.test(text) || !/ref\s*:\s*\$\{\{\s*github\.sha\s*\}\}/m.test(text)) {
+    failures.push('trusted release must checkout the exact source commit without persisted credentials');
+  }
+  if (!/environment\s*:\s*production/m.test(text)) failures.push('trusted release requires production environment approval');
+  if (!/cosign\s+sign-blob/m.test(text)) failures.push('trusted release must sign the parent Release Manifest with OIDC');
   if (!/release\s*:\s*\n\s+types\s*:\s*\[published\]/m.test(text) && !/tags\s*:/m.test(text)) {
     failures.push('workflow must be protected release or tag triggered');
   }
@@ -413,22 +434,56 @@ export function validateRepositoryTemplate(files) {
   const entries = files && typeof files === 'object' && !Array.isArray(files) ? files : {};
   const required = [
     'LICENSE',
+    'NOTICE',
     'CONTRIBUTING.md',
     'SECURITY.md',
     'mcp-app.yaml',
     'tools.json',
     'permissions.json',
+    'tool-contract.json',
+    'common/plugin.json',
+    'common/ui/index.html',
+    'common/ui/app.js',
+    'common/ui/styles.css',
+    'go.mod',
+    'cmd/native/main.go',
+    'cmd/webwasm/main.go',
+    'internal/contract/contract.go',
+    'internal/contract/contract_test.go',
+    'runtime/web/worker.js',
+    'scripts/build-test-runtimes.sh',
+    'scripts/build-artifacts.sh',
+    'scripts/create-release-manifest.mjs',
+    'scripts/verify-repository.sh',
+    'scripts/verify-untrusted-workflow.sh',
+    'tests/native-contract.mjs',
+    'tests/web-wasm-contract.mjs',
+    'tests/mcp-apps-conformance.mjs',
     '.github/CODEOWNERS',
     '.github/ISSUE_TEMPLATE/bug.yml',
     '.github/PULL_REQUEST_TEMPLATE.md',
     '.github/workflows/pr-untrusted.yml',
     '.github/workflows/main-trusted.yml',
     '.github/workflows/release-trusted.yml',
+    '.github/rulesets/main.json',
+    '.github/rulesets/release-tags.json',
   ];
   const failures = required.filter((path) => !String(entries[path] ?? '').trim())
     .map((path) => `missing required repository file: ${path}`);
   const codeowners = String(entries['.github/CODEOWNERS'] ?? '');
-  for (const protectedPath of ['/.github/workflows/', '/.github/CODEOWNERS', '/mcp-app.yaml', '/permissions.json', '/tools.json']) {
+  for (const protectedPath of [
+    '/.github/workflows/',
+    '/.github/CODEOWNERS',
+    '/.github/rulesets/',
+    '/mcp-app.yaml',
+    '/permissions.json',
+    '/tools.json',
+    '/tool-contract.json',
+    '/scripts/build-artifacts.sh',
+    '/scripts/create-release-manifest.mjs',
+    '/internal/contract/',
+    '/runtime/web/',
+  ]) {
     if (!codeowners.includes(protectedPath)) failures.push(`CODEOWNERS must protect ${protectedPath}`);
   }
   const untrusted = validateUntrustedPullRequestWorkflow(entries['.github/workflows/pr-untrusted.yml']);
@@ -439,6 +494,72 @@ export function validateRepositoryTemplate(files) {
   for (const value of [MCP_APPS_STABLE_VERSION, MCP_APPS_EXTENSION, MCP_APPS_MIME, 'common', 'native-cli', 'web-wasm']) {
     if (!manifest.includes(value)) failures.push(`mcp-app.yaml must declare ${value}`);
   }
+  const tools = String(entries['tool-contract.json'] ?? '');
+  for (const name of ['send', 'status', 'cancel', 'logs']) {
+    if (!tools.includes(`"${name}"`)) failures.push(`tool-contract.json must declare ${name}`);
+  }
+  const runtime = [
+    entries['internal/contract/contract.go'],
+    entries['cmd/native/main.go'],
+    entries['cmd/webwasm/main.go'],
+    entries['runtime/web/worker.js'],
+  ].join('\n');
+  for (const value of ['tools/call', 'structuredContent', 'PluginID', 'Version']) {
+    if (!runtime.includes(value)) failures.push(`runtime implementation must include ${value}`);
+  }
+  const build = String(entries['scripts/build-artifacts.sh'] ?? '');
+  for (const value of [
+    'native-macos-arm64',
+    'native-macos-x64',
+    'native-windows-x64',
+    'native-linux-x64',
+    'native-linux-arm64',
+    'web-wasm',
+    'GOOS=js GOARCH=wasm',
+  ]) {
+    if (!build.includes(value)) failures.push(`build-artifacts.sh must build ${value}`);
+  }
+  const releaseManifest = String(entries['scripts/create-release-manifest.mjs'] ?? '');
+  for (const value of ['repositoryId', 'sourceCommit', 'sourceTreeHash', 'parentManifestSha256', 'attestationUrl', 'licenseSpdx', 'optionalDerivation']) {
+    if (!releaseManifest.includes(value)) failures.push(`create-release-manifest.mjs must bind ${value}`);
+  }
+  const ui = `${entries['common/ui/index.html'] ?? ''}\n${entries['common/ui/app.js'] ?? ''}`;
+  for (const value of ['Content-Security-Policy', 'ui/initialize', 'ui/notifications/initialized', 'ui/resource-teardown']) {
+    if (!ui.includes(value)) failures.push(`MCP Apps UI must include ${value}`);
+  }
+  if (/replace with your real build|echo ["']run|TODO:\s*implement/i.test(Object.values(entries).join('\n'))) {
+    failures.push('repository template must contain executable implementations rather than build/test stubs');
+  }
+  const parseRuleset = (path, target, include) => {
+    let ruleset;
+    try {
+      ruleset = JSON.parse(String(entries[path] ?? ''));
+    } catch {
+      failures.push(`${path} must be valid JSON`);
+      return null;
+    }
+    if (ruleset.target !== target || ruleset.enforcement !== 'active') {
+      failures.push(`${path} must be an active ${target} ruleset`);
+    }
+    if (!ruleset.conditions?.ref_name?.include?.includes(include)) {
+      failures.push(`${path} must protect ${include}`);
+    }
+    if (!Array.isArray(ruleset.bypass_actors) || ruleset.bypass_actors.length !== 0) {
+      failures.push(`${path} must not define bypass actors`);
+    }
+    return ruleset;
+  };
+  const mainRuleset = parseRuleset('.github/rulesets/main.json', 'branch', 'refs/heads/main');
+  if (mainRuleset) {
+    const pullRequestRule = mainRuleset.rules?.find((rule) => rule.type === 'pull_request')?.parameters;
+    if (!pullRequestRule || pullRequestRule.required_approving_review_count < 1 ||
+        pullRequestRule.dismiss_stale_reviews_on_push !== true || pullRequestRule.require_code_owner_review !== true) {
+      failures.push('main ruleset must require approval, CODEOWNERS, and stale approval dismissal');
+    }
+    const checks = mainRuleset.rules?.find((rule) => rule.type === 'required_status_checks')?.parameters?.required_status_checks;
+    if (!Array.isArray(checks) || checks.length < 2) failures.push('main ruleset must require both untrusted PR checks');
+  }
+  parseRuleset('.github/rulesets/release-tags.json', 'tag', 'refs/tags/v*');
   return { valid: failures.length === 0, failures };
 }
 
