@@ -164,11 +164,13 @@ test('modern HTTP is per-request POST-only and rejects legacy sessions', async (
   });
   const address = listener.address();
   const endpoint = `http://127.0.0.1:${address.port}/mcp/global-dharma`;
-  const headers = {
+  const headersFor = (method, name) => ({
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
     'mcp-protocol-version': '2026-07-28',
-  };
+    'mcp-method': method,
+    ...(name ? { 'mcp-name': name } : {}),
+  });
   const modernParams = (params = {}) => ({
     ...params,
     _meta: {
@@ -184,7 +186,7 @@ test('modern HTTP is per-request POST-only and rejects legacy sessions', async (
   try {
     const listed = await fetch(endpoint, {
       method: 'POST',
-      headers,
+      headers: headersFor('tools/list'),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -199,7 +201,7 @@ test('modern HTTP is per-request POST-only and rejects legacy sessions', async (
 
     const home = await fetch(endpoint, {
       method: 'POST',
-      headers,
+      headers: headersFor('tools/call', 'home'),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 2,
@@ -212,14 +214,14 @@ test('modern HTTP is per-request POST-only and rejects legacy sessions', async (
     assert.equal(homePayload.result.structuredContent.schema, 'mahayana.miniapp.home.v1');
 
     for (const method of ['GET', 'DELETE']) {
-      const rejected = await fetch(endpoint, { method, headers });
+      const rejected = await fetch(endpoint, { method, headers: headersFor('tools/list') });
       assert.equal(rejected.status, 405);
       assert.equal(rejected.headers.get('allow'), 'POST');
     }
 
     const session = await fetch(endpoint, {
       method: 'POST',
-      headers: { ...headers, 'mcp-session-id': 'legacy-session' },
+      headers: { ...headersFor('tools/list'), 'mcp-session-id': 'legacy-session' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: modernParams() }),
     });
     assert.equal(session.status, 400);
@@ -295,7 +297,7 @@ test('Bot Father creates a complete portable plugin bundle', async () => {
     assert.equal(manifest.name, 'lotus-notes');
     assert.equal(manifest.mcpServers, './.mcp.json');
     for (const variant of manifest.runtimeVariants) assert.ok(mcp.mcpServers[variant.server]);
-    assert.match(bundle.files['ui/home.html'], /method:'tools\/call'/);
+    assert.match(bundle.files['ui/home.html'], /request\('tools\/call'/);
     assert.doesNotMatch(JSON.stringify(bundle), /FabushiMiniApp|bot\.chat|confirmed/);
 
     const validated = await client.callTool({
