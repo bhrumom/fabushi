@@ -24,6 +24,7 @@ struct Config {
     output_dir: PathBuf,
     search_pages: usize,
     delay_ms: u64,
+    article_retries: usize,
     max_articles: usize,
     max_albums: usize,
     download_images: bool,
@@ -56,6 +57,9 @@ impl Config {
             delay_ms: u64_any(arguments, &["delayMs", "delay_ms"])
                 .unwrap_or(450)
                 .clamp(100, 5_000),
+            article_retries: usize_any(arguments, &["articleRetries", "article_retries"])
+                .unwrap_or(5)
+                .clamp(1, 10),
             max_articles: usize_any(arguments, &["maxArticles", "max_articles"]).unwrap_or(0),
             max_albums: usize_any(arguments, &["maxAlbums", "max_albums"])
                 .unwrap_or(250)
@@ -163,6 +167,7 @@ struct ParsedArticle {
     body_html: String,
     album_ids: BTreeSet<String>,
     article_urls: BTreeSet<String>,
+    article_title_hints: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -181,6 +186,7 @@ struct Downloader {
     account: AccountRecord,
     article_queue: VecDeque<QueuedArticle>,
     queued_urls: HashSet<String>,
+    article_title_hints: BTreeMap<String, String>,
     processed_keys: HashSet<String>,
     album_queue: VecDeque<String>,
     queued_albums: HashSet<String>,
@@ -206,11 +212,7 @@ pub fn run(tool: &str, arguments: &Value) -> Result<Value, String> {
 
 fn inspect(config: Config) -> Result<Value, String> {
     let client = build_client(&config)?;
-    let html = get_text(&client, &config.seed_url, None, false, &config)?;
-    if is_verification_page(&html) {
-        return Err("微信返回了验证页；请使用完整、公开可访问的文章分享链接".into());
-    }
-    let parsed = parse_article(&html, &config.seed_url, "seed")?;
+    let (_, parsed) = fetch_and_parse_article(&client, &config.seed_url, "seed", &config)?;
     Ok(json!({
         "ok": true,
         "account": parsed.account,
@@ -239,6 +241,7 @@ fn crawl(config: Config, write_files: bool) -> Result<Value, String> {
         account: AccountRecord::default(),
         article_queue: VecDeque::new(),
         queued_urls: HashSet::new(),
+        article_title_hints: BTreeMap::new(),
         processed_keys: HashSet::new(),
         album_queue: VecDeque::new(),
         queued_albums: HashSet::new(),
@@ -331,10 +334,22 @@ impl Downloader {
     }
 
     fn enqueue_article(&mut self, url: String, source: &str) {
+        self.enqueue_article_with_hint(url, source, None);
+    }
+
+    fn enqueue_article_with_hint(&mut self, url: String, source: &str, title_hint: Option<String>) {
         let Some(url) = normalize_article_url(&url) else {
             return;
         };
         let identity = article_url_identity(&url);
+        if let Some(title_hint) = title_hint
+            .map(|value| value.trim().to_string())
+            .filter(|value| value.chars().count() >= 4 && !value.starts_with("http"))
+        {
+            self.article_title_hints
+                .entry(identity.clone())
+                .or_insert(title_hint);
+        }
         if self.queued_urls.insert(identity) {
             self.article_queue.push_back(QueuedArticle {
                 url,
@@ -353,28 +368,34 @@ impl Downloader {
 
     fn process_article(&mut self, queued: QueuedArticle) {
         self.discovery_sources.insert(queued.source.clone());
-        let result = get_text(
-            &self.client,
-            &queued.url,
-            Some("https://mp.weixin.qq.com/"),
-            false,
-            &self.config,
-        )
-        .and_then(|html| {
-            if is_verification_page(&html) {
-                return Err("微信返回验证页或文章不可公开访问".into());
+        let identity = article_url_identity(&queued.url);
+        let title_hint = self.article_title_hints.get(&identity).cloned();
+        let mut recovered_from_title_index = false;
+        let mut result =
+            fetch_and_parse_article(&self.client, &queued.url, &queued.source, &self.config);
+        if let Err(original_error) = &result {
+            if self.config.allow_sogou
+                && !original_error.starts_with("文章不可公开访问：")
+                && title_hint.is_some()
+            {
+                if let Some(title_hint) = title_hint.as_deref() {
+                    if let Ok(recovered) = self.recover_article_via_sogou(title_hint) {
+                        recovered_from_title_index = true;
+                        result = Ok(recovered);
+                    }
+                }
             }
-            let parsed = parse_article(&html, &queued.url, &queued.source)?;
-            if parsed.account.biz.is_empty() || parsed.mid.is_empty() {
-                return Err("页面没有可验证的公众号 biz/mid 元数据".into());
-            }
-            Ok((html, parsed))
-        });
+        }
         let (html, parsed) = match result {
             Ok(value) => value,
             Err(error) => {
+                let kind = if error.starts_with("文章不可公开访问：") {
+                    "unavailable-article"
+                } else {
+                    "article"
+                };
                 self.failures.push(FailureRecord {
-                    kind: "article".into(),
+                    kind: kind.into(),
                     target: queued.url,
                     error,
                 });
@@ -400,7 +421,11 @@ impl Downloader {
         }
         for url in &parsed.article_urls {
             if article_biz(url).as_deref() == Some(self.account.biz.as_str()) {
-                self.enqueue_article(url.clone(), "article-link");
+                self.enqueue_article_with_hint(
+                    url.clone(),
+                    "article-link",
+                    parsed.article_title_hints.get(url).cloned(),
+                );
             }
         }
         let (output_path, image_count, downloaded_images, body_bytes) = if self.write_files {
@@ -445,7 +470,11 @@ impl Downloader {
             image_count,
             downloaded_images,
             album_ids: parsed.album_ids.into_iter().collect(),
-            discovered_from: queued.source,
+            discovered_from: if recovered_from_title_index {
+                "sogou-title-recovery".into()
+            } else {
+                queued.source
+            },
         };
         self.articles.insert(key, record);
     }
@@ -518,6 +547,64 @@ impl Downloader {
                 pages,
             },
         );
+    }
+
+    fn recover_article_via_sogou(
+        &mut self,
+        title_hint: &str,
+    ) -> Result<(String, ParsedArticle), String> {
+        if self.account.nickname.is_empty() || title_hint.chars().count() < 4 {
+            return Err("缺少可用于公开索引恢复的标题或公众号名称".into());
+        }
+        let queries = [
+            title_hint.to_string(),
+            format!("{title_hint} {}", self.account.nickname),
+        ];
+        let mut last_error = String::new();
+        for query in queries {
+            let encoded =
+                url::form_urlencoded::byte_serialize(query.as_bytes()).collect::<String>();
+            let search_url = format!(
+                "https://weixin.sogou.com/weixin?type=2&s_from=input&query={encoded}&ie=utf8"
+            );
+            let html = get_text(&self.client, &search_url, None, false, &self.config)?;
+            if is_sogou_verification_page(&html) {
+                return Err("搜狗公开索引要求验证码，未尝试绕过".into());
+            }
+            let links = parse_sogou_exact_links(&html, &self.account.nickname, title_hint);
+            if links.is_empty() {
+                last_error = format!("公开索引未找到精确标题：{title_hint}");
+                continue;
+            }
+            for link in links {
+                match resolve_sogou_link(&self.client, &self.config, &search_url, &link).and_then(
+                    |url| {
+                        fetch_and_parse_article(
+                            &self.client,
+                            &url,
+                            "sogou-title-recovery",
+                            &self.config,
+                        )
+                    },
+                ) {
+                    Ok((source, parsed))
+                        if parsed.account.biz == self.account.biz
+                            && normalized_title(&parsed.title) == normalized_title(title_hint) =>
+                    {
+                        self.discovery_sources.insert("sogou-title-recovery".into());
+                        return Ok((source, parsed));
+                    }
+                    Ok((_, parsed)) => {
+                        last_error = format!(
+                            "公开索引候选不匹配：{} / {}",
+                            parsed.account.nickname, parsed.title
+                        );
+                    }
+                    Err(error) => last_error = error,
+                }
+            }
+        }
+        Err(last_error)
     }
 
     fn discover_sogou(&mut self) {
@@ -611,6 +698,56 @@ fn build_client(config: &Config) -> Result<Client, String> {
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|error| format!("build HTTP client: {error}"))
+}
+
+fn fetch_and_parse_article(
+    client: &Client,
+    url: &str,
+    source: &str,
+    config: &Config,
+) -> Result<(String, ParsedArticle), String> {
+    let mut last_error = String::new();
+    for attempt in 1..=config.article_retries {
+        match get_text(
+            client,
+            url,
+            Some("https://mp.weixin.qq.com/"),
+            false,
+            config,
+        ) {
+            Ok(html) => {
+                if let Some(reason) = unavailable_reason(&html) {
+                    return Err(format!("文章不可公开访问：{reason}"));
+                }
+                if is_verification_page(&html) {
+                    last_error = "微信返回临时验证页".into();
+                } else {
+                    match parse_article(&html, url, source) {
+                        Ok(parsed) if !parsed.account.biz.is_empty() && !parsed.mid.is_empty() => {
+                            return Ok((html, parsed));
+                        }
+                        Ok(_) => {
+                            last_error = "页面没有可验证的公众号 biz/mid 元数据".into();
+                        }
+                        Err(error) => {
+                            last_error = error;
+                        }
+                    }
+                }
+            }
+            Err(error) => last_error = error,
+        }
+        if attempt < config.article_retries {
+            let backoff_ms = 1_000u64
+                .saturating_mul(1u64 << (attempt.saturating_sub(1).min(3) as u32))
+                .min(8_000);
+            thread::sleep(Duration::from_millis(backoff_ms));
+        }
+    }
+    Err(format!(
+        "{last_error}（已重试 {} 次）",
+        config.article_retries
+    ))
 }
 
 fn get_text(
@@ -799,6 +936,7 @@ fn parse_article(html: &str, source_url: &str, _source: &str) -> Result<ParsedAr
     let body_html = extract_js_content(html).unwrap_or_default();
     let album_ids = extract_album_ids(html);
     let article_urls = extract_article_urls(html);
+    let article_title_hints = extract_article_title_hints(html);
     let canonical_url = article_urls
         .iter()
         .find(|url| {
@@ -828,6 +966,7 @@ fn parse_article(html: &str, source_url: &str, _source: &str) -> Result<ParsedAr
         body_html,
         album_ids,
         article_urls,
+        article_title_hints,
     })
 }
 
@@ -841,7 +980,7 @@ fn extract_js_content(html: &str) -> Option<String> {
     let mut end = None;
     for found in tag_regex.find_iter(&html[start..]) {
         let tag = found.as_str();
-        if tag.starts_with("</") || tag.starts_with("</") {
+        if tag.starts_with("</") {
             depth -= 1;
             if depth == 0 {
                 end = Some(start + found.end());
@@ -894,6 +1033,82 @@ fn extract_article_urls(html: &str) -> BTreeSet<String> {
         }
     }
     urls
+}
+
+fn extract_article_title_hints(html: &str) -> BTreeMap<String, String> {
+    let mut hints = BTreeMap::new();
+    let Ok(anchor_regex) =
+        Regex::new(r#"(?is)<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>"#)
+    else {
+        return hints;
+    };
+    for captures in anchor_regex.captures_iter(html) {
+        let Some(href) = captures.get(1) else {
+            continue;
+        };
+        let Some(url) = normalize_article_url(href.as_str()) else {
+            continue;
+        };
+        if article_biz(&url).is_none() || article_mid(&url).is_none() {
+            continue;
+        }
+        let title = captures
+            .get(2)
+            .map(|value| strip_tags(value.as_str()))
+            .unwrap_or_default();
+        if title.chars().count() >= 4 && !title.starts_with("http") {
+            hints.entry(url).or_insert(title);
+        }
+    }
+    hints
+}
+
+fn parse_sogou_exact_links(html: &str, nickname: &str, title: &str) -> Vec<String> {
+    let block_regex = match Regex::new(r#"(?is)<li\s+id="sogou_vr_11002601_box_[0-9]+".*?</li>"#) {
+        Ok(regex) => regex,
+        Err(_) => return Vec::new(),
+    };
+    let title_regex = Regex::new(r#"(?is)<h3>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>"#).ok();
+    let author_regex = Regex::new(r#"(?is)<span\s+class="all-time-y2">(.*?)</span>"#).ok();
+    let mut result = Vec::new();
+    for block in block_regex.find_iter(html) {
+        let block = block.as_str();
+        let author = author_regex
+            .as_ref()
+            .and_then(|regex| regex.captures(block))
+            .and_then(|captures| captures.get(1))
+            .map(|value| strip_tags(value.as_str()))
+            .unwrap_or_default();
+        let Some(captures) = title_regex.as_ref().and_then(|regex| regex.captures(block)) else {
+            continue;
+        };
+        let result_title = captures
+            .get(2)
+            .map(|value| strip_tags(value.as_str()))
+            .unwrap_or_default();
+        if author != nickname || normalized_title(&result_title) != normalized_title(title) {
+            continue;
+        }
+        let href = captures
+            .get(1)
+            .map(|value| decode_wechat_string(value.as_str()))
+            .unwrap_or_default();
+        if href.starts_with("/link?") {
+            result.push(format!("https://weixin.sogou.com{href}"));
+        }
+    }
+    result
+}
+
+fn normalized_title(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .replace('“', "\"")
+        .replace('”', "\"")
+        .replace('‘', "'")
+        .replace('’', "'")
 }
 
 fn parse_sogou_links(html: &str, nickname: &str) -> Vec<String> {
@@ -1294,6 +1509,21 @@ fn decode_wechat_string(value: &str) -> String {
     value.trim().to_string()
 }
 
+fn unavailable_reason(html: &str) -> Option<&'static str> {
+    [
+        ("此内容因违规无法查看", "内容因违规无法查看"),
+        ("该内容已被发布者删除", "内容已被发布者删除"),
+        ("内容已被删除", "内容已被删除"),
+        ("此内容已被删除", "内容已被删除"),
+        ("文章不存在", "文章不存在"),
+        ("页面不存在", "页面不存在"),
+        ("已停止访问该网页", "网页已停止访问"),
+        ("链接已过期", "链接已过期"),
+    ]
+    .into_iter()
+    .find_map(|(needle, reason)| html.contains(needle).then_some(reason))
+}
+
 fn is_verification_page(html: &str) -> bool {
     html.contains("secitptpage/verify")
         || html.contains("请在微信客户端打开链接")
@@ -1457,5 +1687,83 @@ mod tests {
         let source = r#"<li id="sogou_vr_11002601_box_0"><h3><a href="/link?url=ok">T</a></h3><span class="all-time-y2">目标号</span></li><li id="sogou_vr_11002601_box_1"><h3><a href="/link?url=no">T2</a></h3><span class="all-time-y2">别的号</span></li>"#;
         let links = parse_sogou_links(source, "目标号");
         assert_eq!(links, vec!["https://weixin.sogou.com/link?url=ok"]);
+    }
+
+    #[test]
+    fn extracts_anchor_text_as_article_recovery_hint() {
+        let source = r#"<a href="https://mp.weixin.qq.com/s?__biz=test%3D%3D&amp;mid=99&amp;idx=1&amp;sn=x"><strong>精确文章标题</strong></a>"#;
+        let hints = extract_article_title_hints(source);
+        assert_eq!(hints.len(), 1);
+        assert_eq!(
+            hints.values().next().map(String::as_str),
+            Some("精确文章标题")
+        );
+    }
+
+    #[test]
+    fn filters_sogou_title_recovery_by_exact_account_and_title() {
+        let source = r#"<li id="sogou_vr_11002601_box_0"><h3><a href="/link?url=ok">精确文章标题</a></h3><span class="all-time-y2">目标号</span></li><li id="sogou_vr_11002601_box_1"><h3><a href="/link?url=no">其他标题</a></h3><span class="all-time-y2">目标号</span></li>"#;
+        assert_eq!(
+            parse_sogou_exact_links(source, "目标号", "精确文章标题"),
+            vec!["https://weixin.sogou.com/link?url=ok"]
+        );
+    }
+
+    #[test]
+    fn distinguishes_unavailable_content_from_temporary_verification() {
+        assert_eq!(
+            unavailable_reason("<p>此内容因违规无法查看</p>"),
+            Some("内容因违规无法查看")
+        );
+        assert_eq!(unavailable_reason("secitptpage/verify"), None);
+        assert!(is_verification_page("secitptpage/verify"));
+    }
+
+    #[test]
+    fn retries_a_temporary_verification_page() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            for request_number in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                let body = if request_number == 0 {
+                    "<html>secitptpage/verify</html>"
+                } else {
+                    r#"<html><script>var biz = "test-biz"; var mid = "42"; var idx = "1";</script><script>window.__mpVideoTransInfo = {title:'Recovered',nick_name:'Test Account'};</script><div id="js_content"><p>body</p></div></html>"#
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            }
+        });
+        let url = format!("http://{address}/article");
+        let config = Config {
+            seed_url: url.clone(),
+            output_dir: PathBuf::from("unused"),
+            search_pages: 0,
+            delay_ms: 100,
+            article_retries: 2,
+            max_articles: 0,
+            max_albums: 1,
+            download_images: false,
+            raw_html: false,
+            allow_sogou: false,
+            strict: false,
+            cookie: None,
+        };
+        let client = build_client(&config).unwrap();
+        let (_, article) = fetch_and_parse_article(&client, &url, "test", &config).unwrap();
+        assert_eq!(article.title, "Recovered");
+        assert_eq!(article.mid, "42");
+        server.join().unwrap();
     }
 }
