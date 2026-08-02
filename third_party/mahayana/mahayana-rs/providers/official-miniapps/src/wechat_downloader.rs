@@ -191,6 +191,7 @@ struct Downloader {
     album_queue: VecDeque<String>,
     queued_albums: HashSet<String>,
     processed_albums: HashSet<String>,
+    album_members: BTreeMap<String, BTreeSet<String>>,
     articles: BTreeMap<String, ArticleRecord>,
     albums: BTreeMap<String, AlbumRecord>,
     failures: Vec<FailureRecord>,
@@ -246,6 +247,7 @@ fn crawl(config: Config, write_files: bool) -> Result<Value, String> {
         album_queue: VecDeque::new(),
         queued_albums: HashSet::new(),
         processed_albums: HashSet::new(),
+        album_members: BTreeMap::new(),
         articles: BTreeMap::new(),
         albums: BTreeMap::new(),
         failures: Vec::new(),
@@ -417,6 +419,10 @@ impl Downloader {
             return;
         }
         for album_id in &parsed.album_ids {
+            self.album_members
+                .entry(album_id.clone())
+                .or_default()
+                .insert(key.clone());
             self.enqueue_album(album_id.clone());
         }
         for url in &parsed.article_urls {
@@ -535,6 +541,10 @@ impl Downloader {
             }
         }
         for url in &all_urls {
+            self.album_members
+                .entry(album_id.clone())
+                .or_default()
+                .insert(article_url_identity(url));
             self.enqueue_article(url.clone(), &format!("album:{album_id}"));
         }
         self.albums.insert(
@@ -651,7 +661,8 @@ impl Downloader {
 
     fn manifest(&self) -> Manifest {
         let articles = self.articles.values().cloned().collect::<Vec<_>>();
-        let albums = self.albums.values().cloned().collect::<Vec<_>>();
+        let mut albums = self.albums.values().cloned().collect::<Vec<_>>();
+        apply_album_membership_counts(&mut albums, &self.album_members);
         let images = articles.iter().map(|article| article.image_count).sum();
         let downloaded_images = articles
             .iter()
@@ -674,6 +685,17 @@ impl Downloader {
             failures: self.failures.clone(),
             warnings: self.warnings.clone(),
             discovery_sources: self.discovery_sources.iter().cloned().collect(),
+        }
+    }
+}
+
+fn apply_album_membership_counts(
+    albums: &mut [AlbumRecord],
+    album_members: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for album in albums {
+        if let Some(members) = album_members.get(&album.id) {
+            album.discovered_articles = members.len();
         }
     }
 }
@@ -1660,6 +1682,23 @@ fn value_truthy(value: Option<&Value>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn album_manifest_counts_include_the_current_article() {
+        let mut albums = vec![AlbumRecord {
+            id: "album-1".into(),
+            title: "Album".into(),
+            declared_count: Some(2),
+            discovered_articles: 1,
+            pages: 1,
+        }];
+        let members = BTreeMap::from([(
+            "album-1".into(),
+            BTreeSet::from(["10:1".into(), "11:1".into()]),
+        )]);
+        apply_album_membership_counts(&mut albums, &members);
+        assert_eq!(albums[0].discovered_articles, 2);
+    }
 
     #[test]
     fn normalizes_escaped_wechat_article_url() {
