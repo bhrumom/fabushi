@@ -86,6 +86,8 @@ jobs:
   bootstrap-live-collaboration:
     name: Bootstrap public upstream, fork, rulesets, and trusted boundaries
     if: github.event_name == 'push' && github.repository == 'bhrumom/fabushi' && github.ref == 'refs/heads/codex/mahayana-marketplace-cloudflare-v10'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -95,38 +97,105 @@ jobs:
       TEST_REPOSITORY: mahayana-mcp-app-collaboration-v10
       TEMPLATE_ROOT: templates/mahayana-mcp-app-github-native
       EVIDENCE_PATH: live-e2e-bootstrap-evidence.json
+      PERSISTED_EVIDENCE_PATH: evidence/mahayana-github-native-live-e2e/latest.json
     steps:
       - name: Checkout exact trusted source commit
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: true
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: false
 
-      - name: Require the protected GitHub administration token
+      - name: Bootstrap real public GitHub collaboration topology
+        id: bootstrap
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$GH_ADMIN_TOKEN" || {
-            echo 'OFFICIAL_SITE_RELEASE_PAT is required to create the public acceptance repository, fork, and rulesets.' >&2
+          if [ -z "${GH_ADMIN_TOKEN:-}" ]; then
+            node - <<'NODE'
+          const fs = require('node:fs');
+          fs.writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({
+            protocol: 'mahayana.github-native-live-e2e.bootstrap.v1',
+            generatedAt: new Date().toISOString(),
+            status: 'blocked',
+            errorCode: 'missing_official_site_release_pat',
+            message: 'The protected OFFICIAL_SITE_RELEASE_PAT Actions secret is not configured for the trusted push workflow.'
+          }, null, 2) + '\n');
+          NODE
+            exit 78
+          fi
+          if ! node .github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs; then
+            if [ ! -s "$EVIDENCE_PATH" ]; then
+              node - <<'NODE'
+          const fs = require('node:fs');
+          fs.writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({
+            protocol: 'mahayana.github-native-live-e2e.bootstrap.v1',
+            generatedAt: new Date().toISOString(),
+            status: 'failed',
+            errorCode: 'github_native_bootstrap_failed',
+            message: 'The trusted bootstrap failed. Inspect the referenced GitHub Actions run; no token or sensitive stderr is persisted.'
+          }, null, 2) + '\n');
+          NODE
+            fi
             exit 1
-          }
+          fi
 
-      - name: Bootstrap real public GitHub collaboration topology
-        run: node .github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs
+      - name: Persist sanitized bootstrap evidence on the task branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$EVIDENCE_PATH"
+          mkdir -p "$(dirname "$PERSISTED_EVIDENCE_PATH")"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const source = JSON.parse(fs.readFileSync(process.env.EVIDENCE_PATH, 'utf8'));
+          source.status ||= 'success';
+          source.workflow = {
+            repository: process.env.GITHUB_REPOSITORY,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            sourceCommit: process.env.GITHUB_SHA,
+            ref: process.env.GITHUB_REF,
+            url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+          };
+          fs.writeFileSync(process.env.PERSISTED_EVIDENCE_PATH, JSON.stringify(source, null, 2) + '\n');
+          NODE
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$PERSISTED_EVIDENCE_PATH"
+          if git diff --cached --quiet; then
+            echo 'Persisted evidence is unchanged.'
+            exit 0
+          fi
+          git commit -m 'chore(evidence): persist GitHub native live E2E status'
+          if ! git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10; then
+            git fetch origin codex/mahayana-marketplace-cloudflare-v10
+            git rebase origin/codex/mahayana-marketplace-cloudflare-v10
+            git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
+          fi
 
       - name: Upload immutable bootstrap evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mahayana-github-native-live-e2e-bootstrap-${{ github.sha }}
-          path: live-e2e-bootstrap-evidence.json
+          path: |
+            live-e2e-bootstrap-evidence.json
+            evidence/mahayana-github-native-live-e2e/latest.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Fail when the trusted bootstrap did not complete
+        if: steps.bootstrap.outcome != 'success'
+        shell: bash
+        run: exit 1
 
   contract:
     name: GitHub-native MCP App contract

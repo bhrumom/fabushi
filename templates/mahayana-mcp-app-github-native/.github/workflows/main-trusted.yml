@@ -23,7 +23,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: false
       - run: bash scripts/verify-repository.sh
       - run: go test ./...
       - run: bash scripts/build-test-runtimes.sh

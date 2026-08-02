@@ -28,7 +28,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: false
       - name: Verify repository and workflow boundaries
         run: bash scripts/verify-repository.sh
       - name: Run shared Tool Contract unit tests
