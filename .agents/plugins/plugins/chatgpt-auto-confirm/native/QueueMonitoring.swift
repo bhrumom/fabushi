@@ -4,6 +4,8 @@ import Darwin
 import Foundation
 import SystemConfiguration
 
+let queueChatStagnationTimeoutSeconds = 10_800
+
 
 func taskReportFingerprint(_ report: AutomationTaskReport) -> String {
   [report.summary, report.remaining.joined(separator: "\n"),
@@ -552,9 +554,10 @@ func monitorAutomationTask(
   ])
   writeQueueConversationDiagnostic(task)
 
-  // A sent Chat that never creates any assistant or tool activity is not a
-  // long-running build. It is a failed renderer/send state. Recover quickly
-  // in a fresh Chat instead of accumulating 20-minute title-only stalls.
+  // A sent Chat that never creates any assistant or tool activity can still be
+  // a long-running connector operation. Give it the same three-hour quiet
+  // window as any other Chat, then start a fresh Chat without touching the old
+  // renderer.
   let hasAssistantActivity = (reply["messageCount"] as? Int ?? 0) > 0
     || !(reply["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     || !(reply["devspaceActivity"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -562,8 +565,7 @@ func monitorAutomationTask(
   let isPending = reply["pending"] as? Bool == true
   if !hasAssistantActivity, !isStreaming, isPending,
      let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
-     Date().timeIntervalSince(lastProgressAt) >= 90 {
-    closeDedicatedAutomationTarget(task, state: state)
+     Date().timeIntervalSince(lastProgressAt) >= Double(queueChatStagnationTimeoutSeconds) {
     queueContinuation(&task, report: nil, reason: "chat_start_no_reply")
     return
   }
@@ -666,7 +668,7 @@ func monitorAutomationTask(
   }
 
   if let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
-     Date().timeIntervalSince(lastProgressAt) >= 1200 {
+     Date().timeIntervalSince(lastProgressAt) >= Double(queueChatStagnationTimeoutSeconds) {
     if responseIsInFlight {
       let activeStallError = "page_stalled_but_response_active"
       if task.lastError != activeStallError {
@@ -678,15 +680,18 @@ func monitorAutomationTask(
       }
       // An active ChatGPT stream may legitimately spend a long time inside a
       // connector. Never click Stop or close its renderer merely because no
-      // visible text changed; the hosted session deadline remains the outer
-      // bound and preserves the conversation for diagnosis.
+      // visible text changed; queue a separate fresh Chat while preserving the
+      // old response for a late completion.
       task.lastError = activeStallError
       task.updatedAt = now
-      return
     }
-    // A stall belongs only to this hidden task renderer.
-    closeDedicatedAutomationTarget(task, state: state)
-    queueContinuation(&task, report: nil, reason: "page_stalled")
+    // Preserve the unchanged Chat and start the continuation in a separate
+    // fresh Chat. The old renderer may still finish or receive a late result.
+    queueContinuation(
+      &task,
+      report: nil,
+      reason: responseIsInFlight ? "page_stalled_but_response_active" : "page_stalled"
+    )
   }
 }
 
@@ -967,20 +972,21 @@ func recoverQueueWithWatchdog(
     ]
   }
 
-  // Stop only the queue-owned hidden renderer. Never touch the primary window
-  // or a target whose hidden ownership cannot be verified.
-  if queueUsesBackgroundWindow(state),
-     let port = state.queueWorkerPort,
-     let targetId = state.queueWorkerTargetId,
-     queueTargetIsHidden(port: port, targetId: targetId) {
-    _ = cdpValue(
-      port: port,
-      targetId: targetId,
-      expression: stopCurrentResponseJS(),
-      timeout: 12.0
+  let runningIndexes = tasks.indices.filter { tasks[$0].status == "running" }
+  if runningIndexes.isEmpty {
+    stopQueueWorker(&state)
+  } else {
+    // A watchdog recovery may discover a quiet but still active Chat. Do not
+    // click Stop or close any running task renderer; detach its ownership and
+    // let the restarted queue create a fresh Chat alongside the old one.
+    queueTrace(
+      "stage=watchdog-preserve-running-chats count=\(runningIndexes.count)"
     )
+    state.queueWorkerPort = nil
+    state.queueWorkerTargetId = nil
+    state.queueWorkerProfilePath = nil
+    state.queueWorkerMode = nil
   }
-  stopQueueWorker(&state)
 
   if watcherIsAlive(state.queueWatcherPid), let pid = state.queueWatcherPid {
     kill(pid, SIGTERM)
@@ -996,6 +1002,13 @@ func recoverQueueWithWatchdog(
         report: tasks[index].report,
         reason: "github_actions_watchdog_recovery"
       )
+      // The old hidden page is intentionally left running, but it is no
+      // longer the task's active ownership record. The next Chat gets a new
+      // renderer and can proceed independently.
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
     } else if previousStatus != "queued" {
       tasks[index].status = "queued"
       tasks[index].startedAt = nil

@@ -15,7 +15,7 @@
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
       "priority": 90,
-      "timeout": 7200,
+      "timeout": 21600,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
       "dependsOn": [],
