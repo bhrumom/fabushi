@@ -198,6 +198,15 @@ async function writeTemplate(repository) {
   if (!currentRef) currentRef = await initializeEmptyRepository(repository);
   const parentSha = currentRef.object.sha;
   const parentCommit = await api(`/repos/${repository.full_name}/git/commits/${parentSha}`);
+  // The live acceptance bootstrap can be rerun after rulesets are active. Do not
+  // attempt a direct main update in that state; protected repositories require
+  // PR-based changes. The first bootstrap already created the full template.
+  if (parentCommit?.tree?.sha && parentCommit.tree.sha !== '0000000000000000000000000000000000000000') {
+    const tree = await api(`/repos/${repository.full_name}/git/trees/${parentCommit.tree.sha}`);
+    if (Array.isArray(tree.tree) && tree.tree.length > 0) {
+      return { commitSha: parentSha, treeSha: parentCommit.tree.sha, changed: false, reusedExisting: true };
+    }
+  }
   const elements = [];
   for (const file of listFiles(templateRoot)) {
     const text = customize(file.relative, fs.readFileSync(file.absolute, 'utf8'));
