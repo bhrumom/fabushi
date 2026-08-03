@@ -73,6 +73,12 @@ async function getRef(repository, branch) {
   return optional(`/repos/${repository}/git/ref/heads/${encodePath(branch)}`);
 }
 
+function requireRefSha(ref, label) {
+  const sha = ref?.object?.sha;
+  if (!sha) throw new Error(`${label} does not have a readable commit ref`);
+  return sha;
+}
+
 async function getCommit(repository, sha) {
   return api(`/repos/${repository}/git/commits/${sha}`);
 }
@@ -350,12 +356,9 @@ async function configureForkActions() {
 
 async function createAiFix(issue) {
   const branch = `ai/issue-whitespace-send-v10-${runIdentity}`;
-  const forkMain = await getRef(fork, 'main');
-  await ensureBranch(fork, branch, forkMain.object.sha);
-  const currentRef = await getRef(fork, branch);
-  if (!currentRef?.object?.sha) {
-    throw new Error(`fork branch ${branch} does not have a readable commit ref`);
-  }
+  const forkMainSha = requireRefSha(await getRef(fork, 'main'), `${fork} main`);
+  const branchHeadSha = await ensureBranch(fork, branch, forkMainSha);
+  if (!branchHeadSha) throw new Error(`fork branch ${branch} could not be initialized`);
   const existingPr = await findPullRequest(branch);
   if (existingPr?.merged) return { branch, pull: existingPr, headSha: existingPr.head.sha, originalDraft: true };
 
@@ -385,7 +388,7 @@ async function createAiFix(issue) {
     { path: 'tool-contract.json', content: await replaceIdentity('tool-contract.json') },
     { path: 'docs/ai-fix-report.md', content: report },
   ];
-  const commit = await commitFiles(fork, branch, currentRef.object.sha, changes, `fix: reject whitespace-only send input\n\nCloses ${issue.html_url}`);
+  const commit = await commitFiles(fork, branch, branchHeadSha, changes, `fix: reject whitespace-only send input\n\nCloses ${issue.html_url}`);
   const pull = await dispatchDraftPullRequest(branch, issue.number, 'fix: reject whitespace-only send input');
   return { branch, pull, headSha: commit.sha, originalDraft: pull.draft };
 }
@@ -446,9 +449,9 @@ async function createUpstreamConflictChange() {
   const title = '[acceptance] Clarify upstream branding for synchronized forks';
   const issue = await ensureIssue(title, 'Update the upstream README heading so derived forks must exercise explicit conflict resolution and retain clear official-versus-derived identity. This change does not alter tools, permissions, or release artifacts.');
   const branch = 'ai/upstream-branding-sync-v10';
-  const upstreamMain = await getRef(upstream, 'main');
-  await ensureBranch(fork, branch, upstreamMain.object.sha);
-  const current = await getRef(fork, branch);
+  const upstreamMainSha = requireRefSha(await getRef(upstream, 'main'), `${upstream} main`);
+  const branchHeadSha = await ensureBranch(fork, branch, upstreamMainSha);
+  if (!branchHeadSha) throw new Error(`fork branch ${branch} could not be initialized`);
   const existing = await findPullRequest(branch);
   if (existing?.merged) return { issue, pull: existing, mergeCommit: existing.merge_commit_sha };
   const readmeFile = await getFile(fork, 'README.md', branch);
@@ -456,7 +459,7 @@ async function createUpstreamConflictChange() {
     '# Mahayana GitHub-native collaboration test App',
     '# Mahayana Official GitHub-native collaboration App',
   );
-  const commit = await commitFiles(fork, branch, current.object.sha, [{ path: 'README.md', content: readme }], 'docs: clarify upstream official identity');
+  const commit = await commitFiles(fork, branch, branchHeadSha, [{ path: 'README.md', content: readme }], 'docs: clarify upstream official identity');
   const pull = await dispatchDraftPullRequest(branch, issue.number, 'docs: clarify upstream official identity');
   const wasDraft = pull.draft;
   await markReady(pull);
@@ -507,13 +510,13 @@ async function resolveForkConflict(upstreamHead) {
 
 async function createMaliciousProbe() {
   const branch = 'adversarial/no-secret-no-publish-v10';
-  const upstreamMain = await getRef(upstream, 'main');
-  await ensureBranch(fork, branch, upstreamMain.object.sha);
-  const current = await getRef(fork, branch);
+  const upstreamMainSha = requireRefSha(await getRef(upstream, 'main'), `${upstream} main`);
+  const branchHeadSha = await ensureBranch(fork, branch, upstreamMainSha);
+  if (!branchHeadSha) throw new Error(`fork branch ${branch} could not be initialized`);
   const existing = await findPullRequest(branch);
   if (existing) return existing;
   const content = `# Untrusted fork boundary probe\n\nThis pull request intentionally relies on the base repository's adversarial CI job to prove that fork code receives no repository secrets, no OIDC token, no write-capable credentials, no privileged cache, and no official release path.\n`;
-  const commit = await commitFiles(fork, branch, current.object.sha, [{ path: 'docs/untrusted-boundary-probe.md', content }], 'test: probe untrusted fork boundaries');
+  const commit = await commitFiles(fork, branch, branchHeadSha, [{ path: 'docs/untrusted-boundary-probe.md', content }], 'test: probe untrusted fork boundaries');
   const issue = await ensureIssue('[acceptance] Prove malicious fork isolation', 'Run a real fork pull request through the untrusted workflow and prove it cannot access secrets, mint OIDC credentials, write upstream, publish official artifacts, or contaminate the trusted release path.');
   const pull = await dispatchDraftPullRequest(branch, issue.number, 'test: prove untrusted fork isolation');
   await markReady(pull);
