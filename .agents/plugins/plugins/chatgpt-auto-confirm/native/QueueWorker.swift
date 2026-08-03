@@ -705,6 +705,53 @@ func launchDedicatedQueueChatProcess(
         return application.processIdentifier
       }
     )
+    func dedicatedProcessID() -> pid_t? {
+      let process = Process()
+      let output = Pipe()
+      process.executableURL = URL(fileURLWithPath: "/bin/ps")
+      process.arguments = ["-axo", "pid=,command="]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = output
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+      } catch {
+        return nil
+      }
+      guard let text = String(
+        data: output.fileHandleForReading.readDataToEndOfFile(),
+        encoding: .utf8
+      ) else { return nil }
+      let marker = "--user-data-dir=\(profilePath)"
+      for line in text.split(separator: "\n") {
+        guard line.contains(marker),
+              line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
+          continue
+        }
+        let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        if let first = fields.first, let pid = pid_t(String(first)) {
+          return pid
+        }
+      }
+      return nil
+    }
+    func requestAccessibilityHide(processID: pid_t) -> Bool {
+      let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+      process.arguments = ["-e", script]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+      } catch {
+        return false
+      }
+    }
     func hideNewDedicatedApplication(
       preferredProcessId: pid_t?,
       attempts: Int
@@ -718,11 +765,6 @@ func launchDedicatedQueueChatProcess(
             && !existingApplicationPids.contains(candidate.processIdentifier)
         }
         if let application {
-          // `NSRunningApplication.isHidden` can remain stale on macOS while
-          // LaunchServices has already accepted the hide request.  Treat a
-          // successful request as sufficient here; the CDP target probe
-          // below independently verifies that the renderer reaches the
-          // hidden visibility state before the worker is used.
           let hideRequested = application.hide()
           if hideRequested || application.isHidden {
             queueTrace(
@@ -731,12 +773,18 @@ func launchDedicatedQueueChatProcess(
             )
             return true
           }
-          // The object returned by NSWorkspace can cache a false hidden flag
-          // forever.  The CDP probe below is authoritative and can request
-          // the page lifecycle transition directly, so do not spin here.
+          if requestAccessibilityHide(processID: application.processIdentifier) {
+            queueTrace(
+              "worker-create stage=dedicated-process-hidden-accessibility "
+                + "port=\(port) pid=\(application.processIdentifier)"
+            )
+            return true
+          }
+        } else if let processID = preferredProcessId ?? dedicatedProcessID(),
+                  requestAccessibilityHide(processID: processID) {
           queueTrace(
-            "worker-create stage=dedicated-process-hidden-stale "
-              + "port=\(port) pid=\(application.processIdentifier)"
+            "worker-create stage=dedicated-process-hidden-accessibility "
+              + "port=\(port) pid=\(processID)"
           )
           return true
         }
