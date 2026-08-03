@@ -783,7 +783,29 @@ func launchDedicatedQueueChatProcess(
     // register a fresh Electron application with LaunchServices. Prefer the
     // exact process we launched even before its bundle metadata is available.
     if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 1_200) {
-      return true
+      // Some macOS builds keep the direct Electron process alive but never
+      // attach a renderer to its CDP port.  Give that path a short bounded
+      // window, then fall back to LaunchServices instead of letting the
+      // hidden-target probe time out for a full minute.
+      for _ in 0..<40 {
+        if !CDPClient.fetchTargets(portOverride: port).isEmpty {
+          return true
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+      }
+      queueTrace(
+        "worker-create stage=dedicated-process-no-cdp-fallback "
+          + "port=\(port) pid=\(launchedProcessId)"
+      )
+      let killer = Process()
+      killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+      killer.arguments = ["-TERM", "-f", "--user-data-dir=\(profilePath)"]
+      killer.standardInput = FileHandle.nullDevice
+      killer.standardOutput = FileHandle.nullDevice
+      killer.standardError = FileHandle.nullDevice
+      try? killer.run()
+      killer.waitUntilExit()
+      dedicatedQueueChatLaunchers.removeValue(forKey: port)
     }
 
     // On some hosted macOS images the direct Electron executable becomes a
