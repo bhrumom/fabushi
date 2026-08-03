@@ -752,11 +752,36 @@ func launchDedicatedQueueChatProcess(
         return false
       }
     }
+    func dedicatedRendererIsHidden() -> Bool {
+      let targets = CDPClient.fetchTargets(portOverride: port)
+      for target in targets {
+        guard target["type"] as? String == "page",
+              (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+              let targetId = target["id"] as? String else { continue }
+        let state = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: "({visibility:document.visibilityState, hidden:document.hidden})",
+          timeout: 2.0
+        )
+        if state?["visibility"] as? String == "hidden",
+           (state?["hidden"] as? NSNumber)?.boolValue == true {
+          return true
+        }
+      }
+      return false
+    }
     func hideNewDedicatedApplication(
       preferredProcessId: pid_t?,
       attempts: Int
     ) -> Bool {
       for iteration in 0..<attempts {
+        if dedicatedRendererIsHidden() {
+          queueTrace(
+            "worker-create stage=dedicated-process-hidden-verified port=\(port)"
+          )
+          return true
+        }
         let application = NSWorkspace.shared.runningApplications.first { candidate in
           guard !candidate.isTerminated else { return false }
           if candidate.processIdentifier == preferredProcessId { return true }
@@ -768,7 +793,7 @@ func launchDedicatedQueueChatProcess(
           let hideRequested = application.hide()
           let accessibilityHide = iteration % 10 == 0
             && requestAccessibilityHide(processID: application.processIdentifier)
-          if application.isHidden || accessibilityHide {
+          if accessibilityHide && dedicatedRendererIsHidden() {
             queueTrace(
               "worker-create stage=dedicated-process-hide-requested "
                 + "port=\(port) pid=\(application.processIdentifier)"
@@ -778,7 +803,8 @@ func launchDedicatedQueueChatProcess(
           _ = hideRequested
         } else if iteration % 10 == 0,
                   let processID = preferredProcessId ?? dedicatedProcessID(),
-                  requestAccessibilityHide(processID: processID) {
+                  requestAccessibilityHide(processID: processID),
+                  dedicatedRendererIsHidden() {
           queueTrace(
             "worker-create stage=dedicated-process-hidden-accessibility "
               + "port=\(port) pid=\(processID)"
@@ -827,7 +853,7 @@ func launchDedicatedQueueChatProcess(
     // Hosted runners can take substantially longer than a local launch to
     // register a fresh Electron application with LaunchServices. Prefer the
     // exact process we launched even before its bundle metadata is available.
-    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 1_200) {
+    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 200) {
       // Some macOS builds keep the direct Electron process alive but never
       // attach a renderer to its CDP port.  Give that path a short bounded
       // window, then fall back to LaunchServices instead of letting the
