@@ -716,7 +716,19 @@ func launchDedicatedQueueChatProcess(
             && !existingApplicationPids.contains(candidate.processIdentifier)
         }
         if let application {
-          _ = application.hide()
+          // `NSRunningApplication.isHidden` can remain stale on macOS while
+          // LaunchServices has already accepted the hide request.  Treat a
+          // successful request as sufficient here; the CDP target probe
+          // below independently verifies that the renderer reaches the
+          // hidden visibility state before the worker is used.
+          let hideRequested = application.hide()
+          if hideRequested {
+            queueTrace(
+              "worker-create stage=dedicated-process-hide-requested "
+                + "port=\(port) pid=\(application.processIdentifier)"
+            )
+            return true
+          }
           for _ in 0..<80 {
             if application.isHidden {
               queueTrace(
