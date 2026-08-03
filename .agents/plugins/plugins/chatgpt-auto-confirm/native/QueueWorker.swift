@@ -756,7 +756,7 @@ func launchDedicatedQueueChatProcess(
       preferredProcessId: pid_t?,
       attempts: Int
     ) -> Bool {
-      for _ in 0..<attempts {
+      for iteration in 0..<attempts {
         let application = NSWorkspace.shared.runningApplications.first { candidate in
           guard !candidate.isTerminated else { return false }
           if candidate.processIdentifier == preferredProcessId { return true }
@@ -766,21 +766,18 @@ func launchDedicatedQueueChatProcess(
         }
         if let application {
           let hideRequested = application.hide()
-          if hideRequested || application.isHidden {
+          let accessibilityHide = iteration % 10 == 0
+            && requestAccessibilityHide(processID: application.processIdentifier)
+          if application.isHidden || accessibilityHide {
             queueTrace(
               "worker-create stage=dedicated-process-hide-requested "
                 + "port=\(port) pid=\(application.processIdentifier)"
             )
             return true
           }
-          if requestAccessibilityHide(processID: application.processIdentifier) {
-            queueTrace(
-              "worker-create stage=dedicated-process-hidden-accessibility "
-                + "port=\(port) pid=\(application.processIdentifier)"
-            )
-            return true
-          }
-        } else if let processID = preferredProcessId ?? dedicatedProcessID(),
+          _ = hideRequested
+        } else if iteration % 10 == 0,
+                  let processID = preferredProcessId ?? dedicatedProcessID(),
                   requestAccessibilityHide(processID: processID) {
           queueTrace(
             "worker-create stage=dedicated-process-hidden-accessibility "
