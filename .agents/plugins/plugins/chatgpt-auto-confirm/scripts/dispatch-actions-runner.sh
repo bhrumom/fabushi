@@ -43,10 +43,10 @@ if [ -n "$ACCOUNT_ID" ]; then
   ENVIRONMENT="chatgpt-auto-confirm-$ACCOUNT_ID"
   # The environment is created with a main-only deployment policy.  Secrets
   # remain environment-scoped so one account can never overwrite another.
-  "$GH_CLI" api --method PUT \
-    "/repos/$REPOSITORY/environments/$ENVIRONMENT" \
-    -F 'wait_timer=0' \
-    -F 'deployment_branch_policy={"protected_branches":false,"custom_branch_policies":true}' >/dev/null
+  printf '%s\n' '{"wait_timer":0,"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' |
+    "$GH_CLI" api --method PUT \
+      "/repos/$REPOSITORY/environments/$ENVIRONMENT" \
+      --input - >/dev/null
   "$GH_CLI" api --method POST \
     "/repos/$REPOSITORY/environments/$ENVIRONMENT/deployment-branch-policies" \
     -f name=main >/dev/null 2>&1 || true
