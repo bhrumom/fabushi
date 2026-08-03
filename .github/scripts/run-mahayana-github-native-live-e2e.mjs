@@ -132,39 +132,38 @@ async function ensureIssue(title, body) {
   });
 }
 
-async function findPullRequest(headBranch) {
+async function findPullRequest(headBranch, state = 'all') {
   const [owner] = fork.split('/');
-  const pulls = await api(`/repos/${upstream}/pulls?state=all&head=${encodeURIComponent(`${owner}:${headBranch}`)}&base=main&per_page=50`);
+  const pulls = await api(`/repos/${upstream}/pulls?state=${encodeURIComponent(state)}&head=${encodeURIComponent(`${owner}:${headBranch}`)}&base=main&per_page=50`);
   return pulls[0] || null;
+}
+
+async function waitForOpenPullRequest(headBranch) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const pull = await findPullRequest(headBranch, 'open');
+    if (pull) return pull;
+    await sleep(2000);
+  }
+  throw new Error(`trusted upstream workflow did not create an open pull request for ${headBranch}`);
 }
 
 async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
   const [owner] = fork.split('/');
-  const existing = await findPullRequest(headBranch);
+  const existing = await findPullRequest(headBranch, 'open');
   if (existing) return existing;
-  const body = [
-    `Closes #${issueNumber}`,
-    '',
-    'AI-assisted change created in the user fork after explicit confirmation.',
-    '',
-    '## Required report',
-    '- Reproduction and root cause are documented in the linked Issue.',
-    '- Untrusted pull_request CI runs with read-only contents and no secrets.',
-    '- Tool Contract, permissions, and artifact impact are reviewed before merge.',
-    '- Merge does not publish; a separate trusted release is required.',
-  ].join('\n');
-  return api(`/repos/${upstream}/pulls`, {
+  await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
     method: 'POST',
-    expected: [201],
+    expected: [204],
     body: {
-      head: `${owner}:${headBranch}`,
-      base: 'main',
-      title,
-      body,
-      draft: true,
-      maintainer_can_modify: false,
+      ref: 'main',
+      inputs: {
+        head: `${owner}:${headBranch}`,
+        issue_number: String(issueNumber),
+        title,
+      },
     },
   });
+  return waitForOpenPullRequest(headBranch);
 }
 
 async function markReady(pull) {
@@ -216,14 +215,22 @@ async function attemptProtectedMerge(pull, expectedHeadSha) {
 }
 
 async function approvePullRequest(number) {
+  const [pull, reviewer] = await Promise.all([
+    api(`/repos/${upstream}/pulls/${number}`),
+    api('/user'),
+  ]);
+  if (pull.user?.id === reviewer.id) {
+    throw new Error(`reviewer ${reviewer.login} cannot approve their own pull request #${number}`);
+  }
   const reviews = await api(`/repos/${upstream}/pulls/${number}/reviews?per_page=100`);
-  if (!reviews.some((review) => review.user?.login === 'bhrum' && review.state === 'APPROVED')) {
+  if (!reviews.some((review) => review.user?.id === reviewer.id && review.state === 'APPROVED')) {
     await api(`/repos/${upstream}/pulls/${number}/reviews`, {
       method: 'POST',
       expected: [200],
       body: { event: 'APPROVE', body: 'CODEOWNERS approval after successful untrusted CI and review of Tool Contract, permissions, and artifact impact.' },
     });
   }
+  return reviewer.login;
 }
 
 async function mergePullRequest(number, headSha) {
@@ -507,7 +514,7 @@ async function main() {
   await markReady(ai.pull);
   const untrustedCi = await waitWorkflow(upstream, 'pr-untrusted.yml', ai.headSha, 'pull_request');
   const rulesetBlock = await attemptProtectedMerge(ai.pull, ai.headSha);
-  await approvePullRequest(ai.pull.number);
+  const codeOwner = await approvePullRequest(ai.pull.number);
   const mergeCommit = await mergePullRequest(ai.pull.number, ai.headSha);
   const trustedMain = await waitWorkflow(upstream, 'main-trusted.yml', mergeCommit, 'push');
 
@@ -560,7 +567,7 @@ async function main() {
     },
     repositoryProtection: {
       mergeBeforeApprovalBlocked: rulesetBlock,
-      codeOwner: 'bhrum',
+      codeOwner,
       mergedAfterApproval: true,
       mergeCommit,
     },
