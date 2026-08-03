@@ -1,15 +1,15 @@
 {
   "protocol": "mahayana.github-native-live-e2e.v1",
-  "generatedAt": "2026-08-03T08:38:57.397Z",
+  "generatedAt": "2026-08-03T09:21:05.550Z",
   "status": "failed",
   "errorCode": "github_native_live_e2e_failed",
-  "message": "Error: trusted upstream workflow did not create an open pull request for ai/issue-whitespace-send-v10-30797121615; latest run 30797693554 is queued/pending: https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10/actions/runs/30797693554\n    at waitForOpenPullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:160:9)\n    at async createAiFix (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:389:16)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:537:14)",
+  "message": "Error: trusted upstream workflow run 30800758285 concluded failure: https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10/actions/runs/30800758285\n    at waitForOpenPullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:161:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async createAiFix (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:392:16)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:540:14)",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30797121615",
+    "runId": "30799535082",
     "runAttempt": "1",
-    "sourceCommit": "f4b9a76b7e83ffe5d8ecb37e40276f0feb8e722a",
+    "sourceCommit": "17bedd21663082a7fbf6d3a056420ad3d38418bc",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30797121615"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30799535082"
   }
 }
