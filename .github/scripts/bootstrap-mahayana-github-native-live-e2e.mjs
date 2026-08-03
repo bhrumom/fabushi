@@ -259,10 +259,13 @@ async function configureActions(repository) {
     expected: [204],
     body: { enabled: true, allowed_actions: 'all' },
   });
+  // GitHub exposes one repository switch for both Actions-created PRs and
+  // Actions-submitted approvals. The trusted workflow only creates a Draft PR;
+  // CODEOWNERS/rulesets still require a distinct maintainer approval before merge.
   await api(`/repos/${repository.full_name}/actions/permissions/workflow`, {
     method: 'PUT',
     expected: [204],
-    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
+    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true },
   });
   await api(`/repos/${repository.full_name}/environments/production`, {
     method: 'PUT',
