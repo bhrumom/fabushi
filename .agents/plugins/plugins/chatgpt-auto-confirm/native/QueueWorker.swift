@@ -933,8 +933,52 @@ func launchDedicatedQueueChatProcess(
   }
 }
 
+func hideDedicatedProcessForPort(_ port: Int) -> Bool {
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+  } catch {
+    return false
+  }
+  guard let text = String(
+    data: output.fileHandleForReading.readDataToEndOfFile(),
+    encoding: .utf8
+  ) else { return false }
+  let portMarker = "--remote-debugging-port=\(port)"
+  for line in text.split(separator: "\n") {
+    guard line.contains(portMarker),
+          line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
+      continue
+    }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let processID = pid_t(String(first)) else { continue }
+    let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
+    let hide = Process()
+    hide.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    hide.arguments = ["-e", script]
+    hide.standardInput = FileHandle.nullDevice
+    hide.standardOutput = FileHandle.nullDevice
+    hide.standardError = FileHandle.nullDevice
+    do {
+      try hide.run()
+      hide.waitUntilExit()
+      return hide.terminationStatus == 0
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 func dedicatedQueueChatTarget(port: Int) -> String? {
-  for _ in 0..<240 {
+  for attempt in 0..<240 {
     let targets = CDPClient.fetchTargets(portOverride: port)
     for target in targets {
       guard target["type"] as? String == "page",
@@ -962,6 +1006,9 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       if bridge, ready == "complete", textLength > 100,
          visibility != "hidden",
          let wsURL = target["webSocketDebuggerUrl"] as? String {
+        if attempt % 8 == 0 {
+          _ = hideDedicatedProcessForPort(port)
+        }
         _ = CDPClient.setWebLifecycleHidden(wsURLString: wsURL)
         continue
       }
