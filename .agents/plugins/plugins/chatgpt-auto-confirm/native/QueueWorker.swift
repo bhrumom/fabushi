@@ -813,34 +813,46 @@ func launchDedicatedQueueChatProcess(
     // LaunchServices only as a bounded fallback, retaining the isolated
     // profile and CDP port; subsequent code still requires a hidden Chat page.
     queueTrace("worker-create stage=dedicated-process-launchservices-fallback begin port=\(port)")
-    let fallbackLauncher = Process()
-    fallbackLauncher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    fallbackLauncher.arguments = [
-      // `-g -j` keeps the new app out of the foreground while `-n` forces a
-      // separate instance. This is the same LaunchServices path used by the
-      // background worker and avoids the hosted runner coalescing the launch
-      // into the already-visible controller instance.
-      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
+    // Use LaunchServices' native configuration instead of `/usr/bin/open`.
+    // The latter keeps the instance out of the foreground but does not
+    // reliably mark the new Electron process hidden on recent macOS builds.
+    // `hides` applies to the newly-created instance before its first window
+    // is shown, so the renderer reaches the same hidden lifecycle used by
+    // the background worker without flashing a second visible ChatGPT UI.
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.hides = true
+    configuration.addsToRecentItems = false
+    configuration.createsNewApplicationInstance = true
+    configuration.arguments = [
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
     if let codexHomePath {
       var environment = ProcessInfo.processInfo.environment
       environment["CODEX_HOME"] = codexHomePath
-      fallbackLauncher.environment = environment
+      configuration.environment = environment
     }
-    fallbackLauncher.standardInput = FileHandle.nullDevice
-    fallbackLauncher.standardOutput = FileHandle.nullDevice
-    fallbackLauncher.standardError = FileHandle.nullDevice
-    try fallbackLauncher.run()
-    dedicatedQueueChatLaunchers[port] = fallbackLauncher
-    // `open` is only a short-lived LaunchServices request; wait for that
-    // request to be accepted before polling for the registered app and its
-    // hidden renderer. Never wait on the ChatGPT process itself.
-    fallbackLauncher.waitUntilExit()
+    let launchSemaphore = DispatchSemaphore(value: 0)
+    var launchError: Error?
+    NSWorkspace.shared.openApplication(
+      at: URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+      configuration: configuration
+    ) { _, error in
+      launchError = error
+      launchSemaphore.signal()
+    }
+    _ = launchSemaphore.wait(timeout: .now() + 8.0)
+    guard launchError == nil else {
+      queueTrace(
+        "worker-create stage=dedicated-process-launchservices-fallback-error "
+          + "port=\(port) error=\(launchError!)"
+      )
+      return false
+    }
     queueTrace(
       "worker-create stage=dedicated-process-launchservices-fallback complete "
-        + "port=\(port) status=\(fallbackLauncher.terminationStatus)"
+        + "port=\(port) hidden=true"
     )
     return hideNewDedicatedApplication(preferredProcessId: nil, attempts: 400)
   } catch {
