@@ -291,6 +291,22 @@ struct CDPClient {
     return true
   }
 
+  // ChatGPT's Electron shell can report a stale NSRunningApplication hidden
+  // flag even after a dedicated renderer has been launched.  Asking CDP to
+  // transition the page to the hidden lifecycle state is harmless on builds
+  // that do not expose the command (they return an error) and fixes the
+  // renderer visibility on builds that do.
+  @discardableResult
+  static func setWebLifecycleHidden(wsURLString: String) -> Bool {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Page.setWebLifecycleState",
+      paramsJSON: "{\"state\":\"hidden\"}",
+      timeout: 4.0
+    ) else { return false }
+    return response["error"] == nil
+  }
+
   @discardableResult
   static func setHiddenPageFocusEmulation(wsURLString: String) -> Bool {
     guard let response = sendCommand(

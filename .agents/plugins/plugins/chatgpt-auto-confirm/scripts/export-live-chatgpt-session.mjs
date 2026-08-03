@@ -104,40 +104,53 @@ const exportSession = async () => {
   }
   await codexIdentifiers(resolve(authPath));
   const targets = await listTargets();
-  const target = targets.find(item => item.type === 'page'
+  const candidates = targets.filter(item => item.type === 'page'
     && item.webSocketDebuggerUrl
     && String(item.url || '').startsWith('app://-/index.html')
     && !String(item.url || '').includes('/avatar-overlay'));
-  if (!target) throw new ExportError('No live ChatGPT desktop app renderer is exposed over CDP');
+  if (!candidates.length) throw new ExportError('No live ChatGPT desktop app renderer is exposed over CDP');
 
-  const { socket, call } = await connect(target.webSocketDebuggerUrl);
-  try {
-    const evaluation = await call('Runtime.evaluate', {
-      expression: `(() => {
-        const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
-        const bodyText = normalize(document.body?.innerText).slice(0, 12000);
-        const controls = [...document.querySelectorAll('button,[role="button"],[role="tab"],[aria-label]')];
-        const labels = controls.map(element => normalize([
-          element.innerText, element.textContent, element.getAttribute('aria-label'),
-          element.getAttribute('title')
-        ].filter(Boolean).join(' ')));
-        const exact = label => labels.some(value => value.toLowerCase() === label);
-        const hasChat = exact('chat') || exact('聊天');
-        const hasWork = exact('work') || exact('工作');
-        const currentMode = labels.find(value => /current mode|当前模式|目前模式/i.test(value)) || '';
-        const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(bodyText);
-        const workComposer = !!document.querySelector('[data-codex-composer="true"]');
-        const authenticated = location.protocol === 'app:' && !!window.electronBridge
-          && !asksForLogin && document.readyState === 'complete' && bodyText.length > 50
-          && !!(currentMode || workComposer || hasChat || hasWork);
-        return {authenticated};
-      })()`,
-      returnByValue: true,
-    });
-    const session = evaluation.result?.value || {};
-    if (!session.authenticated) {
-      throw new ExportError('ChatGPT desktop app renderer is not authenticated');
+  const authenticationExpression = `(() => {
+    const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+    const bodyText = normalize(document.body?.innerText).slice(0, 12000);
+    const controls = [...document.querySelectorAll('button,[role="button"],[role="tab"],[aria-label]')];
+    const labels = controls.map(element => normalize([
+      element.innerText, element.textContent, element.getAttribute('aria-label'),
+      element.getAttribute('title')
+    ].filter(Boolean).join(' ')));
+    const exact = label => labels.some(value => value.toLowerCase() === label);
+    const hasChat = exact('chat') || exact('聊天');
+    const hasWork = exact('work') || exact('工作');
+    const currentMode = labels.find(value => /current mode|当前模式|目前模式/i.test(value)) || '';
+    const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(bodyText);
+    const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+    const authenticated = location.protocol === 'app:' && !!window.electronBridge
+      && !asksForLogin && document.readyState === 'complete' && bodyText.length > 50
+      && !!(currentMode || workComposer || hasChat || hasWork);
+    return {authenticated};
+  })()`;
+  let selectedConnection;
+  for (const candidate of candidates) {
+    let connection;
+    try {
+      connection = await connect(candidate.webSocketDebuggerUrl);
+      const evaluation = await connection.call('Runtime.evaluate', {
+        expression: authenticationExpression,
+        returnByValue: true,
+      });
+      if (evaluation.result?.value?.authenticated === true) {
+        selectedConnection = connection;
+        break;
+      }
+    } catch {
+      // Try the next renderer: ChatGPT may expose an overlay or a stale page
+      // before its authenticated primary page finishes mounting.
     }
+    connection?.socket.close();
+  }
+  if (!selectedConnection) throw new ExportError('ChatGPT desktop app renderer is not authenticated');
+  const { socket, call } = selectedConnection;
+  try {
     await call('Network.enable');
     const cookieResult = await call('Network.getAllCookies');
     const cookies = normalizeCookies(Array.isArray(cookieResult.cookies) ? cookieResult.cookies : []);

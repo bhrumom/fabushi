@@ -673,6 +673,8 @@ func copyProfileForDedicatedQueueWorker(
     process.arguments = [
       "-a",
       "--exclude=Singleton*",
+      "--exclude=**/LOCK",
+      "--exclude=**/LOCK.*",
       "--exclude=Lockfile",
       "--exclude=lockfile",
       "--exclude=DevToolsActivePort",
@@ -703,11 +705,84 @@ func launchDedicatedQueueChatProcess(
         return application.processIdentifier
       }
     )
+    func dedicatedProcessID() -> pid_t? {
+      let process = Process()
+      let output = Pipe()
+      process.executableURL = URL(fileURLWithPath: "/bin/ps")
+      process.arguments = ["-axo", "pid=,command="]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = output
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+      } catch {
+        return nil
+      }
+      guard let text = String(
+        data: output.fileHandleForReading.readDataToEndOfFile(),
+        encoding: .utf8
+      ) else { return nil }
+      let marker = "--user-data-dir=\(profilePath)"
+      for line in text.split(separator: "\n") {
+        guard line.contains(marker),
+              line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
+          continue
+        }
+        let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        if let first = fields.first, let pid = pid_t(String(first)) {
+          return pid
+        }
+      }
+      return nil
+    }
+    func requestAccessibilityHide(processID: pid_t) -> Bool {
+      let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+      process.arguments = ["-e", script]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+      } catch {
+        return false
+      }
+    }
+    func dedicatedRendererIsHidden() -> Bool {
+      let targets = CDPClient.fetchTargets(portOverride: port)
+      for target in targets {
+        guard target["type"] as? String == "page",
+              (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+              !(target["url"] as? String ?? "").contains("avatar-overlay"),
+              let targetId = target["id"] as? String else { continue }
+        let state = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: "({visibility:document.visibilityState, hidden:document.hidden})",
+          timeout: 2.0
+        )
+        if state?["visibility"] as? String == "hidden",
+           (state?["hidden"] as? NSNumber)?.boolValue == true {
+          return true
+        }
+      }
+      return false
+    }
     func hideNewDedicatedApplication(
       preferredProcessId: pid_t?,
       attempts: Int
     ) -> Bool {
-      for _ in 0..<attempts {
+      for iteration in 0..<attempts {
+        if dedicatedRendererIsHidden() {
+          queueTrace(
+            "worker-create stage=dedicated-process-hidden-verified port=\(port)"
+          )
+          return true
+        }
         let application = NSWorkspace.shared.runningApplications.first { candidate in
           guard !candidate.isTerminated else { return false }
           if candidate.processIdentifier == preferredProcessId { return true }
@@ -716,17 +791,27 @@ func launchDedicatedQueueChatProcess(
             && !existingApplicationPids.contains(candidate.processIdentifier)
         }
         if let application {
-          _ = application.hide()
-          for _ in 0..<80 {
-            if application.isHidden {
-              queueTrace(
-                "worker-create stage=dedicated-process-hidden "
-                  + "port=\(port) pid=\(application.processIdentifier)"
-              )
-              return true
-            }
-            Thread.sleep(forTimeInterval: 0.05)
+          let systemHidden = application.isHidden
+          let hideRequested = application.hide()
+          let accessibilityHide = iteration % 10 == 0
+            && requestAccessibilityHide(processID: application.processIdentifier)
+          if (systemHidden || accessibilityHide) && dedicatedRendererIsHidden() {
+            queueTrace(
+              "worker-create stage=dedicated-process-hide-requested "
+                + "port=\(port) pid=\(application.processIdentifier)"
+            )
+            return true
           }
+          _ = hideRequested
+        } else if iteration % 10 == 0,
+                  let processID = preferredProcessId ?? dedicatedProcessID(),
+                  requestAccessibilityHide(processID: processID),
+                  dedicatedRendererIsHidden() {
+          queueTrace(
+            "worker-create stage=dedicated-process-hidden-accessibility "
+              + "port=\(port) pid=\(processID)"
+          )
+          return true
         }
         Thread.sleep(forTimeInterval: 0.05)
       }
@@ -770,8 +855,30 @@ func launchDedicatedQueueChatProcess(
     // Hosted runners can take substantially longer than a local launch to
     // register a fresh Electron application with LaunchServices. Prefer the
     // exact process we launched even before its bundle metadata is available.
-    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 1_200) {
-      return true
+    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 200) {
+      // Some macOS builds keep the direct Electron process alive but never
+      // attach a renderer to its CDP port.  Give that path a short bounded
+      // window, then fall back to LaunchServices instead of letting the
+      // hidden-target probe time out for a full minute.
+      for _ in 0..<40 {
+        if !CDPClient.fetchTargets(portOverride: port).isEmpty {
+          return true
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+      }
+      queueTrace(
+        "worker-create stage=dedicated-process-no-cdp-fallback "
+          + "port=\(port) pid=\(launchedProcessId)"
+      )
+      let killer = Process()
+      killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+      killer.arguments = ["-TERM", "-f", "--user-data-dir=\(profilePath)"]
+      killer.standardInput = FileHandle.nullDevice
+      killer.standardOutput = FileHandle.nullDevice
+      killer.standardError = FileHandle.nullDevice
+      try? killer.run()
+      killer.waitUntilExit()
+      dedicatedQueueChatLaunchers.removeValue(forKey: port)
     }
 
     // On some hosted macOS images the direct Electron executable becomes a
@@ -779,34 +886,46 @@ func launchDedicatedQueueChatProcess(
     // LaunchServices only as a bounded fallback, retaining the isolated
     // profile and CDP port; subsequent code still requires a hidden Chat page.
     queueTrace("worker-create stage=dedicated-process-launchservices-fallback begin port=\(port)")
-    let fallbackLauncher = Process()
-    fallbackLauncher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    fallbackLauncher.arguments = [
-      // `-g -j` keeps the new app out of the foreground while `-n` forces a
-      // separate instance. This is the same LaunchServices path used by the
-      // background worker and avoids the hosted runner coalescing the launch
-      // into the already-visible controller instance.
-      "-g", "-j", "-n", "-a", "/Applications/ChatGPT.app", "--args",
+    // Use LaunchServices' native configuration instead of `/usr/bin/open`.
+    // The latter keeps the instance out of the foreground but does not
+    // reliably mark the new Electron process hidden on recent macOS builds.
+    // `hides` applies to the newly-created instance before its first window
+    // is shown, so the renderer reaches the same hidden lifecycle used by
+    // the background worker without flashing a second visible ChatGPT UI.
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.hides = true
+    configuration.addsToRecentItems = false
+    configuration.createsNewApplicationInstance = true
+    configuration.arguments = [
       "--user-data-dir=\(profilePath)",
       "--remote-debugging-port=\(port)",
     ]
     if let codexHomePath {
       var environment = ProcessInfo.processInfo.environment
       environment["CODEX_HOME"] = codexHomePath
-      fallbackLauncher.environment = environment
+      configuration.environment = environment
     }
-    fallbackLauncher.standardInput = FileHandle.nullDevice
-    fallbackLauncher.standardOutput = FileHandle.nullDevice
-    fallbackLauncher.standardError = FileHandle.nullDevice
-    try fallbackLauncher.run()
-    dedicatedQueueChatLaunchers[port] = fallbackLauncher
-    // `open` is only a short-lived LaunchServices request; wait for that
-    // request to be accepted before polling for the registered app and its
-    // hidden renderer. Never wait on the ChatGPT process itself.
-    fallbackLauncher.waitUntilExit()
+    let launchSemaphore = DispatchSemaphore(value: 0)
+    var launchError: Error?
+    NSWorkspace.shared.openApplication(
+      at: URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+      configuration: configuration
+    ) { _, error in
+      launchError = error
+      launchSemaphore.signal()
+    }
+    _ = launchSemaphore.wait(timeout: .now() + 8.0)
+    guard launchError == nil else {
+      queueTrace(
+        "worker-create stage=dedicated-process-launchservices-fallback-error "
+          + "port=\(port) error=\(launchError!)"
+      )
+      return false
+    }
     queueTrace(
       "worker-create stage=dedicated-process-launchservices-fallback complete "
-        + "port=\(port) status=\(fallbackLauncher.terminationStatus)"
+        + "port=\(port) hidden=true"
     )
     return hideNewDedicatedApplication(preferredProcessId: nil, attempts: 400)
   } catch {
@@ -814,8 +933,52 @@ func launchDedicatedQueueChatProcess(
   }
 }
 
+func hideDedicatedProcessForPort(_ port: Int) -> Bool {
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+  } catch {
+    return false
+  }
+  guard let text = String(
+    data: output.fileHandleForReading.readDataToEndOfFile(),
+    encoding: .utf8
+  ) else { return false }
+  let portMarker = "--remote-debugging-port=\(port)"
+  for line in text.split(separator: "\n") {
+    guard line.contains(portMarker),
+          line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
+      continue
+    }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let processID = pid_t(String(first)) else { continue }
+    let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
+    let hide = Process()
+    hide.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    hide.arguments = ["-e", script]
+    hide.standardInput = FileHandle.nullDevice
+    hide.standardOutput = FileHandle.nullDevice
+    hide.standardError = FileHandle.nullDevice
+    do {
+      try hide.run()
+      hide.waitUntilExit()
+      return hide.terminationStatus == 0
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 func dedicatedQueueChatTarget(port: Int) -> String? {
-  for _ in 0..<240 {
+  for attempt in 0..<240 {
     let targets = CDPClient.fetchTargets(portOverride: port)
     for target in targets {
       guard target["type"] as? String == "page",
@@ -840,6 +1003,15 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
+      if bridge, ready == "complete", textLength > 100,
+         visibility != "hidden",
+         let wsURL = target["webSocketDebuggerUrl"] as? String {
+        if attempt % 8 == 0 {
+          _ = hideDedicatedProcessForPort(port)
+        }
+        _ = CDPClient.setWebLifecycleHidden(wsURLString: wsURL)
+        continue
+      }
       if bridge, ready == "complete", textLength > 100, visibility == "hidden" {
         return targetId
       }

@@ -699,7 +699,7 @@ func accountCommitSession(_ session: AccountLoginSession, label: String, startRu
   }
   guard accountHiddenSmoke(session) else {
     if existingIndex == nil { accountCleanupUnregisteredProfile(account) }
-    output(["ok": false, "errorCode": "account_hidden_chat_unavailable", "message": "账号登录成功，但隐藏 Chat 认证预检未通过；没有保存半套凭据。"], exitCode: 1)
+    output(["ok": false, "errorCode": "account_credential_validation_failed", "message": "账号登录成功，但凭据验证未通过；没有保存半套凭据。"], exitCode: 1)
   }
   do {
     try accountStoreCredentials(account, authData: session.authData, cookieData: session.cookieData)
@@ -716,7 +716,7 @@ func accountCommitSession(_ session: AccountLoginSession, label: String, startRu
   payload["ok"] = true
   payload["credentialsSynchronized"] = true
   payload["started"] = startRunner
-  payload["message"] = startRunner ? "账号已保存、上传并通过隐藏 Chat smoke。" : "账号已保存并上传。"
+  payload["message"] = startRunner ? "账号已保存、上传并通过登录凭据验证。" : "账号已保存并上传。"
   output(payload)
 }
 
@@ -1465,7 +1465,13 @@ case "account_sync":
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
   do {
-    guard let storedAuth = accountAuthData(account) else {
+    // A profile created by an interrupted first-time login can still contain
+    // a valid Codex auth.json even when the Keychain write was interrupted.
+    // Use that file only as a local re-login seed; accountCommitSession still
+    // requires a fresh renderer cookie capture and atomically repopulates the
+    // Keychain before the account is considered synchronized.
+    guard let storedAuth = accountAuthData(account)
+      ?? (try? Data(contentsOf: accountCodexAuthURL(account))) else {
       throw NSError(domain: "chatgpt-auto-confirm", code: 705, userInfo: [NSLocalizedDescriptionKey: "账号没有可恢复的 Codex 凭据，请重新登录。"])
     }
     try accountCreateDirectories(account)
