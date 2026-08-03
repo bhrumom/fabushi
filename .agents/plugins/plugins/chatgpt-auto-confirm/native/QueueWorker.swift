@@ -735,7 +735,7 @@ func launchDedicatedQueueChatProcess(
           // forever.  The CDP probe below is authoritative and can request
           // the page lifecycle transition directly, so do not spin here.
           queueTrace(
-            "worker-create stage=dedicated-process-hide-stale "
+            "worker-create stage=dedicated-process-hidden-stale "
               + "port=\(port) pid=\(application.processIdentifier)"
           )
           return true
