@@ -724,23 +724,21 @@ func launchDedicatedQueueChatProcess(
           // below independently verifies that the renderer reaches the
           // hidden visibility state before the worker is used.
           let hideRequested = application.hide()
-          if hideRequested {
+          if hideRequested || application.isHidden {
             queueTrace(
               "worker-create stage=dedicated-process-hide-requested "
                 + "port=\(port) pid=\(application.processIdentifier)"
             )
             return true
           }
-          for _ in 0..<80 {
-            if application.isHidden {
-              queueTrace(
-                "worker-create stage=dedicated-process-hidden "
-                  + "port=\(port) pid=\(application.processIdentifier)"
-              )
-              return true
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-          }
+          // The object returned by NSWorkspace can cache a false hidden flag
+          // forever.  The CDP probe below is authoritative and can request
+          // the page lifecycle transition directly, so do not spin here.
+          queueTrace(
+            "worker-create stage=dedicated-process-hide-stale "
+              + "port=\(port) pid=\(application.processIdentifier)"
+          )
+          return true
         }
         Thread.sleep(forTimeInterval: 0.05)
       }
@@ -854,6 +852,12 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
+      if bridge, ready == "complete", textLength > 100,
+         visibility != "hidden",
+         let wsURL = target["webSocketDebuggerUrl"] as? String {
+        _ = CDPClient.setWebLifecycleHidden(wsURLString: wsURL)
+        continue
+      }
       if bridge, ready == "complete", textLength > 100, visibility == "hidden" {
         return targetId
       }
