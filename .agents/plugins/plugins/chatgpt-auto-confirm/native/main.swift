@@ -4,6 +4,10 @@ import Darwin
 import Foundation
 import SystemConfiguration
 
+let defaultChatWatchTimeoutSeconds = 21_600
+let maxChatWatchTimeoutSeconds = 86_400
+let defaultChatStagnationTimeoutSeconds = 10_800
+
 
 func commandJSONParams() -> [String: Any] {
   guard CommandLine.arguments.count >= 3,
@@ -105,7 +109,7 @@ func nativeCommandExample(_ command: String, executable: String) -> String? {
   case "send_message":
     return "\(executable) send_message '{\"message\":\"检查当前状态\",\"connector\":\"devspace1\"}'"
   case "send_and_watch":
-    return "\(executable) send_and_watch '{\"message\":\"完成任务并验证\",\"connector\":\"devspace1\",\"timeout\":3600}'"
+    return "\(executable) send_and_watch '{\"message\":\"完成任务并验证\",\"connector\":\"devspace1\",\"timeout\":21600}'"
   default:
     return nil
   }
@@ -196,7 +200,7 @@ ChatGPT 自动确认 macOS 原生运行时
   \(executable) start '{"approveAll":true,"intervalMs":750}'
   \(executable) audit 20
   \(executable) queue_status
-  \(executable) send_and_watch '{"message":"完成任务并验证","connector":"devspace1","timeout":3600}'
+  \(executable) send_and_watch '{"message":"完成任务并验证","connector":"devspace1","timeout":21600}'
 
 环境变量：
   CHATGPT_AUTO_CONFIRM_STATE         覆盖自动确认状态文件路径
@@ -1031,7 +1035,7 @@ case "queue_enqueue":
           dependsOn: raw["dependsOn"] as? [String] ?? [],
           resourceLocks: raw["resourceLocks"] as? [String] ?? [],
           priority: min(100, max(-100, raw["priority"] as? Int ?? 0)),
-          timeout: min(7200, max(60, raw["timeout"] as? Int ?? 3600)),
+          timeout: min(maxChatWatchTimeoutSeconds, max(60, raw["timeout"] as? Int ?? defaultChatWatchTimeoutSeconds)),
           maxTaskContinuations: max(0, raw["maxTaskContinuations"] as? Int ?? 0),
           maxRuntimeRetries: min(5, max(0, raw["maxRuntimeRetries"] as? Int ?? 2)),
           attempts: 0,
@@ -2139,15 +2143,15 @@ case "send_and_watch":
   // User policy: every outbound message starts a fresh Chat. An existing
   // conversation can only be attached in read-only resumeExisting mode.
   let newChat = !resumeExisting && !freshTargetPrepared
-  let timeout = min(7200, max(10, params["timeout"] as? Int ?? 3600))
-  let stagnationTimeout = min(3600, max(60, params["stagnationTimeout"] as? Int ?? 1200))
+  let timeout = min(maxChatWatchTimeoutSeconds, max(10, params["timeout"] as? Int ?? defaultChatWatchTimeoutSeconds))
+  let stagnationTimeout = min(defaultChatStagnationTimeoutSeconds, max(60, params["stagnationTimeout"] as? Int ?? defaultChatStagnationTimeoutSeconds))
   let maxRecoveryAttempts = min(5, max(0, params["maxRecoveryAttempts"] as? Int ?? 5))
   let autoContinueIncomplete = params["autoContinueIncomplete"] as? Bool ?? true
   let maxTaskContinuations = max(0, params["maxTaskContinuations"] as? Int ?? 0)
   let continuationDepth = max(0, params["continuationDepth"] as? Int ?? 0)
   let originalGoal = (params["originalGoal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? message
   let reportFingerprints = params["reportFingerprints"] as? [String] ?? []
-  let defaultContinuationMessage = "上一个 Chat 的 devspace1 或页面已经连续 \(max(1, stagnationTimeout / 60)) 分钟没有新进度并已停止。请在这个新 Chat 中接手原任务：先检查同一 checkout 中最后一个 devspace1 操作是否已返回或落盘，如果该调用超时则只重试对应步骤。不要切换到 Work，不要从头开始，不要覆盖无关改动，完成实现和验证后再返回最终结果。"
+  let defaultContinuationMessage = "上一个 Chat 的 devspace1 或页面已经连续 \(max(1, stagnationTimeout / 60)) 分钟没有新进度。旧 Chat 保持运行，不要停止或关闭它。请在这个新 Chat 中接手原任务：先检查同一 checkout 中最后一个 devspace1 操作是否已返回或落盘，如果该调用超时则只重试对应步骤。不要切换到 Work，不要从头开始，不要覆盖无关改动，完成实现和验证后再返回最终结果。"
   let continuationMessage = ((params["continuationMessage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? defaultContinuationMessage
   let approveAll = params["approveAll"] as? Bool ?? true
   let pollIntervalMs = min(5000, max(200, params["pollIntervalMs"] as? Int ?? 500))
@@ -2472,50 +2476,54 @@ case "send_and_watch":
 
       if recoveryAttempts < maxRecoveryAttempts {
         recoveryAttempts += 1
-        let stopResult = cdpEvaluateOnChatGPT(
-          stopCurrentResponseJS(),
-          timeout: 5.0,
+        // Do not click Stop or close the unchanged Chat. Start the next round
+        // directly; the old renderer remains available for a late completion.
+        var continuationPreparation = cdpEvaluateOnChatGPT(
+          continueInNewTaskJS(
+            expectedConversationId: normalizedConversationId(
+              finalReply["conversationId"] as? String
+            )
+          ),
+          timeout: 35.0,
           preferredURL: activeChatURL
-        ) ?? ["ok": false, "error": "stop_cdp_failed"]
-        let stopConfirmed = stopResult["stopConfirmed"] as? Bool ?? false
+        ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
+        var continuationMode = "continue_in_new_task"
+        if continuationPreparation["ok"] as? Bool != true,
+           let port = state.backgroundAppPort,
+           let targetId = state.backgroundChatTargetId,
+           var freshChat = prepareNewChatTarget(
+             port: port,
+             targetId: targetId,
+             timeout: 35.0,
+             allowBlankConversationReuse: false
+           ) {
+          continuationMode = "fresh_chat_fallback"
+          freshChat["fallbackFrom"] = continuationPreparation["error"] as Any
+          freshChat["previousConversationId"] = normalizedConversationId(
+            finalReply["conversationId"] as? String
+          ) as Any
+          continuationPreparation = freshChat
+        }
         let recoveryResult: [String: Any]
-        var continuationPreparation: [String: Any] = [:]
-        if stopConfirmed {
-          continuationPreparation = cdpEvaluateOnChatGPT(
-            continueInNewTaskJS(
+        if continuationPreparation["ok"] as? Bool == true {
+          recoveryResult = cdpEvaluateOnChatGPT(
+            sendMessageJS(
+              message: continuationMessage,
+              connector: connector,
+              newChat: false,
               expectedConversationId: normalizedConversationId(
-                finalReply["conversationId"] as? String
+                continuationPreparation["conversationId"] as? String
               )
             ),
             timeout: 35.0,
             preferredURL: activeChatURL
-          ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
-          if continuationPreparation["ok"] as? Bool == true {
-            recoveryResult = cdpEvaluateOnChatGPT(
-              sendMessageJS(
-                message: continuationMessage,
-                connector: connector,
-                newChat: false,
-                expectedConversationId: normalizedConversationId(
-                  continuationPreparation["conversationId"] as? String
-                )
-              ),
-              timeout: 35.0,
-              preferredURL: activeChatURL
-            ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
-          } else {
-            recoveryResult = [
-              "ok": false,
-              "error": continuationPreparation["error"]
-                ?? "continue_in_new_task_not_confirmed",
-              "failedStage": "continue_in_new_task",
-            ]
-          }
+          ) ?? ["ok": false, "error": "continuation_send_cdp_failed"]
         } else {
           recoveryResult = [
             "ok": false,
-            "error": "old_chat_stop_not_confirmed",
-            "failedStage": "stop_confirmation",
+            "error": continuationPreparation["error"]
+              ?? "new_chat_not_confirmed",
+            "failedStage": "new_chat",
           ]
         }
         let recoveryEvent: [String: Any] = [
@@ -2523,9 +2531,9 @@ case "send_and_watch":
           "reason": devspaceWaiting ? "devspace_timeout" : "page_stalled",
           "idleSeconds": stagnationTimeout,
           "screenshotPath": screenshotPath as Any,
-          "stopped": stopResult["stopped"] as? Bool ?? false,
-          "stopConfirmed": stopConfirmed,
-          "stopVerification": stopResult,
+          "oldChatPreserved": true,
+          "stopRequested": false,
+          "continuationMode": continuationMode,
           "continuedInNewTask": continuationPreparation["continuationClicked"] as? Bool ?? false,
           "continuationPreparation": continuationPreparation,
           "continued": recoveryResult["messageConfirmed"] as? Bool ?? false,

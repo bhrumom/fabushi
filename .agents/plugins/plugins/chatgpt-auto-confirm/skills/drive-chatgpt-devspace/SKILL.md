@@ -1,6 +1,6 @@
 ---
 name: drive-chatgpt-devspace
-description: Drive a coding task through the actual Chat surface of a hidden second ChatGPT.app instance using the devspace1 connector. Use when an AI must create a fresh Chat for every outbound message, select devspace1, verify the send, auto-confirm authorization cards, stream user-visible thinking/tool progress, recover from a stall in another new Chat, and wait for ChatGPT's final reply before independently validating the repository.
+description: Drive a coding task through the actual Chat surface of a hidden second ChatGPT.app instance using the devspace1 connector. Use when an AI must create a fresh Chat for every outbound message, select devspace1, verify the send, auto-confirm authorization cards, stream user-visible thinking/tool progress, recover from a three-hour stall in another new Chat without stopping the old Chat, and wait for ChatGPT's final reply before independently validating the repository.
 ---
 
 # Drive ChatGPT Devspace
@@ -27,8 +27,8 @@ For long-lived release, deployment, marketplace, or CI work, also apply the bund
    - `connector: "devspace1"`;
    - `newChat: true` and no old `conversationId` for every outbound message;
    - `approveAll: true`;
-   - `timeout: 7200` unless the user requests another total limit;
-   - `stagnationTimeout: 1200` for 20 minutes without new visible progress;
+   - `timeout: 21600` unless the user requests another total limit;
+   - `stagnationTimeout: 10800` for 3 hours without new visible progress;
    - `maxRecoveryAttempts: 5`;
    - select GPT-5.6 Sol and Extra High reasoning effort for complex implementation tasks when the model selector is available;
    - `autoContinueIncomplete: true`;
@@ -50,9 +50,9 @@ For an interrupted controller process, `resumeExisting: true` may bind the same 
 
 ## Stall and recovery behavior
 
-A stall requires 20 continuous minutes with no change in the visible thinking summary, devspace tool activity, or central Chat content. Do not treat a slow build as stalled while its visible activity changes.
+A stall requires 3 continuous hours with no change in the visible thinking summary, devspace tool activity, or central Chat content. Do not treat a slow build as stalled while its visible activity changes.
 
-The 20-minute timer applies only while ChatGPT still appears to be running. If generation has stopped and the stable response explicitly says the task is unfinished, blocked, or failed, return immediately with `chat_finished_incomplete`, the visible response, and diagnostics. Never wait for the stall timer after the Chat has ended.
+The 3-hour timer applies only while ChatGPT still appears to be running. If generation has stopped and the stable response explicitly says the task is unfinished, blocked, or failed, return immediately with `chat_finished_incomplete`, the visible response, and diagnostics. Never wait for the stall timer after the Chat has ended.
 
 Every unfinished handoff requires a `MAHAYANA_TASK_REPORT_V1` JSON report with `status`, `summary`, `completed`, `remaining`, `blockers`, `verification`, `wait_seconds`, `wait_reason`, `next_connector`, and `next_task`. A successful task result is sent to an independent acceptance Chat and does not require the machine report. When the report says `incomplete` or `blocked`, stop monitoring that finished Chat immediately and continue in a fresh Chat built from the original goal plus the report; never append to the finished conversation. A zero continuation cap means continue until complete or until the report lacks `next_task`. Repeated blockers must trigger diagnosis and an alternative path, or an exact list of required prerequisites, rather than merely stopping on a matching fingerprint.
 
@@ -66,13 +66,13 @@ On the first or second stall, the plugin must:
 
 1. Capture a screenshot and the central Chat text.
 2. Classify the event as `devspace_timeout` when the latest visible activity belongs to devspace1; otherwise classify it as `page_stalled`.
-3. Click ChatGPT's stop control inside the hidden Chat and wait until the stop control has remained absent long enough to confirm the old response actually stopped. If this cannot be confirmed, return `old_chat_stop_not_confirmed` with diagnostics and do not create another Chat.
-4. Only after stop confirmation, create a fresh Chat, select devspace1 again, and send a continuation that identifies the same checkout and tells ChatGPT to inspect whether the last action returned or landed, retry only that step if necessary, preserve completed work, and finish verification.
-5. Reset the idle timer and continue streaming progress.
+3. Do not click ChatGPT's stop control and do not close the unchanged old Chat or its renderer.
+4. Create a fresh Chat directly, select devspace1 again, and send a continuation that identifies the same checkout and tells ChatGPT to inspect whether the last action returned or landed, retry only that step if necessary, preserve completed work, and finish verification. If the normal new-task control is unavailable, use the global new-Chat flow or a separate hidden target.
+5. Reset the idle timer and continue streaming progress while retaining the old Chat for a late result.
 
 After `maxRecoveryAttempts`, stop instead of looping forever. Return the error, screenshots, `pageContent`, `pageButtons`, visible thinking, and recovery history.
 
-Devspace itself independently returns `DEVSPACE_TOOL_TIMEOUT` when a tool invocation fails to return within its own 5-minute limit. This is separate from the Chat page's 20-minute visible-stall timer; shell commands can also use a shorter tool-specific timeout.
+Devspace itself independently returns `DEVSPACE_TOOL_TIMEOUT` when a tool invocation fails to return within its own 5-minute limit. This is separate from the Chat page's 3-hour visible-stall timer; shell commands can also use a shorter tool-specific timeout.
 
 ## Decide whether the task completed
 

@@ -106,7 +106,7 @@ function runNativeTool(rpc) {
     'cancel_task', 'sync_actions_credentials', 'login_and_sync_actions', 'start_actions_runner',
   ].includes(tool)) args.push(JSON.stringify(rpc.params?.arguments ?? {}));
   const timeoutMs = tool === 'send_and_watch'
-    ? 7_300_000
+    ? 86_500_000
     : ['start_queue', 'wait_for_review'].includes(tool)
       ? 7_300_000
     : ['start', 'scan_once', 'relaunch_and_confirm'].includes(tool) ? 620_000
