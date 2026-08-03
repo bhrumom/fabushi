@@ -45,8 +45,8 @@ if [ -n "$ACCOUNT_ID" ]; then
   # remain environment-scoped so one account can never overwrite another.
   "$GH_CLI" api --method PUT \
     "/repos/$REPOSITORY/environments/$ENVIRONMENT" \
-    -f 'wait_timer=0' \
-    -f 'deployment_branch_policy={"protected_branches":false,"custom_branch_policies":true}' >/dev/null
+    -F 'wait_timer=0' \
+    -F 'deployment_branch_policy={"protected_branches":false,"custom_branch_policies":true}' >/dev/null
   "$GH_CLI" api --method POST \
     "/repos/$REPOSITORY/environments/$ENVIRONMENT/deployment-branch-policies" \
     -f name=main >/dev/null 2>&1 || true
