@@ -400,18 +400,21 @@ func accountCredentialSession(
                 userInfo: [NSLocalizedDescriptionKey: "等待账号登录超时；没有保存凭据"])
 }
 
+// Credential registration already has a dedicated, authenticated renderer
+// from `accountCredentialSession`.  Validate the auth state and a real Chat
+// composer in that renderer directly; account setup must not launch a second
+// hidden ChatGPT instance merely to prove that the captured credentials work.
 func accountHiddenSmoke(_ session: AccountLoginSession) -> Bool {
-  let workers = queueDirectoryURL().appendingPathComponent("workers", isDirectory: true)
-    .appendingPathComponent("account-smoke-\(session.account.id)-\(UUID().uuidString.lowercased())", isDirectory: true)
-  guard copyProfileForDedicatedQueueWorker(source: accountProfileURL(session.account).path, destination: workers.path) else { return false }
-  guard let port = dedicatedQueueWorkerPort(),
-        launchDedicatedQueueChatProcess(profilePath: workers.path, port: port, codexHomePath: session.account.codexHomePath),
-        let targetId = dedicatedQueueChatTarget(port: port),
-        let prepared = prepareNewChatTarget(port: port, targetId: targetId, timeout: 10, allowBlankConversationReuse: true),
-        prepared["ok"] as? Bool == true else {
-    terminateDedicatedChatProcess(profilePath: workers.path)
+  queueTrace("account-smoke stage=visible-begin account=\(session.account.id)")
+  guard let state = actionsDesktopState(session.target),
+        state["authenticated"] as? Bool == true else {
+    queueTrace("account-smoke stage=visible-auth-failed")
     return false
   }
-  terminateDedicatedChatProcess(profilePath: workers.path)
+  guard accountAuthDataIsUsable(session.authData), !session.cookieData.isEmpty else {
+    queueTrace("account-smoke stage=visible-credential-shape-failed")
+    return false
+  }
+  queueTrace("account-smoke stage=visible-passed credentials=present")
   return true
 }
