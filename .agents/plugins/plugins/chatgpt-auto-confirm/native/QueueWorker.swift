@@ -791,10 +791,11 @@ func launchDedicatedQueueChatProcess(
             && !existingApplicationPids.contains(candidate.processIdentifier)
         }
         if let application {
+          let systemHidden = application.isHidden
           let hideRequested = application.hide()
           let accessibilityHide = iteration % 10 == 0
             && requestAccessibilityHide(processID: application.processIdentifier)
-          if accessibilityHide && dedicatedRendererIsHidden() {
+          if (systemHidden || accessibilityHide) && dedicatedRendererIsHidden() {
             queueTrace(
               "worker-create stage=dedicated-process-hide-requested "
                 + "port=\(port) pid=\(application.processIdentifier)"
