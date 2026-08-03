@@ -53,9 +53,6 @@ jobs:
       name: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-{0}', inputs.account_id) || 'chatgpt-auto-confirm-legacy' }}
     env:
       CHATGPT_CDP_PORT: "9324"
-      CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
-      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
-      CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
       GH_TOKEN: ${{ github.token }}
       CHATGPT_ACCOUNT_ID: ${{ inputs.account_id }}
     steps:
@@ -90,6 +87,7 @@ jobs:
           PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
           STATE_PATH: ${{ steps.paths.outputs.state_path }}
           STATE_ARTIFACT_NAME: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-state-{0}', inputs.account_id) || 'chatgpt-auto-confirm-state' }}
+          CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: |
           set -euo pipefail
           if [[ -n "$PREVIOUS_RUN_ID" ]]; then
@@ -141,12 +139,39 @@ jobs:
                 --account-id "$ACCOUNT_ID" --state-key "$STATE_KEY" --input "$bundle" \
                 --auth-output "$RUNTIME_DIR/latest-credential/auth.json" \
                 --cookies-output "$RUNTIME_DIR/latest-credential/cookies.json"
-              printf 'CHATGPT_CODEX_AUTH_B64=%s\n' "$(base64 < "$RUNTIME_DIR/latest-credential/auth.json" | tr -d '\\n')" >> "$GITHUB_ENV"
-              printf 'CHATGPT_SESSION_COOKIES_B64=%s\n' "$(base64 < "$RUNTIME_DIR/latest-credential/cookies.json" | tr -d '\\n')" >> "$GITHUB_ENV"
+              auth_b64=$(base64 < "$RUNTIME_DIR/latest-credential/auth.json" | tr -d '\r\n')
+              cookies_b64=$(base64 < "$RUNTIME_DIR/latest-credential/cookies.json" | tr -d '\r\n')
+              printf '::add-mask::%s\n' "$auth_b64"
+              printf '::add-mask::%s\n' "$cookies_b64"
+              printf 'CHATGPT_CODEX_AUTH_B64=%s\n' "$auth_b64" >> "$GITHUB_ENV"
+              printf 'CHATGPT_SESSION_COOKIES_B64=%s\n' "$cookies_b64" >> "$GITHUB_ENV"
               echo 'Restored latest authenticated account bundle.'
             fi
           else
             echo 'No rolling credential bundle found; using Environment or legacy repository secrets.'
+          fi
+
+      - name: Resolve account credential seed
+        if: ${{ inputs.cancel_task_id == '' }}
+        shell: bash
+        env:
+          SEED_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
+          SEED_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${SEED_CODEX_AUTH_B64:-}" ]]; then
+            printf '::add-mask::%s\n' "$SEED_CODEX_AUTH_B64"
+          fi
+          if [[ -n "${SEED_SESSION_COOKIES_B64:-}" ]]; then
+            printf '::add-mask::%s\n' "$SEED_SESSION_COOKIES_B64"
+          fi
+          if [[ -z "${CHATGPT_CODEX_AUTH_B64:-}" ]]; then
+            test -n "${SEED_CODEX_AUTH_B64:-}"
+            printf 'CHATGPT_CODEX_AUTH_B64=%s\n' "$SEED_CODEX_AUTH_B64" >> "$GITHUB_ENV"
+          fi
+          if [[ -z "${CHATGPT_SESSION_COOKIES_B64:-}" ]]; then
+            test -n "${SEED_SESSION_COOKIES_B64:-}"
+            printf 'CHATGPT_SESSION_COOKIES_B64=%s\n' "$SEED_SESSION_COOKIES_B64" >> "$GITHUB_ENV"
           fi
 
       - name: Remove stale local worker bindings
@@ -341,6 +366,7 @@ jobs:
         env:
           STATE_PATH: ${{ steps.paths.outputs.state_path }}
           RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
+          CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: |
           set -euo pipefail
           test -n "$CHATGPT_AUTO_CONFIRM_STATE_KEY"
