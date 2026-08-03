@@ -1477,10 +1477,15 @@ func startAutomationTask(
       terminateDedicatedChatProcess(profilePath: workerProfilePath)
     }
   }
-  if state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
+  let preserveStalledChat = [
+    "chat_start_no_reply", "page_stalled", "page_stalled_but_response_active",
+  ].contains(task.lastError ?? "")
+  if !preserveStalledChat,
+     state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
      let staleProfilePath = task.workerProfilePath {
     terminateDedicatedChatProcess(profilePath: staleProfilePath)
-  } else if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
+  } else if !preserveStalledChat,
+            state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
      let staleTargetId = task.workerTargetId,
      let stalePort = task.workerPort,
      queueTargetIsReady(port: stalePort, targetId: staleTargetId) {
@@ -1504,7 +1509,7 @@ func startAutomationTask(
   port = worker.port
   targetId = worker.targetId
   workerProfilePath = worker.profilePath
-  if let previousConversationId {
+  if let previousConversationId, !preserveStalledChat {
     queueTrace(
       "task=\(task.id) stage=prepare-continuation begin "
         + "previousConversation=\(previousConversationId)"
@@ -1593,6 +1598,12 @@ func startAutomationTask(
       }
     }
   } else {
+    if preserveStalledChat {
+      queueTrace(
+        "task=\(task.id) stage=prepare-fresh-chat-after-stall "
+          + "previousConversation=\(previousConversationId ?? "none") oldChat=preserved"
+      )
+    }
     queueTrace("task=\(task.id) stage=prepare-new-chat begin")
     prepared = prepareNewChatTarget(
       port: worker.port,

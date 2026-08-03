@@ -158,23 +158,33 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.doesNotMatch(nativeSource, /无法恢复上一轮会话，未点击/);
 });
 
-test('send_and_watch streams visible thinking and uses bounded same-task recovery', async () => {
+test('send_and_watch streams visible thinking and recovers in a fresh Chat after three hours', async () => {
   const sent = await call('send_and_watch', {
     message: '继续完成任务', connector: 'devspace1',
   });
   const params = sent.result.structuredContent.hostRequest.params;
   assert.equal(params.newChat, true);
-  assert.equal(params.timeout, 3600);
-  assert.equal(params.stagnationTimeout, 1200);
+  assert.equal(params.timeout, 21600);
+  assert.equal(params.stagnationTimeout, 10800);
   assert.equal(params.maxRecoveryAttempts, 5);
   assert.equal(params.autoContinueIncomplete, true);
   assert.equal(params.maxTaskContinuations, 0);
   assert.match(nativeSource, /"thinking_progress"/);
   assert.match(nativeSource, /stopCurrentResponseJS/);
-  assert.match(nativeSource, /stopConfirmed/);
-  assert.match(nativeSource, /old_chat_stop_not_confirmed/);
-  assert.match(nativeSource, /stop_confirmation_timeout/);
   assert.match(nativeSource, /continueInNewTaskJS/);
+  assert.match(nativeSource, /prepareNewChatTarget/);
+  assert.match(nativeSource, /oldChatPreserved/);
+  assert.match(nativeSource, /stopRequested/);
+  assert.match(nativeSource, /fresh_chat_fallback/);
+  const stallRecoveryStart = nativeSource.indexOf(
+    'if Date().timeIntervalSince(lastPageChangeAt)',
+  );
+  const stallRecoveryEnd = nativeSource.indexOf('// Save state', stallRecoveryStart);
+  assert.ok(stallRecoveryStart >= 0 && stallRecoveryEnd > stallRecoveryStart);
+  assert.doesNotMatch(
+    nativeSource.slice(stallRecoveryStart, stallRecoveryEnd),
+    /stopCurrentResponseJS/,
+  );
   assert.match(nativeSource, /message: continuationMessage/);
   assert.match(nativeSource, /newChat: false/);
   assert.doesNotMatch(nativeSource, /private func stopAndContinueJS/);
