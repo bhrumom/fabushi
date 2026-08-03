@@ -757,6 +757,7 @@ func launchDedicatedQueueChatProcess(
       for target in targets {
         guard target["type"] as? String == "page",
               (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
+              !(target["url"] as? String ?? "").contains("avatar-overlay"),
               let targetId = target["id"] as? String else { continue }
         let state = cdpValue(
           port: port,
