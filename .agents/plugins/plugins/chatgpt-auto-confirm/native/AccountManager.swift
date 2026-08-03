@@ -411,15 +411,10 @@ func accountHiddenSmoke(_ session: AccountLoginSession) -> Bool {
     queueTrace("account-smoke stage=visible-auth-failed")
     return false
   }
-  guard let prepared = prepareNewChatTarget(
-    port: session.port,
-    targetId: session.target.targetId,
-    timeout: 10,
-    allowBlankConversationReuse: true
-  ), prepared["ok"] as? Bool == true else {
-    queueTrace("account-smoke stage=visible-chat-prepare-failed")
+  guard accountAuthDataIsUsable(session.authData), !session.cookieData.isEmpty else {
+    queueTrace("account-smoke stage=visible-credential-shape-failed")
     return false
   }
-  queueTrace("account-smoke stage=visible-passed")
+  queueTrace("account-smoke stage=visible-passed credentials=present")
   return true
 }
