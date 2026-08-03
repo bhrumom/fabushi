@@ -673,6 +673,8 @@ func copyProfileForDedicatedQueueWorker(
     process.arguments = [
       "-a",
       "--exclude=Singleton*",
+      "--exclude=**/LOCK",
+      "--exclude=**/LOCK.*",
       "--exclude=Lockfile",
       "--exclude=lockfile",
       "--exclude=DevToolsActivePort",
