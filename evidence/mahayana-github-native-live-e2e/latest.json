@@ -1,6 +1,6 @@
 {
   "protocol": "mahayana.github-native-live-e2e.bootstrap.v1",
-  "generatedAt": "2026-08-02T12:43:24.994Z",
+  "generatedAt": "2026-08-03T03:56:26.802Z",
   "actor": {
     "login": "bhrum",
     "id": 222737880
@@ -52,10 +52,10 @@
   "status": "success",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30748267570",
+    "runId": "30783013358",
     "runAttempt": "1",
-    "sourceCommit": "4dacfaa7c4aa710d947cfb845436b61ae933ba5f",
+    "sourceCommit": "1e056557cbd17d273676c3f135972934f49ab2e6",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30748267570"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30783013358"
   }
 }
