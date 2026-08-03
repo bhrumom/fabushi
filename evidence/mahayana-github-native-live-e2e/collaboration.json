@@ -1,15 +1,15 @@
 {
   "protocol": "mahayana.github-native-live-e2e.v1",
-  "generatedAt": "2026-08-03T04:43:59.047Z",
+  "generatedAt": "2026-08-03T05:57:21.647Z",
   "status": "failed",
   "errorCode": "github_native_live_e2e_failed",
-  "message": "Error: bhrumom/mahayana-mcp-app-collaboration-v10 pr-untrusted.yml run 30785058879 concluded failure\n    at waitWorkflow (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:201:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:508:23)",
+  "message": "Error: bhrumom/mahayana-mcp-app-collaboration-v10 pr-untrusted.yml run 30788460036 concluded failure\n    at waitWorkflow (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:201:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:508:23)",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30784741436",
+    "runId": "30788383404",
     "runAttempt": "1",
-    "sourceCommit": "fbd271cc09ec7d72542d6f5c382852b7f7a3b5b6",
+    "sourceCommit": "a2c86b7d877d2b303c0993701b168687fe28c890",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30784741436"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30788383404"
   }
 }
