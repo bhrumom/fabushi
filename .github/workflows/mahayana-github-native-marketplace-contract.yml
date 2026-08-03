@@ -8,6 +8,7 @@ on:
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
       - '.github/scripts/run-mahayana-github-native-live-e2e.mjs'
+      - '.github/scripts/persist-mahayana-live-evidence.sh'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -30,6 +31,7 @@ on:
       - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
       - '.github/scripts/bootstrap-mahayana-github-native-live-e2e.mjs'
       - '.github/scripts/run-mahayana-github-native-live-e2e.mjs'
+      - '.github/scripts/persist-mahayana-live-evidence.sh'
       - 'templates/mahayana-mcp-app-github-native/**'
       - 'ai-backend/package.json'
       - 'ai-backend/package-lock.json'
@@ -169,19 +171,9 @@ jobs:
           };
           fs.writeFileSync(process.env.PERSISTED_EVIDENCE_PATH, JSON.stringify(source, null, 2) + '\n');
           NODE
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$PERSISTED_EVIDENCE_PATH"
-          if git diff --cached --quiet; then
-            echo 'Persisted evidence is unchanged.'
-            exit 0
-          fi
-          git commit -m 'chore(evidence): persist GitHub native live E2E status'
-          if ! git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10; then
-            git fetch origin codex/mahayana-marketplace-cloudflare-v10
-            git rebase origin/codex/mahayana-marketplace-cloudflare-v10
-            git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
-          fi
+          EVIDENCE_TARGET_BRANCH='codex/mahayana-marketplace-cloudflare-v10' \
+          EVIDENCE_COMMIT_MESSAGE='chore(evidence): persist GitHub native live E2E status' \
+            bash .github/scripts/persist-mahayana-live-evidence.sh
 
       - name: Upload immutable bootstrap evidence
         if: always()
@@ -268,19 +260,9 @@ jobs:
           };
           fs.writeFileSync(process.env.PERSISTED_EVIDENCE_PATH, JSON.stringify(source, null, 2) + '\n');
           NODE
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$PERSISTED_EVIDENCE_PATH"
-          if git diff --cached --quiet; then
-            echo 'Persisted collaboration evidence is unchanged.'
-            exit 0
-          fi
-          git commit -m 'chore(evidence): persist GitHub collaboration live E2E status'
-          if ! git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10; then
-            git fetch origin codex/mahayana-marketplace-cloudflare-v10
-            git rebase origin/codex/mahayana-marketplace-cloudflare-v10
-            git push origin HEAD:codex/mahayana-marketplace-cloudflare-v10
-          fi
+          EVIDENCE_TARGET_BRANCH='codex/mahayana-marketplace-cloudflare-v10' \
+          EVIDENCE_COMMIT_MESSAGE='chore(evidence): persist GitHub collaboration live E2E status' \
+            bash .github/scripts/persist-mahayana-live-evidence.sh
 
       - name: Upload immutable live collaboration evidence
         if: always()

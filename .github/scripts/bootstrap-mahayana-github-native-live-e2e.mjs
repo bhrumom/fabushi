@@ -263,15 +263,14 @@ async function configureActions(repository) {
     expected: [204],
     body: { enabled: true, allowed_actions: 'all' },
   });
-  // Keep the repository GITHUB_TOKEN read-only and unable to approve PRs.
-  // The trusted bootstrap uses the protected administrator token for explicit
-  // Draft PR creation, while CODEOWNERS/rulesets require a distinct maintainer
-  // approval before merge. This also remains compatible with organization
-  // policies that forbid Actions-created or Actions-approved pull requests.
+  // Keep the default repository GITHUB_TOKEN read-only. The explicitly
+  // dispatched trusted workflow may request pull-requests:write solely to create
+  // a user-confirmed Draft PR. CODEOWNERS/rulesets still require a distinct
+  // maintainer approval, and no workflow is allowed to merge the pull request.
   await api(`/repos/${repository.full_name}/actions/permissions/workflow`, {
     method: 'PUT',
     expected: [204],
-    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
+    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true },
   });
   await api(`/repos/${repository.full_name}/environments/production`, {
     method: 'PUT',
