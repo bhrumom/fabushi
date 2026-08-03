@@ -10,5 +10,4 @@ const report = {
 };
 for (const value of Object.values(report)) assert.match(value, /^[0-9a-f]{64}$/);
 fs.mkdirSync('.test-runtime', { recursive: true });
-fs.writeFileSync('.test-runtime/review-diff-report.json', JSON.stringify(report, null, 2) + '
-');
+fs.writeFileSync('.test-runtime/review-diff-report.json', JSON.stringify(report, null, 2) + '\n');
