@@ -1,15 +1,15 @@
 {
   "protocol": "mahayana.github-native-live-e2e.v1",
-  "generatedAt": "2026-08-03T06:15:15.334Z",
+  "generatedAt": "2026-08-03T06:31:55.383Z",
   "status": "failed",
   "errorCode": "github_native_live_e2e_failed",
-  "message": "Error: POST /repos/bhrumom/mahayana-mcp-app-collaboration-v10/pulls/7/reviews returned 422: {\"message\":\"Unprocessable Entity\",\"errors\":[\"Review Can not approve your own pull request\"],\"documentation_url\":\"https://docs.github.com/rest/pulls/reviews#create-a-review-for-a-pull-request\",\"status\":\"422\"}\n    at api (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:39:19)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async approvePullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:221:5)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:510:3)",
+  "message": "Error: reviewer bhrum cannot approve their own pull request #7\n    at approvePullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:223:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:517:21)",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "30788833351",
+    "runId": "30789881490",
     "runAttempt": "1",
-    "sourceCommit": "0ab3cbccbdc908c0a01f00c48e89d8026c345e7c",
+    "sourceCommit": "45af8f2242bafcb4c8bc4a4a98d44ee4fc250085",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/30788833351"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/30789881490"
   }
 }
