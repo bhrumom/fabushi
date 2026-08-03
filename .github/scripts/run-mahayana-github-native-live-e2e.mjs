@@ -353,6 +353,9 @@ async function createAiFix(issue) {
   const forkMain = await getRef(fork, 'main');
   await ensureBranch(fork, branch, forkMain.object.sha);
   const currentRef = await getRef(fork, branch);
+  if (!currentRef?.object?.sha) {
+    throw new Error(`fork branch ${branch} does not have a readable commit ref`);
+  }
   const existingPr = await findPullRequest(branch);
   if (existingPr?.merged) return { branch, pull: existingPr, headSha: existingPr.head.sha, originalDraft: true };
 
