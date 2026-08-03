@@ -90,6 +90,7 @@ function customize(relative, content) {
 }
 
 const createDraftPrWorkflow = `name: Create Upstream Draft PR
+run-name: Create Draft PR for \${{ inputs.head }}
 on:
   workflow_dispatch:
     inputs:
@@ -116,13 +117,16 @@ jobs:
     steps:
       - name: Create user-confirmed Draft Pull Request
         uses: actions/github-script@v7
+        env:
+          PR_HEAD: \${{ inputs.head }}
+          ISSUE_NUMBER: \${{ inputs.issue_number }}
+          PR_TITLE: \${{ inputs.title }}
         with:
           script: |
-            const inputs = context.payload.inputs || {};
-            const head = String(inputs.head || '');
-            const issueNumber = String(inputs.issue_number || '');
-            const title = String(inputs.title || '');
-            if (!head || !issueNumber || !title) core.setFailed('head, issue_number, and title are required');
+            const head = String(process.env.PR_HEAD || '');
+            const issueNumber = String(process.env.ISSUE_NUMBER || '');
+            const title = String(process.env.PR_TITLE || '');
+            if (!head || !issueNumber || !title) throw new Error('head, issue_number, and title are required');
             const body = [
               'Closes #' + issueNumber,
               '',

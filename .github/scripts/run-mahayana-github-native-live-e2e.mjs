@@ -9,6 +9,9 @@ const upstreamPluginId = 'io.mahayana.test.github-native-collaboration';
 const derivedPluginId = 'io.mahayana.bhrum.github-native-collaboration-plus';
 const fixedVersion = '1.0.1';
 const derivedVersion = '1.0.1-derived.1';
+const runIdentity = String(process.env.GITHUB_RUN_ID || process.env.GITHUB_RUN_NUMBER || Date.now())
+  .replace(/[^0-9A-Za-z._-]/g, '-')
+  .slice(0, 32);
 const apiBase = 'https://api.github.com';
 const headers = {
   Accept: 'application/vnd.github+json',
@@ -138,13 +141,23 @@ async function findPullRequest(headBranch, state = 'all') {
   return pulls[0] || null;
 }
 
-async function waitForOpenPullRequest(headBranch) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+async function waitForOpenPullRequest(headBranch, dispatchedAt) {
+  let latestRun = null;
+  for (let attempt = 0; attempt < 180; attempt += 1) {
     const pull = await findPullRequest(headBranch, 'open');
     if (pull) return pull;
+
+    const query = new URLSearchParams({ event: 'workflow_dispatch', branch: 'main', per_page: '20' });
+    const result = await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/runs?${query}`);
+    const recentRuns = (result.workflow_runs || []).filter((run) => Date.parse(run.created_at) >= dispatchedAt - 5000);
+    latestRun = recentRuns.find((run) => String(run.display_title || '').includes(headBranch)) || recentRuns[0] || latestRun;
+    if (latestRun?.status === 'completed' && latestRun.conclusion !== 'success') {
+      throw new Error(`trusted upstream workflow run ${latestRun.id} concluded ${latestRun.conclusion}: ${latestRun.html_url}`);
+    }
     await sleep(2000);
   }
-  throw new Error(`trusted upstream workflow did not create an open pull request for ${headBranch}`);
+  const runSummary = latestRun ? `; latest run ${latestRun.id} is ${latestRun.status}/${latestRun.conclusion || 'pending'}: ${latestRun.html_url}` : '; no matching workflow run was observed';
+  throw new Error(`trusted upstream workflow did not create an open pull request for ${headBranch}${runSummary}`);
 }
 
 async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
@@ -159,6 +172,7 @@ async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
       body: { state: 'closed' },
     });
   }
+  const dispatchedAt = Date.now();
   await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
     method: 'POST',
     expected: [204],
@@ -171,7 +185,7 @@ async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
       },
     },
   });
-  return waitForOpenPullRequest(headBranch);
+  return waitForOpenPullRequest(headBranch, dispatchedAt);
 }
 
 async function markReady(pull) {
@@ -335,7 +349,7 @@ async function configureForkActions() {
 }
 
 async function createAiFix(issue) {
-  const branch = 'ai/issue-whitespace-send-v10';
+  const branch = `ai/issue-whitespace-send-v10-${runIdentity}`;
   const forkMain = await getRef(fork, 'main');
   await ensureBranch(fork, branch, forkMain.object.sha);
   const currentRef = await getRef(fork, branch);
