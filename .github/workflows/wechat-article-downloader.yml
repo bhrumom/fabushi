@@ -159,9 +159,17 @@ jobs:
             actual="$(find artifacts/wechat-archive/articles -mindepth 2 -maxdepth 2 -name "$file" | wc -l | tr -d ' ')"
             test "$actual" = "$expected"
           done
-          test "$(find artifacts/wechat-archive/articles -name content.txt -size +100c | wc -l | tr -d ' ')" = "$expected"
-          if grep -RIEq 'https?://[^" ]*(mmbiz|qpic|qlogo)\.(cn|com)'             artifacts/wechat-archive/articles/*/index.html             artifacts/wechat-archive/articles/*/content.html; then
-            echo 'remote WeChat image reference remains in offline article files' >&2
+          nonempty_text="$(find artifacts/wechat-archive/articles -name content.txt -size +0c | wc -l | tr -d ' ')"
+          if [ "$nonempty_text" != "$expected" ]; then
+            echo "non-empty content.txt count mismatch: actual=$nonempty_text expected=$expected" >&2
+            find artifacts/wechat-archive/articles -name content.txt -size 0 -print >&2
+            exit 1
+          fi
+          if grep -RInE 'https?://[^" ]*(mmbiz|qpic|qlogo)\.(cn|com)' \
+            artifacts/wechat-archive/articles/*/index.html \
+            artifacts/wechat-archive/articles/*/content.html > artifacts/remote-media-references.txt; then
+            echo 'remote WeChat media reference remains in offline article files:' >&2
+            cat artifacts/remote-media-references.txt >&2
             exit 1
           fi
           jq '{account,stats,albumCount:(.albums|length),warnings,failures}' "$manifest" | tee artifacts/archive-summary.json
@@ -185,6 +193,7 @@ jobs:
             inspect.json
             artifacts/download-result.json
             artifacts/archive-summary.json
+            artifacts/remote-media-references.txt
             artifacts/wechat-archive/manifest.json
             artifacts/wechat-archive/index.html
             artifacts/wechat-archive.tar.gz
