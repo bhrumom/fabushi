@@ -150,7 +150,15 @@ async function waitForOpenPullRequest(headBranch) {
 async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
   const [owner] = fork.split('/');
   const existing = await findPullRequest(headBranch, 'open');
-  if (existing) return existing;
+  if (existing) {
+    const actor = await api('/user');
+    if (existing.user?.id !== actor.id) return existing;
+    await api(`/repos/${upstream}/pulls/${existing.number}`, {
+      method: 'PATCH',
+      expected: [200],
+      body: { state: 'closed' },
+    });
+  }
   await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
     method: 'POST',
     expected: [204],
