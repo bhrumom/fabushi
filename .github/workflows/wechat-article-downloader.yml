@@ -22,10 +22,10 @@ on:
         type: boolean
         default: true
       download_images:
-        description: Download article images for offline viewing
+        description: Download article images and rewrite them to local paths
         required: true
         type: boolean
-        default: false
+        default: true
       search_pages:
         description: Sogou public index pages (0-10)
         required: true
@@ -116,12 +116,12 @@ jobs:
           seed="$TARGET_SEED"
           max_articles=20
           search_pages=2
-          download_images=false
+          download_images=true
           archive_kind=smoke
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             seed="${DISPATCH_SEED:-$TARGET_SEED}"
             search_pages="${SEARCH_PAGES:-10}"
-            download_images="${DOWNLOAD_IMAGES:-false}"
+            download_images="${DOWNLOAD_IMAGES:-true}"
             if [ "${FULL_ARCHIVE:-true}" = true ]; then
               max_articles=0
               archive_kind=full
@@ -148,11 +148,22 @@ jobs:
             .account.biz == "MzA5NDcyMDcxNA==" and
             .account.nickname == "紫竹林中莲花开" and
             (.stats.articles >= 20) and
-            any(.articles[]; .mid == "2650956568" and .title == "龙吟声威初探——宇贺神将的西方白金体")
+            (.stats.images > 0) and
+            (.stats.downloadedImages == .stats.images) and
+            (.stats.failedImages == 0) and
+            (.stats.offlineArticles == .stats.articles) and
+            any(.articles[]; .mid == "2650956568" and .title == "龙吟声威初探——宇贺神将的西方白金体" and .offlineComplete == true)
           ' "$manifest" >/dev/null
-          actual="$(find artifacts/wechat-archive/articles -mindepth 2 -maxdepth 2 -name index.html | wc -l | tr -d ' ')"
           expected="$(jq -r '.stats.articles' "$manifest")"
-          test "$actual" = "$expected"
+          for file in index.html content.html content.txt metadata.json; do
+            actual="$(find artifacts/wechat-archive/articles -mindepth 2 -maxdepth 2 -name "$file" | wc -l | tr -d ' ')"
+            test "$actual" = "$expected"
+          done
+          test "$(find artifacts/wechat-archive/articles -name content.txt -size +100c | wc -l | tr -d ' ')" = "$expected"
+          if grep -RIEq 'https?://[^" ]*(mmbiz|qpic|qlogo)\.(cn|com)'             artifacts/wechat-archive/articles/*/index.html             artifacts/wechat-archive/articles/*/content.html; then
+            echo 'remote WeChat image reference remains in offline article files' >&2
+            exit 1
+          fi
           jq '{account,stats,albumCount:(.albums|length),warnings,failures}' "$manifest" | tee artifacts/archive-summary.json
 
       - name: Compress archive
