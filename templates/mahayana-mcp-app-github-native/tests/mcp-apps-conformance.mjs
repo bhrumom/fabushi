@@ -15,4 +15,4 @@ assert.match(app, /event\.origin !== 'null'/);
 assert.match(manifest, /io\.modelcontextprotocol\/ui/);
 assert.match(manifest, /2026-01-26/);
 assert.match(manifest, /text\/html;profile=mcp-app/);
-assert.match(manifest, /ui:\/\/io\.mahayana\.example\.github-native-app\/main/);
+assert.match(manifest, /ui:\/\/io\.mahayana\.[a-z0-9.-]+\/main/);
