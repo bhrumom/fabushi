@@ -403,15 +403,31 @@ func accountCredentialSession(
 func accountHiddenSmoke(_ session: AccountLoginSession) -> Bool {
   let workers = queueDirectoryURL().appendingPathComponent("workers", isDirectory: true)
     .appendingPathComponent("account-smoke-\(session.account.id)-\(UUID().uuidString.lowercased())", isDirectory: true)
-  guard copyProfileForDedicatedQueueWorker(source: accountProfileURL(session.account).path, destination: workers.path) else { return false }
-  guard let port = dedicatedQueueWorkerPort(),
-        launchDedicatedQueueChatProcess(profilePath: workers.path, port: port, codexHomePath: session.account.codexHomePath),
-        let targetId = dedicatedQueueChatTarget(port: port),
-        let prepared = prepareNewChatTarget(port: port, targetId: targetId, timeout: 10, allowBlankConversationReuse: true),
-        prepared["ok"] as? Bool == true else {
+  queueTrace("account-smoke stage=begin account=\(session.account.id)")
+  guard copyProfileForDedicatedQueueWorker(source: accountProfileURL(session.account).path, destination: workers.path) else {
+    queueTrace("account-smoke stage=profile-copy-failed")
+    return false
+  }
+  guard let port = dedicatedQueueWorkerPort() else {
+    queueTrace("account-smoke stage=port-unavailable")
+    return false
+  }
+  guard launchDedicatedQueueChatProcess(profilePath: workers.path, port: port, codexHomePath: session.account.codexHomePath) else {
+    queueTrace("account-smoke stage=process-launch-failed port=\(port)")
+    return false
+  }
+  guard let targetId = dedicatedQueueChatTarget(port: port) else {
+    queueTrace("account-smoke stage=target-unavailable port=\(port)")
     terminateDedicatedChatProcess(profilePath: workers.path)
     return false
   }
+  guard let prepared = prepareNewChatTarget(port: port, targetId: targetId, timeout: 10, allowBlankConversationReuse: true),
+        prepared["ok"] as? Bool == true else {
+    queueTrace("account-smoke stage=chat-prepare-failed port=\(port)")
+    terminateDedicatedChatProcess(profilePath: workers.path)
+    return false
+  }
+  queueTrace("account-smoke stage=passed port=\(port)")
   terminateDedicatedChatProcess(profilePath: workers.path)
   return true
 }
