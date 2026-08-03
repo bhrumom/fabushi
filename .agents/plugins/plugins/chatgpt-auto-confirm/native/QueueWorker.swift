@@ -158,13 +158,19 @@ func sharedChatController(
     (state.automationTasks ?? []).compactMap(\.workerTargetId)
       + [state.queueWorkerTargetId].compactMap { $0 }
   )
-  queueTrace("worker-create stage=controller-discovery begin port=\(port)")
+  let discoveryStartedAt = Date()
+  let discoveryDeadline = discoveryStartedAt.addingTimeInterval(30.0)
+  var discoveryProbeAttempts = 0
+  var lastDiscoveryTargetCount = 0
+  queueTrace("worker-create stage=controller-discovery begin port=\(port) timeout=30s")
   // Hosted macOS runners invoke the queue only a few seconds after launching
-  // ChatGPT. The preload bridge and entry module can be ready before React has
-  // rendered five buttons, so wait for the actual prewarm prerequisites
-  // instead of taking one button-count snapshot.
-  for _ in 0..<120 {
+  // ChatGPT. Bound discovery by wall-clock time rather than a loop count:
+  // every CDP probe can itself block until its timeout, so 120 nominal 250 ms
+  // iterations previously held the queue-state lock for several minutes when
+  // the primary renderer was suspended.
+  while Date() < discoveryDeadline {
     let targets = CDPClient.fetchTargets(portOverride: port)
+    lastDiscoveryTargetCount = targets.count
     let orderedTargets = targets.sorted { lhs, rhs in
       let lhsId = lhs["id"] as? String ?? ""
       let rhsId = rhs["id"] as? String ?? ""
@@ -172,10 +178,14 @@ func sharedChatController(
         < (preferredTargetIds.firstIndex(of: rhsId) ?? Int.max)
     }
     for target in orderedTargets {
+      guard Date() < discoveryDeadline else { break }
       guard target["type"] as? String == "page",
             (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
             let targetId = target["id"] as? String,
             !queueOwnedTargetIds.contains(targetId) else { continue }
+      discoveryProbeAttempts += 1
+      let remaining = discoveryDeadline.timeIntervalSinceNow
+      guard remaining > 0 else { break }
       let probe = cdpValue(
         port: port,
         targetId: targetId,
@@ -188,7 +198,7 @@ func sharedChatController(
           ).length
         }))()
         """,
-        timeout: 3.0
+        timeout: min(1.0, max(0.2, remaining))
       )
       let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
       let ready = probe?["ready"] as? String
@@ -197,11 +207,24 @@ func sharedChatController(
       state.backgroundAppPort = port
       state.backgroundChatTargetId = targetId
       state.backgroundProfilePath = profilePath
-      queueTrace("worker-create stage=controller-discovery complete target=\(targetId)")
+      let elapsedMs = Int(Date().timeIntervalSince(discoveryStartedAt) * 1_000)
+      queueTrace(
+        "worker-create stage=controller-discovery complete target=\(targetId) "
+          + "elapsedMs=\(elapsedMs) probes=\(discoveryProbeAttempts)"
+      )
       return (port, targetId, profilePath)
     }
-    Thread.sleep(forTimeInterval: 0.25)
+    let remaining = discoveryDeadline.timeIntervalSinceNow
+    if remaining > 0 {
+      Thread.sleep(forTimeInterval: min(0.25, remaining))
+    }
   }
+  let discoveryElapsedMs = Int(Date().timeIntervalSince(discoveryStartedAt) * 1_000)
+  queueTrace(
+    "worker-create stage=controller-discovery timeout port=\(port) "
+      + "elapsedMs=\(discoveryElapsedMs) probes=\(discoveryProbeAttempts) "
+      + "targets=\(lastDiscoveryTargetCount)"
+  )
   guard let prepared = ensureHiddenChatTarget(&state),
         prepared["ok"] as? Bool == true,
         let port = prepared["port"] as? Int,
@@ -327,6 +350,51 @@ func continueHiddenOnboardingJS() -> String {
   """#
 }
 
+func wakeHiddenQueueRenderer(
+  port: Int,
+  targetId: String,
+  wsURL: String,
+  timeout: TimeInterval = 12.0
+) -> Bool {
+  let startedAt = Date()
+  let deadline = startedAt.addingTimeInterval(timeout)
+  var attempt = 0
+  repeat {
+    attempt += 1
+    queueTrace(
+      "worker-create stage=prewarm-renderer-wake attempt=\(attempt) target=\(targetId)"
+    )
+    if wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) {
+      let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+      queueTrace(
+        "worker-create stage=prewarm-renderer-wake complete target=\(targetId) "
+          + "attempts=\(attempt) elapsedMs=\(elapsedMs)"
+      )
+      return true
+    }
+    let targetStillExists = CDPClient.fetchTargets(portOverride: port).contains {
+      $0["id"] as? String == targetId
+    }
+    guard targetStillExists else {
+      queueTrace(
+        "worker-create stage=prewarm-renderer-wake target-missing "
+          + "target=\(targetId) attempts=\(attempt)"
+      )
+      return false
+    }
+    let remaining = deadline.timeIntervalSinceNow
+    if remaining > 0 {
+      Thread.sleep(forTimeInterval: min(0.5, remaining))
+    }
+  } while Date() < deadline
+  let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+  queueTrace(
+    "worker-create stage=prewarm-renderer-wake timeout target=\(targetId) "
+      + "attempts=\(attempt) elapsedMs=\(elapsedMs)"
+  )
+  return false
+}
+
 func openBackgroundQueueWindow(
   port: Int,
   controllerTargetId: String,
@@ -449,7 +517,11 @@ func openBackgroundQueueWindow(
   // hidden while asking Chromium to run this renderer at active lifecycle
   // priority. document.visibilityState remains hidden and is rechecked below.
   Thread.sleep(forTimeInterval: 0.5)
-  guard wakeHiddenRenderer(port: port, targetId: targetId, wsURL: wsURL) else {
+  guard wakeHiddenQueueRenderer(
+    port: port,
+    targetId: targetId,
+    wsURL: wsURL
+  ) else {
     failure = "prewarm_renderer_wake_failed"
     _ = CDPClient.closeTarget(targetId, portOverride: port)
     return nil

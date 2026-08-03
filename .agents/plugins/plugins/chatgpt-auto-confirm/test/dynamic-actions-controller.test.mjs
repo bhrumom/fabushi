@@ -69,11 +69,19 @@ test('every new Chat is dispatched only after a fresh control read', () => {
 });
 
 test('unchanged tasks continue while changed tasks replace only at the boundary', () => {
-  assert.match(controller, /if \(exact\) continue/);
+  assert.match(controller, /if \(exact\) \{/);
   assert.match(controller, /staleVersion && !isTerminal\(current\)/);
-  assert.match(controller, /native\('queue_retry'/);
   assert.match(controller, /action: 'resume_after_fresh_control_read'/);
   assert.match(controller, /queue_pause does not interrupt running Chats/);
+});
+
+test('unchanged terminal tasks preserve the child controller recovery budget', () => {
+  assert.match(controller, /action: 'preserve_child_recovery_budget'/);
+  assert.match(controller, /bypassed maxRuntimeRetries and ACTION_MAX_SAME_FAILURE_RECOVERIES/);
+  assert.doesNotMatch(
+    controller,
+    /if \(exact && \['failed', 'blocked', 'cancelled'\]\.includes\(exact\.status\)\)[\s\S]*?native\('queue_retry'/,
+  );
 });
 
 test('every dispatched work Chat receives a complete machine report contract', () => {
