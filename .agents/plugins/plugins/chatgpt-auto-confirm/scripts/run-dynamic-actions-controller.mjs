@@ -221,15 +221,25 @@ const reconcileControl = control => {
       }
     }
 
-    if (exact && ['failed', 'blocked', 'cancelled'].includes(exact.status)) {
-      native('queue_retry', {
-        taskId: exact.id,
-        feedback: `仓库动态任务定义 ${task._specDigest} 仍要求继续执行。`,
-      });
-      requeued.push(exact.id);
+    if (exact) {
+      // The per-session controller owns recovery budgets for an unchanged
+      // runtime id. Requeueing failed/blocked tasks here on every five-second
+      // boundary bypassed maxRuntimeRetries and ACTION_MAX_SAME_FAILURE_RECOVERIES,
+      // so one broken hidden renderer could be resurrected indefinitely while
+      // the outer Actions job remained in_progress. A changed revision/digest
+      // gets a new runtime id and is still enqueued below; an unchanged
+      // terminal task is left for the child controller to retry finitely or
+      // yield encrypted state to the next run.
+      if (['failed', 'blocked', 'cancelled'].includes(exact.status)) {
+        deferred.push({
+          logicalTaskId: task.id,
+          desiredId,
+          terminalStatus: exact.status,
+          action: 'preserve_child_recovery_budget',
+        });
+      }
       continue;
     }
-    if (exact) continue;
 
     native('queue_enqueue', {
       tasks: [{

@@ -515,6 +515,12 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /setTimeout\(resolve, 50\)/);
   assert.match(nativeSource, /eventLoopDelayMs < 2_500/);
   assert.match(nativeSource, /wakeHiddenRenderer/);
+  assert.match(nativeSource, /func wakeHiddenQueueRenderer/);
+  assert.match(nativeSource, /timeout: TimeInterval = 12\.0/);
+  assert.match(nativeSource, /prewarm-renderer-wake timeout/);
+  assert.match(nativeSource, /discoveryDeadline = discoveryStartedAt\.addingTimeInterval\(30\.0\)/);
+  assert.match(nativeSource, /while Date\(\) < discoveryDeadline/);
+  assert.doesNotMatch(nativeSource, /for _ in 0\.\.<120/);
   assert.match(nativeSource, /document\.dispatchEvent\(new Event\('visibilitychange'\)\)/);
   assert.match(nativeSource, /window\.dispatchEvent\(new Event\('focus'\)\)/);
   assert.match(nativeSource, /document\.visibilityState remains hidden/);
