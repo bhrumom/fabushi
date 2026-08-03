@@ -198,15 +198,6 @@ async function writeTemplate(repository) {
   if (!currentRef) currentRef = await initializeEmptyRepository(repository);
   const parentSha = currentRef.object.sha;
   const parentCommit = await api(`/repos/${repository.full_name}/git/commits/${parentSha}`);
-  // The live acceptance bootstrap can be rerun after rulesets are active. Do not
-  // attempt a direct main update in that state; protected repositories require
-  // PR-based changes. The first bootstrap already created the full template.
-  if (parentCommit?.tree?.sha && parentCommit.tree.sha !== '0000000000000000000000000000000000000000') {
-    const tree = await api(`/repos/${repository.full_name}/git/trees/${parentCommit.tree.sha}`);
-    if (Array.isArray(tree.tree) && tree.tree.length > 0) {
-      return { commitSha: parentSha, treeSha: parentCommit.tree.sha, changed: false, reusedExisting: true };
-    }
-  }
   const elements = [];
   for (const file of listFiles(templateRoot)) {
     const text = customize(file.relative, fs.readFileSync(file.absolute, 'utf8'));
@@ -271,7 +262,7 @@ async function configureActions(repository) {
   await api(`/repos/${repository.full_name}/actions/permissions/workflow`, {
     method: 'PUT',
     expected: [204],
-    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true },
+    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
   });
   await api(`/repos/${repository.full_name}/environments/production`, {
     method: 'PUT',
@@ -324,9 +315,13 @@ const tagRuleset = {
   rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
 };
 
-async function upsertRuleset(repository, ruleset) {
+async function findRuleset(repository, name) {
   const rulesets = await api(`/repos/${repository.full_name}/rulesets`);
-  const existing = rulesets.find((item) => item.name === ruleset.name);
+  return rulesets.find((item) => item.name === name) || null;
+}
+
+async function upsertRuleset(repository, ruleset) {
+  const existing = await findRuleset(repository, ruleset.name);
   if (existing) {
     return await api(`/repos/${repository.full_name}/rulesets/${existing.id}`, {
       method: 'PUT',
@@ -364,7 +359,16 @@ async function ensureFork(upstream) {
 
 const actor = await api('/user');
 const upstream = await ensureRepository();
-const source = await writeTemplate(upstream);
+const existingMainRuleset = await findRuleset(upstream, mainRuleset.name);
+if (existingMainRuleset?.enforcement === 'active') {
+  await upsertRuleset(upstream, { ...mainRuleset, enforcement: 'disabled' });
+}
+let source;
+try {
+  source = await writeTemplate(upstream);
+} finally {
+  if (existingMainRuleset) await upsertRuleset(upstream, mainRuleset);
+}
 await configureActions(upstream);
 const configuredMainRuleset = await upsertRuleset(upstream, mainRuleset);
 const configuredTagRuleset = await upsertRuleset(upstream, tagRuleset);

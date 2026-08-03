@@ -142,20 +142,29 @@ async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
   const [owner] = fork.split('/');
   const existing = await findPullRequest(headBranch);
   if (existing) return existing;
-  await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
+  const body = [
+    `Closes #${issueNumber}`,
+    '',
+    'AI-assisted change created in the user fork after explicit confirmation.',
+    '',
+    '## Required report',
+    '- Reproduction and root cause are documented in the linked Issue.',
+    '- Untrusted pull_request CI runs with read-only contents and no secrets.',
+    '- Tool Contract, permissions, and artifact impact are reviewed before merge.',
+    '- Merge does not publish; a separate trusted release is required.',
+  ].join('\n');
+  return api(`/repos/${upstream}/pulls`, {
     method: 'POST',
-    expected: [204],
+    expected: [201],
     body: {
-      ref: 'main',
-      inputs: { head: `${owner}:${headBranch}`, issue_number: String(issueNumber), title },
+      head: `${owner}:${headBranch}`,
+      base: 'main',
+      title,
+      body,
+      draft: true,
+      maintainer_can_modify: false,
     },
   });
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    const pull = await findPullRequest(headBranch);
-    if (pull) return pull;
-    await sleep(5000);
-  }
-  throw new Error(`draft pull request was not created for ${headBranch}`);
 }
 
 async function markReady(pull) {
