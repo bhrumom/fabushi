@@ -400,34 +400,26 @@ func accountCredentialSession(
                 userInfo: [NSLocalizedDescriptionKey: "等待账号登录超时；没有保存凭据"])
 }
 
+// Credential registration already has a dedicated, authenticated renderer
+// from `accountCredentialSession`.  Validate the auth state and a real Chat
+// composer in that renderer directly; account setup must not launch a second
+// hidden ChatGPT instance merely to prove that the captured credentials work.
 func accountHiddenSmoke(_ session: AccountLoginSession) -> Bool {
-  let workers = queueDirectoryURL().appendingPathComponent("workers", isDirectory: true)
-    .appendingPathComponent("account-smoke-\(session.account.id)-\(UUID().uuidString.lowercased())", isDirectory: true)
-  queueTrace("account-smoke stage=begin account=\(session.account.id)")
-  guard copyProfileForDedicatedQueueWorker(source: accountProfileURL(session.account).path, destination: workers.path) else {
-    queueTrace("account-smoke stage=profile-copy-failed")
+  queueTrace("account-smoke stage=visible-begin account=\(session.account.id)")
+  guard let state = actionsDesktopState(session.target),
+        state["authenticated"] as? Bool == true else {
+    queueTrace("account-smoke stage=visible-auth-failed")
     return false
   }
-  guard let port = dedicatedQueueWorkerPort() else {
-    queueTrace("account-smoke stage=port-unavailable")
+  guard let prepared = prepareNewChatTarget(
+    port: session.port,
+    targetId: session.target.targetId,
+    timeout: 10,
+    allowBlankConversationReuse: true
+  ), prepared["ok"] as? Bool == true else {
+    queueTrace("account-smoke stage=visible-chat-prepare-failed")
     return false
   }
-  guard launchDedicatedQueueChatProcess(profilePath: workers.path, port: port, codexHomePath: session.account.codexHomePath) else {
-    queueTrace("account-smoke stage=process-launch-failed port=\(port)")
-    return false
-  }
-  guard let targetId = dedicatedQueueChatTarget(port: port) else {
-    queueTrace("account-smoke stage=target-unavailable port=\(port)")
-    terminateDedicatedChatProcess(profilePath: workers.path)
-    return false
-  }
-  guard let prepared = prepareNewChatTarget(port: port, targetId: targetId, timeout: 10, allowBlankConversationReuse: true),
-        prepared["ok"] as? Bool == true else {
-    queueTrace("account-smoke stage=chat-prepare-failed port=\(port)")
-    terminateDedicatedChatProcess(profilePath: workers.path)
-    return false
-  }
-  queueTrace("account-smoke stage=passed port=\(port)")
-  terminateDedicatedChatProcess(profilePath: workers.path)
+  queueTrace("account-smoke stage=visible-passed")
   return true
 }
