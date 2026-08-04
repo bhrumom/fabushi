@@ -39,7 +39,7 @@ concurrency:
   # Parallel smoke creates its own ephemeral queue state, so it can validate
   # the hosted Chat surface without waiting behind the persistent runner.
   # Persistent runners keep the shared-state serialization guard.
-  group: ${{ inputs.account_id != '' && format('chatgpt-auto-confirm-account-{0}', inputs.account_id) || (inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}', github.ref) || 'chatgpt-auto-confirm-fix-test-runner') }}
+  group: ${{ inputs.parallel_queue_smoke && format('chatgpt-auto-confirm-parallel-smoke-{0}-{1}', github.ref, inputs.account_id) || (inputs.account_id != '' && format('chatgpt-auto-confirm-account-{0}', inputs.account_id) || 'chatgpt-auto-confirm-fix-test-runner') }}
   cancel-in-progress: false
 
 jobs:
@@ -187,13 +187,6 @@ jobs:
           CHATGPT_AUTO_CONFIRM_CANCEL_TASK_ID: ${{ inputs.cancel_task_id }}
           ACTION_RESULT_PATH: ${{ steps.paths.outputs.runtime_dir }}/action-result.json
         run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/cancel-persisted-task.mjs
-
-      - name: Import dynamic parallel task inbox
-        if: ${{ inputs.cancel_task_id == '' && inputs.parallel_queue_smoke }}
-        env:
-          CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
-          CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: ${{ github.workspace }}/.agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json
-        run: node .agents/plugins/plugins/chatgpt-auto-confirm/scripts/import-actions-task-inbox.mjs
 
       - name: Restore ChatGPT login credentials
         if: ${{ inputs.cancel_task_id == '' }}
