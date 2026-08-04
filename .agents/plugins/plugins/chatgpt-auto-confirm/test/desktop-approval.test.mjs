@@ -413,6 +413,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
   assert.match(nativeSource, /headless-parallel-hidden-window-begin/);
   assert.match(nativeSource, /headless-parallel-hidden-window-complete/);
+  assert.match(nativeSource, /parallel-headless-chat-windows/);
+  assert.match(nativeSource, /openHeadlessParallelQueueWindow/);
+  assert.match(nativeSource, /Target.createTarget/);
+  assert.match(nativeSource, /headless-window-target-ready/);
   assert.match(nativeSource, /dedicated-hosted-profile/);
   assert.match(nativeSource, /effectiveAccountId == hostedAccountId/);
   assert.match(nativeSource, /dedicated-avatar-overlay-navigation/);

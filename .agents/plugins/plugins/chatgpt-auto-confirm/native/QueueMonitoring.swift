@@ -719,13 +719,15 @@ func runQueueIteration(_ state: inout PluginState) {
   let currentDate = Date()
   let hasRunningTasks = tasks.contains { $0.status == "running" }
   if state.queueWorkerMode == sharedConversationQueueWorkerMode
-      || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
+      || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
+      || state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode,
      !hasRunningTasks {
     // v82 restores the previously successful dedicated-process path. The
     // official quick-chat prewarm service owns only one window and closes it
     // when the next prewarm starts, so migrate both shared-renderer variants
     // only while idle. Migrating a running task closes its active response.
-    if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode {
+    if state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
+        || state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode {
       state.automationTasks = tasks
       stopQueueWorker(&state)
     } else if let port = state.queueWorkerPort,
