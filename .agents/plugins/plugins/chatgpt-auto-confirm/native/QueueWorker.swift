@@ -1050,12 +1050,34 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
 }
 
 func dedicatedQueueChatTarget(port: Int) -> String? {
-  for attempt in 0..<240 {
+  let startedAt = Date()
+  let deadline = startedAt.addingTimeInterval(90.0)
+  var attempt = 0
+  var navigatedBlankTargets = Set<String>()
+  while Date() < deadline {
     let targets = CDPClient.fetchTargets(portOverride: port)
     for target in targets {
       guard target["type"] as? String == "page",
-            (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
-            let targetId = target["id"] as? String else { continue }
+            let url = target["url"] as? String,
+            url.hasPrefix("app://-/index.html"),
+            let targetId = target["id"] as? String,
+            let wsURL = target["webSocketDebuggerUrl"] as? String else { continue }
+      let decodedURL = url.removingPercentEncoding ?? url
+      if url.contains("/avatar-overlay") || decodedURL.contains("/avatar-overlay") {
+        // A fresh ChatGPT process can expose only the blank avatar overlay
+        // renderer first. Navigating replaces that document, so never reuse
+        // this websocket for the verification probe; rediscover the current
+        // renderer on the next pass just like the hosted restore script.
+        queueTrace(
+          "worker-create stage=dedicated-avatar-overlay-navigation "
+            + "port=\(port) target=\(targetId)"
+        )
+        _ = CDPClient.navigate(
+          wsURLString: wsURL,
+          url: "app://-/index.html"
+        )
+        continue
+      }
       let loaded = cdpValue(
         port: port,
         targetId: targetId,
@@ -1075,9 +1097,24 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
+      if bridge, ready == "complete", textLength <= 100,
+         navigatedBlankTargets.insert(targetId).inserted {
+        // A dedicated copy may finish on the root URL with an empty shell
+        // before the app mounts its real renderer. A one-time root navigation
+        // forces the same bootstrap transition as the avatar-overlay path;
+        // subsequent passes always rediscover the current target.
+        queueTrace(
+          "worker-create stage=dedicated-empty-shell-navigation "
+            + "port=\(port) target=\(targetId)"
+        )
+        _ = CDPClient.navigate(
+          wsURLString: wsURL,
+          url: "app://-/index.html"
+        )
+        continue
+      }
       if bridge, ready == "complete", textLength > 100,
-         visibility != "hidden",
-         let wsURL = target["webSocketDebuggerUrl"] as? String {
+         visibility != "hidden" {
         if attempt % 8 == 0 {
           _ = hideDedicatedProcessForPort(port)
         }
@@ -1088,8 +1125,14 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
         return targetId
       }
     }
+    attempt += 1
     Thread.sleep(forTimeInterval: 0.25)
   }
+  let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+  queueTrace(
+    "worker-create stage=dedicated-chat-target-timeout port=\(port) "
+      + "elapsedMs=\(elapsedMs)"
+  )
   return nil
 }
 
