@@ -51,7 +51,18 @@ tell application "System Events"
         try
           set dialogRole to (subrole of windowRef) as text
         end try
-        if (dialogRole is "AXSystemDialog") or ¬
+        set compactDialog to false
+        try
+          set windowSize to size of windowRef
+          set windowWidth to item 1 of windowSize
+          set windowHeight to item 2 of windowSize
+          if (frontmost of processRef) and ¬
+             (windowWidth is greater than 180) and (windowWidth is less than 420) and ¬
+             (windowHeight is greater than 180) and (windowHeight is less than 360) then
+            set compactDialog to true
+          end if
+        end try
+        if (dialogRole is "AXSystemDialog") or compactDialog or ¬
            (promptTexts contains "find devices on local networks") or ¬
            (promptTexts contains "在本地网络上查找设备") or ¬
            (promptTexts contains "在本地網絡上查找設備") then
@@ -68,11 +79,7 @@ tell application "System Events"
             return "clicked"
           end if
           try
-            set windowSize to size of windowRef
-            set windowWidth to item 1 of windowSize
-            set windowHeight to item 2 of windowSize
-            if (windowWidth is greater than 180) and (windowWidth is less than 420) and ¬
-               (windowHeight is greater than 180) and (windowHeight is less than 360) then
+            if compactDialog then
               set windowPosition to position of windowRef
               set clickX to ((item 1 of windowPosition) + (windowWidth * 72 / 100)) as integer
               set clickY to ((item 2 of windowPosition) + (windowHeight * 87 / 100)) as integer

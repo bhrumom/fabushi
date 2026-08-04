@@ -464,6 +464,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_HEADLESS/);
   assert.match(nativeSource, /dedicated-chat-target-visible-headless/);
   assert.match(nativeSource, /approveHeadlessChatGPTLocalNetworkPrompt/);
+  assert.match(nativeSource, /clickCompactChatGPTLocalNetworkWindowViaQuartz/);
+  assert.match(nativeSource, /CGWindowListCopyWindowInfo/);
+  assert.match(nativeSource, /dedicated-native-local-network-geometry-detected/);
+  assert.match(nativeSource, /localizedCaseInsensitiveContains\("ChatGPT"\)/);
   assert.match(nativeSource, /find devices on local networks/);
   assert.match(nativeSource, /AXSystemDialog/);
   assert.match(nativeSource, /key code 36/);
@@ -665,7 +669,9 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /axPressVisibleForegroundOnly/);
   assert.match(nativeSource, /axPressNeverTargetsHiddenElements/);
   assert.match(nativeSource, /dismissHistoryOverlay\(covering: candidate\)/);
-  assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|CGEvent\s*\(|postToPid/);
+  assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|postToPid/);
+  assert.match(nativeSource, /clickCompactChatGPTLocalNetworkWindowViaQuartz/);
+  assert.match(nativeSource, /mouseDown\.post\(tap: \.cghidEventTap\)/);
   assert.doesNotMatch(backgroundNativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
   assert.doesNotMatch(nativeSource,
     /navigateChat|scanTargetChats|sweepHiddenChats|sidebarTaskButton|switchApplicationMode/);
