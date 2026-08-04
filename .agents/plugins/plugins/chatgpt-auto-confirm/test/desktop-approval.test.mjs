@@ -473,6 +473,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /AXSystemDialog/);
   assert.match(nativeSource, /key code 36/);
   assert.match(nativeSource, /dedicated-native-local-network-permission-allowed/);
+  assert.match(nativeSource, /dedicated-avatar-overlay-retire/);
+  assert.match(nativeSource, /nativePromptApprovalObserved/);
   assert.match(nativeSource, /button \"Allow\"/);
   assert.match(nativeSource, /unhideDedicatedProcessForPort/);
   assert.match(nativeSource, /Target\.activateTarget/);
