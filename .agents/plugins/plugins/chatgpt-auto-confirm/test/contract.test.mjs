@@ -98,6 +98,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(restoreSessionScript, /Page\.reload/);
   assert.match(restoreSessionScript, /Page\.navigate/);
   assert.match(restoreSessionScript, /avatar-overlay/);
+  assert.match(restoreSessionScript, /approveHeadlessChatGPTLocalNetworkPrompt/);
+  assert.match(restoreSessionScript, /find devices on local networks/);
+  assert.match(restoreSessionScript, /nativePromptImpl/);
   assert.match(restoreSessionScript, /initialRoute=%2F/);
   assert.match(restoreSessionScript, /Optional CDP command/);
   assert.match(restoreSessionScript, /authenticatedControllerIsReady/);

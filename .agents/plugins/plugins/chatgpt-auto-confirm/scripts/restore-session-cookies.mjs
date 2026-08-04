@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const defaultPort = 9324;
@@ -31,6 +32,51 @@ const safeTargetSummary = targets => targets.map(target => ({
 }));
 
 const targetKey = target => `${target?.id || ''}|${target?.webSocketDebuggerUrl || ''}`;
+
+const approveHeadlessChatGPTLocalNetworkPrompt = ({
+  platform = process.platform,
+  spawnImpl = spawnSync,
+} = {}) => {
+  if (platform !== 'darwin') return false;
+  const script = `
+tell application "System Events"
+  repeat with processRef in (application processes whose name is "ChatGPT")
+    repeat with windowRef in (windows of processRef)
+      try
+        set promptTexts to (value of static texts of windowRef) as text
+        if (promptTexts contains "find devices on local networks") or ¬
+           (promptTexts contains "在本地网络上查找设备") or ¬
+           (promptTexts contains "在本地網絡上查找設備") then
+          if exists (button "Allow" of windowRef) then
+            click button "Allow" of windowRef
+            return "clicked"
+          end if
+          if exists (button "允许" of windowRef) then
+            click button "允许" of windowRef
+            return "clicked"
+          end if
+          if exists (button "允許" of windowRef) then
+            click button "允許" of windowRef
+            return "clicked"
+          end if
+        end if
+      end try
+    end repeat
+  end repeat
+end tell
+return "none"
+`;
+  try {
+    const result = spawnImpl('/usr/bin/osascript', ['-e', script], {
+      encoding: 'utf8',
+      timeout: 1_500,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return result?.status === 0 && String(result.stdout || '').includes('clicked');
+  } catch {
+    return false;
+  }
+};
 
 const pickTarget = (targets, predicate) =>
   targets.find(predicate);
@@ -155,6 +201,7 @@ const findTarget = async ({
   nowImpl,
   allowAvatarOverlay = true,
   avatarOverlayFallbackMs = 10_000,
+  beforeProbeImpl = () => {},
 }) => {
   const deadline = nowImpl() + timeoutMs;
   const avatarOverlayFallbackDeadline = nowImpl() + Math.min(
@@ -165,6 +212,7 @@ const findTarget = async ({
   let avatarOverlayTarget;
   let lastError = '';
   while (nowImpl() < deadline) {
+    await beforeProbeImpl();
     try {
       lastTargets = await listTargets(fetchImpl, port);
       const target = pickTarget(lastTargets, isNormalAppTarget);
@@ -201,6 +249,7 @@ const recoverAppRootConnection = async ({
   timeoutMs,
   label,
   log,
+  beforeProbeImpl = () => {},
 }) => {
   const deadline = nowImpl() + timeoutMs;
   let active = connection;
@@ -241,6 +290,7 @@ const recoverAppRootConnection = async ({
   }
 
   while (nowImpl() < deadline) {
+    await beforeProbeImpl();
     try {
       lastTargets = await listTargets(fetchImpl, port);
       const normalTarget = pickTarget(lastTargets, isNormalAppTarget);
@@ -340,6 +390,7 @@ export async function restoreSession({
   port = Number(process.env.CHATGPT_CDP_PORT || defaultPort),
   mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify',
   headless = process.env.CHATGPT_AUTO_CONFIRM_HEADLESS === '1',
+  nativePromptImpl,
   encoded = process.env.CHATGPT_SESSION_COOKIES_B64,
   fetchImpl = globalThis.fetch,
   WebSocketImpl = globalThis.WebSocket,
@@ -369,6 +420,15 @@ export async function restoreSession({
   }
 
   let connection;
+  const beforeProbeImpl = headless
+    ? async () => {
+      if (typeof nativePromptImpl === 'function') {
+        nativePromptImpl();
+      } else {
+        approveHeadlessChatGPTLocalNetworkPrompt();
+      }
+    }
+    : undefined;
   try {
     const target = await findTarget({
       port,
@@ -377,6 +437,7 @@ export async function restoreSession({
       fetchImpl,
       sleepImpl,
       nowImpl,
+      beforeProbeImpl,
     });
     connection = await connect(target, { WebSocketImpl });
 
@@ -404,6 +465,7 @@ export async function restoreSession({
       timeoutMs: reconnectTimeoutMs,
       label: 'ChatGPT app shell after bootstrap',
       log,
+      beforeProbeImpl,
     });
 
     if (mode === 'restore' || mode === 'restore-and-verify') {
@@ -437,6 +499,7 @@ export async function restoreSession({
         timeoutMs: reconnectTimeoutMs,
         label: 'ChatGPT app shell after reload',
         log,
+        beforeProbeImpl,
       });
       await activate(connection.call, log);
     }
@@ -468,6 +531,7 @@ export async function restoreSession({
             timeoutMs: reconnectTimeoutMs,
             label: 'ChatGPT app shell during verification',
             log,
+            beforeProbeImpl,
           });
           continue;
         }
@@ -491,6 +555,7 @@ export async function restoreSession({
             timeoutMs: reconnectTimeoutMs,
             label: 'ChatGPT app shell after CDP failure',
             log,
+            beforeProbeImpl,
           });
         } catch (recoveryError) {
           lastState.recoveryError = recoveryError instanceof Error
