@@ -18,7 +18,11 @@ var dedicatedQueueChatLaunchers: [Int: Process] = [:]
 // browser target (or an about:blank page), not the renderer that owns the
 // authenticated app. Starting the Chat target timeout from that first target
 // made a slow second worker look dead just before its app renderer appeared.
-let dedicatedRendererBootstrapTimeout: TimeInterval = 120.0
+// Keep each direct/LaunchServices bootstrap bounded: the parallel verifier
+// waits 300 seconds for both workers, and two isolated attempts must be able
+// to fail and retry within that window instead of holding the queue lock for
+// several minutes with no renderer target.
+let dedicatedRendererBootstrapTimeout: TimeInterval = 20.0
 
 enum QueueTargetRuntimeState {
   case missing
