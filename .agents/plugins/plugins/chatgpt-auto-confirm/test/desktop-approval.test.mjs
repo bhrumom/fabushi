@@ -425,6 +425,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
   assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
   assert.match(nativeSource, /let shouldNavigate = loaded != nil/);
+  assert.match(nativeSource, /let shouldNavigate = loaded != nil && ready == "complete"/);
   assert.match(nativeSource, /setHiddenPageFocusEmulation/);
   assert.match(nativeSource, /probeBridge=/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
