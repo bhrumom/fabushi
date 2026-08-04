@@ -270,10 +270,16 @@ func monitorAutomationTask(
       refreshLifecycle: true
     )
   }
-  if runtimeState != .hidden {
+  let workerStateUsable = queueTargetStateIsUsableForQueue(
+    runtimeState,
+    workerMode: state.queueWorkerMode
+  )
+  if !workerStateUsable {
     if runtimeState == .visible {
       // Safety is fail-closed only for a genuinely visible page. Never close,
       // navigate, confirm, stop, or type in a page the user may be operating.
+      // A dedicated hosted worker is the one explicit exception: its copied
+      // profile has no user-facing page and may remain visible on Actions.
       state.queuePaused = true
       task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
       task.lastError = task.hiddenWorkerLastError
@@ -322,7 +328,11 @@ func monitorAutomationTask(
     let restoration = restoreHiddenConversation(
       port: port,
       targetId: targetId,
-      conversationId: conversationId
+      conversationId: conversationId,
+      allowVisible: queueTargetStateIsUsableForQueue(
+        .visible,
+        workerMode: state.queueWorkerMode
+      )
     )
     let restored = restoration["ok"] as? Bool == true
     runtimeState = queueTargetRuntimeState(
@@ -330,7 +340,11 @@ func monitorAutomationTask(
       targetId: targetId,
       refreshLifecycle: true
     )
-    guard restored, runtimeState == .hidden else {
+    guard restored,
+          queueTargetStateIsUsableForQueue(
+            runtimeState,
+            workerMode: state.queueWorkerMode
+          ) else {
       closeDedicatedAutomationTarget(task, state: state)
       task.hiddenWorkerLastError = "queue_monitor_hidden_target_recovery_failed"
       queueContinuation(
@@ -449,7 +463,11 @@ func monitorAutomationTask(
       let restoredOK = navigateHiddenConversation(
         port: port,
         targetId: targetId,
-        conversationId: conversationId
+        conversationId: conversationId,
+        allowVisible: queueTargetStateIsUsableForQueue(
+          .visible,
+          workerMode: state.queueWorkerMode
+        )
       )
       if restoredOK,
          let statusAfterRestore = cdpValue(

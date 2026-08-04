@@ -281,7 +281,8 @@ func navigateHiddenConversation(
   port: Int,
   targetId: String,
   conversationId: String,
-  timeout: TimeInterval = 35.0
+  timeout: TimeInterval = 35.0,
+  allowVisible: Bool = false
 ) -> Bool {
   guard let url = backgroundConversationURL(conversationId),
         let target = CDPClient.fetchTargets(portOverride: port).first(where: {
@@ -301,7 +302,7 @@ func navigateHiddenConversation(
       return false
     }
   case .visible:
-    return false
+    guard allowVisible else { return false }
   case .missing, .suspended:
     return false
   }
@@ -316,7 +317,7 @@ func navigateHiddenConversation(
     case .hidden, .hiddenNonChat:
       break
     case .visible:
-      return false
+      if !allowVisible { return false }
     case .missing, .suspended:
       return false
     }
@@ -338,7 +339,8 @@ func restoreHiddenConversation(
   port: Int,
   targetId: String,
   conversationId: String,
-  timeout: TimeInterval = 35.0
+  timeout: TimeInterval = 35.0,
+  allowVisible: Bool = false
 ) -> [String: Any] {
   // Prefer the live sidebar. A direct Page.navigate on the hosted desktop
   // renderer can leave the app on its startup spinner, which also poisons the
@@ -369,7 +371,8 @@ func restoreHiddenConversation(
     port: port,
     targetId: targetId,
     conversationId: conversationId,
-    timeout: timeout
+    timeout: timeout,
+    allowVisible: allowVisible
   )
   return [
     "ok": navigated,

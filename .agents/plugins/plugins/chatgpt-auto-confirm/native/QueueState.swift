@@ -638,6 +638,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
   }
   let workerRuntimeState: QueueTargetRuntimeState?
   let workerIsHidden: Bool
+  let workerVisibilityVerified: Bool
   if queueUsesBackgroundWindow(state),
      let port = state.queueWorkerPort,
      let targetId = state.queueWorkerTargetId {
@@ -648,9 +649,14 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
     )
     workerRuntimeState = runtimeState
     workerIsHidden = runtimeState == .hidden
+    workerVisibilityVerified = queueTargetStateIsUsableForQueue(
+      runtimeState,
+      workerMode: state.queueWorkerMode
+    )
   } else {
     workerRuntimeState = nil
     workerIsHidden = false
+    workerVisibilityVerified = false
   }
   let activeWorkers = tasks.filter { $0.status == "running" }.map { task in
     let runtimeState: QueueTargetRuntimeState? = {
@@ -663,7 +669,9 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "targetId": task.workerTargetId as Any,
       "conversationId": task.conversationId as Any,
       "runtimeState": runtimeState.map(queueTargetRuntimeStateName) ?? "not-started",
-      "visibilityVerified": runtimeState == .hidden,
+      "visibilityVerified": runtimeState.map {
+        queueTargetStateIsUsableForQueue($0, workerMode: state.queueWorkerMode)
+      } ?? false,
     ] as [String: Any]
   }
   return [
@@ -693,7 +701,7 @@ func queueStatusPayload(_ state: PluginState) -> [String: Any] {
       "sameApplicationProcess": queueUsesBackgroundWindow(state)
         && state.queueWorkerMode != parallelDedicatedProcessQueueWorkerMode,
       "isolatedFromVisiblePage": workerIsHidden,
-      "visibilityVerified": workerIsHidden,
+      "visibilityVerified": workerVisibilityVerified,
       "runtimeState": workerRuntimeState.map(queueTargetRuntimeStateName) ?? "not-started",
       "separateApplicationProcess":
         state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode,
