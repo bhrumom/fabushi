@@ -372,6 +372,18 @@ struct CDPClient {
     return result["targetInfo"] as? [String: Any]
   }
 
+  @discardableResult
+  static func activateTarget(_ targetId: String, portOverride: Int? = nil) -> Bool {
+    guard let browserWS = browserWebSocketURL(portOverride: portOverride),
+          let response = sendCommand(
+            wsURLString: browserWS,
+            method: "Target.activateTarget",
+            paramsJSON: "{\"targetId\":\(jsonStringLiteral(targetId))}",
+            timeout: 4.0
+          ), response["error"] == nil else { return false }
+    return (response["result"] as? [String: Any])?["success"] as? Bool ?? true
+  }
+
   static func createTarget(
     url: String,
     browserContextId: String?,
