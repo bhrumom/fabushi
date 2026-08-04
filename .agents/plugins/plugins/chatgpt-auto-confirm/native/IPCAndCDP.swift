@@ -272,8 +272,28 @@ struct CDPClient {
     }
 
     let originalFlags = Darwin.fcntl(fd, F_GETFL, 0)
-    if originalFlags >= 0 {
-      _ = Darwin.fcntl(fd, F_SETFL, originalFlags | O_NONBLOCK)
+    guard originalFlags >= 0,
+          Darwin.fcntl(fd, F_SETFL, originalFlags | O_NONBLOCK) == 0 else {
+      return []
+    }
+    let deadline = Date().addingTimeInterval(1.8)
+    func waitForSocketEvent(_ events: Int16) -> Bool {
+      while Date() < deadline {
+        let remainingMs = Int32(
+          max(1, min(1_800, Int(deadline.timeIntervalSinceNow * 1_000)))
+        )
+        var descriptor = pollfd()
+        descriptor.fd = fd
+        descriptor.events = events
+        descriptor.revents = 0
+        let result = Darwin.poll(&descriptor, 1, remainingMs)
+        if result > 0 {
+          return descriptor.revents & (events | Int16(POLLERR | POLLHUP)) != 0
+        }
+        if result < 0, errno == EINTR { continue }
+        return false
+      }
+      return false
     }
     let connectResult = withUnsafePointer(to: &address) { pointer in
       pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
@@ -286,11 +306,7 @@ struct CDPClient {
     }
     if connectResult != 0 {
       guard errno == EINPROGRESS else { return [] }
-      var descriptor = pollfd()
-      descriptor.fd = fd
-      descriptor.events = Int16(POLLOUT)
-      descriptor.revents = 0
-      guard Darwin.poll(&descriptor, 1, 1_800) > 0 else { return [] }
+      guard waitForSocketEvent(Int16(POLLOUT)) else { return [] }
       var socketError: Int32 = 0
       var socketErrorLength = socklen_t(MemoryLayout<Int32>.size)
       guard Darwin.getsockopt(
@@ -303,46 +319,41 @@ struct CDPClient {
         return []
       }
     }
-    if originalFlags >= 0 {
-      _ = Darwin.fcntl(fd, F_SETFL, originalFlags)
-    }
-
-    var timeout = timeval(tv_sec: 1, tv_usec: 500_000)
-    withUnsafePointer(to: &timeout) { timeoutPointer in
-      _ = Darwin.setsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_RCVTIMEO,
-        timeoutPointer,
-        socklen_t(MemoryLayout<timeval>.size)
-      )
-      _ = Darwin.setsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_SNDTIMEO,
-        timeoutPointer,
-        socklen_t(MemoryLayout<timeval>.size)
-      )
-    }
 
     let request = Data(
       "GET /json HTTP/1.1\r\nHost: \(addressHost)\r\nConnection: close\r\n\r\n".utf8
     )
-    let sent = request.withUnsafeBytes { bytes -> Int in
-      guard let baseAddress = bytes.baseAddress else { return 0 }
-      return Darwin.send(fd, baseAddress, request.count, 0)
+    var sent = 0
+    while sent < request.count {
+      guard waitForSocketEvent(Int16(POLLOUT)) else { return [] }
+      let written = request.withUnsafeBytes { bytes -> Int in
+        guard let baseAddress = bytes.baseAddress else { return 0 }
+        return Darwin.send(
+          fd,
+          baseAddress.advanced(by: sent),
+          request.count - sent,
+          0
+        )
+      }
+      if written > 0 {
+        sent += written
+      } else if errno != EAGAIN && errno != EWOULDBLOCK {
+        return []
+      }
     }
-    guard sent == request.count else { return [] }
 
     var response = Data()
     var buffer = [UInt8](repeating: 0, count: 16 * 1024)
-    while response.count < 4 * 1024 * 1024 {
+    while response.count < 4 * 1024 * 1024, waitForSocketEvent(Int16(POLLIN)) {
       let received = buffer.withUnsafeMutableBytes { bytes -> Int in
         guard let baseAddress = bytes.baseAddress else { return 0 }
         return Darwin.recv(fd, baseAddress, bytes.count, 0)
       }
-      guard received > 0 else { break }
-      response.append(contentsOf: buffer.prefix(received))
+      if received > 0 {
+        response.append(contentsOf: buffer.prefix(received))
+      } else if received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK) {
+        break
+      }
     }
     guard let body = decodeHTTPBody(response) else { return [] }
     return decodeTargetPayload(body)
