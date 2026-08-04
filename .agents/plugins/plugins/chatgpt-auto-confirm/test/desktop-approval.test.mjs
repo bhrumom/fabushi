@@ -662,6 +662,9 @@ test('native runtime stays in the background and never takes over the UI', () =>
   const backgroundNativeSource = nativeSource.replace(
     /func activateChatGPTForLogin\(\) \{[\s\S]*?\n\}\n\nfunc waitForActionsLoginTarget/,
     'func waitForActionsLoginTarget',
+  ).replace(
+    /func unhideDedicatedProcessForPort\([\s\S]*?\) -> Bool \{[\s\S]*?\n\}\n\nfunc dedicatedQueueChatTarget/,
+    'func dedicatedQueueChatTarget',
   );
   assert.match(nativeSource, /AXUIElementPerformAction\(candidate\.element, kAXPressAction/);
   assert.match(nativeSource, /AXPress 已发送，等待授权卡消失/);
@@ -676,6 +679,7 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.doesNotMatch(nativeSource, /CGWarpMouseCursorPosition|postToPid/);
   assert.match(nativeSource, /clickCompactChatGPTLocalNetworkWindowViaQuartz/);
   assert.match(nativeSource, /mouseDown\.post\(tap: \.cghidEventTap\)/);
+  assert.match(nativeSource, /application\.activate\(options: \[\.activateIgnoringOtherApps\]\)/);
   assert.doesNotMatch(backgroundNativeSource, /\.activate\s*\(|postToPid|kAXFocusedAttribute/);
   assert.doesNotMatch(nativeSource,
     /navigateChat|scanTargetChats|sweepHiddenChats|sidebarTaskButton|switchApplicationMode/);
