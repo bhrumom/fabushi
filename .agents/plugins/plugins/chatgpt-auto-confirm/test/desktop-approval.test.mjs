@@ -409,6 +409,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
   assert.match(nativeSource, /dedicated-hosted-profile/);
   assert.match(nativeSource, /effectiveAccountId == hostedAccountId/);
+  assert.match(nativeSource, /dedicated-avatar-overlay-navigation/);
+  assert.match(nativeSource, /dedicated-empty-shell-navigation/);
+  assert.match(nativeSource, /dedicated-chat-target-timeout/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
   assert.match(nativeSource, /single-process-hidden-chat-windows/);
   assert.match(nativeSource, /createDedicatedParallelQueueWorkerTarget/);
