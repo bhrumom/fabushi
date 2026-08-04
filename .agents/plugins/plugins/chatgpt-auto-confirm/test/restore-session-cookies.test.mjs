@@ -172,11 +172,16 @@ test('uses root navigation instead of reload for a headless desktop shell', asyn
   const server = new FakeCDPServer({
     initialURL: 'app://-/index.html?initialRoute=%2F',
   });
+  let nativePromptProbes = 0;
 
-  const output = await run(server, { headless: true });
+  const output = await run(server, {
+    headless: true,
+    nativePromptImpl: () => { nativePromptProbes += 1; },
+  });
   assert.match(output, /^Verified authenticated desktop shell/);
   assert.equal(server.reloads, 0);
   assert.equal(server.navigations, 1);
+  assert.ok(nativePromptProbes > 0);
   assert.ok(server.connections.some(item => item.target?.id === 'after-navigation'));
 });
 
