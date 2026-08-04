@@ -420,6 +420,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /boundedDedicatedRendererTargets/);
   assert.match(nativeSource, /boundedDedicatedRendererTargetExists/);
   assert.match(nativeSource, /CDPClient\.fetchTargets\(portOverride: port\)/);
+  assert.match(nativeSource, /fetchTargetsOverLocalSocket/);
+  assert.match(nativeSource, /Darwin\.socket\(AF_INET, SOCK_STREAM, 0\)/);
   assert.match(nativeSource, /dedicatedRendererTargetSummary/);
   assert.match(nativeSource, /dedicatedRendererBootstrapTimeout/);
   assert.match(nativeSource, /let dedicatedRendererBootstrapTimeout: TimeInterval = 20\.0/);
