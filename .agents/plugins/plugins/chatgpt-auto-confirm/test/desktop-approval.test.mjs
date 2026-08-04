@@ -427,6 +427,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /existingApplicationPids/);
   assert.match(nativeSource, /application\.hide\(\)/);
   assert.match(nativeSource, /application\.isHidden/);
+  assert.match(nativeSource, /dedicated-process-launched/);
+  assert.match(nativeSource, /configuration\.hides = false/);
+  assert.match(nativeSource, /initialRoute=%2F/);
   assert.match(nativeSource, /stage=dedicated-process-hidden/);
   assert.match(nativeSource, /parallelDedicatedProcessQueueWorkerMode/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_PROFILE_PATH/);
