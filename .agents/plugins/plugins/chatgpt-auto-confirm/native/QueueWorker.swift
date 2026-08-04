@@ -47,6 +47,72 @@ func queueAllowsVisibleDedicatedRenderer() -> Bool {
   return environment["GITHUB_ACTIONS"]?.lowercased() == "true"
 }
 
+// A fresh copied ChatGPT profile can trigger macOS's one-time local-network
+// privacy alert before its preload bridge is mounted. On hosted Actions there
+// is no person who can click that native alert, so the dedicated worker would
+// otherwise remain an empty/overlay renderer forever. Scope this helper to the
+// headless worker path and require the exact macOS prompt text; ChatGPT's own
+// in-page authorization cards continue through the normal CDP approval flow.
+func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
+  guard queueAllowsVisibleDedicatedRenderer() else { return false }
+  let script = #"""
+  tell application "System Events"
+    repeat with processRef in (application processes whose name is "ChatGPT")
+      repeat with windowRef in (windows of processRef)
+        try
+          set promptTexts to (value of static texts of windowRef) as text
+          if (promptTexts contains "find devices on local networks") or ¬
+             (promptTexts contains "在本地网络上查找设备") or ¬
+             (promptTexts contains "在本地網絡上查找設備") then
+            if exists (button "Allow" of windowRef) then
+              click button "Allow" of windowRef
+              return "clicked"
+            end if
+            if exists (button "允许" of windowRef) then
+              click button "允许" of windowRef
+              return "clicked"
+            end if
+            if exists (button "允許" of windowRef) then
+              click button "允許" of windowRef
+              return "clicked"
+            end if
+          end if
+        end try
+      end repeat
+    end repeat
+  end tell
+  return "none"
+  """#
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+  process.arguments = ["-e", script]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+  } catch {
+    return false
+  }
+  let deadline = Date().addingTimeInterval(1.5)
+  while process.isRunning && Date() < deadline {
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  guard !process.isRunning else {
+    process.terminate()
+    return false
+  }
+  guard process.terminationStatus == 0,
+        let result = String(
+          data: output.fileHandleForReading.readDataToEndOfFile(),
+          encoding: .utf8
+        ) else {
+    return false
+  }
+  return result.contains("clicked")
+}
+
 func queueTargetStateIsUsableForQueue(
   _ runtimeState: QueueTargetRuntimeState,
   workerMode: String?
@@ -1232,6 +1298,13 @@ func dedicatedQueueChatTarget(
   let appRootURL = "app://-/index.html?initialRoute=%2F"
   let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
   while Date() < deadline {
+    if allowVisibleRenderer, attempt % 4 == 0,
+       approveHeadlessChatGPTLocalNetworkPrompt() {
+      queueTrace(
+        "worker-create stage=dedicated-native-local-network-permission-allowed "
+          + "port=\(port)"
+      )
+    }
     let targets = boundedDedicatedRendererTargets(port: port)
     for target in targets {
       guard target["type"] as? String == "page",
