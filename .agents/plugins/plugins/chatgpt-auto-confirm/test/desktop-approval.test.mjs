@@ -420,6 +420,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicatedRendererTargetSummary/);
   assert.match(nativeSource, /dedicatedRendererBootstrapTimeout/);
   assert.match(nativeSource, /dedicated-process-renderer-timeout/);
+  assert.match(nativeSource, /dedicated-renderer-bootstrap-recovery/);
+  assert.match(nativeSource, /setHiddenPageFocusEmulation/);
+  assert.match(nativeSource, /probeBridge=/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
   assert.match(nativeSource, /single-process-hidden-chat-windows/);
   assert.match(nativeSource, /createDedicatedParallelQueueWorkerTarget/);
