@@ -932,6 +932,52 @@ func watchdogAnchorDate(_ task: AutomationTask) -> Date? {
   .max()
 }
 
+// The watchdog runs in a separate process from the queue renderer. Keep the
+// last renderer reply in durable task state so a restart cannot mistake an
+// authorization card or an in-flight response for a dead renderer.
+func watchdogReply(_ task: AutomationTask) -> [String: Any]? {
+  guard let rawResult = task.lastResultJSON,
+        let data = rawResult.data(using: .utf8),
+        let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+    return nil
+  }
+  return (result["reply"] as? [String: Any])
+    ?? (result["reviewReply"] as? [String: Any])
+}
+
+func watchdogActiveResponseFlags(_ task: AutomationTask) -> [String] {
+  guard let reply = watchdogReply(task) else { return [] }
+  return [
+    "waitingForApproval",
+    "pending",
+    "streaming",
+    "stopAvailable",
+    "devspaceWaiting",
+  ].filter { reply[$0] as? Bool == true }
+}
+
+func watchdogRunningTaskProtection(
+  _ task: AutomationTask,
+  now: Date,
+  staleAfterSeconds: Int
+) -> String? {
+  guard task.status == "running" else { return nil }
+  let activeFlags = watchdogActiveResponseFlags(task)
+  if !activeFlags.isEmpty {
+    return "active_response:\(activeFlags.joined(separator: ","))"
+  }
+  // A force recovery may repair a genuinely stale worker, but never during
+  // the handoff immediately after send. The watcher may not have persisted its
+  // first reply yet, and restarting here strands the authorization card and
+  // creates a duplicate Chat.
+  guard let anchor = watchdogAnchorDate(task) else { return nil }
+  let age = now.timeIntervalSince(anchor)
+  guard age >= Double(staleAfterSeconds) else {
+    return "startup_grace:\(Int(max(0, age)))s<\(staleAfterSeconds)s"
+  }
+  return nil
+}
+
 func watchdogTaskIsEligible(
   _ task: AutomationTask,
   now: Date,
@@ -940,6 +986,16 @@ func watchdogTaskIsEligible(
 ) -> Bool {
   guard watchdogRecoverableStatuses.contains(task.status) else { return false }
   guard !watchdogTaskHasNonRecoverableFailure(task) else { return false }
+  // Never detach a running Chat while it is waiting for authorization or still
+  // responding. `force` is reserved for stale renderer recovery and must not
+  // override this protection.
+  if watchdogRunningTaskProtection(
+    task,
+    now: now,
+    staleAfterSeconds: staleAfterSeconds
+  ) != nil {
+    return false
+  }
   if force { return true }
   if task.status == "waiting",
      let waitingUntil = task.waitingUntil.flatMap(isoFormatter.date(from:)),
@@ -959,6 +1015,17 @@ func recoverQueueWithWatchdog(
   let nowDate = Date()
   let now = isoFormatter.string(from: nowDate)
   var tasks = state.automationTasks ?? []
+  let deferredTaskIds = tasks.indices.compactMap { index -> String? in
+    guard let reason = watchdogRunningTaskProtection(
+      tasks[index],
+      now: nowDate,
+      staleAfterSeconds: staleAfterSeconds
+    ) else { return nil }
+    queueTrace(
+      "task=\(tasks[index].id) stage=watchdog-deferred reason=\(reason)"
+    )
+    return tasks[index].id
+  }
   let eligibleIndexes = tasks.indices.filter {
     watchdogTaskIsEligible(
       tasks[$0],
@@ -975,6 +1042,7 @@ func recoverQueueWithWatchdog(
       "dryRun": dryRun,
       "staleAfterSeconds": staleAfterSeconds,
       "eligibleTaskIds": eligibleIds,
+      "deferredTaskIds": deferredTaskIds,
       "queue": queueStatusPayload(state),
     ]
   }
@@ -986,6 +1054,7 @@ func recoverQueueWithWatchdog(
       "dryRun": true,
       "staleAfterSeconds": staleAfterSeconds,
       "eligibleTaskIds": eligibleIds,
+      "deferredTaskIds": deferredTaskIds,
       "queue": queueStatusPayload(state),
     ]
   }
@@ -1071,6 +1140,7 @@ func recoverQueueWithWatchdog(
     "dryRun": false,
     "staleAfterSeconds": staleAfterSeconds,
     "eligibleTaskIds": eligibleIds,
+    "deferredTaskIds": deferredTaskIds,
     "watcherPid": state.queueWatcherPid as Any,
     "queue": queueStatusPayload(state),
   ]
