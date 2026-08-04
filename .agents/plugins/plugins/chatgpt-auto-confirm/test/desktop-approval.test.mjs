@@ -465,6 +465,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-chat-target-visible-headless/);
   assert.match(nativeSource, /approveHeadlessChatGPTLocalNetworkPrompt/);
   assert.match(nativeSource, /find devices on local networks/);
+  assert.match(nativeSource, /AXSystemDialog/);
+  assert.match(nativeSource, /key code 36/);
   assert.match(nativeSource, /dedicated-native-local-network-permission-allowed/);
   assert.match(nativeSource, /button \"Allow\"/);
   assert.match(nativeSource, /unhideDedicatedProcessForPort/);
