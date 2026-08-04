@@ -69,11 +69,11 @@ if (command === 'queue_watchdog') {
       },
     });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /QUEUE_RETRY_RECOVERY/);
+    assert.doesNotMatch(result.stdout, /QUEUE_RETRY_RECOVERY/);
     assert.match(result.stdout, /ACTION_RESULT/);
     const report = JSON.parse(readFileSync(resultPath, 'utf8'));
     assert.equal(report.status, 'incomplete');
-    assert.equal(report.reason, 'repeated_recoverable_task_failure');
+    assert.equal(report.reason, 'recoverable_task_retry_budget_exhausted');
     assert.deepEqual(report.counts, { failed: 1 });
     assert.equal(report.tasks[0].id, 'broken-task');
     assert.equal(report.tasks[0].lastError, 'new_chat_prepare_failed');
@@ -133,10 +133,10 @@ if (command === 'queue_watchdog') {
       },
     });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /QUEUE_RETRY_RECOVERY/);
+    assert.doesNotMatch(result.stdout, /QUEUE_RETRY_RECOVERY/);
     const report = JSON.parse(readFileSync(resultPath, 'utf8'));
     assert.equal(report.status, 'incomplete');
-    assert.equal(report.reason, 'repeated_recoverable_task_failure');
+    assert.equal(report.reason, 'recoverable_task_retry_budget_exhausted');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
