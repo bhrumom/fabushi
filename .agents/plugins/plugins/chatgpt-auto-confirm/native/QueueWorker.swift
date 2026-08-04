@@ -2324,7 +2324,7 @@ func createIndependentQueueWorkerTarget(
         return nil
       }
       queueTrace(
-        "worker-create stage=headless-parallel-window-complete "
+        "worker-create stage=headless-parallel-hidden-window-complete "
           + "account=\(effectiveAccountId) target=\(worker.targetId)"
       )
       return worker
