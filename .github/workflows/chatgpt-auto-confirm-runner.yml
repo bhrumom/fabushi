@@ -13,7 +13,7 @@ on:
         default: false
         type: boolean
       parallel_queue_smoke:
-        description: Dynamically enqueue two tasks and require real hidden-Chat overlap
+        description: Dynamically enqueue two tasks and require real isolated Chat overlap
         required: false
         default: false
         type: boolean
@@ -55,6 +55,9 @@ jobs:
       CHATGPT_CDP_PORT: "9324"
       GH_TOKEN: ${{ github.token }}
       CHATGPT_ACCOUNT_ID: ${{ inputs.account_id }}
+      # Hosted macOS runners have no user-facing desktop page. Dedicated
+      # workers may stay visible while they bootstrap their copied profile.
+      CHATGPT_AUTO_CONFIRM_HEADLESS: "1"
     steps:
       - name: Checkout trusted runner implementation
         uses: actions/checkout@v5
