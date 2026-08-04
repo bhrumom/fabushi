@@ -467,7 +467,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /clickCompactChatGPTLocalNetworkWindowViaQuartz/);
   assert.match(nativeSource, /CGWindowListCopyWindowInfo/);
   assert.match(nativeSource, /dedicated-native-local-network-geometry-detected/);
-  assert.match(nativeSource, /localizedCaseInsensitiveContains\("ChatGPT"\)/);
+  assert.match(nativeSource, /runningApplications\.contains/);
+  assert.match(nativeSource, /dedicated-native-local-network-screen-fallback/);
   assert.match(nativeSource, /find devices on local networks/);
   assert.match(nativeSource, /AXSystemDialog/);
   assert.match(nativeSource, /key code 36/);
