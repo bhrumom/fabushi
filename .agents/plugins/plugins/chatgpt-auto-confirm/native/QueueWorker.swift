@@ -804,8 +804,35 @@ func copyProfileForDedicatedQueueWorker(
   }
 }
 
+func boundedDedicatedRendererTargets(
+  port: Int,
+  timeout: TimeInterval = 2.0
+) -> [[String: Any]] {
+  let semaphore = DispatchSemaphore(value: 0)
+  let lock = NSLock()
+  var result: [[String: Any]] = []
+  DispatchQueue.global(qos: .utility).async {
+    let targets = CDPClient.fetchTargets(portOverride: port)
+    lock.lock()
+    result = targets
+    lock.unlock()
+    semaphore.signal()
+  }
+  let boundedTimeout = max(0.2, timeout)
+  guard semaphore.wait(timeout: .now() + boundedTimeout) == .success else {
+    queueTrace(
+      "worker-create stage=dedicated-renderer-target-probe-timeout "
+        + "port=\(port) timeoutMs=\(Int(boundedTimeout * 1_000))"
+    )
+    return []
+  }
+  lock.lock()
+  defer { lock.unlock() }
+  return result
+}
+
 func dedicatedRendererTargetExists(port: Int) -> Bool {
-  CDPClient.fetchTargets(portOverride: port).contains { target in
+  boundedDedicatedRendererTargets(port: port).contains { target in
     guard target["type"] as? String == "page",
           target["webSocketDebuggerUrl"] as? String != nil else {
       return false
@@ -819,31 +846,18 @@ func boundedDedicatedRendererTargetExists(
   port: Int,
   timeout: TimeInterval = 2.0
 ) -> Bool {
-  let semaphore = DispatchSemaphore(value: 0)
-  let lock = NSLock()
-  var result = false
-  DispatchQueue.global(qos: .utility).async {
-    let found = dedicatedRendererTargetExists(port: port)
-    lock.lock()
-    result = found
-    lock.unlock()
-    semaphore.signal()
+  boundedDedicatedRendererTargets(port: port, timeout: timeout).contains { target in
+    guard target["type"] as? String == "page",
+          target["webSocketDebuggerUrl"] as? String != nil else {
+      return false
+    }
+    let url = target["url"] as? String ?? ""
+    return url.hasPrefix("app://-/index.html")
   }
-  let boundedTimeout = max(0.2, timeout)
-  guard semaphore.wait(timeout: .now() + boundedTimeout) == .success else {
-    queueTrace(
-      "worker-create stage=dedicated-renderer-target-probe-timeout "
-        + "port=\(port) timeoutMs=\(Int(boundedTimeout * 1_000))"
-    )
-    return false
-  }
-  lock.lock()
-  defer { lock.unlock() }
-  return result
 }
 
 func dedicatedRendererTargetSummary(port: Int) -> String {
-  let summaries = CDPClient.fetchTargets(portOverride: port).prefix(8).map { target in
+  let summaries = boundedDedicatedRendererTargets(port: port).prefix(8).map { target in
     let type = target["type"] as? String ?? "unknown"
     let rawURL = target["url"] as? String ?? ""
     let safeURL: String
@@ -1042,6 +1056,19 @@ func launchDedicatedQueueChatProcess(
       "worker-create stage=dedicated-process-launched "
         + "port=\(port) pid=\(launchedProcessId)"
     )
+    // GitHub Actions has no user-facing window to hide and the first CDP
+    // endpoint can remain unresponsive while Electron is still creating its
+    // renderer. Defer the readiness probe to dedicatedQueueChatTarget(),
+    // whose complete bootstrap loop is independently bounded. Keeping this
+    // launcher call non-blocking prevents a second worker from holding the
+    // queue scheduler forever after its process has already started.
+    if queueAllowsVisibleDedicatedRenderer() {
+      queueTrace(
+        "worker-create stage=dedicated-headless-probe-deferred "
+          + "port=\(port) pid=\(launchedProcessId)"
+      )
+      return true
+    }
     if waitForDedicatedRendererTarget(port: port) {
       return true
     }
@@ -1218,7 +1245,7 @@ func dedicatedQueueChatTarget(
   let appRootURL = "app://-/index.html?initialRoute=%2F"
   let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
   while Date() < deadline {
-    let targets = CDPClient.fetchTargets(portOverride: port)
+    let targets = boundedDedicatedRendererTargets(port: port)
     for target in targets {
       guard target["type"] as? String == "page",
             let url = target["url"] as? String,
