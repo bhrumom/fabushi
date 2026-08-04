@@ -43,8 +43,16 @@ tell application "System Events"
   repeat with processRef in (application processes whose name is "ChatGPT")
     repeat with windowRef in (windows of processRef)
       try
-        set promptTexts to (value of static texts of windowRef) as text
-        if (promptTexts contains "find devices on local networks") or ¬
+        set promptTexts to ""
+        try
+          set promptTexts to (value of static texts of windowRef) as text
+        end try
+        set dialogRole to ""
+        try
+          set dialogRole to (subrole of windowRef) as text
+        end try
+        if (dialogRole is "AXSystemDialog") or ¬
+           (promptTexts contains "find devices on local networks") or ¬
            (promptTexts contains "在本地网络上查找设备") or ¬
            (promptTexts contains "在本地網絡上查找設備") then
           if exists (button "Allow" of windowRef) then
@@ -59,6 +67,9 @@ tell application "System Events"
             click button "允許" of windowRef
             return "clicked"
           end if
+          if (dialogRole is "AXSystemDialog") and (frontmost of processRef) then
+            return "dialog"
+          end if
         end if
       end try
     end repeat
@@ -72,7 +83,16 @@ return "none"
       timeout: 1_500,
       stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return result?.status === 0 && String(result.stdout || '').includes('clicked');
+    if (result?.status !== 0) return false;
+    const output = String(result.stdout || '');
+    if (output.includes('clicked')) return true;
+    if (!output.includes('dialog')) return false;
+    const keyPress = spawnImpl(
+      '/usr/bin/osascript',
+      ['-e', 'tell application "System Events" to key code 36'],
+      { encoding: 'utf8', timeout: 1_000, stdio: ['ignore', 'ignore', 'ignore'] },
+    );
+    return keyPress?.status === 0;
   } catch {
     return false;
   }
@@ -422,10 +442,11 @@ export async function restoreSession({
   let connection;
   const beforeProbeImpl = headless
     ? async () => {
-      if (typeof nativePromptImpl === 'function') {
-        nativePromptImpl();
-      } else {
-        approveHeadlessChatGPTLocalNetworkPrompt();
+      const approved = typeof nativePromptImpl === 'function'
+        ? nativePromptImpl()
+        : approveHeadlessChatGPTLocalNetworkPrompt();
+      if (approved) {
+        log('Headless ChatGPT native local-network prompt approved');
       }
     }
     : undefined;

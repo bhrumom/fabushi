@@ -60,8 +60,16 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
     repeat with processRef in (application processes whose name is "ChatGPT")
       repeat with windowRef in (windows of processRef)
         try
-          set promptTexts to (value of static texts of windowRef) as text
-          if (promptTexts contains "find devices on local networks") or ¬
+          set promptTexts to ""
+          try
+            set promptTexts to (value of static texts of windowRef) as text
+          end try
+          set dialogRole to ""
+          try
+            set dialogRole to (subrole of windowRef) as text
+          end try
+          if (dialogRole is "AXSystemDialog") or ¬
+             (promptTexts contains "find devices on local networks") or ¬
              (promptTexts contains "在本地网络上查找设备") or ¬
              (promptTexts contains "在本地網絡上查找設備") then
             if exists (button "Allow" of windowRef) then
@@ -75,6 +83,9 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
             if exists (button "允許" of windowRef) then
               click button "允許" of windowRef
               return "clicked"
+            end if
+            if (dialogRole is "AXSystemDialog") and (frontmost of processRef) then
+              return "dialog"
             end if
           end if
         end try
@@ -110,7 +121,31 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
         ) else {
     return false
   }
-  return result.contains("clicked")
+  if result.contains("clicked") { return true }
+  guard result.contains("dialog") else { return false }
+  let keyPress = Process()
+  keyPress.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+  keyPress.arguments = [
+    "-e",
+    "tell application \"System Events\" to key code 36",
+  ]
+  keyPress.standardInput = FileHandle.nullDevice
+  keyPress.standardOutput = FileHandle.nullDevice
+  keyPress.standardError = FileHandle.nullDevice
+  do {
+    try keyPress.run()
+  } catch {
+    return false
+  }
+  let keyDeadline = Date().addingTimeInterval(1.0)
+  while keyPress.isRunning && Date() < keyDeadline {
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  guard !keyPress.isRunning else {
+    keyPress.terminate()
+    return false
+  }
+  return keyPress.terminationStatus == 0
 }
 
 func queueTargetStateIsUsableForQueue(
