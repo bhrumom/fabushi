@@ -888,9 +888,21 @@ func openHeadlessParallelQueueWindow(
     failure = "headless_window_controller_target_missing"
     return nil
   }
+  // Electron may expose a default browser context without the ChatGPT
+  // partition/preload bridge. Reuse the authenticated controller's context
+  // when it is available; CDPClient still falls back to the default context
+  // for older desktop builds that reject the reported id.
+  let browserContextId = CDPClient.targetInfo(
+    targetId: controllerTargetId,
+    portOverride: port
+  )?["browserContextId"] as? String
+  queueTrace(
+    "worker-create stage=headless-window-context "
+      + "present=\(browserContextId?.isEmpty == false)"
+  )
   guard let targetId = CDPClient.createTarget(
     url: appRootURL,
-    browserContextId: nil,
+    browserContextId: browserContextId,
     background: false,
     portOverride: port
   ) else {
