@@ -417,6 +417,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-empty-shell-navigation/);
   assert.match(nativeSource, /dedicated-chat-target-timeout/);
   assert.match(nativeSource, /dedicatedRendererTargetExists/);
+  assert.match(nativeSource, /boundedDedicatedRendererTargets/);
   assert.match(nativeSource, /boundedDedicatedRendererTargetExists/);
   assert.match(nativeSource, /dedicatedRendererTargetSummary/);
   assert.match(nativeSource, /dedicatedRendererBootstrapTimeout/);
@@ -451,6 +452,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /application\.hide\(\)/);
   assert.match(nativeSource, /application\.isHidden/);
   assert.match(nativeSource, /dedicated-process-launched/);
+  assert.match(nativeSource, /dedicated-headless-probe-deferred/);
   assert.match(nativeSource, /configuration\.hides = false/);
   assert.match(nativeSource, /initialRoute=%2F/);
   assert.match(nativeSource, /func queueAllowsVisibleDedicatedRenderer\(\)/);
