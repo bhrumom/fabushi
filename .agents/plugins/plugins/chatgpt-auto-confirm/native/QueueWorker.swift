@@ -900,19 +900,88 @@ func openHeadlessParallelQueueWindow(
     "worker-create stage=headless-window-context "
       + "present=\(browserContextId?.isEmpty == false)"
   )
-  guard let targetId = CDPClient.createTarget(
-    url: appRootURL,
-    browserContextId: browserContextId,
-    background: false,
-    portOverride: port
-  ) else {
-    failure = "headless_window_target_create_failed"
+  // Target.createTarget is a browser-level operation. On some ChatGPT
+  // desktop builds it creates a normal Chromium page even when the
+  // authenticated browserContextId is supplied; that page has no Electron
+  // preload bridge and can never become a usable Chat surface. Ask the
+  // authenticated app renderer to open a real BrowserWindow first. Electron
+  // inherits the opener's session and preload when it handles window.open,
+  // which keeps the window signed in and preserves electronBridge.
+  let existingTargetIds = Set(
+    CDPClient.fetchTargets(portOverride: port).compactMap { $0["id"] as? String }
+  )
+  var targetId: String?
+  if CDPClient.fetchTargets(portOverride: port).contains(where: {
+    $0["id"] as? String == controllerTargetId
+  }) {
+    let windowName = "fabushi-queue-\(UUID().uuidString)"
+    let windowOpen = cdpValue(
+      port: port,
+      targetId: controllerTargetId,
+      expression: """
+      (() => {
+        try {
+          const popup = window.open(\(jsonStringLiteral(appRootURL)),
+            \(jsonStringLiteral(windowName)),
+            'width=1280,height=900,resizable=yes');
+          return {opened: !!popup};
+        } catch (error) {
+          return {opened: false, error: String(error)};
+        }
+      })()
+      """,
+      timeout: 5.0
+    )
+    let opened = windowOpen?["opened"] as? Bool ?? false
+    queueTrace(
+      "worker-create stage=headless-window-open "
+        + "requested=true opened=\(opened) "
+        + "error=\(windowOpen?["error"] as? String ?? "none")"
+    )
+    if opened {
+      let discoveryDeadline = Date().addingTimeInterval(8.0)
+      while Date() < discoveryDeadline, targetId == nil {
+        let candidates = CDPClient.fetchTargets(portOverride: port).filter { target in
+          guard let candidateId = target["id"] as? String,
+                !existingTargetIds.contains(candidateId),
+                target["type"] as? String == "page",
+                target["webSocketDebuggerUrl"] as? String != nil else { return false }
+          return true
+        }
+        if let candidate = candidates.first,
+           let candidateId = candidate["id"] as? String {
+          targetId = candidateId
+          queueTrace(
+            "worker-create stage=headless-window-open-target "
+              + "target=\(candidateId) "
+              + "url=\(candidate["url"] as? String ?? "none")"
+          )
+          break
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+      }
+    }
+  }
+  if targetId == nil {
+    targetId = CDPClient.createTarget(
+      url: appRootURL,
+      browserContextId: browserContextId,
+      background: false,
+      portOverride: port
+    )
+    guard targetId != nil else {
+      failure = "headless_window_target_create_failed"
+      return nil
+    }
+    queueTrace(
+      "worker-create stage=headless-window-target-created "
+        + "port=\(port) target=\(targetId!)"
+    )
+  }
+  guard let targetId else {
+    failure = "headless_window_target_missing_after_create"
     return nil
   }
-  queueTrace(
-    "worker-create stage=headless-window-target-created "
-      + "port=\(port) target=\(targetId)"
-  )
 
   var lastProbe: [String: Any]?
   var navigated = false
