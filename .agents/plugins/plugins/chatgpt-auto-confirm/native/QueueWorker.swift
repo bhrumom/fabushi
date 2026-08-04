@@ -1455,19 +1455,38 @@ func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  if let accountId {
-    guard let account = resolveAccount(accountId),
+  let hostedAccountId = ProcessInfo.processInfo.environment["CHATGPT_ACCOUNT_ID"]?
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  if let effectiveAccountId = accountId ?? hostedAccountId {
+    guard let account = resolveAccount(effectiveAccountId),
           FileManager.default.fileExists(atPath: account.profilePath) else {
-      // A task with an explicit account must never fall back to another
-      // account's renderer or the user's shared ChatGPT process.
+      // Hosted account runners and explicitly assigned tasks must never fall
+      // back to the shared desktop renderer. The official prewarm window is
+      // account-feature-gated and repeatedly disappeared on macOS runners
+      // before a message could be sent. A dedicated process is deterministic
+      // and keeps each account and parallel task isolated.
+      queueTrace(
+        "worker-create stage=dedicated-account-missing account=\(effectiveAccountId)"
+      )
       return nil
     }
+    queueTrace(
+      "worker-create stage=dedicated-account begin account=\(effectiveAccountId)"
+    )
     guard let worker = createDedicatedParallelQueueWorkerTarget(
       &state,
       sourceProfilePath: account.profilePath,
       codexHomePath: account.codexHomePath
-    ) else { return nil }
+    ) else {
+      queueTrace(
+        "worker-create stage=dedicated-account failed account=\(effectiveAccountId)"
+      )
+      return nil
+    }
     state.queueWorkerMode = parallelDedicatedProcessQueueWorkerMode
+    queueTrace(
+      "worker-create stage=dedicated-account complete account=\(effectiveAccountId) target=\(worker.targetId)"
+    )
     return worker
   }
   // Reuse the authenticated ChatGPT desktop process and ask its official

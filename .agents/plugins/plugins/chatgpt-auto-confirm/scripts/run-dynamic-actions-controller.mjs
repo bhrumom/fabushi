@@ -365,8 +365,17 @@ const handleFinishedChild = async () => {
   if (!child || child.exitCode === null) return false;
   const exitCode = child.exitCode;
   let status = '';
-  try { status = JSON.parse(readFileSync(resultPath, 'utf8')).status || ''; } catch {}
+  let reason = '';
+  try {
+    const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+    status = result.status || '';
+    reason = result.reason || '';
+  } catch {}
   if (status === 'failed') process.exit(exitCode || 1);
+  if (reason === 'recoverable_task_retry_budget_exhausted') {
+    process.stdout.write(`TASK_CONTROLLER_STOP ${JSON.stringify({ status, reason })}\n`);
+    process.exit(0);
+  }
   if (activeControl?.keepAlive !== true) {
     process.exit(exitCode || (status === 'complete' ? 0 : 1));
   }

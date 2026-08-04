@@ -327,12 +327,21 @@ while (Date.now() < deadline) {
     writeResult('failed', queue, 'terminal_task_failure');
     process.exit(1);
   }
+  if (allTerminal && hasRecoverableTerminalFailure) {
+    // Native task attempts already enforce maxRuntimeRetries. Requeueing a
+    // terminal task here used the operator-only queue_retry command, reset the
+    // terminal state, and allowed a broken renderer to loop for the full
+    // hosted session. Preserve the exhausted task exactly as-is and yield it
+    // once to the outer controller for encrypted state upload and diagnosis.
+    writeResult('incomplete', queue, 'recoverable_task_retry_budget_exhausted');
+    process.exit(0);
+  }
 
   const needsWatchdogRecovery = tasks.some(task =>
     task.status === 'running'
     && task.lastError
     && String(task.lastError).includes('not_chat_surface'));
-  const needsRecovery = hasRecoverableTerminalFailure || needsWatchdogRecovery;
+  const needsRecovery = needsWatchdogRecovery;
   if (needsRecovery && Date.now() - lastRecovery >= recoveryIntervalMs) {
     const currentFailureFingerprint = failureFingerprint(tasks);
     if (currentFailureFingerprint === lastFailureFingerprint) {
@@ -349,39 +358,11 @@ while (Date.now() < deadline) {
       process.exit(0);
     }
 
-    const retryResults = [];
-    for (const task of recoverableTerminalTasks) {
-      try {
-        const retry = run('queue_retry', {
-          taskId: task.id,
-          feedback: 'GitHub Actions 检测到可恢复的 Chat/连接器运行时失败。请重建隐藏 Chat，并从同一 checkout 的最新落盘进度继续。',
-        });
-        retryResults.push({
-          id: task.id,
-          ok: true,
-          status: retry?.retriedTask?.status || null,
-        });
-      } catch (error) {
-        retryResults.push({
-          id: task.id,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    if (retryResults.length > 0) {
-      process.stdout.write(
-        `QUEUE_RETRY_RECOVERY attempt=${sameFailureRecoveries} ${JSON.stringify(retryResults)}\n`,
-      );
-    }
-
-    if (needsWatchdogRecovery || retryResults.some(result => !result.ok)) {
-      const recovery = run('queue_watchdog', { staleAfterSeconds: 300, force: true });
-      process.stdout.write(
-        `WATCHDOG_RECOVERY attempt=${sameFailureRecoveries} ` +
-        `${JSON.stringify(watchdogDiagnostics(recovery))}\n`,
-      );
-    }
+    const recovery = run('queue_watchdog', { staleAfterSeconds: 300, force: true });
+    process.stdout.write(
+      `WATCHDOG_RECOVERY attempt=${sameFailureRecoveries} ` +
+      `${JSON.stringify(watchdogDiagnostics(recovery))}\n`,
+    );
     lastRecovery = Date.now();
   }
   await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
