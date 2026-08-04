@@ -1450,11 +1450,14 @@ func dedicatedQueueChatTarget(
   var lastProbeDiagnosticAttempt = -8
   var lastVisibleWakeAttempt = -8
   var lastProbe: [String: Any]?
+  var nativePromptApprovalObserved = false
+  var avatarOverlayRetired = false
   let appRootURL = "app://-/index.html?initialRoute=%2F"
   let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
   while Date() < deadline {
     if allowVisibleRenderer, attempt % 4 == 0,
        approveHeadlessChatGPTLocalNetworkPrompt() {
+      nativePromptApprovalObserved = true
       queueTrace(
         "worker-create stage=dedicated-native-local-network-permission-allowed "
           + "port=\(port)"
@@ -1473,13 +1476,22 @@ func dedicatedQueueChatTarget(
         // renderer first. Navigating replaces that document, so never reuse
         // this websocket for the verification probe; rediscover the current
         // renderer on the next pass just like the hosted restore script.
-        queueTrace(
-          "worker-create stage=dedicated-avatar-overlay-navigation "
-            + "port=\(port) target=\(targetId)"
-        )
-        _ = CDPClient.navigate(
+        if nativePromptApprovalObserved, !avatarOverlayRetired {
+          avatarOverlayRetired = true
+          let closed = CDPClient.closeTarget(targetId, portOverride: port)
+          queueTrace(
+            "worker-create stage=dedicated-avatar-overlay-retire "
+              + "port=\(port) target=\(targetId) closed=\(closed)"
+          )
+          continue
+        }
+        let navigated = CDPClient.navigate(
           wsURLString: wsURL,
           url: appRootURL
+        )
+        queueTrace(
+          "worker-create stage=dedicated-avatar-overlay-navigation "
+            + "port=\(port) target=\(targetId) navigate=\(navigated)"
         )
         continue
       }
@@ -1555,14 +1567,20 @@ func dedicatedQueueChatTarget(
             _ = CDPClient.bringPageToFront(wsURLString: wsURL)
           }
           let interactiveNavigationCount = interactiveNavigationCounts[targetId, default: 0]
-          let shouldNavigate = loaded != nil && (
+          let shouldNavigate = (
+            loaded != nil && (
             ready == "complete"
               || (
                 ready == "interactive"
                   && textLength <= 100
-                  && nextRecoveryCount >= 2
-                  && interactiveNavigationCount < 2
+                && nextRecoveryCount >= 2
+                && interactiveNavigationCount < 2
               )
+            )
+          ) || (
+            nativePromptApprovalObserved
+              && avatarOverlayRetired
+              && nextRecoveryCount >= 2
           )
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
@@ -1579,9 +1597,13 @@ func dedicatedQueueChatTarget(
                   + "attempt=\(interactiveNavigationCount + 1)"
               )
             }
-            _ = CDPClient.navigate(
+            let navigated = CDPClient.navigate(
               wsURLString: wsURL,
               url: appRootURL
+            )
+            queueTrace(
+              "worker-create stage=dedicated-renderer-bootstrap-navigation "
+                + "port=\(port) target=\(targetId) result=\(navigated)"
             )
           }
         }
