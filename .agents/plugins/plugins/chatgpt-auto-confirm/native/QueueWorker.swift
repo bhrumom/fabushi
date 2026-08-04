@@ -84,6 +84,19 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
               click button "允許" of windowRef
               return "clicked"
             end if
+            try
+              set windowSize to size of windowRef
+              set windowWidth to item 1 of windowSize
+              set windowHeight to item 2 of windowSize
+              if (windowWidth is greater than 180) and (windowWidth is less than 420) and ¬
+                 (windowHeight is greater than 180) and (windowHeight is less than 360) then
+                set windowPosition to position of windowRef
+                set clickX to ((item 1 of windowPosition) + (windowWidth * 72 / 100)) as integer
+                set clickY to ((item 2 of windowPosition) + (windowHeight * 87 / 100)) as integer
+                click at {clickX, clickY}
+                return "clicked"
+              end if
+            end try
             if (dialogRole is "AXSystemDialog") and (frontmost of processRef) then
               return "dialog"
             end if
