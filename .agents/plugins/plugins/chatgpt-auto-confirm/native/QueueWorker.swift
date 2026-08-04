@@ -1133,7 +1133,7 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
 }
 
 @discardableResult
-func activateDedicatedProcessForPort(_ port: Int) -> Bool {
+func unhideDedicatedProcessForPort(_ port: Int) -> Bool {
   let process = Process()
   let output = Pipe()
   process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -1162,7 +1162,7 @@ func activateDedicatedProcessForPort(_ port: Int) -> Bool {
           let application = NSRunningApplication(processIdentifier: processID) else {
       continue
     }
-    return application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    return application.unhide()
   }
   return false
 }
@@ -1232,7 +1232,7 @@ func dedicatedQueueChatTarget(
          (loaded == nil || ready != "complete" || visibility != "visible" || textLength <= 100),
          attempt - lastVisibleWakeAttempt >= 4 {
         lastVisibleWakeAttempt = attempt
-        let processActivated = activateDedicatedProcessForPort(port)
+        let processUnhidden = unhideDedicatedProcessForPort(port)
         let targetActivated = CDPClient.activateTarget(targetId, portOverride: port)
         let pageBroughtToFront = CDPClient.bringPageToFront(wsURLString: wsURL)
         _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
@@ -1241,7 +1241,7 @@ func dedicatedQueueChatTarget(
         queueTrace(
           "worker-create stage=dedicated-visible-renderer-wake "
             + "port=\(port) target=\(targetId) "
-            + "processActivated=\(processActivated) "
+            + "processUnhidden=\(processUnhidden) "
             + "targetActivated=\(targetActivated) "
             + "pageBroughtToFront=\(pageBroughtToFront)"
         )
