@@ -808,27 +808,14 @@ func boundedDedicatedRendererTargets(
   port: Int,
   timeout: TimeInterval = 2.0
 ) -> [[String: Any]] {
-  let semaphore = DispatchSemaphore(value: 0)
-  let lock = NSLock()
-  var result: [[String: Any]] = []
-  DispatchQueue.global(qos: .utility).async {
-    let targets = CDPClient.fetchTargets(portOverride: port)
-    lock.lock()
-    result = targets
-    lock.unlock()
-    semaphore.signal()
-  }
-  let boundedTimeout = max(0.2, timeout)
-  guard semaphore.wait(timeout: .now() + boundedTimeout) == .success else {
-    queueTrace(
-      "worker-create stage=dedicated-renderer-target-probe-timeout "
-        + "port=\(port) timeoutMs=\(Int(boundedTimeout * 1_000))"
-    )
-    return []
-  }
-  lock.lock()
-  defer { lock.unlock() }
-  return result
+  // CDPClient.fetchTargets owns the bounded URLSession request and cancels
+  // the task when its 1.8s deadline expires. Do not dispatch another probe
+  // onto a shared GCD worker here: a second Electron process can leave that
+  // nested semaphore path waiting indefinitely while the queue scheduler is
+  // still trying to bring up the renderer. Keeping one synchronous, already
+  // bounded request per loop also prevents timed-out probes from piling up.
+  _ = timeout
+  return CDPClient.fetchTargets(portOverride: port)
 }
 
 func dedicatedRendererTargetExists(port: Int) -> Bool {
