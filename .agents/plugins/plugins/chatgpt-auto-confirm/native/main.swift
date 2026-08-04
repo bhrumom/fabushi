@@ -1229,7 +1229,15 @@ case "queue_update":
         if tasks[index].status == "running", applyMode == "interrupt" {
           let port = tasks[index].workerPort ?? state.queueWorkerPort
           let targetId = tasks[index].workerTargetId ?? state.queueWorkerTargetId
-          if let port, let targetId, queueTargetIsHidden(port: port, targetId: targetId) {
+          if let port, let targetId,
+             queueTargetStateIsUsableForQueue(
+               queueTargetRuntimeState(
+                 port: port,
+                 targetId: targetId,
+                 refreshLifecycle: false
+               ),
+               workerMode: state.queueWorkerMode
+             ) {
             _ = cdpValue(
               port: port,
               targetId: targetId,
