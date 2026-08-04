@@ -8,6 +8,7 @@ import SystemConfiguration
 let backgroundWindowQueueWorkerMode = "single-process-hidden-prewarm"
 let sharedConversationQueueWorkerMode = "single-process-hidden-chat-conversations"
 let parallelHiddenWindowQueueWorkerMode = "single-process-hidden-chat-windows"
+let parallelHeadlessWindowQueueWorkerMode = "parallel-headless-chat-windows"
 let parallelDedicatedProcessQueueWorkerMode = "parallel-dedicated-hidden-chat-processes"
 let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 // Electron stays alive after its executable is launched. Keep the launcher
@@ -276,8 +277,11 @@ func queueTargetStateIsUsableForQueue(
   case .hidden:
     return true
   case .visible:
-    return workerMode == parallelDedicatedProcessQueueWorkerMode
-      && queueAllowsVisibleDedicatedRenderer()
+    return queueAllowsVisibleDedicatedRenderer()
+      && (
+        workerMode == parallelDedicatedProcessQueueWorkerMode
+          || workerMode == parallelHeadlessWindowQueueWorkerMode
+      )
   case .missing, .hiddenNonChat, .suspended:
     return false
   }
@@ -287,6 +291,7 @@ func queueUsesBackgroundWindow(_ state: PluginState) -> Bool {
   state.queueWorkerMode == backgroundWindowQueueWorkerMode
     || state.queueWorkerMode == sharedConversationQueueWorkerMode
     || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
+    || state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode
     || state.queueWorkerMode == parallelDedicatedProcessQueueWorkerMode
 }
 
@@ -860,6 +865,96 @@ func openBackgroundQueueWindow(
     "routeMatches=\((lastReady?["href"] as? String ?? "").contains("initialRoute=%2F"))",
     "labels=\((lastReady?["buttonLabels"] as? [String] ?? []).joined(separator: "|"))",
     "safeText=\(lastReady?["safeText"] as? String ?? "none")",
+  ].joined(separator: ":")
+  _ = CDPClient.closeTarget(targetId, portOverride: port)
+  return nil
+}
+
+// The quick-chat prewarm RPC owns one show:false BrowserWindow and clears the
+// previous prewarm whenever it creates the next one. That contract is correct
+// for the legacy single hidden worker, but it cannot back two overlapping
+// Actions tasks. Headless runners can ask Chromium/Electron for independent
+// normal BrowserWindows directly; the authenticated app process and preload
+// bridge are shared, while each target remains queue-owned and isolated.
+func openHeadlessParallelQueueWindow(
+  port: Int,
+  controllerTargetId: String,
+  failure: inout String?
+) -> String? {
+  let appRootURL = "app://-/index.html?initialRoute=%2F"
+  guard CDPClient.fetchTargets(portOverride: port).contains(where: {
+    $0["id"] as? String == controllerTargetId
+  }) else {
+    failure = "headless_window_controller_target_missing"
+    return nil
+  }
+  guard let targetId = CDPClient.createTarget(
+    url: appRootURL,
+    browserContextId: nil,
+    background: false,
+    portOverride: port
+  ) else {
+    failure = "headless_window_target_create_failed"
+    return nil
+  }
+  queueTrace(
+    "worker-create stage=headless-window-target-created "
+      + "port=\(port) target=\(targetId)"
+  )
+
+  var lastProbe: [String: Any]?
+  var navigated = false
+  let deadline = Date().addingTimeInterval(30.0)
+  while Date() < deadline {
+    guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+      $0["id"] as? String == targetId
+    }), let wsURL = target["webSocketDebuggerUrl"] as? String else {
+      Thread.sleep(forTimeInterval: 0.25)
+      continue
+    }
+    // Target.createTarget may expose a static shell first. Explicitly
+    // navigate the new target and wake it as a real visible Electron window;
+    // unlike quick-chat prewarm this does not retire another task's target.
+    if !navigated {
+      navigated = CDPClient.navigate(wsURLString: wsURL, url: appRootURL)
+    }
+    _ = CDPClient.activateTarget(targetId, portOverride: port)
+    _ = CDPClient.bringPageToFront(wsURLString: wsURL)
+    _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+    _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+    _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+    lastProbe = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: """
+      (() => ({
+        bridge: !!window.electronBridge,
+        ready: document.readyState,
+        text: (document.body?.innerText || '').length,
+        visibility: document.visibilityState,
+        href: location.href
+      }))()
+      """,
+      timeout: 3.0
+    )
+    let bridge = (lastProbe?["bridge"] as? NSNumber)?.boolValue ?? false
+    let ready = lastProbe?["ready"] as? String
+    let textLength = (lastProbe?["text"] as? NSNumber)?.intValue ?? 0
+    if bridge, ready == "complete", textLength > 50 {
+      queueTrace(
+        "worker-create stage=headless-window-target-ready "
+          + "port=\(port) target=\(targetId) "
+          + "visibility=\(lastProbe?["visibility"] as? String ?? "none")"
+      )
+      return targetId
+    }
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  failure = [
+    "headless_window_target_not_ready",
+    "bridge=\((lastProbe?["bridge"] as? NSNumber)?.boolValue ?? false)",
+    "ready=\(lastProbe?["ready"] as? String ?? "none")",
+    "text=\((lastProbe?["text"] as? NSNumber)?.intValue ?? -1)",
   ].joined(separator: ":")
   _ = CDPClient.closeTarget(targetId, portOverride: port)
   return nil
@@ -2114,6 +2209,91 @@ func createQueueWorkerTarget(
   return (preparedPort, targetId, preparedProfilePath)
 }
 
+func createHeadlessParallelQueueWorkerTarget(
+  _ state: inout PluginState
+) -> (port: Int, targetId: String, profilePath: String)? {
+  guard let controller = sharedChatController(&state) else {
+    state.lastError = "headless_window_controller_unavailable"
+    return nil
+  }
+  var failure: String?
+  guard let targetId = openHeadlessParallelQueueWindow(
+    port: controller.port,
+    controllerTargetId: controller.targetId,
+    failure: &failure
+  ) else {
+    state.lastError = failure ?? "headless_window_target_unavailable"
+    queueTrace(
+      "worker-create stage=headless-window-target-failed "
+        + "error=\(state.lastError ?? "unknown")"
+    )
+    return nil
+  }
+
+  var chatSelection: [String: Any]?
+  for _ in 0..<20 {
+    chatSelection = cdpValue(
+      port: controller.port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    if chatSelection?["ok"] as? Bool == true
+        || chatSelection?["alreadySelected"] as? Bool == true {
+      break
+    }
+    Thread.sleep(forTimeInterval: 0.35)
+  }
+
+  var lastPrepared: [String: Any]?
+  for _ in 0..<80 {
+    lastPrepared = cdpValue(
+      port: controller.port,
+      targetId: targetId,
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: chatSelection?["alreadySelected"] as? Bool == true
+      ),
+      timeout: 5.0
+    )
+    let runtimeState = queueTargetRuntimeState(
+      port: controller.port,
+      targetId: targetId,
+      refreshLifecycle: true
+    )
+    if lastPrepared?["ok"] as? Bool == true,
+       queueTargetStateIsUsableForQueue(
+         runtimeState,
+         workerMode: parallelHeadlessWindowQueueWorkerMode
+       ) {
+      let profilePath = configuredHiddenChatProfilePath()
+        ?? state.backgroundProfilePath
+        ?? hiddenChatProfilePath()
+      state.queueWorkerPort = controller.port
+      state.queueWorkerTargetId = targetId
+      state.queueWorkerProfilePath = profilePath
+      state.queueWorkerMode = parallelHeadlessWindowQueueWorkerMode
+      state.lastError = nil
+      queueTrace(
+        "worker-create stage=headless-parallel-window-chat-ready "
+          + "port=\(controller.port) target=\(targetId) "
+          + "visibility=\(queueTargetRuntimeStateName(runtimeState))"
+      )
+      return (controller.port, targetId, profilePath)
+    }
+    _ = cdpValue(
+      port: controller.port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  state.lastError = "headless_window_not_chat:\(lastPrepared?["error"] as? String ?? "no_result")"
+  _ = CDPClient.closeTarget(targetId, portOverride: controller.port)
+  return nil
+}
+
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
@@ -2124,28 +2304,27 @@ func createIndependentQueueWorkerTarget(
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let hostedAccountId = hostedAccountValue.isEmpty ? nil : hostedAccountValue
   if let effectiveAccountId = explicitAccountId ?? hostedAccountId {
-    // GitHub Actions has already authenticated the primary ChatGPT process
-    // and its official prewarm service creates independent Chat BrowserWindows
-    // with the same session. Prefer that proven renderer path on a headless
-    // runner: launching a second Electron process can expose only an empty
-    // app:// root target even after macOS's native network prompt is allowed.
-    // Each task still receives its own renderer and conversation, while local
-    // desktop account sessions keep the isolated-process path below.
+    // GitHub Actions has already authenticated the primary ChatGPT process.
+    // Create independent normal BrowserWindows in that process on a headless
+    // runner: the official quick-chat prewarm RPC clears its previous window
+    // whenever it starts the next one, while a second Electron process can
+    // expose only an empty app:// root target. Each task still receives its
+    // own renderer and conversation; local desktop account sessions keep the
+    // isolated-process path below.
     if queueAllowsVisibleDedicatedRenderer() {
       queueTrace(
         "worker-create stage=headless-parallel-hidden-window-begin "
           + "account=\(effectiveAccountId)"
       )
-      guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+      guard let worker = createHeadlessParallelQueueWorkerTarget(&state) else {
         queueTrace(
           "worker-create stage=headless-parallel-hidden-window-failed "
             + "account=\(effectiveAccountId)"
         )
         return nil
       }
-      state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
       queueTrace(
-        "worker-create stage=headless-parallel-hidden-window-complete "
+        "worker-create stage=headless-parallel-window-complete "
           + "account=\(effectiveAccountId) target=\(worker.targetId)"
       )
       return worker
@@ -2250,6 +2429,17 @@ func stopQueueWorker(_ state: inout PluginState) {
        queueTargetIsHidden(port: port, targetId: targetId) {
       _ = CDPClient.closeTarget(targetId, portOverride: port)
     }
+  } else if state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode {
+    let taskTargets = Set((state.automationTasks ?? []).compactMap { task -> String? in
+      guard let port = task.workerPort, let targetId = task.workerTargetId else { return nil }
+      _ = CDPClient.closeTarget(targetId, portOverride: port)
+      return targetId
+    })
+    if let targetId = state.queueWorkerTargetId,
+       !taskTargets.contains(targetId),
+       let port = state.queueWorkerPort {
+      _ = CDPClient.closeTarget(targetId, portOverride: port)
+    }
   } else if state.queueWorkerMode == backgroundWindowQueueWorkerMode {
     if let targetId = state.queueWorkerTargetId {
       _ = CDPClient.closeTarget(targetId, portOverride: state.queueWorkerPort)
@@ -2296,9 +2486,10 @@ func startAutomationTask(
      let staleProfilePath = task.workerProfilePath {
     terminateDedicatedChatProcess(profilePath: staleProfilePath)
   } else if !preserveStalledChat,
-            state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode,
-     let staleTargetId = task.workerTargetId,
-     let stalePort = task.workerPort,
+            (state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
+              || state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode),
+            let staleTargetId = task.workerTargetId,
+            let stalePort = task.workerPort,
      queueTargetIsReady(port: stalePort, targetId: staleTargetId) {
     _ = CDPClient.closeTarget(staleTargetId, portOverride: stalePort)
   }
