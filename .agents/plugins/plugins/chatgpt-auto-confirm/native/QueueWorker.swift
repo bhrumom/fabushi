@@ -1455,11 +1455,42 @@ func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  let hostedAccountId = ProcessInfo.processInfo.environment["CHATGPT_ACCOUNT_ID"]?
-    .trimmingCharacters(in: .whitespacesAndNewlines)
-  if let effectiveAccountId = accountId ?? hostedAccountId {
-    guard let account = resolveAccount(effectiveAccountId),
-          FileManager.default.fileExists(atPath: account.profilePath) else {
+  let explicitAccountValue = accountId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let explicitAccountId = explicitAccountValue.isEmpty ? nil : explicitAccountValue
+  let hostedAccountValue = ProcessInfo.processInfo.environment["CHATGPT_ACCOUNT_ID"]?
+    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let hostedAccountId = hostedAccountValue.isEmpty ? nil : hostedAccountValue
+  if let effectiveAccountId = explicitAccountId ?? hostedAccountId {
+    // Local account records carry their own profile and CODEX_HOME paths. A
+    // hosted runner intentionally has no local account registry: it restores
+    // the encrypted account bundle into the workflow's private profile and
+    // ~/.codex before starting this runtime. Use that profile only when the
+    // requested task account is the same hosted account; an explicitly
+    // different account still fails closed instead of borrowing a renderer.
+    let dedicatedSource: (profilePath: String, codexHomePath: String?, traceStage: String)?
+    if let account = resolveAccount(effectiveAccountId),
+       FileManager.default.fileExists(atPath: account.profilePath) {
+      dedicatedSource = (
+        profilePath: account.profilePath,
+        codexHomePath: account.codexHomePath,
+        traceStage: "dedicated-account"
+      )
+    } else if let hostedAccountId,
+              effectiveAccountId == hostedAccountId,
+              let profilePath = configuredHiddenChatProfilePath(),
+              FileManager.default.fileExists(atPath: profilePath) {
+      let codexHomeValue = ProcessInfo.processInfo.environment["CODEX_HOME"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let codexHomePath = codexHomeValue.isEmpty ? nil : codexHomeValue
+      dedicatedSource = (
+        profilePath: profilePath,
+        codexHomePath: codexHomePath,
+        traceStage: "dedicated-hosted-profile"
+      )
+    } else {
+      dedicatedSource = nil
+    }
+    guard let dedicatedSource else {
       // Hosted account runners and explicitly assigned tasks must never fall
       // back to the shared desktop renderer. The official prewarm window is
       // account-feature-gated and repeatedly disappeared on macOS runners
@@ -1471,21 +1502,21 @@ func createIndependentQueueWorkerTarget(
       return nil
     }
     queueTrace(
-      "worker-create stage=dedicated-account begin account=\(effectiveAccountId)"
+      "worker-create stage=\(dedicatedSource.traceStage)-begin account=\(effectiveAccountId)"
     )
     guard let worker = createDedicatedParallelQueueWorkerTarget(
       &state,
-      sourceProfilePath: account.profilePath,
-      codexHomePath: account.codexHomePath
+      sourceProfilePath: dedicatedSource.profilePath,
+      codexHomePath: dedicatedSource.codexHomePath
     ) else {
       queueTrace(
-        "worker-create stage=dedicated-account failed account=\(effectiveAccountId)"
+        "worker-create stage=\(dedicatedSource.traceStage)-failed account=\(effectiveAccountId)"
       )
       return nil
     }
     state.queueWorkerMode = parallelDedicatedProcessQueueWorkerMode
     queueTrace(
-      "worker-create stage=dedicated-account complete account=\(effectiveAccountId) target=\(worker.targetId)"
+      "worker-create stage=\(dedicatedSource.traceStage)-complete account=\(effectiveAccountId) target=\(worker.targetId)"
     )
     return worker
   }
