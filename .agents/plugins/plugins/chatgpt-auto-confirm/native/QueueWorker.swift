@@ -68,19 +68,41 @@ func cgWindowNumber(_ value: Any?) -> CGFloat? {
 // window and does not weaken the in-page authorization checks.
 func clickCompactChatGPTLocalNetworkWindowViaQuartz() -> Bool {
   guard queueAllowsVisibleDedicatedRenderer(),
-        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-        targetBundleIdentifiers.contains(frontmostBundleIdentifier),
+        NSWorkspace.shared.runningApplications.contains(where: { application in
+          guard let bundleIdentifier = application.bundleIdentifier else { return false }
+          return targetBundleIdentifiers.contains(bundleIdentifier)
+        }),
         let windowInfo = CGWindowListCopyWindowInfo(
           [.optionOnScreenOnly, .excludeDesktopElements],
           kCGNullWindowID
         ) as? [[String: Any]] else {
     return false
   }
+
+  func postClick(at point: CGPoint, stage: String) -> Bool {
+    guard let mouseDown = CGEvent(
+      mouseEventSource: nil,
+      mouseType: .leftMouseDown,
+      mouseCursorPosition: point,
+      mouseButton: .left
+    ), let mouseUp = CGEvent(
+      mouseEventSource: nil,
+      mouseType: .leftMouseUp,
+      mouseCursorPosition: point,
+      mouseButton: .left
+    ) else {
+      return false
+    }
+    queueTrace(stage)
+    mouseDown.post(tap: .cghidEventTap)
+    mouseUp.post(tap: .cghidEventTap)
+    return true
+  }
+
   for window in windowInfo {
-    guard let ownerName = window[kCGWindowOwnerName as String] as? String,
-          ownerName.localizedCaseInsensitiveContains("ChatGPT"),
-          let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue,
-          layer == 0,
+    let ownerName = window[kCGWindowOwnerName as String] as? String ?? "unknown"
+    guard let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue,
+          layer >= 0, layer < 100,
           let bounds = window[kCGWindowBounds as String] as? [String: Any],
           let originX = cgWindowNumber(bounds["X"]),
           let originY = cgWindowNumber(bounds["Y"]),
@@ -93,26 +115,31 @@ func clickCompactChatGPTLocalNetworkWindowViaQuartz() -> Bool {
       x: originX + width * 0.72,
       y: originY + height * 0.87
     )
-    guard let mouseDown = CGEvent(
-      mouseEventSource: nil,
-      mouseType: .leftMouseDown,
-      mouseCursorPosition: clickPoint,
-      mouseButton: .left
-    ), let mouseUp = CGEvent(
-      mouseEventSource: nil,
-      mouseType: .leftMouseUp,
-      mouseCursorPosition: clickPoint,
-      mouseButton: .left
-    ) else {
-      return false
-    }
-    queueTrace(
+    if postClick(
+      at: clickPoint,
+      stage:
       "worker-create stage=dedicated-native-local-network-geometry-detected "
-        + "window=\(Int(width))x\(Int(height))"
+        + "window=\(Int(width))x\(Int(height)) owner=\(ownerName)"
+    ) {
+      return true
+    }
+  }
+
+  // CoreServicesUIAgent can own the privacy alert while ChatGPT remains the
+  // running application, so there may be no matching compact window in the
+  // list. The hosted headless display uses the standard macOS alert layout;
+  // click its Allow location only after a ChatGPT process was confirmed.
+  if let screen = NSScreen.screens.first {
+    let fallbackPoint = CGPoint(
+      x: screen.frame.minX + screen.frame.width * 0.557,
+      y: screen.frame.minY + screen.frame.height * 0.420
     )
-    mouseDown.post(tap: .cghidEventTap)
-    mouseUp.post(tap: .cghidEventTap)
-    return true
+    if postClick(
+      at: fallbackPoint,
+      stage: "worker-create stage=dedicated-native-local-network-screen-fallback"
+    ) {
+      return true
+    }
   }
   return false
 }
