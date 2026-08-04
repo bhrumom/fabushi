@@ -450,6 +450,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /func queueAllowsVisibleDedicatedRenderer\(\)/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_HEADLESS/);
   assert.match(nativeSource, /dedicated-chat-target-visible-headless/);
+  assert.match(nativeSource, /activateDedicatedProcessForPort/);
+  assert.match(nativeSource, /Target\.activateTarget/);
+  assert.match(nativeSource, /dedicated-visible-renderer-wake/);
+  assert.match(nativeSource, /blankNavigationCount < 3/);
   assert.match(nativeSource, /queueTargetStateIsUsableForQueue/);
   assert.match(runnerWorkflowSource, /CHATGPT_AUTO_CONFIRM_HEADLESS: "1"/);
   assert.match(nativeSource, /stage=dedicated-process-hidden/);

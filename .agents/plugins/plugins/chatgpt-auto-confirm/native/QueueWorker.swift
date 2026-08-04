@@ -1029,7 +1029,7 @@ func launchDedicatedQueueChatProcess(
     // On some hosted macOS images the direct Electron executable becomes a
     // short-lived launcher and never registers an NSRunningApplication. Use
     // LaunchServices only as a bounded fallback, retaining the isolated
-    // profile and CDP port; subsequent code still requires a hidden Chat page.
+    // profile and CDP port; subsequent code still requires a verified Chat page.
     queueTrace("worker-create stage=dedicated-process-launchservices-fallback begin port=\(port)")
     // Use LaunchServices' native configuration instead of `/usr/bin/open`.
     // The latter keeps the instance out of the foreground but does not
@@ -1132,6 +1132,41 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
   return false
 }
 
+@discardableResult
+func activateDedicatedProcessForPort(_ port: Int) -> Bool {
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+  } catch {
+    return false
+  }
+  guard let text = String(
+    data: output.fileHandleForReading.readDataToEndOfFile(),
+    encoding: .utf8
+  ) else { return false }
+  let portMarker = "--remote-debugging-port=\(port)"
+  for line in text.split(separator: "\n") {
+    guard line.contains(portMarker),
+          line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
+      continue
+    }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let processID = pid_t(String(first)),
+          let application = NSRunningApplication(processIdentifier: processID) else {
+      continue
+    }
+    return application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+  }
+  return false
+}
+
 func dedicatedQueueChatTarget(
   port: Int,
   timeout: TimeInterval = 90.0
@@ -1139,9 +1174,11 @@ func dedicatedQueueChatTarget(
   let startedAt = Date()
   let deadline = startedAt.addingTimeInterval(timeout)
   var attempt = 0
-  var navigatedBlankTargets = Set<String>()
+  var blankNavigationCounts: [String: Int] = [:]
+  var lastBlankNavigationAttempt: [String: Int] = [:]
   var bootstrapRecoveryCounts: [String: Int] = [:]
   var lastProbeDiagnosticAttempt = -8
+  var lastVisibleWakeAttempt = -8
   var lastProbe: [String: Any]?
   let appRootURL = "app://-/index.html?initialRoute=%2F"
   let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
@@ -1191,6 +1228,24 @@ func dedicatedQueueChatTarget(
       let visibility = loaded?["visibility"] as? String
       let readyValue = ready ?? "none"
       let visibilityValue = visibility ?? "none"
+      if allowVisibleRenderer,
+         (loaded == nil || ready != "complete" || visibility != "visible" || textLength <= 100),
+         attempt - lastVisibleWakeAttempt >= 4 {
+        lastVisibleWakeAttempt = attempt
+        let processActivated = activateDedicatedProcessForPort(port)
+        let targetActivated = CDPClient.activateTarget(targetId, portOverride: port)
+        let pageBroughtToFront = CDPClient.bringPageToFront(wsURLString: wsURL)
+        _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+        _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+        _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+        queueTrace(
+          "worker-create stage=dedicated-visible-renderer-wake "
+            + "port=\(port) target=\(targetId) "
+            + "processActivated=\(processActivated) "
+            + "targetActivated=\(targetActivated) "
+            + "pageBroughtToFront=\(pageBroughtToFront)"
+        )
+      }
       guard bridge, ready == "complete" else {
         // A renderer can expose the correct app URL while its preload bridge
         // is still suspended. Wake the page without changing the user's
@@ -1243,15 +1298,23 @@ func dedicatedQueueChatTarget(
         }
         continue
       }
+      let blankNavigationCount = blankNavigationCounts[targetId, default: 0]
+      let lastBlankAttempt = lastBlankNavigationAttempt[targetId] ?? Int.min
       if bridge, ready == "complete", textLength <= 100,
-         navigatedBlankTargets.insert(targetId).inserted {
+         blankNavigationCount < 3,
+         (blankNavigationCount == 0 || attempt - lastBlankAttempt >= 16) {
         // A dedicated copy may finish on the root URL with an empty shell
         // before the app mounts its real renderer. A one-time root navigation
         // forces the same bootstrap transition as the avatar-overlay path;
-        // subsequent passes always rediscover the current target.
+        // subsequent passes always rediscover the current target. Some hosted
+        // launches need more than one pass after macOS has activated a second
+        // Electron process, so keep this bounded per renderer.
+        blankNavigationCounts[targetId] = blankNavigationCount + 1
+        lastBlankNavigationAttempt[targetId] = attempt
         queueTrace(
           "worker-create stage=dedicated-empty-shell-navigation "
-            + "port=\(port) target=\(targetId)"
+            + "port=\(port) target=\(targetId) "
+            + "attempt=\(blankNavigationCount + 1)"
         )
         _ = CDPClient.navigate(
           wsURLString: wsURL,
@@ -1261,13 +1324,13 @@ func dedicatedQueueChatTarget(
       }
       if bridge, ready == "complete", textLength > 100,
          visibility != "hidden" {
-        if allowVisibleRenderer, visibility == "visible" {
+        if allowVisibleRenderer {
           // The hosted runner has no user-facing page to protect. Returning
           // the live renderer lets the authenticated Chat surface finish its
           // own bootstrap instead of waiting for a hidden lifecycle state.
           queueTrace(
             "worker-create stage=dedicated-chat-target-visible-headless "
-              + "port=\(port) target=\(targetId)"
+              + "port=\(port) target=\(targetId) visibility=\(visibilityValue)"
           )
           return targetId
         }
@@ -1388,7 +1451,7 @@ func createDedicatedParallelQueueWorkerTarget(
     }
   }
   guard let targetId else {
-    state.lastError = "dedicated_hidden_chat_process_not_ready"
+    state.lastError = "dedicated_chat_process_not_ready"
     terminateDedicatedChatProcess(profilePath: profilePath)
     return nil
   }
@@ -1437,7 +1500,7 @@ func createDedicatedParallelQueueWorkerTarget(
     Thread.sleep(forTimeInterval: 0.25)
   }
   let prepareError = prepared?["error"] as? String ?? "no_result"
-  state.lastError = "dedicated_hidden_target_not_chat:\(prepareError)"
+    state.lastError = "dedicated_target_not_chat:\(prepareError)"
   _ = captureHiddenChatScreenshot(
     port: port,
     targetId: targetId,
@@ -1888,7 +1951,7 @@ func startAutomationTask(
       domain: "chatgpt-auto-confirm",
       code: 33,
       userInfo: [
-        NSLocalizedDescriptionKey: "当前 ChatGPT 实例没有可用的隐藏 Chat 页面（\(detail)）"
+        NSLocalizedDescriptionKey: "当前 ChatGPT 实例没有可用的 Chat 页面（\(detail)）"
       ]
     )
   }
