@@ -416,6 +416,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-avatar-overlay-navigation/);
   assert.match(nativeSource, /dedicated-empty-shell-navigation/);
   assert.match(nativeSource, /dedicated-chat-target-timeout/);
+  assert.match(nativeSource, /dedicatedRendererTargetExists/);
+  assert.match(nativeSource, /dedicatedRendererTargetSummary/);
+  assert.match(nativeSource, /dedicatedRendererBootstrapTimeout/);
+  assert.match(nativeSource, /dedicated-process-renderer-timeout/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
   assert.match(nativeSource, /single-process-hidden-chat-windows/);
   assert.match(nativeSource, /createDedicatedParallelQueueWorkerTarget/);
