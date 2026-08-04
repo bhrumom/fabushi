@@ -1189,6 +1189,8 @@ func dedicatedQueueChatTarget(
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
+      let readyValue = ready ?? "none"
+      let visibilityValue = visibility ?? "none"
       guard bridge, ready == "complete" else {
         // A renderer can expose the correct app URL while its preload bridge
         // is still suspended. Wake the page without changing the user's
@@ -1203,7 +1205,7 @@ func dedicatedQueueChatTarget(
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
               + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
-              + "bridge=\(bridge) ready=\(ready ?? \"none\")"
+              + "bridge=\(bridge) ready=\(readyValue)"
           )
           _ = CDPClient.navigate(
             wsURLString: wsURL,
@@ -1215,8 +1217,8 @@ func dedicatedQueueChatTarget(
           queueTrace(
             "worker-create stage=dedicated-renderer-probe "
               + "port=\(port) target=\(targetId) bridge=\(bridge) "
-              + "ready=\(ready ?? \"none\") text=\(textLength) "
-              + "visibility=\(visibility ?? \"none\")"
+              + "ready=\(readyValue) text=\(textLength) "
+              + "visibility=\(visibilityValue)"
           )
         }
         continue
@@ -1263,14 +1265,18 @@ func dedicatedQueueChatTarget(
     Thread.sleep(forTimeInterval: 0.25)
   }
   let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
+  let probeBridge = (lastProbe?["bridge"] as? NSNumber)?.boolValue ?? false
+  let probeReady = lastProbe?["ready"] as? String ?? "none"
+  let probeText = (lastProbe?["text"] as? NSNumber)?.intValue ?? -1
+  let probeVisibility = lastProbe?["visibility"] as? String ?? "none"
   queueTrace(
     "worker-create stage=dedicated-chat-target-timeout port=\(port) "
       + "elapsedMs=\(elapsedMs) "
       + "targets=\(dedicatedRendererTargetSummary(port: port)) "
-      + "probeBridge=\((lastProbe?[\"bridge\"] as? NSNumber)?.boolValue ?? false) "
-      + "probeReady=\(lastProbe?[\"ready\"] as? String ?? \"none\") "
-      + "probeText=\((lastProbe?[\"text\"] as? NSNumber)?.intValue ?? -1) "
-      + "probeVisibility=\(lastProbe?[\"visibility\"] as? String ?? \"none\")"
+      + "probeBridge=\(probeBridge) "
+      + "probeReady=\(probeReady) "
+      + "probeText=\(probeText) "
+      + "probeVisibility=\(probeVisibility)"
   )
   return nil
 }
