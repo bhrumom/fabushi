@@ -168,6 +168,18 @@ test('reconnects to the replacement renderer after avatar-overlay navigation and
   assert.ok(server.connections.some(item => item.target?.id === 'after-reload'));
 });
 
+test('uses root navigation instead of reload for a headless desktop shell', async () => {
+  const server = new FakeCDPServer({
+    initialURL: 'app://-/index.html?initialRoute=%2F',
+  });
+
+  const output = await run(server, { headless: true });
+  assert.match(output, /^Verified authenticated desktop shell/);
+  assert.equal(server.reloads, 0);
+  assert.equal(server.navigations, 1);
+  assert.ok(server.connections.some(item => item.target?.id === 'after-navigation'));
+});
+
 test('recovers when the active renderer fails during Runtime.evaluate', async () => {
   const server = new FakeCDPServer({
     initialURL: 'app://-/index.html?initialRoute=%2F',
