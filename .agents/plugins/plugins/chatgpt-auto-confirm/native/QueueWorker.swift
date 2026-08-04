@@ -2124,6 +2124,32 @@ func createIndependentQueueWorkerTarget(
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let hostedAccountId = hostedAccountValue.isEmpty ? nil : hostedAccountValue
   if let effectiveAccountId = explicitAccountId ?? hostedAccountId {
+    // GitHub Actions has already authenticated the primary ChatGPT process
+    // and its official prewarm service creates independent Chat BrowserWindows
+    // with the same session. Prefer that proven renderer path on a headless
+    // runner: launching a second Electron process can expose only an empty
+    // app:// root target even after macOS's native network prompt is allowed.
+    // Each task still receives its own renderer and conversation, while local
+    // desktop account sessions keep the isolated-process path below.
+    if queueAllowsVisibleDedicatedRenderer() {
+      queueTrace(
+        "worker-create stage=headless-parallel-hidden-window-begin "
+          + "account=\(effectiveAccountId)"
+      )
+      guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+        queueTrace(
+          "worker-create stage=headless-parallel-hidden-window-failed "
+            + "account=\(effectiveAccountId)"
+        )
+        return nil
+      }
+      state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
+      queueTrace(
+        "worker-create stage=headless-parallel-hidden-window-complete "
+          + "account=\(effectiveAccountId) target=\(worker.targetId)"
+      )
+      return worker
+    }
     // Local account records carry their own profile and CODEX_HOME paths. A
     // hosted runner intentionally has no local account registry: it restores
     // the encrypted account bundle into the workflow's private profile and
