@@ -815,6 +815,33 @@ func dedicatedRendererTargetExists(port: Int) -> Bool {
   }
 }
 
+func boundedDedicatedRendererTargetExists(
+  port: Int,
+  timeout: TimeInterval = 2.0
+) -> Bool {
+  let semaphore = DispatchSemaphore(value: 0)
+  let lock = NSLock()
+  var result = false
+  DispatchQueue.global(qos: .utility).async {
+    let found = dedicatedRendererTargetExists(port: port)
+    lock.lock()
+    result = found
+    lock.unlock()
+    semaphore.signal()
+  }
+  let boundedTimeout = max(0.2, timeout)
+  guard semaphore.wait(timeout: .now() + boundedTimeout) == .success else {
+    queueTrace(
+      "worker-create stage=dedicated-renderer-target-probe-timeout "
+        + "port=\(port) timeoutMs=\(Int(boundedTimeout * 1_000))"
+    )
+    return false
+  }
+  lock.lock()
+  defer { lock.unlock() }
+  return result
+}
+
 func dedicatedRendererTargetSummary(port: Int) -> String {
   let summaries = CDPClient.fetchTargets(portOverride: port).prefix(8).map { target in
     let type = target["type"] as? String ?? "unknown"
@@ -840,7 +867,10 @@ func waitForDedicatedRendererTarget(
 ) -> Bool {
   let deadline = Date().addingTimeInterval(timeout)
   while Date() < deadline {
-    if dedicatedRendererTargetExists(port: port) {
+    if boundedDedicatedRendererTargetExists(
+      port: port,
+      timeout: min(2.0, max(0.2, timeout))
+    ) {
       return true
     }
     Thread.sleep(forTimeInterval: 0.25)
