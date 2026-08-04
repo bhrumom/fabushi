@@ -578,8 +578,9 @@ export async function restoreSession({
       // recovery window. Navigating to the app root exercises the same cookie
       // bootstrap while keeping the renderer lifecycle recoverable. The local
       // desktop path retains the stronger cache-busting reload behavior.
+      let bootstrapActionSucceeded;
       if (headless) {
-        await optionalCall(
+        bootstrapActionSucceeded = await optionalCall(
           connection.call,
           'Page.navigate',
           { url: appRootURL },
@@ -589,7 +590,20 @@ export async function restoreSession({
       } else {
         // Page.reload can replace the renderer. Re-discover the target after
         // the command instead of issuing Runtime calls through the stale socket.
-        await optionalCall(connection.call, 'Page.reload', { ignoreCache: true }, 10_000, log);
+        bootstrapActionSucceeded = await optionalCall(
+          connection.call,
+          'Page.reload',
+          { ignoreCache: true },
+          10_000,
+          log,
+        );
+      }
+      if (!bootstrapActionSucceeded) {
+        // Some Electron builds retire the only renderer when navigation or
+        // reload times out. Create a replacement root page before polling the
+        // now-empty target list so the recovery does not wait out its entire
+        // timeout with no renderer to attach to.
+        await rootTargetCreator({ port, fetchImpl, WebSocketImpl, log });
       }
       closeConnection(connection);
       connection = await recoverAppRootConnection({

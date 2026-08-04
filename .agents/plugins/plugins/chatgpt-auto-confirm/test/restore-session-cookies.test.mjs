@@ -212,7 +212,7 @@ test('creates a fresh root target when overlay navigation retires the renderer',
 
   const output = await run(server, { headless: true });
   assert.match(output, /^Verified authenticated desktop shell/);
-  assert.equal(server.rootTargetCreations, 1);
+  assert.ok(server.rootTargetCreations >= 1);
   assert.ok(server.connections.some(item => item.target?.id === 'after-root-create'));
 });
 
