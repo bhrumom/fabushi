@@ -194,6 +194,69 @@ if (command === 'queue_watchdog') {
   }
 });
 
+test('Actions controller preserves a pending authorization Chat instead of watchdog-restarting it', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-approval-'));
+  const runtimePath = path.join(directory, 'fake-runtime.mjs');
+  const resultPath = path.join(directory, 'action-result.json');
+  const callsPath = path.join(directory, 'watchdog-calls.log');
+  try {
+    writeFileSync(runtimePath, `#!/usr/bin/env node
+import { appendFileSync } from 'node:fs';
+const command = process.argv[2];
+if (command === 'queue_watchdog') {
+  appendFileSync(process.env.CALLS_PATH, (process.argv[3] || '{}') + '\\n');
+  console.log(JSON.stringify({ ok: true, recovered: false, deferredTaskIds: ['approval-task'] }));
+} else if (command === 'queue_status') {
+  console.log(JSON.stringify({
+    ok: true,
+    counts: { running: 1 },
+    tasks: [{
+      id: 'approval-task',
+      status: 'running',
+      attempts: 1,
+      lastError: 'not_chat_surface',
+      hiddenWorkerLastError: null,
+      replyDiagnostics: {
+        pending: true,
+        waitingForApproval: true,
+        streaming: false,
+        stopAvailable: false,
+        devspaceWaiting: false,
+      },
+    }],
+  }));
+} else {
+  console.log(JSON.stringify({ ok: false, message: 'unexpected command' }));
+  process.exitCode = 1;
+}
+`);
+    chmodSync(runtimePath, 0o755);
+    const result = spawnSync(process.execPath, [controller], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        CHATGPT_AUTO_CONFIRM_NATIVE: runtimePath,
+        ACTION_RESULT_PATH: resultPath,
+        ACTION_SESSION_SECONDS: '1',
+        ACTION_POLL_INTERVAL_MS: '10',
+        ACTION_RECOVERY_INTERVAL_MS: '10',
+        CALLS_PATH: callsPath,
+      },
+    });
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /WATCHDOG_RECOVERY/);
+    const report = JSON.parse(readFileSync(resultPath, 'utf8'));
+    assert.equal(report.status, 'incomplete');
+    assert.equal(report.reason, 'hosted_runner_session_deadline');
+    const watchdogCalls = readFileSync(callsPath, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(watchdogCalls.length, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('Actions controller refreshes task revisions from the active branch', () => {
   const source = readFileSync(controller, 'utf8');
   assert.match(source, /ACTION_TASK_REFRESH_INTERVAL_MS/);
