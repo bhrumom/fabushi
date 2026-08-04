@@ -21,8 +21,10 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(workflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_POLL_SECONDS: "30"/);
   assert.match(
     workflow,
-    /Import dynamic parallel task inbox\r?\n\s+if: \$\{\{ inputs\.cancel_task_id == '' && inputs\.parallel_queue_smoke \}\}/,
+    /inputs\.parallel_queue_smoke && format\('chatgpt-auto-confirm-parallel-smoke-\{0\}-\{1\}'/,
   );
+  assert.doesNotMatch(workflow, /Import dynamic parallel task inbox/);
+  assert.match(workflow, /Verify dynamic parallel task queue/);
   assert.match(controller, /spawnSync\('gh'/);
   assert.match(controller, /repos\/\$\{repository\}\/contents\/\$\{repositoryPath\}/);
   assert.match(controller, /fetchRepositoryContent\(controlPath\)/);

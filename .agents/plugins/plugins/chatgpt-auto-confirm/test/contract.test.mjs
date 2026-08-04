@@ -131,9 +131,10 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /parallel-queue-evidence\.json/);
   assert.match(actionsWorkflow, /task-queue\/watcher-trace\.log/);
   assert.doesNotMatch(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_B64/);
-  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE/);
+  assert.doesNotMatch(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE/);
+  assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_TASK_CONTROL_PATH/);
   assert.match(actionsWorkflow, /tasks\/actions-inbox\.json/);
-  assert.match(actionsWorkflow, /import-actions-task-inbox\.mjs/);
+  assert.doesNotMatch(actionsWorkflow, /import-actions-task-inbox\.mjs/);
   assert.match(actionsWorkflow, /status" != "incomplete"/);
   assert.match(actionsWorkflow, /VERIFICATION_ONLY/);
   assert.match(actionsWorkflow, /no continuation was dispatched/);
