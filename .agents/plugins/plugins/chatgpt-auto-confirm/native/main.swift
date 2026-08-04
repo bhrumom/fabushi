@@ -1859,6 +1859,15 @@ case "queue_retry":
             state.queueWorkerTargetId = nil
             state.queueWorkerProfilePath = nil
           }
+        } else if state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode {
+          if let port, let targetId {
+            _ = CDPClient.closeTarget(targetId, portOverride: port)
+          }
+          if state.queueWorkerTargetId == targetId {
+            state.queueWorkerPort = nil
+            state.queueWorkerTargetId = nil
+            state.queueWorkerProfilePath = nil
+          }
         } else {
           stopQueueWorker(&state)
         }
