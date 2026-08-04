@@ -97,6 +97,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.match(restoreSessionScript, /Page\.reload/);
   assert.match(restoreSessionScript, /Page\.navigate/);
+  assert.match(restoreSessionScript, /json\/version/);
+  assert.match(restoreSessionScript, /Target\.createTarget/);
+  assert.match(restoreSessionScript, /Created ChatGPT app root target/);
   assert.match(restoreSessionScript, /avatar-overlay/);
   assert.match(restoreSessionScript, /approveHeadlessChatGPTLocalNetworkPrompt/);
   assert.match(restoreSessionScript, /find devices on local networks/);
