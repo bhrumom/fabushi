@@ -435,8 +435,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
   assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
   assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
-  assert.match(nativeSource, /let shouldNavigate = loaded != nil/);
-  assert.match(nativeSource, /let shouldNavigate = loaded != nil && \(/);
+  assert.match(nativeSource, /let shouldNavigate = \(/);
   assert.match(nativeSource, /ready == "complete"/);
   assert.match(nativeSource, /setHiddenPageFocusEmulation/);
   assert.match(nativeSource, /bringPageToFront/);
@@ -473,6 +472,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /AXSystemDialog/);
   assert.match(nativeSource, /key code 36/);
   assert.match(nativeSource, /dedicated-native-local-network-permission-allowed/);
+  assert.match(nativeSource, /dedicated-avatar-overlay-retire/);
+  assert.match(nativeSource, /nativePromptApprovalObserved/);
   assert.match(nativeSource, /button \"Allow\"/);
   assert.match(nativeSource, /unhideDedicatedProcessForPort/);
   assert.match(nativeSource, /Target\.activateTarget/);
