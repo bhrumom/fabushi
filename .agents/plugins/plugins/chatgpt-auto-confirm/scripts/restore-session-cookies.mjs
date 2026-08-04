@@ -1,26 +1,39 @@
-const port = Number(process.env.CHATGPT_CDP_PORT || 9324);
-const mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify';
-const encoded = process.env.CHATGPT_SESSION_COOKIES_B64;
+import { pathToFileURL } from 'node:url';
 
-if (!['seed', 'restore', 'verify', 'restore-and-verify'].includes(mode)) {
-  throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
-}
-
-let payload = { cookies: [] };
-if (mode !== 'verify') {
-  if (!encoded) {
-    throw new Error(
-      'CHATGPT_SESSION_COOKIES_B64 is required because Codex auth alone only restores Work access'
-    );
-  }
-  payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
-  if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
-    throw new Error('The ChatGPT session cookie secret is empty');
-  }
-}
+const defaultPort = 9324;
+const appRootURL = 'app://-/index.html?initialRoute=%2F';
 
 const sleep = milliseconds =>
   new Promise(resolve => setTimeout(resolve, milliseconds));
+
+const targetURL = target => String(target?.url || '');
+
+const isAppPage = target =>
+  target?.type === 'page'
+  && target?.webSocketDebuggerUrl
+  && targetURL(target).startsWith('app://-/index.html');
+
+const isAvatarOverlay = target => {
+  const url = targetURL(target);
+  try {
+    return url.includes('/avatar-overlay') || decodeURIComponent(url).includes('/avatar-overlay');
+  } catch {
+    return url.includes('/avatar-overlay');
+  }
+};
+
+const isNormalAppTarget = target => isAppPage(target) && !isAvatarOverlay(target);
+
+const safeTargetSummary = targets => targets.map(target => ({
+  type: target?.type,
+  id: String(target?.id || '').slice(0, 48),
+  url: targetURL(target).slice(0, 160),
+}));
+
+const targetKey = target => `${target?.id || ''}|${target?.webSocketDebuggerUrl || ''}`;
+
+const pickTarget = (targets, predicate) =>
+  targets.find(predicate);
 
 const authenticatedControllerIsReady = state =>
   !state.asksForLogin
@@ -28,54 +41,17 @@ const authenticatedControllerIsReady = state =>
   && state.readyState === 'complete'
   && state.bodyLength > 50;
 
-const appRootURL = 'app://-/index.html?initialRoute=%2F';
-
-const listTargets = async () =>
-  fetch(`http://127.0.0.1:${port}/json/list`, {
+const listTargets = async (fetchImpl, port) =>
+  fetchImpl(`http://127.0.0.1:${port}/json/list`, {
     signal: AbortSignal.timeout(5_000),
   }).then(response => response.json());
 
-const findTarget = async (timeoutMs, label) => {
-  const deadline = Date.now() + timeoutMs;
-  const avatarOverlayFallbackDeadline = Date.now() + Math.min(10_000, timeoutMs);
-  let lastTargets = [];
-  let avatarOverlayTarget;
-  while (Date.now() < deadline) {
-    try {
-      lastTargets = await listTargets();
-      const target = lastTargets.find(item =>
-        item.type === 'page'
-        && item.webSocketDebuggerUrl
-        && String(item.url || '').startsWith('app://-/index.html')
-        && !String(item.url || '').includes('/avatar-overlay')
-      );
-      if (target) return target;
-      avatarOverlayTarget = lastTargets.find(item =>
-        item.type === 'page'
-        && item.webSocketDebuggerUrl
-        && String(item.url || '').startsWith('app://-/index.html')
-        && String(item.url || '').includes('/avatar-overlay')
-      ) || avatarOverlayTarget;
-      // The desktop app can expose only its startup avatar overlay while the
-      // normal renderer is being bootstrapped. It is still a valid CDP page;
-      // recover it to the app root after connecting instead of waiting for a
-      // renderer that the app will not create on its own.
-      if (avatarOverlayTarget && Date.now() >= avatarOverlayFallbackDeadline) {
-        return avatarOverlayTarget;
-      }
-    } catch {}
-    await sleep(1_000);
-  }
-  if (avatarOverlayTarget) return avatarOverlayTarget;
-  const safeTargets = lastTargets.map(item => ({
-    type: item.type,
-    url: String(item.url || '').slice(0, 160),
-  }));
-  throw new Error(`${label} was not exposed; targets=${JSON.stringify(safeTargets)}`);
-};
-
-const connect = async target => {
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+const connect = async (
+  target,
+  { WebSocketImpl = globalThis.WebSocket } = {},
+) => {
+  if (!WebSocketImpl) throw new Error('WebSocket is unavailable');
+  const socket = new WebSocketImpl(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timer);
@@ -144,161 +120,383 @@ const connect = async target => {
       finish(reject, error instanceof Error ? error : new Error(String(error)));
     }
   });
-  return { socket, call };
+  return { socket, call, target };
 };
 
-const restoreAppRootIfNeeded = async call => {
-  let currentURL = '';
+const closeConnection = connection => {
   try {
-    const evaluation = await call('Runtime.evaluate', {
-      expression: 'location.href',
-      returnByValue: true,
-    }, 5_000);
-    currentURL = String(evaluation.result?.value || '');
+    connection?.socket?.close();
   } catch {}
-  if (!currentURL.includes('/avatar-overlay')) return false;
-  const navigated = await optionalCall(call, 'Page.navigate', { url: appRootURL }, 10_000);
-  if (navigated) await sleep(1_000);
-  return navigated;
 };
 
-const optionalCall = async (call, method, params = {}, timeoutMs = 5_000) => {
+const optionalCall = async (
+  call,
+  method,
+  params = {},
+  timeoutMs = 5_000,
+  log = message => process.stderr.write(`${message}\n`),
+) => {
   try {
     await call(method, params, timeoutMs);
     return true;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`Optional CDP command ${method} failed: ${detail}\n`);
+    log(`Optional CDP command ${method} failed: ${detail}`);
     return false;
   }
 };
 
-const activate = async call => {
+const findTarget = async ({
+  port,
+  timeoutMs,
+  label,
+  fetchImpl,
+  sleepImpl,
+  nowImpl,
+  allowAvatarOverlay = true,
+  avatarOverlayFallbackMs = 10_000,
+}) => {
+  const deadline = nowImpl() + timeoutMs;
+  const avatarOverlayFallbackDeadline = nowImpl() + Math.min(
+    avatarOverlayFallbackMs,
+    timeoutMs,
+  );
+  let lastTargets = [];
+  let avatarOverlayTarget;
+  let lastError = '';
+  while (nowImpl() < deadline) {
+    try {
+      lastTargets = await listTargets(fetchImpl, port);
+      const target = pickTarget(lastTargets, isNormalAppTarget);
+      if (target) return target;
+      avatarOverlayTarget = pickTarget(lastTargets, targetItem =>
+        isAppPage(targetItem) && isAvatarOverlay(targetItem),
+      ) || avatarOverlayTarget;
+      if (
+        allowAvatarOverlay
+        && avatarOverlayTarget
+        && nowImpl() >= avatarOverlayFallbackDeadline
+      ) {
+        return avatarOverlayTarget;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await sleepImpl(1_000);
+  }
+  if (allowAvatarOverlay && avatarOverlayTarget) return avatarOverlayTarget;
+  throw new Error(`${label} was not exposed (${JSON.stringify({
+    lastError,
+    targets: safeTargetSummary(lastTargets),
+  })})`);
+};
+
+const recoverAppRootConnection = async ({
+  connection,
+  port,
+  fetchImpl,
+  WebSocketImpl,
+  sleepImpl,
+  nowImpl,
+  timeoutMs,
+  label,
+  log,
+}) => {
+  const deadline = nowImpl() + timeoutMs;
+  let active = connection;
+  let lastTargets = [];
+  let lastError = '';
+  let navigationAttempts = 0;
+
+  // A navigation can replace the renderer while leaving the old DevTools
+  // socket open. Always release that socket before selecting the replacement.
+  if (active) {
+    let currentURL = '';
+    try {
+      const evaluation = await active.call('Runtime.evaluate', {
+        expression: 'location.href',
+        returnByValue: true,
+      }, 5_000);
+      currentURL = String(evaluation.result?.value || '');
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    if (isAvatarOverlay({ url: currentURL })) {
+      await optionalCall(
+        active.call,
+        'Page.navigate',
+        { url: appRootURL },
+        10_000,
+        log,
+      );
+      navigationAttempts += 1;
+      closeConnection(active);
+      active = null;
+    } else if (lastError) {
+      // A failed Runtime.evaluate can mean the renderer was replaced while
+      // Chromium kept the old target record. Force a fresh WebSocket attach.
+      closeConnection(active);
+      active = null;
+    }
+  }
+
+  while (nowImpl() < deadline) {
+    try {
+      lastTargets = await listTargets(fetchImpl, port);
+      const normalTarget = pickTarget(lastTargets, isNormalAppTarget);
+      if (normalTarget) {
+        if (active && targetKey(active.target) === targetKey(normalTarget)) {
+          return active;
+        }
+        closeConnection(active);
+        return await connect(normalTarget, { WebSocketImpl });
+      }
+
+      const overlayTarget = pickTarget(lastTargets, targetItem =>
+        isAppPage(targetItem) && isAvatarOverlay(targetItem),
+      );
+      if (overlayTarget) {
+        if (!active || targetKey(active.target) !== targetKey(overlayTarget)) {
+          closeConnection(active);
+          active = await connect(overlayTarget, { WebSocketImpl });
+        }
+        if (navigationAttempts < 2) {
+          await optionalCall(
+            active.call,
+            'Page.navigate',
+            { url: appRootURL },
+            10_000,
+            log,
+          );
+          navigationAttempts += 1;
+          closeConnection(active);
+          active = null;
+        }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      closeConnection(active);
+      active = null;
+    }
+    await sleepImpl(1_000);
+  }
+
+  closeConnection(active);
+  throw new Error(`${label} was not ready (${JSON.stringify({
+    lastError,
+    navigationAttempts,
+    targets: safeTargetSummary(lastTargets),
+  })})`);
+};
+
+const activate = async (call, log) => {
   // New ChatGPT desktop builds can leave Page.setWebLifecycleState unanswered.
   // Focus hints improve hosted rendering but must never abort cookie bootstrap.
-  await optionalCall(call, 'Emulation.setFocusEmulationEnabled', { enabled: true });
+  await optionalCall(call, 'Emulation.setFocusEmulationEnabled', { enabled: true }, 5_000, log);
   await optionalCall(call, 'Emulation.setIdleOverride', {
     isUserActive: true,
     isScreenUnlocked: true,
-  });
+  }, 5_000, log);
 };
 
-const target = await findTarget(120_000, 'ChatGPT app shell');
-const { socket, call } = await connect(target);
+const sessionStateExpression = `(() => {
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const visible = element => !!(element && (
+    element.offsetWidth || element.offsetHeight || element.getClientRects().length
+  ));
+  const bodyText = normalize(document.body?.innerText).slice(0, 12000);
+  const controls = [...document.querySelectorAll(
+    'button, [role="button"], [role="tab"], [aria-label]'
+  )].filter(visible);
+  const labels = controls.map(element => normalize([
+    element.innerText,
+    element.textContent,
+    element.getAttribute('aria-label'),
+    element.getAttribute('title')
+  ].filter(Boolean).join(' ')));
+  const exact = label => labels.some(value => value.toLowerCase() === label);
+  const hasChat = exact('chat') || exact('聊天');
+  const hasWork = exact('work') || exact('工作');
+  const currentMode = labels.find(value =>
+    /current mode|当前模式|目前模式/i.test(value)
+  ) || '';
+  const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(bodyText);
+  const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+  return {
+    hasChat,
+    hasWork,
+    currentMode: currentMode.slice(0, 160),
+    asksForLogin,
+    workComposer,
+    bodyLength: bodyText.length,
+    url: location.href,
+    bridge: !!window.electronBridge,
+    visibility: document.visibilityState,
+    readyState: document.readyState
+  };
+})()`;
 
-if (mode !== 'verify') {
-  await call('Network.setCookies', { cookies: payload.cookies });
-  const result = await call('Network.getAllCookies');
-  const restored = (result.cookies || []).filter(cookie =>
-    /(^|\.)((chatgpt|openai)\.com)$/i.test(cookie.domain || '')
-  ).length;
-  if (restored === 0) {
-    socket.close();
-    throw new Error('ChatGPT session cookies were not persisted');
+export async function restoreSession({
+  port = Number(process.env.CHATGPT_CDP_PORT || defaultPort),
+  mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify',
+  encoded = process.env.CHATGPT_SESSION_COOKIES_B64,
+  fetchImpl = globalThis.fetch,
+  WebSocketImpl = globalThis.WebSocket,
+  sleepImpl = sleep,
+  nowImpl = () => Date.now(),
+  targetTimeoutMs = 120_000,
+  reconnectTimeoutMs = 120_000,
+  verificationTimeoutMs = 120_000,
+  log = message => process.stderr.write(`${message}\n`),
+} = {}) {
+  if (!['seed', 'restore', 'verify', 'restore-and-verify'].includes(mode)) {
+    throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
   }
-  if (mode === 'seed') {
-    socket.close();
-    process.stdout.write(`Seeded ${restored} ChatGPT session cookies\n`);
-    process.exit(0);
+  if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable');
+
+  let payload = { cookies: [] };
+  if (mode !== 'verify') {
+    if (!encoded) {
+      throw new Error(
+        'CHATGPT_SESSION_COOKIES_B64 is required because Codex auth alone only restores Work access',
+      );
+    }
+    payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+    if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
+      throw new Error('The ChatGPT session cookie secret is empty');
+    }
+  }
+
+  let connection;
+  try {
+    const target = await findTarget({
+      port,
+      timeoutMs: targetTimeoutMs,
+      label: 'ChatGPT app shell',
+      fetchImpl,
+      sleepImpl,
+      nowImpl,
+    });
+    connection = await connect(target, { WebSocketImpl });
+
+    if (mode !== 'verify') {
+      await connection.call('Network.setCookies', { cookies: payload.cookies });
+      const result = await connection.call('Network.getAllCookies');
+      const restored = (result.cookies || []).filter(cookie =>
+        /(^|\.)((chatgpt|openai)\.com)$/i.test(cookie.domain || ''),
+      ).length;
+      if (restored === 0) {
+        throw new Error('ChatGPT session cookies were not persisted');
+      }
+      if (mode === 'seed') {
+        return `Seeded ${restored} ChatGPT session cookies`;
+      }
+    }
+
+    connection = await recoverAppRootConnection({
+      connection,
+      port,
+      fetchImpl,
+      WebSocketImpl,
+      sleepImpl,
+      nowImpl,
+      timeoutMs: reconnectTimeoutMs,
+      label: 'ChatGPT app shell after bootstrap',
+      log,
+    });
+
+    if (mode === 'restore' || mode === 'restore-and-verify') {
+      // Page.reload can replace the renderer. Re-discover the target after the
+      // command instead of issuing Runtime calls through the stale socket.
+      await optionalCall(connection.call, 'Page.reload', { ignoreCache: true }, 10_000, log);
+      closeConnection(connection);
+      connection = await recoverAppRootConnection({
+        connection: null,
+        port,
+        fetchImpl,
+        WebSocketImpl,
+        sleepImpl,
+        nowImpl,
+        timeoutMs: reconnectTimeoutMs,
+        label: 'ChatGPT app shell after reload',
+        log,
+      });
+      await activate(connection.call, log);
+    }
+
+    // Bootstrap mode intentionally stops here. The native queue owns the
+    // authoritative hidden-Chat authentication check.
+    if (mode === 'restore') {
+      return `Restored ${payload.cookies.length} ChatGPT session cookies and requested renderer reload`;
+    }
+
+    const verificationDeadline = nowImpl() + verificationTimeoutMs;
+    let lastState = {};
+    while (nowImpl() < verificationDeadline) {
+      await sleepImpl(2_000);
+      try {
+        const evaluation = await connection.call('Runtime.evaluate', {
+          expression: sessionStateExpression,
+          returnByValue: true,
+        }, 15_000);
+        lastState = evaluation.result?.value || {};
+        if (isAvatarOverlay({ url: lastState.url })) {
+          connection = await recoverAppRootConnection({
+            connection,
+            port,
+            fetchImpl,
+            WebSocketImpl,
+            sleepImpl,
+            nowImpl,
+            timeoutMs: reconnectTimeoutMs,
+            label: 'ChatGPT app shell during verification',
+            log,
+          });
+          continue;
+        }
+        if (authenticatedControllerIsReady(lastState)) {
+          return `Verified authenticated desktop shell (${JSON.stringify(lastState)})`;
+        }
+      } catch (error) {
+        lastState = {
+          cdpError: error instanceof Error ? error.message : String(error),
+        };
+        closeConnection(connection);
+        connection = null;
+        try {
+          connection = await recoverAppRootConnection({
+            connection,
+            port,
+            fetchImpl,
+            WebSocketImpl,
+            sleepImpl,
+            nowImpl,
+            timeoutMs: reconnectTimeoutMs,
+            label: 'ChatGPT app shell after CDP failure',
+            log,
+          });
+        } catch (recoveryError) {
+          lastState.recoveryError = recoveryError instanceof Error
+            ? recoveryError.message
+            : String(recoveryError);
+        }
+      }
+    }
+    throw new Error(
+      `Authenticated desktop shell was not verified (${JSON.stringify(lastState)})`,
+    );
+  } finally {
+    closeConnection(connection);
   }
 }
 
-// A fresh hosted desktop launch can land on the internal avatar overlay
-// instead of the normal app shell. The overlay is blank but remains a live
-// renderer, so navigate that same target back to the authenticated app root.
-await restoreAppRootIfNeeded(call);
+const isMainModule = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-if (mode === 'restore' || mode === 'restore-and-verify') {
-  // Page.reload is a bounded request and is more reliable than evaluating
-  // location.reload() inside a renderer that may still be suspended.
-  await optionalCall(call, 'Page.reload', { ignoreCache: true }, 10_000);
-  await restoreAppRootIfNeeded(call);
-}
-await activate(call);
-
-// Hosted macOS can leave the visible controller blank after reload. The
-// native queue must be allowed to create and verify the real Chat renderer.
-if (mode === 'restore') {
-  socket.close();
-  process.stdout.write(`Restored ${payload.cookies.length} ChatGPT session cookies and requested renderer reload\n`);
+if (isMainModule) {
+  const output = await restoreSession();
+  process.stdout.write(`${output}\n`);
+  // Electron does not always complete the DevTools WebSocket close handshake
+  // on hosted macOS, so terminate cleanly after the one-shot bootstrap.
   process.exit(0);
 }
-
-// Cookie restoration authenticates the visible controller window. A fresh
-// hosted runner commonly opens that controller on Work, while the native queue
-// runtime creates and validates its own show:false Chat window immediately
-// afterwards. Requiring the controller itself to finish rendering Chat here
-// prevented the real hidden-Chat path from ever running.
-const verificationDeadline = Date.now() + 120_000;
-let verified = false;
-let lastState = {};
-while (Date.now() < verificationDeadline) {
-  await sleep(2_000);
-  await restoreAppRootIfNeeded(call);
-  let evaluation;
-  try {
-    evaluation = await call('Runtime.evaluate', {
-      expression: `(() => {
-        const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
-        const visible = element => !!(element && (
-          element.offsetWidth || element.offsetHeight || element.getClientRects().length
-        ));
-        const bodyText = normalize(document.body?.innerText).slice(0, 12000);
-        const controls = [...document.querySelectorAll(
-          'button, [role="button"], [role="tab"], [aria-label]'
-        )].filter(visible);
-        const labels = controls.map(element => normalize([
-          element.innerText,
-          element.textContent,
-          element.getAttribute('aria-label'),
-          element.getAttribute('title')
-        ].filter(Boolean).join(' ')));
-        const exact = label => labels.some(value => value.toLowerCase() === label);
-        const hasChat = exact('chat') || exact('聊天');
-        const hasWork = exact('work') || exact('工作');
-        const currentMode = labels.find(value =>
-          /current mode|当前模式|目前模式/i.test(value)
-        ) || '';
-        const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(bodyText);
-        const workComposer = !!document.querySelector('[data-codex-composer="true"]');
-        return {
-          hasChat,
-          hasWork,
-          currentMode: currentMode.slice(0, 160),
-          asksForLogin,
-          workComposer,
-          bodyLength: bodyText.length,
-          url: location.href,
-          bridge: !!window.electronBridge,
-          visibility: document.visibilityState,
-          readyState: document.readyState
-        };
-      })()`,
-      returnByValue: true,
-    }, 15_000);
-  } catch (error) {
-    lastState = {
-      cdpError: error instanceof Error ? error.message : String(error),
-    };
-    continue;
-  }
-  lastState = evaluation.result?.value || {};
-  if (authenticatedControllerIsReady(lastState)) {
-    verified = true;
-    break;
-  }
-}
-
-socket.close();
-if (!verified) {
-  throw new Error(
-    `Authenticated desktop shell was not verified (${JSON.stringify(lastState)})`
-  );
-}
-process.stdout.write(
-  `Verified authenticated desktop shell (${JSON.stringify(lastState)})\n`
-);
-// This is a one-shot bootstrap command. Electron does not always complete the
-// DevTools WebSocket close handshake on hosted macOS, which can otherwise keep
-// Node alive after verification has already succeeded.
-process.exit(0);
