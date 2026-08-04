@@ -2317,12 +2317,142 @@ func createQueueWorkerTarget(
   return (preparedPort, targetId, preparedProfilePath)
 }
 
+func existingHeadlessParallelQueueTarget(
+  _ state: inout PluginState,
+  port: Int,
+  controllerTargetId: String
+) -> String? {
+  let queueOwnedTargetIds = Set(
+    (state.automationTasks ?? []).compactMap(\.workerTargetId)
+      + [state.queueWorkerTargetId].compactMap { $0 }
+  )
+  let candidates = CDPClient.fetchTargets(portOverride: port)
+    .filter { target in
+      guard let targetId = target["id"] as? String else { return false }
+      return target["type"] as? String == "page"
+        && (target["url"] as? String ?? "").hasPrefix("app://-/index.html")
+        && !queueOwnedTargetIds.contains(targetId)
+        && target["webSocketDebuggerUrl"] as? String != nil
+    }
+    .sorted { lhs, rhs in
+      // Prefer a normal primary renderer over the queue's prewarm controller;
+      // use the controller only when no other authenticated renderer remains.
+      let lhsIsController = lhs["id"] as? String == controllerTargetId
+      let rhsIsController = rhs["id"] as? String == controllerTargetId
+      if lhsIsController != rhsIsController { return !lhsIsController }
+      return (lhs["id"] as? String ?? "") < (rhs["id"] as? String ?? "")
+    }
+  for candidate in candidates {
+    guard let targetId = candidate["id"] as? String else { continue }
+    let probe = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: """
+      (() => ({
+        bridge: !!window.electronBridge,
+        ready: document.readyState,
+        visibility: document.visibilityState,
+        text: (document.body?.innerText || '').length,
+        href: location.href
+      }))()
+      """,
+      timeout: 3.0
+    )
+    let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
+    let ready = probe?["ready"] as? String ?? "none"
+    let visibility = probe?["visibility"] as? String ?? "none"
+    let textLength = (probe?["text"] as? NSNumber)?.intValue ?? 0
+    queueTrace(
+      "worker-create stage=headless-existing-window-probe "
+        + "target=\(targetId) visibility=\(visibility) "
+        + "bridge=\(bridge) ready=\(ready) text=\(textLength)"
+    )
+    guard bridge, ready == "complete" else { continue }
+
+    var chatSelection: [String: Any]?
+    for _ in 0..<12 {
+      chatSelection = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: clickChatJS(),
+        timeout: 4.0
+      )
+      if chatSelection?["ok"] as? Bool == true
+          || chatSelection?["alreadySelected"] as? Bool == true {
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.25)
+    }
+
+    var prepared: [String: Any]?
+    for _ in 0..<24 {
+      prepared = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: prepareBackgroundChatJS(
+          newChat: false,
+          confirmedChatMode: chatSelection?["alreadySelected"] as? Bool == true
+        ),
+        timeout: 5.0
+      )
+      let runtimeState = queueTargetRuntimeState(
+        port: port,
+        targetId: targetId,
+        refreshLifecycle: true
+      )
+      if prepared?["ok"] as? Bool == true,
+         queueTargetStateIsUsableForQueue(
+           runtimeState,
+           workerMode: parallelHeadlessWindowQueueWorkerMode
+         ) {
+        queueTrace(
+          "worker-create stage=headless-existing-window-ready "
+            + "target=\(targetId) "
+            + "visibility=\(queueTargetRuntimeStateName(runtimeState))"
+        )
+        return targetId
+      }
+      _ = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: clickChatJS(),
+        timeout: 4.0
+      )
+      Thread.sleep(forTimeInterval: 0.25)
+    }
+    queueTrace(
+      "worker-create stage=headless-existing-window-rejected "
+        + "target=\(targetId) error=\(prepared?["error"] as? String ?? "no_result")"
+    )
+  }
+  return nil
+}
+
 func createHeadlessParallelQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
   guard let controller = sharedChatController(&state) else {
     state.lastError = "headless_window_controller_unavailable"
     return nil
+  }
+  if let existingTargetId = existingHeadlessParallelQueueTarget(
+    &state,
+    port: controller.port,
+    controllerTargetId: controller.targetId
+  ) {
+    let profilePath = configuredHiddenChatProfilePath()
+      ?? state.backgroundProfilePath
+      ?? hiddenChatProfilePath()
+    state.queueWorkerPort = controller.port
+    state.queueWorkerTargetId = existingTargetId
+    state.queueWorkerProfilePath = profilePath
+    state.queueWorkerMode = parallelHeadlessWindowQueueWorkerMode
+    state.lastError = nil
+    queueTrace(
+      "worker-create stage=headless-parallel-existing-window-complete "
+        + "target=\(existingTargetId)"
+    )
+    return (controller.port, existingTargetId, profilePath)
   }
   var failure: String?
   guard let targetId = openHeadlessParallelQueueWindow(
