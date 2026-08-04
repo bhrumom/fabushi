@@ -281,6 +281,17 @@ struct CDPClient {
   }
 
   @discardableResult
+  static func bringPageToFront(wsURLString: String) -> Bool {
+    guard let response = sendCommand(
+      wsURLString: wsURLString,
+      method: "Page.bringToFront",
+      paramsJSON: "{}",
+      timeout: 4.0
+    ) else { return false }
+    return response["error"] == nil
+  }
+
+  @discardableResult
   static func setWebLifecycleActive(wsURLString: String) -> Bool {
     guard let response = sendCommand(
       wsURLString: wsURLString,
