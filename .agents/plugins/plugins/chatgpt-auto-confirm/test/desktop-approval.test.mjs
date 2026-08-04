@@ -485,6 +485,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /parallelDedicatedProcessQueueWorkerMode/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_PROFILE_PATH/);
   assert.match(nativeSource, /configuredHiddenChatProfilePath\(\)/);
+  assert.match(nativeSource, /launcher\.processIdentifier/);
+  assert.match(nativeSource, /activate\(options: \[\.activateIgnoringOtherApps\]\)/);
   assert.match(nativeSource, /"conversationId": task\.conversationId/);
   assert.match(nativeSource, /stableSamples >= 3/);
   assert.match(nativeSource, /openBackgroundQueueWindow\(/);
