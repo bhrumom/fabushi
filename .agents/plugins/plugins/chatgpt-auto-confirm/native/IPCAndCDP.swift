@@ -205,7 +205,14 @@ struct CDPClient {
       semaphore.signal()
     }
     task.resume()
-    _ = semaphore.wait(timeout: .now() + 1.8)
+    if semaphore.wait(timeout: .now() + 1.8) == .timedOut {
+      // A dedicated Electron process can keep an unopened CDP port around
+      // while its first renderer is starting.  Cancel the request when the
+      // bounded probe expires so timed-out attempts do not accumulate in the
+      // shared URLSession connection pool and stall the next worker probe.
+      task.cancel()
+      return []
+    }
     guard let data = resultData,
           let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
       return []
