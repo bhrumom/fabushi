@@ -919,39 +919,34 @@ func launchDedicatedQueueChatProcess(
     }
     let launchedProcessId = launcher.processIdentifier
 
-    // Direct Electron launch creates a dedicated instance, but the renderer
-    // still reports `document.visibilityState == visible` until it is hidden.
-    // Hide the newly created application process explicitly. This is the same
-    // transition used by the successful local hidden-Chat probe: the full
-    // Chat renderer stays mounted while its visibility changes to `hidden`.
-    // Hosted runners can take substantially longer than a local launch to
-    // register a fresh Electron application with LaunchServices. Prefer the
-    // exact process we launched even before its bundle metadata is available.
-    if hideNewDedicatedApplication(preferredProcessId: launchedProcessId, attempts: 200) {
-      // Some macOS builds keep the direct Electron process alive but never
-      // attach a renderer to its CDP port.  Give that path a short bounded
-      // window, then fall back to LaunchServices instead of letting the
-      // hidden-target probe time out for a full minute.
-      for _ in 0..<40 {
-        if !CDPClient.fetchTargets(portOverride: port).isEmpty {
-          return true
-        }
-        Thread.sleep(forTimeInterval: 0.25)
+    // Let the dedicated renderer finish its first visible bootstrap before
+    // hiding the application. Hiding the Electron process immediately after
+    // launch can suspend the avatar-overlay/empty-shell renderer on hosted
+    // macOS, so it never mounts the authenticated Chat surface. The target
+    // probe below hides the process only after a real app body is present.
+    queueTrace(
+      "worker-create stage=dedicated-process-launched "
+        + "port=\(port) pid=\(launchedProcessId)"
+    )
+    for _ in 0..<60 {
+      if !CDPClient.fetchTargets(portOverride: port).isEmpty {
+        return true
       }
-      queueTrace(
-        "worker-create stage=dedicated-process-no-cdp-fallback "
-          + "port=\(port) pid=\(launchedProcessId)"
-      )
-      let killer = Process()
-      killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-      killer.arguments = ["-TERM", "-f", "--user-data-dir=\(profilePath)"]
-      killer.standardInput = FileHandle.nullDevice
-      killer.standardOutput = FileHandle.nullDevice
-      killer.standardError = FileHandle.nullDevice
-      try? killer.run()
-      killer.waitUntilExit()
-      dedicatedQueueChatLaunchers.removeValue(forKey: port)
+      Thread.sleep(forTimeInterval: 0.25)
     }
+    queueTrace(
+      "worker-create stage=dedicated-process-no-cdp-fallback "
+        + "port=\(port) pid=\(launchedProcessId)"
+    )
+    let killer = Process()
+    killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+    killer.arguments = ["-TERM", "-f", "--user-data-dir=\(profilePath)"]
+    killer.standardInput = FileHandle.nullDevice
+    killer.standardOutput = FileHandle.nullDevice
+    killer.standardError = FileHandle.nullDevice
+    try? killer.run()
+    killer.waitUntilExit()
+    dedicatedQueueChatLaunchers.removeValue(forKey: port)
 
     // On some hosted macOS images the direct Electron executable becomes a
     // short-lived launcher and never registers an NSRunningApplication. Use
@@ -966,7 +961,10 @@ func launchDedicatedQueueChatProcess(
     // the background worker without flashing a second visible ChatGPT UI.
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
-    configuration.hides = true
+    // The first renderer must be allowed to mount while visible. The queue
+    // probe hides it after it has a real Chat body, avoiding App Nap/suspended
+    // avatar overlays on hosted runners.
+    configuration.hides = false
     configuration.addsToRecentItems = false
     configuration.createsNewApplicationInstance = true
     configuration.arguments = [
@@ -997,9 +995,15 @@ func launchDedicatedQueueChatProcess(
     }
     queueTrace(
       "worker-create stage=dedicated-process-launchservices-fallback complete "
-        + "port=\(port) hidden=true"
+        + "port=\(port) hidden=false"
     )
-    return hideNewDedicatedApplication(preferredProcessId: nil, attempts: 400)
+    for _ in 0..<60 {
+      if !CDPClient.fetchTargets(portOverride: port).isEmpty {
+        return true
+      }
+      Thread.sleep(forTimeInterval: 0.25)
+    }
+    return false
   } catch {
     return false
   }
@@ -1054,6 +1058,7 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
   let deadline = startedAt.addingTimeInterval(90.0)
   var attempt = 0
   var navigatedBlankTargets = Set<String>()
+  let appRootURL = "app://-/index.html?initialRoute=%2F"
   while Date() < deadline {
     let targets = CDPClient.fetchTargets(portOverride: port)
     for target in targets {
@@ -1074,7 +1079,7 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
         )
         _ = CDPClient.navigate(
           wsURLString: wsURL,
-          url: "app://-/index.html"
+          url: appRootURL
         )
         continue
       }
@@ -1109,7 +1114,7 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
         )
         _ = CDPClient.navigate(
           wsURLString: wsURL,
-          url: "app://-/index.html"
+          url: appRootURL
         )
         continue
       }
