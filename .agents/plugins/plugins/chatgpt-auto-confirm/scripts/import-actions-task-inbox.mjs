@@ -26,8 +26,8 @@ const readSpecSnapshot = (task) => {
     return `## ${source}\n${readFileSync(resolved, 'utf8').trim()}`;
   });
   const specSnapshot = sections.join('\n\n').trim();
-  if (specSnapshot.length > 60_000) {
-    throw new Error(`Task ${task.id} spec snapshot exceeds 60000 characters`);
+  if (specSnapshot.length > 120_000) {
+    throw new Error(`Task ${task.id} spec snapshot exceeds 120000 characters`);
   }
   const specDigest = `sha256:${createHash('sha256').update(specSnapshot).digest('hex')}`;
   return { specSnapshot, specDigest };

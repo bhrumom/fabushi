@@ -1134,7 +1134,7 @@ case "queue_update":
   guard let taskId, revision >= 1,
         ["next_chat", "interrupt"].contains(applyMode),
         specSources.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-        (specSnapshot?.count ?? 0) <= 60_000,
+        (specSnapshot?.count ?? 0) <= 120_000,
         (directive?.count ?? 0) <= 10_000,
         (updatedPrompt?.count ?? 0) <= 10_000,
         (updatedTitle?.count ?? 0) <= 160 else {
