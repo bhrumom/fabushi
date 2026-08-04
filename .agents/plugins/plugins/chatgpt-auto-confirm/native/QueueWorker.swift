@@ -14,6 +14,12 @@ let legacyIsolatedQueueWorkerMode = "isolated-dedicated-process"
 // `Process` can tear down the child before its CDP endpoint is ready.
 var dedicatedQueueChatLaunchers: [Int: Process] = [:]
 
+// The first CDP target exposed by a fresh ChatGPT process is often the
+// browser target (or an about:blank page), not the renderer that owns the
+// authenticated app. Starting the Chat target timeout from that first target
+// made a slow second worker look dead just before its app renderer appeared.
+let dedicatedRendererBootstrapTimeout: TimeInterval = 120.0
+
 enum QueueTargetRuntimeState {
   case missing
   case hidden
@@ -794,6 +800,50 @@ func copyProfileForDedicatedQueueWorker(
   }
 }
 
+func dedicatedRendererTargetExists(port: Int) -> Bool {
+  CDPClient.fetchTargets(portOverride: port).contains { target in
+    guard target["type"] as? String == "page",
+          target["webSocketDebuggerUrl"] as? String != nil else {
+      return false
+    }
+    let url = target["url"] as? String ?? ""
+    return url.hasPrefix("app://-/index.html")
+  }
+}
+
+func dedicatedRendererTargetSummary(port: Int) -> String {
+  let summaries = CDPClient.fetchTargets(portOverride: port).prefix(8).map { target in
+    let type = target["type"] as? String ?? "unknown"
+    let rawURL = target["url"] as? String ?? ""
+    let safeURL: String
+    if rawURL.hasPrefix("app://-/index.html") {
+      safeURL = rawURL.contains("avatar-overlay")
+        ? "app://-/index.html/avatar-overlay"
+        : "app://-/index.html"
+    } else if let scheme = URL(string: rawURL)?.scheme, !scheme.isEmpty {
+      safeURL = "\(scheme)://"
+    } else {
+      safeURL = "(empty)"
+    }
+    return "\(type):\(safeURL)"
+  }
+  return summaries.isEmpty ? "none" : summaries.joined(separator: ",")
+}
+
+func waitForDedicatedRendererTarget(
+  port: Int,
+  timeout: TimeInterval = dedicatedRendererBootstrapTimeout
+) -> Bool {
+  let deadline = Date().addingTimeInterval(timeout)
+  while Date() < deadline {
+    if dedicatedRendererTargetExists(port: port) {
+      return true
+    }
+    Thread.sleep(forTimeInterval: 0.25)
+  }
+  return false
+}
+
 func launchDedicatedQueueChatProcess(
   profilePath: String,
   port: Int,
@@ -958,15 +1008,13 @@ func launchDedicatedQueueChatProcess(
       "worker-create stage=dedicated-process-launched "
         + "port=\(port) pid=\(launchedProcessId)"
     )
-    for _ in 0..<60 {
-      if !CDPClient.fetchTargets(portOverride: port).isEmpty {
-        return true
-      }
-      Thread.sleep(forTimeInterval: 0.25)
+    if waitForDedicatedRendererTarget(port: port) {
+      return true
     }
     queueTrace(
-      "worker-create stage=dedicated-process-no-cdp-fallback "
-        + "port=\(port) pid=\(launchedProcessId)"
+      "worker-create stage=dedicated-process-renderer-timeout "
+        + "port=\(port) pid=\(launchedProcessId) "
+        + "targets=\(dedicatedRendererTargetSummary(port: port))"
     )
     let killer = Process()
     killer.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
@@ -1027,12 +1075,13 @@ func launchDedicatedQueueChatProcess(
       "worker-create stage=dedicated-process-launchservices-fallback complete "
         + "port=\(port) hidden=false"
     )
-    for _ in 0..<60 {
-      if !CDPClient.fetchTargets(portOverride: port).isEmpty {
-        return true
-      }
-      Thread.sleep(forTimeInterval: 0.25)
+    if waitForDedicatedRendererTarget(port: port) {
+      return true
     }
+    queueTrace(
+      "worker-create stage=dedicated-process-launchservices-renderer-timeout "
+        + "port=\(port) targets=\(dedicatedRendererTargetSummary(port: port))"
+    )
     return false
   } catch {
     return false
@@ -1083,9 +1132,12 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
   return false
 }
 
-func dedicatedQueueChatTarget(port: Int) -> String? {
+func dedicatedQueueChatTarget(
+  port: Int,
+  timeout: TimeInterval = 90.0
+) -> String? {
   let startedAt = Date()
-  let deadline = startedAt.addingTimeInterval(90.0)
+  let deadline = startedAt.addingTimeInterval(timeout)
   var attempt = 0
   var navigatedBlankTargets = Set<String>()
   let appRootURL = "app://-/index.html?initialRoute=%2F"
@@ -1177,7 +1229,8 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
   let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1_000)
   queueTrace(
     "worker-create stage=dedicated-chat-target-timeout port=\(port) "
-      + "elapsedMs=\(elapsedMs)"
+      + "elapsedMs=\(elapsedMs) "
+      + "targets=\(dedicatedRendererTargetSummary(port: port))"
   )
   return nil
 }
