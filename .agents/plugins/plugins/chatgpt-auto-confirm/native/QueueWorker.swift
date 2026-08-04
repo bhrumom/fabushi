@@ -22,6 +22,36 @@ enum QueueTargetRuntimeState {
   case suspended
 }
 
+// A hosted GitHub Actions runner has no user-facing ChatGPT window. Keep the
+// dedicated process private to its copied profile, but do not make bootstrap
+// depend on macOS successfully applying a hidden/occluded lifecycle state.
+// Desktop runs remain fail-closed when a renderer is genuinely visible.
+func queueAllowsVisibleDedicatedRenderer() -> Bool {
+  let environment = ProcessInfo.processInfo.environment
+  let explicit = environment["CHATGPT_AUTO_CONFIRM_HEADLESS"]?
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+    .lowercased()
+  if explicit == "1" || explicit == "true" {
+    return true
+  }
+  return environment["GITHUB_ACTIONS"]?.lowercased() == "true"
+}
+
+func queueTargetStateIsUsableForQueue(
+  _ runtimeState: QueueTargetRuntimeState,
+  workerMode: String?
+) -> Bool {
+  switch runtimeState {
+  case .hidden:
+    return true
+  case .visible:
+    return workerMode == parallelDedicatedProcessQueueWorkerMode
+      && queueAllowsVisibleDedicatedRenderer()
+  case .missing, .hiddenNonChat, .suspended:
+    return false
+  }
+}
+
 func queueUsesBackgroundWindow(_ state: PluginState) -> Bool {
   state.queueWorkerMode == backgroundWindowQueueWorkerMode
     || state.queueWorkerMode == sharedConversationQueueWorkerMode
@@ -1059,6 +1089,7 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
   var attempt = 0
   var navigatedBlankTargets = Set<String>()
   let appRootURL = "app://-/index.html?initialRoute=%2F"
+  let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
   while Date() < deadline {
     let targets = CDPClient.fetchTargets(portOverride: port)
     for target in targets {
@@ -1120,6 +1151,16 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       }
       if bridge, ready == "complete", textLength > 100,
          visibility != "hidden" {
+        if allowVisibleRenderer, visibility == "visible" {
+          // The hosted runner has no user-facing page to protect. Returning
+          // the live renderer lets the authenticated Chat surface finish its
+          // own bootstrap instead of waiting for a hidden lifecycle state.
+          queueTrace(
+            "worker-create stage=dedicated-chat-target-visible-headless "
+              + "port=\(port) target=\(targetId)"
+          )
+          return targetId
+        }
         if attempt % 8 == 0 {
           _ = hideDedicatedProcessForPort(port)
         }
@@ -1200,14 +1241,19 @@ func createDedicatedParallelQueueWorkerTarget(
       targetId: targetId,
       refreshLifecycle: true
     )
-    if prepared?["ok"] as? Bool == true, runtimeState == .hidden {
+    if prepared?["ok"] as? Bool == true,
+       queueTargetStateIsUsableForQueue(
+         runtimeState,
+         workerMode: parallelDedicatedProcessQueueWorkerMode
+       ) {
       state.queueWorkerPort = port
       state.queueWorkerTargetId = targetId
       state.queueWorkerProfilePath = profilePath
       state.queueWorkerMode = parallelDedicatedProcessQueueWorkerMode
       state.lastError = nil
       queueTrace(
-        "worker-create stage=dedicated-chat-ready port=\(port) target=\(targetId)"
+        "worker-create stage=dedicated-chat-ready port=\(port) target=\(targetId) "
+          + "visibility=\(queueTargetRuntimeStateName(runtimeState))"
       )
       return (port, targetId, profilePath)
     }
@@ -1687,7 +1733,11 @@ func startAutomationTask(
     let restoration = restoreHiddenConversation(
       port: worker.port,
       targetId: worker.targetId,
-      conversationId: previousConversationId
+      conversationId: previousConversationId,
+      allowVisible: queueTargetStateIsUsableForQueue(
+        .visible,
+        workerMode: state.queueWorkerMode
+      )
     )
     let restorationSucceeded = restoration["ok"] as? Bool == true
     if restorationSucceeded {

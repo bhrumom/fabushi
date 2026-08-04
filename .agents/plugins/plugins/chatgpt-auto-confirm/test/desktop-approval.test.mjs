@@ -47,6 +47,10 @@ const nativeSource = readdirSync(nativeDirectory)
   .sort()
   .map(name => readFileSync(new URL(name, nativeDirectory), 'utf8'))
   .join('\n');
+const runnerWorkflowSource = readFileSync(
+  new URL('../../../../../.github/workflows/chatgpt-auto-confirm-runner.yml', import.meta.url),
+  'utf8',
+);
 
 const call = async (name, args = {}) => {
   const response = await worker.fetch(new Request('https://example.test/mcp', {
@@ -430,6 +434,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-process-launched/);
   assert.match(nativeSource, /configuration\.hides = false/);
   assert.match(nativeSource, /initialRoute=%2F/);
+  assert.match(nativeSource, /func queueAllowsVisibleDedicatedRenderer\(\)/);
+  assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_HEADLESS/);
+  assert.match(nativeSource, /dedicated-chat-target-visible-headless/);
+  assert.match(nativeSource, /queueTargetStateIsUsableForQueue/);
+  assert.match(runnerWorkflowSource, /CHATGPT_AUTO_CONFIRM_HEADLESS: "1"/);
   assert.match(nativeSource, /stage=dedicated-process-hidden/);
   assert.match(nativeSource, /parallelDedicatedProcessQueueWorkerMode/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_PROFILE_PATH/);
@@ -550,7 +559,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /hiddenWorkerLastHeartbeatAt/);
   assert.match(nativeSource, /hiddenWorkerRecoveryCount/);
   assert.match(nativeSource, /"runtimeState": workerRuntimeState\.map\(queueTargetRuntimeStateName\)/);
-  assert.match(nativeSource, /"visibilityVerified": workerIsHidden/);
+  assert.match(nativeSource, /"visibilityVerified": workerVisibilityVerified/);
   assert.doesNotMatch(nativeSource, /openNewWindowUsingApplicationMenu/);
   assert.doesNotMatch(nativeSource, /kAXMinimizedAttribute/);
   assert.match(nativeSource, /state\.queueWorkerTargetId/);
