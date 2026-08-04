@@ -1140,6 +1140,9 @@ func dedicatedQueueChatTarget(
   let deadline = startedAt.addingTimeInterval(timeout)
   var attempt = 0
   var navigatedBlankTargets = Set<String>()
+  var bootstrapRecoveryCounts: [String: Int] = [:]
+  var lastProbeDiagnosticAttempt = -8
+  var lastProbe: [String: Any]?
   let appRootURL = "app://-/index.html?initialRoute=%2F"
   let allowVisibleRenderer = queueAllowsVisibleDedicatedRenderer()
   while Date() < deadline {
@@ -1181,10 +1184,43 @@ func dedicatedQueueChatTarget(
         """,
         timeout: 3.0
       )
+      lastProbe = loaded
       let bridge = (loaded?["bridge"] as? NSNumber)?.boolValue ?? false
       let ready = loaded?["ready"] as? String
       let textLength = (loaded?["text"] as? NSNumber)?.intValue ?? 0
       let visibility = loaded?["visibility"] as? String
+      guard bridge, ready == "complete" else {
+        // A renderer can expose the correct app URL while its preload bridge
+        // is still suspended. Wake the page without changing the user's
+        // visible/hidden policy, then navigate once so a stale document and
+        // its old CDP websocket are replaced by a fresh renderer.
+        let recoveryCount = bootstrapRecoveryCounts[targetId, default: 0]
+        if attempt % 8 == 0, recoveryCount < 3 {
+          bootstrapRecoveryCounts[targetId] = recoveryCount + 1
+          _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+          _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+          _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+          queueTrace(
+            "worker-create stage=dedicated-renderer-bootstrap-recovery "
+              + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
+              + "bridge=\(bridge) ready=\(ready ?? \"none\")"
+          )
+          _ = CDPClient.navigate(
+            wsURLString: wsURL,
+            url: appRootURL
+          )
+        }
+        if attempt - lastProbeDiagnosticAttempt >= 8 {
+          lastProbeDiagnosticAttempt = attempt
+          queueTrace(
+            "worker-create stage=dedicated-renderer-probe "
+              + "port=\(port) target=\(targetId) bridge=\(bridge) "
+              + "ready=\(ready ?? \"none\") text=\(textLength) "
+              + "visibility=\(visibility ?? \"none\")"
+          )
+        }
+        continue
+      }
       if bridge, ready == "complete", textLength <= 100,
          navigatedBlankTargets.insert(targetId).inserted {
         // A dedicated copy may finish on the root URL with an empty shell
@@ -1230,7 +1266,11 @@ func dedicatedQueueChatTarget(
   queueTrace(
     "worker-create stage=dedicated-chat-target-timeout port=\(port) "
       + "elapsedMs=\(elapsedMs) "
-      + "targets=\(dedicatedRendererTargetSummary(port: port))"
+      + "targets=\(dedicatedRendererTargetSummary(port: port)) "
+      + "probeBridge=\((lastProbe?[\"bridge\"] as? NSNumber)?.boolValue ?? false) "
+      + "probeReady=\(lastProbe?[\"ready\"] as? String ?? \"none\") "
+      + "probeText=\((lastProbe?[\"text\"] as? NSNumber)?.intValue ?? -1) "
+      + "probeVisibility=\(lastProbe?[\"visibility\"] as? String ?? \"none\")"
   )
   return nil
 }
