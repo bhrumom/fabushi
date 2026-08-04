@@ -1202,15 +1202,24 @@ func dedicatedQueueChatTarget(
           _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
           _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
           _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+          // Do not replace a document that is still naturally loading. The
+          // first renderer can take several seconds to attach its preload
+          // bridge; navigating during that interval closes the only target
+          // and leaves the dedicated process with no renderer at all.
+          let shouldNavigate = (loaded != nil && ready == "complete")
+            || recoveryCount >= 2
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
               + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
-              + "bridge=\(bridge) ready=\(readyValue)"
+              + "bridge=\(bridge) ready=\(readyValue) "
+              + "navigate=\(shouldNavigate)"
           )
-          _ = CDPClient.navigate(
-            wsURLString: wsURL,
-            url: appRootURL
-          )
+          if shouldNavigate {
+            _ = CDPClient.navigate(
+              wsURLString: wsURL,
+              url: appRootURL
+            )
+          }
         }
         if attempt - lastProbeDiagnosticAttempt >= 8 {
           lastProbeDiagnosticAttempt = attempt
