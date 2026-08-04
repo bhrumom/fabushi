@@ -911,13 +911,38 @@ func openHeadlessParallelQueueWindow(
     CDPClient.fetchTargets(portOverride: port).compactMap { $0["id"] as? String }
   )
   var targetId: String?
-  if CDPClient.fetchTargets(portOverride: port).contains(where: {
-    $0["id"] as? String == controllerTargetId
-  }) {
+  let openerTargets = CDPClient.fetchTargets(portOverride: port)
+    .filter { target in
+      (target["type"] as? String) == "page"
+        && (target["url"] as? String ?? "").hasPrefix("app://-/index.html")
+        && target["webSocketDebuggerUrl"] as? String != nil
+    }
+    .sorted { lhs, rhs in
+      let lhsIsController = lhs["id"] as? String == controllerTargetId
+      let rhsIsController = rhs["id"] as? String == controllerTargetId
+      if lhsIsController != rhsIsController { return lhsIsController }
+      return (lhs["id"] as? String ?? "") < (rhs["id"] as? String ?? "")
+    }
+  for opener in openerTargets {
+    guard targetId == nil,
+          let openerId = opener["id"] as? String else { break }
     let windowName = "fabushi-queue-\(UUID().uuidString)"
+    let openerProbe = cdpValue(
+      port: port,
+      targetId: openerId,
+      expression: """
+      (() => ({
+        bridge: !!window.electronBridge,
+        visibility: document.visibilityState,
+        ready: document.readyState,
+        href: location.href
+      }))()
+      """,
+      timeout: 3.0
+    )
     let windowOpen = cdpValue(
       port: port,
-      targetId: controllerTargetId,
+      targetId: openerId,
       expression: """
       (() => {
         try {
@@ -935,31 +960,33 @@ func openHeadlessParallelQueueWindow(
     let opened = windowOpen?["opened"] as? Bool ?? false
     queueTrace(
       "worker-create stage=headless-window-open "
+        + "opener=\(openerId) "
+        + "visibility=\(openerProbe?["visibility"] as? String ?? "none") "
+        + "bridge=\((openerProbe?["bridge"] as? NSNumber)?.boolValue ?? false) "
         + "requested=true opened=\(opened) "
         + "error=\(windowOpen?["error"] as? String ?? "none")"
     )
-    if opened {
-      let discoveryDeadline = Date().addingTimeInterval(8.0)
-      while Date() < discoveryDeadline, targetId == nil {
-        let candidates = CDPClient.fetchTargets(portOverride: port).filter { target in
-          guard let candidateId = target["id"] as? String,
-                !existingTargetIds.contains(candidateId),
-                target["type"] as? String == "page",
-                target["webSocketDebuggerUrl"] as? String != nil else { return false }
-          return true
-        }
-        if let candidate = candidates.first,
-           let candidateId = candidate["id"] as? String {
-          targetId = candidateId
-          queueTrace(
-            "worker-create stage=headless-window-open-target "
-              + "target=\(candidateId) "
-              + "url=\(candidate["url"] as? String ?? "none")"
-          )
-          break
-        }
-        Thread.sleep(forTimeInterval: 0.25)
+    guard opened else { continue }
+    let discoveryDeadline = Date().addingTimeInterval(8.0)
+    while Date() < discoveryDeadline, targetId == nil {
+      let candidates = CDPClient.fetchTargets(portOverride: port).filter { target in
+        guard let candidateId = target["id"] as? String,
+              !existingTargetIds.contains(candidateId),
+              target["type"] as? String == "page",
+              target["webSocketDebuggerUrl"] as? String != nil else { return false }
+        return true
       }
+      if let candidate = candidates.first,
+         let candidateId = candidate["id"] as? String {
+        targetId = candidateId
+        queueTrace(
+          "worker-create stage=headless-window-open-target "
+            + "opener=\(openerId) target=\(candidateId) "
+            + "url=\(candidate["url"] as? String ?? "none")"
+        )
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.25)
     }
   }
   if targetId == nil {
