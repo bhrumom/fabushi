@@ -1180,6 +1180,7 @@ func dedicatedQueueChatTarget(
   var attempt = 0
   var blankNavigationCounts: [String: Int] = [:]
   var lastBlankNavigationAttempt: [String: Int] = [:]
+  var interactiveNavigationCounts: [String: Int] = [:]
   var bootstrapRecoveryCounts: [String: Int] = [:]
   var lastProbeDiagnosticAttempt = -8
   var lastVisibleWakeAttempt = -8
@@ -1257,14 +1258,18 @@ func dedicatedQueueChatTarget(
         // its old CDP websocket are replaced by a fresh renderer.
         let recoveryCount = bootstrapRecoveryCounts[targetId, default: 0]
         if attempt % 8 == 0, recoveryCount < 3 {
-          bootstrapRecoveryCounts[targetId] = recoveryCount + 1
+          let nextRecoveryCount = recoveryCount + 1
+          bootstrapRecoveryCounts[targetId] = nextRecoveryCount
           _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
           _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
           _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
           // Do not replace a document that is still naturally loading. The
           // first renderer can take several seconds to attach its preload
           // bridge; navigating during that interval closes the only target
-          // and leaves the dedicated process with no renderer at all.
+          // and leaves the dedicated process with no renderer at all. An
+          // interactive renderer that has remained an empty shell for two
+          // probes is no longer naturally loading, so give it one bounded
+          // root navigation and rediscover the replacement target below.
           // A nil probe means that the renderer stopped answering its old
           // websocket.  Navigating through that stale connection can close
           // the only page in a dedicated process, so let the bounded startup
@@ -1277,7 +1282,16 @@ func dedicatedQueueChatTarget(
             // preload bridge while the app is still bootstrapping.
             _ = CDPClient.bringPageToFront(wsURLString: wsURL)
           }
-          let shouldNavigate = loaded != nil && ready == "complete"
+          let interactiveNavigationCount = interactiveNavigationCounts[targetId, default: 0]
+          let shouldNavigate = loaded != nil && (
+            ready == "complete"
+              || (
+                ready == "interactive"
+                  && textLength <= 100
+                  && nextRecoveryCount >= 2
+                  && interactiveNavigationCount < 2
+              )
+          )
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
               + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
@@ -1285,6 +1299,14 @@ func dedicatedQueueChatTarget(
               + "navigate=\(shouldNavigate)"
           )
           if shouldNavigate {
+            if ready == "interactive" {
+              interactiveNavigationCounts[targetId] = interactiveNavigationCount + 1
+              queueTrace(
+                "worker-create stage=dedicated-interactive-shell-navigation "
+                  + "port=\(port) target=\(targetId) "
+                  + "attempt=\(interactiveNavigationCount + 1)"
+              )
+            }
             _ = CDPClient.navigate(
               wsURLString: wsURL,
               url: appRootURL
