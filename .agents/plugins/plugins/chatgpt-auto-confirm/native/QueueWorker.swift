@@ -1403,6 +1403,19 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
 
 @discardableResult
 func unhideDedicatedProcessForPort(_ port: Int) -> Bool {
+  // Directly launched Electron instances are not always discoverable through
+  // `ps` with the original command line (the app can hand off to a helper
+  // process before its renderer is ready).  Keep the launcher PID as the
+  // primary identity and explicitly bring that application to the foreground
+  // so Chromium can resume the root renderer and attach its preload bridge.
+  if let launcher = dedicatedQueueChatLaunchers[port],
+     let application = NSRunningApplication(processIdentifier: launcher.processIdentifier) {
+    let unhidden = application.unhide()
+    let activated = application.activate(options: [.activateIgnoringOtherApps])
+    if unhidden || activated || !application.isHidden {
+      return true
+    }
+  }
   let process = Process()
   let output = Pipe()
   process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -1431,7 +1444,9 @@ func unhideDedicatedProcessForPort(_ port: Int) -> Bool {
           let application = NSRunningApplication(processIdentifier: processID) else {
       continue
     }
-    return application.unhide()
+    let unhidden = application.unhide()
+    let activated = application.activate(options: [.activateIgnoringOtherApps])
+    return unhidden || activated || !application.isHidden
   }
   return false
 }
