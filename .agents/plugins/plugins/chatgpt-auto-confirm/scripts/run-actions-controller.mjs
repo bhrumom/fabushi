@@ -269,12 +269,24 @@ const watchdogDiagnostics = result => ({
   ok: result?.ok !== false,
   recovered: result?.recovered === true,
   eligibleTaskIds: result?.eligibleTaskIds || [],
+  deferredTaskIds: result?.deferredTaskIds || [],
   watcherPid: result?.watcherPid || null,
   queue: {
     counts: result?.queue?.counts || {},
     tasks: taskDiagnostics(result?.queue),
   },
 });
+
+const taskHasActiveChatResponse = task => {
+  const diagnostics = task?.replyDiagnostics || {};
+  return [
+    'waitingForApproval',
+    'pending',
+    'streaming',
+    'stopAvailable',
+    'devspaceWaiting',
+  ].some(field => diagnostics[field] === true);
+};
 
 const initialRecovery = run('queue_watchdog', { staleAfterSeconds: 300, force: true });
 process.stdout.write(`WATCHDOG_INITIAL ${JSON.stringify(watchdogDiagnostics(initialRecovery))}\n`);
@@ -340,7 +352,11 @@ while (Date.now() < deadline) {
   const needsWatchdogRecovery = tasks.some(task =>
     task.status === 'running'
     && task.lastError
-    && String(task.lastError).includes('not_chat_surface'));
+    && String(task.lastError).includes('not_chat_surface')
+    // A renderer can report `not_chat_surface` while the same Chat is already
+    // streaming or waiting for a permission card. Keep polling that Chat so
+    // its response/authorization can finish instead of opening a duplicate.
+    && !taskHasActiveChatResponse(task));
   const needsRecovery = needsWatchdogRecovery;
   if (needsRecovery && Date.now() - lastRecovery >= recoveryIntervalMs) {
     const currentFailureFingerprint = failureFingerprint(tasks);
