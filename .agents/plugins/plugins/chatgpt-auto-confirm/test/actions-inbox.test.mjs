@@ -202,6 +202,42 @@ test('Actions inbox promotes a newer task revision with a hashed spec snapshot',
 });
 
 
+test('Actions inbox accepts large multi-document spec snapshots used by hosted tasks', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-large-spec-'));
+  const statePath = path.join(directory, 'state.json');
+  const inboxPath = path.join(directory, 'actions-inbox.json');
+  const specPath = path.join(directory, 'docs', 'large.md');
+  const script = fileURLToPath(
+    new URL('../scripts/import-actions-task-inbox.mjs', import.meta.url));
+  const env = {
+    ...process.env,
+    GITHUB_WORKSPACE: directory,
+    CHATGPT_AUTO_CONFIRM_QUEUE_STATE: statePath,
+    CHATGPT_AUTO_CONFIRM_TASK_INBOX_FILE: inboxPath,
+  };
+  try {
+    mkdirSync(path.dirname(specPath), { recursive: true });
+    writeFileSync(specPath, 'x'.repeat(80_000));
+    writeFileSync(statePath, JSON.stringify({ automationTasks: [] }));
+    writeFileSync(inboxPath, JSON.stringify({
+      tasks: [{
+        id: 'large-spec-task',
+        revision: 1,
+        title: 'Large spec',
+        prompt: 'Follow the complete specification',
+        specSources: ['docs/large.md'],
+      }],
+    }));
+    execFileSync(process.execPath, [script], { env });
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.ok(state.automationTasks[0].specSnapshot.length > 77_000);
+    assert.match(state.automationTasks[0].specDigest, /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
 test('Actions inbox rejects changed content without a revision increment', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'chatgpt-actions-inbox-conflict-'));
   const statePath = path.join(directory, 'state.json');
