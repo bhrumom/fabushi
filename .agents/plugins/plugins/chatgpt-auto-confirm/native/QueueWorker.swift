@@ -1206,8 +1206,13 @@ func dedicatedQueueChatTarget(
           // first renderer can take several seconds to attach its preload
           // bridge; navigating during that interval closes the only target
           // and leaves the dedicated process with no renderer at all.
-          let shouldNavigate = (loaded != nil && ready == "complete")
-            || recoveryCount >= 2
+          // A nil probe means that the renderer stopped answering its old
+          // websocket.  Navigating through that stale connection can close
+          // the only page in a dedicated process, so let the bounded startup
+          // retry replace the process instead.  Only navigate a renderer
+          // whose latest probe was actually received.
+          let shouldNavigate = loaded != nil
+            && ((ready == "complete") || recoveryCount >= 2)
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
               + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
@@ -1309,22 +1314,74 @@ func createDedicatedParallelQueueWorkerTarget(
     state.lastError = "dedicated_worker_port_unavailable"
     return nil
   }
-  let profilePath = queueDirectoryURL()
+  let workerDirectory = queueDirectoryURL()
     .appendingPathComponent("workers", isDirectory: true)
+  var profilePath = workerDirectory
     .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
     .path
-  queueTrace("worker-create stage=dedicated-profile-copy begin port=\(port)")
-  guard copyProfileForDedicatedQueueWorker(
-    source: sourceProfile,
-    destination: profilePath
-  ) else {
-    state.lastError = "dedicated_profile_copy_failed"
+  // A renderer can become unresponsive after exposing its initial app target
+  // (most often while a second isolated ChatGPT process is starting).  Keep
+  // the authentication checks fail-closed, but replace that entire process a
+  // bounded number of times instead of navigating through a stale websocket.
+  // Each attempt receives a fresh copied profile so Chromium's renderer and
+  // lock state cannot leak from the failed attempt.
+  let maximumBootstrapAttempts = 2
+  var targetId: String?
+  for bootstrapAttempt in 1...maximumBootstrapAttempts {
+    if bootstrapAttempt > 1 {
+      profilePath = workerDirectory
+        .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        .path
+    }
+    queueTrace(
+      "worker-create stage=dedicated-process-bootstrap-attempt "
+        + "port=\(port) attempt=\(bootstrapAttempt) "
+        + "max=\(maximumBootstrapAttempts)"
+    )
+    queueTrace(
+      "worker-create stage=dedicated-profile-copy begin "
+        + "port=\(port) attempt=\(bootstrapAttempt)"
+    )
+    guard copyProfileForDedicatedQueueWorker(
+      source: sourceProfile,
+      destination: profilePath
+    ) else {
+      queueTrace(
+        "worker-create stage=dedicated-process-bootstrap-retry "
+          + "port=\(port) attempt=\(bootstrapAttempt) reason=profile_copy_failed"
+      )
+      terminateDedicatedChatProcess(profilePath: profilePath)
+      if bootstrapAttempt == maximumBootstrapAttempts {
+        state.lastError = "dedicated_profile_copy_failed"
+        return nil
+      }
+      Thread.sleep(forTimeInterval: 1.0)
+      continue
+    }
+    queueTrace(
+      "worker-create stage=dedicated-process-launch begin "
+        + "port=\(port) attempt=\(bootstrapAttempt)"
+    )
+    let launched = launchDedicatedQueueChatProcess(
+      profilePath: profilePath,
+      port: port,
+      codexHomePath: codexHomePath
+    )
+    if launched, let candidate = dedicatedQueueChatTarget(port: port) {
+      targetId = candidate
+      break
+    }
+    queueTrace(
+      "worker-create stage=dedicated-process-bootstrap-retry "
+        + "port=\(port) attempt=\(bootstrapAttempt) "
+        + "reason=renderer_not_ready targets=\(dedicatedRendererTargetSummary(port: port))"
+    )
     terminateDedicatedChatProcess(profilePath: profilePath)
-    return nil
+    if bootstrapAttempt < maximumBootstrapAttempts {
+      Thread.sleep(forTimeInterval: 1.0)
+    }
   }
-  queueTrace("worker-create stage=dedicated-process-launch begin port=\(port)")
-  guard launchDedicatedQueueChatProcess(profilePath: profilePath, port: port, codexHomePath: codexHomePath),
-        let targetId = dedicatedQueueChatTarget(port: port) else {
+  guard let targetId else {
     state.lastError = "dedicated_hidden_chat_process_not_ready"
     terminateDedicatedChatProcess(profilePath: profilePath)
     return nil

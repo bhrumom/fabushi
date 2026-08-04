@@ -422,6 +422,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicated-process-renderer-timeout/);
   assert.match(nativeSource, /dedicated-renderer-bootstrap-recovery/);
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
+  assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
+  assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
+  assert.match(nativeSource, /let shouldNavigate = loaded != nil/);
   assert.match(nativeSource, /setHiddenPageFocusEmulation/);
   assert.match(nativeSource, /probeBridge=/);
   assert.match(nativeSource, /single-process-hidden-chat-conversations/);
