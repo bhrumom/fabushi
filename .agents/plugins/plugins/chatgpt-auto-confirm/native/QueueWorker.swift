@@ -1,5 +1,6 @@
 import ApplicationServices
 import Cocoa
+import CoreGraphics
 import Darwin
 import Foundation
 import SystemConfiguration
@@ -47,6 +48,75 @@ func queueAllowsVisibleDedicatedRenderer() -> Bool {
   return environment["GITHUB_ACTIONS"]?.lowercased() == "true"
 }
 
+func cgWindowNumber(_ value: Any?) -> CGFloat? {
+  if let number = value as? NSNumber {
+    return CGFloat(number.doubleValue)
+  }
+  if let number = value as? Double {
+    return CGFloat(number)
+  }
+  if let number = value as? Int {
+    return CGFloat(number)
+  }
+  return nil
+}
+
+// System privacy alerts are sometimes not exposed to System Events as an
+// AXSystemDialog. Quartz still reports the frontmost ChatGPT-owned alert as a
+// small on-screen window, so use that strictly scoped geometry as a second
+// path. This keeps the click limited to ChatGPT's own compact foreground
+// window and does not weaken the in-page authorization checks.
+func clickCompactChatGPTLocalNetworkWindowViaQuartz() -> Bool {
+  guard queueAllowsVisibleDedicatedRenderer(),
+        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+        targetBundleIdentifiers.contains(frontmostBundleIdentifier),
+        let windowInfo = CGWindowListCopyWindowInfo(
+          [.optionOnScreenOnly, .excludeDesktopElements],
+          kCGNullWindowID
+        ) as? [[String: Any]] else {
+    return false
+  }
+  for window in windowInfo {
+    guard let ownerName = window[kCGWindowOwnerName as String] as? String,
+          ownerName.localizedCaseInsensitiveContains("ChatGPT"),
+          let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue,
+          layer == 0,
+          let bounds = window[kCGWindowBounds as String] as? [String: Any],
+          let originX = cgWindowNumber(bounds["X"]),
+          let originY = cgWindowNumber(bounds["Y"]),
+          let width = cgWindowNumber(bounds["Width"]),
+          let height = cgWindowNumber(bounds["Height"]),
+          width > 180, width < 420, height > 180, height < 360 else {
+      continue
+    }
+    let clickPoint = CGPoint(
+      x: originX + width * 0.72,
+      y: originY + height * 0.87
+    )
+    guard let mouseDown = CGEvent(
+      mouseEventSource: nil,
+      mouseType: .leftMouseDown,
+      mouseCursorPosition: clickPoint,
+      mouseButton: .left
+    ), let mouseUp = CGEvent(
+      mouseEventSource: nil,
+      mouseType: .leftMouseUp,
+      mouseCursorPosition: clickPoint,
+      mouseButton: .left
+    ) else {
+      return false
+    }
+    queueTrace(
+      "worker-create stage=dedicated-native-local-network-geometry-detected "
+        + "window=\(Int(width))x\(Int(height))"
+    )
+    mouseDown.post(tap: .cghidEventTap)
+    mouseUp.post(tap: .cghidEventTap)
+    return true
+  }
+  return false
+}
+
 // A fresh copied ChatGPT profile can trigger macOS's one-time local-network
 // privacy alert before its preload bridge is mounted. On hosted Actions there
 // is no person who can click that native alert, so the dedicated worker would
@@ -55,6 +125,9 @@ func queueAllowsVisibleDedicatedRenderer() -> Bool {
 // in-page authorization cards continue through the normal CDP approval flow.
 func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
   guard queueAllowsVisibleDedicatedRenderer() else { return false }
+  if clickCompactChatGPTLocalNetworkWindowViaQuartz() {
+    return true
+  }
   let script = #"""
   tell application "System Events"
     repeat with processRef in (application processes whose name is "ChatGPT")
@@ -64,14 +137,25 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
           try
             set promptTexts to (value of static texts of windowRef) as text
           end try
-          set dialogRole to ""
-          try
-            set dialogRole to (subrole of windowRef) as text
-          end try
-          if (dialogRole is "AXSystemDialog") or ¬
-             (promptTexts contains "find devices on local networks") or ¬
-             (promptTexts contains "在本地网络上查找设备") or ¬
-             (promptTexts contains "在本地網絡上查找設備") then
+        set dialogRole to ""
+        try
+          set dialogRole to (subrole of windowRef) as text
+        end try
+        set compactDialog to false
+        try
+          set windowSize to size of windowRef
+          set windowWidth to item 1 of windowSize
+          set windowHeight to item 2 of windowSize
+          if (frontmost of processRef) and ¬
+             (windowWidth is greater than 180) and (windowWidth is less than 420) and ¬
+             (windowHeight is greater than 180) and (windowHeight is less than 360) then
+            set compactDialog to true
+          end if
+        end try
+        if (dialogRole is "AXSystemDialog") or compactDialog or ¬
+           (promptTexts contains "find devices on local networks") or ¬
+           (promptTexts contains "在本地网络上查找设备") or ¬
+           (promptTexts contains "在本地網絡上查找設備") then
             if exists (button "Allow" of windowRef) then
               click button "Allow" of windowRef
               return "clicked"
@@ -85,11 +169,7 @@ func approveHeadlessChatGPTLocalNetworkPrompt() -> Bool {
               return "clicked"
             end if
             try
-              set windowSize to size of windowRef
-              set windowWidth to item 1 of windowSize
-              set windowHeight to item 2 of windowSize
-              if (windowWidth is greater than 180) and (windowWidth is less than 420) and ¬
-                 (windowHeight is greater than 180) and (windowHeight is less than 360) then
+              if compactDialog then
                 set windowPosition to position of windowRef
                 set clickX to ((item 1 of windowPosition) + (windowWidth * 72 / 100)) as integer
                 set clickY to ((item 2 of windowPosition) + (windowHeight * 87 / 100)) as integer
