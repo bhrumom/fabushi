@@ -374,7 +374,13 @@ struct CDPClient {
   static func fetchTargets(portOverride: Int? = nil) -> [[String: Any]] {
     let resolvedPort = portOverride ?? port()
     let resolvedHost = host().lowercased()
-    if resolvedHost == "127.0.0.1" || resolvedHost == "localhost" {
+    // Keep the proven URLSession path for the primary authenticated renderer
+    // (usually 9324 and the integration-test's ephemeral port). The isolated
+    // worker range is the only path that needs the independent socket probe:
+    // a second Electron process can otherwise wedge URLSession's shared local
+    // connection pool while its CDP endpoint is still opening.
+    if (resolvedHost == "127.0.0.1" || resolvedHost == "localhost"),
+       (9330...9380).contains(resolvedPort) {
       return fetchTargetsOverLocalSocket(port: resolvedPort)
     }
     return fetchTargetsOverURLSession(port: resolvedPort)
