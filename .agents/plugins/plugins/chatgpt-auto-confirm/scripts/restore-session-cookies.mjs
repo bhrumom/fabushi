@@ -132,6 +132,44 @@ const listTargets = async (fetchImpl, port) =>
     signal: AbortSignal.timeout(5_000),
   }).then(response => response.json());
 
+const createAppRootTarget = async ({
+  port,
+  fetchImpl,
+  WebSocketImpl,
+  log,
+}) => {
+  let browserConnection;
+  try {
+    const version = await fetchImpl(`http://127.0.0.1:${port}/json/version`, {
+      signal: AbortSignal.timeout(5_000),
+    }).then(response => response.json());
+    const browserWebSocketDebuggerUrl = String(version?.webSocketDebuggerUrl || '');
+    if (!browserWebSocketDebuggerUrl) {
+      throw new Error('CDP browser websocket URL was not exposed');
+    }
+    browserConnection = await connect({
+      id: 'browser',
+      type: 'browser',
+      url: 'devtools://browser',
+      webSocketDebuggerUrl: browserWebSocketDebuggerUrl,
+    }, { WebSocketImpl });
+    const result = await browserConnection.call('Target.createTarget', {
+      url: appRootURL,
+      background: false,
+    }, 10_000);
+    const targetId = String(result.targetId || '');
+    if (!targetId) throw new Error('CDP Target.createTarget returned no target id');
+    log(`Created ChatGPT app root target ${targetId.slice(0, 48)}`);
+    return targetId;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log(`CDP app root target creation failed: ${detail}`);
+    return null;
+  } finally {
+    closeConnection(browserConnection);
+  }
+};
+
 const connect = async (
   target,
   { WebSocketImpl = globalThis.WebSocket } = {},
@@ -289,6 +327,7 @@ const recoverAppRootConnection = async ({
   timeoutMs,
   label,
   log,
+  createRootTargetImpl,
   beforeProbeImpl = () => {},
 }) => {
   const deadline = nowImpl() + timeoutMs;
@@ -296,6 +335,14 @@ const recoverAppRootConnection = async ({
   let lastTargets = [];
   let lastError = '';
   let navigationAttempts = 0;
+  let rootTargetCreationAttempts = 0;
+  let lastNavigationAt = 0;
+
+  const createRootTargetIfNeeded = async () => {
+    if (rootTargetCreationAttempts >= 2 || typeof createRootTargetImpl !== 'function') return;
+    rootTargetCreationAttempts += 1;
+    await createRootTargetImpl({ port, fetchImpl, WebSocketImpl, log });
+  };
 
   // A navigation can replace the renderer while leaving the old DevTools
   // socket open. Always release that socket before selecting the replacement.
@@ -311,7 +358,7 @@ const recoverAppRootConnection = async ({
       lastError = error instanceof Error ? error.message : String(error);
     }
     if (isAvatarOverlay({ url: currentURL })) {
-      await optionalCall(
+      const navigated = await optionalCall(
         active.call,
         'Page.navigate',
         { url: appRootURL },
@@ -319,8 +366,10 @@ const recoverAppRootConnection = async ({
         log,
       );
       navigationAttempts += 1;
+      lastNavigationAt = nowImpl();
       closeConnection(active);
       active = null;
+      if (!navigated) await createRootTargetIfNeeded();
     } else if (lastError) {
       // A failed Runtime.evaluate can mean the renderer was replaced while
       // Chromium kept the old target record. Force a fresh WebSocket attach.
@@ -351,7 +400,7 @@ const recoverAppRootConnection = async ({
           active = await connect(overlayTarget, { WebSocketImpl });
         }
         if (navigationAttempts < 2) {
-          await optionalCall(
+          const navigated = await optionalCall(
             active.call,
             'Page.navigate',
             { url: appRootURL },
@@ -359,9 +408,19 @@ const recoverAppRootConnection = async ({
             log,
           );
           navigationAttempts += 1;
+          lastNavigationAt = nowImpl();
           closeConnection(active);
           active = null;
+          if (!navigated) await createRootTargetIfNeeded();
         }
+      } else if (
+        navigationAttempts > 0
+        && nowImpl() - lastNavigationAt >= 2_000
+      ) {
+        // A renderer can disappear after Page.navigate has acknowledged the
+        // request. Create a fresh normal app target through the browser CDP
+        // endpoint instead of waiting for the retired overlay to reappear.
+        await createRootTargetIfNeeded();
       }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
@@ -439,6 +498,7 @@ export async function restoreSession({
   targetTimeoutMs = 120_000,
   reconnectTimeoutMs = 120_000,
   verificationTimeoutMs = 120_000,
+  createRootTargetImpl,
   log = message => process.stderr.write(`${message}\n`),
 } = {}) {
   if (!['seed', 'restore', 'verify', 'restore-and-verify'].includes(mode)) {
@@ -460,6 +520,7 @@ export async function restoreSession({
   }
 
   let connection;
+  const rootTargetCreator = createRootTargetImpl || createAppRootTarget;
   const beforeProbeImpl = headless
     ? async () => {
       const approved = typeof nativePromptImpl === 'function'
@@ -506,6 +567,7 @@ export async function restoreSession({
       timeoutMs: reconnectTimeoutMs,
       label: 'ChatGPT app shell after bootstrap',
       log,
+      createRootTargetImpl: rootTargetCreator,
       beforeProbeImpl,
     });
 
@@ -540,6 +602,7 @@ export async function restoreSession({
         timeoutMs: reconnectTimeoutMs,
         label: 'ChatGPT app shell after reload',
         log,
+        createRootTargetImpl: rootTargetCreator,
         beforeProbeImpl,
       });
       await activate(connection.call, log);
@@ -572,6 +635,7 @@ export async function restoreSession({
             timeoutMs: reconnectTimeoutMs,
             label: 'ChatGPT app shell during verification',
             log,
+            createRootTargetImpl: rootTargetCreator,
             beforeProbeImpl,
           });
           continue;
@@ -596,6 +660,7 @@ export async function restoreSession({
             timeoutMs: reconnectTimeoutMs,
             label: 'ChatGPT app shell after CDP failure',
             log,
+            createRootTargetImpl: rootTargetCreator,
             beforeProbeImpl,
           });
         } catch (recoveryError) {

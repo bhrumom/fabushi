@@ -14,16 +14,24 @@ const appTarget = (id, url) => ({
 });
 
 class FakeCDPServer {
-  constructor({ initialURL, loginPrompt = false, replaceOnAuthFailure = false, stuckOverlay = false }) {
+  constructor({
+    initialURL,
+    loginPrompt = false,
+    replaceOnAuthFailure = false,
+    stuckOverlay = false,
+    navigationFailure = false,
+  }) {
     this.targets = [appTarget('initial', initialURL)];
     this.loginPrompt = loginPrompt;
     this.replaceOnAuthFailure = replaceOnAuthFailure;
     this.stuckOverlay = stuckOverlay;
+    this.navigationFailure = navigationFailure;
     this.failAuthEvaluation = replaceOnAuthFailure;
     this.connections = [];
     this.closedSockets = 0;
     this.navigations = 0;
     this.reloads = 0;
+    this.rootTargetCreations = 0;
     this.clock = 0;
   }
 
@@ -39,6 +47,12 @@ class FakeCDPServer {
   replaceTarget(id, url) {
     this.targets = [appTarget(id, url)];
   }
+
+  createRootTarget = async () => {
+    this.rootTargetCreations += 1;
+    this.replaceTarget('after-root-create', 'app://-/index.html?initialRoute=%2F');
+    return 'after-root-create';
+  };
 
   handle(socket, method) {
     const target = this.targetForSocket(socket);
@@ -75,6 +89,10 @@ class FakeCDPServer {
     }
     if (method === 'Page.navigate') {
       this.navigations += 1;
+      if (this.navigationFailure) {
+        this.targets = [];
+        return { error: { message: 'renderer replaced during navigation' } };
+      }
       if (!this.stuckOverlay) {
         this.replaceTarget('after-navigation', 'app://-/index.html?initialRoute=%2F');
       }
@@ -150,6 +168,7 @@ const run = (server, options = {}) => restoreSession({
   targetTimeoutMs: 20_000,
   reconnectTimeoutMs: 20_000,
   verificationTimeoutMs: 20_000,
+  createRootTargetImpl: options.createRootTargetImpl || server.createRootTarget,
   log: () => {},
   ...options,
 });
@@ -183,6 +202,18 @@ test('uses root navigation instead of reload for a headless desktop shell', asyn
   assert.equal(server.navigations, 1);
   assert.ok(nativePromptProbes > 0);
   assert.ok(server.connections.some(item => item.target?.id === 'after-navigation'));
+});
+
+test('creates a fresh root target when overlay navigation retires the renderer', async () => {
+  const server = new FakeCDPServer({
+    initialURL: 'app://-/index.html?initialRoute=%2Favatar-overlay',
+    navigationFailure: true,
+  });
+
+  const output = await run(server, { headless: true });
+  assert.match(output, /^Verified authenticated desktop shell/);
+  assert.equal(server.rootTargetCreations, 1);
+  assert.ok(server.connections.some(item => item.target?.id === 'after-root-create'));
 });
 
 test('recovers when the active renderer fails during Runtime.evaluate', async () => {
