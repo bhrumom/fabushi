@@ -193,9 +193,109 @@ struct CDPClient {
     return "127.0.0.1"
   }
 
-  static func fetchTargets(portOverride: Int? = nil) -> [[String: Any]] {
-    let resolvedPort = portOverride ?? port()
-    guard let url = URL(string: "http://\(host()):\(resolvedPort)/json") else { return [] }
+  private static func decodeTargetPayload(_ data: Data) -> [[String: Any]] {
+    guard let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      return []
+    }
+    return array
+  }
+
+  private static func fetchTargetsOverLocalSocket(port: Int) -> [[String: Any]] {
+    let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { return [] }
+    defer { Darwin.close(fd) }
+
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = in_port_t(UInt16(port).bigEndian)
+    let addressHost = host() == "localhost" ? "127.0.0.1" : host()
+    guard addressHost.withCString({
+      Darwin.inet_pton(AF_INET, $0, &address.sin_addr)
+    }) == 1 else {
+      return []
+    }
+
+    let originalFlags = Darwin.fcntl(fd, F_GETFL, 0)
+    if originalFlags >= 0 {
+      _ = Darwin.fcntl(fd, F_SETFL, originalFlags | O_NONBLOCK)
+    }
+    let connectResult = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+        Darwin.connect(
+          fd,
+          socketAddress,
+          socklen_t(MemoryLayout<sockaddr_in>.size)
+        )
+      }
+    }
+    if connectResult != 0 {
+      guard errno == EINPROGRESS else { return [] }
+      var descriptor = pollfd()
+      descriptor.fd = fd
+      descriptor.events = Int16(POLLOUT)
+      descriptor.revents = 0
+      guard Darwin.poll(&descriptor, 1, 1_800) > 0 else { return [] }
+      var socketError: Int32 = 0
+      var socketErrorLength = socklen_t(MemoryLayout<Int32>.size)
+      guard Darwin.getsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_ERROR,
+        &socketError,
+        &socketErrorLength
+      ) == 0, socketError == 0 else {
+        return []
+      }
+    }
+    if originalFlags >= 0 {
+      _ = Darwin.fcntl(fd, F_SETFL, originalFlags)
+    }
+
+    var timeout = timeval(tv_sec: 1, tv_usec: 500_000)
+    withUnsafePointer(to: &timeout) { timeoutPointer in
+      _ = Darwin.setsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_RCVTIMEO,
+        timeoutPointer,
+        socklen_t(MemoryLayout<timeval>.size)
+      )
+      _ = Darwin.setsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_SNDTIMEO,
+        timeoutPointer,
+        socklen_t(MemoryLayout<timeval>.size)
+      )
+    }
+
+    let request = Data(
+      "GET /json HTTP/1.1\r\nHost: \(addressHost)\r\nConnection: close\r\n\r\n".utf8
+    )
+    let sent = request.withUnsafeBytes { bytes -> Int in
+      guard let baseAddress = bytes.baseAddress else { return 0 }
+      return Darwin.send(fd, baseAddress, request.count, 0)
+    }
+    guard sent == request.count else { return [] }
+
+    var response = Data()
+    var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+    while response.count < 4 * 1024 * 1024 {
+      let received = buffer.withUnsafeMutableBytes { bytes -> Int in
+        guard let baseAddress = bytes.baseAddress else { return 0 }
+        return Darwin.recv(fd, baseAddress, bytes.count, 0)
+      }
+      guard received > 0 else { break }
+      response.append(contentsOf: buffer.prefix(received))
+    }
+    let separator = Data([13, 10, 13, 10])
+    guard let bodyStart = response.range(of: separator)?.upperBound else { return [] }
+    return decodeTargetPayload(response.suffix(from: bodyStart))
+  }
+
+  private static func fetchTargetsOverURLSession(port: Int) -> [[String: Any]] {
+    guard let url = URL(string: "http://\(host()):\(port)/json") else { return [] }
     var request = URLRequest(url: url)
     request.timeoutInterval = 1.5
     var resultData: Data?
@@ -213,11 +313,17 @@ struct CDPClient {
       task.cancel()
       return []
     }
-    guard let data = resultData,
-          let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-      return []
+    guard let resultData else { return [] }
+    return decodeTargetPayload(resultData)
+  }
+
+  static func fetchTargets(portOverride: Int? = nil) -> [[String: Any]] {
+    let resolvedPort = portOverride ?? port()
+    let resolvedHost = host().lowercased()
+    if resolvedHost == "127.0.0.1" || resolvedHost == "localhost" {
+      return fetchTargetsOverLocalSocket(port: resolvedPort)
     }
-    return array
+    return fetchTargetsOverURLSession(port: resolvedPort)
   }
 
   static func checkStatus() -> [String: Any] {
