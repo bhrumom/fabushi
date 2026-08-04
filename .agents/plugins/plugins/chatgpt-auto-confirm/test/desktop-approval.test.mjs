@@ -422,6 +422,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /let dedicatedRendererBootstrapTimeout: TimeInterval = 20\.0/);
   assert.match(nativeSource, /dedicated-process-renderer-timeout/);
   assert.match(nativeSource, /dedicated-renderer-bootstrap-recovery/);
+  assert.match(nativeSource, /dedicated-interactive-shell-navigation/);
+  assert.match(nativeSource, /ready == "interactive"/);
+  assert.match(nativeSource, /interactiveNavigationCount < 2/);
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
   assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
   assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
