@@ -200,6 +200,61 @@ struct CDPClient {
     return array
   }
 
+  private static func decodeHTTPBody(_ response: Data) -> Data? {
+    let bytes = Array(response)
+    guard bytes.count >= 4 else { return nil }
+    var separatorIndex: Int?
+    for index in 0...(bytes.count - 4) {
+      if bytes[index] == 13, bytes[index + 1] == 10,
+         bytes[index + 2] == 13, bytes[index + 3] == 10 {
+        separatorIndex = index
+        break
+      }
+    }
+    guard let separatorIndex else { return nil }
+    let header = String(
+      decoding: bytes[0..<separatorIndex],
+      as: UTF8.self
+    ).lowercased()
+    let body = Array(bytes[(separatorIndex + 4)...])
+    guard header.contains("transfer-encoding: chunked") else {
+      return Data(body)
+    }
+
+    var decoded: [UInt8] = []
+    var offset = 0
+    while offset < body.count {
+      var lineEnd: Int?
+      if body.count >= offset + 2 {
+        for index in offset...(body.count - 2) {
+          if body[index] == 13, body[index + 1] == 10 {
+            lineEnd = index
+            break
+          }
+        }
+      }
+      guard let lineEnd else { return nil }
+      let lengthToken = String(
+        String(decoding: body[offset..<lineEnd], as: UTF8.self)
+          .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true)
+          .first ?? ""
+      )
+      guard let length = UInt64(lengthToken, radix: 16),
+            length <= UInt64(Int.max) else {
+        return nil
+      }
+      offset = lineEnd + 2
+      if length == 0 { return Data(decoded) }
+      let chunkLength = Int(length)
+      guard offset + chunkLength + 2 <= body.count else { return nil }
+      decoded.append(contentsOf: body[offset..<(offset + chunkLength)])
+      offset += chunkLength
+      guard body[offset] == 13, body[offset + 1] == 10 else { return nil }
+      offset += 2
+    }
+    return Data(decoded)
+  }
+
   private static func fetchTargetsOverLocalSocket(port: Int) -> [[String: Any]] {
     let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else { return [] }
@@ -289,9 +344,8 @@ struct CDPClient {
       guard received > 0 else { break }
       response.append(contentsOf: buffer.prefix(received))
     }
-    let separator = Data([13, 10, 13, 10])
-    guard let bodyStart = response.range(of: separator)?.upperBound else { return [] }
-    return decodeTargetPayload(response.suffix(from: bodyStart))
+    guard let body = decodeHTTPBody(response) else { return [] }
+    return decodeTargetPayload(body)
   }
 
   private static func fetchTargetsOverURLSession(port: Int) -> [[String: Any]] {
