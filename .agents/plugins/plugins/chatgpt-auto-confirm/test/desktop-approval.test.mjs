@@ -419,6 +419,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicatedRendererTargetExists/);
   assert.match(nativeSource, /dedicatedRendererTargetSummary/);
   assert.match(nativeSource, /dedicatedRendererBootstrapTimeout/);
+  assert.match(nativeSource, /let dedicatedRendererBootstrapTimeout: TimeInterval = 20\.0/);
   assert.match(nativeSource, /dedicated-process-renderer-timeout/);
   assert.match(nativeSource, /dedicated-renderer-bootstrap-recovery/);
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
