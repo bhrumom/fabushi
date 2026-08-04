@@ -1211,8 +1211,7 @@ func dedicatedQueueChatTarget(
           // the only page in a dedicated process, so let the bounded startup
           // retry replace the process instead.  Only navigate a renderer
           // whose latest probe was actually received.
-          let shouldNavigate = loaded != nil
-            && ((ready == "complete") || recoveryCount >= 2)
+          let shouldNavigate = loaded != nil && ready == "complete"
           queueTrace(
             "worker-create stage=dedicated-renderer-bootstrap-recovery "
               + "port=\(port) target=\(targetId) attempt=\(recoveryCount + 1) "
