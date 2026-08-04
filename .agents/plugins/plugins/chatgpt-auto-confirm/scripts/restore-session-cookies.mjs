@@ -339,6 +339,7 @@ const sessionStateExpression = `(() => {
 export async function restoreSession({
   port = Number(process.env.CHATGPT_CDP_PORT || defaultPort),
   mode = process.env.CHATGPT_SESSION_MODE || 'restore-and-verify',
+  headless = process.env.CHATGPT_AUTO_CONFIRM_HEADLESS === '1',
   encoded = process.env.CHATGPT_SESSION_COOKIES_B64,
   fetchImpl = globalThis.fetch,
   WebSocketImpl = globalThis.WebSocket,
@@ -406,9 +407,25 @@ export async function restoreSession({
     });
 
     if (mode === 'restore' || mode === 'restore-and-verify') {
-      // Page.reload can replace the renderer. Re-discover the target after the
-      // command instead of issuing Runtime calls through the stale socket.
-      await optionalCall(connection.call, 'Page.reload', { ignoreCache: true }, 10_000, log);
+      // Hosted macOS runs have no user-facing window. In that environment a
+      // Chromium Page.reload can tear down the only Electron renderer before
+      // it answers the CDP command, leaving /json/list empty for the whole
+      // recovery window. Navigating to the app root exercises the same cookie
+      // bootstrap while keeping the renderer lifecycle recoverable. The local
+      // desktop path retains the stronger cache-busting reload behavior.
+      if (headless) {
+        await optionalCall(
+          connection.call,
+          'Page.navigate',
+          { url: appRootURL },
+          10_000,
+          log,
+        );
+      } else {
+        // Page.reload can replace the renderer. Re-discover the target after
+        // the command instead of issuing Runtime calls through the stale socket.
+        await optionalCall(connection.call, 'Page.reload', { ignoreCache: true }, 10_000, log);
+      }
       closeConnection(connection);
       connection = await recoverAppRootConnection({
         connection: null,
