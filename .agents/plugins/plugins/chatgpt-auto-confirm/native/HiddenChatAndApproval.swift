@@ -208,9 +208,7 @@ func nativeApprovalArrowKey(
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
-  let requestedLabel = label ?? ""
-  let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
-    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+  let requestedLabelLiteral = jsonStringLiteral(label ?? "")
   let focusExpression = #"""
   (() => {
     const normalize = value => String(value || '')
@@ -328,11 +326,8 @@ func nativeApprovalComponentActionResult(
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
   queueTrace("task=approval-watcher stage=approval-native-component-coordinates-ready action=\(action)")
-  let requestedLabel = label ?? ""
-  let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
-    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
-  let actionLiteral = (try? JSONSerialization.data(withJSONObject: action))
-    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"option\""
+  let requestedLabelLiteral = jsonStringLiteral(label ?? "")
+  let actionLiteral = jsonStringLiteral(action)
   queueTrace("task=approval-watcher stage=approval-native-component-labels-ready action=\(action)")
   if action == "trigger" || action == "option" {
     queueTrace("task=approval-watcher stage=approval-native-component-expression-begin action=\(action)")
@@ -1067,9 +1062,7 @@ func nativeApprovalDOMClickResult(
 ) -> [String: Any]? {
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
-  let requestedLabel = label ?? ""
-  let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
-    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+  let requestedLabelLiteral = jsonStringLiteral(label ?? "")
   let expression = #"""
   (() => {
     const selector =
