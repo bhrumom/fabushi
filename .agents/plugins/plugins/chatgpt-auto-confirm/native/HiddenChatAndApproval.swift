@@ -1555,6 +1555,34 @@ func detectDedicatedAuthorizationJS() -> String {
       return controls.find(button => isMenuTrigger(button, candidate, card.container)) || null;
     };
     const componentControlSamples = (card, candidate) => {
+      const reactHandlerNames = element => {
+        const names = [];
+        for (const key of Object.keys(element || {})) {
+          if (!key.startsWith('__reactProps$')) continue;
+          const value = element[key];
+          const props = value?.memoizedProps || value?.pendingProps || value;
+          for (const prop of Object.keys(props || {})) {
+            if (/^on[A-Z]/.test(prop)) names.push(prop);
+          }
+        }
+        return [...new Set(names)].slice(0, 20);
+      };
+      const compactElement = element => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect?.();
+        return {
+          tag: element.tagName?.toLowerCase() || '',
+          role: normalize(element.getAttribute?.('role')),
+          text: labelText(element).slice(0, 120),
+          className: String(element.getAttribute?.('class') || '').slice(0, 160),
+          clickSemantics: hasClickSemantics(element),
+          reactHandlers: reactHandlerNames(element),
+          rect: rect ? {
+            left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+            right: rect.right, bottom: rect.bottom
+          } : null
+        };
+      };
       const nodes = componentRoots(card.container)
         .flatMap(root => query(root, '*'))
         .filter((element, index, all) => all.indexOf(element) === index)
@@ -1597,6 +1625,20 @@ func detectDedicatedAuthorizationJS() -> String {
             clickSemantics: hasClickSemantics(element),
             arrowLike: isArrowLike(element),
             nearRightSplit: isNearRightSplit(element, candidate),
+            reactHandlers: reactHandlerNames(element),
+            childElements: hasAllowLabel(element)
+              ? query(element, '*').slice(0, 20).map(compactElement)
+              : [],
+            rightEdgeHit: hasAllowLabel(element)
+              ? (() => {
+                const elementRect = element.getBoundingClientRect?.();
+                if (!elementRect || elementRect.width <= 0 || elementRect.height <= 0) return null;
+                return compactElement(document.elementFromPoint?.(
+                  elementRect.right - 2,
+                  elementRect.top + elementRect.height / 2
+                ));
+              })()
+              : null,
             rect: rect ? {
               left: rect.left, top: rect.top, width: rect.width, height: rect.height,
               right: rect.right, bottom: rect.bottom
