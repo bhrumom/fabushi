@@ -2192,10 +2192,21 @@ func autoApproveDedicatedAuthorizationJS() -> String {
             });
             break;
           }
-          const menuItems = allInteractive().filter(item => {
+          const sessionTargets = allInteractive()
+            .map(item => {
+              let node = item;
+              for (let depth = 0; depth < 8 && node; depth += 1) {
+                if (isSessionScope(labelText(node))
+                    && visible(node)
+                    && hasClickSemantics(node)) return node;
+                node = parentOf(node);
+              }
+              return null;
+            })
+            .filter(Boolean);
+          const menuItems = [...new Set(sessionTargets)].filter(item => {
             if (item === sessionControl || cardButtons.includes(item)) return false;
-            const itemLabel = labelText(item);
-            return isSessionScope(itemLabel) && visible(item);
+            return isSessionScope(labelText(item)) && visible(item);
           });
           menuCandidates = allInteractive().map(label).filter(Boolean).slice(-40);
           sessionOption = menuItems[0] || null;

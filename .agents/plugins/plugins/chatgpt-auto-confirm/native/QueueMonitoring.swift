@@ -37,6 +37,7 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
     "componentActionKeys": detection["componentActionKeys"] ?? [],
     "componentTargetMessageIdPresent": detection["componentTargetMessageIdPresent"] ?? false,
+    "componentControlSamples": detection["componentControlSamples"] ?? [],
     "interactiveLabelSamples": detection["interactiveLabelSamples"] ?? [],
     "cardCount": detection["cardCount"] ?? 0,
     "interactiveCount": detection["interactiveCount"] ?? 0,
