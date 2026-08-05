@@ -794,9 +794,10 @@ func dedicatedApprovalWithNativeInput(
       expression: sessionScopeComponentProbeJS(),
       timeout: 2.0
     )
+    let scopeError = scope?["error"] as? String ?? "none"
     queueTrace(
       "task=approval-watcher stage=approval-native-scope-return "
-        + "found=\(scope != nil) error=\(scope?[\"error\"] as? String ?? \"none\")"
+        + "found=\(scope != nil) error=\(scopeError)"
     )
     return scope
   }
@@ -859,11 +860,12 @@ func dedicatedApprovalWithNativeInput(
         label: detection["selectedLabel"] as? String,
         wsURLString: approvalWSURL
       )
+      let componentOK = componentResult?["ok"] as? Bool == true
+      let componentMode = componentResult?["mode"] as? String ?? "none"
+      let componentError = componentResult?["error"] as? String ?? "none"
       queueTrace(
         "task=approval-watcher stage=approval-native-component-return action=trigger "
-          + "ok=\(componentResult?[\"ok\"] as? Bool == true) "
-          + "mode=\(componentResult?[\"mode\"] as? String ?? \"none\") "
-          + "error=\(componentResult?[\"error\"] as? String ?? \"none\")"
+          + "ok=\(componentOK) mode=\(componentMode) error=\(componentError)"
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
