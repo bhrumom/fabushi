@@ -1455,11 +1455,20 @@ func detectDedicatedAuthorizationJS() -> String {
     const isArrowLike = element => {
       if (!element) return false;
       const tagName = element.tagName?.toLowerCase();
+      if (['kbd', 'br', 'img'].includes(tagName)) return false;
       const marker = structuralMarker(element);
       return element.getAttribute?.('aria-haspopup') !== null
         || element.getAttribute?.('aria-expanded') !== null
         || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(marker)
         || (['svg', 'path', 'polyline', 'polygon'].includes(tagName) && !labelText(element));
+    };
+    const hasMenuStructure = element => {
+      if (!element) return false;
+      return element.getAttribute?.('aria-haspopup') !== null
+        || element.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
+          structuralMarker(element)
+        );
     };
     const isNearRightSplit = (element, candidate) => {
       if (!element || !candidate || element === candidate || labelText(element)) return false;
@@ -1480,19 +1489,30 @@ func detectDedicatedAuthorizationJS() -> String {
       return adjacentRight || insideRight;
     };
     const isMenuTrigger = (button, candidate, container = null) => {
-      if (!button || button === candidate) return false;
+      if (!button) return false;
       const value = labelText(button);
+      const sameButton = button === candidate;
+      if (sameButton) {
+        return hasClickSemantics(button)
+          && isOneShot(labelText(candidate))
+          && hasMenuStructure(button);
+      }
       const sameContainer = !!(container
         && (container === button || container.contains?.(button))
         && (container === candidate || container.contains?.(candidate)));
       const sameComponent = sameContainer || sharesComponent(button, candidate);
       if (!sameComponent) return false;
-      const structural = isSessionScope(value)
-        || button.getAttribute?.('aria-haspopup') === 'menu'
-        || button.getAttribute?.('aria-expanded') !== null
-        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
-          structuralMarker(button)
-        );
+      const tagName = button.tagName?.toLowerCase();
+      const nonActionableTag = ['kbd', 'svg', 'path', 'polyline', 'polygon'].includes(tagName);
+      const actionableCompanion = hasClickSemantics(button)
+        || isNearRightSplit(button, candidate)
+        || (hasMenuStructure(button) && !nonActionableTag);
+      if (!actionableCompanion) return false;
+      const approvalRelated = !value
+        || isSessionScope(value)
+        || isOneShot(value)
+        || isAllowLabel(value);
+      const structural = approvalRelated && hasMenuStructure(button);
       const iconOnlyCompanion = !value
         && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
@@ -1565,6 +1585,8 @@ func detectDedicatedAuthorizationJS() -> String {
             tag: element.tagName?.toLowerCase() || '',
             role: normalize(element.getAttribute?.('role')),
             ariaLabel: element.getAttribute?.('aria-label') || '',
+            ariaHasPopup: element.getAttribute?.('aria-haspopup') || '',
+            ariaExpanded: element.getAttribute?.('aria-expanded') || '',
             title: element.getAttribute?.('title') || '',
             dataTestId: element.getAttribute?.('data-testid') || '',
             dataSlot: element.getAttribute?.('data-slot') || '',
@@ -1911,6 +1933,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     const isArrowLike = element => {
       if (!element) return false;
       const tagName = element.tagName?.toLowerCase();
+      if (['kbd', 'br', 'img'].includes(tagName)) return false;
       const marker = structuralMarker(element);
       return element.getAttribute?.('aria-haspopup') !== null
         || element.getAttribute?.('aria-expanded') !== null
@@ -1936,19 +1959,30 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       return adjacentRight || insideRight;
     };
     const isMenuTrigger = (button, candidate, container = null) => {
-      if (!button || button === candidate) return false;
+      if (!button) return false;
       const value = labelText(button);
+      const sameButton = button === candidate;
+      if (sameButton) {
+        return hasClickSemantics(button)
+          && isOneShot(labelText(candidate))
+          && hasMenuStructure(button);
+      }
       const sameContainer = !!(container
         && (container === button || container.contains?.(button))
         && (container === candidate || container.contains?.(candidate)));
       const sameComponent = sameContainer || sharesComponent(button, candidate);
       if (!sameComponent) return false;
-      const structural = isSessionScope(value)
-        || button.getAttribute?.('aria-haspopup') === 'menu'
-        || button.getAttribute?.('aria-expanded') !== null
-        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
-          structuralMarker(button)
-        );
+      const tagName = button.tagName?.toLowerCase();
+      const nonActionableTag = ['kbd', 'svg', 'path', 'polyline', 'polygon'].includes(tagName);
+      const actionableCompanion = hasClickSemantics(button)
+        || isNearRightSplit(button, candidate)
+        || (hasMenuStructure(button) && !nonActionableTag);
+      if (!actionableCompanion) return false;
+      const approvalRelated = !value
+        || isSessionScope(value)
+        || isOneShot(value)
+        || isAllowLabel(value);
+      const structural = approvalRelated && hasMenuStructure(button);
       const iconOnlyCompanion = !value
         && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
@@ -1983,13 +2017,41 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       }
       return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
     };
+    const hasMenuStructure = element => {
+      if (!element) return false;
+      return element.getAttribute?.('aria-haspopup') !== null
+        || element.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
+          structuralMarker(element)
+        );
+    };
     const menuTriggerOptions = new WeakMap();
+    const configureMenuTrigger = (trigger, candidate) => {
+      if (!trigger || trigger !== candidate) return;
+      const rect = trigger.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        menuTriggerOptions.set(trigger, { coordinateOnly: false });
+        return;
+      }
+      // The ChatGPT permission control is a split button in some renderers:
+      // its visible Allow once label and disclosure arrow share one <button>.
+      // Keep the native click path off and dispatch at the right edge so the
+      // host receives the disclosure activation instead of the one-shot action.
+      menuTriggerOptions.set(trigger, {
+        coordinateOnly: true,
+        point: {
+          x: Math.max(rect.left + 1, rect.right - 6),
+          y: rect.top + rect.height / 2
+        }
+      });
+    };
     const findMenuTrigger = (card, candidate) => {
       const controls = [
         ...card.cardButtons,
         ...componentControls(card.container, candidate)
       ].filter((button, index, all) => all.indexOf(button) === index);
       const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
+      configureMenuTrigger(companion, candidate);
       return companion || null;
     };
     const approvalComponentData = element => {
@@ -2186,10 +2248,12 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         for (let waitIndex = 0; waitIndex < 40 && !sessionOption; waitIndex += 1) {
           await sleep(100);
           if (!candidate.button.isConnected || !rendered(candidate.button)) {
-            approvedCards.push({
-              strategy: 'session-scope-direct', label: menuTriggerLabel,
-              menuTriggerLabel, candidateLabels
-            });
+            lastFailure = {
+              ok: false, clicked: true, confirmed: false,
+              strategy: 'session-scope', label: menuTriggerLabel,
+              menuTriggerLabel, candidateLabels,
+              error: 'session_scope_menu_not_opened'
+            };
             break;
           }
           const sessionTargets = allInteractive()
@@ -2211,14 +2275,15 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           menuCandidates = allInteractive().map(label).filter(Boolean).slice(-40);
           sessionOption = menuItems[0] || null;
         }
-        if (approvedCards.length === cardIndex + 1) continue;
         if (!sessionOption) {
-          lastFailure = {
-            ok: false, clicked: true, confirmed: false,
-            strategy: 'session-scope', label: menuTriggerLabel,
-            menuTriggerLabel, candidateLabels, menuCandidates,
-            error: 'session_scope_option_not_found'
-          };
+          if (lastFailure?.error !== 'session_scope_menu_not_opened') {
+            lastFailure = {
+              ok: false, clicked: true, confirmed: false,
+              strategy: 'session-scope', label: menuTriggerLabel,
+              menuTriggerLabel, candidateLabels, menuCandidates,
+              error: 'session_scope_option_not_found'
+            };
+          }
           break;
         }
         const sessionScopeLabel = label(sessionOption);
