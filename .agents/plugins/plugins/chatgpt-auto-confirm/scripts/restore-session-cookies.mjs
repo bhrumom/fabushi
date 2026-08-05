@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const defaultPort = 9324;
@@ -32,6 +34,44 @@ const safeTargetSummary = targets => targets.map(target => ({
 }));
 
 const targetKey = target => `${target?.id || ''}|${target?.webSocketDebuggerUrl || ''}`;
+
+const diagnosticTimestamp = () => new Date().toISOString()
+  .replace(/[^0-9]/g, '')
+  .slice(0, 17);
+
+const writeDiagnosticEvidence = ({ directory, label, payload }) => {
+  if (!directory) return null;
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const path = join(directory, `renderer-${label}-${diagnosticTimestamp()}.json`);
+    writeFileSync(path, `${JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      ...payload,
+    }, null, 2)}\n`, { mode: 0o600 });
+    return path;
+  } catch {
+    return null;
+  }
+};
+
+const captureDiagnosticScreenshot = async ({ connection, directory, label }) => {
+  if (!connection || !directory) return null;
+  try {
+    const result = await connection.call('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+      fromSurface: true,
+    }, 5_000);
+    const encoded = String(result?.data || '');
+    if (!encoded) return null;
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const path = join(directory, `renderer-${label}-${diagnosticTimestamp()}.png`);
+    writeFileSync(path, Buffer.from(encoded, 'base64'), { mode: 0o600 });
+    return path;
+  } catch {
+    return null;
+  }
+};
 
 const approveHeadlessChatGPTLocalNetworkPrompt = ({
   platform = process.platform,
@@ -329,6 +369,7 @@ const recoverAppRootConnection = async ({
   log,
   createRootTargetImpl,
   beforeProbeImpl = () => {},
+  diagnosticsDir,
 }) => {
   const deadline = nowImpl() + timeoutMs;
   let active = connection;
@@ -337,6 +378,39 @@ const recoverAppRootConnection = async ({
   let navigationAttempts = 0;
   let rootTargetCreationAttempts = 0;
   let lastNavigationAt = 0;
+
+  const recordEvidence = async (label, extra = {}, screenshotConnection = active) => {
+    const screenshotPath = await captureDiagnosticScreenshot({
+      connection: screenshotConnection,
+      directory: diagnosticsDir,
+      label,
+    });
+    const evidencePath = writeDiagnosticEvidence({
+      directory: diagnosticsDir,
+      label,
+      payload: {
+        phase: label,
+        label,
+        targets: safeTargetSummary(lastTargets),
+        navigationAttempts,
+        rootTargetCreationAttempts,
+        lastError,
+        screenshotPath,
+        ...extra,
+      },
+    });
+    if (diagnosticsDir) {
+      log(`Renderer diagnostic ${label}: ${JSON.stringify({
+        screenshotPath: screenshotPath || null,
+        evidencePath: evidencePath || null,
+        targetCount: lastTargets.length,
+        navigationAttempts,
+        rootTargetCreationAttempts,
+        lastError: lastError || null,
+      })}`);
+    }
+    return { screenshotPath, evidencePath };
+  };
 
   const createRootTargetIfNeeded = async () => {
     if (rootTargetCreationAttempts >= 2 || typeof createRootTargetImpl !== 'function') return;
@@ -358,6 +432,7 @@ const recoverAppRootConnection = async ({
       lastError = error instanceof Error ? error.message : String(error);
     }
     if (isAvatarOverlay({ url: currentURL })) {
+      await recordEvidence('before-overlay-navigation', { currentURL });
       const navigated = await optionalCall(
         active.call,
         'Page.navigate',
@@ -384,6 +459,10 @@ const recoverAppRootConnection = async ({
       lastTargets = await listTargets(fetchImpl, port);
       const normalTarget = pickTarget(lastTargets, isNormalAppTarget);
       if (normalTarget) {
+        await recordEvidence('normal-renderer-ready', {
+          targetId: String(normalTarget.id || '').slice(0, 48),
+          targetURL: targetURL(normalTarget),
+        }, active);
         if (active && targetKey(active.target) === targetKey(normalTarget)) {
           return active;
         }
@@ -400,6 +479,10 @@ const recoverAppRootConnection = async ({
           active = await connect(overlayTarget, { WebSocketImpl });
         }
         if (navigationAttempts < 2) {
+          await recordEvidence('before-overlay-retry-navigation', {
+            targetId: String(overlayTarget.id || '').slice(0, 48),
+            targetURL: targetURL(overlayTarget),
+          });
           const navigated = await optionalCall(
             active.call,
             'Page.navigate',
@@ -421,6 +504,16 @@ const recoverAppRootConnection = async ({
         // request. Create a fresh normal app target through the browser CDP
         // endpoint instead of waiting for the retired overlay to reappear.
         await createRootTargetIfNeeded();
+      } else if (rootTargetCreationAttempts < 2) {
+        // Page.navigate can retire the only renderer before the caller gets
+        // here. In that state there is no overlay and no navigation attempt
+        // left to trigger the old fallback, so actively ask the browser CDP
+        // endpoint for a fresh authenticated app root instead of polling an
+        // empty target list until the timeout.
+        await recordEvidence('empty-target-list-before-root-retry', {
+          reason: 'no_normal_or_overlay_target',
+        }, null);
+        await createRootTargetIfNeeded();
       }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
@@ -431,6 +524,9 @@ const recoverAppRootConnection = async ({
   }
 
   closeConnection(active);
+  await recordEvidence('renderer-recovery-timeout', {
+    reason: 'reconnect_deadline_exhausted',
+  }, active);
   throw new Error(`${label} was not ready (${JSON.stringify({
     lastError,
     navigationAttempts,
@@ -500,6 +596,7 @@ export async function restoreSession({
   verificationTimeoutMs = 120_000,
   createRootTargetImpl,
   log = message => process.stderr.write(`${message}\n`),
+  diagnosticsDir = process.env.CHATGPT_AUTO_CONFIRM_DIAGNOSTICS_DIR || '',
 } = {}) {
   if (!['seed', 'restore', 'verify', 'restore-and-verify'].includes(mode)) {
     throw new Error(`Unsupported CHATGPT_SESSION_MODE: ${mode}`);
@@ -569,6 +666,7 @@ export async function restoreSession({
       log,
       createRootTargetImpl: rootTargetCreator,
       beforeProbeImpl,
+      diagnosticsDir,
     });
 
     if (mode === 'restore' || mode === 'restore-and-verify') {
@@ -618,6 +716,7 @@ export async function restoreSession({
         log,
         createRootTargetImpl: rootTargetCreator,
         beforeProbeImpl,
+        diagnosticsDir,
       });
       await activate(connection.call, log);
     }
@@ -651,6 +750,7 @@ export async function restoreSession({
             log,
             createRootTargetImpl: rootTargetCreator,
             beforeProbeImpl,
+            diagnosticsDir,
           });
           continue;
         }
@@ -676,6 +776,7 @@ export async function restoreSession({
             log,
             createRootTargetImpl: rootTargetCreator,
             beforeProbeImpl,
+            diagnosticsDir,
           });
         } catch (recoveryError) {
           lastState.recoveryError = recoveryError instanceof Error

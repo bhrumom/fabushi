@@ -275,6 +275,7 @@ jobs:
         shell: bash
         env:
           PROFILE_DIR: ${{ steps.paths.outputs.profile_dir }}
+          CHATGPT_AUTO_CONFIRM_DIAGNOSTICS_DIR: ${{ steps.paths.outputs.runtime_dir }}/diagnostics
         run: |
           set -euo pipefail
           test -n "$CHATGPT_SESSION_COOKIES_B64"
