@@ -181,11 +181,11 @@ struct CDPClient {
   // for every Runtime.evaluate can leave Electron's previous CDP connection
   // closing while the next command is already waiting for its handshake.
   // That is exactly the boundary where the direct approval path used to stop.
-  private static let commandQueue = DispatchQueue(
+  private static let persistentCommandQueue = DispatchQueue(
     label: "chatgpt-auto-confirm.cdp-command",
     qos: .userInitiated
   )
-  private static var websocketSessions: [String: URLSessionWebSocketTask] = [:]
+  private static var persistentWebsocketSessions: [String: URLSessionWebSocketTask] = [:]
 
   static func port() -> Int {
     if let envPortStr = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_CDP_PORT"],
@@ -426,6 +426,24 @@ struct CDPClient {
   static func evaluate(wsURLString: String, expression: String, timeout: TimeInterval = 2.5) -> [String: Any]? {
     let params = "{\"expression\":\(jsonStringLiteral(expression)),\"returnByValue\":true,\"awaitPromise\":true}"
     return sendCommand(
+      wsURLString: wsURLString,
+      method: "Runtime.evaluate",
+      paramsJSON: params,
+      timeout: timeout
+    )
+  }
+
+  // Approval actions must share the exact renderer connection that performed
+  // card detection. A second short-lived WebSocket can still be handshaking
+  // while Electron is closing the first one, which strands the action before
+  // it can dispatch the live component event.
+  static func evaluatePersistent(
+    wsURLString: String,
+    expression: String,
+    timeout: TimeInterval = 2.5
+  ) -> [String: Any]? {
+    let params = "{\"expression\":\(jsonStringLiteral(expression)),\"returnByValue\":true,\"awaitPromise\":true}"
+    return sendPersistentCommand(
       wsURLString: wsURLString,
       method: "Runtime.evaluate",
       paramsJSON: params,
@@ -717,60 +735,24 @@ struct CDPClient {
     paramsJSON: String,
     timeout: TimeInterval
   ) -> [String: Any]? {
-    commandQueue.sync {
-      sendCommandSerial(
-        wsURLString: wsURLString,
-        method: method,
-        paramsJSON: paramsJSON,
-        timeout: timeout
-      )
-    }
-  }
-
-  private static func sendCommandSerial(
-    wsURLString: String,
-    method: String,
-    paramsJSON: String,
-    timeout: TimeInterval
-  ) -> [String: Any]? {
     guard let wsURL = URL(string: wsURLString) else { return nil }
-    let wsTask: URLSessionWebSocketTask
-    if let existing = websocketSessions[wsURLString] {
-      wsTask = existing
-    } else {
-      var request = URLRequest(url: wsURL)
-      request.timeoutInterval = max(timeout, 5.0)
-      let created = URLSession.shared.webSocketTask(with: request)
-      created.resume()
-      websocketSessions[wsURLString] = created
-      wsTask = created
-    }
+    var request = URLRequest(url: wsURL)
+    request.timeoutInterval = timeout
+    let wsTask = URLSession.shared.webSocketTask(with: request)
+    wsTask.resume()
+    defer { wsTask.cancel(with: .normalClosure, reason: nil) }
 
     let msgId = Int.random(in: 1000...999999)
     let reqStr = "{\"id\":\(msgId),\"method\":\(jsonStringLiteral(method)),\"params\":\(paramsJSON)}"
     cdpDebug("CDP request \(reqStr.prefix(1200))")
 
     let semaphore = DispatchSemaphore(value: 0)
-    let responseLock = NSLock()
     var responseJSON: [String: Any]?
-    var completed = false
-
-    func complete(_ response: [String: Any]?) {
-      responseLock.lock()
-      guard !completed else {
-        responseLock.unlock()
-        return
-      }
-      completed = true
-      responseJSON = response
-      responseLock.unlock()
-      semaphore.signal()
-    }
 
     wsTask.send(.string(reqStr)) { error in
       if let error {
         cdpDebug("CDP send failed: \(error)")
-        complete(nil)
+        semaphore.signal()
       }
     }
 
@@ -778,46 +760,137 @@ struct CDPClient {
       wsTask.receive { result in
         switch result {
         case .success(let message):
-          let object: [String: Any]?
           switch message {
           case .string(let text):
-            object = text.data(using: .utf8).flatMap {
-              try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            if let data = text.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+              if obj["id"] as? Int == msgId {
+                responseJSON = obj
+                semaphore.signal()
+                return
+              }
             }
           case .data(let data):
-            object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+              if obj["id"] as? Int == msgId {
+                responseJSON = obj
+                semaphore.signal()
+                return
+              }
+            }
           @unknown default:
-            object = nil
+            break
           }
-          if object?["id"] as? Int == msgId {
-            complete(object)
-          } else {
-            receiveNext()
-          }
+          receiveNext()
         case .failure(let error):
           cdpDebug("CDP receive failed: \(error)")
-          complete(nil)
+          semaphore.signal()
         }
       }
     }
     receiveNext()
 
-    let waitResult = semaphore.wait(timeout: .now() + max(timeout, 0.1))
-    responseLock.lock()
-    let response = responseJSON
-    responseLock.unlock()
-    if waitResult == .success, let response {
-      return sanitizeJSONDict(response)
-    }
-
-    websocketSessions.removeValue(forKey: wsURLString)
-    // Do not block the queue while an unresponsive renderer closes its stale
-    // transport. A later command will create a fresh bounded session.
-    DispatchQueue.global(qos: .utility).async {
-      wsTask.cancel(with: .goingAway, reason: nil)
+    _ = semaphore.wait(timeout: .now() + timeout)
+    if let json = responseJSON {
+      return sanitizeJSONDict(json)
     }
     cdpDebug("CDP command \(method) timed out for \(wsURLString)")
     return nil
+  }
+
+  private static func sendPersistentCommand(
+    wsURLString: String,
+    method: String,
+    paramsJSON: String,
+    timeout: TimeInterval
+  ) -> [String: Any]? {
+    persistentCommandQueue.sync {
+      guard let wsURL = URL(string: wsURLString) else { return nil }
+      let wsTask: URLSessionWebSocketTask
+      if let existing = persistentWebsocketSessions[wsURLString] {
+        wsTask = existing
+      } else {
+        var request = URLRequest(url: wsURL)
+        request.timeoutInterval = max(timeout, 5.0)
+        let created = URLSession.shared.webSocketTask(with: request)
+        created.resume()
+        persistentWebsocketSessions[wsURLString] = created
+        wsTask = created
+      }
+
+      let msgId = Int.random(in: 1000...999999)
+      let reqStr = "{\"id\":\(msgId),\"method\":\(jsonStringLiteral(method)),\"params\":\(paramsJSON)}"
+      cdpDebug("CDP request \(reqStr.prefix(1200))")
+
+      let semaphore = DispatchSemaphore(value: 0)
+      let responseLock = NSLock()
+      var responseJSON: [String: Any]?
+      var completed = false
+
+      func complete(_ response: [String: Any]?) {
+        responseLock.lock()
+        guard !completed else {
+          responseLock.unlock()
+          return
+        }
+        completed = true
+        responseJSON = response
+        responseLock.unlock()
+        semaphore.signal()
+      }
+
+      wsTask.send(.string(reqStr)) { error in
+        if let error {
+          cdpDebug("CDP send failed: \(error)")
+          complete(nil)
+        }
+      }
+
+      func receiveNext() {
+        wsTask.receive { result in
+          switch result {
+          case .success(let message):
+            let object: [String: Any]?
+            switch message {
+            case .string(let text):
+              object = text.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+              }
+            case .data(let data):
+              object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            @unknown default:
+              object = nil
+            }
+            if object?["id"] as? Int == msgId {
+              complete(object)
+            } else {
+              receiveNext()
+            }
+          case .failure(let error):
+            cdpDebug("CDP receive failed: \(error)")
+            complete(nil)
+          }
+        }
+      }
+      receiveNext()
+
+      let waitResult = semaphore.wait(timeout: .now() + max(timeout, 0.1))
+      responseLock.lock()
+      let response = responseJSON
+      responseLock.unlock()
+      if waitResult == .success, let response {
+        return sanitizeJSONDict(response)
+      }
+
+      persistentWebsocketSessions.removeValue(forKey: wsURLString)
+      // Do not block the queue while an unresponsive renderer closes its stale
+      // transport. A later command will create a fresh bounded session.
+      DispatchQueue.global(qos: .utility).async {
+        wsTask.cancel(with: .goingAway, reason: nil)
+      }
+      cdpDebug("CDP command \(method) timed out for \(wsURLString)")
+      return nil
+    }
   }
 
   private static func sanitizeJSONDict(_ dict: [String: Any]) -> [String: Any] {
