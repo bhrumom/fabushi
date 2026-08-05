@@ -153,21 +153,6 @@ func approvalRect(_ value: Any?) -> (left: Double, top: Double, width: Double, h
   return (left, top, width, height)
 }
 
-func nativeApprovalClick(
-  port: Int,
-  targetId: String,
-  point: (x: Double, y: Double)
-) -> Bool {
-  guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
-  // Keep the renderer hidden and stable. Focus/lifecycle emulation lets CDP
-  // deliver trusted input to a hidden card without activating a different
-  // target or invalidating the websocket used for the follow-up verification.
-  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
-  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
-  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
-  return CDPClient.dispatchMouseClick(wsURLString: wsURL, x: point.x, y: point.y)
-}
-
 func nativeApprovalArrowKey(
   port: Int,
   targetId: String,
@@ -214,11 +199,8 @@ func nativeApprovalArrowKey(
       ? hitTarget
       : labelledTargets[0];
     if (!target || typeof target.focus !== 'function') return { ok: false };
-    // The card can be attached below the current viewport in a hidden or
-    // scrollable renderer. Scroll only the identified authorization control;
-    // never click a coordinate that could fall on the primary Allow once
-    // action or on an unrelated page element.
-    try { target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+    // The control may be covered or outside the viewport. It is still a
+    // live renderer component, so focus it directly without scrolling.
     target.focus({ preventScroll: true });
     return {
       ok: document.activeElement === target || target.contains?.(document.activeElement),
@@ -252,25 +234,69 @@ func nativeApprovalArrowKey(
 func nativeApprovalDOMClickResult(
   port: Int,
   targetId: String,
-  point: (x: Double, y: Double)
+  point: (x: Double, y: Double),
+  label: String? = nil
 ) -> [String: Any]? {
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let requestedLabel = label ?? ""
+  let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
+    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
   let expression = #"""
   (() => {
     const selector =
       '[role="menuitem"], [role="menuitemradio"], [role="option"], button, '
         + '[data-radix-collection-item], [data-slot*="menu" i]';
+    const hasReactClick = element => Object.keys(element || {}).some(key => {
+      if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) return false;
+      const value = element[key];
+      const props = value?.memoizedProps || value?.pendingProps || value?.props || value;
+      return typeof props?.onClick === 'function'
+        || typeof props?.onKeyDown === 'function';
+    });
+    const isActionNode = node => !!(node?.matches?.(selector) || hasReactClick(node));
+    const normalize = value => String(value || '')
+      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
+    const requested = normalize(\#(requestedLabelLiteral));
+    const labelOf = element => normalize(
+      element?.getAttribute?.('aria-label')
+        || element?.getAttribute?.('title')
+        || element?.getAttribute?.('data-label')
+        || element?.innerText
+        || element?.textContent
+        || ''
+    );
+    const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const isMenuSurface = element => {
+      let node = element;
+      for (let depth = 0; depth < 12 && node; depth += 1) {
+        const role = normalize(node.getAttribute?.('role'));
+        const marker = normalize([
+          node.getAttribute?.('data-slot'),
+          node.getAttribute?.('data-state'),
+          node.getAttribute?.('class'),
+          node.getAttribute?.('id')
+        ].filter(Boolean).join(' '));
+        if (['menu', 'listbox', 'dialog'].includes(role)
+            || node.getAttribute?.('aria-modal') === 'true'
+            || node.getAttribute?.('data-state') === 'open'
+            || /menu|dropdown|popover|listbox|select|command/.test(marker)) {
+          return true;
+        }
+        node = parentOf(node);
+      }
+      return false;
+    };
     const pointInRect = (rect, px, py) => !!(rect
       && rect.width > 0 && rect.height > 0
       && px >= rect.left && px <= rect.right
       && py >= rect.top && py <= rect.bottom);
     const directMatches = (root, px, py) => {
       const nodes = [];
-      if (root?.matches?.(selector)) nodes.push(root);
-      for (const node of root?.querySelectorAll?.(selector) || []) {
+      if (isActionNode(root)) nodes.push(root);
+      for (const node of root?.querySelectorAll?.('*') || []) {
         const rect = node.getBoundingClientRect?.();
-        if (pointInRect(rect, px, py)) nodes.push(node);
+        if (isActionNode(node) && pointInRect(rect, px, py)) nodes.push(node);
       }
       return nodes;
     };
@@ -301,7 +327,26 @@ func nativeApprovalDOMClickResult(
       ...nestedShadowMatches(root, px, py),
       ...nestedFrameMatches(root, px, py)
     ];
-    const matches = findMatches(document, \#(x), \#(y))
+    const pointMatches = findMatches(document, \#(x), \#(y));
+    const labelMatches = [];
+    if (requested) {
+      const collectLabelMatches = root => {
+        for (const node of root?.querySelectorAll?.('*') || []) {
+          if (isActionNode(node)
+              && isMenuSurface(node)
+              && labelOf(node) === requested) {
+            labelMatches.push(node);
+          }
+          if (node.shadowRoot) collectLabelMatches(node.shadowRoot);
+          if (node.tagName?.toLowerCase() === 'iframe') {
+            try { if (node.contentDocument) collectLabelMatches(node.contentDocument); }
+            catch (_) {}
+          }
+        }
+      };
+      collectLabelMatches(document);
+    }
+    const matches = [...pointMatches, ...labelMatches]
       .filter((node, index, all) => all.indexOf(node) === index)
       .sort((left, right) => {
         const leftRect = left.getBoundingClientRect?.();
@@ -314,10 +359,12 @@ func nativeApprovalDOMClickResult(
     if (target.disabled || target.getAttribute?.('aria-disabled') === 'true') {
       return { ok: false, error: 'session_option_hit_disabled' };
     }
-    if (typeof target.click !== 'function') {
-      return { ok: false, error: 'session_option_hit_not_clickable' };
+    if (typeof target.focus !== 'function') {
+      return { ok: false, error: 'session_option_hit_not_focusable' };
     }
-    try { target.focus?.({ preventScroll: true }); } catch (_) {}
+    // This is the direct renderer path: no scrolling and no coordinate input
+    // are required once the exact menu component has been identified.
+    try { target.focus({ preventScroll: true }); } catch (_) {}
     target.click();
     const rect = target.getBoundingClientRect?.();
     return {
@@ -337,14 +384,6 @@ func nativeApprovalDOMClickResult(
     expression: expression,
     timeout: 4.0
   )
-}
-
-func nativeApprovalDOMClick(
-  port: Int,
-  targetId: String,
-  point: (x: Double, y: Double)
-) -> Bool {
-  nativeApprovalDOMClickResult(port: port, targetId: targetId, point: point)?["ok"] as? Bool == true
 }
 
 func dedicatedApprovalWithNativeInput(
@@ -426,11 +465,11 @@ func dedicatedApprovalWithNativeInput(
       && !cardMissing
       && !keyEvaluationFailed {
       nativeTriggerClickAttempts += 1
-      let clicked = nativeApprovalClick(
+      let clicked = nativeApprovalDOMClickResult(
         port: port,
         targetId: targetId,
         point: triggerPoint
-      )
+      )?["ok"] as? Bool == true
       nativeTriggerClicked = clicked || nativeTriggerClicked
       if clicked {
         nativeTriggerClickSuccesses += 1
@@ -457,11 +496,9 @@ func dedicatedApprovalWithNativeInput(
   }
   annotateNativeTrigger(&finalResult)
 
-  // The menu item must be activated with trusted input while the menu is
-  // still open. The previous implementation first dispatched a synthetic
-  // click, which could close the menu before this native replay arrived.
-  // Re-detect and reopen the component root between bounded attempts so both
-  // visible and hidden renderers use the same arrow -> option sequence.
+  // The menu item is activated directly through its live renderer component
+  // while the menu is still open. No viewport movement or coordinate input is
+  // needed once the component root and exact session label are known.
   var cardsApproved = 0
   var nativeOptionClickAttempts = 0
   var nativeOptionClickSuccesses = 0
@@ -504,56 +541,40 @@ func dedicatedApprovalWithNativeInput(
       var optionClicked = false
       for point in optionPoints {
         nativeOptionClickAttempts += 1
-        let clicked = nativeApprovalClick(
+        let domResult = nativeApprovalDOMClickResult(
           port: port,
           targetId: targetId,
-          point: point
+          point: point,
+          label: finalResult["sessionScopeLabel"] as? String
         )
-        if clicked {
+        if domResult?["ok"] as? Bool == true {
           nativeOptionClickSuccesses += 1
           optionClicked = true
+          nativeOptionDOMFallbackLastTarget = domResult?["text"] as? String ?? "unknown"
           finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
           Thread.sleep(forTimeInterval: 0.45)
-          if let stillOpen = evaluateSessionScope(),
-             approvalPoint(stillOpen["sessionOptionPoint"]) != nil {
-            finalResult = stillOpen
-            if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
-            nativeOptionDOMFallbackAttempts += 1
-            let domResult = nativeApprovalDOMClickResult(
-              port: port,
-              targetId: targetId,
-              point: point
-            )
-            if domResult?["ok"] as? Bool == true {
-              nativeOptionDOMFallbackSuccesses += 1
-              nativeOptionDOMFallbackLastTarget = domResult?["text"] as? String ?? "unknown"
-              Thread.sleep(forTimeInterval: 0.45)
-              if let after = cdpValue(
-                port: port,
-                targetId: targetId,
-                expression: detectDedicatedAuthorizationJS(),
-                timeout: 6.0
-              ), after["found"] as? Bool != true {
-                cardsApproved += 1
-                finalResult["ok"] = true
-                finalResult["clicked"] = true
-                finalResult["confirmed"] = true
-                finalResult["strategy"] = "session-scope-native-dom"
-                finalResult["nativeInput"] = true
-                finalResult["cardsApproved"] = cardsApproved
-                finalResult["cardsRemaining"] = 0
-                finalResult["error"] = "none"
-                annotateNativeInput(&finalResult)
-                return finalResult
-              }
-            } else {
-              nativeOptionDOMFallbackLastError = domResult?["error"] as? String
-                ?? "session_option_dom_eval_failed"
-            }
-            continue
+          if let after = cdpValue(
+            port: port,
+            targetId: targetId,
+            expression: detectDedicatedAuthorizationJS(),
+            timeout: 6.0
+          ), after["found"] as? Bool != true {
+            cardsApproved += 1
+            finalResult["ok"] = true
+            finalResult["clicked"] = true
+            finalResult["confirmed"] = true
+            finalResult["strategy"] = "session-scope-component"
+            finalResult["nativeInput"] = true
+            finalResult["cardsApproved"] = cardsApproved
+            finalResult["cardsRemaining"] = 0
+            finalResult["error"] = "none"
+            annotateNativeInput(&finalResult)
+            return finalResult
           }
+        } else {
+          nativeOptionDOMFallbackLastError = domResult?["error"] as? String
+            ?? "session_option_component_eval_failed"
         }
-        break
       }
       if optionClicked {
         finalResult["clicked"] = true
@@ -594,12 +615,31 @@ func dedicatedApprovalWithNativeInput(
          || refreshedError == "session_scope_menu_not_opened"
          || refreshedError == "session_scope_option_not_found"),
        let retryPoint = approvalPoint(refreshed["menuTriggerPoint"]) ?? triggerPoint {
-      let retried = nativeApprovalClick(
-        port: port,
-        targetId: targetId,
-        point: retryPoint
-      )
-      nativeTriggerClicked = nativeTriggerClicked || retried
+      let retried: Bool
+      if menuTriggerIsSelectedButton {
+        nativeTriggerKeyAttempts += 1
+        retried = nativeApprovalArrowKey(
+          port: port,
+          targetId: targetId,
+          point: retryPoint,
+          label: detection["selectedLabel"] as? String
+        )
+        if retried {
+          nativeTriggerKeySuccesses += 1
+          nativeTriggerKeyUsed = true
+        }
+      } else {
+        nativeTriggerClickAttempts += 1
+        retried = nativeApprovalDOMClickResult(
+          port: port,
+          targetId: targetId,
+          point: retryPoint
+        )?["ok"] as? Bool == true
+        if retried {
+          nativeTriggerClickSuccesses += 1
+        }
+      }
+      nativeTriggerClicked = nativeTriggerClicked || (!menuTriggerIsSelectedButton && retried)
       if retried {
         Thread.sleep(forTimeInterval: 0.35)
       }
