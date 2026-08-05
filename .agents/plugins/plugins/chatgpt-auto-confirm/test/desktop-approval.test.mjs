@@ -13,6 +13,29 @@ const approvalScriptMatch = hiddenApprovalSource.match(
 );
 assert.ok(approvalScriptMatch, 'embedded authorization script must be extractable');
 const approvalScript = approvalScriptMatch[1].trim();
+const detectionScriptMatch = hiddenApprovalSource.match(
+  /func detectDedicatedAuthorizationJS\(\) -> String \{[\s\S]*?#"""([\s\S]*?)"""#/,
+);
+assert.ok(detectionScriptMatch, 'embedded authorization detector must be extractable');
+const detectionScript = detectionScriptMatch[1].trim();
+
+const attachApprovalComponent = (element, { nested = false, action = 'allow_once' } = {}) => {
+  const metadata = {
+    memoizedProps: {
+      jit_plugin_data: {
+        from_server: {
+          actions: {
+            [action]: { target_message_id: 'test-approval-message' },
+          },
+        },
+      },
+    },
+  };
+  element.__reactFiber$approvalTest = nested
+    ? { memoizedProps: {}, return: metadata }
+    : metadata;
+  return element;
+};
 
 const chatScriptsSource = readFileSync(
   new URL('../native/ChatScripts.swift', import.meta.url),
@@ -893,7 +916,10 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
     }
   }
   const deny = new FakeElement('deny', 'Deny', { role: 'button' });
-  const allow = new FakeElement('allow', 'Allow', { role: 'button' });
+  const allow = attachApprovalComponent(
+    new FakeElement('allow', 'Allow', { role: 'button' }),
+    { nested: true },
+  );
   const sessionTrigger = new FakeElement(
     'session-trigger',
     '',
@@ -971,7 +997,9 @@ test('allow-once approval works when controls are plain clickable card nodes', a
     }
   }
   const deny = new FakeElement('deny', 'Deny', { role: 'button' });
-  const allow = new FakeElement('allow', 'Allow once', { role: 'button' });
+  const allow = attachApprovalComponent(
+    new FakeElement('allow', 'Allow once', { role: 'button' }),
+  );
   const card = new FakeElement('card', 'Allow ChatGPT to use bhrum2?');
   card.querySelectorAll = () => [deny, allow];
   deny.parentElement = card;
@@ -984,6 +1012,11 @@ test('allow-once approval works when controls are plain clickable card nodes', a
       return [];
     },
   };
+  const detection = await runInNewContext(detectionScript, { document });
+  assert.equal(detection.ok, true);
+  assert.equal(detection.found, true);
+  assert.deepEqual(detection.componentActionKeys, ['allow_once']);
+  assert.equal(detection.componentTargetMessageIdPresent, true);
   const result = await runInNewContext(approvalScript, {
     document,
     PointerEvent: FakeEvent,
@@ -1028,7 +1061,10 @@ test('allow-once approval works for attached controls before hidden-renderer lay
     }
   }
   const deny = new FakeElement('deny', 'Deny', { role: 'button' });
-  const allow = new FakeElement('allow', 'Allow once', { role: 'button' });
+  const allow = attachApprovalComponent(
+    new FakeElement('allow', 'Allow once', { role: 'button' }),
+    { nested: true },
+  );
   const card = new FakeElement('card', 'Allow ChatGPT to use bhrum2?');
   card.querySelectorAll = () => [deny, allow];
   deny.parentElement = card;
@@ -1041,6 +1077,11 @@ test('allow-once approval works for attached controls before hidden-renderer lay
       return [];
     },
   };
+  const detection = await runInNewContext(detectionScript, { document });
+  assert.equal(detection.ok, true);
+  assert.equal(detection.found, true);
+  assert.deepEqual(detection.componentActionKeys, ['allow_once']);
+  assert.equal(detection.componentTargetMessageIdPresent, true);
   const result = await runInNewContext(approvalScript, {
     document,
     PointerEvent: FakeEvent,

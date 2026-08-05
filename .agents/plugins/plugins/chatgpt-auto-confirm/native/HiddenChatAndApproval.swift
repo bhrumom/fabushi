@@ -1414,6 +1414,62 @@ func detectDedicatedAuthorizationJS() -> String {
         return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
       });
     };
+    const approvalComponentData = element => {
+      const ownKeys = node => {
+        try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
+      };
+      const approvalActionPattern = /^(allow|approve|confirm|authorize|authorise|grant|permit)(?:_|$)/i;
+      const targetFrom = action => action?.target_message_id
+        || action?.targetMessageId
+        || action?.target_messageID
+        || '';
+      const inspect = (source, domNode, fiberDepth) => {
+        const props = source?.memoizedProps || source?.pendingProps || source?.props || source;
+        const pluginData = props?.jit_plugin_data
+          || props?.pluginData
+          || props?.card?.jit_plugin_data;
+        const fromServer = pluginData?.from_server || pluginData?.fromServer;
+        const actions = fromServer?.actions || pluginData?.actions || props?.actions;
+        if (!actions || typeof actions !== 'object') return null;
+        const entries = Object.entries(actions);
+        const actionKeys = entries.map(([key]) => key);
+        const hasApprovalAction = actionKeys.some(action => approvalActionPattern.test(action));
+        const targetMessageId = entries
+          .filter(([key]) => approvalActionPattern.test(key))
+          .map(([, action]) => targetFrom(action))
+          .find(Boolean)
+          || targetFrom(props)
+          || '';
+        if (!hasApprovalAction || !targetMessageId) return null;
+        return {
+          root: domNode,
+          actionKeys,
+          targetMessageId,
+          fiberDepth
+        };
+      };
+      const seenFibers = new Set();
+      let node = element;
+      for (let depth = 0; depth < 30 && node; depth += 1) {
+        for (const key of ownKeys(node)) {
+          if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) continue;
+          const value = node[key];
+          const direct = inspect(value, node, 0);
+          if (direct) return direct;
+          if (!key.startsWith('__reactFiber$')) continue;
+          let fiber = value;
+          for (let fiberDepth = 1; fiberDepth < 50 && fiber; fiberDepth += 1) {
+            if (seenFibers.has(fiber)) break;
+            seenFibers.add(fiber);
+            const found = inspect(fiber, node, fiberDepth);
+            if (found) return found;
+            fiber = fiber.return;
+          }
+        }
+        node = parentOf(node);
+      }
+      return null;
+    };
     const interactive = allInteractive();
     const candidates = interactive
       .map((button, index) => ({ button, index, label: label(button) }))
@@ -1439,9 +1495,9 @@ func detectDedicatedAuthorizationJS() -> String {
         ].filter(Boolean).join(' '));
         const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
         const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
-        const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|授权|权限|允许 chatgpt|使用/.test(cardText);
-        if (hasAllow && cardText.length <= 6000 && (hasReject || hasAuthorizationText)) {
-          return { container, cardButtons, cardLabels, cardText };
+        const componentData = approvalComponentData(candidate.button);
+        if (hasAllow && hasReject && componentData) {
+          return { container, cardButtons, cardLabels, cardText, componentData };
         }
         container = parentOf(container);
       }
@@ -1491,6 +1547,8 @@ func detectDedicatedAuthorizationJS() -> String {
       unlabeledControlCount: card.cardButtons.filter(button =>
         !isAllowLabel(labelText(button)) && !isRejectLabel(labelText(button)) && !label(button)
       ).length,
+      componentActionKeys: card.componentData?.actionKeys || [],
+      componentTargetMessageIdPresent: Boolean(card.componentData?.targetMessageId),
       cardCount: cards.length,
       interactiveCount: interactive.length,
       detectionStrategy: 'interactive-dom-shadow-iframe'
@@ -1625,6 +1683,62 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
       });
     };
+    const approvalComponentData = element => {
+      const ownKeys = node => {
+        try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
+      };
+      const approvalActionPattern = /^(allow|approve|confirm|authorize|authorise|grant|permit)(?:_|$)/i;
+      const targetFrom = action => action?.target_message_id
+        || action?.targetMessageId
+        || action?.target_messageID
+        || '';
+      const inspect = (source, domNode, fiberDepth) => {
+        const props = source?.memoizedProps || source?.pendingProps || source?.props || source;
+        const pluginData = props?.jit_plugin_data
+          || props?.pluginData
+          || props?.card?.jit_plugin_data;
+        const fromServer = pluginData?.from_server || pluginData?.fromServer;
+        const actions = fromServer?.actions || pluginData?.actions || props?.actions;
+        if (!actions || typeof actions !== 'object') return null;
+        const entries = Object.entries(actions);
+        const actionKeys = entries.map(([key]) => key);
+        const hasApprovalAction = actionKeys.some(action => approvalActionPattern.test(action));
+        const targetMessageId = entries
+          .filter(([key]) => approvalActionPattern.test(key))
+          .map(([, action]) => targetFrom(action))
+          .find(Boolean)
+          || targetFrom(props)
+          || '';
+        if (!hasApprovalAction || !targetMessageId) return null;
+        return {
+          root: domNode,
+          actionKeys,
+          targetMessageId,
+          fiberDepth
+        };
+      };
+      const seenFibers = new Set();
+      let node = element;
+      for (let depth = 0; depth < 30 && node; depth += 1) {
+        for (const key of ownKeys(node)) {
+          if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) continue;
+          const value = node[key];
+          const direct = inspect(value, node, 0);
+          if (direct) return direct;
+          if (!key.startsWith('__reactFiber$')) continue;
+          let fiber = value;
+          for (let fiberDepth = 1; fiberDepth < 50 && fiber; fiberDepth += 1) {
+            if (seenFibers.has(fiber)) break;
+            seenFibers.add(fiber);
+            const found = inspect(fiber, node, fiberDepth);
+            if (found) return found;
+            fiber = fiber.return;
+          }
+        }
+        node = parentOf(node);
+      }
+      return null;
+    };
     const isOneShot = value => /\bonce\b|one time|this time|\u4e00\u6b21|\u672c\u6b21|\u6b64\u6b21/.test(normalize(value));
     const dispatchPointerClick = candidate => {
       const rect = candidate.getBoundingClientRect?.();
@@ -1669,9 +1783,9 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         ].filter(Boolean).join(' '));
         const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
         const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
-        const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|\u6388\u6743|\u6743\u9650|\u5141\u8bb8 chatgpt|\u4f7f\u7528/.test(cardText);
-        if (hasAllow && cardText.length <= 6000 && (hasReject || hasAuthorizationText)) {
-          return { container, cardButtons, cardLabels, cardText };
+        const componentData = approvalComponentData(candidate);
+        if (hasAllow && hasReject && componentData) {
+          return { container, cardButtons, cardLabels, cardText, componentData };
         }
         container = parentOf(container);
       }
