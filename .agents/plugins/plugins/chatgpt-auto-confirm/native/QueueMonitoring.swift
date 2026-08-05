@@ -37,6 +37,7 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
     "componentActionKeys": detection["componentActionKeys"] ?? [],
     "componentTargetMessageIdPresent": detection["componentTargetMessageIdPresent"] ?? false,
+    "interactiveLabelSamples": detection["interactiveLabelSamples"] ?? [],
     "cardCount": detection["cardCount"] ?? 0,
     "interactiveCount": detection["interactiveCount"] ?? 0,
     "detectionStrategy": detection["detectionStrategy"] ?? "unknown",
@@ -88,7 +89,19 @@ func approveDedicatedAuthorizationWithDiagnostics(
     expression: detectDedicatedAuthorizationJS(),
     timeout: 4.0
   )
-  guard detection?["found"] as? Bool == true else { return nil }
+  guard let detection else { return nil }
+  guard detection["found"] as? Bool == true else {
+    let candidateCount = detection["candidates"] as? Int ?? 0
+    let cardLabels = detection["cardButtonLabels"] as? [Any] ?? []
+    let componentKeys = detection["componentActionKeys"] as? [Any] ?? []
+    if candidateCount > 0 || !cardLabels.isEmpty || !componentKeys.isEmpty {
+      queueTrace(
+        "task=\(taskId) stage=approval-\(stage)-not-detected strategy=component-root "
+          + approvalDetectionTraceFields(detection)
+      )
+    }
+    return nil
+  }
 
   let safeTask = approvalDiagnosticToken(taskId)
   let safeStage = approvalDiagnosticToken(stage)

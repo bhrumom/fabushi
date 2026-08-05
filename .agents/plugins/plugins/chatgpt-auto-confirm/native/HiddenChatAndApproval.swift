@@ -1505,18 +1505,38 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const cards = candidates.map(cardFor).filter(Boolean);
     const card = cards[0];
+    const componentProbe = interactive
+      .map(button => approvalComponentData(button))
+      .filter(Boolean);
+    const componentActionKeys = [...new Set(componentProbe
+      .flatMap(item => item.actionKeys || []))];
+    const componentTargetMessageIdPresent = componentProbe
+      .some(item => Boolean(item.targetMessageId));
+    const interactiveLabelSamples = interactive
+      .map(button => label(button))
+      .filter(Boolean)
+      .slice(0, 40);
     if (!card) {
       return {
         ok: true,
         found: false,
-        candidates: 0,
-        candidateLabels: [],
+        candidates: candidates.length,
+        candidateLabels: candidates.map(item => item.label),
         selectedLabel: '',
-        cardButtonLabels: [],
+        cardButtonLabels: interactive
+          .filter(button => isAllowLabel(labelText(button)) || isRejectLabel(labelText(button)))
+          .map(label)
+          .filter(Boolean),
         sessionScopeLabels: [],
         menuTriggerLabels: [],
         menuTriggerCount: 0,
-        unlabeledControlCount: 0
+        unlabeledControlCount: 0,
+        componentActionKeys,
+        componentTargetMessageIdPresent,
+        interactiveLabelSamples,
+        cardCount: 0,
+        interactiveCount: interactive.length,
+        detectionStrategy: 'interactive-dom-shadow-iframe'
       };
     }
     return {
