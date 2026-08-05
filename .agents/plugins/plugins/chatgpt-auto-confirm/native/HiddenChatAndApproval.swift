@@ -444,18 +444,22 @@ func nativeApprovalComponentActionResult(
             })[0] || null;
         }
       } else {
-        const surfaces = [...new Set([
-          ...query(document, '[role="menu"], [role="listbox"], [role="dialog"], '
-            + '[data-state="open"], [data-radix-menu-content], '
-            + '[data-radix-popper-content-wrapper], [data-slot*="menu" i]')
-        ])].filter(connected);
+        const surfaces = [...new Set(allElements(document).filter(element => {
+          const role = String(element.getAttribute?.('role') || '').toLowerCase();
+          const marker = structuralMarker(element);
+          return ['menu', 'listbox', 'dialog'].includes(role)
+            || element.getAttribute?.('aria-modal') === 'true'
+            || element.getAttribute?.('data-state') === 'open'
+            || /menu|dropdown|popover|listbox|select|command/.test(marker);
+        }))].filter(connected);
         const candidates = surfaces.flatMap(surface => [
-          ...(surface.matches?.(selector) ? [surface] : []),
-          ...query(surface, selector)
+          surface,
+          ...allElements(surface)
         ]).filter((candidate, index, all) =>
           all.indexOf(candidate) === index
             && connected(candidate)
             && surfaceFor(candidate)
+            && hasClickSemantics(candidate)
             && matchesRequested(candidate)
         );
         target = candidates.sort((left, right) => {
@@ -605,9 +609,54 @@ func nativeApprovalComponentActionResult(
         const eventY = rectPointUsable
           ? rect.top + rect.height / 2
           : pointUsed ? \#(y) : 0;
+        const hitNode = pointUsed && typeof document.elementFromPoint === 'function'
+          ? (() => {
+            try { return document.elementFromPoint(eventX, eventY); }
+            catch (_) { return null; }
+          })()
+          : null;
+        const approvalSurface = rootsFor(target).find(root =>
+          root.getAttribute?.('data-codex-approval-surface') === 'true'
+        ) || null;
+        const disclosureTarget = (() => {
+          let node = hitNode;
+          for (let depth = 0; depth < 10 && node; depth += 1) {
+            if (node !== target) {
+              const candidateRect = node.getBoundingClientRect?.();
+              const verticalOverlap = !!(candidateRect && rect
+                && candidateRect.bottom > rect.top
+                && candidateRect.top < rect.bottom);
+              const rightAligned = !!(candidateRect && rect
+                && (candidateRect.left >= rect.left + rect.width * 0.55
+                  || candidateRect.right >= rect.right - 12));
+              const inApprovalSurface = !approvalSurface
+                || contains(approvalSurface, node);
+              const candidateLabel = labelOf(node);
+              const actionable = node.matches?.(selector) || hasClickSemantics(node);
+              if (inApprovalSurface && verticalOverlap && rightAligned
+                  && actionable && !isAllow(node)
+                  && (hasMenuStructure(node) || !candidateLabel)) {
+                return node;
+              }
+            }
+            node = parentOf(node);
+          }
+          return null;
+        })();
+        const activationTarget = disclosureTarget || target;
+        const activationRect = activationTarget.getBoundingClientRect?.();
+        const activationPointUsable = !!(disclosureTarget && activationRect
+          && eventX >= activationRect.left && eventX <= activationRect.right
+          && eventY >= activationRect.top && eventY <= activationRect.bottom);
+        const activationX = disclosureTarget && activationRect && !activationPointUsable
+          ? activationRect.right - Math.min(2, Math.max(1, activationRect.width * 0.02))
+          : eventX;
+        const activationY = disclosureTarget && activationRect && !activationPointUsable
+          ? activationRect.top + activationRect.height / 2
+          : eventY;
         const componentDiagnostics = (() => {
           const ancestors = [];
-          let ancestor = target;
+          let ancestor = activationTarget;
           for (let depth = 0; depth < 8 && ancestor; depth += 1) {
             ancestors.push({ depth, node: compactDiagnosticNode(ancestor) });
             ancestor = parentOf(ancestor);
@@ -618,25 +667,26 @@ func nativeApprovalComponentActionResult(
           }));
           return {
             target: compactDiagnosticNode(target),
+            disclosureTarget: compactDiagnosticNode(disclosureTarget),
             targetPseudoBefore: pseudoDiagnostic(target, '::before'),
             targetPseudoAfter: pseudoDiagnostic(target, '::after'),
             children,
             ancestors,
-            hit: compactDiagnosticNode(
-              typeof document.elementFromPoint === 'function'
-                ? document.elementFromPoint(eventX, eventY) : null
-            ),
+            hit: compactDiagnosticNode(hitNode),
             activeElement: compactDiagnosticNode(document.activeElement)
           };
         })();
-        const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
+        const hiddenFallback = !activationRect || activationRect.width <= 0
+          || activationRect.height <= 0;
         const eventTarget = (() => {
-          if (!pointUsed || typeof document.elementFromPoint !== 'function') return target;
+          if (!pointUsed || typeof document.elementFromPoint !== 'function') {
+            return activationTarget;
+          }
           try {
-            const hit = document.elementFromPoint(eventX, eventY);
-            return hit && (hit === target || target.contains?.(hit)) ? hit : target;
+            return hitNode && (hitNode === activationTarget
+              || activationTarget.contains?.(hitNode)) ? hitNode : activationTarget;
           } catch (_) {
-            return target;
+            return activationTarget;
           }
         })();
         const pressed = {
@@ -647,10 +697,10 @@ func nativeApprovalComponentActionResult(
           detail: 1,
           button: 0,
           buttons: 1,
-          clientX: eventX,
-          clientY: eventY,
-          screenX: eventX,
-          screenY: eventY
+          clientX: activationX,
+          clientY: activationY,
+          screenX: activationX,
+          screenY: activationY
         };
         const dispatchMouse = (type, buttons) => {
           const options = { ...pressed, buttons };
@@ -669,7 +719,7 @@ func nativeApprovalComponentActionResult(
           eventTarget.dispatchEvent(new MouseEvent(type, options));
         };
         try {
-          target.focus?.({ preventScroll: true });
+          activationTarget.focus?.({ preventScroll: true });
           dispatchMouse('pointerdown', 1);
           dispatchMouse('mousedown', 1);
           dispatchMouse('pointerup', 0);
@@ -684,19 +734,19 @@ func nativeApprovalComponentActionResult(
               key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
               bubbles: true, cancelable: true, composed: true
             };
-            target.dispatchEvent(new KeyboardEvent('keydown', options));
-            target.dispatchEvent(new KeyboardEvent('keyup', options));
+            activationTarget.dispatchEvent(new KeyboardEvent('keydown', options));
+            activationTarget.dispatchEvent(new KeyboardEvent('keyup', options));
           } catch (_) {}
         }
         return {
           ok: true,
           action,
           mode: 'component-split-disclosure-event-sequence-dispatched',
-          targetTag: target.tagName || '',
-          targetRole: target.getAttribute?.('role') || '',
-          targetLabel: labelOf(target),
+          targetTag: activationTarget.tagName || '',
+          targetRole: activationTarget.getAttribute?.('role') || '',
+          targetLabel: labelOf(activationTarget),
           pointUsed: pointUsed || !!rect,
-          inputPoint: pointUsed ? { x: eventX, y: eventY } : null,
+          inputPoint: pointUsed ? { x: activationX, y: activationY } : null,
           hiddenFallback,
           componentDiagnostics
         };
@@ -888,6 +938,52 @@ func nativeApprovalComponentActionResult(
         || ''
     );
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const ownKeys = node => {
+      try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
+    };
+    const propsFrom = source => source?.memoizedProps || source?.pendingProps
+      || source?.props || source || {};
+    const hasClickSemantics = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const role = normalize(element.getAttribute?.('role'));
+      if (['button', 'a', 'summary'].includes(tagName)
+          || ['button', 'menuitem', 'menuitemradio', 'option'].includes(role)) {
+        return true;
+      }
+      for (const key of ownKeys(element)) {
+        if (key === 'onclick' && typeof element[key] === 'function') return true;
+        if (!key.startsWith('__reactProps$')) continue;
+        const props = propsFrom(element[key]);
+        if (['onClick', 'onPointerDown', 'onKeyDown', 'onSelect'].some(name =>
+          typeof props?.[name] === 'function'
+        )) return true;
+      }
+      return false;
+    };
+    const allElements = root => {
+      const output = [];
+      const seen = new Set();
+      const visit = container => {
+        if (!container || seen.has(container)) return;
+        seen.add(container);
+        let nodes = [];
+        try { nodes = [...(container.querySelectorAll?.('*') || [])]; }
+        catch (_) { nodes = []; }
+        for (const node of nodes) {
+          if (seen.has(node)) continue;
+          seen.add(node);
+          output.push(node);
+          if (node.shadowRoot) visit(node.shadowRoot);
+          if (node.tagName?.toLowerCase() === 'iframe') {
+            try { if (node.contentDocument) visit(node.contentDocument); }
+            catch (_) {}
+          }
+        }
+      };
+      visit(root);
+      return output;
+    };
     const structuralMarker = element => normalize([
       element?.getAttribute?.('data-slot'),
       element?.getAttribute?.('data-state'),
@@ -1170,6 +1266,52 @@ func sessionScopeComponentProbeJS() -> String {
       return !!text && sessionHints.some(hint => text.includes(hint));
     };
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const ownKeys = node => {
+      try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
+    };
+    const propsFrom = source => source?.memoizedProps || source?.pendingProps
+      || source?.props || source || {};
+    const hasClickSemantics = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const role = normalize(element.getAttribute?.('role'));
+      if (['button', 'a', 'summary'].includes(tagName)
+          || ['button', 'menuitem', 'menuitemradio', 'option'].includes(role)) {
+        return true;
+      }
+      for (const key of ownKeys(element)) {
+        if (key === 'onclick' && typeof element[key] === 'function') return true;
+        if (!key.startsWith('__reactProps$')) continue;
+        const props = propsFrom(element[key]);
+        if (['onClick', 'onPointerDown', 'onKeyDown', 'onSelect'].some(name =>
+          typeof props?.[name] === 'function'
+        )) return true;
+      }
+      return false;
+    };
+    const allElements = root => {
+      const output = [];
+      const seen = new Set();
+      const visit = container => {
+        if (!container || seen.has(container)) return;
+        seen.add(container);
+        let nodes = [];
+        try { nodes = [...(container.querySelectorAll?.('*') || [])]; }
+        catch (_) { nodes = []; }
+        for (const node of nodes) {
+          if (seen.has(node)) continue;
+          seen.add(node);
+          output.push(node);
+          if (node.shadowRoot) visit(node.shadowRoot);
+          if (node.tagName?.toLowerCase() === 'iframe') {
+            try { if (node.contentDocument) visit(node.contentDocument); }
+            catch (_) {}
+          }
+        }
+      };
+      visit(root);
+      return output;
+    };
     const marker = element => normalize([
       element?.getAttribute?.('data-slot'),
       element?.getAttribute?.('data-state'),
@@ -1198,23 +1340,29 @@ func sessionScopeComponentProbeJS() -> String {
         || element?.textContent
         || ''
     );
-    const surfaces = [...new Set(
-      [...document.querySelectorAll?.(
-        '[role="menu"], [role="listbox"], [role="dialog"], '
-          + '[data-state="open"], [data-radix-menu-content], '
-          + '[data-radix-popper-content-wrapper], [data-slot*="menu" i]'
-      ) || []]
-    )].filter(node => node?.isConnected !== false);
+    const surfaces = [...new Set(allElements(document).filter(node => {
+      const role = normalize(node.getAttribute?.('role'));
+      const marker = normalize([
+        node.getAttribute?.('data-slot'),
+        node.getAttribute?.('data-state'),
+        node.getAttribute?.('class'),
+        node.getAttribute?.('id')
+      ].filter(Boolean).join(' '));
+      return ['menu', 'listbox', 'dialog'].includes(role)
+        || node.getAttribute?.('aria-modal') === 'true'
+        || node.getAttribute?.('data-state') === 'open'
+        || /menu|dropdown|popover|listbox|select|command/.test(marker);
+    }))].filter(node => node?.isConnected !== false);
     const selector = [
       '[role="menuitem"]', '[role="menuitemradio"]', '[role="option"]',
       'button', '[data-radix-collection-item]', '[data-slot*="menu" i]'
     ].join(',');
-    const options = surfaces.flatMap(surface => [
-      ...(surface.querySelectorAll?.(selector) || [])
-    ]).filter((node, index, all) =>
+    const options = surfaces.flatMap(surface => allElements(surface))
+      .filter((node, index, all) =>
       all.indexOf(node) === index
         && node?.isConnected !== false
         && !!surfaceFor(node)
+        && hasClickSemantics(node)
         && isSession(labelOf(node))
     ).sort((left, right) => {
       const leftRect = left.getBoundingClientRect?.();
