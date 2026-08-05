@@ -424,6 +424,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Target.createTarget/);
   assert.match(nativeSource, /headless-window-target-ready/);
   assert.match(nativeSource, /dedicated-hosted-profile/);
+  assert.match(nativeSource, /launchDedicatedQueueChatProcessViaLaunchServices/);
+  assert.match(nativeSource, /dedicated-launchservices-first-start/);
   assert.match(nativeSource, /effectiveAccountId == hostedAccountId/);
   assert.match(nativeSource, /dedicated-avatar-overlay-navigation/);
   assert.match(nativeSource, /dedicated-empty-shell-navigation/);
