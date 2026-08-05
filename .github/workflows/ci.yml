@@ -176,6 +176,19 @@ jobs:
           while IFS= read -r path; do
             [ -n "$path" ] || continue
             case "$path" in
+              .github/workflows/chatgpt-auto-confirm-*.yml|.github/workflows/ci_codex_sync.yml|.github/workflows/plugin-marketplace-contract.yml)
+                # The ChatGPT runtime has its own macOS validation workflow.
+                # The embedded-runtime and marketplace workflows likewise
+                # validate their own scopes. Keep only the lightweight
+                # workflow guard check here; do not classify them as a
+                # Flutter/Worker deploy input.
+                mark_guard "Scoped workflow guardrail changed: $path"
+                ;;
+              .github/workflows/ci.yml)
+                # Changes to this classifier need its own guard check, but do
+                # not imply that the mobile or Worker artifacts changed.
+                mark_guard "CI classifier workflow changed: $path"
+                ;;
               fabushi/android/*)
                 mark_app "mobile platform input changed: $path"
                 mark_android "android build input changed: $path"
@@ -206,6 +219,10 @@ jobs:
                 ;;
             esac
             case "$path" in
+              .agents/plugins/plugins/chatgpt-auto-confirm/*|.github/workflows/chatgpt-auto-confirm-*.yml)
+                # This plugin is validated by chatgpt-auto-confirm-runtime.yml;
+                # its native runtime files are not MCP contract inputs.
+                ;;
               .agents/plugins/*|ai-backend/*|native/global-dharma/*|third_party/mahayana|third_party/mahayana/*|fabushi/lib/screens/mini_app_host_screen.dart|fabushi/lib/widgets/mcp_schema_form_dialog.dart|fabushi/lib/widgets/social/social_feature_bot.dart|fabushi/lib/services/mini_app_registry_service.dart|fabushi/tool/desktop_package_cli.dart|frontend/apps/web/src/app/miniapps/*|frontend/packages/mcp-app-sdk/*|.github/workflows/ci.yml)
                 mark_mcp "MCP plugin contract input changed: $path"
                 ;;
