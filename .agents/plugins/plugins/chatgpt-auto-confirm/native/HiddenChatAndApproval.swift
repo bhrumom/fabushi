@@ -4157,6 +4157,10 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
           strategy: 'session-scope', label: sessionScopeLabel,
           menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates
         });
+        if (card.cardButtons.some(button =>
+          hasAllowLabel(button) && (!button.isConnected || !visible(button)))) {
+          break;
+        }
         await sleep(150);
         continue;
       }
@@ -4203,6 +4207,10 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       approvedCards.push({
         strategy: approvalStrategy, label: candidate.label, candidateLabels
       });
+      if (card.cardButtons.some(button =>
+        hasAllowLabel(button) && (!button.isConnected || !visible(button)))) {
+        break;
+      }
       await sleep(150);
     }
 
