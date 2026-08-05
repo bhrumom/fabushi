@@ -397,6 +397,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /allPrefixedModelChoices\('Extra High'\)/);
   assert.match(nativeSource, /quickChatKeyboardTarget/);
   assert.match(nativeSource, /quickChatSliderElements/);
+  assert.match(nativeSource, /data-reasoning-slider/);
+  assert.match(nativeSource, /quickChatSelectionConfirmed/);
+  assert.match(nativeSource, /max - 1/);
   assert.match(nativeSource, /quickChatSelectionEvidence/);
   assert.match(nativeSource, /dispatchQuickChatEnter/);
   assert.match(nativeSource, /modelSelectionEvidence/);
