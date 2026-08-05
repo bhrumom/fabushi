@@ -408,6 +408,29 @@ jobs:
             -in "$STATE_PATH" \
             -out "${{ steps.paths.outputs.runtime_dir }}/queue-state.enc"
 
+      - name: Report diagnostic evidence inventory
+        if: always()
+        shell: bash
+        env:
+          RUNTIME_DIR: ${{ steps.paths.outputs.runtime_dir }}
+        run: |
+          set -euo pipefail
+          echo "Action diagnostic evidence:"
+          if [[ -d "$RUNTIME_DIR/diagnostics" ]]; then
+            find "$RUNTIME_DIR/diagnostics" -type f -print \
+              | sort \
+              | while IFS= read -r path; do
+                  bytes=$(stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path")
+                  echo "  $path (${bytes} bytes)"
+                  if [[ "$path" == *.png ]] && command -v sips >/dev/null 2>&1; then
+                    sips -g pixelWidth -g pixelHeight "$path" 2>/dev/null \
+                      | sed 's#^#    #' || true
+                  fi
+                done
+          else
+            echo "  no diagnostics directory"
+          fi
+
       - name: Upload encrypted continuation state
         if: always()
         uses: actions/upload-artifact@v7

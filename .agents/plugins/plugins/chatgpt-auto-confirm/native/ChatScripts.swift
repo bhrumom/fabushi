@@ -533,8 +533,62 @@ func sendMessageJS(
         || text.includes('额外高');
     }
 
+    function quickChatSliderElements() {
+      return [...document.querySelectorAll(
+        'input[type="range"], [role="slider"], [aria-valuenow], [aria-label*="of 5"], '
+          + '[aria-label*="adjust power"], [aria-label*="调整强度"]'
+      )].filter((element, index, all) => {
+        return element && all.indexOf(element) === index && visible(element);
+      });
+    }
+
+    function quickChatElementEvidence(element) {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect?.();
+      return {
+        tag: element.tagName || '',
+        type: element.getAttribute('type') || '',
+        role: element.getAttribute('role') || '',
+        ariaLabel: element.getAttribute('aria-label') || '',
+        ariaValueNow: element.getAttribute('aria-valuenow') || '',
+        ariaValueMin: element.getAttribute('aria-valuemin') || '',
+        ariaValueMax: element.getAttribute('aria-valuemax') || '',
+        ariaValueText: element.getAttribute('aria-valuetext') || '',
+        tabIndex: element.getAttribute('tabindex') || '',
+        value: element.value == null ? '' : String(element.value),
+        selected: selectedChoice(element),
+        text: normalize(element.textContent).slice(0, 500),
+        outerHTML: (element.outerHTML || '').replace(/\\s+/g, ' ').slice(0, 900),
+        rect: rect ? {
+          x: Math.round(rect.x), y: Math.round(rect.y),
+          width: Math.round(rect.width), height: Math.round(rect.height)
+        } : null
+      };
+    }
+
+    function quickChatSelectionEvidence() {
+      const active = document.activeElement;
+      const menus = visibleModelMenus().map(menu => ({
+        tag: menu.tagName || '',
+        role: menu.getAttribute('role') || '',
+        text: normalize(menu.textContent).slice(0, 1200),
+        items: [...menu.querySelectorAll(
+          'button, [role="option"], [role="menuitem"], [role="menuitemradio"], '
+            + 'input, [role="slider"], [aria-valuenow]'
+        )].filter(visible).slice(0, 30).map(quickChatElementEvidence)
+      }));
+      return {
+        activeElement: quickChatElementEvidence(active),
+        sliders: quickChatSliderElements().slice(0, 20).map(quickChatElementEvidence),
+        picker: quickChatElementEvidence(modelPickerButton()),
+        menus,
+        visibleText: normalize(document.body?.innerText || '').slice(0, 5000)
+      };
+    }
+
     function quickChatKeyboardTarget() {
       const candidates = [
+        ...quickChatSliderElements(),
         document.activeElement,
         ...document.querySelectorAll(
           '[role="slider"], [aria-valuenow], [aria-label*="of 5"], '
@@ -560,8 +614,36 @@ func sendMessageJS(
         keyCode: 39,
         which: 39
       };
-      element.dispatchEvent(new KeyboardEvent('keydown', event));
-      element.dispatchEvent(new KeyboardEvent('keyup', event));
+      const keyDown = new KeyboardEvent('keydown', event);
+      const keyPress = new KeyboardEvent('keypress', event);
+      const keyUp = new KeyboardEvent('keyup', event);
+      // Chromium ignores keyCode/which in the KeyboardEvent constructor. Some
+      // Electron builds still use those legacy fields in their React handler,
+      // so define them explicitly before dispatching the synthetic event.
+      for (const keyboardEvent of [keyDown, keyPress, keyUp]) {
+        for (const [name, value] of [['keyCode', 39], ['which', 39]]) {
+          try { Object.defineProperty(keyboardEvent, name, {value}); } catch {}
+        }
+      }
+      element.dispatchEvent(keyDown);
+      element.dispatchEvent(keyPress);
+      element.dispatchEvent(keyUp);
+      return true;
+    }
+
+    function dispatchQuickChatEnter(element) {
+      if (!element) return false;
+      element.focus?.();
+      const event = {bubbles: true, cancelable: true, key: 'Enter', code: 'Enter'};
+      const keyDown = new KeyboardEvent('keydown', event);
+      const keyUp = new KeyboardEvent('keyup', event);
+      for (const keyboardEvent of [keyDown, keyUp]) {
+        for (const [name, value] of [['keyCode', 13], ['which', 13]]) {
+          try { Object.defineProperty(keyboardEvent, name, {value}); } catch {}
+        }
+      }
+      element.dispatchEvent(keyDown);
+      element.dispatchEvent(keyUp);
       return true;
     }
 
@@ -709,6 +791,17 @@ func sendMessageJS(
             selectedLabel = quickChatLabel(picker);
             quickChatConfirmed = quickChatStrongMode(selectedLabel);
           }
+          if (!quickChatConfirmed) {
+            // The five-position control commits its value on Enter in some
+            // desktop builds. Keep the menu open while committing so the
+            // subsequent evidence shows the exact active control and value.
+            const keyboardTarget = quickChatKeyboardTarget() || picker;
+            dispatchQuickChatEnter(keyboardTarget);
+            await sleep(500);
+            picker = modelPickerButton();
+            selectedLabel = quickChatLabel(picker);
+            quickChatConfirmed = quickChatStrongMode(selectedLabel);
+          }
         }
         if (!quickChatConfirmed) {
           return {
@@ -725,6 +818,7 @@ func sendMessageJS(
             quickChatKeyboardTargetLabel,
             visibleMenuText: visibleModelMenus()
               .map(menu => normalize(menu.textContent).slice(0, 500)),
+            modelSelectionEvidence: quickChatSelectionEvidence(),
             surface: chatSurfaceEvidence()
           };
         }
@@ -742,6 +836,7 @@ func sendMessageJS(
           quickChatChoiceClicked,
           quickChatKeyboardAttempts,
           quickChatKeyboardTargetLabel,
+          modelSelectionEvidence: quickChatSelectionEvidence(),
           verificationModelSelected: true,
           submenuExtraHighSelected: true,
           submenuHighSelected: true,
