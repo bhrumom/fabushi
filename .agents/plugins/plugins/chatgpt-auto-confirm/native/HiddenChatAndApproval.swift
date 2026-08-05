@@ -3989,9 +3989,18 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       return null;
     };
     const confirmCardClosed = async (candidate, card) => {
+      const allowControls = (card?.cardButtons || [])
+        .filter(button => hasAllowLabel(button));
       for (let index = 0; index < 30; index += 1) {
         await sleep(100);
         if (!candidate.isConnected || !visible(candidate)) return true;
+        // A split authorization component may retire the primary Allow node
+        // before its disclosure wrapper. Treat the card as closed once any
+        // card-owned Allow control is gone; waiting for the wrapper itself
+        // would report a completed session choice as a false failure.
+        if (allowControls.some(button => !button.isConnected || !visible(button))) {
+          return true;
+        }
         if (card?.container && (!card.container.isConnected || !visible(card.container))) return true;
         if (!collectCard(candidate)) return true;
       }
