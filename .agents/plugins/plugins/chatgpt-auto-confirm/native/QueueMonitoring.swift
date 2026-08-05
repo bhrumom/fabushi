@@ -66,11 +66,14 @@ func traceQueueApproval(
     "menuCandidates": result["menuCandidates"] ?? [],
     "menuTriggerPoint": result["menuTriggerPoint"] ?? NSNull(),
     "sessionOptionPoint": result["sessionOptionPoint"] ?? NSNull(),
+    "sessionOptionRect": result["sessionOptionRect"] ?? NSNull(),
     "sessionOptionClickPoint": result["sessionOptionClickPoint"] ?? NSNull(),
     "nativeTriggerClicked": result["nativeTriggerClicked"] ?? false,
     "nativeInput": result["nativeInput"] ?? false,
     "nativeOptionClickAttempts": result["nativeOptionClickAttempts"] ?? 0,
     "nativeOptionClickSuccesses": result["nativeOptionClickSuccesses"] ?? 0,
+    "nativeOptionDOMFallbackAttempts": result["nativeOptionDOMFallbackAttempts"] ?? 0,
+    "nativeOptionDOMFallbackSuccesses": result["nativeOptionDOMFallbackSuccesses"] ?? 0,
     "cardsApproved": result["cardsApproved"] ?? 0,
     "cardsRemaining": result["cardsRemaining"] ?? 0,
   ]) ?? "{\"labels\":[]}"
@@ -161,6 +164,8 @@ func approveDedicatedAuthorizationWithDiagnostics(
     let resultNativeInput = result["nativeInput"] as? Bool == true
     let nativeOptionClickAttempts = result["nativeOptionClickAttempts"] as? Int ?? 0
     let nativeOptionClickSuccesses = result["nativeOptionClickSuccesses"] as? Int ?? 0
+    let nativeOptionDOMFallbackAttempts = result["nativeOptionDOMFallbackAttempts"] as? Int ?? 0
+    let nativeOptionDOMFallbackSuccesses = result["nativeOptionDOMFallbackSuccesses"] as? Int ?? 0
     let resultError = result["error"] as? String ?? "none"
     let afterPath = captureHiddenChatScreenshot(
       port: port,
@@ -175,6 +180,8 @@ func approveDedicatedAuthorizationWithDiagnostics(
         + "nativeInput=\(resultNativeInput) "
         + "nativeOptionClickAttempts=\(nativeOptionClickAttempts) "
         + "nativeOptionClickSuccesses=\(nativeOptionClickSuccesses) "
+        + "nativeOptionDOMFallbackAttempts=\(nativeOptionDOMFallbackAttempts) "
+        + "nativeOptionDOMFallbackSuccesses=\(nativeOptionDOMFallbackSuccesses) "
         + "beforeScreenshot=\(screenshotPath ?? "none") "
         + "afterScreenshot=\(afterPath ?? "none") "
         + "error=\(resultError)"
