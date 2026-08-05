@@ -34,6 +34,7 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "sessionScopeLabels": detection["sessionScopeLabels"] ?? [],
     "menuTriggerLabels": detection["menuTriggerLabels"] ?? [],
     "menuTriggerCount": detection["menuTriggerCount"] ?? 0,
+    "menuTriggerIsSelectedButton": detection["menuTriggerIsSelectedButton"] ?? false,
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
     "componentActionKeys": detection["componentActionKeys"] ?? [],
     "componentTargetMessageIdPresent": detection["componentTargetMessageIdPresent"] ?? false,
@@ -69,6 +70,11 @@ func traceQueueApproval(
     "sessionOptionRect": result["sessionOptionRect"] ?? NSNull(),
     "sessionOptionClickPoint": result["sessionOptionClickPoint"] ?? NSNull(),
     "nativeTriggerClicked": result["nativeTriggerClicked"] ?? false,
+    "nativeTriggerClickAttempts": result["nativeTriggerClickAttempts"] ?? 0,
+    "nativeTriggerClickSuccesses": result["nativeTriggerClickSuccesses"] ?? 0,
+    "nativeTriggerKeyUsed": result["nativeTriggerKeyUsed"] ?? false,
+    "nativeTriggerKeyAttempts": result["nativeTriggerKeyAttempts"] ?? 0,
+    "nativeTriggerKeySuccesses": result["nativeTriggerKeySuccesses"] ?? 0,
     "nativeInput": result["nativeInput"] ?? false,
     "nativeOptionClickAttempts": result["nativeOptionClickAttempts"] ?? 0,
     "nativeOptionClickSuccesses": result["nativeOptionClickSuccesses"] ?? 0,
@@ -147,6 +153,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
       + "strategy=\(result["strategy"] as? String ?? "session-scope") "
       + "clicked=\(result["clicked"] as? Bool == true) "
       + "confirmed=\(result["confirmed"] as? Bool == true) "
+      + "nativeTriggerClickAttempts=\(result["nativeTriggerClickAttempts"] as? Int ?? 0) "
+      + "nativeTriggerClickSuccesses=\(result["nativeTriggerClickSuccesses"] as? Int ?? 0) "
+      + "nativeTriggerKeyAttempts=\(result["nativeTriggerKeyAttempts"] as? Int ?? 0) "
+      + "nativeTriggerKeySuccesses=\(result["nativeTriggerKeySuccesses"] as? Int ?? 0) "
       + "error=\(result["error"] as? String ?? "none")"
   )
   traceQueueApproval(
@@ -166,6 +176,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
     let nativeOptionClickSuccesses = result["nativeOptionClickSuccesses"] as? Int ?? 0
     let nativeOptionDOMFallbackAttempts = result["nativeOptionDOMFallbackAttempts"] as? Int ?? 0
     let nativeOptionDOMFallbackSuccesses = result["nativeOptionDOMFallbackSuccesses"] as? Int ?? 0
+    let nativeTriggerClickAttempts = result["nativeTriggerClickAttempts"] as? Int ?? 0
+    let nativeTriggerClickSuccesses = result["nativeTriggerClickSuccesses"] as? Int ?? 0
+    let nativeTriggerKeyAttempts = result["nativeTriggerKeyAttempts"] as? Int ?? 0
+    let nativeTriggerKeySuccesses = result["nativeTriggerKeySuccesses"] as? Int ?? 0
     let resultError = result["error"] as? String ?? "none"
     let afterPath = captureHiddenChatScreenshot(
       port: port,
@@ -178,6 +192,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
         + "clicked=\(resultClicked) "
         + "confirmed=\(resultConfirmed) "
         + "nativeInput=\(resultNativeInput) "
+        + "nativeTriggerClickAttempts=\(nativeTriggerClickAttempts) "
+        + "nativeTriggerClickSuccesses=\(nativeTriggerClickSuccesses) "
+        + "nativeTriggerKeyAttempts=\(nativeTriggerKeyAttempts) "
+        + "nativeTriggerKeySuccesses=\(nativeTriggerKeySuccesses) "
         + "nativeOptionClickAttempts=\(nativeOptionClickAttempts) "
         + "nativeOptionClickSuccesses=\(nativeOptionClickSuccesses) "
         + "nativeOptionDOMFallbackAttempts=\(nativeOptionDOMFallbackAttempts) "
