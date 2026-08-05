@@ -223,7 +223,7 @@ jobs:
                 # This plugin is validated by chatgpt-auto-confirm-runtime.yml;
                 # its native runtime files are not MCP contract inputs.
                 ;;
-              .agents/plugins/*|ai-backend/*|native/global-dharma/*|third_party/mahayana|third_party/mahayana/*|fabushi/lib/screens/mini_app_host_screen.dart|fabushi/lib/widgets/mcp_schema_form_dialog.dart|fabushi/lib/widgets/social/social_feature_bot.dart|fabushi/lib/services/mini_app_registry_service.dart|fabushi/tool/desktop_package_cli.dart|frontend/apps/web/src/app/miniapps/*|frontend/packages/mcp-app-sdk/*|.github/workflows/ci.yml)
+              .agents/plugins/*|ai-backend/*|native/global-dharma/*|third_party/mahayana|third_party/mahayana/*|fabushi/lib/screens/mini_app_host_screen.dart|fabushi/lib/widgets/mcp_schema_form_dialog.dart|fabushi/lib/widgets/social/social_feature_bot.dart|fabushi/lib/services/mini_app_registry_service.dart|fabushi/tool/desktop_package_cli.dart|frontend/apps/web/src/app/miniapps/*|frontend/packages/mcp-app-sdk/*)
                 mark_mcp "MCP plugin contract input changed: $path"
                 ;;
             esac
