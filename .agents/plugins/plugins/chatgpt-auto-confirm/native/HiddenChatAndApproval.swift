@@ -265,11 +265,15 @@ func nativeApprovalArrowKey(
       key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
       bubbles: true, cancelable: true, composed: true
     };
-    target.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
-    target.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
+    setTimeout(() => {
+      try {
+        target.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
+        target.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
+      } catch (_) {}
+    }, 0);
     return {
       ok: true,
-      mode: 'component-dom-key-event',
+      mode: 'component-dom-key-event-queued',
       tag: target.tagName || '',
       label: labelOf(target),
       expanded: target.getAttribute?.('aria-expanded') ?? null
@@ -418,11 +422,13 @@ func nativeApprovalComponentActionResult(
         screenX: \#(x),
         screenY: \#(y)
       });
-      target.dispatchEvent(clickEvent);
+      setTimeout(() => {
+        try { target.dispatchEvent(clickEvent); } catch (_) {}
+      }, 0);
       return {
         ok: true,
         action,
-        mode: 'component-dom-click-event',
+        mode: 'component-dom-click-event-queued',
         targetTag: target.tagName || '',
         targetRole: target.getAttribute?.('role') || '',
         targetLabel: labelOf(target),
@@ -515,13 +521,15 @@ func nativeApprovalComponentActionResult(
               type: selected.name === 'onClick' ? 'click' : 'pointerdown',
               pointerId: 1, pointerType: 'mouse', isPrimary: true
             }
-          };
+      };
       try {
-        selected.handler.call(selected.owner, event);
+        setTimeout(() => {
+          try { selected.handler.call(selected.owner, event); } catch (_) {}
+        }, 0);
         return {
           ok: true,
           action,
-          mode: 'react-handler',
+          mode: 'react-handler-queued',
           handler: selected.name,
           handlerFiberDepth: selected.fiberDepth,
           targetTag: target.tagName || '',
@@ -545,11 +553,13 @@ func nativeApprovalComponentActionResult(
     // use its native DOM activation instead of any coordinate input.
     if (action === 'option' && typeof target.click === 'function') {
       try {
-        target.click();
+        setTimeout(() => {
+          try { target.click(); } catch (_) {}
+        }, 0);
         return {
           ok: true,
           action,
-          mode: 'component-dom-activation',
+          mode: 'component-dom-activation-queued',
           targetTag: target.tagName || '',
           targetRole: target.getAttribute?.('role') || '',
           targetLabel: labelOf(target)
