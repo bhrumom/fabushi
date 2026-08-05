@@ -2295,6 +2295,38 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       configureMenuTrigger(companion, candidate);
       return companion || null;
     };
+    const isMenuSurface = element => {
+      if (!element) return false;
+      const role = normalize(element.getAttribute?.('role'));
+      if (['menu', 'listbox', 'dialog'].includes(role)) return true;
+      const marker = structuralMarker(element);
+      return element.getAttribute?.('aria-modal') === 'true'
+        || element.getAttribute?.('data-state') === 'open'
+        || /menu|dropdown|popover|listbox|select|command/.test(marker);
+    };
+    const menuSurfaceFor = element => {
+      let node = element;
+      for (let depth = 0; depth < 12 && node; depth += 1) {
+        if (isMenuSurface(node)) return node;
+        node = parentOf(node);
+      }
+      return null;
+    };
+    const menuTargetFor = element => {
+      let node = element;
+      for (let depth = 0; depth < 8 && node; depth += 1) {
+        const role = normalize(node.getAttribute?.('role'));
+        const actionableRole = ['button', 'menuitem', 'menuitemradio', 'option'].includes(role);
+        if (node !== sessionControl
+            && !cardButtons.includes(node)
+            && hasAllowLabel(node)
+            && (hasClickSemantics(node) || actionableRole)) {
+          return node;
+        }
+        node = parentOf(node);
+      }
+      return element;
+    };
     const sessionMenuItems = (sessionControl, cardButtons) => [...new Set(
       allInteractive()
         .map(item => {
@@ -2305,12 +2337,18 @@ func autoApproveDedicatedAuthorizationJS() -> String {
                 && hasClickSemantics(node)) return node;
             node = parentOf(node);
           }
-          return null;
+          if (!hasAllowLabel(item)
+              || item === sessionControl
+              || cardButtons.includes(item)
+              || !menuSurfaceFor(item)) {
+            return null;
+          }
+          return menuTargetFor(item);
         })
         .filter(Boolean)
     )].filter(item => {
       if (item === sessionControl || cardButtons.includes(item)) return false;
-      return isSessionScope(labelText(item)) && visible(item);
+      return (isSessionScope(labelText(item)) || hasAllowLabel(item)) && visible(item);
     });
     const pointForElement = element => {
       const rect = rectObject(element);
