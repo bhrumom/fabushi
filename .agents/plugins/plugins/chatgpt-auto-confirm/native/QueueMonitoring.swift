@@ -112,7 +112,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
   )
   queueTrace(
     "task=\(taskId) stage=approval-\(stage)-detected strategy=per-card "
-      + "selected=\(detection?["selectedLabel"] as? String ?? "none") "
+      + "selected=\(detection["selectedLabel"] as? String ?? "none") "
       + "screenshot=\(screenshotPath ?? "none") "
       + approvalDetectionTraceFields(detection)
   )
