@@ -247,14 +247,6 @@ func nativeApprovalDOMClickResult(
     const selector =
       '[role="menuitem"], [role="menuitemradio"], [role="option"], button, '
         + '[data-radix-collection-item], [data-slot*="menu" i]';
-    const hasReactClick = element => Object.keys(element || {}).some(key => {
-      if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) return false;
-      const value = element[key];
-      const props = value?.memoizedProps || value?.pendingProps || value?.props || value;
-      return typeof props?.onClick === 'function'
-        || typeof props?.onKeyDown === 'function';
-    });
-    const isActionNode = node => !!(node?.matches?.(selector) || hasReactClick(node));
     const normalize = value => String(value || '')
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const requested = normalize(\#(requestedLabelLiteral));
@@ -287,70 +279,21 @@ func nativeApprovalDOMClickResult(
       }
       return false;
     };
-    const pointInRect = (rect, px, py) => !!(rect
-      && rect.width > 0 && rect.height > 0
-      && px >= rect.left && px <= rect.right
-      && py >= rect.top && py <= rect.bottom);
-    const directMatches = (root, px, py) => {
-      const nodes = [];
-      if (isActionNode(root)) nodes.push(root);
-      for (const node of root?.querySelectorAll?.('*') || []) {
-        const rect = node.getBoundingClientRect?.();
-        if (isActionNode(node) && pointInRect(rect, px, py)) nodes.push(node);
-      }
-      return nodes;
-    };
-    const nestedShadowMatches = (root, px, py) => {
-      const matches = [];
-      for (const host of root?.querySelectorAll?.('*') || []) {
-        if (host.shadowRoot) matches.push(...findMatches(host.shadowRoot, px, py));
-      }
-      return matches;
-    };
-    const nestedFrameMatches = (root, px, py) => {
-      const matches = [];
-      for (const frame of root?.querySelectorAll?.('iframe') || []) {
-        try {
-          const rect = frame.getBoundingClientRect?.();
-          if (!pointInRect(rect, px, py) || !frame.contentDocument) continue;
-          matches.push(...findMatches(
-            frame.contentDocument,
-            px - rect.left,
-            py - rect.top
-          ));
-        } catch (_) {}
-      }
-      return matches;
-    };
-    const findMatches = (root, px, py) => [
-      ...directMatches(root, px, py),
-      ...nestedShadowMatches(root, px, py),
-      ...nestedFrameMatches(root, px, py)
-    ];
-    const pointMatches = findMatches(document, \#(x), \#(y));
-    const labelMatches = [];
-    if (requested) {
-      const collectLabelMatches = root => {
-        // Label recovery is only a fallback for an off-viewport point. Keep
-        // it bounded to structural menu controls; the normal point path is
-        // already scoped to the detected authorization component.
-        for (const node of root?.querySelectorAll?.(selector) || []) {
-          if (isActionNode(node) && isMenuSurface(node) && labelOf(node) === requested) {
-            labelMatches.push(node);
-          }
-        }
-      };
-      collectLabelMatches(document);
-    }
-    const matches = [...pointMatches, ...labelMatches]
-      .filter((node, index, all) => all.indexOf(node) === index)
-      .sort((left, right) => {
-        const leftRect = left.getBoundingClientRect?.();
-        const rightRect = right.getBoundingClientRect?.();
-        return (leftRect?.width || 0) * (leftRect?.height || 0)
-          - (rightRect?.width || 0) * (rightRect?.height || 0);
-      });
-    const target = matches[0];
+    const hit = document.elementFromPoint(\#(x), \#(y));
+    const pointTarget = hit?.closest?.(selector) || (hit?.matches?.(selector) ? hit : null);
+    const labelTarget = requested
+      ? [...document.querySelectorAll(selector)]
+        .filter(node => isMenuSurface(node) && labelOf(node) === requested)
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect?.();
+          const rightRect = right.getBoundingClientRect?.();
+          return (leftRect?.width || 0) * (leftRect?.height || 0)
+            - (rightRect?.width || 0) * (rightRect?.height || 0);
+        })[0]
+      : null;
+    const target = requested
+      ? (pointTarget && labelOf(pointTarget) === requested ? pointTarget : labelTarget)
+      : pointTarget;
     if (!target) return { ok: false, error: 'session_option_hit_missing' };
     if (target.disabled || target.getAttribute?.('aria-disabled') === 'true') {
       return { ok: false, error: 'session_option_hit_disabled' };
