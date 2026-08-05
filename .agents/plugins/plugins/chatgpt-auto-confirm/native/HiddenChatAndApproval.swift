@@ -143,6 +143,16 @@ func approvalPoint(_ value: Any?) -> (x: Double, y: Double)? {
   return (x, y)
 }
 
+func approvalRect(_ value: Any?) -> (left: Double, top: Double, width: Double, height: Double)? {
+  guard let rect = value as? [String: Any],
+        let left = approvalCoordinate(rect["left"]),
+        let top = approvalCoordinate(rect["top"]),
+        let width = approvalCoordinate(rect["width"]),
+        let height = approvalCoordinate(rect["height"]),
+        width > 0, height > 0 else { return nil }
+  return (left, top, width, height)
+}
+
 func nativeApprovalClick(
   port: Int,
   targetId: String,
@@ -252,17 +262,50 @@ func dedicatedApprovalWithNativeInput(
   // Re-detect and reopen the component root between bounded attempts so both
   // visible and hidden renderers use the same arrow -> option sequence.
   var cardsApproved = 0
+  var nativeOptionClickAttempts = 0
+  var nativeOptionClickSuccesses = 0
+  func annotateNativeInput(_ result: inout [String: Any]) {
+    result["nativeOptionClickAttempts"] = nativeOptionClickAttempts
+    result["nativeOptionClickSuccesses"] = nativeOptionClickSuccesses
+  }
   for attempt in 0..<3 {
     if let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]) {
-      let optionClicked = nativeApprovalClick(
-        port: port,
-        targetId: targetId,
-        point: optionPoint
-      )
+      var optionPoints = [optionPoint]
+      // A menu row can expose a padded wrapper around its actual action. If
+      // the first trusted click is rejected by that wrapper, try one more
+      // point inside the same structurally identified row. Never retry after
+      // the menu has closed: that could hit the main Allow once control.
+      if let optionRect = approvalRect(finalResult["sessionOptionRect"]) {
+        optionPoints.append((
+          x: optionRect.left + optionRect.width / 2,
+          y: optionRect.top + optionRect.height * 0.35
+        ))
+      }
+      var optionClicked = false
+      for point in optionPoints {
+        nativeOptionClickAttempts += 1
+        let clicked = nativeApprovalClick(
+          port: port,
+          targetId: targetId,
+          point: point
+        )
+        if clicked {
+          nativeOptionClickSuccesses += 1
+          optionClicked = true
+          finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
+          Thread.sleep(forTimeInterval: 0.45)
+          if let stillOpen = evaluateSessionScope(),
+             approvalPoint(stillOpen["sessionOptionPoint"]) != nil {
+            finalResult = stillOpen
+            if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
+            continue
+          }
+        }
+        break
+      }
       if optionClicked {
         finalResult["clicked"] = true
         finalResult["nativeInput"] = true
-        Thread.sleep(forTimeInterval: 0.45)
         if let after = cdpValue(
           port: port,
           targetId: targetId,
@@ -278,6 +321,7 @@ func dedicatedApprovalWithNativeInput(
           finalResult["cardsApproved"] = cardsApproved
           finalResult["cardsRemaining"] = 0
           finalResult["error"] = "none"
+          annotateNativeInput(&finalResult)
           return finalResult
         }
       }
@@ -288,6 +332,7 @@ func dedicatedApprovalWithNativeInput(
     if nativeTriggerClicked { refreshed["nativeTriggerClicked"] = true }
     if refreshed["confirmed"] as? Bool == true {
       refreshed["cardsApproved"] = cardsApproved
+      annotateNativeInput(&refreshed)
       return refreshed
     }
 
@@ -310,6 +355,7 @@ func dedicatedApprovalWithNativeInput(
     finalResult = evaluateSessionScope() ?? refreshed
     if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
   }
+  annotateNativeInput(&finalResult)
   return finalResult
 }
 
@@ -1759,13 +1805,32 @@ func detectDedicatedAuthorizationJS() -> String {
     const menuTriggerPoint = (element, candidate) => {
       const rect = rectObject(element);
       if (!rect) return null;
-      // A renderer may expose the visible label and its disclosure affordance
-      // as one button. The last two CSS pixels are the only coordinate that
-      // can activate that affordance without pressing the Allow once label.
       const sameButton = element && element === candidate;
+      if (sameButton) {
+        // Some renderers put the disclosure triangle in the trailing padding
+        // of the same button as the visible Allow once label. Use the center
+        // of that trailing affordance, not the outer border: the border can
+        // be hit-tested as the primary action or ignored by hidden Chromium
+        // renderers. A keyboard-chip child gives us the exact left boundary;
+        // otherwise keep a small component-relative fallback.
+        const childRights = query(element, '*')
+          .map(child => ({ child, rect: rectObject(child) }))
+          .filter(item => item.rect && visible(item.child))
+          .map(item => item.rect.right);
+        const contentRight = childRights.length
+          ? Math.max(...childRights)
+          : rect.right;
+        const trailingWidth = rect.right - contentRight;
+        const offset = trailingWidth >= 4 && trailingWidth <= 20
+          ? trailingWidth / 2
+          : Math.min(8, Math.max(4, rect.width * 0.08));
+        return {
+          x: Math.max(rect.left + 1, rect.right - offset),
+          y: rect.top + rect.height / 2
+        };
+      }
       return {
-        x: sameButton ? Math.max(rect.left + 1, rect.right - 2)
-          : rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
+        x: rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
         y: rect.top + rect.height / 2
       };
     };
@@ -2310,10 +2375,25 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
     const menuTriggerPoint = (trigger, candidate) => {
       const rect = rectObject(trigger);
       if (!rect) return null;
+      if (trigger === candidate) {
+        const childRights = query(trigger, '*')
+          .map(child => ({ child, rect: rectObject(child) }))
+          .filter(item => item.rect && visible(item.child))
+          .map(item => item.rect.right);
+        const contentRight = childRights.length
+          ? Math.max(...childRights)
+          : rect.right;
+        const trailingWidth = rect.right - contentRight;
+        const offset = trailingWidth >= 4 && trailingWidth <= 20
+          ? trailingWidth / 2
+          : Math.min(8, Math.max(4, rect.width * 0.08));
+        return {
+          x: Math.max(rect.left + 1, rect.right - offset),
+          y: rect.top + rect.height / 2
+        };
+      }
       return {
-        x: trigger === candidate
-          ? Math.max(rect.left + 1, rect.right - 2)
-          : rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
+        x: rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
         y: rect.top + rect.height / 2
       };
     };
@@ -2641,6 +2721,7 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
         }
         const sessionScopeLabel = label(sessionOption);
         const sessionOptionPoint = pointForElement(sessionOption);
+        const sessionOptionRect = rectObject(sessionOption);
         if (nativeOnly) {
           // Do not dispatch a synthetic menu-item click. Swift will replay
           // this exact point through trusted CDP input while the menu remains
@@ -2650,7 +2731,7 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
             strategy: 'session-scope', label: sessionScopeLabel,
             menuTriggerLabel, sessionScopeLabel,
             menuTriggerPoint: menuTriggerPointValue,
-            sessionOptionPoint, candidateLabels, menuCandidates,
+            sessionOptionPoint, sessionOptionRect, candidateLabels, menuCandidates,
             error: 'session_scope_native_option_required'
           };
         }
@@ -2661,7 +2742,7 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
             strategy: 'session-scope', label: sessionScopeLabel,
             menuTriggerLabel, sessionScopeLabel,
             menuTriggerPoint: menuTriggerPointValue,
-            sessionOptionPoint, candidateLabels, menuCandidates,
+            sessionOptionPoint, sessionOptionRect, candidateLabels, menuCandidates,
             error: String(error?.message || error || 'session_scope_option_click_failed')
           };
           break;
