@@ -1309,7 +1309,7 @@ func detectDedicatedAuthorizationJS() -> String {
       element?.textContent
     ].map(normalize).filter(Boolean);
     const label = element => labelParts(element)[0] || '';
-    const labelText = element => labelParts(element).join(' ');
+    const labelText = element => [...new Set(labelParts(element))].join(' ');
     const query = (root, selector) => {
       try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
     };
@@ -1475,7 +1475,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       element?.textContent
     ].map(normalize).filter(Boolean);
     const label = element => labelParts(element)[0] || '';
-    const labelText = element => labelParts(element).join(' ');
+    const labelText = element => [...new Set(labelParts(element))].join(' ');
     const query = (root, selector) => {
       try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
     };
