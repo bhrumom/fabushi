@@ -587,32 +587,30 @@ func nativeApprovalComponentActionResult(
           }
           eventTarget.dispatchEvent(new MouseEvent(type, options));
         };
-        setTimeout(() => {
+        try {
+          target.focus?.({ preventScroll: true });
+          dispatchMouse('pointerdown', 1);
+          dispatchMouse('mousedown', 1);
+          dispatchMouse('pointerup', 0);
+          dispatchMouse('mouseup', 0);
+          dispatchMouse('click', 0);
+        } catch (_) {}
+        // A hidden renderer may not have hit-test geometry at all. ArrowDown
+        // is the component's non-primary disclosure action in that case.
+        if (hiddenFallback) {
           try {
-            target.focus?.({ preventScroll: true });
-            dispatchMouse('pointerdown', 1);
-            dispatchMouse('mousedown', 1);
-            dispatchMouse('pointerup', 0);
-            dispatchMouse('mouseup', 0);
-            dispatchMouse('click', 0);
+            const options = {
+              key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
+              bubbles: true, cancelable: true, composed: true
+            };
+            target.dispatchEvent(new KeyboardEvent('keydown', options));
+            target.dispatchEvent(new KeyboardEvent('keyup', options));
           } catch (_) {}
-          // A hidden renderer may not have hit-test geometry at all. ArrowDown
-          // is the component's non-primary disclosure action in that case.
-          if (hiddenFallback) {
-            try {
-              const options = {
-                key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
-                bubbles: true, cancelable: true, composed: true
-              };
-              target.dispatchEvent(new KeyboardEvent('keydown', options));
-              target.dispatchEvent(new KeyboardEvent('keyup', options));
-            } catch (_) {}
-          }
-        }, 0);
+        }
         return {
           ok: true,
           action,
-          mode: 'component-split-disclosure-event-sequence-queued',
+          mode: 'component-split-disclosure-event-sequence-dispatched',
           targetTag: target.tagName || '',
           targetRole: target.getAttribute?.('role') || '',
           targetLabel: labelOf(target),
