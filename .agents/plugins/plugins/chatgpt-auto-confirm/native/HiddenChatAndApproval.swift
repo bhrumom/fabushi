@@ -498,20 +498,43 @@ func nativeApprovalComponentActionResult(
         const eventY = pointUsed
           ? #(y)
           : rect && rect.height > 0 ? rect.top + rect.height / 2 : 0;
-        const clickEvent = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          detail: 1,
-          button: 0,
-          buttons: 0,
-          clientX: eventX,
-          clientY: eventY,
-          screenX: eventX,
-          screenY: eventY
-        });
         const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
+        let clickEvent = null;
+        try {
+          if (typeof MouseEvent === 'function') {
+            clickEvent = new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              view: window,
+              detail: 1,
+              button: 0,
+              buttons: 0,
+              clientX: eventX,
+              clientY: eventY,
+              screenX: eventX,
+              screenY: eventY
+            });
+          }
+        } catch (_) {}
+        if (!clickEvent) {
+          try {
+            clickEvent = document.createEvent('MouseEvents');
+            clickEvent.initMouseEvent(
+              'click', true, true, window, 1, eventX, eventY, eventX, eventY,
+              false, false, false, false, 0, target
+            );
+          } catch (error) {
+            return {
+              ok: false,
+              action,
+              targetTag: target.tagName || '',
+              targetLabel: labelOf(target),
+              error: 'split_disclosure_event_create_failed:'
+                + String(error?.message || error || 'unknown')
+            };
+          }
+        }
         setTimeout(() => {
           try { target.dispatchEvent(clickEvent); } catch (_) {}
           // A hidden renderer may not have hit-test geometry at all. ArrowDown
