@@ -1445,28 +1445,89 @@ func detectDedicatedAuthorizationJS() -> String {
       }
       return false;
     };
-    const isMenuTrigger = (button, candidate) => {
-      if (!button || button === candidate || !hasClickSemantics(button)) return false;
+    const structuralMarker = element => normalize([
+      element?.getAttribute?.('data-testid'),
+      element?.getAttribute?.('data-slot'),
+      element?.getAttribute?.('data-state'),
+      element?.getAttribute?.('class'),
+      element?.getAttribute?.('id')
+    ].filter(Boolean).join(' '));
+    const isArrowLike = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const marker = structuralMarker(element);
+      return element.getAttribute?.('aria-haspopup') !== null
+        || element.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(marker)
+        || (['svg', 'path', 'polyline', 'polygon'].includes(tagName) && !labelText(element));
+    };
+    const isNearRightSplit = (element, candidate) => {
+      if (!element || !candidate || element === candidate || labelText(element)) return false;
+      const elementRect = element.getBoundingClientRect?.();
+      const candidateRect = candidate.getBoundingClientRect?.();
+      if (!elementRect || !candidateRect
+          || elementRect.width <= 0 || elementRect.height <= 0
+          || candidateRect.width <= 0 || candidateRect.height <= 0) return false;
+      const verticalOverlap = Math.min(elementRect.bottom, candidateRect.bottom)
+        - Math.max(elementRect.top, candidateRect.top);
+      if (verticalOverlap <= 0) return false;
+      const maxArrowWidth = Math.max(20, Math.min(56, candidateRect.width * 0.45));
+      if (elementRect.width > maxArrowWidth) return false;
+      const adjacentRight = elementRect.left >= candidateRect.right - 8
+        && elementRect.left <= candidateRect.right + 64;
+      const insideRight = elementRect.right >= candidateRect.right - 4
+        && elementRect.left >= candidateRect.left + candidateRect.width * 0.55;
+      return adjacentRight || insideRight;
+    };
+    const isMenuTrigger = (button, candidate, container = null) => {
+      if (!button || button === candidate) return false;
       const value = labelText(button);
+      const sameContainer = !!(container
+        && (container === button || container.contains?.(button))
+        && (container === candidate || container.contains?.(candidate)));
+      const sameComponent = sameContainer || sharesComponent(button, candidate);
+      if (!sameComponent) return false;
       const structural = isSessionScope(value)
         || button.getAttribute?.('aria-haspopup') === 'menu'
         || button.getAttribute?.('aria-expanded') !== null
-        || /menu|dropdown|chevron|caret|arrow|more|popover/.test(normalize(
-          button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
-            || button.getAttribute?.('class') || ''
-        ));
-      const iconOnlyCompanion = !value && sharesComponent(button, candidate);
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
+          structuralMarker(button)
+        );
+      const iconOnlyCompanion = !value
+        && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
-        && isOneShot(labelText(candidate))
-        && sharesComponent(button, candidate);
+        && isOneShot(labelText(candidate));
       const buttonRect = button.getBoundingClientRect?.();
       const narrowAllowCompanion = isAllowLabel(value)
         && isOneShot(labelText(candidate))
-        && sharesComponent(button, candidate)
         && buttonRect
         && buttonRect.width > 0
         && buttonRect.width <= 48;
       return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
+    };
+    const componentControls = (container, candidate) => {
+      if (!container) return [];
+      const output = [
+        ...query(container, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'),
+        ...query(container, '*').filter(element => {
+          return !labelText(element)
+            && (isArrowLike(element) || isNearRightSplit(element, candidate));
+        })
+      ];
+      return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
+    };
+    const findMenuTrigger = (card, candidate) => {
+      const controls = [
+        ...card.cardButtons,
+        ...componentControls(card.container, candidate)
+      ].filter((button, index, all) => all.indexOf(button) === index);
+      const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
+      if (companion) return companion;
+      const marker = structuralMarker(candidate);
+      const rect = candidate.getBoundingClientRect?.();
+      return rect && rect.width > 48
+        && /split|dropdown|chevron|caret|arrow|disclosure/.test(marker)
+        ? candidate : null;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -1611,12 +1672,11 @@ func detectDedicatedAuthorizationJS() -> String {
       selectedLabel: approvalLabel(selectedButton),
       cardButtonLabels: card.cardLabels.filter(Boolean),
       sessionScopeLabels: card.cardLabels.filter(value => isSessionScope(value)),
-      menuTriggerLabels: card.cardButtons.filter(button => {
-        return isMenuTrigger(button, selectedButton);
-      }).map(button => approvalLabel(button) || '[unlabeled companion]'),
-      menuTriggerCount: card.cardButtons.filter(button =>
-        isMenuTrigger(button, selectedButton)
-      ).length,
+      menuTriggerLabels: (() => {
+        const trigger = findMenuTrigger(card, selectedButton);
+        return trigger ? [approvalLabel(trigger) || '[unlabeled companion]'] : [];
+      })(),
+      menuTriggerCount: findMenuTrigger(card, selectedButton) ? 1 : 0,
       unlabeledControlCount: card.cardButtons.filter(button =>
         !hasAllowLabel(button) && !hasRejectLabel(button) && !label(button)
       ).length,
@@ -1786,28 +1846,102 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       }
       return false;
     };
-    const isMenuTrigger = (button, candidate) => {
-      if (!button || button === candidate || !hasClickSemantics(button)) return false;
+    const structuralMarker = element => normalize([
+      element?.getAttribute?.('data-testid'),
+      element?.getAttribute?.('data-slot'),
+      element?.getAttribute?.('data-state'),
+      element?.getAttribute?.('class'),
+      element?.getAttribute?.('id')
+    ].filter(Boolean).join(' '));
+    const isArrowLike = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const marker = structuralMarker(element);
+      return element.getAttribute?.('aria-haspopup') !== null
+        || element.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(marker)
+        || (['svg', 'path', 'polyline', 'polygon'].includes(tagName) && !labelText(element));
+    };
+    const isNearRightSplit = (element, candidate) => {
+      if (!element || !candidate || element === candidate || labelText(element)) return false;
+      const elementRect = element.getBoundingClientRect?.();
+      const candidateRect = candidate.getBoundingClientRect?.();
+      if (!elementRect || !candidateRect
+          || elementRect.width <= 0 || elementRect.height <= 0
+          || candidateRect.width <= 0 || candidateRect.height <= 0) return false;
+      const verticalOverlap = Math.min(elementRect.bottom, candidateRect.bottom)
+        - Math.max(elementRect.top, candidateRect.top);
+      if (verticalOverlap <= 0) return false;
+      const maxArrowWidth = Math.max(20, Math.min(56, candidateRect.width * 0.45));
+      if (elementRect.width > maxArrowWidth) return false;
+      const adjacentRight = elementRect.left >= candidateRect.right - 8
+        && elementRect.left <= candidateRect.right + 64;
+      const insideRight = elementRect.right >= candidateRect.right - 4
+        && elementRect.left >= candidateRect.left + candidateRect.width * 0.55;
+      return adjacentRight || insideRight;
+    };
+    const isMenuTrigger = (button, candidate, container = null) => {
+      if (!button || button === candidate) return false;
       const value = labelText(button);
+      const sameContainer = !!(container
+        && (container === button || container.contains?.(button))
+        && (container === candidate || container.contains?.(candidate)));
+      const sameComponent = sameContainer || sharesComponent(button, candidate);
+      if (!sameComponent) return false;
       const structural = isSessionScope(value)
         || button.getAttribute?.('aria-haspopup') === 'menu'
         || button.getAttribute?.('aria-expanded') !== null
-        || /menu|dropdown|chevron|caret|arrow|more|popover/.test(normalize(
-          button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
-            || button.getAttribute?.('class') || ''
-        ));
-      const iconOnlyCompanion = !value && sharesComponent(button, candidate);
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
+          structuralMarker(button)
+        );
+      const iconOnlyCompanion = !value
+        && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
-        && isOneShot(labelText(candidate))
-        && sharesComponent(button, candidate);
+        && isOneShot(labelText(candidate));
       const buttonRect = button.getBoundingClientRect?.();
       const narrowAllowCompanion = isAllowLabel(value)
         && isOneShot(labelText(candidate))
-        && sharesComponent(button, candidate)
         && buttonRect
         && buttonRect.width > 0
         && buttonRect.width <= 48;
       return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
+    };
+    const componentControls = (container, candidate) => {
+      if (!container) return [];
+      const output = [
+        ...query(container, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'),
+        ...query(container, '*').filter(element => {
+          return !labelText(element)
+            && (isArrowLike(element) || isNearRightSplit(element, candidate));
+        })
+      ];
+      return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
+    };
+    const menuTriggerOptions = new WeakMap();
+    const findMenuTrigger = (card, candidate) => {
+      const controls = [
+        ...card.cardButtons,
+        ...componentControls(card.container, candidate)
+      ].filter((button, index, all) => all.indexOf(button) === index);
+      const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
+      if (companion) return companion;
+      // A few renderer builds put the disclosure hit area inside the same
+      // Allow once button and expose only the split/dropdown marker. Preserve
+      // the button as the event target but send the click at its right edge.
+      const marker = structuralMarker(candidate);
+      const rect = candidate.getBoundingClientRect?.();
+      if (rect && rect.width > 48
+          && /split|dropdown|chevron|caret|arrow|disclosure/.test(marker)) {
+        menuTriggerOptions.set(candidate, {
+          coordinateOnly: true,
+          point: {
+            x: rect.right - Math.min(12, Math.max(1, rect.width * 0.18)),
+            y: rect.top + Math.max(1, rect.height / 2)
+          }
+        });
+        return candidate;
+      }
+      return null;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -1868,32 +2002,42 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     };
     const isOneShot = value => /\bonce\b|one time|this time|\u4e00\u6b21|\u672c\u6b21|\u6b64\u6b21/.test(normalize(value));
     const dispatchPointerClick = candidate => {
+      const options = menuTriggerOptions.get(candidate) || {};
       const rect = candidate.getBoundingClientRect?.();
-      const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
-      const clientY = rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1;
+      const clientX = Number.isFinite(options.point?.x)
+        ? options.point.x
+        : (rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1);
+      const clientY = Number.isFinite(options.point?.y)
+        ? options.point.y
+        : (rect ? rect.top + Math.min(12, Math.max(1, rect.height / 2)) : 1);
+      const hit = options.coordinateOnly && document.elementFromPoint?.(clientX, clientY);
+      const eventTarget = hit && (hit === candidate || candidate.contains?.(hit))
+        ? hit : candidate;
       const pressed = {
         bubbles: true, cancelable: true, composed: true,
         button: 0, buttons: 1, clientX, clientY
       };
-      candidate.dispatchEvent(new PointerEvent('pointerdown', {
+      eventTarget.dispatchEvent(new PointerEvent('pointerdown', {
         ...pressed, pointerId: 1, pointerType: 'mouse', isPrimary: true
       }));
-      candidate.dispatchEvent(new MouseEvent('mousedown', pressed));
-      candidate.dispatchEvent(new PointerEvent('pointerup', {
+      eventTarget.dispatchEvent(new MouseEvent('mousedown', pressed));
+      eventTarget.dispatchEvent(new PointerEvent('pointerup', {
         ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
       }));
-      candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      eventTarget.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
       // Dispatching an untrusted MouseEvent alone is not enough for every
       // React/Chromium renderer. Use the element's native activation path when
       // available; the synthetic event remains the fallback for test doubles
-      // and custom elements without HTMLElement.click().
+      // and custom elements without HTMLElement.click(). A split control must
+      // keep the pointer coordinate so native click() cannot replace the
+      // disclosure activation with the one-shot action.
       try {
-        if (typeof candidate.click === 'function') {
+        if (!options.coordinateOnly && typeof candidate.click === 'function') {
           candidate.click();
           return;
         }
       } catch (_) {}
-      candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
+      eventTarget.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
     };
     const click = candidate => {
       try { dispatchPointerClick(candidate); }
@@ -1974,9 +2118,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
 
       const card = candidate.card;
       const cardButtons = card.cardButtons;
-      const sessionControl = cardButtons.find(button =>
-        isMenuTrigger(button, candidate.button)
-      );
+      const sessionControl = findMenuTrigger(card, candidate.button);
 
       if (sessionControl) {
         const menuTriggerLabel = label(sessionControl);
