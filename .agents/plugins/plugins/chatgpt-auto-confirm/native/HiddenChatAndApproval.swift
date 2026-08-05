@@ -312,6 +312,8 @@ func nativeApprovalComponentActionResult(
       const requested = String(\#(requestedLabelLiteral) || '')
         .replace(/[\s\u21b5\u00a0⏎↵]+/g, ' ').trim().toLowerCase();
       const pointAvailable = \#(pointAvailableLiteral);
+      const pointX = \#(x);
+      const pointY = \#(y);
       const selector = [
         'button', '[role="button"]', '[role="menuitem"]',
         '[role="menuitemradio"]', '[role="option"]',
@@ -360,6 +362,21 @@ func nativeApprovalComponentActionResult(
         const value = labelOf(element);
         return value === requested || value.includes(requested);
       };
+      const pointTarget = (() => {
+        if (!pointAvailable || typeof document.elementFromPoint !== 'function') return null;
+        try {
+          let node = document.elementFromPoint(pointX, pointY);
+          for (let depth = 0; depth < 8 && node; depth += 1) {
+            if (node.matches?.(selector)
+                && (isAllow(node) || matchesRequested(node))
+                && hasMenuStructure(node)) {
+              return node;
+            }
+            node = parentOf(node);
+          }
+        } catch (_) {}
+        return null;
+      })();
       const query = (root, querySelector) => {
         try { return [...(root?.querySelectorAll?.(querySelector) || [])]; }
         catch (_) { return []; }
@@ -380,7 +397,7 @@ func nativeApprovalComponentActionResult(
           && element.getAttribute?.('aria-disabled') !== 'true');
       const approvalControls = allControls
         .filter(element => isAllow(element) || matchesRequested(element));
-      const selectedApproval = approvalControls
+      const selectedApproval = pointTarget || approvalControls
         .sort((left, right) => {
           const score = element => (matchesRequested(element) ? 1000 : 0)
             + (isAllow(element) ? 200 : 0)
@@ -412,17 +429,19 @@ func nativeApprovalComponentActionResult(
         : [];
       let target = null;
       if (action === 'trigger') {
-        target = componentControls
-          .filter(element => hasMenuStructure(element))
-          .sort((left, right) => {
-            const score = element => (element === selectedApproval ? 500 : 0)
-              + (isAllow(element) ? 100 : 0)
-              + (matchesRequested(element) ? 50 : 0)
-              + (!isAllow(element) ? 25 : 0);
-            return score(right) - score(left);
-          })[0] || null;
-        if (!target && selectedApproval && hasMenuStructure(selectedApproval)) {
+        if (selectedApproval && hasMenuStructure(selectedApproval)) {
           target = selectedApproval;
+        }
+        if (!target) {
+          target = componentControls
+            .filter(element => hasMenuStructure(element))
+            .sort((left, right) => {
+              const score = element => (element === selectedApproval ? 500 : 0)
+                + (isAllow(element) ? 100 : 0)
+                + (matchesRequested(element) ? 50 : 0)
+                + (!isAllow(element) ? 25 : 0);
+              return score(right) - score(left);
+            })[0] || null;
         }
       } else {
         const surfaces = [...new Set([
@@ -1236,6 +1255,8 @@ func dedicatedApprovalWithNativeInput(
 
   let triggerPoint = approvalPoint(detection["menuTriggerPoint"])
   let menuTriggerIsSelectedButton = detection["menuTriggerIsSelectedButton"] as? Bool == true
+  let approvalComponentLabel = (detection["selectedLabel"] as? String)
+    ?? (detection["menuTriggerLabels"] as? [String])?.first
   var nativeTriggerClicked = false
   var nativeTriggerClickAttempts = 0
   var nativeTriggerClickSuccesses = 0
@@ -1288,7 +1309,7 @@ func dedicatedApprovalWithNativeInput(
         point: triggerPoint,
         action: "trigger",
         wsURLString: approvalWSURL,
-        label: detection["selectedLabel"] as? String
+        label: approvalComponentLabel
       )
       let componentOK = componentResult?["ok"] as? Bool == true
       let componentMode = componentResult?["mode"] as? String ?? "none"
@@ -1314,7 +1335,7 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: triggerPoint,
           wsURLString: approvalWSURL,
-          label: detection["selectedLabel"] as? String
+          label: approvalComponentLabel
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -1338,7 +1359,7 @@ func dedicatedApprovalWithNativeInput(
         point: triggerPoint,
         action: "trigger",
         wsURLString: approvalWSURL,
-        label: detection["selectedLabel"] as? String
+        label: approvalComponentLabel
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
@@ -1354,7 +1375,7 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: triggerPoint,
           wsURLString: approvalWSURL,
-          label: detection["selectedLabel"] as? String
+          label: approvalComponentLabel
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -1531,7 +1552,7 @@ func dedicatedApprovalWithNativeInput(
         point: retryPoint,
         action: "trigger",
         wsURLString: approvalWSURL,
-        label: detection["selectedLabel"] as? String
+        label: approvalComponentLabel
       )
       nativeTriggerComponentLastMode = retriedResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = retriedResult?["error"] as? String ?? "none"
@@ -1546,7 +1567,7 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: retryPoint,
           wsURLString: approvalWSURL,
-          label: detection["selectedLabel"] as? String
+          label: approvalComponentLabel
         )
         if retried {
           nativeTriggerKeySuccesses += 1
@@ -1559,7 +1580,7 @@ func dedicatedApprovalWithNativeInput(
           point: retryPoint,
           action: "trigger",
           wsURLString: approvalWSURL,
-          label: detection["selectedLabel"] as? String
+          label: approvalComponentLabel
         )
         nativeTriggerComponentLastMode = separateTriggerResult?["mode"] as? String ?? "none"
         nativeTriggerComponentLastError = separateTriggerResult?["error"] as? String ?? "none"
