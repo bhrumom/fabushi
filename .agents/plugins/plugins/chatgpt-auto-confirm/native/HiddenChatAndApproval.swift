@@ -1422,15 +1422,18 @@ func detectDedicatedAuthorizationJS() -> String {
           }),
           ...localButtons
         ].filter((button, buttonIndex, all) =>
-          all.indexOf(button) === buttonIndex && visible(button)
+          all.indexOf(button) === buttonIndex
+            && visible(button)
+            && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
         const cardText = normalize([
           container.innerText, container.textContent, ...cardLabels
         ].filter(Boolean).join(' '));
+        const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
         const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
         const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|授权|权限|允许 chatgpt|使用/.test(cardText);
-        if (hasReject || hasAuthorizationText) {
+        if (hasAllow && cardText.length <= 6000 && (hasReject || hasAuthorizationText)) {
           return { container, cardButtons, cardLabels, cardText };
         }
         container = parentOf(container);
@@ -1643,15 +1646,18 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           }),
           ...localButtons
         ].filter((button, buttonIndex, all) =>
-          all.indexOf(button) === buttonIndex && visible(button)
+          all.indexOf(button) === buttonIndex
+            && visible(button)
+            && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
         const cardText = normalize([
           container.innerText, container.textContent, ...cardLabels
         ].filter(Boolean).join(' '));
+        const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
         const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
         const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|\u6388\u6743|\u6743\u9650|\u5141\u8bb8 chatgpt|\u4f7f\u7528/.test(cardText);
-        if (hasReject || hasAuthorizationText) {
+        if (hasAllow && cardText.length <= 6000 && (hasReject || hasAuthorizationText)) {
           return { container, cardButtons, cardLabels, cardText };
         }
         container = parentOf(container);
