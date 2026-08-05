@@ -124,6 +124,25 @@ func cdpValue(
   return nil
 }
 
+func cdpValue(
+  wsURLString: String,
+  expression: String,
+  timeout: TimeInterval = 5.0
+) -> [String: Any]? {
+  guard let response = CDPClient.evaluate(
+    wsURLString: wsURLString,
+    expression: expression,
+    timeout: timeout
+  ), let outer = response["result"] as? [String: Any] else { return nil }
+  if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
+    return sanitizeJSONValue(value) as? [String: Any]
+  }
+  if let value = outer["value"] as? [String: Any] {
+    return sanitizeJSONValue(value) as? [String: Any]
+  }
+  return nil
+}
+
 func cdpWebSocketURL(port: Int, targetId: String) -> String? {
   CDPClient.fetchTargets(portOverride: port)
     .first(where: { $0["id"] as? String == targetId })?["webSocketDebuggerUrl"] as? String
@@ -157,9 +176,12 @@ func nativeApprovalArrowKey(
   port: Int,
   targetId: String,
   point: (x: Double, y: Double),
-  label: String? = nil
+  label: String? = nil,
+  wsURLString: String? = nil
 ) -> Bool {
-  guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
+  guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
+    return false
+  }
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
   let requestedLabel = label ?? ""
@@ -212,10 +234,9 @@ func nativeApprovalArrowKey(
   })()
   """#
   guard cdpValue(
-    port: port,
-    targetId: targetId,
+    wsURLString: wsURL,
     expression: focusExpression,
-    timeout: 4.0
+    timeout: 2.5
   )?["ok"] as? Bool == true else { return false }
   _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
   _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
@@ -236,8 +257,12 @@ func nativeApprovalComponentActionResult(
   targetId: String,
   point: (x: Double, y: Double),
   action: String,
-  label: String? = nil
+  label: String? = nil,
+  wsURLString: String? = nil
 ) -> [String: Any]? {
+  guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
+    return ["ok": false, "action": action, "error": "approval_cdp_target_missing"]
+  }
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
   let requestedLabel = label ?? ""
@@ -486,10 +511,9 @@ func nativeApprovalComponentActionResult(
   })()
   """#
   return cdpValue(
-    port: port,
-    targetId: targetId,
+    wsURLString: wsURL,
     expression: expression,
-    timeout: 3.0
+    timeout: 2.5
   )
 }
 
@@ -698,12 +722,13 @@ func dedicatedApprovalWithNativeInput(
   targetId: String,
   detection: [String: Any]
 ) -> [String: Any]? {
+  let approvalWSURL = cdpWebSocketURL(port: port, targetId: targetId)
   func evaluateSessionScope() -> [String: Any]? {
-    cdpValue(
-      port: port,
-      targetId: targetId,
+    guard let approvalWSURL else { return nil }
+    return cdpValue(
+      wsURLString: approvalWSURL,
       expression: sessionScopeComponentProbeJS(),
-      timeout: 2.5
+      timeout: 2.0
     )
   }
 
@@ -761,7 +786,8 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: triggerPoint,
         action: "trigger",
-        label: detection["selectedLabel"] as? String
+        label: detection["selectedLabel"] as? String,
+        wsURLString: approvalWSURL
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
@@ -779,7 +805,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: triggerPoint,
-          label: detection["selectedLabel"] as? String
+          label: detection["selectedLabel"] as? String,
+          wsURLString: approvalWSURL
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -800,7 +827,8 @@ func dedicatedApprovalWithNativeInput(
         port: port,
         targetId: targetId,
         point: triggerPoint,
-        action: "trigger"
+        action: "trigger",
+        wsURLString: approvalWSURL
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
@@ -815,7 +843,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: triggerPoint,
-          label: detection["selectedLabel"] as? String
+          label: detection["selectedLabel"] as? String,
+          wsURLString: approvalWSURL
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -904,7 +933,8 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: point,
           action: "option",
-          label: finalResult["sessionScopeLabel"] as? String
+          label: finalResult["sessionScopeLabel"] as? String,
+          wsURLString: approvalWSURL
         )
         nativeOptionComponentLastMode = componentResult?["mode"] as? String ?? "none"
         nativeOptionComponentLastTarget = componentResult?["targetLabel"] as? String ?? "none"
@@ -916,12 +946,12 @@ func dedicatedApprovalWithNativeInput(
           nativeOptionDOMFallbackLastTarget = nativeOptionComponentLastTarget
           finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
           Thread.sleep(forTimeInterval: 0.45)
-          if let after = cdpValue(
-            port: port,
-            targetId: targetId,
-            expression: detectDedicatedAuthorizationJS(),
-            timeout: 6.0
-          ), after["found"] as? Bool != true {
+          if let approvalWSURL,
+             let after = cdpValue(
+               wsURLString: approvalWSURL,
+               expression: detectDedicatedAuthorizationJS(),
+               timeout: 3.0
+             ), after["found"] as? Bool != true {
             cardsApproved += 1
             finalResult["ok"] = true
             finalResult["clicked"] = true
@@ -942,12 +972,12 @@ func dedicatedApprovalWithNativeInput(
       if optionClicked {
         finalResult["clicked"] = true
         finalResult["nativeInput"] = true
-        if let after = cdpValue(
-          port: port,
-          targetId: targetId,
-          expression: detectDedicatedAuthorizationJS(),
-          timeout: 6.0
-        ), after["found"] as? Bool != true {
+        if let approvalWSURL,
+           let after = cdpValue(
+             wsURLString: approvalWSURL,
+             expression: detectDedicatedAuthorizationJS(),
+             timeout: 3.0
+           ), after["found"] as? Bool != true {
           cardsApproved += 1
           finalResult["ok"] = true
           finalResult["clicked"] = true
@@ -984,7 +1014,8 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: retryPoint,
         action: "trigger",
-        label: detection["selectedLabel"] as? String
+        label: detection["selectedLabel"] as? String,
+        wsURLString: approvalWSURL
       )
       nativeTriggerComponentLastMode = retriedResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = retriedResult?["error"] as? String ?? "none"
@@ -998,7 +1029,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: retryPoint,
-          label: detection["selectedLabel"] as? String
+          label: detection["selectedLabel"] as? String,
+          wsURLString: approvalWSURL
         )
         if retried {
           nativeTriggerKeySuccesses += 1
@@ -1009,7 +1041,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: retryPoint,
-          action: "trigger"
+          action: "trigger",
+          wsURLString: approvalWSURL
         )
         nativeTriggerComponentLastMode = separateTriggerResult?["mode"] as? String ?? "none"
         nativeTriggerComponentLastError = separateTriggerResult?["error"] as? String ?? "none"
