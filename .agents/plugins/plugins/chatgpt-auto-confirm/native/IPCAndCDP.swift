@@ -434,14 +434,25 @@ struct CDPClient {
   }
 
   static func captureScreenshot(wsURLString: String, outputURL: URL) -> Bool {
-    guard let response = sendCommand(
-      wsURLString: wsURLString,
-      method: "Page.captureScreenshot",
-      paramsJSON: "{\"format\":\"png\",\"captureBeyondViewport\":true,\"fromSurface\":true}",
-      timeout: 8.0
-    ), let result = response["result"] as? [String: Any],
-       let encoded = result["data"] as? String,
-       let data = Data(base64Encoded: encoded) else { return false }
+    let parameterVariants = [
+      "{\"format\":\"png\",\"captureBeyondViewport\":true,\"fromSurface\":true}",
+      "{\"format\":\"png\",\"captureBeyondViewport\":true}",
+      "{\"format\":\"png\"}",
+    ]
+    var data: Data?
+    for paramsJSON in parameterVariants {
+      guard let response = sendCommand(
+        wsURLString: wsURLString,
+        method: "Page.captureScreenshot",
+        paramsJSON: paramsJSON,
+        timeout: 8.0
+      ), let result = response["result"] as? [String: Any],
+         let encoded = result["data"] as? String,
+         let decoded = Data(base64Encoded: encoded) else { continue }
+      data = decoded
+      break
+    }
+    guard let data else { return false }
     do {
       try FileManager.default.createDirectory(
         at: outputURL.deletingLastPathComponent(),
