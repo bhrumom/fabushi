@@ -1495,7 +1495,10 @@ func detectDedicatedAuthorizationJS() -> String {
         const cardLabels = cardButtons.map(label).filter(Boolean);
         const hasAllow = cardButtons.some(hasAllowLabel);
         const componentData = approvalComponentData(candidate.button);
-        if (hasAllow && componentData) {
+        // The explicit allow control is the authorization-card marker. React
+        // metadata is retained for diagnostics, but it must not block a real
+        // Allow once/Allow button when the renderer omits or reshapes it.
+        if (hasAllow) {
           return { container, cardButtons, cardLabels, componentData };
         }
         container = parentOf(container);
@@ -1802,7 +1805,10 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         const cardLabels = cardButtons.map(label).filter(Boolean);
         const hasAllow = cardButtons.some(hasAllowLabel);
         const componentData = approvalComponentData(candidate);
-        if (hasAllow && componentData) {
+        // The explicit allow control is the authorization-card marker. React
+        // metadata is retained for diagnostics, but it must not block a real
+        // Allow once/Allow button when the renderer omits or reshapes it.
+        if (hasAllow) {
           return { container, cardButtons, cardLabels, componentData };
         }
         container = parentOf(container);
