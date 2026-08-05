@@ -331,16 +331,12 @@ func nativeApprovalDOMClickResult(
     const labelMatches = [];
     if (requested) {
       const collectLabelMatches = root => {
-        for (const node of root?.querySelectorAll?.('*') || []) {
-          if (isActionNode(node)
-              && isMenuSurface(node)
-              && labelOf(node) === requested) {
+        // Label recovery is only a fallback for an off-viewport point. Keep
+        // it bounded to structural menu controls; the normal point path is
+        // already scoped to the detected authorization component.
+        for (const node of root?.querySelectorAll?.(selector) || []) {
+          if (isActionNode(node) && isMenuSurface(node) && labelOf(node) === requested) {
             labelMatches.push(node);
-          }
-          if (node.shadowRoot) collectLabelMatches(node.shadowRoot);
-          if (node.tagName?.toLowerCase() === 'iframe') {
-            try { if (node.contentDocument) collectLabelMatches(node.contentDocument); }
-            catch (_) {}
           }
         }
       };
@@ -502,8 +498,8 @@ func dedicatedApprovalWithNativeInput(
   var cardsApproved = 0
   var nativeOptionClickAttempts = 0
   var nativeOptionClickSuccesses = 0
-  var nativeOptionDOMFallbackAttempts = 0
-  var nativeOptionDOMFallbackSuccesses = 0
+  let nativeOptionDOMFallbackAttempts = 0
+  let nativeOptionDOMFallbackSuccesses = 0
   var nativeOptionDOMFallbackLastError = "none"
   var nativeOptionDOMFallbackLastTarget = "none"
   var lastSessionOptionPoint: Any?
