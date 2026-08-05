@@ -9,7 +9,7 @@ const hiddenApprovalSource = readFileSync(
   'utf8',
 );
 const approvalScriptMatch = hiddenApprovalSource.match(
-  /func autoApproveDedicatedAuthorizationJS\(\) -> String \{[\s\S]*?#"""([\s\S]*?)"""#/,
+  /func autoApproveDedicatedAuthorizationJS(?:\(nativeOnly: Bool = false\))? -> String \{[\s\S]*?#"""([\s\S]*?)"""#/,
 );
 assert.ok(approvalScriptMatch, 'embedded authorization script must be extractable');
 const approvalScript = approvalScriptMatch[1].trim();
