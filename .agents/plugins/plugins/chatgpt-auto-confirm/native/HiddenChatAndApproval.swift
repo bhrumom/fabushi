@@ -908,10 +908,20 @@ func dedicatedApprovalWithNativeInput(
   targetId: String,
   detection: [String: Any]
 ) -> [String: Any]? {
-  let approvalWSURL = cdpWebSocketURL(port: port, targetId: targetId)
+  guard let approvalWSURL = cdpWebSocketURL(port: port, targetId: targetId) else {
+    queueTrace(
+      "task=approval-watcher stage=approval-native-target-url-missing target=\(targetId)"
+    )
+    return [
+      "ok": false,
+      "clicked": false,
+      "confirmed": false,
+      "strategy": "session-scope",
+      "error": "approval_cdp_target_missing",
+    ]
+  }
   queueTrace("task=approval-watcher stage=approval-native-enter target=\(targetId)")
   func evaluateSessionScope() -> [String: Any]? {
-    guard let approvalWSURL else { return nil }
     queueTrace("task=approval-watcher stage=approval-native-scope-begin")
     let scope = cdpValue(
       wsURLString: approvalWSURL,
@@ -1148,12 +1158,11 @@ func dedicatedApprovalWithNativeInput(
           nativeOptionDOMFallbackLastTarget = nativeOptionComponentLastTarget
           finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
           Thread.sleep(forTimeInterval: 0.45)
-          if let approvalWSURL,
-             let after = cdpValue(
-               wsURLString: approvalWSURL,
-               expression: detectDedicatedAuthorizationJS(),
-               timeout: 3.0
-             ), after["found"] as? Bool != true {
+          if let after = cdpValue(
+            wsURLString: approvalWSURL,
+            expression: detectDedicatedAuthorizationJS(),
+            timeout: 3.0
+          ), after["found"] as? Bool != true {
             cardsApproved += 1
             finalResult["ok"] = true
             finalResult["clicked"] = true
@@ -1174,12 +1183,11 @@ func dedicatedApprovalWithNativeInput(
       if optionClicked {
         finalResult["clicked"] = true
         finalResult["nativeInput"] = true
-        if let approvalWSURL,
-           let after = cdpValue(
-             wsURLString: approvalWSURL,
-             expression: detectDedicatedAuthorizationJS(),
-             timeout: 3.0
-           ), after["found"] as? Bool != true {
+        if let after = cdpValue(
+          wsURLString: approvalWSURL,
+          expression: detectDedicatedAuthorizationJS(),
+          timeout: 3.0
+        ), after["found"] as? Bool != true {
           cardsApproved += 1
           finalResult["ok"] = true
           finalResult["clicked"] = true
