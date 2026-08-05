@@ -3354,7 +3354,8 @@ func detectDedicatedAuthorizationJS() -> String {
     const interactive = allInteractive();
     const candidates = interactive
       .map((button, index) => ({ button, index, label: approvalLabel(button) }))
-      .filter(candidate => hasAllowLabel(candidate.button));
+      .filter(candidate => hasAllowLabel(candidate.button)
+        && hasClickSemantics(candidate.button));
     const cardFor = candidate => {
       let container = parentOf(candidate.button);
       for (let index = 0; index < 30 && container; index += 1) {
@@ -4082,7 +4083,8 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
     for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) {
       const candidates = allInteractive()
         .map((button, index) => ({ button, index, label: approvalLabel(button) }))
-        .filter(candidate => hasAllowLabel(candidate.button))
+        .filter(candidate => hasAllowLabel(candidate.button)
+          && hasClickSemantics(candidate.button))
         .map(candidate => ({ ...candidate, card: collectCard(candidate.button) }))
         .filter(candidate => candidate.card)
         .filter(candidate => {
