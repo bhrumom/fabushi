@@ -468,12 +468,19 @@ func nativeApprovalComponentActionResult(
           })[0] || null;
       }
       if (!target || typeof target.dispatchEvent !== 'function') {
+        const brief = element => element
+          ? `${element.tagName || ''}:${labelOf(element).slice(0, 80)}:${
+            element.getAttribute?.('aria-haspopup') ?? '-'}:${
+            element.getAttribute?.('aria-expanded') ?? '-'}`
+          : 'none';
+        const triggerCount = componentControls.filter(element => hasMenuStructure(element)).length;
         return {
           ok: false,
           action,
-          error: action === 'trigger'
+          error: (action === 'trigger'
             ? 'approval_trigger_component_missing'
-            : 'session_option_component_missing'
+            : 'session_option_component_missing')
+            + `:requested=${requested}|point=${brief(pointTarget)}|selected=${brief(selectedApproval)}|root=${brief(componentRoot)}|controls=${componentControls.length}|triggers=${triggerCount}`
         };
       }
       const ownKeys = node => {
