@@ -143,6 +143,25 @@ func cdpValue(
   return nil
 }
 
+func cdpValuePersistent(
+  wsURLString: String,
+  expression: String,
+  timeout: TimeInterval = 5.0
+) -> [String: Any]? {
+  guard let response = CDPClient.evaluatePersistent(
+    wsURLString: wsURLString,
+    expression: expression,
+    timeout: timeout
+  ), let outer = response["result"] as? [String: Any] else { return nil }
+  if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
+    return sanitizeJSONValue(value) as? [String: Any]
+  }
+  if let value = outer["value"] as? [String: Any] {
+    return sanitizeJSONValue(value) as? [String: Any]
+  }
+  return nil
+}
+
 func cdpWebSocketURL(port: Int, targetId: String) -> String? {
   CDPClient.fetchTargets(portOverride: port)
     .first(where: { $0["id"] as? String == targetId })?["webSocketDebuggerUrl"] as? String
@@ -280,7 +299,7 @@ func nativeApprovalArrowKey(
     };
   })()
   """#
-  return cdpValue(
+  return cdpValuePersistent(
     wsURLString: wsURL,
     expression: directKeyExpression,
     timeout: 2.5
@@ -413,7 +432,7 @@ func nativeApprovalComponentActionResult(
       };
     })()
     """#
-    let componentProbe = cdpValue(
+    let componentProbe = cdpValuePersistent(
       wsURLString: wsURL,
       expression: "({ok:true})",
       timeout: 1.0
@@ -426,7 +445,7 @@ func nativeApprovalComponentActionResult(
       return ["ok": false, "action": action, "error": "approval_cdp_probe_failed"]
     }
     queueTrace("task=approval-watcher stage=approval-native-component-eval-begin")
-    let componentResult = cdpValue(
+    let componentResult = cdpValuePersistent(
       wsURLString: wsURL,
       expression: directComponentExpression,
       timeout: 2.5
@@ -941,7 +960,7 @@ func dedicatedApprovalWithNativeInput(
   queueTrace("task=approval-watcher stage=approval-native-enter target=\(targetId)")
   func evaluateSessionScope() -> [String: Any]? {
     queueTrace("task=approval-watcher stage=approval-native-scope-begin")
-    let scope = cdpValue(
+    let scope = cdpValuePersistent(
       wsURLString: approvalWSURL,
       expression: sessionScopeComponentProbeJS(),
       timeout: 2.0
@@ -1176,7 +1195,7 @@ func dedicatedApprovalWithNativeInput(
           nativeOptionDOMFallbackLastTarget = nativeOptionComponentLastTarget
           finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
           Thread.sleep(forTimeInterval: 0.45)
-          if let after = cdpValue(
+          if let after = cdpValuePersistent(
             wsURLString: approvalWSURL,
             expression: detectDedicatedAuthorizationJS(),
             timeout: 3.0
@@ -1201,7 +1220,7 @@ func dedicatedApprovalWithNativeInput(
       if optionClicked {
         finalResult["clicked"] = true
         finalResult["nativeInput"] = true
-        if let after = cdpValue(
+        if let after = cdpValuePersistent(
           wsURLString: approvalWSURL,
           expression: detectDedicatedAuthorizationJS(),
           timeout: 3.0
@@ -4395,10 +4414,10 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     var approvalDetection: [String: Any]?
     var approvalProbe: [String: Any]?
     var approvalScreenshotPath: String?
-    if let detectionEval = CDPClient.evaluate(
-          wsURLString: wsURL,
-          expression: detectDedicatedAuthorizationJS()
-        ),
+    if let detectionEval = CDPClient.evaluatePersistent(
+      wsURLString: wsURL,
+      expression: detectDedicatedAuthorizationJS()
+    ),
        let detectionResult = detectionEval["result"] as? [String: Any],
        let detectionValue = ((detectionResult["result"] as? [String: Any])?["value"]
          ?? detectionResult["value"]) as? [String: Any],
