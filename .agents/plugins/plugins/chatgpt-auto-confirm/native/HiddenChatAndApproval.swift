@@ -124,6 +124,112 @@ func cdpValue(
   return nil
 }
 
+func cdpWebSocketURL(port: Int, targetId: String) -> String? {
+  CDPClient.fetchTargets(portOverride: port)
+    .first(where: { $0["id"] as? String == targetId })?["webSocketDebuggerUrl"] as? String
+}
+
+func approvalCoordinate(_ value: Any?) -> Double? {
+  if let number = value as? NSNumber { return number.doubleValue }
+  if let number = value as? Double { return number }
+  if let number = value as? Int { return Double(number) }
+  return nil
+}
+
+func approvalPoint(_ value: Any?) -> (x: Double, y: Double)? {
+  guard let point = value as? [String: Any],
+        let x = approvalCoordinate(point["x"]),
+        let y = approvalCoordinate(point["y"]) else { return nil }
+  return (x, y)
+}
+
+func nativeApprovalClick(
+  port: Int,
+  targetId: String,
+  point: (x: Double, y: Double)
+) -> Bool {
+  guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+  return CDPClient.dispatchMouseClick(wsURLString: wsURL, x: point.x, y: point.y)
+}
+
+func dedicatedApprovalWithNativeInput(
+  port: Int,
+  targetId: String,
+  detection: [String: Any]
+) -> [String: Any]? {
+  let triggerPoint = approvalPoint(detection["menuTriggerPoint"])
+  var nativeTriggerClicked = false
+  if let triggerPoint,
+     (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
+    // The real permission control can render its disclosure arrow as a CSS
+    // affordance inside the same button. Use CDP input for that split region;
+    // DOM-dispatched events are untrusted and were activating neither menu.
+    nativeTriggerClicked = nativeApprovalClick(
+      port: port,
+      targetId: targetId,
+      point: triggerPoint
+    )
+  }
+
+  var result = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoApproveDedicatedAuthorizationJS(),
+    timeout: 10.0
+  )
+
+  // If a separate arrow control was present but did not open its menu on the
+  // untrusted DOM path, retry the exact component-root geometry with trusted
+  // input. A self split-button returns native_input_required instead of ever
+  // falling through to the one-shot Allow once activation.
+  if let result,
+     result["confirmed"] as? Bool != true,
+     let retryPoint = approvalPoint(result["menuTriggerPoint"]) ?? triggerPoint,
+     (result["error"] as? String == "session_scope_menu_not_opened"
+       || result["error"] as? String == "session_scope_native_input_required") {
+    nativeTriggerClicked = nativeApprovalClick(
+      port: port,
+      targetId: targetId,
+      point: retryPoint
+    ) || nativeTriggerClicked
+    result = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: autoApproveDedicatedAuthorizationJS(),
+      timeout: 10.0
+    )
+  }
+
+  guard var finalResult = result else { return nil }
+  if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
+
+  // A menu item can also be rendered without a reliable React click target.
+  // If the DOM path found it but did not close the card, replay that exact
+  // menu-item rectangle as trusted input and verify the card is gone.
+  if finalResult["confirmed"] as? Bool != true,
+     let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]),
+     nativeApprovalClick(port: port, targetId: targetId, point: optionPoint) {
+    let after = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: detectDedicatedAuthorizationJS(),
+      timeout: 6.0
+    )
+    if after?["found"] as? Bool != true {
+      finalResult["ok"] = true
+      finalResult["clicked"] = true
+      finalResult["confirmed"] = true
+      finalResult["strategy"] = "session-scope-native"
+      finalResult["nativeInput"] = true
+      finalResult["error"] = "none"
+    }
+  }
+  return finalResult
+}
+
 func pageDiagnosticJS() -> String {
   #"""
   (async () => {
@@ -1554,6 +1660,32 @@ func detectDedicatedAuthorizationJS() -> String {
       ].filter((button, index, all) => all.indexOf(button) === index);
       return controls.find(button => isMenuTrigger(button, candidate, card.container)) || null;
     };
+    const rectObject = element => {
+      const rect = element?.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+      const left = rect.left || 0;
+      const top = rect.top || 0;
+      const width = rect.width || 0;
+      const height = rect.height || 0;
+      return {
+        left, top, width, height,
+        right: Number.isFinite(rect.right) ? rect.right : left + width,
+        bottom: Number.isFinite(rect.bottom) ? rect.bottom : top + height
+      };
+    };
+    const menuTriggerPoint = (element, candidate) => {
+      const rect = rectObject(element);
+      if (!rect) return null;
+      // A renderer may expose the visible label and its disclosure affordance
+      // as one button. The last two CSS pixels are the only coordinate that
+      // can activate that affordance without pressing the Allow once label.
+      const sameButton = element && element === candidate;
+      return {
+        x: sameButton ? Math.max(rect.left + 1, rect.right - 2)
+          : rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
+        y: rect.top + rect.height / 2
+      };
+    };
     const componentControlSamples = (card, candidate) => {
       const reactHandlerNames = element => {
         const names = [];
@@ -1599,14 +1731,16 @@ func detectDedicatedAuthorizationJS() -> String {
         });
       const score = element => {
         const value = labelText(element);
-        return (isNearRightSplit(element, candidate) ? 8 : 0)
+        return (element === candidate ? 100 : 0)
+          + (hasAllowLabel(element) ? 20 : 0)
+          + (isNearRightSplit(element, candidate) ? 8 : 0)
           + (isArrowLike(element) ? 4 : 0)
           + (hasClickSemantics(element) ? 2 : 0)
           + (value ? 1 : 0);
       };
       return nodes
         .sort((left, right) => score(right) - score(left))
-        .slice(0, 80)
+        .slice(0, 24)
         .map(element => {
           const rect = element.getBoundingClientRect?.();
           return {
@@ -1776,12 +1910,18 @@ func detectDedicatedAuthorizationJS() -> String {
         componentActionKeys,
         componentTargetMessageIdPresent,
         componentControlSamples: [],
+        selectedButtonRect: null,
+        menuTriggerRect: null,
+        menuTriggerPoint: null,
         interactiveLabelSamples,
         cardCount: 0,
         interactiveCount: interactive.length,
         detectionStrategy: 'interactive-dom-shadow-iframe'
       };
     }
+    const menuTrigger = findMenuTrigger(card, selectedButton);
+    const selectedButtonRect = rectObject(selectedButton);
+    const menuTriggerRect = rectObject(menuTrigger);
     return {
       ok: true,
       found: true,
@@ -1790,17 +1930,18 @@ func detectDedicatedAuthorizationJS() -> String {
       selectedLabel: approvalLabel(selectedButton),
       cardButtonLabels: card.cardLabels.filter(Boolean),
       sessionScopeLabels: card.cardLabels.filter(value => isSessionScope(value)),
-      menuTriggerLabels: (() => {
-        const trigger = findMenuTrigger(card, selectedButton);
-        return trigger ? [approvalLabel(trigger) || '[unlabeled companion]'] : [];
-      })(),
-      menuTriggerCount: findMenuTrigger(card, selectedButton) ? 1 : 0,
+      menuTriggerLabels: menuTrigger
+        ? [approvalLabel(menuTrigger) || '[unlabeled companion]'] : [],
+      menuTriggerCount: menuTrigger ? 1 : 0,
       unlabeledControlCount: card.cardButtons.filter(button =>
         !hasAllowLabel(button) && !hasRejectLabel(button) && !label(button)
       ).length,
       componentActionKeys: card.componentData?.actionKeys || [],
       componentTargetMessageIdPresent: Boolean(card.componentData?.targetMessageId),
       componentControlSamples: componentControlSamples(card, selectedButton),
+      selectedButtonRect,
+      menuTriggerRect,
+      menuTriggerPoint: menuTriggerPoint(menuTrigger, selectedButton),
       cardCount: cards.length,
       interactiveCount: interactive.length,
       detectionStrategy: 'interactive-dom-shadow-iframe'
@@ -2068,10 +2209,33 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         );
     };
     const menuTriggerOptions = new WeakMap();
+    const rectObject = element => {
+      const rect = element?.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+      const left = rect.left || 0;
+      const top = rect.top || 0;
+      const width = rect.width || 0;
+      const height = rect.height || 0;
+      return {
+        left, top, width, height,
+        right: Number.isFinite(rect.right) ? rect.right : left + width,
+        bottom: Number.isFinite(rect.bottom) ? rect.bottom : top + height
+      };
+    };
+    const menuTriggerPoint = (trigger, candidate) => {
+      const rect = rectObject(trigger);
+      if (!rect) return null;
+      return {
+        x: trigger === candidate
+          ? Math.max(rect.left + 1, rect.right - 2)
+          : rect.left + Math.min(rect.width / 2, Math.max(1, rect.width - 1)),
+        y: rect.top + rect.height / 2
+      };
+    };
     const configureMenuTrigger = (trigger, candidate) => {
       if (!trigger || trigger !== candidate) return;
-      const rect = trigger.getBoundingClientRect?.();
-      if (!rect || rect.width <= 0 || rect.height <= 0) {
+      const point = menuTriggerPoint(trigger, candidate);
+      if (!point) {
         menuTriggerOptions.set(trigger, { coordinateOnly: false });
         return;
       }
@@ -2081,10 +2245,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       // host receives the disclosure activation instead of the one-shot action.
       menuTriggerOptions.set(trigger, {
         coordinateOnly: true,
-        point: {
-          x: Math.max(rect.left + 1, rect.right - 6),
-          y: rect.top + rect.height / 2
-        }
+        point
       });
     };
     const findMenuTrigger = (card, candidate) => {
@@ -2095,6 +2256,30 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
       configureMenuTrigger(companion, candidate);
       return companion || null;
+    };
+    const sessionMenuItems = (sessionControl, cardButtons) => [...new Set(
+      allInteractive()
+        .map(item => {
+          let node = item;
+          for (let depth = 0; depth < 8 && node; depth += 1) {
+            if (isSessionScope(labelText(node))
+                && visible(node)
+                && hasClickSemantics(node)) return node;
+            node = parentOf(node);
+          }
+          return null;
+        })
+        .filter(Boolean)
+    )].filter(item => {
+      if (item === sessionControl || cardButtons.includes(item)) return false;
+      return isSessionScope(labelText(item)) && visible(item);
+    });
+    const pointForElement = element => {
+      const rect = rectObject(element);
+      return rect ? {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      } : null;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -2275,66 +2460,72 @@ func autoApproveDedicatedAuthorizationJS() -> String {
 
       if (sessionControl) {
         const menuTriggerLabel = label(sessionControl);
-        try { dispatchPointerClick(sessionControl); }
-        catch (error) {
-          lastFailure = {
-            ok: false, clicked: false, confirmed: false,
-            strategy: 'session-scope', label: menuTriggerLabel,
-            candidateLabels,
-            error: String(error?.message || error || 'session_scope_menu_click_failed')
-          };
-          break;
-        }
+        const menuTriggerPointValue = menuTriggerPoint(sessionControl, candidate.button);
         let menuCandidates = [];
-        let sessionOption = null;
+        let sessionOption = sessionMenuItems(sessionControl, cardButtons)[0] || null;
+        if (!sessionOption) {
+          // A self split-button has no separate DOM arrow. Do not synthesize a
+          // click on its main action because that would grant Allow once.
+          // Swift replays menuTriggerPointValue through trusted CDP input.
+          if (sessionControl === candidate.button) {
+            lastFailure = {
+              ok: false, clicked: false, confirmed: false,
+              strategy: 'session-scope', label: menuTriggerLabel,
+              menuTriggerLabel, menuTriggerPoint: menuTriggerPointValue,
+              candidateLabels,
+              error: 'session_scope_native_input_required'
+            };
+            break;
+          }
+          try { dispatchPointerClick(sessionControl); }
+          catch (error) {
+            lastFailure = {
+              ok: false, clicked: false, confirmed: false,
+              strategy: 'session-scope', label: menuTriggerLabel,
+              menuTriggerLabel, menuTriggerPoint: menuTriggerPointValue,
+              candidateLabels,
+              error: String(error?.message || error || 'session_scope_menu_click_failed')
+            };
+            break;
+          }
+        }
         for (let waitIndex = 0; waitIndex < 40 && !sessionOption; waitIndex += 1) {
           await sleep(100);
           if (!candidate.button.isConnected || !rendered(candidate.button)) {
             lastFailure = {
               ok: false, clicked: true, confirmed: false,
               strategy: 'session-scope', label: menuTriggerLabel,
-              menuTriggerLabel, candidateLabels,
+              menuTriggerLabel, menuTriggerPoint: menuTriggerPointValue,
+              candidateLabels,
               error: 'session_scope_menu_not_opened'
             };
             break;
           }
-          const sessionTargets = allInteractive()
-            .map(item => {
-              let node = item;
-              for (let depth = 0; depth < 8 && node; depth += 1) {
-                if (isSessionScope(labelText(node))
-                    && visible(node)
-                    && hasClickSemantics(node)) return node;
-                node = parentOf(node);
-              }
-              return null;
-            })
-            .filter(Boolean);
-          const menuItems = [...new Set(sessionTargets)].filter(item => {
-            if (item === sessionControl || cardButtons.includes(item)) return false;
-            return isSessionScope(labelText(item)) && visible(item);
-          });
           menuCandidates = allInteractive().map(label).filter(Boolean).slice(-40);
-          sessionOption = menuItems[0] || null;
+          sessionOption = sessionMenuItems(sessionControl, cardButtons)[0] || null;
         }
         if (!sessionOption) {
           if (lastFailure?.error !== 'session_scope_menu_not_opened') {
             lastFailure = {
               ok: false, clicked: true, confirmed: false,
               strategy: 'session-scope', label: menuTriggerLabel,
-              menuTriggerLabel, candidateLabels, menuCandidates,
+              menuTriggerLabel, menuTriggerPoint: menuTriggerPointValue,
+              candidateLabels, menuCandidates,
               error: 'session_scope_option_not_found'
             };
           }
           break;
         }
         const sessionScopeLabel = label(sessionOption);
+        const sessionOptionPoint = pointForElement(sessionOption);
         try { dispatchPointerClick(sessionOption); }
         catch (error) {
           lastFailure = {
             ok: false, clicked: true, confirmed: false,
             strategy: 'session-scope', label: sessionScopeLabel,
-            menuTriggerLabel, candidateLabels, menuCandidates,
+            menuTriggerLabel, sessionScopeLabel,
+            menuTriggerPoint: menuTriggerPointValue,
+            sessionOptionPoint, candidateLabels, menuCandidates,
             error: String(error?.message || error || 'session_scope_option_click_failed')
           };
           break;
@@ -2344,7 +2535,9 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           lastFailure = {
             ok: false, clicked: true, confirmed: false,
             strategy: 'session-scope', label: sessionScopeLabel,
-            menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates,
+            menuTriggerLabel, sessionScopeLabel,
+            menuTriggerPoint: menuTriggerPointValue,
+            sessionOptionPoint, candidateLabels, menuCandidates,
             error: 'session_scope_approval_not_confirmed'
           };
           break;
@@ -2997,17 +3190,11 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     // that are not literal <button> elements. Once a real card is detected,
     // never fall through to that one-shot fallback.
     if let detection = approvalDetection {
-      var dedicatedResult: [String: Any]?
-      if let dedicatedEval = CDPClient.evaluate(
-            wsURLString: wsURL,
-            expression: autoApproveDedicatedAuthorizationJS()
-          ),
-         let dedicatedResponse = dedicatedEval["result"] as? [String: Any],
-         let dedicatedValue = ((dedicatedResponse["result"] as? [String: Any])?["value"]
-           ?? dedicatedResponse["value"]) as? [String: Any] {
-        dedicatedResult = dedicatedValue
-      }
-      let result = dedicatedResult ?? [
+      let result = dedicatedApprovalWithNativeInput(
+        port: endpoint.port,
+        targetId: targetId,
+        detection: detection
+      ) ?? [
         "ok": false,
         "clicked": false,
         "confirmed": false,

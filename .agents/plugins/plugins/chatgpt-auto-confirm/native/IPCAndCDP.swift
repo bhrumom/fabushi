@@ -422,6 +422,43 @@ struct CDPClient {
     )
   }
 
+  @discardableResult
+  static func dispatchMouseClick(
+    wsURLString: String,
+    x: Double,
+    y: Double,
+    timeout: TimeInterval = 4.0
+  ) -> Bool {
+    let coordinate = { (value: Double) in
+      String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+    let events: [(String, String)] = [
+      (
+        "mouseMoved",
+        "{\"type\":\"mouseMoved\",\"x\":\(coordinate(x)),\"y\":\(coordinate(y))}"
+      ),
+      (
+        "mousePressed",
+        "{\"type\":\"mousePressed\",\"x\":\(coordinate(x)),\"y\":\(coordinate(y)),"
+          + "\"button\":\"left\",\"buttons\":1,\"clickCount\":1}"
+      ),
+      (
+        "mouseReleased",
+        "{\"type\":\"mouseReleased\",\"x\":\(coordinate(x)),\"y\":\(coordinate(y)),"
+          + "\"button\":\"left\",\"buttons\":0,\"clickCount\":1}"
+      ),
+    ]
+    for (method, paramsJSON) in events {
+      guard let response = sendCommand(
+        wsURLString: wsURLString,
+        method: "Input.dispatchMouseEvent",
+        paramsJSON: paramsJSON,
+        timeout: timeout
+      ), response["error"] == nil else { return false }
+    }
+    return true
+  }
+
   static func allCookies(wsURLString: String, timeout: TimeInterval = 5.0) -> [[String: Any]] {
     guard let response = sendCommand(
       wsURLString: wsURLString,
