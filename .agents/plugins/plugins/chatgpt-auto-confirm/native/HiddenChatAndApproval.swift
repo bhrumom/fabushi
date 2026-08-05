@@ -1302,7 +1302,7 @@ func detectDedicatedAuthorizationJS() -> String {
     // A hidden Electron renderer can expose an attached permission card before
     // layout has produced a non-zero rect. It is still safe to inspect and
     // dispatch the card's own events when the node is attached and paired with
-    // the card's allow/reject labels; container scoping below prevents page
+    // the component's allow control; container scoping below prevents page
     // copy from becoming an approval candidate.
     const visible = element => !!(element
       && !element.disabled
@@ -1334,8 +1334,8 @@ func detectDedicatedAuthorizationJS() -> String {
       for (const element of query(root, '*')) {
         if (hasClickSemantics(element)
             || (element.children?.length === 0
-              && (isAllowLabel(labelText(element))
-                || isRejectLabel(labelText(element))
+              && (hasAllowLabel(element)
+                || hasRejectLabel(element)
                 || isSessionScope(labelText(element))))) {
           output.push(element);
         }
@@ -1393,6 +1393,8 @@ func detectDedicatedAuthorizationJS() -> String {
         || /^(deny|reject|cancel|decline)(?:\s+once)?$/.test(normalized)
         || /^(拒绝|不允许|取消)(一次)?$/.test(normalized);
     };
+    const hasAllowLabel = element => labelParts(element).some(isAllowLabel);
+    const hasRejectLabel = element => labelParts(element).some(isRejectLabel);
     const hasClickSemantics = element => {
       if (!element) return false;
       const tagName = element.tagName?.toLowerCase();
@@ -1440,7 +1442,8 @@ func detectDedicatedAuthorizationJS() -> String {
           .find(Boolean)
           || targetFrom(props)
           || '';
-        if (!hasApprovalAction || !targetMessageId) return null;
+        const hasPluginAuthorizationData = Boolean(pluginData && fromServer);
+        if (!hasApprovalAction || (!hasPluginAuthorizationData && !targetMessageId)) return null;
         return {
           root: domNode,
           actionKeys,
@@ -1473,7 +1476,7 @@ func detectDedicatedAuthorizationJS() -> String {
     const interactive = allInteractive();
     const candidates = interactive
       .map((button, index) => ({ button, index, label: label(button) }))
-      .filter(candidate => isAllowLabel(labelText(candidate.button)));
+      .filter(candidate => hasAllowLabel(candidate.button));
     const cardFor = candidate => {
       let container = parentOf(candidate.button);
       for (let index = 0; index < 30 && container; index += 1) {
@@ -1490,14 +1493,10 @@ func detectDedicatedAuthorizationJS() -> String {
             && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
-        const cardText = normalize([
-          container.innerText, container.textContent, ...cardLabels
-        ].filter(Boolean).join(' '));
-        const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
-        const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
+        const hasAllow = cardButtons.some(hasAllowLabel);
         const componentData = approvalComponentData(candidate.button);
-        if (hasAllow && hasReject && componentData) {
-          return { container, cardButtons, cardLabels, cardText, componentData };
+        if (hasAllow && componentData) {
+          return { container, cardButtons, cardLabels, componentData };
         }
         container = parentOf(container);
       }
@@ -1524,7 +1523,7 @@ func detectDedicatedAuthorizationJS() -> String {
         candidateLabels: candidates.map(item => item.label),
         selectedLabel: '',
         cardButtonLabels: interactive
-          .filter(button => isAllowLabel(labelText(button)) || isRejectLabel(labelText(button)))
+          .filter(button => hasAllowLabel(button) || hasRejectLabel(button))
           .map(label)
           .filter(Boolean),
         sessionScopeLabels: [],
@@ -1544,7 +1543,7 @@ func detectDedicatedAuthorizationJS() -> String {
       found: true,
       candidates: candidates.length,
       candidateLabels: candidates.map(item => item.label),
-      selectedLabel: label(cards[0].cardButtons.find(button => isAllowLabel(labelText(button))) || candidates[0].button),
+      selectedLabel: label(cards[0].cardButtons.find(hasAllowLabel) || candidates[0].button),
       cardButtonLabels: card.cardLabels.filter(Boolean),
       sessionScopeLabels: card.cardLabels.filter(value => isSessionScope(value)),
       menuTriggerLabels: card.cardButtons.filter(button => {
@@ -1559,13 +1558,13 @@ func detectDedicatedAuthorizationJS() -> String {
             )));
       }).map(label).filter(Boolean),
       menuTriggerCount: card.cardButtons.filter(button =>
-        !isAllowLabel(labelText(button)) && !isRejectLabel(labelText(button))
+        !hasAllowLabel(button) && !hasRejectLabel(button)
           && (isSessionScope(labelText(button))
             || button.getAttribute?.('aria-haspopup') === 'menu'
             || button.getAttribute?.('aria-expanded') !== null)
       ).length,
       unlabeledControlCount: card.cardButtons.filter(button =>
-        !isAllowLabel(labelText(button)) && !isRejectLabel(labelText(button)) && !label(button)
+        !hasAllowLabel(button) && !hasRejectLabel(button) && !label(button)
       ).length,
       componentActionKeys: card.componentData?.actionKeys || [],
       componentTargetMessageIdPresent: Boolean(card.componentData?.targetMessageId),
@@ -1587,8 +1586,10 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       && (element.offsetWidth || element.offsetHeight || element.getClientRects?.().length));
     // Hidden ChatGPT renderer cards may be attached before they receive layout
     // geometry. Treat those card-owned controls as actionable as long as they
-    // remain connected and enabled; collectCard still requires the surrounding
-    // authorization/reject evidence before any event is dispatched.
+    // remain connected and enabled; collectCard still requires the allow
+    // control's authorization component root before any event is dispatched.
+    const hasAllowLabel = element => labelParts(element).some(isAllowLabel);
+    const hasRejectLabel = element => labelParts(element).some(isRejectLabel);
     const visible = element => !!(element
       && !element.disabled
       && (rendered(element) || element.isConnected !== false));
@@ -1619,8 +1620,8 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       for (const element of query(root, '*')) {
         if (hasClickSemantics(element)
             || (element.children?.length === 0
-              && (isAllowLabel(labelText(element))
-                || isRejectLabel(labelText(element))
+              && (hasAllowLabel(element)
+                || hasRejectLabel(element)
                 || isSessionScope(labelText(element))))) {
           output.push(element);
         }
@@ -1729,7 +1730,8 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           .find(Boolean)
           || targetFrom(props)
           || '';
-        if (!hasApprovalAction || !targetMessageId) return null;
+        const hasPluginAuthorizationData = Boolean(pluginData && fromServer);
+        if (!hasApprovalAction || (!hasPluginAuthorizationData && !targetMessageId)) return null;
         return {
           root: domNode,
           actionKeys,
@@ -1798,14 +1800,10 @@ func autoApproveDedicatedAuthorizationJS() -> String {
             && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
-        const cardText = normalize([
-          container.innerText, container.textContent, ...cardLabels
-        ].filter(Boolean).join(' '));
-        const hasAllow = cardButtons.some(button => isAllowLabel(labelText(button)));
-        const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
+        const hasAllow = cardButtons.some(hasAllowLabel);
         const componentData = approvalComponentData(candidate);
-        if (hasAllow && hasReject && componentData) {
-          return { container, cardButtons, cardLabels, cardText, componentData };
+        if (hasAllow && componentData) {
+          return { container, cardButtons, cardLabels, componentData };
         }
         container = parentOf(container);
       }
@@ -1827,7 +1825,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) {
       const candidates = allInteractive()
         .map((button, index) => ({ button, index, label: label(button) }))
-        .filter(candidate => isAllowLabel(labelText(candidate.button)))
+        .filter(candidate => hasAllowLabel(candidate.button))
         .map(candidate => ({ ...candidate, card: collectCard(candidate.button) }))
         .filter(candidate => candidate.card)
         .sort((left, right) => {
