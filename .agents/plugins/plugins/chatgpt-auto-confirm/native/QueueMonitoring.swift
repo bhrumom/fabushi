@@ -38,6 +38,9 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "componentActionKeys": detection["componentActionKeys"] ?? [],
     "componentTargetMessageIdPresent": detection["componentTargetMessageIdPresent"] ?? false,
     "componentControlSamples": detection["componentControlSamples"] ?? [],
+    "selectedButtonRect": detection["selectedButtonRect"] ?? NSNull(),
+    "menuTriggerRect": detection["menuTriggerRect"] ?? NSNull(),
+    "menuTriggerPoint": detection["menuTriggerPoint"] ?? NSNull(),
     "interactiveLabelSamples": detection["interactiveLabelSamples"] ?? [],
     "cardCount": detection["cardCount"] ?? 0,
     "interactiveCount": detection["interactiveCount"] ?? 0,
@@ -61,6 +64,10 @@ func traceQueueApproval(
     "menuTriggerLabel": result["menuTriggerLabel"] ?? "",
     "sessionScopeLabel": result["sessionScopeLabel"] ?? "",
     "menuCandidates": result["menuCandidates"] ?? [],
+    "menuTriggerPoint": result["menuTriggerPoint"] ?? NSNull(),
+    "sessionOptionPoint": result["sessionOptionPoint"] ?? NSNull(),
+    "nativeTriggerClicked": result["nativeTriggerClicked"] ?? false,
+    "nativeInput": result["nativeInput"] ?? false,
     "cardsApproved": result["cardsApproved"] ?? 0,
     "cardsRemaining": result["cardsRemaining"] ?? 0,
   ]) ?? "{\"labels\":[]}"
@@ -118,11 +125,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
       + approvalDetectionTraceFields(detection)
   )
 
-  let result = cdpValue(
+  let result = dedicatedApprovalWithNativeInput(
     port: port,
     targetId: targetId,
-    expression: autoApproveDedicatedAuthorizationJS(),
-    timeout: 8.0
+    detection: detection
   )
   traceQueueApproval(
     result,
