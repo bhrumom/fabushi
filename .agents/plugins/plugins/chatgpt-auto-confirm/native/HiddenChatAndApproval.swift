@@ -2822,6 +2822,17 @@ func detectDedicatedAuthorizationJS() -> String {
       && !element.disabled
       && (rendered(element) || element.isConnected !== false));
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const containsNode = (root, element) => {
+      if (!root || !element) return false;
+      if (root === element) return true;
+      try { if (root.contains?.(element)) return true; } catch (_) {}
+      let node = parentOf(element);
+      for (let depth = 0; depth < 24 && node; depth += 1) {
+        if (node === root) return true;
+        node = parentOf(node);
+      }
+      return false;
+    };
     const labelParts = element => [
       element?.getAttribute?.('aria-label'),
       element?.getAttribute?.('title'),
@@ -3052,13 +3063,20 @@ func detectDedicatedAuthorizationJS() -> String {
     const componentControls = (container, candidate) => {
       if (!container) return [];
       const output = [];
-      for (const root of componentRoots(container)) {
+      const roots = componentRoots(container);
+      for (const root of roots) {
         output.push(...query(root, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'));
         output.push(...query(root, '*').filter(element => {
           return !labelText(element)
             && (isArrowLike(element) || isNearRightSplit(element, candidate));
         }));
       }
+      // Portaled/test and hidden-renderer controls may not expose a usable
+      // Element.contains implementation. The parent/host walk still keeps
+      // this list inside the authorization component.
+      output.push(...allInteractive().filter(element =>
+        roots.some(root => containsNode(root, element))
+      ));
       return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
     };
     const findMenuTrigger = (card, candidate) => {
@@ -3406,6 +3424,17 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       && !element.disabled
       && (rendered(element) || element.isConnected !== false));
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const containsNode = (root, element) => {
+      if (!root || !element) return false;
+      if (root === element) return true;
+      try { if (root.contains?.(element)) return true; } catch (_) {}
+      let node = parentOf(element);
+      for (let depth = 0; depth < 24 && node; depth += 1) {
+        if (node === root) return true;
+        node = parentOf(node);
+      }
+      return false;
+    };
     const labelParts = element => [
       element?.getAttribute?.('aria-label'),
       element?.getAttribute?.('title'),
@@ -3629,13 +3658,20 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
     const componentControls = (container, candidate) => {
       if (!container) return [];
       const output = [];
-      for (const root of componentRoots(container)) {
+      const roots = componentRoots(container);
+      for (const root of roots) {
         output.push(...query(root, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'));
         output.push(...query(root, '*').filter(element => {
           return !labelText(element)
             && (isArrowLike(element) || isNearRightSplit(element, candidate));
         }));
       }
+      // Portaled/test and hidden-renderer controls may not expose a usable
+      // Element.contains implementation. The parent/host walk still keeps
+      // this list inside the authorization component.
+      output.push(...allInteractive().filter(element =>
+        roots.some(root => containsNode(root, element))
+      ));
       return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
     };
     const hasMenuStructure = element => {
@@ -3767,9 +3803,11 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       let node = item;
       const candidates = [];
       for (let depth = 0; depth < 10 && node; depth += 1) {
+        const role = normalize(node.getAttribute?.('role'));
+        const standaloneMenuItem = ['menuitem', 'menuitemradio', 'option'].includes(role);
         if (node !== sessionControl
             && !cardButtons.includes(node)
-            && menuSurfaceFor(node)
+            && (menuSurfaceFor(node) || standaloneMenuItem)
             && visible(node)
             && hasClickSemantics(node)) {
           const labels = labelParts(node);
