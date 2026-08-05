@@ -1435,9 +1435,9 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const sharesComponent = (left, right) => {
       let leftAncestor = parentOf(left);
-      for (let leftDepth = 0; leftDepth < 6 && leftAncestor; leftDepth += 1) {
+      for (let leftDepth = 0; leftDepth < 12 && leftAncestor; leftDepth += 1) {
         let rightAncestor = parentOf(right);
-        for (let rightDepth = 0; rightDepth < 6 && rightAncestor; rightDepth += 1) {
+        for (let rightDepth = 0; rightDepth < 12 && rightAncestor; rightDepth += 1) {
           if (leftAncestor === rightAncestor) return true;
           rightAncestor = parentOf(rightAncestor);
         }
@@ -1496,7 +1496,8 @@ func detectDedicatedAuthorizationJS() -> String {
       const iconOnlyCompanion = !value
         && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
-        && isOneShot(labelText(candidate));
+        && isOneShot(labelText(candidate))
+        && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const buttonRect = button.getBoundingClientRect?.();
       const narrowAllowCompanion = isAllowLabel(value)
         && isOneShot(labelText(candidate))
@@ -1505,15 +1506,25 @@ func detectDedicatedAuthorizationJS() -> String {
         && buttonRect.width <= 48;
       return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
     };
+    const componentRoots = container => {
+      const roots = [];
+      let root = container;
+      for (let depth = 0; depth < 6 && root; depth += 1) {
+        roots.push(root);
+        root = parentOf(root);
+      }
+      return roots;
+    };
     const componentControls = (container, candidate) => {
       if (!container) return [];
-      const output = [
-        ...query(container, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'),
-        ...query(container, '*').filter(element => {
+      const output = [];
+      for (const root of componentRoots(container)) {
+        output.push(...query(root, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'));
+        output.push(...query(root, '*').filter(element => {
           return !labelText(element)
             && (isArrowLike(element) || isNearRightSplit(element, candidate));
-        })
-      ];
+        }));
+      }
       return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
     };
     const findMenuTrigger = (card, candidate) => {
@@ -1521,13 +1532,55 @@ func detectDedicatedAuthorizationJS() -> String {
         ...card.cardButtons,
         ...componentControls(card.container, candidate)
       ].filter((button, index, all) => all.indexOf(button) === index);
-      const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
-      if (companion) return companion;
-      const marker = structuralMarker(candidate);
-      const rect = candidate.getBoundingClientRect?.();
-      return rect && rect.width > 48
-        && /split|dropdown|chevron|caret|arrow|disclosure/.test(marker)
-        ? candidate : null;
+      return controls.find(button => isMenuTrigger(button, candidate, card.container)) || null;
+    };
+    const componentControlSamples = (card, candidate) => {
+      const nodes = componentRoots(card.container)
+        .flatMap(root => query(root, '*'))
+        .filter((element, index, all) => all.indexOf(element) === index)
+        .filter(element => {
+          if (!visible(element)) return false;
+          const value = labelText(element);
+          return value.length <= 120
+            && (hasAllowLabel(element)
+              || hasRejectLabel(element)
+              || hasClickSemantics(element)
+              || !value
+              || isArrowLike(element)
+              || isNearRightSplit(element, candidate));
+        });
+      const score = element => {
+        const value = labelText(element);
+        return (isNearRightSplit(element, candidate) ? 8 : 0)
+          + (isArrowLike(element) ? 4 : 0)
+          + (hasClickSemantics(element) ? 2 : 0)
+          + (value ? 1 : 0);
+      };
+      return nodes
+        .sort((left, right) => score(right) - score(left))
+        .slice(0, 80)
+        .map(element => {
+          const rect = element.getBoundingClientRect?.();
+          return {
+            tag: element.tagName?.toLowerCase() || '',
+            role: normalize(element.getAttribute?.('role')),
+            ariaLabel: element.getAttribute?.('aria-label') || '',
+            title: element.getAttribute?.('title') || '',
+            dataTestId: element.getAttribute?.('data-testid') || '',
+            dataSlot: element.getAttribute?.('data-slot') || '',
+            dataState: element.getAttribute?.('data-state') || '',
+            id: element.getAttribute?.('id') || '',
+            className: String(element.getAttribute?.('class') || '').slice(0, 160),
+            text: labelText(element).slice(0, 120),
+            clickSemantics: hasClickSemantics(element),
+            arrowLike: isArrowLike(element),
+            nearRightSplit: isNearRightSplit(element, candidate),
+            rect: rect ? {
+              left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+              right: rect.right, bottom: rect.bottom
+            } : null
+          };
+        });
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -1658,6 +1711,7 @@ func detectDedicatedAuthorizationJS() -> String {
         unlabeledControlCount: 0,
         componentActionKeys,
         componentTargetMessageIdPresent,
+        componentControlSamples: [],
         interactiveLabelSamples,
         cardCount: 0,
         interactiveCount: interactive.length,
@@ -1682,6 +1736,7 @@ func detectDedicatedAuthorizationJS() -> String {
       ).length,
       componentActionKeys: card.componentData?.actionKeys || [],
       componentTargetMessageIdPresent: Boolean(card.componentData?.targetMessageId),
+      componentControlSamples: componentControlSamples(card, selectedButton),
       cardCount: cards.length,
       interactiveCount: interactive.length,
       detectionStrategy: 'interactive-dom-shadow-iframe'
@@ -1836,9 +1891,9 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     };
     const sharesComponent = (left, right) => {
       let leftAncestor = parentOf(left);
-      for (let leftDepth = 0; leftDepth < 6 && leftAncestor; leftDepth += 1) {
+      for (let leftDepth = 0; leftDepth < 12 && leftAncestor; leftDepth += 1) {
         let rightAncestor = parentOf(right);
-        for (let rightDepth = 0; rightDepth < 6 && rightAncestor; rightDepth += 1) {
+        for (let rightDepth = 0; rightDepth < 12 && rightAncestor; rightDepth += 1) {
           if (leftAncestor === rightAncestor) return true;
           rightAncestor = parentOf(rightAncestor);
         }
@@ -1897,7 +1952,8 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       const iconOnlyCompanion = !value
         && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const labeledSplitCompanion = isOneShot(value)
-        && isOneShot(labelText(candidate));
+        && isOneShot(labelText(candidate))
+        && (isArrowLike(button) || isNearRightSplit(button, candidate));
       const buttonRect = button.getBoundingClientRect?.();
       const narrowAllowCompanion = isAllowLabel(value)
         && isOneShot(labelText(candidate))
@@ -1906,15 +1962,25 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         && buttonRect.width <= 48;
       return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
     };
+    const componentRoots = container => {
+      const roots = [];
+      let root = container;
+      for (let depth = 0; depth < 6 && root; depth += 1) {
+        roots.push(root);
+        root = parentOf(root);
+      }
+      return roots;
+    };
     const componentControls = (container, candidate) => {
       if (!container) return [];
-      const output = [
-        ...query(container, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'),
-        ...query(container, '*').filter(element => {
+      const output = [];
+      for (const root of componentRoots(container)) {
+        output.push(...query(root, 'button, a, [role="button"], [aria-haspopup], [aria-expanded], [data-testid], [data-slot], [data-state]'));
+        output.push(...query(root, '*').filter(element => {
           return !labelText(element)
             && (isArrowLike(element) || isNearRightSplit(element, candidate));
-        })
-      ];
+        }));
+      }
       return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
     };
     const menuTriggerOptions = new WeakMap();
@@ -1924,24 +1990,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         ...componentControls(card.container, candidate)
       ].filter((button, index, all) => all.indexOf(button) === index);
       const companion = controls.find(button => isMenuTrigger(button, candidate, card.container));
-      if (companion) return companion;
-      // A few renderer builds put the disclosure hit area inside the same
-      // Allow once button and expose only the split/dropdown marker. Preserve
-      // the button as the event target but send the click at its right edge.
-      const marker = structuralMarker(candidate);
-      const rect = candidate.getBoundingClientRect?.();
-      if (rect && rect.width > 48
-          && /split|dropdown|chevron|caret|arrow|disclosure/.test(marker)) {
-        menuTriggerOptions.set(candidate, {
-          coordinateOnly: true,
-          point: {
-            x: rect.right - Math.min(12, Math.max(1, rect.width * 0.18)),
-            y: rect.top + Math.max(1, rect.height / 2)
-          }
-        });
-        return candidate;
-      }
-      return null;
+      return companion || null;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
