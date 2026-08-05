@@ -154,7 +154,14 @@ func approveDedicatedAuthorizationWithDiagnostics(
     screenshotPath: screenshotPath
   )
 
-  if result?["clicked"] as? Bool != true || result?["confirmed"] as? Bool != true {
+  let resultClicked = result["clicked"] as? Bool == true
+  let resultConfirmed = result["confirmed"] as? Bool == true
+  if !resultClicked || !resultConfirmed {
+    let resultStrategy = result["strategy"] as? String ?? "per-card"
+    let resultNativeInput = result["nativeInput"] as? Bool == true
+    let nativeOptionClickAttempts = result["nativeOptionClickAttempts"] as? Int ?? 0
+    let nativeOptionClickSuccesses = result["nativeOptionClickSuccesses"] as? Int ?? 0
+    let resultError = result["error"] as? String ?? "none"
     let afterPath = captureHiddenChatScreenshot(
       port: port,
       targetId: targetId,
@@ -162,15 +169,15 @@ func approveDedicatedAuthorizationWithDiagnostics(
     )
     queueTrace(
       "task=\(taskId) stage=approval-\(stage)-unconfirmed "
-        + "strategy=\(result?["strategy"] as? String ?? "per-card") "
-        + "clicked=\(result?["clicked"] as? Bool == true) "
-        + "confirmed=\(result?["confirmed"] as? Bool == true) "
-        + "nativeInput=\(result?["nativeInput"] as? Bool == true) "
-        + "nativeOptionClickAttempts=\(result?["nativeOptionClickAttempts"] as? Int ?? 0) "
-        + "nativeOptionClickSuccesses=\(result?["nativeOptionClickSuccesses"] as? Int ?? 0) "
+        + "strategy=\(resultStrategy) "
+        + "clicked=\(resultClicked) "
+        + "confirmed=\(resultConfirmed) "
+        + "nativeInput=\(resultNativeInput) "
+        + "nativeOptionClickAttempts=\(nativeOptionClickAttempts) "
+        + "nativeOptionClickSuccesses=\(nativeOptionClickSuccesses) "
         + "beforeScreenshot=\(screenshotPath ?? "none") "
         + "afterScreenshot=\(afterPath ?? "none") "
-        + "error=\(result?["error"] as? String ?? "none")"
+        + "error=\(resultError)"
     )
   }
   return result
