@@ -194,15 +194,16 @@ func approvalRect(_ value: Any?) -> (left: Double, top: Double, width: Double, h
 func nativeApprovalArrowKey(
   port: Int,
   targetId: String,
-  point: (x: Double, y: Double),
+  point: (x: Double, y: Double)?,
   label: String? = nil,
   wsURLString: String? = nil
 ) -> Bool {
   guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
     return false
   }
-  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
-  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
+  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
+  let pointAvailableLiteral = point == nil ? "false" : "true"
   let requestedLabel = label ?? ""
   let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
@@ -227,7 +228,8 @@ func nativeApprovalArrowKey(
       const dy = rect.top + rect.height / 2 - \#(y);
       return dx * dx + dy * dy;
     };
-    const hit = document.elementFromPoint(\#(x), \#(y));
+    const pointAvailable = \#(pointAvailableLiteral);
+    const hit = pointAvailable ? document.elementFromPoint(\#(x), \#(y)) : null;
     const hitTarget = hit?.closest?.(
       '[aria-haspopup], [aria-expanded], [role="button"], button'
     ) || hit;
@@ -266,7 +268,8 @@ func nativeApprovalArrowKey(
         || element?.textContent
         || ''
     );
-    const hit = document.elementFromPoint(#(x), #(y));
+    const pointAvailable = #(pointAvailableLiteral);
+    const hit = pointAvailable ? document.elementFromPoint(#(x), #(y)) : null;
     const hitTarget = hit?.closest?.(
       '[aria-haspopup], [aria-expanded], [role="button"], button'
     ) || hit;
@@ -309,7 +312,7 @@ func nativeApprovalArrowKey(
 func nativeApprovalComponentActionResult(
   port: Int,
   targetId: String,
-  point: (x: Double, y: Double),
+  point: (x: Double, y: Double)?,
   action: String,
   label: String? = nil,
   wsURLString: String? = nil
@@ -317,8 +320,9 @@ func nativeApprovalComponentActionResult(
   guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
     return ["ok": false, "action": action, "error": "approval_cdp_target_missing"]
   }
-  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
-  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
+  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
+  let pointAvailableLiteral = point == nil ? "false" : "true"
   let requestedLabel = label ?? ""
   let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
@@ -330,6 +334,7 @@ func nativeApprovalComponentActionResult(
       const action = \#(actionLiteral);
       const requested = String(\#(requestedLabelLiteral) || '')
         .replace(/[\s\u21b5\u00a0⏎↵]+/g, ' ').trim().toLowerCase();
+      const pointAvailable = \#(pointAvailableLiteral);
       const selector = [
         'button', '[role="button"]', '[role="menuitem"]',
         '[role="menuitemradio"]', '[role="option"]',
@@ -345,55 +350,126 @@ func nativeApprovalComponentActionResult(
       ).replace(/[\s\u21b5\u00a0⏎↵]+/g, ' ').trim().toLowerCase();
       const parentOf = element => element?.parentElement
         || element?.parentNode?.host || null;
+      const connected = element => !!(element && element.isConnected !== false);
+      const structuralMarker = element => String([
+        element?.getAttribute?.('data-testid'), element?.getAttribute?.('data-slot'),
+        element?.getAttribute?.('data-state'), element?.getAttribute?.('class'),
+        element?.getAttribute?.('id')
+      ].filter(Boolean).join(' ')).toLowerCase();
+      const hasMenuStructure = element => !!(element && (
+        element.getAttribute?.('aria-haspopup') !== null
+        || element.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|overflow|popover|split|disclosure/.test(
+          structuralMarker(element)
+        )
+      ));
       const surfaceFor = element => {
         let node = element;
         for (let depth = 0; depth < 12 && node; depth += 1) {
           const role = String(node.getAttribute?.('role') || '').toLowerCase();
-          const marker = String([
-            node.getAttribute?.('data-slot'), node.getAttribute?.('data-state'),
-            node.getAttribute?.('class'), node.getAttribute?.('id')
-          ].filter(Boolean).join(' ')).toLowerCase();
           if (['menu', 'listbox', 'dialog'].includes(role)
               || node.getAttribute?.('aria-modal') === 'true'
               || node.getAttribute?.('data-state') === 'open'
-              || /menu|dropdown|popover|listbox|select|command/.test(marker)) {
+              || /menu|dropdown|popover|listbox|select|command/.test(structuralMarker(node))) {
             return node;
           }
           node = parentOf(node);
         }
         return null;
       };
-      const pointHit = document.elementFromPoint(\#(x), \#(y));
-      const pointTarget = pointHit?.closest?.(selector)
-        || (pointHit?.matches?.(selector) ? pointHit : null);
+      const isAllow = element => /allow|approve|confirm|authorize|authorise|permit|grant|\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4|\u51c6\u8bb8/.test(labelOf(element));
       const matchesRequested = element => {
         if (!requested) return true;
         const value = labelOf(element);
         return value === requested || value.includes(requested);
       };
-      const approvalLike = element => /allow|approve|confirm|authorize|authorise|permit|grant|\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4|\u51c6\u8bb8/.test(labelOf(element));
+      const query = (root, querySelector) => {
+        try { return [...(root?.querySelectorAll?.(querySelector) || [])]; }
+        catch (_) { return []; }
+      };
+      const collect = root => {
+        const output = query(root, selector);
+        for (const node of query(root, '*')) {
+          if (node.shadowRoot) output.push(...collect(node.shadowRoot));
+          if (node.tagName?.toLowerCase() === 'iframe') {
+            try { if (node.contentDocument) output.push(...collect(node.contentDocument)); }
+            catch (_) {}
+          }
+        }
+        return output;
+      };
+      const allControls = [...new Set(collect(document))]
+        .filter(element => connected(element) && !element.disabled
+          && element.getAttribute?.('aria-disabled') !== 'true');
+      const approvalControls = allControls
+        .filter(element => isAllow(element) || matchesRequested(element));
+      const selectedApproval = approvalControls
+        .sort((left, right) => {
+          const score = element => (matchesRequested(element) ? 1000 : 0)
+            + (isAllow(element) ? 200 : 0)
+            + (hasMenuStructure(element) ? 100 : 0)
+            - Math.min(80, labelOf(element).length);
+          return score(right) - score(left);
+        })[0] || null;
+      const rootsFor = element => {
+        const roots = [];
+        let node = element;
+        for (let depth = 0; depth < 18 && node; depth += 1) {
+          roots.push(node);
+          node = parentOf(node);
+        }
+        return roots;
+      };
+      const contains = (root, element) => !!(root && element
+        && (root === element || root.contains?.(element)));
+      const componentRoot = selectedApproval
+        ? rootsFor(selectedApproval).find(root =>
+          query(root, selector).some(element => hasMenuStructure(element)))
+        : null;
+      const componentControls = componentRoot
+        ? [...new Set([
+          ...(componentRoot.matches?.(selector) ? [componentRoot] : []),
+          ...query(componentRoot, selector)
+        ])].filter(element => connected(element) && !element.disabled
+          && element.getAttribute?.('aria-disabled') !== 'true')
+        : [];
       let target = null;
       if (action === 'trigger') {
-        target = pointTarget && (approvalLike(pointTarget) || matchesRequested(pointTarget))
-          ? pointTarget : null;
-      } else {
-        target = pointTarget && surfaceFor(pointTarget) && matchesRequested(pointTarget)
-          ? pointTarget : null;
-        if (!target) {
-          const surfaces = [...document.querySelectorAll?.(
-            '[role="menu"], [role="listbox"], [role="dialog"], '
-              + '[data-state="open"], [data-radix-menu-content], '
-              + '[data-radix-popper-content-wrapper], [data-slot*="menu" i]'
-          ) || []];
-          const candidates = surfaces.flatMap(surface => [
-            ...(surface.querySelectorAll?.(selector) || [])
-          ]);
-          target = candidates.find(candidate =>
-            candidate?.isConnected !== false
-              && surfaceFor(candidate)
-              && matchesRequested(candidate)
-          ) || null;
+        target = componentControls
+          .filter(element => hasMenuStructure(element))
+          .sort((left, right) => {
+            const score = element => (element === selectedApproval ? 500 : 0)
+              + (isAllow(element) ? 100 : 0)
+              + (matchesRequested(element) ? 50 : 0)
+              + (!isAllow(element) ? 25 : 0);
+            return score(right) - score(left);
+          })[0] || null;
+        if (!target && selectedApproval && hasMenuStructure(selectedApproval)) {
+          target = selectedApproval;
         }
+      } else {
+        const surfaces = [...new Set([
+          ...query(document, '[role="menu"], [role="listbox"], [role="dialog"], '
+            + '[data-state="open"], [data-radix-menu-content], '
+            + '[data-radix-popper-content-wrapper], [data-slot*="menu" i]')
+        ])].filter(connected);
+        const candidates = surfaces.flatMap(surface => [
+          ...(surface.matches?.(selector) ? [surface] : []),
+          ...query(surface, selector)
+        ]).filter((candidate, index, all) =>
+          all.indexOf(candidate) === index
+            && connected(candidate)
+            && surfaceFor(candidate)
+            && matchesRequested(candidate)
+        );
+        target = candidates.sort((left, right) => {
+            const score = element => (labelOf(element) === requested ? 1000 : 0)
+              + (['menuitem', 'menuitemradio', 'option'].includes(
+                String(element.getAttribute?.('role') || '').toLowerCase()
+              ) ? 100 : 0)
+              - Math.min(80, labelOf(element).length);
+            return score(right) - score(left);
+          })[0] || null;
       }
       if (!target || typeof target.dispatchEvent !== 'function') {
         return {
@@ -404,31 +480,159 @@ func nativeApprovalComponentActionResult(
             : 'session_option_component_missing'
         };
       }
-      const clickEvent = new MouseEvent('click', {
+      const ownKeys = node => {
+        try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
+      };
+      const propsFrom = source => source?.memoizedProps || source?.pendingProps
+        || source?.props || source || {};
+      const handlers = [];
+      const seenHandlers = new Set();
+      const sameAllowControl = action === 'trigger' && isAllow(target);
+      const handlerNames = action === 'trigger'
+        ? (sameAllowControl
+          ? ['onKeyDown', 'onPointerDown']
+          : ['onClick', 'onPointerDown', 'onKeyDown'])
+        : ['onClick', 'onSelect', 'onPointerUp', 'onPointerDown', 'onKeyDown'];
+      const inspectSource = (source, owner, fiberDepth) => {
+        const props = propsFrom(source);
+        for (const name of handlerNames) {
+          const handler = props?.[name];
+          if (typeof handler !== 'function' || seenHandlers.has(handler)) continue;
+          seenHandlers.add(handler);
+          handlers.push({ name, handler, owner, fiberDepth });
+        }
+      };
+      const inspectNode = node => {
+        for (const key of ownKeys(node)) {
+          if (key.startsWith('__reactProps$')) inspectSource(node[key], node, 0);
+          if (!key.startsWith('__reactFiber$')) continue;
+          let fiber = node[key];
+          for (let depth = 1; depth < 40 && fiber; depth += 1) {
+            inspectSource(fiber, node, depth);
+            fiber = fiber.return;
+          }
+        }
+      };
+      let node = target;
+      for (let depth = 0; depth < 10 && node; depth += 1) {
+        inspectNode(node);
+        node = parentOf(node);
+      }
+      const targetAtPoint = target;
+      const eventBase = {
+        target: targetAtPoint,
+        currentTarget: target,
         bubbles: true,
         cancelable: true,
-        composed: true,
-        view: window,
-        detail: 1,
+        defaultPrevented: false,
         button: 0,
-        buttons: 0,
+        buttons: action === 'trigger' ? 0 : 1,
         clientX: \#(x),
         clientY: \#(y),
-        screenX: \#(x),
-        screenY: \#(y)
-      });
-      setTimeout(() => {
-        try { target.dispatchEvent(clickEvent); } catch (_) {}
-      }, 0);
+        pageX: \#(x),
+        pageY: \#(y),
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() { this.propagationStopped = true; },
+        stopImmediatePropagation() { this.immediatePropagationStopped = true; },
+        isPropagationStopped() { return this.propagationStopped === true; },
+        isDefaultPrevented() { return this.defaultPrevented === true; },
+        persist() {},
+        nativeEvent: {
+          target: targetAtPoint,
+          currentTarget: target,
+          button: 0,
+          buttons: action === 'trigger' ? 0 : 1,
+          clientX: \#(x),
+          clientY: \#(y)
+        }
+      };
+      if (handlers.length) {
+        const selected = handlers[0];
+        const isKey = selected.name === 'onKeyDown';
+        const event = isKey
+          ? {
+              ...eventBase,
+              type: 'keydown', key: 'ArrowDown', code: 'ArrowDown',
+              keyCode: 40, which: 40, repeat: false, isComposing: false,
+              nativeEvent: {
+                ...eventBase.nativeEvent,
+                type: 'keydown', key: 'ArrowDown', code: 'ArrowDown',
+                keyCode: 40, which: 40, repeat: false
+              }
+            }
+          : {
+              ...eventBase,
+              type: selected.name === 'onSelect'
+                ? 'select'
+                : selected.name === 'onClick' ? 'click' : 'pointerdown',
+              pointerId: 1, pointerType: 'mouse', isPrimary: true,
+              nativeEvent: {
+                ...eventBase.nativeEvent,
+                type: selected.name === 'onSelect'
+                  ? 'select'
+                  : selected.name === 'onClick' ? 'click' : 'pointerdown',
+                pointerId: 1, pointerType: 'mouse', isPrimary: true
+              }
+            };
+        try {
+          selected.handler.call(selected.owner, event);
+          return {
+            ok: true,
+            action,
+            mode: 'react-handler-invoked',
+            handler: selected.name,
+            handlerFiberDepth: selected.fiberDepth,
+            targetTag: target.tagName || '',
+            targetRole: target.getAttribute?.('role') || '',
+            targetLabel: labelOf(target),
+            pointUsed: pointAvailable
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            action,
+            mode: 'react-handler',
+            handler: selected.name,
+            targetTag: target.tagName || '',
+            targetLabel: labelOf(target),
+            error: String(error?.message || error || 'approval_component_handler_failed')
+          };
+        }
+      }
+      // A separately rendered disclosure or menu item can still expose the
+      // native component activation without a React prop on the exact node.
+      // Never call click() on the labelled Allow control for trigger: that is
+      // the primary Allow once action, not the session-scope disclosure.
+      if (typeof target.click === 'function' && !(action === 'trigger' && sameAllowControl)) {
+        try {
+          target.click();
+          return {
+            ok: true,
+            action,
+            mode: 'component-dom-activation',
+            targetTag: target.tagName || '',
+            targetRole: target.getAttribute?.('role') || '',
+            targetLabel: labelOf(target),
+            pointUsed: pointAvailable
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            action,
+            error: String(error?.message || error || 'component_dom_activation_failed')
+          };
+        }
+      }
       return {
-        ok: true,
+        ok: false,
         action,
-        mode: 'component-dom-click-event-queued',
+        handlerNames: handlers.map(item => item.name),
         targetTag: target.tagName || '',
         targetRole: target.getAttribute?.('role') || '',
         targetLabel: labelOf(target),
-        clientX: \#(x),
-        clientY: \#(y)
+        error: action === 'trigger'
+          ? 'approval_trigger_component_handler_missing'
+          : 'session_option_component_handler_missing'
       };
     })()
     """#
@@ -1014,12 +1218,10 @@ func dedicatedApprovalWithNativeInput(
   }
 
   var result: [String: Any]?
-  if let triggerPoint,
-     (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
-    // A same-button split control exposes the disclosure through its native
-    // menu semantics. ArrowDown is a trusted, non-primary activation for
-    // that component and avoids sending the main Allow once action when the
-    // renderer has no separate arrow DOM node.
+  if (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
+    // A same-button split control exposes the disclosure through its own
+    // component semantics. The live renderer action below can locate that
+    // control even when its geometry is absent or outside the viewport.
     if menuTriggerIsSelectedButton {
       nativeTriggerComponentAttempts += 1
       queueTrace("task=approval-watcher stage=approval-native-component-begin action=trigger")
@@ -1066,9 +1268,10 @@ func dedicatedApprovalWithNativeInput(
     }
 
     let hasSessionOption = approvalPoint(result?["sessionOptionPoint"]) != nil
-    // A same-button split control has no safe mouse fallback: its outer
-    // button is also the primary Allow once action. If keyboard disclosure
-    // activation could not focus/open the component, leave the card pending.
+      || result?["sessionScopeLabel"] != nil
+    // A same-button split control has no safe primary-button fallback: its
+    // outer labelled control is also Allow once. If the component disclosure
+    // could not open, leave the card pending instead of granting once.
     if !menuTriggerIsSelectedButton
       && !hasSessionOption {
       nativeTriggerComponentAttempts += 1
@@ -1077,6 +1280,7 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: triggerPoint,
         action: "trigger",
+        label: detection["selectedLabel"] as? String,
         wsURLString: approvalWSURL
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
@@ -1159,10 +1363,13 @@ func dedicatedApprovalWithNativeInput(
     }
   }
   for attempt in 0..<2 {
-    if let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]) {
+    if finalResult["sessionOptionPoint"] != nil
+        || finalResult["sessionScopeLabel"] != nil {
+      let optionPoint = approvalPoint(finalResult["sessionOptionPoint"])
       lastSessionOptionPoint = finalResult["sessionOptionPoint"]
       lastSessionOptionRect = finalResult["sessionOptionRect"]
-      var optionPoints = [optionPoint]
+      var optionPoints: [(x: Double, y: Double)?] = []
+      if let optionPoint { optionPoints.append(optionPoint) }
       // A menu row can expose a padded wrapper around its actual action. If
       // the first trusted click is rejected by that wrapper, try one more
       // point inside the same structurally identified row. Never retry after
@@ -1173,6 +1380,7 @@ func dedicatedApprovalWithNativeInput(
           y: optionRect.top + optionRect.height * 0.35
         ))
       }
+      if optionPoints.isEmpty { optionPoints.append(nil) }
       var optionClicked = false
       for point in optionPoints {
         nativeOptionClickAttempts += 1
@@ -1193,7 +1401,9 @@ func dedicatedApprovalWithNativeInput(
           nativeOptionComponentSuccesses += 1
           optionClicked = true
           nativeOptionDOMFallbackLastTarget = nativeOptionComponentLastTarget
-          finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
+          if let point {
+            finalResult["sessionOptionClickPoint"] = ["x": point.x, "y": point.y]
+          }
           Thread.sleep(forTimeInterval: 0.45)
           if let after = cdpValuePersistent(
             wsURLString: approvalWSURL,
@@ -1250,11 +1460,13 @@ func dedicatedApprovalWithNativeInput(
     }
 
     let refreshedError = refreshed["error"] as? String ?? ""
-    if approvalPoint(refreshed["sessionOptionPoint"]) == nil,
+    let refreshedHasOption = approvalPoint(refreshed["sessionOptionPoint"]) != nil
+      || refreshed["sessionScopeLabel"] != nil
+    if !refreshedHasOption,
        (refreshedError == "session_scope_native_input_required"
          || refreshedError == "session_scope_menu_not_opened"
-         || refreshedError == "session_scope_option_not_found"),
-       let retryPoint = approvalPoint(refreshed["menuTriggerPoint"]) ?? triggerPoint {
+         || refreshedError == "session_scope_option_not_found") {
+      let retryPoint = approvalPoint(refreshed["menuTriggerPoint"]) ?? triggerPoint
       nativeTriggerComponentAttempts += 1
       let retriedResult = nativeApprovalComponentActionResult(
         port: port,

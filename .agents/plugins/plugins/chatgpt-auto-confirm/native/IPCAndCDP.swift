@@ -176,17 +176,6 @@ struct CDPApprovalTarget {
 }
 
 struct CDPClient {
-  // Keep one renderer WebSocket alive across the detection, component action,
-  // and post-action verification calls. Opening a fresh URLSession WebSocket
-  // for every Runtime.evaluate can leave Electron's previous CDP connection
-  // closing while the next command is already waiting for its handshake.
-  // That is exactly the boundary where the direct approval path used to stop.
-  private static let persistentCommandQueue = DispatchQueue(
-    label: "chatgpt-auto-confirm.cdp-command",
-    qos: .userInitiated
-  )
-  private static var persistentWebsocketSessions: [String: URLSessionWebSocketTask] = [:]
-
   static func port() -> Int {
     if let envPortStr = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_CDP_PORT"],
        let envPort = Int(envPortStr.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -433,22 +422,356 @@ struct CDPClient {
     )
   }
 
-  // Approval actions must share the exact renderer connection that performed
-  // card detection. A second short-lived WebSocket can still be handshaking
-  // while Electron is closing the first one, which strands the action before
-  // it can dispatch the live component event.
+  // Approval actions must use the same live renderer target that performed
+  // card detection. The action transport is deliberately bounded and local;
+  // it never depends on viewport visibility or an OS input device.
   static func evaluatePersistent(
     wsURLString: String,
     expression: String,
     timeout: TimeInterval = 2.5
   ) -> [String: Any]? {
     let params = "{\"expression\":\(jsonStringLiteral(expression)),\"returnByValue\":true,\"awaitPromise\":true}"
-    return sendPersistentCommand(
+    return sendRawCommand(
       wsURLString: wsURLString,
       method: "Runtime.evaluate",
       paramsJSON: params,
       timeout: timeout
     )
+  }
+
+  // URLSessionWebSocketTask can block while a renderer is closing a previous
+  // DevTools session. Approval handling needs a transport whose connect, send,
+  // receive, and close phases all have the same hard deadline, so use a small
+  // bounded local WebSocket client for the direct Runtime.evaluate action.
+  private static func sendRawCommand(
+    wsURLString: String,
+    method: String,
+    paramsJSON: String,
+    timeout: TimeInterval
+  ) -> [String: Any]? {
+    queueTrace("task=approval-watcher stage=approval-cdp-raw-enter method=\(method)")
+    defer {
+      queueTrace("task=approval-watcher stage=approval-cdp-raw-exit method=\(method)")
+    }
+    guard let url = URL(string: wsURLString),
+          url.scheme?.lowercased() == "ws",
+          let host = url.host,
+          let port = url.port else { return nil }
+    let deadline = Date().addingTimeInterval(max(timeout, 1.0) + 1.0)
+    guard let fd = connectRawSocket(host: host, port: port, deadline: deadline) else {
+      queueTrace("task=approval-watcher stage=approval-cdp-raw-connect-failed method=\(method)")
+      return nil
+    }
+    defer { Darwin.close(fd) }
+
+    let path = (url.path.isEmpty ? "/" : url.path)
+      + (url.query.map { "?\($0)" } ?? "")
+    let key = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+      .base64EncodedString()
+    let hostHeader = "\(host):\(port)"
+    let handshakeText =
+      "GET \(path) HTTP/1.1\r\nHost: \(hostHeader)\r\nUpgrade: websocket\r\n"
+        + "Connection: Upgrade\r\nSec-WebSocket-Key: \(key)\r\n"
+        + "Sec-WebSocket-Version: 13\r\n\r\n"
+    let handshake = Data(handshakeText.utf8)
+    guard writeRawSocket(handshake, fd: fd, deadline: deadline),
+          let responseHeader = readRawHTTPHeader(fd: fd, deadline: deadline),
+          String(decoding: responseHeader, as: UTF8.self)
+            .lowercased()
+            .hasPrefix("http/1.1 101") else {
+      queueTrace("task=approval-watcher stage=approval-cdp-raw-handshake-failed method=\(method)")
+      return nil
+    }
+    queueTrace("task=approval-watcher stage=approval-cdp-raw-handshake-ok method=\(method)")
+
+    let messageId = Int.random(in: 1000...999999)
+    let request = "{\"id\":\(messageId),\"method\":\(jsonStringLiteral(method)),\"params\":\(paramsJSON)}"
+    guard writeRawSocket(
+      Data(makeRawWebSocketFrame(opcode: 0x1, payload: Array(request.utf8))),
+      fd: fd,
+      deadline: deadline
+    ) else { return nil }
+    queueTrace("task=approval-watcher stage=approval-cdp-raw-request-sent method=\(method)")
+
+    var fragmentedPayload: [UInt8] = []
+    var fragmented = false
+    while Date() < deadline {
+      guard let frame = readRawWebSocketFrame(fd: fd, deadline: deadline) else { return nil }
+      if frame.opcode == 0x9 {
+        _ = writeRawSocket(
+          Data(makeRawWebSocketFrame(opcode: 0xA, payload: frame.payload)),
+          fd: fd,
+          deadline: deadline
+        )
+        continue
+      }
+      if frame.opcode == 0x8 { return nil }
+      if frame.opcode == 0x1 {
+        fragmentedPayload = frame.payload
+        fragmented = !frame.fin
+      } else if frame.opcode == 0x0, fragmented {
+        fragmentedPayload.append(contentsOf: frame.payload)
+        fragmented = !frame.fin
+      } else {
+        continue
+      }
+      guard !fragmented else { continue }
+      guard let decoded = try? JSONSerialization.jsonObject(
+        with: Data(fragmentedPayload)
+      ), let object = decoded as? [String: Any] else {
+        fragmentedPayload.removeAll(keepingCapacity: true)
+        continue
+      }
+      let responseId = (object["id"] as? NSNumber)?.intValue
+      if responseId == messageId {
+        queueTrace("task=approval-watcher stage=approval-cdp-raw-response method=\(method)")
+        return sanitizeJSONDict(object)
+      }
+      fragmentedPayload.removeAll(keepingCapacity: true)
+    }
+    return nil
+  }
+
+  private static func connectRawSocket(
+    host: String,
+    port: Int,
+    deadline: Date
+  ) -> Int32? {
+    let addressHost = host == "localhost" ? "127.0.0.1" : host
+    guard let portNumber = UInt16(exactly: port),
+          addressHost.withCString({
+            var address = in_addr()
+            return Darwin.inet_pton(AF_INET, $0, &address) == 1
+          }) else { return nil }
+    let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { return nil }
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = in_port_t(portNumber.bigEndian)
+    guard addressHost.withCString({
+      Darwin.inet_pton(AF_INET, $0, &address.sin_addr)
+    }) == 1 else {
+      Darwin.close(fd)
+      return nil
+    }
+    let originalFlags = Darwin.fcntl(fd, F_GETFL, 0)
+    guard originalFlags >= 0,
+          Darwin.fcntl(fd, F_SETFL, originalFlags | O_NONBLOCK) == 0 else {
+      Darwin.close(fd)
+      return nil
+    }
+    let result = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+        Darwin.connect(
+          fd,
+          socketAddress,
+          socklen_t(MemoryLayout<sockaddr_in>.size)
+        )
+      }
+    }
+    if result != 0 {
+      guard errno == EINPROGRESS,
+            waitForRawSocket(fd, events: Int16(POLLOUT), deadline: deadline) else {
+        Darwin.close(fd)
+        return nil
+      }
+      var socketError: Int32 = 0
+      var socketErrorLength = socklen_t(MemoryLayout<Int32>.size)
+      guard Darwin.getsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_ERROR,
+        &socketError,
+        &socketErrorLength
+      ) == 0, socketError == 0 else {
+        Darwin.close(fd)
+        return nil
+      }
+    }
+    return fd
+  }
+
+  private static func waitForRawSocket(
+    _ fd: Int32,
+    events: Int16,
+    deadline: Date
+  ) -> Bool {
+    while Date() < deadline {
+      var descriptor = pollfd()
+      descriptor.fd = fd
+      descriptor.events = events
+      descriptor.revents = 0
+      let milliseconds = Int32(
+        max(1, min(1_000, Int(deadline.timeIntervalSinceNow * 1_000)))
+      )
+      let result = Darwin.poll(&descriptor, 1, milliseconds)
+      if result > 0 {
+        return descriptor.revents & (events | Int16(POLLERR | POLLHUP)) != 0
+      }
+      if result < 0, errno == EINTR { continue }
+      if result == 0 { continue }
+      return false
+    }
+    return false
+  }
+
+  private static func writeRawSocket(
+    _ data: Data,
+    fd: Int32,
+    deadline: Date
+  ) -> Bool {
+    let bytes = Array(data)
+    var offset = 0
+    while offset < bytes.count {
+      guard waitForRawSocket(fd, events: Int16(POLLOUT), deadline: deadline) else {
+        return false
+      }
+      let written = bytes.withUnsafeBytes { buffer -> Int in
+        guard let baseAddress = buffer.baseAddress else { return -1 }
+        return Darwin.send(
+          fd,
+          baseAddress.advanced(by: offset),
+          bytes.count - offset,
+          0
+        )
+      }
+      if written > 0 {
+        offset += written
+      } else if written < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK {
+        continue
+      } else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private static func readRawBytes(
+    count: Int,
+    fd: Int32,
+    deadline: Date
+  ) -> [UInt8]? {
+    guard count >= 0 else { return nil }
+    var bytes = [UInt8](repeating: 0, count: count)
+    var offset = 0
+    while offset < count {
+      guard waitForRawSocket(fd, events: Int16(POLLIN), deadline: deadline) else {
+        return nil
+      }
+      let received = bytes.withUnsafeMutableBytes { buffer -> Int in
+        guard let baseAddress = buffer.baseAddress else { return -1 }
+        return Darwin.recv(
+          fd,
+          baseAddress.advanced(by: offset),
+          count - offset,
+          0
+        )
+      }
+      if received > 0 {
+        offset += received
+      } else if received < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK {
+        continue
+      } else {
+        return nil
+      }
+    }
+    return bytes
+  }
+
+  private static func readRawHTTPHeader(fd: Int32, deadline: Date) -> [UInt8]? {
+    var bytes: [UInt8] = []
+    let delimiter: [UInt8] = [13, 10, 13, 10]
+    while bytes.count < 64 * 1024 {
+      guard waitForRawSocket(fd, events: Int16(POLLIN), deadline: deadline) else {
+        return nil
+      }
+      var buffer = [UInt8](repeating: 0, count: 4 * 1024)
+      let received = buffer.withUnsafeMutableBytes { rawBuffer -> Int in
+        guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+        return Darwin.recv(fd, baseAddress, rawBuffer.count, 0)
+      }
+      if received > 0 {
+        bytes.append(contentsOf: buffer.prefix(received))
+        if bytes.count >= delimiter.count,
+           Array(bytes.suffix(delimiter.count)) == delimiter {
+          return bytes
+        }
+      } else if received < 0, errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK {
+        continue
+      } else {
+        return nil
+      }
+    }
+    return nil
+  }
+
+  private static func makeRawWebSocketFrame(
+    opcode: UInt8,
+    payload: [UInt8]
+  ) -> [UInt8] {
+    var frame: [UInt8] = [UInt8(0x80) | (opcode & 0x0F)]
+    let length = payload.count
+    if length < 126 {
+      frame.append(UInt8(0x80) | UInt8(length))
+    } else if length <= Int(UInt16.max) {
+      frame.append(UInt8(0x80 | 126))
+      frame.append(UInt8((length >> 8) & 0xFF))
+      frame.append(UInt8(length & 0xFF))
+    } else {
+      frame.append(UInt8(0x80 | 127))
+      let length64 = UInt64(length)
+      for shift in stride(from: 56, through: 0, by: -8) {
+        frame.append(UInt8((length64 >> UInt64(shift)) & 0xFF))
+      }
+    }
+    let mask = (0..<4).map { _ in UInt8.random(in: 0...255) }
+    frame.append(contentsOf: mask)
+    for index in 0..<payload.count {
+      frame.append(payload[index] ^ mask[index % 4])
+    }
+    return frame
+  }
+
+  private static func readRawWebSocketFrame(
+    fd: Int32,
+    deadline: Date
+  ) -> (fin: Bool, opcode: UInt8, payload: [UInt8])? {
+    guard let header = readRawBytes(count: 2, fd: fd, deadline: deadline) else {
+      return nil
+    }
+    let fin = (header[0] & 0x80) != 0
+    let opcode = header[0] & 0x0F
+    let masked = (header[1] & 0x80) != 0
+    var length = Int(header[1] & 0x7F)
+    if length == 126 {
+      guard let extended = readRawBytes(count: 2, fd: fd, deadline: deadline) else {
+        return nil
+      }
+      length = (Int(extended[0]) << 8) | Int(extended[1])
+    } else if length == 127 {
+      guard let extended = readRawBytes(count: 8, fd: fd, deadline: deadline) else {
+        return nil
+      }
+      var length64: UInt64 = 0
+      for byte in extended { length64 = (length64 << 8) | UInt64(byte) }
+      guard length64 <= UInt64(Int.max), length64 <= 4 * 1024 * 1024 else { return nil }
+      length = Int(length64)
+    }
+    var mask: [UInt8] = []
+    if masked {
+      guard let maskBytes = readRawBytes(count: 4, fd: fd, deadline: deadline) else {
+        return nil
+      }
+      mask = maskBytes
+    }
+    guard var payload = readRawBytes(count: length, fd: fd, deadline: deadline) else {
+      return nil
+    }
+    if !mask.isEmpty {
+      for index in 0..<payload.count { payload[index] ^= mask[index % 4] }
+    }
+    return (fin, opcode, payload)
   }
 
   @discardableResult
@@ -796,113 +1119,6 @@ struct CDPClient {
     }
     cdpDebug("CDP command \(method) timed out for \(wsURLString)")
     return nil
-  }
-
-  private static func sendPersistentCommand(
-    wsURLString: String,
-    method: String,
-    paramsJSON: String,
-    timeout: TimeInterval
-  ) -> [String: Any]? {
-    queueTrace("task=approval-watcher stage=approval-cdp-persistent-enter method=\(method)")
-    let result: [String: Any]? = persistentCommandQueue.sync {
-      queueTrace("task=approval-watcher stage=approval-cdp-persistent-queue-enter method=\(method)")
-      guard let wsURL = URL(string: wsURLString) else { return nil }
-      let wsTask: URLSessionWebSocketTask
-      if let existing = persistentWebsocketSessions[wsURLString] {
-        wsTask = existing
-        queueTrace("task=approval-watcher stage=approval-cdp-persistent-session-reuse method=\(method)")
-      } else {
-        var request = URLRequest(url: wsURL)
-        request.timeoutInterval = max(timeout, 5.0)
-        let created = URLSession.shared.webSocketTask(with: request)
-        created.resume()
-        persistentWebsocketSessions[wsURLString] = created
-        wsTask = created
-        queueTrace("task=approval-watcher stage=approval-cdp-persistent-session-create method=\(method)")
-      }
-
-      let msgId = Int.random(in: 1000...999999)
-      let reqStr = "{\"id\":\(msgId),\"method\":\(jsonStringLiteral(method)),\"params\":\(paramsJSON)}"
-      cdpDebug("CDP request \(reqStr.prefix(1200))")
-
-      let semaphore = DispatchSemaphore(value: 0)
-      let responseLock = NSLock()
-      var responseJSON: [String: Any]?
-      var completed = false
-
-      func complete(_ response: [String: Any]?) {
-        responseLock.lock()
-        guard !completed else {
-          responseLock.unlock()
-          return
-        }
-        completed = true
-        responseJSON = response
-        responseLock.unlock()
-        semaphore.signal()
-      }
-
-      wsTask.send(.string(reqStr)) { error in
-        if let error {
-          cdpDebug("CDP send failed: \(error)")
-          complete(nil)
-        }
-      }
-      queueTrace("task=approval-watcher stage=approval-cdp-persistent-send-return method=\(method)")
-
-      func receiveNext() {
-        wsTask.receive { result in
-          switch result {
-          case .success(let message):
-            let object: [String: Any]?
-            switch message {
-            case .string(let text):
-              object = text.data(using: .utf8).flatMap {
-                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-              }
-            case .data(let data):
-              object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            @unknown default:
-              object = nil
-            }
-            if object?["id"] as? Int == msgId {
-              complete(object)
-            } else {
-              receiveNext()
-            }
-          case .failure(let error):
-            cdpDebug("CDP receive failed: \(error)")
-            complete(nil)
-          }
-        }
-      }
-      receiveNext()
-      queueTrace("task=approval-watcher stage=approval-cdp-persistent-receive-start method=\(method)")
-
-      let waitResult = semaphore.wait(timeout: .now() + max(timeout, 0.1))
-      queueTrace(
-        "task=approval-watcher stage=approval-cdp-persistent-wait-return method=\(method) "
-          + "success=\(waitResult == .success)"
-      )
-      responseLock.lock()
-      let response = responseJSON
-      responseLock.unlock()
-      if waitResult == .success, let response {
-        return sanitizeJSONDict(response)
-      }
-
-      persistentWebsocketSessions.removeValue(forKey: wsURLString)
-      // Do not block the queue while an unresponsive renderer closes its stale
-      // transport. A later command will create a fresh bounded session.
-      DispatchQueue.global(qos: .utility).async {
-        wsTask.cancel(with: .goingAway, reason: nil)
-      }
-      cdpDebug("CDP command \(method) timed out for \(wsURLString)")
-      return nil
-    }
-    queueTrace("task=approval-watcher stage=approval-cdp-persistent-queue-exit method=\(method)")
-    return result
   }
 
   private static func sanitizeJSONDict(_ dict: [String: Any]) -> [String: Any] {
