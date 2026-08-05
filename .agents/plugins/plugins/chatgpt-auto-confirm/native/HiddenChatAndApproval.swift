@@ -1707,7 +1707,6 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           && !labelText(button)
           && hasClickSemantics(button)
       );
-      });
 
       if (sessionControl) {
         const menuTriggerLabel = label(sessionControl);
