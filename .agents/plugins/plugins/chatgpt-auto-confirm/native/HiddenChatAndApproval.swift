@@ -209,53 +209,6 @@ func nativeApprovalArrowKey(
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
   let requestedLabelLiteral = jsonStringLiteral(label ?? "")
-  let focusExpression = #"""
-  (() => {
-    const normalize = value => String(value || '')
-      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase()
-      .replace(/\s*(?:enter|return|⏎|↵)$/i, '').trim();
-    const requested = normalize(\#(requestedLabelLiteral));
-    const labelOf = element => normalize(
-      element?.getAttribute?.('aria-label')
-        || element?.getAttribute?.('title')
-        || element?.getAttribute?.('data-label')
-        || element?.innerText
-        || element?.textContent
-        || ''
-    );
-    const pointDistance = element => {
-      const rect = element?.getBoundingClientRect?.();
-      if (!rect) return Number.MAX_SAFE_INTEGER;
-      const dx = rect.left + rect.width / 2 - \#(x);
-      const dy = rect.top + rect.height / 2 - \#(y);
-      return dx * dx + dy * dy;
-    };
-    const pointAvailable = \#(pointAvailableLiteral);
-    const hit = pointAvailable ? document.elementFromPoint(\#(x), \#(y)) : null;
-    const hitTarget = hit?.closest?.(
-      '[aria-haspopup], [aria-expanded], [role="button"], button'
-    ) || hit;
-    const labelledTargets = [...document.querySelectorAll?.(
-      'button, [role="button"], [aria-haspopup], [aria-expanded]'
-    ) || []]
-      .filter(element => requested && labelOf(element) === requested)
-      .sort((left, right) => pointDistance(left) - pointDistance(right));
-    const target = hitTarget && (!requested || labelOf(hitTarget) === requested)
-      ? hitTarget
-      : labelledTargets[0];
-    if (!target || typeof target.focus !== 'function') return { ok: false };
-    // The control may be covered or outside the viewport. It is still a
-    // live renderer component, so focus it directly without scrolling.
-    target.focus({ preventScroll: true });
-    return {
-      ok: document.activeElement === target || target.contains?.(document.activeElement),
-      tag: target.tagName || '',
-      label: labelOf(target),
-      expanded: target.getAttribute?.('aria-expanded') ?? null,
-      hasPopup: target.getAttribute?.('aria-haspopup') ?? null
-    };
-  })()
-  """#
   let directKeyExpression = #"""
   (() => {
     const normalize = value => String(value || '')
@@ -270,6 +223,11 @@ func nativeApprovalArrowKey(
         || element?.textContent
         || ''
     );
+    const matchesRequested = element => {
+      if (!requested) return true;
+      const value = labelOf(element);
+      return value === requested || value.includes(requested) || requested.includes(value);
+    };
     const pointAvailable = #(pointAvailableLiteral);
     const hit = pointAvailable ? document.elementFromPoint(#(x), #(y)) : null;
     const hitTarget = hit?.closest?.(
@@ -277,10 +235,13 @@ func nativeApprovalArrowKey(
     ) || hit;
     const labelledTargets = [...document.querySelectorAll?.(
       'button, [role="button"], [aria-haspopup], [aria-expanded]'
-    ) || []].filter(element => requested && labelOf(element) === requested);
-    const target = hitTarget && (!requested || labelOf(hitTarget) === requested)
+    ) || []].filter(element => matchesRequested(element));
+    const target = hitTarget && matchesRequested(hitTarget)
       ? hitTarget
-      : labelledTargets[0];
+      : labelledTargets.find(element =>
+        element.getAttribute?.('aria-haspopup') !== null
+          || element.getAttribute?.('aria-expanded') !== null
+      ) || labelledTargets[0];
     if (!target || typeof target.dispatchEvent !== 'function') {
       return { ok: false, error: 'approval_key_target_missing' };
     }
@@ -519,6 +480,63 @@ func nativeApprovalComponentActionResult(
       for (let depth = 0; depth < 10 && node; depth += 1) {
         inspectNode(node);
         node = parentOf(node);
+      }
+      // ChatGPT renders the Allow-once control as one split component. The
+      // disclosure triangle is not a second DOM button: the component decides
+      // whether the click is primary or disclosure from the trailing event
+      // coordinates. Dispatch that event inside the live renderer instead of
+      // calling click(), which would always grant Allow once.
+      if (action === 'trigger' && sameAllowControl && hasMenuStructure(target)) {
+        const rect = target.getBoundingClientRect?.();
+        const pointUsed = pointAvailable && Number.isFinite(#(x))
+          && Number.isFinite(#(y)) && (#(x) > 0 || #(y) > 0);
+        const eventX = pointUsed
+          ? #(x)
+          : rect && rect.width > 0
+            ? rect.right - Math.min(8, Math.max(4, rect.width * 0.08))
+            : 0;
+        const eventY = pointUsed
+          ? #(y)
+          : rect && rect.height > 0 ? rect.top + rect.height / 2 : 0;
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          detail: 1,
+          button: 0,
+          buttons: 0,
+          clientX: eventX,
+          clientY: eventY,
+          screenX: eventX,
+          screenY: eventY
+        });
+        const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
+        setTimeout(() => {
+          try { target.dispatchEvent(clickEvent); } catch (_) {}
+          // A hidden renderer may not have hit-test geometry at all. ArrowDown
+          // is the component's non-primary disclosure action in that case.
+          if (hiddenFallback) {
+            try {
+              const options = {
+                key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
+                bubbles: true, cancelable: true, composed: true
+              };
+              target.dispatchEvent(new KeyboardEvent('keydown', options));
+              target.dispatchEvent(new KeyboardEvent('keyup', options));
+            } catch (_) {}
+          }
+        }, 0);
+        return {
+          ok: true,
+          action,
+          mode: 'component-split-disclosure-event-queued',
+          targetTag: target.tagName || '',
+          targetRole: target.getAttribute?.('role') || '',
+          targetLabel: labelOf(target),
+          pointUsed: pointUsed || !!rect,
+          hiddenFallback
+        };
       }
       const targetAtPoint = target;
       const eventBase = {
