@@ -202,7 +202,7 @@ func nativeApprovalArrowKey(
   targetId: String,
   point: (x: Double, y: Double)?,
   wsURLString: String,
-  label: String? = nil
+  label: String?
 ) -> Bool {
   let wsURL = wsURLString
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
@@ -319,7 +319,7 @@ func nativeApprovalComponentActionResult(
   point: (x: Double, y: Double)?,
   action: String,
   wsURLString: String,
-  label: String? = nil
+  label: String?
 ) -> [String: Any]? {
   let wsURL = wsURLString
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
@@ -1233,8 +1233,8 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: triggerPoint,
         action: "trigger",
-        label: detection["selectedLabel"] as? String,
-        wsURLString: approvalWSURL
+        wsURLString: approvalWSURL,
+        label: detection["selectedLabel"] as? String
       )
       let componentOK = componentResult?["ok"] as? Bool == true
       let componentMode = componentResult?["mode"] as? String ?? "none"
@@ -1259,8 +1259,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: triggerPoint,
-          label: detection["selectedLabel"] as? String,
-          wsURLString: approvalWSURL
+          wsURLString: approvalWSURL,
+          label: detection["selectedLabel"] as? String
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -1283,8 +1283,8 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: triggerPoint,
         action: "trigger",
-        label: detection["selectedLabel"] as? String,
-        wsURLString: approvalWSURL
+        wsURLString: approvalWSURL,
+        label: detection["selectedLabel"] as? String
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
@@ -1299,8 +1299,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: triggerPoint,
-          label: detection["selectedLabel"] as? String,
-          wsURLString: approvalWSURL
+          wsURLString: approvalWSURL,
+          label: detection["selectedLabel"] as? String
         ) {
           nativeTriggerKeySuccesses += 1
           nativeTriggerKeyUsed = true
@@ -1393,8 +1393,8 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: point,
           action: "option",
-          label: finalResult["sessionScopeLabel"] as? String,
-          wsURLString: approvalWSURL
+          wsURLString: approvalWSURL,
+          label: finalResult["sessionScopeLabel"] as? String
         )
         nativeOptionComponentLastMode = componentResult?["mode"] as? String ?? "none"
         nativeOptionComponentLastTarget = componentResult?["targetLabel"] as? String ?? "none"
@@ -1476,8 +1476,8 @@ func dedicatedApprovalWithNativeInput(
         targetId: targetId,
         point: retryPoint,
         action: "trigger",
-        label: detection["selectedLabel"] as? String,
-        wsURLString: approvalWSURL
+        wsURLString: approvalWSURL,
+        label: detection["selectedLabel"] as? String
       )
       nativeTriggerComponentLastMode = retriedResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = retriedResult?["error"] as? String ?? "none"
@@ -1491,8 +1491,8 @@ func dedicatedApprovalWithNativeInput(
           port: port,
           targetId: targetId,
           point: retryPoint,
-          label: detection["selectedLabel"] as? String,
-          wsURLString: approvalWSURL
+          wsURLString: approvalWSURL,
+          label: detection["selectedLabel"] as? String
         )
         if retried {
           nativeTriggerKeySuccesses += 1
@@ -1504,8 +1504,8 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: retryPoint,
           action: "trigger",
-          label: detection["selectedLabel"] as? String,
-          wsURLString: approvalWSURL
+          wsURLString: approvalWSURL,
+          label: detection["selectedLabel"] as? String
         )
         nativeTriggerComponentLastMode = separateTriggerResult?["mode"] as? String ?? "none"
         nativeTriggerComponentLastError = separateTriggerResult?["error"] as? String ?? "none"
