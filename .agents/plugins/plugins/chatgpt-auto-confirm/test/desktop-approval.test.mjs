@@ -1036,6 +1036,81 @@ test('session-scoped approval prefers the explicit Allow once split control over
   assert.equal(clicks.includes('generic-confirm'), false);
 });
 
+test('session-scoped approval finds an unlabeled adjacent arrow in the authorization component', async () => {
+  const clicks = [];
+  let menuOpen = false;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(id, text, attributes = {}, rect = {}) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.attributes = attributes;
+      this.tagName = attributes.tagName || 'div';
+      this.children = [];
+      this.disabled = false;
+      this.offsetWidth = rect.width ?? 80;
+      this.offsetHeight = rect.height ?? 24;
+      this.rect = { left: rect.left ?? 0, top: rect.top ?? 0,
+        width: this.offsetWidth, height: this.offsetHeight };
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() {
+      return { ...this.rect, right: this.rect.left + this.rect.width,
+        bottom: this.rect.top + this.rect.height };
+    }
+    querySelectorAll(selector) {
+      if (selector === '*') return this.children;
+      return [];
+    }
+    dispatchEvent(event) {
+      if (event.type !== 'click') return true;
+      clicks.push(this.id);
+      if (this.id === 'session-arrow') menuOpen = true;
+      if (this.id === 'session-option') {
+        allow.isConnected = false;
+        allow.offsetWidth = 0;
+        allow.offsetHeight = 0;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('deny', 'Deny', { role: 'button' }, { left: 0 });
+  const allow = new FakeElement('allow', 'Allow once', { role: 'button' }, { left: 0 });
+  const sessionArrow = new FakeElement(
+    'session-arrow', '', {}, { left: 80, width: 24 },
+  );
+  const sessionOption = new FakeElement(
+    'session-option', 'Allow for this conversation', { role: 'menuitem' },
+  );
+  const card = new FakeElement('card', 'authorization card');
+  card.children = [deny, allow, sessionArrow];
+  card.querySelectorAll = selector => selector === '*' ? card.children : [];
+  for (const element of card.children) element.parentElement = card;
+  const document = {
+    querySelectorAll(selector) {
+      if (selector === '[role="button"]') return [deny, allow];
+      if (selector.includes('[role="menuitem"]')) return menuOpen ? [sessionOption] : [];
+      return [];
+    },
+  };
+  const result = await runInNewContext(approvalScript, {
+    document,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmed, true);
+  assert.equal(result.strategy, 'session-scope');
+  assert.deepEqual(clicks, ['session-arrow', 'session-option']);
+});
+
 test('allow-once approval works from the component allow control without card text', async () => {
   const clicks = [];
   class FakeEvent {
