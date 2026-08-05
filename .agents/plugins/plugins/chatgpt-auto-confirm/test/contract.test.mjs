@@ -53,6 +53,18 @@ const actionsInbox = JSON.parse(readFileSync(
   new URL('../tasks/actions-inbox.json', import.meta.url),
   'utf8',
 ));
+const rendererRecoverySkill = readFileSync(
+  new URL('../skills/recover-actions-chatgpt-renderer/SKILL.md', import.meta.url),
+  'utf8',
+);
+const rendererRecoveryReference = readFileSync(
+  new URL('../skills/recover-actions-chatgpt-renderer/references/renderer-diagnostics.md', import.meta.url),
+  'utf8',
+);
+const rendererRecoveryMetadata = readFileSync(
+  new URL('../skills/recover-actions-chatgpt-renderer/agents/openai.yaml', import.meta.url),
+  'utf8',
+);
 
 test('home contract', () => {
   assert.equal(HOME.schema, 'mahayana.miniapp.home.v1');
@@ -67,6 +79,18 @@ test('home contract', () => {
   ]);
   assert.equal(HOME.quickReplies.some(item => item.action.name === 'web_login_and_sync_actions'), false);
   assert.equal(HOME.quickReplies.some(item => item.action.name === 'account_list'), true);
+});
+test('renderer recovery skill is packaged with the miniapp', () => {
+  assert.equal(plugin.skills, './skills');
+  assert.match(rendererRecoverySkill, /name: recover-actions-chatgpt-renderer/);
+  assert.match(rendererRecoverySkill, /verify_chatgpt_login/);
+  assert.match(rendererRecoverySkill, /window\.open/);
+  assert.match(rendererRecoverySkill, /clicked=true/);
+  assert.match(rendererRecoverySkill, /parallel_queue_smoke/);
+  assert.match(rendererRecoveryReference, /headless-existing-window-ready/);
+  assert.match(rendererRecoveryReference, /needs_login/);
+  assert.match(rendererRecoveryMetadata, /display_name:/);
+  assert.match(rendererRecoveryMetadata, /\$recover-actions-chatgpt-renderer/);
 });
 test('article bodies stay lazy', () => assert.ok(Object.keys(RESOURCES).length >= 1));
 test('continuous Actions runner preserves secrets and chains incomplete sessions', () => {
