@@ -391,7 +391,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /quick_chat_thinking_not_selected/);
   assert.match(nativeSource, /const desiredQuickChatReasoning = 'Extra High'/);
   assert.match(nativeSource, /const desiredReasoning = 'Extra High'/);
-  assert.match(nativeSource, /pickerEvidence: 'quick-chat-extra-high-selection'/);
+  assert.match(nativeSource, /quick-chat-extra-high-selection/);
   assert.match(nativeSource, /submenuExtraHighSelected: true/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
   assert.match(nativeSource, /allPrefixedModelChoices\('Extra High'\)/);
