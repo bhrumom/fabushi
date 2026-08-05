@@ -4064,7 +4064,7 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
           // A self split-button has no separate DOM arrow. Do not synthesize a
           // click on its main action because that would grant Allow once.
           // Swift replays menuTriggerPointValue through trusted CDP input.
-          if (sessionControl === candidate.button) {
+          if (sessionControl === candidate.button && nativeOnly) {
             lastFailure = {
               ok: false, clicked: false, confirmed: false,
               strategy: 'session-scope', label: menuTriggerLabel,
