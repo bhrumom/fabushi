@@ -174,6 +174,12 @@ func dedicatedApprovalWithNativeInput(
     )
   }
 
+  // React renders the session menu asynchronously after the trusted pointer
+  // release. Poll the existing approval JS before sending another trigger
+  // click; a second click can close a menu that the first click just opened.
+  if nativeTriggerClicked {
+    Thread.sleep(forTimeInterval: 0.35)
+  }
   var result = cdpValue(
     port: port,
     targetId: targetId,
@@ -181,11 +187,27 @@ func dedicatedApprovalWithNativeInput(
     timeout: 10.0
   )
 
+  if result?["error"] as? String == "session_scope_native_input_required" {
+    for _ in 0..<4 {
+      Thread.sleep(forTimeInterval: 0.25)
+      result = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: autoApproveDedicatedAuthorizationJS(),
+        timeout: 10.0
+      )
+      if result?["error"] as? String != "session_scope_native_input_required" {
+        break
+      }
+    }
+  }
+
   // If a separate arrow control was present but did not open its menu on the
   // untrusted DOM path, retry the exact component-root geometry with trusted
   // input. A self split-button returns native_input_required instead of ever
   // falling through to the one-shot Allow once activation.
   if result?["confirmed"] as? Bool != true,
+     !nativeTriggerClicked,
      let retryPoint = approvalPoint(result?["menuTriggerPoint"]) ?? triggerPoint,
      (result?["error"] as? String == "session_scope_menu_not_opened"
        || result?["error"] as? String == "session_scope_native_input_required") {
@@ -194,12 +216,29 @@ func dedicatedApprovalWithNativeInput(
       targetId: targetId,
       point: retryPoint
     ) || nativeTriggerClicked
+    if nativeTriggerClicked {
+      Thread.sleep(forTimeInterval: 0.35)
+    }
     result = cdpValue(
       port: port,
       targetId: targetId,
       expression: autoApproveDedicatedAuthorizationJS(),
       timeout: 10.0
     )
+    if result?["error"] as? String == "session_scope_native_input_required" {
+      for _ in 0..<4 {
+        Thread.sleep(forTimeInterval: 0.25)
+        result = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: autoApproveDedicatedAuthorizationJS(),
+          timeout: 10.0
+        )
+        if result?["error"] as? String != "session_scope_native_input_required" {
+          break
+        }
+      }
+    }
   }
 
   guard var finalResult = result else { return nil }
