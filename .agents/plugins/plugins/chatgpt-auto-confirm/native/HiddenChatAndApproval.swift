@@ -168,6 +168,36 @@ func nativeApprovalClick(
   return CDPClient.dispatchMouseClick(wsURLString: wsURL, x: point.x, y: point.y)
 }
 
+func nativeApprovalDOMClick(
+  port: Int,
+  targetId: String,
+  point: (x: Double, y: Double)
+) -> Bool {
+  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
+  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let expression = #"""
+  (() => {
+    const hit = document.elementFromPoint(\#(x), \#(y));
+    if (!hit) return { ok: false, error: 'session_option_hit_missing' };
+    const target = hit.closest?.(
+      '[role="menuitem"], [role="menuitemradio"], [role="option"], button, '
+        + '[data-radix-collection-item], [data-slot*="menu" i]'
+    ) || hit;
+    if (typeof target.click !== 'function') {
+      return { ok: false, error: 'session_option_hit_not_clickable' };
+    }
+    target.click();
+    return { ok: true };
+  })()
+  """#
+  return cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: expression,
+    timeout: 4.0
+  )?["ok"] as? Bool == true
+}
+
 func dedicatedApprovalWithNativeInput(
   port: Int,
   targetId: String,
@@ -264,12 +294,26 @@ func dedicatedApprovalWithNativeInput(
   var cardsApproved = 0
   var nativeOptionClickAttempts = 0
   var nativeOptionClickSuccesses = 0
+  var nativeOptionDOMFallbackAttempts = 0
+  var nativeOptionDOMFallbackSuccesses = 0
+  var lastSessionOptionPoint: Any?
+  var lastSessionOptionRect: Any?
   func annotateNativeInput(_ result: inout [String: Any]) {
     result["nativeOptionClickAttempts"] = nativeOptionClickAttempts
     result["nativeOptionClickSuccesses"] = nativeOptionClickSuccesses
+    result["nativeOptionDOMFallbackAttempts"] = nativeOptionDOMFallbackAttempts
+    result["nativeOptionDOMFallbackSuccesses"] = nativeOptionDOMFallbackSuccesses
+    if result["sessionOptionPoint"] == nil, let lastSessionOptionPoint {
+      result["sessionOptionPoint"] = lastSessionOptionPoint
+    }
+    if result["sessionOptionRect"] == nil, let lastSessionOptionRect {
+      result["sessionOptionRect"] = lastSessionOptionRect
+    }
   }
   for attempt in 0..<3 {
     if let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]) {
+      lastSessionOptionPoint = finalResult["sessionOptionPoint"]
+      lastSessionOptionRect = finalResult["sessionOptionRect"]
       var optionPoints = [optionPoint]
       // A menu row can expose a padded wrapper around its actual action. If
       // the first trusted click is rejected by that wrapper, try one more
@@ -298,6 +342,29 @@ func dedicatedApprovalWithNativeInput(
              approvalPoint(stillOpen["sessionOptionPoint"]) != nil {
             finalResult = stillOpen
             if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
+            nativeOptionDOMFallbackAttempts += 1
+            if nativeApprovalDOMClick(port: port, targetId: targetId, point: point) {
+              nativeOptionDOMFallbackSuccesses += 1
+              Thread.sleep(forTimeInterval: 0.45)
+              if let after = cdpValue(
+                port: port,
+                targetId: targetId,
+                expression: detectDedicatedAuthorizationJS(),
+                timeout: 6.0
+              ), after["found"] as? Bool != true {
+                cardsApproved += 1
+                finalResult["ok"] = true
+                finalResult["clicked"] = true
+                finalResult["confirmed"] = true
+                finalResult["strategy"] = "session-scope-native-dom"
+                finalResult["nativeInput"] = true
+                finalResult["cardsApproved"] = cardsApproved
+                finalResult["cardsRemaining"] = 0
+                finalResult["error"] = "none"
+                annotateNativeInput(&finalResult)
+                return finalResult
+              }
+            }
             continue
           }
         }
