@@ -1307,12 +1307,66 @@ func waitForDedicatedRendererTarget(
   return false
 }
 
+func launchDedicatedQueueChatProcessViaLaunchServices(
+  profilePath: String,
+  port: Int,
+  codexHomePath: String? = nil
+) -> Bool {
+  // The hosted runner's direct Electron executable can expose an app root
+  // target without loading ChatGPT's preload bridge. The workflow's proven
+  // `open -na ... --args` path goes through LaunchServices and creates the
+  // renderer with the normal application bootstrap instead.
+  let configuration = NSWorkspace.OpenConfiguration()
+  configuration.activates = true
+  configuration.hides = false
+  configuration.addsToRecentItems = false
+  configuration.createsNewApplicationInstance = true
+  configuration.arguments = [
+    "--user-data-dir=\(profilePath)",
+    "--remote-debugging-port=\(port)",
+  ]
+  if let codexHomePath {
+    var environment = ProcessInfo.processInfo.environment
+    environment["CODEX_HOME"] = codexHomePath
+    configuration.environment = environment
+  }
+  let launchSemaphore = DispatchSemaphore(value: 0)
+  var launchError: Error?
+  NSWorkspace.shared.openApplication(
+    at: URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+    configuration: configuration
+  ) { _, error in
+    launchError = error
+    launchSemaphore.signal()
+  }
+  _ = launchSemaphore.wait(timeout: .now() + 10.0)
+  guard launchError == nil else {
+    queueTrace(
+      "worker-create stage=dedicated-launchservices-first-error "
+        + "port=\(port) error=\(String(describing: launchError))"
+    )
+    return false
+  }
+  queueTrace(
+    "worker-create stage=dedicated-launchservices-first-start "
+      + "port=\(port) visible=true"
+  )
+  return true
+}
+
 func launchDedicatedQueueChatProcess(
   profilePath: String,
   port: Int,
   codexHomePath: String? = nil
 ) -> Bool {
   do {
+    if queueAllowsVisibleDedicatedRenderer() {
+      return launchDedicatedQueueChatProcessViaLaunchServices(
+        profilePath: profilePath,
+        port: port,
+        codexHomePath: codexHomePath
+      )
+    }
     let existingApplicationPids = Set(
       NSWorkspace.shared.runningApplications.compactMap { application -> pid_t? in
         guard let bundleIdentifier = application.bundleIdentifier,
