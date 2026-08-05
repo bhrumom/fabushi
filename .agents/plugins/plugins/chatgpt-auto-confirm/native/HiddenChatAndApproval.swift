@@ -233,23 +233,54 @@ func nativeApprovalArrowKey(
     };
   })()
   """#
-  guard cdpValue(
+  let directKeyExpression = #"""
+  (() => {
+    const normalize = value => String(value || '')
+      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase()
+      .replace(/\s*(?:enter|return|⏎|↵)$/i, '').trim();
+    const requested = normalize(#(requestedLabelLiteral));
+    const labelOf = element => normalize(
+      element?.getAttribute?.('aria-label')
+        || element?.getAttribute?.('title')
+        || element?.getAttribute?.('data-label')
+        || element?.innerText
+        || element?.textContent
+        || ''
+    );
+    const hit = document.elementFromPoint(#(x), #(y));
+    const hitTarget = hit?.closest?.(
+      '[aria-haspopup], [aria-expanded], [role="button"], button'
+    ) || hit;
+    const labelledTargets = [...document.querySelectorAll?.(
+      'button, [role="button"], [aria-haspopup], [aria-expanded]'
+    ) || []].filter(element => requested && labelOf(element) === requested);
+    const target = hitTarget && (!requested || labelOf(hitTarget) === requested)
+      ? hitTarget
+      : labelledTargets[0];
+    if (!target || typeof target.dispatchEvent !== 'function') {
+      return { ok: false, error: 'approval_key_target_missing' };
+    }
+    try { target.focus({ preventScroll: true }); } catch (_) {}
+    const eventOptions = {
+      key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
+      bubbles: true, cancelable: true, composed: true
+    };
+    target.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
+    target.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
+    return {
+      ok: true,
+      mode: 'component-dom-key-event',
+      tag: target.tagName || '',
+      label: labelOf(target),
+      expanded: target.getAttribute?.('aria-expanded') ?? null
+    };
+  })()
+  """#
+  return cdpValue(
     wsURLString: wsURL,
-    expression: focusExpression,
+    expression: directKeyExpression,
     timeout: 2.5
-  )?["ok"] as? Bool == true else { return false }
-  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
-  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
-  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
-  // ArrowDown is the non-destructive native activation for a disclosure/menu
-  // control. It never invokes the primary Allow once action on a split card.
-  return CDPClient.dispatchKeyPress(
-    wsURLString: wsURL,
-    key: "ArrowDown",
-    code: "ArrowDown",
-    windowsVirtualKeyCode: 40,
-    nativeVirtualKeyCode: 125
-  )
+  )?["ok"] as? Bool == true
 }
 
 func nativeApprovalComponentActionResult(
@@ -368,6 +399,38 @@ func nativeApprovalComponentActionResult(
           : 'approval_trigger_component_missing'
       };
     }
+    const targetAtPoint = pointHit && target.contains?.(pointHit) ? pointHit : target;
+    // The approval card uses one split button: the primary surface invokes
+    // Allow once, while the right-edge click opens the scope menu. Dispatch
+    // the event inside the renderer so React's delegated listener receives
+    // the exact component event; this is not coordinate input through CDP.
+    if (action === 'trigger' && typeof target.dispatchEvent === 'function') {
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        detail: 1,
+        button: 0,
+        buttons: 0,
+        clientX: \#(x),
+        clientY: \#(y),
+        screenX: \#(x),
+        screenY: \#(y)
+      });
+      target.dispatchEvent(clickEvent);
+      return {
+        ok: true,
+        action,
+        mode: 'component-dom-click-event',
+        targetTag: target.tagName || '',
+        targetRole: target.getAttribute?.('role') || '',
+        targetLabel: labelOf(target),
+        clientX: \#(x),
+        clientY: \#(y),
+        expanded: target.getAttribute?.('aria-expanded') ?? null
+      };
+    }
     const ownKeys = node => {
       try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
     };
@@ -403,7 +466,6 @@ func nativeApprovalComponentActionResult(
       inspectNode(node);
       node = parentOf(node);
     }
-    const targetAtPoint = pointHit && target.contains?.(pointHit) ? pointHit : target;
     const eventBase = {
       target: targetAtPoint,
       currentTarget: target,
@@ -723,13 +785,20 @@ func dedicatedApprovalWithNativeInput(
   detection: [String: Any]
 ) -> [String: Any]? {
   let approvalWSURL = cdpWebSocketURL(port: port, targetId: targetId)
+  queueTrace("task=approval-watcher stage=approval-native-enter target=\(targetId)")
   func evaluateSessionScope() -> [String: Any]? {
     guard let approvalWSURL else { return nil }
-    return cdpValue(
+    queueTrace("task=approval-watcher stage=approval-native-scope-begin")
+    let scope = cdpValue(
       wsURLString: approvalWSURL,
       expression: sessionScopeComponentProbeJS(),
       timeout: 2.0
     )
+    queueTrace(
+      "task=approval-watcher stage=approval-native-scope-return "
+        + "found=\(scope != nil) error=\(scope?[\"error\"] as? String ?? \"none\")"
+    )
+    return scope
   }
 
   let triggerPoint = approvalPoint(detection["menuTriggerPoint"])
@@ -781,6 +850,7 @@ func dedicatedApprovalWithNativeInput(
     // renderer has no separate arrow DOM node.
     if menuTriggerIsSelectedButton {
       nativeTriggerComponentAttempts += 1
+      queueTrace("task=approval-watcher stage=approval-native-component-begin action=trigger")
       let componentResult = nativeApprovalComponentActionResult(
         port: port,
         targetId: targetId,
@@ -788,6 +858,12 @@ func dedicatedApprovalWithNativeInput(
         action: "trigger",
         label: detection["selectedLabel"] as? String,
         wsURLString: approvalWSURL
+      )
+      queueTrace(
+        "task=approval-watcher stage=approval-native-component-return action=trigger "
+          + "ok=\(componentResult?[\"ok\"] as? Bool == true) "
+          + "mode=\(componentResult?[\"mode\"] as? String ?? \"none\") "
+          + "error=\(componentResult?[\"error\"] as? String ?? \"none\")"
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
