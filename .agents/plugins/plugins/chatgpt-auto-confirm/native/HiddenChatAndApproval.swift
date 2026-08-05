@@ -228,7 +228,7 @@ func nativeApprovalArrowKey(
     const normalize = value => String(value || '')
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase()
       .replace(/\s*(?:enter|return|⏎|↵)$/i, '').trim();
-    const requested = normalize(#(requestedLabelLiteral));
+    const requested = normalize(\#(requestedLabelLiteral));
     const labelOf = element => normalize(
       element?.getAttribute?.('aria-label')
         || element?.getAttribute?.('title')
@@ -242,8 +242,8 @@ func nativeApprovalArrowKey(
       const value = labelOf(element);
       return value === requested || value.includes(requested) || requested.includes(value);
     };
-    const pointAvailable = #(pointAvailableLiteral);
-    const hit = pointAvailable ? document.elementFromPoint(#(x), #(y)) : null;
+    const pointAvailable = \#(pointAvailableLiteral);
+    const hit = pointAvailable ? document.elementFromPoint(\#(x), \#(y)) : null;
     const hitTarget = hit?.closest?.(
       '[aria-haspopup], [aria-expanded], [role="button"], button'
     ) || hit;
