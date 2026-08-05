@@ -75,9 +75,18 @@ func traceQueueApproval(
     "nativeTriggerKeyUsed": result["nativeTriggerKeyUsed"] ?? false,
     "nativeTriggerKeyAttempts": result["nativeTriggerKeyAttempts"] ?? 0,
     "nativeTriggerKeySuccesses": result["nativeTriggerKeySuccesses"] ?? 0,
+    "nativeTriggerComponentAttempts": result["nativeTriggerComponentAttempts"] ?? 0,
+    "nativeTriggerComponentSuccesses": result["nativeTriggerComponentSuccesses"] ?? 0,
+    "nativeTriggerComponentLastMode": result["nativeTriggerComponentLastMode"] ?? "none",
+    "nativeTriggerComponentLastError": result["nativeTriggerComponentLastError"] ?? "none",
     "nativeInput": result["nativeInput"] ?? false,
     "nativeOptionClickAttempts": result["nativeOptionClickAttempts"] ?? 0,
     "nativeOptionClickSuccesses": result["nativeOptionClickSuccesses"] ?? 0,
+    "nativeOptionComponentAttempts": result["nativeOptionComponentAttempts"] ?? 0,
+    "nativeOptionComponentSuccesses": result["nativeOptionComponentSuccesses"] ?? 0,
+    "nativeOptionComponentLastMode": result["nativeOptionComponentLastMode"] ?? "none",
+    "nativeOptionComponentLastTarget": result["nativeOptionComponentLastTarget"] ?? "none",
+    "nativeOptionComponentLastError": result["nativeOptionComponentLastError"] ?? "none",
     "nativeOptionDOMFallbackAttempts": result["nativeOptionDOMFallbackAttempts"] ?? 0,
     "nativeOptionDOMFallbackSuccesses": result["nativeOptionDOMFallbackSuccesses"] ?? 0,
     "nativeOptionDOMFallbackLastError": result["nativeOptionDOMFallbackLastError"] ?? "none",
@@ -159,6 +168,15 @@ func approveDedicatedAuthorizationWithDiagnostics(
       + "nativeTriggerClickSuccesses=\(result["nativeTriggerClickSuccesses"] as? Int ?? 0) "
       + "nativeTriggerKeyAttempts=\(result["nativeTriggerKeyAttempts"] as? Int ?? 0) "
       + "nativeTriggerKeySuccesses=\(result["nativeTriggerKeySuccesses"] as? Int ?? 0) "
+      + "nativeTriggerComponentAttempts=\(result["nativeTriggerComponentAttempts"] as? Int ?? 0) "
+      + "nativeTriggerComponentSuccesses=\(result["nativeTriggerComponentSuccesses"] as? Int ?? 0) "
+      + "nativeTriggerComponentLastMode=\(result["nativeTriggerComponentLastMode"] as? String ?? "none") "
+      + "nativeTriggerComponentLastError=\(result["nativeTriggerComponentLastError"] as? String ?? "none") "
+      + "nativeOptionComponentAttempts=\(result["nativeOptionComponentAttempts"] as? Int ?? 0) "
+      + "nativeOptionComponentSuccesses=\(result["nativeOptionComponentSuccesses"] as? Int ?? 0) "
+      + "nativeOptionComponentLastMode=\(result["nativeOptionComponentLastMode"] as? String ?? "none") "
+      + "nativeOptionComponentLastTarget=\(result["nativeOptionComponentLastTarget"] as? String ?? "none") "
+      + "nativeOptionComponentLastError=\(result["nativeOptionComponentLastError"] as? String ?? "none") "
       + "error=\(result["error"] as? String ?? "none")"
   )
   traceQueueApproval(
