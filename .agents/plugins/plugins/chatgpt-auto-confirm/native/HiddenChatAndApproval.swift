@@ -1641,7 +1641,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
 
       if (sessionControl) {
         const menuTriggerLabel = label(sessionControl);
-        try { click(sessionControl); }
+        try { dispatchPointerClick(sessionControl); }
         catch (error) {
           lastFailure = {
             ok: false, clicked: false, confirmed: false,
@@ -1665,11 +1665,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           const menuItems = allInteractive().filter(item => {
             if (item === sessionControl || cardButtons.includes(item)) return false;
             const itemLabel = labelText(item);
-            if (!isSessionScope(itemLabel) || !visible(item)) return false;
-            const role = normalize(item.getAttribute?.('role'));
-            return role.includes('menu') || role === 'option' || role === 'button'
-              || item.getAttribute?.('data-value') != null
-              || item.getAttribute?.('aria-label') != null;
+            return isSessionScope(itemLabel) && visible(item);
           });
           menuCandidates = allInteractive().map(label).filter(Boolean).slice(-40);
           sessionOption = menuItems[0] || null;
@@ -1685,7 +1681,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
           break;
         }
         const sessionScopeLabel = label(sessionOption);
-        try { click(sessionOption); }
+        try { dispatchPointerClick(sessionOption); }
         catch (error) {
           lastFailure = {
             ok: false, clicked: true, confirmed: false,
