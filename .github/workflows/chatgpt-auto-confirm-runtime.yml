@@ -12,6 +12,10 @@ on:
     branches:
       - main
       - 'codex/**'
+    paths:
+      - '.agents/plugins/plugins/chatgpt-auto-confirm/**'
+      - '.github/workflows/chatgpt-auto-confirm-runtime.yml'
+      - '.github/workflows/chatgpt-auto-confirm-runner.yml'
   pull_request:
     paths:
       - '.agents/plugins/plugins/chatgpt-auto-confirm/**'
