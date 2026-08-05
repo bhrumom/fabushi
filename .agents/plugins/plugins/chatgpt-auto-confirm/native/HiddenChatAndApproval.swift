@@ -542,8 +542,14 @@ func nativeApprovalComponentActionResult(
         const pointUsed = rectPointUsable || (pointAvailable
           && Number.isFinite(\#(x)) && Number.isFinite(\#(y))
           && (\#(x) > 0 || \#(y) > 0));
+        const detectorPointUsable = rectPointUsable && pointAvailable
+          && Number.isFinite(\#(x)) && Number.isFinite(\#(y))
+          && \#(x) >= rect.left && \#(x) <= rect.right
+          && \#(y) >= rect.top && \#(y) <= rect.bottom;
         const eventX = rectPointUsable
-          ? rect.right - Math.min(8, Math.max(4, rect.width * 0.08))
+          ? (detectorPointUsable
+            ? Math.min(rect.right - 1, Math.max(rect.left + 1, \#(x)))
+            : rect.right - Math.min(2, Math.max(1, rect.width * 0.02)))
           : pointUsed ? \#(x) : 0;
         const eventY = rectPointUsable
           ? rect.top + rect.height / 2
@@ -615,6 +621,7 @@ func nativeApprovalComponentActionResult(
           targetRole: target.getAttribute?.('role') || '',
           targetLabel: labelOf(target),
           pointUsed: pointUsed || !!rect,
+          inputPoint: pointUsed ? { x: eventX, y: eventY } : null,
           hiddenFallback
         };
       }
@@ -1338,8 +1345,13 @@ func dedicatedApprovalWithNativeInput(
     }
     return current
   }
+  func sessionOptionAvailable(_ value: [String: Any]?) -> Bool {
+    approvalPoint(value?["sessionOptionPoint"]) != nil
+      || value?["sessionScopeLabel"] != nil
+  }
 
   var result: [String: Any]?
+  var componentInputPoint = triggerPoint
   if (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
     // A same-button split control exposes the disclosure through its own
     // component semantics. The live renderer action below can locate that
@@ -1364,6 +1376,7 @@ func dedicatedApprovalWithNativeInput(
       )
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
+      componentInputPoint = approvalPoint(componentResult?["inputPoint"]) ?? triggerPoint
       if componentResult?["ok"] as? Bool == true {
         nativeTriggerComponentSuccesses += 1
         nativeTriggerClicked = true
@@ -1389,8 +1402,57 @@ func dedicatedApprovalWithNativeInput(
       }
     }
 
-    let hasSessionOption = approvalPoint(result?["sessionOptionPoint"]) != nil
-      || result?["sessionScopeLabel"] != nil
+    var hasSessionOption = sessionOptionAvailable(result)
+    if menuTriggerIsSelectedButton && !hasSessionOption {
+      // The split disclosure is a browser-trusted component boundary in the
+      // hosted Electron renderer. DOM events are the first, direct path; if
+      // that component deliberately ignores untrusted events, use CDP's
+      // renderer Input domain at the exact live component point. This does not
+      // move the macOS cursor, scroll the page, or invoke an OS mouse API.
+      nativeTriggerKeyAttempts += 1
+      queueTrace("task=approval-watcher stage=approval-native-cdp-key-begin")
+      let trustedKey = CDPClient.dispatchKeyPress(
+        wsURLString: approvalWSURL,
+        key: "ArrowDown",
+        code: "ArrowDown",
+        windowsVirtualKeyCode: 40,
+        nativeVirtualKeyCode: 125,
+        timeout: 2.5
+      )
+      queueTrace(
+        "task=approval-watcher stage=approval-native-cdp-key-return ok=\(trustedKey)"
+      )
+      if trustedKey {
+        nativeTriggerKeySuccesses += 1
+        nativeTriggerKeyUsed = true
+        Thread.sleep(forTimeInterval: 0.35)
+        result = pollSessionScope(evaluateSessionScope())
+        hasSessionOption = sessionOptionAvailable(result)
+      }
+      if !hasSessionOption, let inputPoint = componentInputPoint {
+        nativeTriggerClickAttempts += 1
+        queueTrace(
+          "task=approval-watcher stage=approval-native-cdp-mouse-begin "
+            + "x=\(inputPoint.x) y=\(inputPoint.y)"
+        )
+        let trustedClick = CDPClient.dispatchMouseClick(
+          wsURLString: approvalWSURL,
+          x: inputPoint.x,
+          y: inputPoint.y,
+          timeout: 2.5
+        )
+        queueTrace(
+          "task=approval-watcher stage=approval-native-cdp-mouse-return ok=\(trustedClick)"
+        )
+        if trustedClick {
+          nativeTriggerClickSuccesses += 1
+          nativeTriggerClicked = true
+          Thread.sleep(forTimeInterval: 0.35)
+          result = pollSessionScope(evaluateSessionScope())
+          hasSessionOption = sessionOptionAvailable(result)
+        }
+      }
+    }
     // A same-button split control has no safe primary-button fallback: its
     // outer labelled control is also Allow once. If the component disclosure
     // could not open, leave the card pending instead of granting once.
