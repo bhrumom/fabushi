@@ -804,11 +804,14 @@ struct CDPClient {
     paramsJSON: String,
     timeout: TimeInterval
   ) -> [String: Any]? {
-    persistentCommandQueue.sync {
+    queueTrace("task=approval-watcher stage=approval-cdp-persistent-enter method=\(method)")
+    let result: [String: Any]? = persistentCommandQueue.sync {
+      queueTrace("task=approval-watcher stage=approval-cdp-persistent-queue-enter method=\(method)")
       guard let wsURL = URL(string: wsURLString) else { return nil }
       let wsTask: URLSessionWebSocketTask
       if let existing = persistentWebsocketSessions[wsURLString] {
         wsTask = existing
+        queueTrace("task=approval-watcher stage=approval-cdp-persistent-session-reuse method=\(method)")
       } else {
         var request = URLRequest(url: wsURL)
         request.timeoutInterval = max(timeout, 5.0)
@@ -816,6 +819,7 @@ struct CDPClient {
         created.resume()
         persistentWebsocketSessions[wsURLString] = created
         wsTask = created
+        queueTrace("task=approval-watcher stage=approval-cdp-persistent-session-create method=\(method)")
       }
 
       let msgId = Int.random(in: 1000...999999)
@@ -845,6 +849,7 @@ struct CDPClient {
           complete(nil)
         }
       }
+      queueTrace("task=approval-watcher stage=approval-cdp-persistent-send-return method=\(method)")
 
       func receiveNext() {
         wsTask.receive { result in
@@ -873,8 +878,13 @@ struct CDPClient {
         }
       }
       receiveNext()
+      queueTrace("task=approval-watcher stage=approval-cdp-persistent-receive-start method=\(method)")
 
       let waitResult = semaphore.wait(timeout: .now() + max(timeout, 0.1))
+      queueTrace(
+        "task=approval-watcher stage=approval-cdp-persistent-wait-return method=\(method) "
+          + "success=\(waitResult == .success)"
+      )
       responseLock.lock()
       let response = responseJSON
       responseLock.unlock()
@@ -891,6 +901,8 @@ struct CDPClient {
       cdpDebug("CDP command \(method) timed out for \(wsURLString)")
       return nil
     }
+    queueTrace("task=approval-watcher stage=approval-cdp-persistent-queue-exit method=\(method)")
+    return result
   }
 
   private static func sanitizeJSONDict(_ dict: [String: Any]) -> [String: Any] {
