@@ -2667,16 +2667,56 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       }
       return element;
     };
+    const sessionMenuItemScore = (node, sessionLabel) => {
+      const rect = rectObject(node);
+      const role = normalize(node.getAttribute?.('role'));
+      const tagName = node.tagName?.toLowerCase();
+      const actionableRole = ['menuitem', 'menuitemradio', 'option'].includes(role);
+      const semanticTag = ['button', 'a', 'summary'].includes(tagName);
+      const inViewport = !!(rect
+        && rect.bottom > 0
+        && rect.top < (window.innerHeight || 0)
+        && rect.right > 0
+        && rect.left < (window.innerWidth || 0));
+      const textLength = labelText(node).length;
+      const area = rect ? rect.width * rect.height : Number.MAX_SAFE_INTEGER;
+      return (sessionLabel ? 100000 : 0)
+        + (actionableRole ? 10000 : 0)
+        + (semanticTag ? 5000 : 0)
+        + (inViewport ? 2000 : 0)
+        + (hasClickSemantics(node) ? 1000 : 0)
+        - Math.min(2000, textLength)
+        - Math.min(2000, area / 100);
+    };
+    const sessionMenuItemFor = (item, sessionControl, cardButtons) => {
+      let node = item;
+      const candidates = [];
+      for (let depth = 0; depth < 10 && node; depth += 1) {
+        if (node !== sessionControl
+            && !cardButtons.includes(node)
+            && menuSurfaceFor(node)
+            && visible(node)
+            && hasClickSemantics(node)) {
+          const labels = labelParts(node);
+          const sessionLabel = labels.find(isSessionScope);
+          const allowLabel = labels.find(isAllowLabel);
+          if (sessionLabel || allowLabel) {
+            candidates.push({ node, sessionLabel: !!sessionLabel });
+          }
+        }
+        node = parentOf(node);
+      }
+      if (!candidates.length) return null;
+      return candidates.sort((left, right) =>
+        sessionMenuItemScore(right.node, right.sessionLabel)
+        - sessionMenuItemScore(left.node, left.sessionLabel)
+      )[0].node;
+    };
     const sessionMenuItems = (sessionControl, cardButtons) => [...new Set(
       allInteractive()
         .map(item => {
-          let node = item;
-          for (let depth = 0; depth < 8 && node; depth += 1) {
-            if (isSessionScope(labelText(node))
-                && visible(node)
-                && hasClickSemantics(node)) return node;
-            node = parentOf(node);
-          }
+          const sessionItem = sessionMenuItemFor(item, sessionControl, cardButtons);
+          if (sessionItem) return sessionItem;
           if (!hasAllowLabel(item)
               || item === sessionControl
               || cardButtons.includes(item)
@@ -2689,7 +2729,10 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
     )].filter(item => {
       if (item === sessionControl || cardButtons.includes(item)) return false;
       return (isSessionScope(labelText(item)) || hasAllowLabel(item)) && visible(item);
-    });
+    }).sort((left, right) =>
+      sessionMenuItemScore(right, isSessionScope(labelText(right)))
+      - sessionMenuItemScore(left, isSessionScope(labelText(left)))
+    );
     const pointForElement = element => {
       const rect = rectObject(element);
       return rect ? {
