@@ -430,7 +430,9 @@ struct CDPClient {
     expression: String,
     timeout: TimeInterval = 2.5
   ) -> [String: Any]? {
+    queueTrace("task=approval-watcher stage=approval-cdp-evaluate-enter")
     let params = "{\"expression\":\(jsonStringLiteral(expression)),\"returnByValue\":true,\"awaitPromise\":true}"
+    queueTrace("task=approval-watcher stage=approval-cdp-evaluate-dispatch")
     return sendRawCommand(
       wsURLString: wsURLString,
       method: "Runtime.evaluate",

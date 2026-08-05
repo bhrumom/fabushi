@@ -148,11 +148,17 @@ func cdpValuePersistent(
   expression: String,
   timeout: TimeInterval = 5.0
 ) -> [String: Any]? {
-  guard let response = CDPClient.evaluatePersistent(
+  queueTrace("task=approval-watcher stage=approval-cdp-wrapper-enter")
+  let response = CDPClient.evaluatePersistent(
     wsURLString: wsURLString,
     expression: expression,
     timeout: timeout
-  ), let outer = response["result"] as? [String: Any] else { return nil }
+  )
+  queueTrace(
+    "task=approval-watcher stage=approval-cdp-wrapper-return response=\(response != nil)"
+  )
+  guard let response,
+        let outer = response["result"] as? [String: Any] else { return nil }
   if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
     return sanitizeJSONValue(value) as? [String: Any]
   }
@@ -636,6 +642,7 @@ func nativeApprovalComponentActionResult(
       };
     })()
     """#
+    queueTrace("task=approval-watcher stage=approval-native-component-probe-begin")
     let componentProbe = cdpValuePersistent(
       wsURLString: wsURL,
       expression: "({ok:true})",
