@@ -171,22 +171,59 @@ func nativeApprovalClick(
 func nativeApprovalArrowKey(
   port: Int,
   targetId: String,
-  point: (x: Double, y: Double)
+  point: (x: Double, y: Double),
+  label: String? = nil
 ) -> Bool {
   guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let requestedLabel = label ?? ""
+  let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
+    .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
   let focusExpression = #"""
   (() => {
+    const normalize = value => String(value || '')
+      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase()
+      .replace(/\s*(?:enter|return|⏎|↵)$/i, '').trim();
+    const requested = normalize(\#(requestedLabelLiteral));
+    const labelOf = element => normalize(
+      element?.getAttribute?.('aria-label')
+        || element?.getAttribute?.('title')
+        || element?.getAttribute?.('data-label')
+        || element?.innerText
+        || element?.textContent
+        || ''
+    );
+    const pointDistance = element => {
+      const rect = element?.getBoundingClientRect?.();
+      if (!rect) return Number.MAX_SAFE_INTEGER;
+      const dx = rect.left + rect.width / 2 - \#(x);
+      const dy = rect.top + rect.height / 2 - \#(y);
+      return dx * dx + dy * dy;
+    };
     const hit = document.elementFromPoint(\#(x), \#(y));
-    const target = hit?.closest?.(
+    const hitTarget = hit?.closest?.(
       '[aria-haspopup], [aria-expanded], [role="button"], button'
     ) || hit;
+    const labelledTargets = [...document.querySelectorAll?.(
+      'button, [role="button"], [aria-haspopup], [aria-expanded]'
+    ) || []]
+      .filter(element => requested && labelOf(element) === requested)
+      .sort((left, right) => pointDistance(left) - pointDistance(right));
+    const target = hitTarget && (!requested || labelOf(hitTarget) === requested)
+      ? hitTarget
+      : labelledTargets[0];
     if (!target || typeof target.focus !== 'function') return { ok: false };
+    // The card can be attached below the current viewport in a hidden or
+    // scrollable renderer. Scroll only the identified authorization control;
+    // never click a coordinate that could fall on the primary Allow once
+    // action or on an unrelated page element.
+    try { target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
     target.focus({ preventScroll: true });
     return {
       ok: document.activeElement === target || target.contains?.(document.activeElement),
       tag: target.tagName || '',
+      label: labelOf(target),
       expanded: target.getAttribute?.('aria-expanded') ?? null,
       hasPopup: target.getAttribute?.('aria-haspopup') ?? null
     };
@@ -364,7 +401,12 @@ func dedicatedApprovalWithNativeInput(
     // renderer has no separate arrow DOM node.
     if menuTriggerIsSelectedButton {
       nativeTriggerKeyAttempts += 1
-      if nativeApprovalArrowKey(port: port, targetId: targetId, point: triggerPoint) {
+      if nativeApprovalArrowKey(
+        port: port,
+        targetId: targetId,
+        point: triggerPoint,
+        label: detection["selectedLabel"] as? String
+      ) {
         nativeTriggerKeySuccesses += 1
         nativeTriggerKeyUsed = true
         Thread.sleep(forTimeInterval: 0.35)
@@ -375,7 +417,14 @@ func dedicatedApprovalWithNativeInput(
     let hasSessionOption = approvalPoint(result?["sessionOptionPoint"]) != nil
     let cardMissing = result?["error"] as? String == "session_scope_card_not_found_after_trigger"
     let keyEvaluationFailed = nativeTriggerKeyUsed && result == nil
-    if !hasSessionOption && !cardMissing && !keyEvaluationFailed {
+    // A same-button split control has no safe mouse fallback: its outer
+    // button is also the primary Allow once action. If keyboard disclosure
+    // activation could not focus/open the component, leave the card pending
+    // for a bounded retry instead of granting one-shot access.
+    if !menuTriggerIsSelectedButton
+      && !hasSessionOption
+      && !cardMissing
+      && !keyEvaluationFailed {
       nativeTriggerClickAttempts += 1
       let clicked = nativeApprovalClick(
         port: port,
