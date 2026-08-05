@@ -1313,14 +1313,25 @@ func detectDedicatedAuthorizationJS() -> String {
     const query = (root, selector) => {
       try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
     };
+    const controlSelectors = [
+      'button', 'a', 'input[type="button"]', 'input[type="submit"]', 'summary',
+      '[role="button"]', '[role="menuitem"]', '[role="menuitemradio"]',
+      '[role="option"]', '[role="link"]', '[onclick]', '[tabindex]:not([tabindex="-1"])',
+      '[aria-label]', '[title]', '[data-label]', '[data-testid*="allow" i]',
+      '[data-testid*="deny" i]', '[data-testid*="permission" i]'
+    ];
     const collectInteractive = (root, output, visited) => {
       if (!root || visited.has(root)) return;
       visited.add(root);
-      for (const selector of [
-        'button', 'a', '[role="button"]', '[role="menuitem"]',
-        '[role="menuitemradio"]', '[role="option"]', '[role="link"]'
-      ]) output.push(...query(root, selector));
+      for (const selector of controlSelectors) output.push(...query(root, selector));
       for (const element of query(root, '*')) {
+        if (hasClickSemantics(element)
+            || (element.children?.length === 0
+              && (isAllowLabel(labelText(element))
+                || isRejectLabel(labelText(element))
+                || isSessionScope(labelText(element))))) {
+          output.push(element);
+        }
         if (element.shadowRoot) collectInteractive(element.shadowRoot, output, visited);
         if (element.tagName?.toLowerCase() === 'iframe') {
           try { if (element.contentDocument) collectInteractive(element.contentDocument, output, visited); }
@@ -1374,6 +1385,27 @@ func detectDedicatedAuthorizationJS() -> String {
       return rejectLabels.has(normalized)
         || /^(deny|reject|cancel|decline)(?:\s+once)?$/.test(normalized)
         || /^(拒绝|不允许|取消)(一次)?$/.test(normalized);
+    };
+    const hasClickSemantics = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const role = normalize(element.getAttribute?.('role'));
+      if (['button', 'a', 'summary', 'input', 'select'].includes(tagName)
+          || ['button', 'link', 'menuitem', 'menuitemradio', 'option'].includes(role)) {
+        return true;
+      }
+      if (element.getAttribute?.('onclick') !== null
+          || element.getAttribute?.('aria-haspopup') !== null
+          || element.getAttribute?.('aria-expanded') !== null
+          || Number(element.tabIndex) >= 0) {
+        return true;
+      }
+      return Object.keys(element).some(key => {
+        if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) return false;
+        const value = element[key];
+        const props = value?.memoizedProps || value?.pendingProps || value;
+        return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
+      });
     };
     const interactive = allInteractive();
     const candidates = interactive
@@ -1479,14 +1511,25 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     const query = (root, selector) => {
       try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
     };
+    const controlSelectors = [
+      'button', 'a', 'input[type="button"]', 'input[type="submit"]', 'summary',
+      '[role="button"]', '[role="menuitem"]', '[role="menuitemradio"]',
+      '[role="option"]', '[role="link"]', '[onclick]', '[tabindex]:not([tabindex="-1"])',
+      '[aria-label]', '[title]', '[data-label]', '[data-testid*="allow" i]',
+      '[data-testid*="deny" i]', '[data-testid*="permission" i]'
+    ];
     const collectInteractive = (root, output, visited) => {
       if (!root || visited.has(root)) return;
       visited.add(root);
-      for (const selector of [
-        'button', 'a', '[role="button"]', '[role="menuitem"]',
-        '[role="menuitemradio"]', '[role="option"]', '[role="link"]'
-      ]) output.push(...query(root, selector));
+      for (const selector of controlSelectors) output.push(...query(root, selector));
       for (const element of query(root, '*')) {
+        if (hasClickSemantics(element)
+            || (element.children?.length === 0
+              && (isAllowLabel(labelText(element))
+                || isRejectLabel(labelText(element))
+                || isSessionScope(labelText(element))))) {
+          output.push(element);
+        }
         if (element.shadowRoot) collectInteractive(element.shadowRoot, output, visited);
         if (element.tagName?.toLowerCase() === 'iframe') {
           try { if (element.contentDocument) collectInteractive(element.contentDocument, output, visited); }
@@ -1544,6 +1587,27 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       return rejectLabels.has(normalized)
         || /^(deny|reject|cancel|decline)(?:\s+once)?$/.test(normalized)
         || /^(\u62d2\u7edd|\u4e0d\u5141\u8bb8|\u53d6\u6d88)(\u4e00\u6b21)?$/.test(normalized);
+    };
+    const hasClickSemantics = element => {
+      if (!element) return false;
+      const tagName = element.tagName?.toLowerCase();
+      const role = normalize(element.getAttribute?.('role'));
+      if (['button', 'a', 'summary', 'input', 'select'].includes(tagName)
+          || ['button', 'link', 'menuitem', 'menuitemradio', 'option'].includes(role)) {
+        return true;
+      }
+      if (element.getAttribute?.('onclick') !== null
+          || element.getAttribute?.('aria-haspopup') !== null
+          || element.getAttribute?.('aria-expanded') !== null
+          || Number(element.tabIndex) >= 0) {
+        return true;
+      }
+      return Object.keys(element).some(key => {
+        if (!key.startsWith('__reactProps$') && !key.startsWith('__reactFiber$')) return false;
+        const value = element[key];
+        const props = value?.memoizedProps || value?.pendingProps || value;
+        return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
+      });
     };
     const isOneShot = value => /\bonce\b|one time|this time|\u4e00\u6b21|\u672c\u6b21|\u6b64\u6b21/.test(normalize(value));
     const dispatchPointerClick = candidate => {
@@ -1632,11 +1696,17 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         return !isAllowLabel(value) && !isRejectLabel(value) && (
           button.getAttribute?.('aria-haspopup') === 'menu'
             || button.getAttribute?.('aria-expanded') !== null
-            || /menu|dropdown|chevron|more/.test(normalize(
+                || /menu|dropdown|chevron|more/.test(normalize(
               button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
                 || button.getAttribute?.('class') || ''
             ))
         );
+      }) || cardButtons.find(button =>
+        isOneShot(candidate.label)
+          && button !== candidate.button
+          && !labelText(button)
+          && hasClickSemantics(button)
+      );
       });
 
       if (sessionControl) {
@@ -1709,22 +1779,18 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         continue;
       }
 
-      // A card with a single generic Allow/Approve/Confirm action is already
-      // session-scoped by the host. Never silently downgrade an explicit
-      // “Allow once” card when its session selector was not found.
-      if (isOneShot(candidate.label)) {
-        lastFailure = {
-          ok: false, clicked: false, confirmed: false,
-          strategy: 'session-scope-required', label: candidate.label,
-          candidateLabels, error: 'session_scope_control_not_found'
-        };
-        break;
-      }
+      // Some ChatGPT builds expose only the single-card `Allow once` action;
+      // it is still the safe, explicit approval control for that card. Use a
+      // session selector whenever the host exposes one, and otherwise click
+      // the exact allow control rather than leaving the task stranded.
+      const approvalStrategy = isOneShot(candidate.label)
+        ? 'single-approval-allow-once'
+        : 'single-approval';
       try { click(candidate.button); }
       catch (error) {
         lastFailure = {
           ok: false, clicked: false, confirmed: false,
-          strategy: 'single-approval', label: candidate.label,
+          strategy: approvalStrategy, label: candidate.label,
           candidateLabels,
           error: String(error?.message || error || 'approval_click_failed')
         };
@@ -1734,13 +1800,13 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       if (!confirmed) {
         lastFailure = {
           ok: false, clicked: true, confirmed: false,
-          strategy: 'single-approval', label: candidate.label,
+          strategy: approvalStrategy, label: candidate.label,
           candidateLabels, error: 'approval_click_not_confirmed'
         };
         break;
       }
       approvedCards.push({
-        strategy: 'single-approval', label: candidate.label, candidateLabels
+        strategy: approvalStrategy, label: candidate.label, candidateLabels
       });
       await sleep(150);
     }

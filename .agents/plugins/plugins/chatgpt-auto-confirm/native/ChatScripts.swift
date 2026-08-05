@@ -1768,12 +1768,17 @@ func getReplyJS() -> String {
       ) || null;
     }
 
-    const approvalButton = [...main.querySelectorAll('button, a, [role="button"]')].find(button => {
-      const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '').trim().toLowerCase();
+    const approvalButton = [...document.querySelectorAll(
+      'button, a, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="option"], [onclick], [aria-label], [title], *'
+    )].find(button => {
+      const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '')
+        .replace(/[\s\u21b5\u00a0]+/g, ' ')
+        .trim()
+        .toLowerCase();
       return visible(button) && [
         '完全访问', 'full access', 'allow', 'allow once',
         '允许', '允许一次', 'approve', 'approve once',
-        'confirm', '确认'
+        'confirm', 'confirm once', '确认', '确认一次'
       ].includes(text);
     });
     const thinkingActive = !responseActionsComplete && !!latestThinking && (
