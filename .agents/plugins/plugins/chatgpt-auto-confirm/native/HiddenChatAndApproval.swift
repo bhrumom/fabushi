@@ -149,6 +149,12 @@ func nativeApprovalClick(
   point: (x: Double, y: Double)
 ) -> Bool {
   guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
+  // A hidden renderer can accept Runtime.evaluate while dropping synthetic
+  // pointer events. Activate the target and bring its page forward before
+  // sending trusted CDP input; this does not depend on the card being visible
+  // in the user's current window.
+  _ = CDPClient.activateTarget(targetId, portOverride: port)
+  _ = CDPClient.bringPageToFront(wsURLString: wsURL)
   _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
   _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
   _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
@@ -160,6 +166,15 @@ func dedicatedApprovalWithNativeInput(
   targetId: String,
   detection: [String: Any]
 ) -> [String: Any]? {
+  func evaluateSessionScope() -> [String: Any]? {
+    cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: autoApproveDedicatedAuthorizationJS(nativeOnly: true),
+      timeout: 10.0
+    )
+  }
+
   let triggerPoint = approvalPoint(detection["menuTriggerPoint"])
   var nativeTriggerClicked = false
   if let triggerPoint,
@@ -180,22 +195,12 @@ func dedicatedApprovalWithNativeInput(
   if nativeTriggerClicked {
     Thread.sleep(forTimeInterval: 0.35)
   }
-  var result = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: autoApproveDedicatedAuthorizationJS(),
-    timeout: 10.0
-  )
+  var result = evaluateSessionScope()
 
   if result?["error"] as? String == "session_scope_native_input_required" {
-    for _ in 0..<4 {
+    for _ in 0..<12 {
       Thread.sleep(forTimeInterval: 0.25)
-      result = cdpValue(
-        port: port,
-        targetId: targetId,
-        expression: autoApproveDedicatedAuthorizationJS(),
-        timeout: 10.0
-      )
+      result = evaluateSessionScope()
       if result?["error"] as? String != "session_scope_native_input_required" {
         break
       }
@@ -219,21 +224,11 @@ func dedicatedApprovalWithNativeInput(
     if nativeTriggerClicked {
       Thread.sleep(forTimeInterval: 0.35)
     }
-    result = cdpValue(
-      port: port,
-      targetId: targetId,
-      expression: autoApproveDedicatedAuthorizationJS(),
-      timeout: 10.0
-    )
+    result = evaluateSessionScope()
     if result?["error"] as? String == "session_scope_native_input_required" {
-      for _ in 0..<4 {
+      for _ in 0..<12 {
         Thread.sleep(forTimeInterval: 0.25)
-        result = cdpValue(
-          port: port,
-          targetId: targetId,
-          expression: autoApproveDedicatedAuthorizationJS(),
-          timeout: 10.0
-        )
+        result = evaluateSessionScope()
         if result?["error"] as? String != "session_scope_native_input_required" {
           break
         }
@@ -244,26 +239,69 @@ func dedicatedApprovalWithNativeInput(
   guard var finalResult = result else { return nil }
   if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
 
-  // A menu item can also be rendered without a reliable React click target.
-  // If the DOM path found it but did not close the card, replay that exact
-  // menu-item rectangle as trusted input and verify the card is gone.
-  if finalResult["confirmed"] as? Bool != true,
-     let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]),
-     nativeApprovalClick(port: port, targetId: targetId, point: optionPoint) {
-    let after = cdpValue(
-      port: port,
-      targetId: targetId,
-      expression: detectDedicatedAuthorizationJS(),
-      timeout: 6.0
-    )
-    if after?["found"] as? Bool != true {
-      finalResult["ok"] = true
-      finalResult["clicked"] = true
-      finalResult["confirmed"] = true
-      finalResult["strategy"] = "session-scope-native"
-      finalResult["nativeInput"] = true
-      finalResult["error"] = "none"
+  // The menu item must be activated with trusted input while the menu is
+  // still open. The previous implementation first dispatched a synthetic
+  // click, which could close the menu before this native replay arrived.
+  // Re-detect and reopen the component root between bounded attempts so both
+  // visible and hidden renderers use the same arrow -> option sequence.
+  var cardsApproved = 0
+  for attempt in 0..<3 {
+    if let optionPoint = approvalPoint(finalResult["sessionOptionPoint"]) {
+      let optionClicked = nativeApprovalClick(
+        port: port,
+        targetId: targetId,
+        point: optionPoint
+      )
+      if optionClicked {
+        finalResult["clicked"] = true
+        finalResult["nativeInput"] = true
+        Thread.sleep(forTimeInterval: 0.45)
+        if let after = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: detectDedicatedAuthorizationJS(),
+          timeout: 6.0
+        ), after["found"] as? Bool != true {
+          cardsApproved += 1
+          finalResult["ok"] = true
+          finalResult["clicked"] = true
+          finalResult["confirmed"] = true
+          finalResult["strategy"] = "session-scope-native"
+          finalResult["nativeInput"] = true
+          finalResult["cardsApproved"] = cardsApproved
+          finalResult["cardsRemaining"] = 0
+          finalResult["error"] = "none"
+          return finalResult
+        }
+      }
     }
+
+    guard attempt < 2 else { break }
+    guard var refreshed = evaluateSessionScope() else { break }
+    if nativeTriggerClicked { refreshed["nativeTriggerClicked"] = true }
+    if refreshed["confirmed"] as? Bool == true {
+      refreshed["cardsApproved"] = cardsApproved
+      return refreshed
+    }
+
+    let refreshedError = refreshed["error"] as? String ?? ""
+    if approvalPoint(refreshed["sessionOptionPoint"]) == nil,
+       (refreshedError == "session_scope_native_input_required"
+         || refreshedError == "session_scope_menu_not_opened"
+         || refreshedError == "session_scope_option_not_found"),
+       let retryPoint = approvalPoint(refreshed["menuTriggerPoint"]) ?? triggerPoint {
+      let retried = nativeApprovalClick(
+        port: port,
+        targetId: targetId,
+        point: retryPoint
+      )
+      nativeTriggerClicked = nativeTriggerClicked || retried
+      if retried {
+        Thread.sleep(forTimeInterval: 0.35)
+      }
+    }
+    finalResult = evaluateSessionScope() ?? refreshed
+    if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
   }
   return finalResult
 }
@@ -1988,10 +2026,12 @@ func detectDedicatedAuthorizationJS() -> String {
   """#
 }
 
-func autoApproveDedicatedAuthorizationJS() -> String {
-  #"""
+func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
+  let nativeOnlyLiteral = nativeOnly ? "true" : "false"
+  return #"""
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const nativeOnly = \#(nativeOnlyLiteral);
     const normalize = value => String(value || '')
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
@@ -2594,6 +2634,19 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         }
         const sessionScopeLabel = label(sessionOption);
         const sessionOptionPoint = pointForElement(sessionOption);
+        if (nativeOnly) {
+          // Do not dispatch a synthetic menu-item click. Swift will replay
+          // this exact point through trusted CDP input while the menu remains
+          // open, then verify that the authorization card disappeared.
+          return {
+            ok: false, clicked: false, confirmed: false,
+            strategy: 'session-scope', label: sessionScopeLabel,
+            menuTriggerLabel, sessionScopeLabel,
+            menuTriggerPoint: menuTriggerPointValue,
+            sessionOptionPoint, candidateLabels, menuCandidates,
+            error: 'session_scope_native_option_required'
+          };
+        }
         try { dispatchPointerClick(sessionOption); }
         catch (error) {
           lastFailure = {
@@ -2626,10 +2679,23 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         continue;
       }
 
+      if (nativeOnly) {
+        // A dedicated approval card must never fall through to the main
+        // `Allow once` action when no session selector was found. Returning a
+        // diagnostic keeps the card pending for a caller that can recover the
+        // component's disclosure control with trusted input.
+        lastFailure = {
+          ok: false, clicked: false, confirmed: false,
+          strategy: 'session-scope', label: candidate.label,
+          candidateLabels,
+          error: 'session_scope_menu_trigger_required'
+        };
+        break;
+      }
+
       // Some ChatGPT builds expose only the single-card `Allow once` action;
-      // it is still the safe, explicit approval control for that card. Use a
-      // session selector whenever the host exposes one, and otherwise click
-      // the exact allow control rather than leaving the task stranded.
+      // it remains a legacy fallback only when this native session-scope path
+      // is not active. A split control always returns through the branch above.
       const approvalStrategy = isOneShot(candidate.label)
         ? 'single-approval-allow-once'
         : 'single-approval';
@@ -3238,6 +3304,7 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     guard let wsURL = endpoint.target["webSocketDebuggerUrl"] as? String else { continue }
     let targetId = endpoint.target["id"] as? String ?? "unknown-target"
     var approvalDetection: [String: Any]?
+    var approvalProbe: [String: Any]?
     var approvalScreenshotPath: String?
     if let detectionEval = CDPClient.evaluate(
           wsURLString: wsURL,
@@ -3246,19 +3313,22 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
        let detectionResult = detectionEval["result"] as? [String: Any],
        let detectionValue = ((detectionResult["result"] as? [String: Any])?["value"]
          ?? detectionResult["value"]) as? [String: Any],
-       detectionValue["found"] as? Bool == true {
-      approvalDetection = detectionValue
-      approvalScreenshotPath = captureHiddenChatScreenshot(
-        port: endpoint.port,
-        targetId: targetId,
-        label: "approval-watcher-before"
-      )
-      queueTrace(
-        "task=approval-watcher stage=approval-ipc-detected strategy=per-card "
-          + "target=\(targetId) selected=\(detectionValue["selectedLabel"] as? String ?? "none") "
-          + "screenshot=\(approvalScreenshotPath ?? "none") "
-          + approvalDetectionTraceFields(detectionValue)
-      )
+       true {
+      approvalProbe = detectionValue
+      if detectionValue["found"] as? Bool == true {
+        approvalDetection = detectionValue
+        approvalScreenshotPath = captureHiddenChatScreenshot(
+          port: endpoint.port,
+          targetId: targetId,
+          label: "approval-watcher-before"
+        )
+        queueTrace(
+          "task=approval-watcher stage=approval-ipc-detected strategy=per-card "
+            + "target=\(targetId) selected=\(detectionValue["selectedLabel"] as? String ?? "none") "
+            + "screenshot=\(approvalScreenshotPath ?? "none") "
+            + approvalDetectionTraceFields(detectionValue)
+        )
+      }
     }
     // Use the same session-aware path for the general watcher. The legacy IPC
     // sweep only pressed the first `allow_once` control, which could bypass the
@@ -3318,6 +3388,24 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
         )
       }
       continue
+    }
+    // If the component-root probe saw an approval-shaped control but could
+    // not yet compute a complete card, do not fall through to the legacy
+    // allow_once text sweep. Leaving it untouched gives the dedicated path a
+    // later chance to recover the hidden component without granting the
+    // one-shot permission.
+    if let probe = approvalProbe {
+      let candidateLabels = probe["candidateLabels"] as? [Any] ?? []
+      let cardButtonLabels = probe["cardButtonLabels"] as? [Any] ?? []
+      let componentActionKeys = probe["componentActionKeys"] as? [Any] ?? []
+      if !candidateLabels.isEmpty || !cardButtonLabels.isEmpty || !componentActionKeys.isEmpty {
+        queueTrace(
+          "task=approval-watcher stage=approval-component-probe-blocked "
+            + "strategy=session-scope target=\(targetId) "
+            + approvalDetectionTraceFields(probe)
+        )
+        continue
+      }
     }
     guard let evalRes = CDPClient.evaluate(wsURLString: wsURL, expression: jsScript),
           let result = evalRes["result"] as? [String: Any],
