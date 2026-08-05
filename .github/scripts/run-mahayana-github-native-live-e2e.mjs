@@ -347,7 +347,7 @@ async function configureForkActions() {
     method: 'PUT', expected: [204], body: { enabled: true, allowed_actions: 'all' },
   });
   await api(`/repos/${fork}/actions/permissions/workflow`, {
-    method: 'PUT', expected: [204], body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
+    method: 'PUT', expected: [204], body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true },
   });
   await api(`/repos/${fork}/environments/production`, {
     method: 'PUT', expected: [200], body: { wait_timer: 0, prevent_self_review: false, reviewers: [], deployment_branch_policy: null },
