@@ -212,26 +212,86 @@ func nativeApprovalArrowKey(
   )
 }
 
-func nativeApprovalDOMClick(
+func nativeApprovalDOMClickResult(
   port: Int,
   targetId: String,
   point: (x: Double, y: Double)
-) -> Bool {
+) -> [String: Any]? {
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
   let expression = #"""
   (() => {
-    const hit = document.elementFromPoint(\#(x), \#(y));
-    if (!hit) return { ok: false, error: 'session_option_hit_missing' };
-    const target = hit.closest?.(
+    const selector =
       '[role="menuitem"], [role="menuitemradio"], [role="option"], button, '
-        + '[data-radix-collection-item], [data-slot*="menu" i]'
-    ) || hit;
+        + '[data-radix-collection-item], [data-slot*="menu" i]';
+    const pointInRect = (rect, px, py) => !!(rect
+      && rect.width > 0 && rect.height > 0
+      && px >= rect.left && px <= rect.right
+      && py >= rect.top && py <= rect.bottom);
+    const directMatches = (root, px, py) => {
+      const nodes = [];
+      if (root?.matches?.(selector)) nodes.push(root);
+      for (const node of root?.querySelectorAll?.(selector) || []) {
+        const rect = node.getBoundingClientRect?.();
+        if (pointInRect(rect, px, py)) nodes.push(node);
+      }
+      return nodes;
+    };
+    const nestedShadowMatches = (root, px, py) => {
+      const matches = [];
+      for (const host of root?.querySelectorAll?.('*') || []) {
+        if (host.shadowRoot) matches.push(...findMatches(host.shadowRoot, px, py));
+      }
+      return matches;
+    };
+    const nestedFrameMatches = (root, px, py) => {
+      const matches = [];
+      for (const frame of root?.querySelectorAll?.('iframe') || []) {
+        try {
+          const rect = frame.getBoundingClientRect?.();
+          if (!pointInRect(rect, px, py) || !frame.contentDocument) continue;
+          matches.push(...findMatches(
+            frame.contentDocument,
+            px - rect.left,
+            py - rect.top
+          ));
+        } catch (_) {}
+      }
+      return matches;
+    };
+    const findMatches = (root, px, py) => [
+      ...directMatches(root, px, py),
+      ...nestedShadowMatches(root, px, py),
+      ...nestedFrameMatches(root, px, py)
+    ];
+    const matches = findMatches(document, \#(x), \#(y))
+      .filter((node, index, all) => all.indexOf(node) === index)
+      .sort((left, right) => {
+        const leftRect = left.getBoundingClientRect?.();
+        const rightRect = right.getBoundingClientRect?.();
+        return (leftRect?.width || 0) * (leftRect?.height || 0)
+          - (rightRect?.width || 0) * (rightRect?.height || 0);
+      });
+    const target = matches[0];
+    if (!target) return { ok: false, error: 'session_option_hit_missing' };
+    if (target.disabled || target.getAttribute?.('aria-disabled') === 'true') {
+      return { ok: false, error: 'session_option_hit_disabled' };
+    }
     if (typeof target.click !== 'function') {
       return { ok: false, error: 'session_option_hit_not_clickable' };
     }
+    try { target.focus?.({ preventScroll: true }); } catch (_) {}
     target.click();
-    return { ok: true };
+    const rect = target.getBoundingClientRect?.();
+    return {
+      ok: true,
+      tag: target.tagName || '',
+      role: target.getAttribute?.('role') || '',
+      text: String(target.innerText || target.textContent || '').trim().slice(0, 160),
+      rect: rect ? {
+        left: rect.left, top: rect.top, width: rect.width, height: rect.height
+      } : null
+    };
   })()
   """#
   return cdpValue(
@@ -239,7 +299,15 @@ func nativeApprovalDOMClick(
     targetId: targetId,
     expression: expression,
     timeout: 4.0
-  )?["ok"] as? Bool == true
+  )
+}
+
+func nativeApprovalDOMClick(
+  port: Int,
+  targetId: String,
+  point: (x: Double, y: Double)
+) -> Bool {
+  nativeApprovalDOMClickResult(port: port, targetId: targetId, point: point)?["ok"] as? Bool == true
 }
 
 func dedicatedApprovalWithNativeInput(
@@ -350,6 +418,8 @@ func dedicatedApprovalWithNativeInput(
   var nativeOptionClickSuccesses = 0
   var nativeOptionDOMFallbackAttempts = 0
   var nativeOptionDOMFallbackSuccesses = 0
+  var nativeOptionDOMFallbackLastError = "none"
+  var nativeOptionDOMFallbackLastTarget = "none"
   var lastSessionOptionPoint: Any?
   var lastSessionOptionRect: Any?
   func annotateNativeInput(_ result: inout [String: Any]) {
@@ -358,6 +428,8 @@ func dedicatedApprovalWithNativeInput(
     result["nativeOptionClickSuccesses"] = nativeOptionClickSuccesses
     result["nativeOptionDOMFallbackAttempts"] = nativeOptionDOMFallbackAttempts
     result["nativeOptionDOMFallbackSuccesses"] = nativeOptionDOMFallbackSuccesses
+    result["nativeOptionDOMFallbackLastError"] = nativeOptionDOMFallbackLastError
+    result["nativeOptionDOMFallbackLastTarget"] = nativeOptionDOMFallbackLastTarget
     if result["sessionOptionPoint"] == nil, let lastSessionOptionPoint {
       result["sessionOptionPoint"] = lastSessionOptionPoint
     }
@@ -398,8 +470,14 @@ func dedicatedApprovalWithNativeInput(
             finalResult = stillOpen
             if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
             nativeOptionDOMFallbackAttempts += 1
-            if nativeApprovalDOMClick(port: port, targetId: targetId, point: point) {
+            let domResult = nativeApprovalDOMClickResult(
+              port: port,
+              targetId: targetId,
+              point: point
+            )
+            if domResult?["ok"] as? Bool == true {
               nativeOptionDOMFallbackSuccesses += 1
+              nativeOptionDOMFallbackLastTarget = domResult?["text"] as? String ?? "unknown"
               Thread.sleep(forTimeInterval: 0.45)
               if let after = cdpValue(
                 port: port,
@@ -419,6 +497,9 @@ func dedicatedApprovalWithNativeInput(
                 annotateNativeInput(&finalResult)
                 return finalResult
               }
+            } else {
+              nativeOptionDOMFallbackLastError = domResult?["error"] as? String
+                ?? "session_option_dom_eval_failed"
             }
             continue
           }

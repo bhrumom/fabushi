@@ -80,6 +80,8 @@ func traceQueueApproval(
     "nativeOptionClickSuccesses": result["nativeOptionClickSuccesses"] ?? 0,
     "nativeOptionDOMFallbackAttempts": result["nativeOptionDOMFallbackAttempts"] ?? 0,
     "nativeOptionDOMFallbackSuccesses": result["nativeOptionDOMFallbackSuccesses"] ?? 0,
+    "nativeOptionDOMFallbackLastError": result["nativeOptionDOMFallbackLastError"] ?? "none",
+    "nativeOptionDOMFallbackLastTarget": result["nativeOptionDOMFallbackLastTarget"] ?? "none",
     "cardsApproved": result["cardsApproved"] ?? 0,
     "cardsRemaining": result["cardsRemaining"] ?? 0,
   ]) ?? "{\"labels\":[]}"
@@ -176,6 +178,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
     let nativeOptionClickSuccesses = result["nativeOptionClickSuccesses"] as? Int ?? 0
     let nativeOptionDOMFallbackAttempts = result["nativeOptionDOMFallbackAttempts"] as? Int ?? 0
     let nativeOptionDOMFallbackSuccesses = result["nativeOptionDOMFallbackSuccesses"] as? Int ?? 0
+    let nativeOptionDOMFallbackLastError = result["nativeOptionDOMFallbackLastError"] as? String ?? "none"
+    let nativeOptionDOMFallbackLastTarget = result["nativeOptionDOMFallbackLastTarget"] as? String ?? "none"
+    let sessionOptionPoint = jsonString(result["sessionOptionPoint"] as? [String: Any]) ?? "none"
+    let sessionOptionRect = jsonString(result["sessionOptionRect"] as? [String: Any]) ?? "none"
     let nativeTriggerClickAttempts = result["nativeTriggerClickAttempts"] as? Int ?? 0
     let nativeTriggerClickSuccesses = result["nativeTriggerClickSuccesses"] as? Int ?? 0
     let nativeTriggerKeyAttempts = result["nativeTriggerKeyAttempts"] as? Int ?? 0
@@ -200,6 +206,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
         + "nativeOptionClickSuccesses=\(nativeOptionClickSuccesses) "
         + "nativeOptionDOMFallbackAttempts=\(nativeOptionDOMFallbackAttempts) "
         + "nativeOptionDOMFallbackSuccesses=\(nativeOptionDOMFallbackSuccesses) "
+        + "nativeOptionDOMFallbackLastError=\(nativeOptionDOMFallbackLastError) "
+        + "nativeOptionDOMFallbackLastTarget=\(nativeOptionDOMFallbackLastTarget) "
+        + "sessionOptionPoint=\(sessionOptionPoint) "
+        + "sessionOptionRect=\(sessionOptionRect) "
         + "beforeScreenshot=\(screenshotPath ?? "none") "
         + "afterScreenshot=\(afterPath ?? "none") "
         + "error=\(resultError)"
