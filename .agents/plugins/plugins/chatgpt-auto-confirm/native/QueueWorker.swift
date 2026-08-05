@@ -53,6 +53,19 @@ func runningOnGitHubActions() -> Bool {
   ProcessInfo.processInfo.environment["GITHUB_ACTIONS"]?.lowercased() == "true"
 }
 
+// Persistent hosted runs normally have one logical task at a time. Reuse the
+// authenticated app process's official prewarm service for that path: it is
+// the renderer that the login check already proved to have a working preload
+// bridge. The parallel smoke command explicitly sets its private state path
+// and still uses isolated workers so it can verify two concurrent Chats.
+func hostedPersistentQueueUsesPrewarmWorker() -> Bool {
+  guard runningOnGitHubActions() else { return false }
+  let parallelState = ProcessInfo.processInfo.environment[
+    "CHATGPT_AUTO_CONFIRM_PARALLEL_STATE"
+  ]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  return parallelState.isEmpty
+}
+
 func cgWindowNumber(_ value: Any?) -> CGFloat? {
   if let number = value as? NSNumber {
     return CGFloat(number.doubleValue)
@@ -2604,11 +2617,45 @@ func createIndependentQueueWorkerTarget(
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let hostedAccountId = hostedAccountValue.isEmpty ? nil : hostedAccountValue
   if let effectiveAccountId = explicitAccountId ?? hostedAccountId {
+    if hostedPersistentQueueUsesPrewarmWorker() {
+      // The authenticated controller and the hidden prewarm renderer are
+      // created and verified by verify_chatgpt_login in this same process.
+      // A copied second ChatGPT process is not needed for the persistent
+      // runner, and on hosted macOS it can stop at an avatar-overlay page
+      // without mounting electronBridge. Never use the shared process for a
+      // task assigned to a different account.
+      guard let hostedAccountId,
+            effectiveAccountId == hostedAccountId else {
+        state.lastError = "hosted_account_mismatch"
+        queueTrace(
+          "worker-create stage=hosted-prewarm-worker-rejected "
+            + "account=\(effectiveAccountId) hostedAccount=\(hostedAccountId ?? "none")"
+        )
+        return nil
+      }
+      queueTrace(
+        "worker-create stage=hosted-prewarm-worker-begin "
+          + "account=\(effectiveAccountId)"
+      )
+      guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+        queueTrace(
+          "worker-create stage=hosted-prewarm-worker-failed "
+            + "account=\(effectiveAccountId) error=\(state.lastError ?? "unknown")"
+        )
+        return nil
+      }
+      state.queueWorkerMode = sharedConversationQueueWorkerMode
+      queueTrace(
+        "worker-create stage=hosted-prewarm-worker-complete "
+          + "account=\(effectiveAccountId) target=\(worker.targetId)"
+      )
+      return worker
+    }
     // A local headless desktop run can create an independent BrowserWindow in
-    // the authenticated process. Hosted Actions deliberately uses the
-    // dedicated-process path below: the primary renderer is the controller,
-    // and borrowing it would let task cleanup close the controller or leave a
-    // bridge-less window for the next retry.
+    // the authenticated process. The parallel Actions smoke keeps the
+    // dedicated-process path below so each overlapping task owns a separate
+    // profile and renderer; persistent hosted runs use the verified prewarm
+    // path above.
     if queueAllowsVisibleDedicatedRenderer() && !runningOnGitHubActions() {
       queueTrace(
         "worker-create stage=headless-parallel-hidden-window-begin "

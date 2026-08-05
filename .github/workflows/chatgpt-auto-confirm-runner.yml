@@ -55,8 +55,10 @@ jobs:
       CHATGPT_CDP_PORT: "9324"
       GH_TOKEN: ${{ github.token }}
       CHATGPT_ACCOUNT_ID: ${{ inputs.account_id }}
-      # Hosted macOS runners have no user-facing desktop page. Dedicated
-      # workers may stay visible while they bootstrap their copied profile.
+      # Hosted macOS runners have no user-facing desktop page. Persistent
+      # queue work reuses the authenticated process's verified prewarm
+      # renderer; the parallel smoke path may still use visible isolated
+      # workers while it checks renderer separation.
       CHATGPT_AUTO_CONFIRM_HEADLESS: "1"
     steps:
       - name: Checkout trusted runner implementation

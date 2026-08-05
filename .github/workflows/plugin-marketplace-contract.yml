@@ -3,7 +3,10 @@ name: Plugin Marketplace Contract
 on:
   pull_request:
     paths:
-      - '.agents/plugins/**'
+      - '.agents/plugins/marketplace.json'
+      - '.agents/plugins/plugins/**/.codex-plugin/plugin.json'
+      - '.agents/plugins/plugins/**/.mahayana/plugin.json'
+      - '.agents/plugins/plugins/**/.mcp.json'
       - 'frontend/apps/web/public/.well-known/mahayana/**'
       - 'scripts/check-official-plugin-marketplace.py'
       - 'third_party/mahayana/mahayana-rs/mahayana-cli/**'
@@ -12,11 +15,13 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-      - '.github/workflows/plugin-marketplace-contract.yml'
   push:
     branches: [main]
     paths:
-      - '.agents/plugins/**'
+      - '.agents/plugins/marketplace.json'
+      - '.agents/plugins/plugins/**/.codex-plugin/plugin.json'
+      - '.agents/plugins/plugins/**/.mahayana/plugin.json'
+      - '.agents/plugins/plugins/**/.mcp.json'
       - 'frontend/apps/web/public/.well-known/mahayana/**'
       - 'scripts/check-official-plugin-marketplace.py'
       - 'third_party/mahayana/mahayana-rs/mahayana-cli/**'
@@ -25,7 +30,6 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-      - '.github/workflows/plugin-marketplace-contract.yml'
   workflow_dispatch:
 
 permissions:
