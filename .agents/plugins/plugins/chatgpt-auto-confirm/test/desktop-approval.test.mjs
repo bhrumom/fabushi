@@ -1104,6 +1104,41 @@ test('allow-once approval works from the component allow control without card te
   assert.deepEqual(clicks, ['allow']);
 });
 
+test('generic Confirm alone is not treated as an authorization card', async () => {
+  class FakeElement {
+    constructor(id, text, attributes = {}) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.attributes = attributes;
+      this.disabled = false;
+      this.offsetWidth = 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    getClientRects() { return [{}]; }
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: this.offsetWidth, height: this.offsetHeight };
+    }
+    querySelectorAll() { return []; }
+  }
+  const confirm = new FakeElement('confirm', 'Confirm', { role: 'button' });
+  const card = new FakeElement('card', 'unrelated confirmation');
+  confirm.parentElement = card;
+  card.querySelectorAll = () => [confirm];
+  const document = {
+    querySelectorAll(selector) {
+      if (selector === '[role="button"]') return [confirm];
+      return [];
+    },
+  };
+  const result = await runInNewContext(detectionScript, { document });
+  assert.equal(result.ok, true);
+  assert.equal(result.found, false);
+});
+
 test('allow-once approval works for attached controls before hidden-renderer layout', async () => {
   const clicks = [];
   class FakeEvent {

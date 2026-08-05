@@ -1427,7 +1427,8 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const approvalLabel = element => {
       const parts = labelParts(element);
-      return parts.find(isExplicitAllowLabel)
+      return parts.find(value => isExplicitAllowLabel(value) && isOneShot(value))
+        || parts.find(isExplicitAllowLabel)
         || parts.find(isAllowLabel)
         || parts[0]
         || '';
@@ -1458,7 +1459,14 @@ func detectDedicatedAuthorizationJS() -> String {
       const labeledSplitCompanion = isOneShot(value)
         && isOneShot(labelText(candidate))
         && sharesComponent(button, candidate);
-      return structural || iconOnlyCompanion || labeledSplitCompanion;
+      const buttonRect = button.getBoundingClientRect?.();
+      const narrowAllowCompanion = isAllowLabel(value)
+        && isOneShot(labelText(candidate))
+        && sharesComponent(button, candidate)
+        && buttonRect
+        && buttonRect.width > 0
+        && buttonRect.width <= 48;
+      return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -1537,13 +1545,20 @@ func detectDedicatedAuthorizationJS() -> String {
             && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
-        const hasAllow = cardButtons.some(hasAllowLabel);
+        const hasExplicitAllow = cardButtons.some(button =>
+          isExplicitAllowLabel(approvalLabel(button))
+        );
         const componentData = approvalComponentData(candidate.button);
+        const hasComponentAuthorization = Boolean(componentData)
+          || cardButtons.some(button => Boolean(approvalComponentData(button)));
         // The explicit allow control is the authorization-card marker. React
         // metadata is retained for diagnostics, but it must not block a real
         // Allow once/Allow button when the renderer omits or reshapes it.
-        if (hasAllow) {
-          return { container, cardButtons, cardLabels, componentData };
+        if (hasExplicitAllow || hasComponentAuthorization) {
+          return {
+            container, cardButtons, cardLabels, componentData,
+            hasComponentAuthorization
+          };
         }
         container = parentOf(container);
       }
@@ -1753,7 +1768,8 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     };
     const approvalLabel = element => {
       const parts = labelParts(element);
-      return parts.find(isExplicitAllowLabel)
+      return parts.find(value => isExplicitAllowLabel(value) && isOneShot(value))
+        || parts.find(isExplicitAllowLabel)
         || parts.find(isAllowLabel)
         || parts[0]
         || '';
@@ -1784,7 +1800,14 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       const labeledSplitCompanion = isOneShot(value)
         && isOneShot(labelText(candidate))
         && sharesComponent(button, candidate);
-      return structural || iconOnlyCompanion || labeledSplitCompanion;
+      const buttonRect = button.getBoundingClientRect?.();
+      const narrowAllowCompanion = isAllowLabel(value)
+        && isOneShot(labelText(candidate))
+        && sharesComponent(button, candidate)
+        && buttonRect
+        && buttonRect.width > 0
+        && buttonRect.width <= 48;
+      return structural || iconOnlyCompanion || labeledSplitCompanion || narrowAllowCompanion;
     };
     const approvalComponentData = element => {
       const ownKeys = node => {
@@ -1892,13 +1915,20 @@ func autoApproveDedicatedAuthorizationJS() -> String {
             && labelText(button).length <= 240
         );
         const cardLabels = cardButtons.map(label).filter(Boolean);
-        const hasAllow = cardButtons.some(hasAllowLabel);
+        const hasExplicitAllow = cardButtons.some(button =>
+          isExplicitAllowLabel(approvalLabel(button))
+        );
         const componentData = approvalComponentData(candidate);
+        const hasComponentAuthorization = Boolean(componentData)
+          || cardButtons.some(button => Boolean(approvalComponentData(button)));
         // The explicit allow control is the authorization-card marker. React
         // metadata is retained for diagnostics, but it must not block a real
         // Allow once/Allow button when the renderer omits or reshapes it.
-        if (hasAllow) {
-          return { container, cardButtons, cardLabels, componentData };
+        if (hasExplicitAllow || hasComponentAuthorization) {
+          return {
+            container, cardButtons, cardLabels, componentData,
+            hasComponentAuthorization
+          };
         }
         container = parentOf(container);
       }
