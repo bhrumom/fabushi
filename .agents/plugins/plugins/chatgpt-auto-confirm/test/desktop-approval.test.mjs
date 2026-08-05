@@ -396,6 +396,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
   assert.match(nativeSource, /allPrefixedModelChoices\('Extra High'\)/);
   assert.match(nativeSource, /quickChatKeyboardTarget/);
+  assert.match(nativeSource, /quickChatSliderElements/);
+  assert.match(nativeSource, /quickChatSelectionEvidence/);
+  assert.match(nativeSource, /dispatchQuickChatEnter/);
+  assert.match(nativeSource, /modelSelectionEvidence/);
   assert.match(nativeSource, /dispatchQuickChatArrowRight/);
   assert.match(nativeSource, /quick-chat-thinking-keyboard-selection/);
   assert.match(nativeSource, /dispatchPointerClick\(picker\)/);
@@ -427,6 +431,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /hostedPersistentQueueUsesPrewarmWorker/);
   assert.match(nativeSource, /hosted-prewarm-worker-begin/);
   assert.match(nativeSource, /hosted-prewarm-worker-complete/);
+  assert.match(nativeSource, /model-selection-before/);
+  assert.match(nativeSource, /model-selection-failed/);
+  assert.match(nativeSource, /writeQueueConversationDiagnostic\(task, finalReason: "start_failed"\)/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_PARALLEL_STATE/);
   assert.match(nativeSource, /launchDedicatedQueueChatProcessViaLaunchServices/);
   assert.match(nativeSource, /dedicated-launchservices-first-start/);
