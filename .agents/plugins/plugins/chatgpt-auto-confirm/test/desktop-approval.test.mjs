@@ -1029,7 +1029,6 @@ test('session-scoped approval prefers the explicit Allow once split control over
     MouseEvent: FakeEvent,
     setTimeout,
   });
-  if (!result.ok) console.error('DEBUG_APPROVAL_RESULT', result);
   assert.equal(result.ok, true);
   assert.equal(result.confirmed, true);
   assert.equal(result.strategy, 'session-scope');
