@@ -15,7 +15,6 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-      - '.github/workflows/plugin-marketplace-contract.yml'
   push:
     branches: [main]
     paths:
@@ -31,7 +30,6 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'examples/mahayana-cloud-marketplace/**'
       - '.github/workflows/mahayana-cloud-marketplace-e2e.yml'
-      - '.github/workflows/plugin-marketplace-contract.yml'
   workflow_dispatch:
 
 permissions:
