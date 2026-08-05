@@ -35,6 +35,9 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "menuTriggerLabels": detection["menuTriggerLabels"] ?? [],
     "menuTriggerCount": detection["menuTriggerCount"] ?? 0,
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
+    "cardCount": detection["cardCount"] ?? 0,
+    "interactiveCount": detection["interactiveCount"] ?? 0,
+    "detectionStrategy": detection["detectionStrategy"] ?? "unknown",
   ]) ?? "{}"
   return "detection=\(details)"
 }
@@ -54,6 +57,8 @@ func traceQueueApproval(
     "menuTriggerLabel": result["menuTriggerLabel"] ?? "",
     "sessionScopeLabel": result["sessionScopeLabel"] ?? "",
     "menuCandidates": result["menuCandidates"] ?? [],
+    "cardsApproved": result["cardsApproved"] ?? 0,
+    "cardsRemaining": result["cardsRemaining"] ?? 0,
   ]) ?? "{\"labels\":[]}"
   queueTrace(
     "task=\(taskId) stage=approval-\(stage) "

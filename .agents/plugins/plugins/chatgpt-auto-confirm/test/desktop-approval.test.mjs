@@ -892,12 +892,16 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
       return true;
     }
   }
-  const deny = new FakeElement('deny', 'Deny');
-  const allow = new FakeElement('allow', 'Allow');
+  const deny = new FakeElement('deny', 'Deny', { role: 'button' });
+  const allow = new FakeElement('allow', 'Allow', { role: 'button' });
   const sessionTrigger = new FakeElement(
     'session-trigger',
     '',
-    { 'aria-label': 'Allow bhrum2 for this conversation', 'aria-haspopup': 'menu' },
+    {
+      role: 'button',
+      'aria-label': 'Allow bhrum2 for this conversation',
+      'aria-haspopup': 'menu',
+    },
   );
   const sessionOption = new FakeElement(
     'session-option',
@@ -911,7 +915,7 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
   sessionTrigger.parentElement = card;
   const document = {
     querySelectorAll(selector) {
-      if (selector === 'button') return [deny, allow, sessionTrigger];
+      if (selector === '[role="button"]') return [deny, allow, sessionTrigger];
       if (selector.includes('[role="menuitem"]')) return menuOpen ? [sessionOption] : [];
       return [];
     },

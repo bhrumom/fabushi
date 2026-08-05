@@ -1295,36 +1295,119 @@ func autoConfirmChatContinuationJS() -> String {
 func detectDedicatedAuthorizationJS() -> String {
   #"""
   (() => {
-    const normalize = value => (value || '').replace(/[\s↵]+/g, ' ').trim().toLowerCase();
-    const visible = element => !!(element
-      && !element.disabled
-      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
-    const label = button => normalize(
-      button.innerText || button.textContent
-        || button.getAttribute('aria-label') || button.getAttribute('title')
-    );
-    const allowLabels = new Set([
-      'allow', 'allow once', 'approve', 'approve once', 'confirm', 'confirm once',
-      '允许', '允许一次', '同意', '同意一次', '确认', '确认一次',
-      'full access', '完全访问'
-    ]);
-    const rejectLabels = new Set([
-      'deny', 'reject', 'cancel', 'deny once', 'reject once',
-      '拒绝', '拒绝一次', '不允许', '不允许一次', '取消'
-    ]);
+    const normalize = value => String(value || '')
+      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
+    const rendered = element => !!(element
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects?.().length));
+    const visible = element => rendered(element) && !element.disabled;
+    const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const labelParts = element => [
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+      element?.getAttribute?.('data-label'),
+      element?.innerText,
+      element?.textContent
+    ].map(normalize).filter(Boolean);
+    const label = element => labelParts(element)[0] || '';
+    const labelText = element => labelParts(element).join(' ');
+    const query = (root, selector) => {
+      try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
+    };
+    const collectInteractive = (root, output, visited) => {
+      if (!root || visited.has(root)) return;
+      visited.add(root);
+      for (const selector of [
+        'button', 'a', '[role="button"]', '[role="menuitem"]',
+        '[role="menuitemradio"]', '[role="option"]', '[role="link"]'
+      ]) output.push(...query(root, selector));
+      for (const element of query(root, '*')) {
+        if (element.shadowRoot) collectInteractive(element.shadowRoot, output, visited);
+        if (element.tagName?.toLowerCase() === 'iframe') {
+          try { if (element.contentDocument) collectInteractive(element.contentDocument, output, visited); }
+          catch (_) {}
+        }
+      }
+    };
+    const allInteractive = () => {
+      const output = [];
+      collectInteractive(document, output, new Set());
+      return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
+    };
     const sessionHints = [
       'this chat', 'this conversation', 'for this chat', 'for this conversation',
       'for this session', 'during this chat', 'always allow in this chat',
-      '本次会话', '这次会话', '此会话', '当前会话', '在此聊天中', '本次聊天',
-      '始终允许', '会话期间'
+      'this thread', 'for this thread', 'conversation only', 'chat only',
+      '本次会话', '这次会话', '此会话', '当前会话', '本次对话', '此对话',
+      '当前对话', '本次聊天', '在此聊天中', '会话期间', '仅此会话', '始终允许'
     ];
-    const buttons = [...document.querySelectorAll('button, a, [role="button"]')]
-      .filter(visible);
-    const candidates = buttons
+    const isSessionScope = value => {
+      const normalized = normalize(value);
+      return !!normalized && sessionHints.some(hint => normalized.includes(hint));
+    };
+    const allowLabels = new Set([
+      'allow', 'allow once', 'allow this time', 'allow one time',
+      'approve', 'approve once', 'confirm', 'confirm once',
+      'authorize', 'authorise', 'permit', 'grant access', 'full access',
+      '允许', '允许一次', '允许本次', '允许此次', '允许访问', '授权',
+      '同意', '同意一次', '确认', '确认一次', '准许', '完全访问'
+    ]);
+    const rejectLabels = new Set([
+      'deny', 'reject', 'cancel', 'deny once', 'reject once', 'decline',
+      '拒绝', '拒绝一次', '不允许', '不允许一次', '取消', '不同意'
+    ]);
+    const stripDecorators = value => normalize(value)
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/[⌘⌥⇧⌃⏎↵]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const withoutShortcut = value => stripDecorators(value)
+      .replace(/\s+(?:escape|esc|enter|return|space|tab)(?:\s+.*)?$/i, '')
+      .trim();
+    const isAllowLabel = value => {
+      const normalized = withoutShortcut(value);
+      if (!normalized || isSessionScope(normalized)) return false;
+      if (allowLabels.has(normalized)) return true;
+      return /^(allow|approve|confirm|authorize|authorise|permit)(?:\s+(?:once|one time|this time))?$/.test(normalized)
+        || /^(允许|同意|确认|准许)(一次|本次|此次)?$/.test(normalized);
+    };
+    const isRejectLabel = value => {
+      const normalized = withoutShortcut(value);
+      return rejectLabels.has(normalized)
+        || /^(deny|reject|cancel|decline)(?:\s+once)?$/.test(normalized)
+        || /^(拒绝|不允许|取消)(一次)?$/.test(normalized);
+    };
+    const interactive = allInteractive();
+    const candidates = interactive
       .map((button, index) => ({ button, index, label: label(button) }))
-      .filter(candidate => allowLabels.has(candidate.label));
-    const candidate = candidates[0];
-    if (!candidate) {
+      .filter(candidate => isAllowLabel(labelText(candidate.button)));
+    const cardFor = candidate => {
+      let container = parentOf(candidate.button);
+      for (let index = 0; index < 30 && container; index += 1) {
+        const localButtons = [];
+        collectInteractive(container, localButtons, new Set());
+        const cardButtons = [
+          ...allInteractive().filter(button => {
+            try { return container.contains?.(button); } catch (_) { return false; }
+          }),
+          ...localButtons
+        ].filter((button, buttonIndex, all) =>
+          all.indexOf(button) === buttonIndex && visible(button)
+        );
+        const cardLabels = cardButtons.map(label).filter(Boolean);
+        const cardText = normalize([
+          container.innerText, container.textContent, ...cardLabels
+        ].filter(Boolean).join(' '));
+        const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
+        const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|授权|权限|允许 chatgpt|使用/.test(cardText);
+        if (hasReject || hasAuthorizationText) {
+          return { container, cardButtons, cardLabels, cardText };
+        }
+        container = parentOf(container);
+      }
+      return null;
+    };
+    const cards = candidates.map(cardFor).filter(Boolean);
+    const card = cards[0];
+    if (!card) {
       return {
         ok: true,
         found: false,
@@ -1338,58 +1421,37 @@ func detectDedicatedAuthorizationJS() -> String {
         unlabeledControlCount: 0
       };
     }
-
-    let container = candidate.button.parentElement;
-    for (let index = 0; index < 15 && container; index += 1) {
-      const cardButtons = [...container.querySelectorAll('button, a, [role="button"]')]
-        .filter(visible);
-      const cardLabels = cardButtons.map(label);
-      const hasReject = cardLabels.some(value => rejectLabels.has(value));
-      const cardText = normalize(container.innerText || container.textContent || '');
-      if (hasReject || cardText.includes('allow chatgpt to use') || cardText.includes('允许 chatgpt 使用')) {
-        const nonDecisionControls = cardButtons.filter(button => {
-          const value = label(button);
-          return !allowLabels.has(value) && !rejectLabels.has(value);
-        });
-        const menuTriggers = nonDecisionControls.filter(button =>
-          button.getAttribute('aria-haspopup') === 'menu'
-            || button.getAttribute('aria-expanded') !== null
-            || normalize(button.getAttribute('data-state')) === 'open'
-            || /menu|dropdown|chevron|more/.test(normalize(
-              button.getAttribute('data-testid') || button.getAttribute('data-slot')
-                || button.getAttribute('class') || ''
-            ))
-        );
-        const sessionScopeLabels = cardLabels.filter(value =>
-          value && sessionHints.some(hint => value.includes(hint))
-        );
-        return {
-          ok: true,
-          found: true,
-          candidates: candidates.length,
-          candidateLabels: candidates.map(item => item.label),
-          selectedLabel: candidate.label,
-          cardButtonLabels: cardLabels.filter(Boolean),
-          sessionScopeLabels,
-          menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
-          menuTriggerCount: menuTriggers.length,
-          unlabeledControlCount: nonDecisionControls.filter(button => !label(button)).length
-        };
-      }
-      container = container.parentElement;
-    }
-
     return {
       ok: true,
       found: true,
       candidates: candidates.length,
       candidateLabels: candidates.map(item => item.label),
-      selectedLabel: candidate.label,
-      cardButtonLabels: [],
-      sessionScopeLabels: [],
-      menuTriggerLabels: [],
-      menuTriggerCount: 0,
-      unlabeledControlCount: 0
+      selectedLabel: label(cards[0].cardButtons.find(button => isAllowLabel(labelText(button))) || candidates[0].button),
+      cardButtonLabels: card.cardLabels.filter(Boolean),
+      sessionScopeLabels: card.cardLabels.filter(value => isSessionScope(value)),
+      menuTriggerLabels: card.cardButtons.filter(button => {
+        const value = labelText(button);
+        return !isAllowLabel(value) && !isRejectLabel(value)
+          && (isSessionScope(value)
+            || button.getAttribute?.('aria-haspopup') === 'menu'
+            || button.getAttribute?.('aria-expanded') !== null
+            || /menu|dropdown|chevron|more/.test(normalize(
+              button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
+                || button.getAttribute?.('class') || ''
+            )));
+      }).map(label).filter(Boolean),
+      menuTriggerCount: card.cardButtons.filter(button =>
+        !isAllowLabel(labelText(button)) && !isRejectLabel(labelText(button))
+          && (isSessionScope(labelText(button))
+            || button.getAttribute?.('aria-haspopup') === 'menu'
+            || button.getAttribute?.('aria-expanded') !== null)
+      ).length,
+      unlabeledControlCount: card.cardButtons.filter(button =>
+        !isAllowLabel(labelText(button)) && !isRejectLabel(labelText(button)) && !label(button)
+      ).length,
+      cardCount: cards.length,
+      interactiveCount: interactive.length,
+      detectionStrategy: 'interactive-dom-shadow-iframe'
     };
   })()
   """#
@@ -1399,35 +1461,91 @@ func autoApproveDedicatedAuthorizationJS() -> String {
   #"""
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const normalize = value => (value || '').replace(/[\s\u21b5]+/g, ' ').trim().toLowerCase();
+    const normalize = value => String(value || '')
+      .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
-      && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+      && (element.offsetWidth || element.offsetHeight || element.getClientRects?.().length));
     const visible = element => rendered(element) && !element.disabled;
-    const allowed = new Set([
-      '\u5b8c\u5168\u8bbf\u95ee', 'full access', 'allow', 'allow once',
-      '\u5141\u8bb8', '\u5141\u8bb8\u4e00\u6b21', 'approve', 'approve once',
-      'confirm', 'confirm once', '\u786e\u8ba4', '\u786e\u8ba4\u4e00\u6b21',
-      '\u540c\u610f', '\u540c\u610f\u4e00\u6b21'
-    ]);
-    const rejectLabels = new Set([
-      'deny', 'reject', 'cancel', 'deny once', 'reject once',
-      '\u62d2\u7edd', '\u62d2\u7edd\u4e00\u6b21', '\u4e0d\u5141\u8bb8',
-      '\u4e0d\u5141\u8bb8\u4e00\u6b21', '\u53d6\u6d88'
-    ]);
+    const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
+    const labelParts = element => [
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+      element?.getAttribute?.('data-label'),
+      element?.innerText,
+      element?.textContent
+    ].map(normalize).filter(Boolean);
+    const label = element => labelParts(element)[0] || '';
+    const labelText = element => labelParts(element).join(' ');
+    const query = (root, selector) => {
+      try { return [...(root?.querySelectorAll?.(selector) || [])]; } catch (_) { return []; }
+    };
+    const collectInteractive = (root, output, visited) => {
+      if (!root || visited.has(root)) return;
+      visited.add(root);
+      for (const selector of [
+        'button', 'a', '[role="button"]', '[role="menuitem"]',
+        '[role="menuitemradio"]', '[role="option"]', '[role="link"]'
+      ]) output.push(...query(root, selector));
+      for (const element of query(root, '*')) {
+        if (element.shadowRoot) collectInteractive(element.shadowRoot, output, visited);
+        if (element.tagName?.toLowerCase() === 'iframe') {
+          try { if (element.contentDocument) collectInteractive(element.contentDocument, output, visited); }
+          catch (_) {}
+        }
+      }
+    };
+    const allInteractive = () => {
+      const output = [];
+      collectInteractive(document, output, new Set());
+      return output.filter((element, index, all) => all.indexOf(element) === index && visible(element));
+    };
     const sessionHints = [
       'this chat', 'this conversation', 'for this chat', 'for this conversation',
       'for this session', 'during this chat', 'always allow in this chat',
-      '\u672c\u6b21\u4f1a\u8bdd', '\u8fd9\u6b21\u4f1a\u8bdd',
-      '\u6b64\u4f1a\u8bdd', '\u5f53\u524d\u4f1a\u8bdd',
-      '\u5728\u6b64\u804a\u5929\u4e2d', '\u672c\u6b21\u804a\u5929',
-      '\u59cb\u7ec8\u5141\u8bb8', '\u4f1a\u8bdd\u671f\u95f4'
+      'this thread', 'for this thread', 'conversation only', 'chat only',
+      '\u672c\u6b21\u4f1a\u8bdd', '\u8fd9\u6b21\u4f1a\u8bdd', '\u6b64\u4f1a\u8bdd',
+      '\u5f53\u524d\u4f1a\u8bdd', '\u672c\u6b21\u5bf9\u8bdd', '\u6b64\u5bf9\u8bdd',
+      '\u5f53\u524d\u5bf9\u8bdd', '\u672c\u6b21\u804a\u5929', '\u5728\u6b64\u804a\u5929\u4e2d',
+      '\u4f1a\u8bdd\u671f\u95f4', '\u4ec5\u6b64\u4f1a\u8bdd', '\u59cb\u7ec8\u5141\u8bb8'
     ];
-    const label = button => normalize(
-      button.innerText || button.textContent
-        || button.getAttribute('aria-label') || button.getAttribute('title')
-    );
-    const isSessionScope = value => !!value
-      && sessionHints.some(hint => value.includes(hint));
+    const isSessionScope = value => {
+      const normalized = normalize(value);
+      return !!normalized && sessionHints.some(hint => normalized.includes(hint));
+    };
+    const allowLabels = new Set([
+      '\u5b8c\u5168\u8bbf\u95ee', 'full access', 'allow', 'allow once',
+      'allow this time', 'allow one time', 'approve', 'approve once',
+      'confirm', 'confirm once', 'authorize', 'authorise', 'permit', 'grant access',
+      '\u5141\u8bb8', '\u5141\u8bb8\u4e00\u6b21', '\u5141\u8bb8\u672c\u6b21', '\u5141\u8bb8\u8bbf\u95ee', '\u6388\u6743',
+      'allow', 'approve', '\u786e\u8ba4', '\u786e\u8ba4\u4e00\u6b21',
+      '\u540c\u610f', '\u540c\u610f\u4e00\u6b21', '\u51c6\u8bb8'
+    ]);
+    const rejectLabels = new Set([
+      'deny', 'reject', 'cancel', 'deny once', 'reject once', 'decline',
+      '\u62d2\u7edd', '\u62d2\u7edd\u4e00\u6b21', '\u4e0d\u5141\u8bb8',
+      '\u4e0d\u5141\u8bb8\u4e00\u6b21', '\u53d6\u6d88', '\u4e0d\u540c\u610f'
+    ]);
+    const stripDecorators = value => normalize(value)
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/[⌘⌥⇧⌃⏎↵]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const withoutShortcut = value => stripDecorators(value)
+      .replace(/\s+(?:escape|esc|enter|return|space|tab)(?:\s+.*)?$/i, '')
+      .trim();
+    const isAllowLabel = value => {
+      const normalized = withoutShortcut(value);
+      if (!normalized || isSessionScope(normalized)) return false;
+      if (allowLabels.has(normalized)) return true;
+      return /^(allow|approve|confirm|authorize|authorise|permit)(?:\s+(?:once|one time|this time))?$/.test(normalized)
+        || /^(\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4|\u51c6\u8bb8)(\u4e00\u6b21|\u672c\u6b21|\u6b64\u6b21)?$/.test(normalized);
+    };
+    const isRejectLabel = value => {
+      const normalized = withoutShortcut(value);
+      return rejectLabels.has(normalized)
+        || /^(deny|reject|cancel|decline)(?:\s+once)?$/.test(normalized)
+        || /^(\u62d2\u7edd|\u4e0d\u5141\u8bb8|\u53d6\u6d88)(\u4e00\u6b21)?$/.test(normalized);
+    };
+    const isOneShot = value => /\bonce\b|one time|this time|\u4e00\u6b21|\u672c\u6b21|\u6b64\u6b21/.test(normalize(value));
     const dispatchPointerClick = candidate => {
       const rect = candidate.getBoundingClientRect?.();
       const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
@@ -1446,137 +1564,215 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
       candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
     };
-    const confirmCardClosed = async candidate => {
+    const click = candidate => {
+      try { dispatchPointerClick(candidate); }
+      catch (_) { candidate.click?.(); }
+    };
+    const collectCard = candidate => {
+      let container = parentOf(candidate);
+      for (let index = 0; index < 30 && container; index += 1) {
+        const localButtons = [];
+        collectInteractive(container, localButtons, new Set());
+        const cardButtons = [
+          ...allInteractive().filter(button => {
+            try { return container.contains?.(button); } catch (_) { return false; }
+          }),
+          ...localButtons
+        ].filter((button, buttonIndex, all) =>
+          all.indexOf(button) === buttonIndex && visible(button)
+        );
+        const cardLabels = cardButtons.map(label).filter(Boolean);
+        const cardText = normalize([
+          container.innerText, container.textContent, ...cardLabels
+        ].filter(Boolean).join(' '));
+        const hasReject = cardButtons.some(button => isRejectLabel(labelText(button)));
+        const hasAuthorizationText = /allow chatgpt|chatgpt.*(?:use|access)|permission|authorization|authorize|access request|grant access|connector|tool|\buse\b|\u6388\u6743|\u6743\u9650|\u5141\u8bb8 chatgpt|\u4f7f\u7528/.test(cardText);
+        if (hasReject || hasAuthorizationText) {
+          return { container, cardButtons, cardLabels, cardText };
+        }
+        container = parentOf(container);
+      }
+      return null;
+    };
+    const confirmCardClosed = async (candidate, card) => {
       for (let index = 0; index < 30; index += 1) {
         await sleep(100);
         if (!candidate.isConnected || !rendered(candidate)) return true;
+        if (card?.container && (!card.container.isConnected || !rendered(card.container))) return true;
+        if (!collectCard(candidate)) return true;
       }
       return false;
     };
-    const priority = new Map([
-      ['allow', 0], ['\u5141\u8bb8', 0], ['approve', 0], ['\u540c\u610f', 0],
-      ['confirm', 0], ['\u786e\u8ba4', 0], ['allow once', 1],
-      ['\u5141\u8bb8\u4e00\u6b21', 1], ['approve once', 1],
-      ['\u540c\u610f\u4e00\u6b21', 1], ['confirm once', 1],
-      ['\u786e\u8ba4\u4e00\u6b21', 1], ['full access', 20],
-      ['\u5b8c\u5168\u8bbf\u95ee', 20]
-    ]);
-    const candidates = [...document.querySelectorAll('button')]
-      .filter(visible)
-      .map((button, index) => ({ button, index, label: label(button) }))
-      .filter(candidate => allowed.has(candidate.label))
-      .sort((left, right) =>
-        (priority.get(left.label) ?? 10) - (priority.get(right.label) ?? 10)
-          || left.index - right.index
-      );
-    const candidateLabels = candidates.map(candidate => candidate.label);
-    const candidate = candidates[0];
-    if (!candidate) {
-      return { ok: true, clicked: false, confirmed: false, candidateLabels };
-    }
+    const maxCards = 20;
+    const approvedCards = [];
+    let lastFailure = null;
+    let lastMenuCandidates = [];
+    for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) {
+      const candidates = allInteractive()
+        .map((button, index) => ({ button, index, label: label(button) }))
+        .filter(candidate => isAllowLabel(labelText(candidate.button)))
+        .map(candidate => ({ ...candidate, card: collectCard(candidate.button) }))
+        .filter(candidate => candidate.card)
+        .sort((left, right) => {
+          const leftOneShot = isOneShot(left.label) ? 1 : 0;
+          const rightOneShot = isOneShot(right.label) ? 1 : 0;
+          return leftOneShot - rightOneShot || left.index - right.index;
+        });
+      const candidateLabels = candidates.map(candidate => candidate.label);
+      const candidate = candidates[0];
+      if (!candidate) break;
 
-    let card = candidate.button.parentElement;
-    let cardButtons = [];
-    for (let index = 0; index < 15 && card; index += 1) {
-      cardButtons = [...card.querySelectorAll('button, a, [role="button"]')]
-        .filter(visible);
-      const cardLabels = cardButtons.map(label);
-      const cardText = normalize(card.innerText || card.textContent || '');
-      if (cardLabels.some(value => rejectLabels.has(value))
-          || cardText.includes('allow chatgpt to use')
-          || cardText.includes('\u5141\u8bb8 chatgpt \u4f7f\u7528')) {
-        break;
-      }
-      card = card.parentElement;
-      cardButtons = [];
-    }
+      const card = candidate.card;
+      const cardButtons = card.cardButtons;
+      const sessionControl = cardButtons.find(button =>
+        button !== candidate.button && isSessionScope(labelText(button))
+      ) || cardButtons.find(button => {
+        if (button === candidate.button) return false;
+        const value = labelText(button);
+        return !isAllowLabel(value) && !isRejectLabel(value) && (
+          button.getAttribute?.('aria-haspopup') === 'menu'
+            || button.getAttribute?.('aria-expanded') !== null
+            || /menu|dropdown|chevron|more/.test(normalize(
+              button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
+                || button.getAttribute?.('class') || ''
+            ))
+        );
+      });
 
-    const sessionControl = cardButtons.find(button =>
-      button !== candidate.button && isSessionScope(label(button))
-    ) || cardButtons.find(button => {
-      if (button === candidate.button) return false;
-      const value = label(button);
-      return !allowed.has(value) && !rejectLabels.has(value) && (
-        button.getAttribute('aria-haspopup') === 'menu'
-          || button.getAttribute('aria-expanded') !== null
-          || /menu|dropdown|chevron|more/.test(normalize(
-            button.getAttribute('data-testid') || button.getAttribute('data-slot')
-              || button.getAttribute('class') || ''
-          ))
-      );
-    });
-
-    if (sessionControl) {
-      const menuTriggerLabel = label(sessionControl);
-      try {
-        dispatchPointerClick(sessionControl);
-      } catch (error) {
-        return {
-          ok: false, clicked: false, confirmed: false,
-          strategy: 'session-scope', label: menuTriggerLabel, candidateLabels,
-          error: String(error?.message || error || 'session_scope_menu_click_failed')
-        };
-      }
-      let menuCandidates = [];
-      for (let index = 0; index < 40; index += 1) {
-        await sleep(100);
-        if (!candidate.button.isConnected || !rendered(candidate.button)) {
-          return {
-            ok: true, clicked: true, confirmed: true,
-            strategy: 'session-scope-direct', label: menuTriggerLabel,
-            menuTriggerLabel, candidateLabels
+      if (sessionControl) {
+        const menuTriggerLabel = label(sessionControl);
+        try { click(sessionControl); }
+        catch (error) {
+          lastFailure = {
+            ok: false, clicked: false, confirmed: false,
+            strategy: 'session-scope', label: menuTriggerLabel,
+            candidateLabels,
+            error: String(error?.message || error || 'session_scope_menu_click_failed')
           };
+          break;
         }
-        const menuItems = [...document.querySelectorAll(
-          '[role="menuitem"], [role="menuitemradio"], [role="option"], '
-            + '[role="menu"] button, [role="listbox"] button, '
-            + '[data-radix-menu-content] button, '
-            + '[data-radix-popper-content-wrapper] button'
-        )].filter(item => item !== sessionControl && visible(item));
-        menuCandidates = menuItems.map(label).filter(Boolean).slice(-30);
-        const sessionOption = menuItems.find(item => isSessionScope(label(item)));
-        if (!sessionOption) continue;
+        let menuCandidates = [];
+        let sessionOption = null;
+        for (let waitIndex = 0; waitIndex < 40 && !sessionOption; waitIndex += 1) {
+          await sleep(100);
+          if (!candidate.button.isConnected || !rendered(candidate.button)) {
+            approvedCards.push({
+              strategy: 'session-scope-direct', label: menuTriggerLabel,
+              menuTriggerLabel, candidateLabels
+            });
+            break;
+          }
+          const menuItems = allInteractive().filter(item => {
+            if (item === sessionControl || cardButtons.includes(item)) return false;
+            const itemLabel = labelText(item);
+            if (!isSessionScope(itemLabel) || !visible(item)) return false;
+            const role = normalize(item.getAttribute?.('role'));
+            return role.includes('menu') || role === 'option' || role === 'button'
+              || item.getAttribute?.('data-value') != null
+              || item.getAttribute?.('aria-label') != null;
+          });
+          menuCandidates = allInteractive().map(label).filter(Boolean).slice(-40);
+          sessionOption = menuItems[0] || null;
+        }
+        if (approvedCards.length === cardIndex + 1) continue;
+        if (!sessionOption) {
+          lastFailure = {
+            ok: false, clicked: true, confirmed: false,
+            strategy: 'session-scope', label: menuTriggerLabel,
+            menuTriggerLabel, candidateLabels, menuCandidates,
+            error: 'session_scope_option_not_found'
+          };
+          break;
+        }
         const sessionScopeLabel = label(sessionOption);
-        try {
-          dispatchPointerClick(sessionOption);
-        } catch (error) {
-          return {
+        try { click(sessionOption); }
+        catch (error) {
+          lastFailure = {
             ok: false, clicked: true, confirmed: false,
             strategy: 'session-scope', label: sessionScopeLabel,
             menuTriggerLabel, candidateLabels, menuCandidates,
             error: String(error?.message || error || 'session_scope_option_click_failed')
           };
+          break;
         }
-        const confirmed = await confirmCardClosed(candidate.button);
-        return {
-          ok: confirmed, clicked: true, confirmed,
+        const confirmed = await confirmCardClosed(candidate.button, card);
+        if (!confirmed) {
+          lastFailure = {
+            ok: false, clicked: true, confirmed: false,
+            strategy: 'session-scope', label: sessionScopeLabel,
+            menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates,
+            error: 'session_scope_approval_not_confirmed'
+          };
+          break;
+        }
+        approvedCards.push({
           strategy: 'session-scope', label: sessionScopeLabel,
-          menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates,
-          error: confirmed ? null : 'session_scope_approval_not_confirmed'
-        };
+          menuTriggerLabel, sessionScopeLabel, candidateLabels, menuCandidates
+        });
+        await sleep(150);
+        continue;
       }
-      return {
-        ok: false, clicked: true, confirmed: false,
-        strategy: 'session-scope', label: menuTriggerLabel,
-        menuTriggerLabel, candidateLabels, menuCandidates,
-        error: 'session_scope_option_not_found'
-      };
+
+      // A card with a single generic Allow/Approve/Confirm action is already
+      // session-scoped by the host. Never silently downgrade an explicit
+      // “Allow once” card when its session selector was not found.
+      if (isOneShot(candidate.label)) {
+        lastFailure = {
+          ok: false, clicked: false, confirmed: false,
+          strategy: 'session-scope-required', label: candidate.label,
+          candidateLabels, error: 'session_scope_control_not_found'
+        };
+        break;
+      }
+      try { click(candidate.button); }
+      catch (error) {
+        lastFailure = {
+          ok: false, clicked: false, confirmed: false,
+          strategy: 'single-approval', label: candidate.label,
+          candidateLabels,
+          error: String(error?.message || error || 'approval_click_failed')
+        };
+        break;
+      }
+      const confirmed = await confirmCardClosed(candidate.button, card);
+      if (!confirmed) {
+        lastFailure = {
+          ok: false, clicked: true, confirmed: false,
+          strategy: 'single-approval', label: candidate.label,
+          candidateLabels, error: 'approval_click_not_confirmed'
+        };
+        break;
+      }
+      approvedCards.push({
+        strategy: 'single-approval', label: candidate.label, candidateLabels
+      });
+      await sleep(150);
     }
 
-    try {
-      dispatchPointerClick(candidate.button);
-    } catch (error) {
+    const clicked = approvedCards.length > 0 || lastFailure?.clicked === true;
+    const confirmed = approvedCards.length > 0 && !lastFailure;
+    if (lastFailure) {
       return {
-        ok: false, clicked: false, confirmed: false,
-        strategy: 'single-approval', label: candidate.label, candidateLabels,
-        error: String(error?.message || error || 'approval_click_failed')
+        ...lastFailure,
+        clicked,
+        confirmed,
+        cardsApproved: approvedCards.length,
+        cardsRemaining: Math.max(0, maxCards - approvedCards.length)
       };
     }
-    const confirmed = await confirmCardClosed(candidate.button);
+    if (approvedCards.length === 0) {
+      return { ok: true, clicked: false, confirmed: false, cardsApproved: 0, candidateLabels: [] };
+    }
+    const last = approvedCards[approvedCards.length - 1];
     return {
-      ok: confirmed, clicked: true, confirmed,
-      strategy: 'single-approval', label: candidate.label, candidateLabels,
-      error: confirmed ? null : 'approval_click_not_confirmed'
+      ok: true, clicked: true, confirmed: true,
+      strategy: approvedCards.length > 1 ? 'session-scope-batch' : last.strategy,
+      label: last.label, menuTriggerLabel: last.menuTriggerLabel,
+      sessionScopeLabel: last.sessionScopeLabel,
+      candidateLabels: last.candidateLabels,
+      menuCandidates: last.menuCandidates || [],
+      cardsApproved: approvedCards.length,
+      cardsRemaining: 0
     };
   })()
   """#
@@ -2154,6 +2350,71 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
           + "screenshot=\(approvalScreenshotPath ?? "none") "
           + approvalDetectionTraceFields(detectionValue)
       )
+    }
+    // Use the same session-aware path for the general watcher. The legacy IPC
+    // sweep only pressed the first `allow_once` control, which could bypass the
+    // adjacent “allow for this conversation” menu and also missed role buttons
+    // that are not literal <button> elements. Once a real card is detected,
+    // never fall through to that one-shot fallback.
+    if let detection = approvalDetection {
+      var dedicatedResult: [String: Any]?
+      if let dedicatedEval = CDPClient.evaluate(
+            wsURLString: wsURL,
+            expression: autoApproveDedicatedAuthorizationJS()
+          ),
+         let dedicatedResponse = dedicatedEval["result"] as? [String: Any],
+         let dedicatedValue = ((dedicatedResponse["result"] as? [String: Any])?["value"]
+           ?? dedicatedResponse["value"]) as? [String: Any] {
+        dedicatedResult = dedicatedValue
+      }
+      let result = dedicatedResult ?? [
+        "ok": false,
+        "clicked": false,
+        "confirmed": false,
+        "strategy": "session-scope",
+        "error": "session_aware_approval_eval_failed",
+      ]
+      let clicked = result["clicked"] as? Bool == true
+      let confirmed = result["confirmed"] as? Bool == true
+      let approvedCards = max(0, result["cardsApproved"] as? Int ?? (confirmed ? 1 : 0))
+      let cardCount = max(1, approvedCards)
+      let strategy = result["strategy"] as? String ?? "session-scope"
+      let error = result["error"] as? String ?? "none"
+      totalCandidates += cardCount
+      if confirmed {
+        totalApproved += cardCount
+      } else if clicked {
+        totalPending += cardCount
+      } else {
+        totalBlocked += cardCount
+      }
+      queueTrace(
+        "task=approval-watcher stage=approval-ipc-result strategy="
+          + "\(strategy) "
+          + "target=\(targetId) approved=\(confirmed ? cardCount : 0) "
+          + "pending=\(confirmed ? 0 : (clicked ? cardCount : 0)) "
+          + "blocked=\(confirmed || clicked ? 0 : cardCount) "
+          + "clicked=\(clicked) confirmed=\(confirmed) "
+          + "cardsApproved=\(approvedCards) "
+          + "error=\(error) "
+          + "screenshot=\(approvalScreenshotPath ?? "none") "
+          + approvalDetectionTraceFields(detection)
+      )
+      if !confirmed {
+        let afterPath = captureHiddenChatScreenshot(
+          port: endpoint.port,
+          targetId: targetId,
+          label: "approval-watcher-after"
+        )
+        queueTrace(
+          "task=approval-watcher stage=approval-ipc-unconfirmed strategy="
+            + "\(strategy) "
+            + "target=\(targetId) beforeScreenshot=\(approvalScreenshotPath ?? "none") "
+            + "afterScreenshot=\(afterPath ?? "none") "
+            + "error=\(error)"
+        )
+      }
+      continue
     }
     guard let evalRes = CDPClient.evaluate(wsURLString: wsURL, expression: jsScript),
           let result = evalRes["result"] as? [String: Any],

@@ -316,7 +316,14 @@ func isApprovalContext(_ context: String) -> Bool {
   if sharedDataPermission { return normalized.utf8.count <= 20_000 }
   guard normalized.utf8.count <= 3_000 else { return false }
   return normalized.contains("allow chatgpt to use") ||
-    compact.contains("允许chatgpt使用")
+    normalized.contains("allow chatgpt access") ||
+    normalized.contains("permission request") ||
+    normalized.contains("authorization request") ||
+    normalized.contains("access request") ||
+    normalized.contains("tool authorization") ||
+    compact.contains("允许chatgpt使用") ||
+    compact.contains("授权请求") ||
+    compact.contains("权限请求")
 }
 
 func approvalAuditPrompt(_ context: String) -> String {
@@ -336,16 +343,23 @@ func isAllowButton(title: String, context: String) -> Bool {
   let normalizedTitle = normalizedAXText(title)
   let allowedTitles = [
     "allow", "allow once", "approve", "approve once", "confirm", "confirm once",
-    "允许", "允许一次", "同意", "同意一次", "确认", "确认一次",
+    "allow this time", "allow one time", "authorize", "authorise", "permit", "grant access",
+    "full access", "允许", "允许一次", "允许本次", "允许此次", "允许访问", "授权",
+    "同意", "同意一次", "确认", "确认一次", "准许", "完全访问",
   ]
-  return !context.isEmpty && allowedTitles.contains(normalizedTitle)
+  guard !context.isEmpty else { return false }
+  return allowedTitles.contains(normalizedTitle) ||
+    normalizedTitle.range(of: #"^(allow|approve|confirm|authorize|authorise|permit)( (once|one time|this time))?$"#, options: .regularExpression) != nil ||
+    normalizedTitle.range(of: #"^(允许|同意|确认|准许)(一次|本次|此次)?$"#, options: .regularExpression) != nil
 }
 
 func isRejectButton(title: String) -> Bool {
   [
-    "deny", "reject", "cancel", "deny once", "reject once", "拒绝", "拒绝一次", "不允许",
-    "不允许一次", "取消",
-  ].contains(normalizedAXText(title))
+    "deny", "reject", "cancel", "deny once", "reject once", "decline",
+    "拒绝", "拒绝一次", "不允许", "不允许一次", "取消", "不同意",
+  ].contains(normalizedAXText(title)) ||
+    normalizedAXText(title).range(of: #"^(deny|reject|cancel|decline)( once)?$"#, options: .regularExpression) != nil ||
+    normalizedAXText(title).range(of: #"^(拒绝|不允许|取消)(一次)?$"#, options: .regularExpression) != nil
 }
 
 func isStructurallyVerifiedApprovalButton(
@@ -683,4 +697,3 @@ func candidates() -> [Candidate] {
   }
   return values
 }
-
