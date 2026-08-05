@@ -224,10 +224,42 @@ jobs:
             --output "$RUNNER_TEMP/ChatGPT.dmg"
           mount_dir="$RUNNER_TEMP/chatgpt-mount"
           mkdir -p "$mount_dir"
+          mounted=false
+          detach_mount() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if hdiutil detach "$mount_dir" -wait; then
+                mounted=false
+                return 0
+              fi
+              echo "::warning::ChatGPT DMG detach attempt $attempt failed; waiting for open handles to close."
+              sleep "$((attempt * 2))"
+            done
+
+            echo "::warning::ChatGPT DMG is still busy; attempting a forced detach."
+            if hdiutil detach "$mount_dir" -force -wait; then
+              mounted=false
+              return 0
+            fi
+
+            echo "::error::Unable to detach ChatGPT DMG mount after bounded retries."
+            hdiutil info || true
+            return 1
+          }
+          cleanup_mount() {
+            local exit_status=$?
+            if [[ "$mounted" == true ]]; then
+              detach_mount || true
+            fi
+            return "$exit_status"
+          }
+          trap cleanup_mount EXIT
           hdiutil attach "$RUNNER_TEMP/ChatGPT.dmg" \
             -nobrowse -readonly -mountpoint "$mount_dir"
+          mounted=true
           ditto "$mount_dir/ChatGPT.app" /Applications/ChatGPT.app
-          hdiutil detach "$mount_dir"
+          detach_mount
+          trap - EXIT
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
 
       - name: Build native queue runtime

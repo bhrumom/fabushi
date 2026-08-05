@@ -117,6 +117,12 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /restarting the app before retrying/);
   assert.match(actionsWorkflow, /pkill -f "user-data-dir=\$PROFILE_DIR"/);
   assert.match(actionsWorkflow, /SingletonLock/);
+  assert.match(actionsWorkflow, /detach_mount\(\)/);
+  assert.match(actionsWorkflow, /for attempt in 1 2 3 4 5/);
+  assert.match(actionsWorkflow, /hdiutil detach "\$mount_dir" -wait/);
+  assert.match(actionsWorkflow, /hdiutil detach "\$mount_dir" -force -wait/);
+  assert.match(actionsWorkflow, /hdiutil info/);
+  assert.match(actionsWorkflow, /trap cleanup_mount EXIT/);
   assert.match(restoreSessionScript, /mode === 'restore'/);
   assert.match(restoreSessionScript, /process\.exit\(0\)/);
   assert.match(restoreSessionScript, /Page\.reload/);
