@@ -149,12 +149,9 @@ func nativeApprovalClick(
   point: (x: Double, y: Double)
 ) -> Bool {
   guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
-  // A hidden renderer can accept Runtime.evaluate while dropping synthetic
-  // pointer events. Activate the target and bring its page forward before
-  // sending trusted CDP input; this does not depend on the card being visible
-  // in the user's current window.
-  _ = CDPClient.activateTarget(targetId, portOverride: port)
-  _ = CDPClient.bringPageToFront(wsURLString: wsURL)
+  // Keep the renderer hidden and stable. Focus/lifecycle emulation lets CDP
+  // deliver trusted input to a hidden card without activating a different
+  // target or invalidating the websocket used for the follow-up verification.
   _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
   _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
   _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
@@ -236,7 +233,17 @@ func dedicatedApprovalWithNativeInput(
     }
   }
 
-  guard var finalResult = result else { return nil }
+  guard var finalResult = result else {
+    var failure: [String: Any] = [
+      "ok": false,
+      "clicked": nativeTriggerClicked,
+      "confirmed": false,
+      "strategy": "session-scope",
+      "error": "session_scope_cdp_eval_failed",
+    ]
+    if nativeTriggerClicked { failure["nativeTriggerClicked"] = true }
+    return failure
+  }
   if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
 
   // The menu item must be activated with trusted input while the menu is
