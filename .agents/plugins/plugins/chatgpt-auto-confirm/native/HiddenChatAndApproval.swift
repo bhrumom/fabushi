@@ -201,12 +201,10 @@ func nativeApprovalArrowKey(
   port: Int,
   targetId: String,
   point: (x: Double, y: Double)?,
-  label: String? = nil,
-  wsURLString: String? = nil
+  wsURLString: String,
+  label: String? = nil
 ) -> Bool {
-  guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
-    return false
-  }
+  let wsURL = wsURLString
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
@@ -320,12 +318,10 @@ func nativeApprovalComponentActionResult(
   targetId: String,
   point: (x: Double, y: Double)?,
   action: String,
-  label: String? = nil,
-  wsURLString: String? = nil
+  wsURLString: String,
+  label: String? = nil
 ) -> [String: Any]? {
-  guard let wsURL = wsURLString ?? cdpWebSocketURL(port: port, targetId: targetId) else {
-    return ["ok": false, "action": action, "error": "approval_cdp_target_missing"]
-  }
+  let wsURL = wsURLString
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
@@ -1508,6 +1504,7 @@ func dedicatedApprovalWithNativeInput(
           targetId: targetId,
           point: retryPoint,
           action: "trigger",
+          label: detection["selectedLabel"] as? String,
           wsURLString: approvalWSURL
         )
         nativeTriggerComponentLastMode = separateTriggerResult?["mode"] as? String ?? "none"
