@@ -413,11 +413,29 @@ func nativeApprovalComponentActionResult(
       };
     })()
     """#
-    return cdpValue(
+    let componentProbe = cdpValue(
+      wsURLString: wsURL,
+      expression: "({ok:true})",
+      timeout: 1.0
+    )
+    queueTrace(
+      "task=approval-watcher stage=approval-native-component-probe-return "
+        + "found=\(componentProbe != nil)"
+    )
+    guard componentProbe != nil else {
+      return ["ok": false, "action": action, "error": "approval_cdp_probe_failed"]
+    }
+    queueTrace("task=approval-watcher stage=approval-native-component-eval-begin")
+    let componentResult = cdpValue(
       wsURLString: wsURL,
       expression: directComponentExpression,
       timeout: 2.5
     )
+    queueTrace(
+      "task=approval-watcher stage=approval-native-component-eval-return "
+        + "found=\(componentResult != nil)"
+    )
+    return componentResult
   }
   let expression = #"""
   (() => {
