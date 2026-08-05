@@ -132,6 +132,19 @@ func approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
     detection: detection
+  ) ?? [
+    "ok": false,
+    "clicked": false,
+    "confirmed": false,
+    "strategy": "session-scope",
+    "error": "session_aware_approval_eval_failed",
+  ]
+  queueTrace(
+    "task=\(taskId) stage=approval-\(stage)-native-return "
+      + "strategy=\(result["strategy"] as? String ?? "session-scope") "
+      + "clicked=\(result["clicked"] as? Bool == true) "
+      + "confirmed=\(result["confirmed"] as? Bool == true) "
+      + "error=\(result["error"] as? String ?? "none")"
   )
   traceQueueApproval(
     result,
