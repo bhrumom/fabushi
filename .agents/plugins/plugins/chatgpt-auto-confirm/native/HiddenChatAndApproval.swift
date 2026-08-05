@@ -4406,11 +4406,11 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       approvalProbe = detectionValue
       if detectionValue["found"] as? Bool == true {
         approvalDetection = detectionValue
-        approvalScreenshotPath = captureHiddenChatScreenshot(
-          port: endpoint.port,
-          targetId: targetId,
-          label: "approval-watcher-before"
-        )
+        // Do not open a second CDP command for a diagnostic screenshot here.
+        // The same live renderer target is handed directly to the component
+        // action below; a screenshot/wake round-trip can stale or suspend the
+        // hidden target between detection and authorization.
+        approvalScreenshotPath = nil
         queueTrace(
           "task=approval-watcher stage=approval-ipc-detected strategy=per-card "
             + "target=\(targetId) selected=\(detectionValue["selectedLabel"] as? String ?? "none") "
