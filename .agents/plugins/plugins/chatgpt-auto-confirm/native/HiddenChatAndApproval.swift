@@ -549,44 +549,53 @@ func nativeApprovalComponentActionResult(
           ? rect.top + rect.height / 2
           : pointUsed ? \#(y) : 0;
         const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
-        let clickEvent = null;
-        try {
-          if (typeof MouseEvent === 'function') {
-            clickEvent = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              view: window,
-              detail: 1,
-              button: 0,
-              buttons: 0,
-              clientX: eventX,
-              clientY: eventY,
-              screenX: eventX,
-              screenY: eventY
-            });
-          }
-        } catch (_) {}
-        if (!clickEvent) {
+        const eventTarget = (() => {
+          if (!pointUsed || typeof document.elementFromPoint !== 'function') return target;
           try {
-            clickEvent = document.createEvent('MouseEvents');
-            clickEvent.initMouseEvent(
-              'click', true, true, window, 1, eventX, eventY, eventX, eventY,
-              false, false, false, false, 0, target
-            );
-          } catch (error) {
-            return {
-              ok: false,
-              action,
-              targetTag: target.tagName || '',
-              targetLabel: labelOf(target),
-              error: 'split_disclosure_event_create_failed:'
-                + String(error?.message || error || 'unknown')
-            };
+            const hit = document.elementFromPoint(eventX, eventY);
+            return hit && (hit === target || target.contains?.(hit)) ? hit : target;
+          } catch (_) {
+            return target;
           }
-        }
+        })();
+        const pressed = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          detail: 1,
+          button: 0,
+          buttons: 1,
+          clientX: eventX,
+          clientY: eventY,
+          screenX: eventX,
+          screenY: eventY
+        };
+        const dispatchMouse = (type, buttons) => {
+          const options = { ...pressed, buttons };
+          if (type === 'pointerdown' || type === 'pointerup') {
+            const pointerOptions = {
+              ...options,
+              pointerId: 1,
+              pointerType: 'mouse',
+              isPrimary: true
+            };
+            if (typeof PointerEvent === 'function') {
+              eventTarget.dispatchEvent(new PointerEvent(type, pointerOptions));
+              return;
+            }
+          }
+          eventTarget.dispatchEvent(new MouseEvent(type, options));
+        };
         setTimeout(() => {
-          try { target.dispatchEvent(clickEvent); } catch (_) {}
+          try {
+            target.focus?.({ preventScroll: true });
+            dispatchMouse('pointerdown', 1);
+            dispatchMouse('mousedown', 1);
+            dispatchMouse('pointerup', 0);
+            dispatchMouse('mouseup', 0);
+            dispatchMouse('click', 0);
+          } catch (_) {}
           // A hidden renderer may not have hit-test geometry at all. ArrowDown
           // is the component's non-primary disclosure action in that case.
           if (hiddenFallback) {
@@ -603,7 +612,7 @@ func nativeApprovalComponentActionResult(
         return {
           ok: true,
           action,
-          mode: 'component-split-disclosure-event-queued',
+          mode: 'component-split-disclosure-event-sequence-queued',
           targetTag: target.tagName || '',
           targetRole: target.getAttribute?.('role') || '',
           targetLabel: labelOf(target),
