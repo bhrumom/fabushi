@@ -424,6 +424,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Target.createTarget/);
   assert.match(nativeSource, /headless-window-target-ready/);
   assert.match(nativeSource, /dedicated-hosted-profile/);
+  assert.match(nativeSource, /hostedPersistentQueueUsesPrewarmWorker/);
+  assert.match(nativeSource, /hosted-prewarm-worker-begin/);
+  assert.match(nativeSource, /hosted-prewarm-worker-complete/);
+  assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_PARALLEL_STATE/);
   assert.match(nativeSource, /launchDedicatedQueueChatProcessViaLaunchServices/);
   assert.match(nativeSource, /dedicated-launchservices-first-start/);
   assert.match(nativeSource, /effectiveAccountId == hostedAccountId/);
