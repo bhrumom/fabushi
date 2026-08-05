@@ -3388,11 +3388,10 @@ func detectDedicatedAuthorizationJS() -> String {
 }
 
 func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
-  let nativeOnlyLiteral = nativeOnly ? "true" : "false"
-  return #"""
+  let script = #"""
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const nativeOnly = \#(nativeOnlyLiteral);
+    const nativeOnly = false;
     const normalize = value => String(value || '')
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
@@ -4187,6 +4186,11 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
     };
   })()
   """#
+  guard nativeOnly else { return script }
+  return script.replacingOccurrences(
+    of: "const nativeOnly = false;",
+    with: "const nativeOnly = true;"
+  )
 }
 
 func prepareNewChatTarget(
