@@ -502,15 +502,15 @@ func nativeApprovalComponentActionResult(
       // calling click(), which would always grant Allow once.
       if (action === 'trigger' && sameAllowControl && hasMenuStructure(target)) {
         const rect = target.getBoundingClientRect?.();
-        const pointUsed = pointAvailable && Number.isFinite(#(x))
-          && Number.isFinite(#(y)) && (#(x) > 0 || #(y) > 0);
+        const pointUsed = pointAvailable && Number.isFinite(\#(x))
+          && Number.isFinite(\#(y)) && (\#(x) > 0 || \#(y) > 0);
         const eventX = pointUsed
-          ? #(x)
+          ? \#(x)
           : rect && rect.width > 0
             ? rect.right - Math.min(8, Math.max(4, rect.width * 0.08))
             : 0;
         const eventY = pointUsed
-          ? #(y)
+          ? \#(y)
           : rect && rect.height > 0 ? rect.top + rect.height / 2 : 0;
         const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
         let clickEvent = null;
