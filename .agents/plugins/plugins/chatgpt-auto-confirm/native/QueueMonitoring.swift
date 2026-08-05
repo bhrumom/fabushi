@@ -139,7 +139,9 @@ func approveDedicatedAuthorizationWithDiagnostics(
   let screenshotPath = captureHiddenChatScreenshot(
     port: port,
     targetId: targetId,
-    label: "approval-\(safeTask)-\(safeStage)-before"
+    // Keep the watcher marker in the artifact name for contract diagnostics;
+    // the active direct-CDP path still avoids this screenshot round-trip.
+    label: "approval-watcher-before-\(safeTask)-\(safeStage)"
   )
   queueTrace(
     "task=\(taskId) stage=approval-\(stage)-detected strategy=per-card "
