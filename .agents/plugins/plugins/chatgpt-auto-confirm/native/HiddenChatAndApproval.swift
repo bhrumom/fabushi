@@ -305,6 +305,120 @@ func nativeApprovalComponentActionResult(
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
   let actionLiteral = (try? JSONSerialization.data(withJSONObject: action))
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"option\""
+  if action == "trigger" || action == "option" {
+    let directComponentExpression = #"""
+    (() => {
+      const action = \#(actionLiteral);
+      const requested = String(\#(requestedLabelLiteral) || '')
+        .replace(/[\s\u21b5\u00a0⏎↵]+/g, ' ').trim().toLowerCase();
+      const selector = [
+        'button', '[role="button"]', '[role="menuitem"]',
+        '[role="menuitemradio"]', '[role="option"]',
+        '[data-radix-collection-item]'
+      ].join(',');
+      const labelOf = element => String(
+        element?.getAttribute?.('aria-label')
+          || element?.getAttribute?.('title')
+          || element?.getAttribute?.('data-label')
+          || element?.innerText
+          || element?.textContent
+          || ''
+      ).replace(/[\s\u21b5\u00a0⏎↵]+/g, ' ').trim().toLowerCase();
+      const parentOf = element => element?.parentElement
+        || element?.parentNode?.host || null;
+      const surfaceFor = element => {
+        let node = element;
+        for (let depth = 0; depth < 12 && node; depth += 1) {
+          const role = String(node.getAttribute?.('role') || '').toLowerCase();
+          const marker = String([
+            node.getAttribute?.('data-slot'), node.getAttribute?.('data-state'),
+            node.getAttribute?.('class'), node.getAttribute?.('id')
+          ].filter(Boolean).join(' ')).toLowerCase();
+          if (['menu', 'listbox', 'dialog'].includes(role)
+              || node.getAttribute?.('aria-modal') === 'true'
+              || node.getAttribute?.('data-state') === 'open'
+              || /menu|dropdown|popover|listbox|select|command/.test(marker)) {
+            return node;
+          }
+          node = parentOf(node);
+        }
+        return null;
+      };
+      const pointHit = document.elementFromPoint(\#(x), \#(y));
+      const pointTarget = pointHit?.closest?.(selector)
+        || (pointHit?.matches?.(selector) ? pointHit : null);
+      const matchesRequested = element => {
+        if (!requested) return true;
+        const value = labelOf(element);
+        return value === requested || value.includes(requested);
+      };
+      const approvalLike = element => /allow|approve|confirm|authorize|authorise|permit|grant|\u5141\u8bb8|\u540c\u610f|\u786e\u8ba4|\u51c6\u8bb8/.test(labelOf(element));
+      let target = null;
+      if (action === 'trigger') {
+        target = pointTarget && (approvalLike(pointTarget) || matchesRequested(pointTarget))
+          ? pointTarget : null;
+      } else {
+        target = pointTarget && surfaceFor(pointTarget) && matchesRequested(pointTarget)
+          ? pointTarget : null;
+        if (!target) {
+          const surfaces = [...document.querySelectorAll?.(
+            '[role="menu"], [role="listbox"], [role="dialog"], '
+              + '[data-state="open"], [data-radix-menu-content], '
+              + '[data-radix-popper-content-wrapper], [data-slot*="menu" i]'
+          ) || []];
+          const candidates = surfaces.flatMap(surface => [
+            ...(surface.querySelectorAll?.(selector) || [])
+          ]);
+          target = candidates.find(candidate =>
+            candidate?.isConnected !== false
+              && surfaceFor(candidate)
+              && matchesRequested(candidate)
+          ) || null;
+        }
+      }
+      if (!target || typeof target.dispatchEvent !== 'function') {
+        return {
+          ok: false,
+          action,
+          error: action === 'trigger'
+            ? 'approval_trigger_component_missing'
+            : 'session_option_component_missing'
+        };
+      }
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        detail: 1,
+        button: 0,
+        buttons: 0,
+        clientX: \#(x),
+        clientY: \#(y),
+        screenX: \#(x),
+        screenY: \#(y)
+      });
+      setTimeout(() => {
+        try { target.dispatchEvent(clickEvent); } catch (_) {}
+      }, 0);
+      return {
+        ok: true,
+        action,
+        mode: 'component-dom-click-event-queued',
+        targetTag: target.tagName || '',
+        targetRole: target.getAttribute?.('role') || '',
+        targetLabel: labelOf(target),
+        clientX: \#(x),
+        clientY: \#(y)
+      };
+    })()
+    """#
+    return cdpValue(
+      wsURLString: wsURL,
+      expression: directComponentExpression,
+      timeout: 2.5
+    )
+  }
   let expression = #"""
   (() => {
     const normalize = value => String(value || '')
