@@ -122,6 +122,7 @@ jobs:
           ISSUE_NUMBER: \${{ inputs.issue_number }}
           PR_TITLE: \${{ inputs.title }}
         with:
+          github-token: \${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
           script: |
             const head = String(process.env.PR_HEAD || '');
             const issueNumber = String(process.env.ISSUE_NUMBER || '');
