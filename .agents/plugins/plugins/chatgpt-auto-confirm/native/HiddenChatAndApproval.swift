@@ -524,6 +524,57 @@ func nativeApprovalComponentActionResult(
         inspectNode(node);
         node = parentOf(node);
       }
+      const reactEventNames = element => {
+        const names = [];
+        for (const key of ownKeys(element)) {
+          if (!key.startsWith('__reactProps$')) continue;
+          const props = propsFrom(element[key]);
+          for (const name of Object.keys(props || {})) {
+            if (/^on[A-Z]/.test(name) && typeof props[name] === 'function') {
+              names.push(name);
+            }
+          }
+        }
+        return [...new Set(names)].slice(0, 24);
+      };
+      const compactDiagnosticNode = element => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect?.();
+        const attributes = {};
+        try {
+          for (const attribute of [...(element.attributes || [])].slice(0, 24)) {
+            attributes[attribute.name] = String(attribute.value || '').slice(0, 180);
+          }
+        } catch (_) {}
+        return {
+          tag: element.tagName?.toLowerCase() || '',
+          role: element.getAttribute?.('role') || '',
+          className: String(element.getAttribute?.('class') || '').slice(0, 180),
+          attributes,
+          reactEvents: reactEventNames(element),
+          rect: rect ? {
+            left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+            right: rect.right, bottom: rect.bottom
+          } : null
+        };
+      };
+      const pseudoDiagnostic = (element, pseudo) => {
+        try {
+          const style = window.getComputedStyle?.(element, pseudo);
+          if (!style) return null;
+          return {
+            content: String(style.content || '').slice(0, 180),
+            display: style.display || '',
+            position: style.position || '',
+            width: style.width || '',
+            height: style.height || '',
+            left: style.left || '',
+            right: style.right || '',
+            pointerEvents: style.pointerEvents || '',
+            backgroundImage: String(style.backgroundImage || '').slice(0, 240)
+          };
+        } catch (_) { return null; }
+      };
       // ChatGPT renders the Allow-once control as one split component. The
       // disclosure triangle is not a second DOM button: the component decides
       // whether the click is primary or disclosure from the trailing event
@@ -554,6 +605,30 @@ func nativeApprovalComponentActionResult(
         const eventY = rectPointUsable
           ? rect.top + rect.height / 2
           : pointUsed ? \#(y) : 0;
+        const componentDiagnostics = (() => {
+          const ancestors = [];
+          let ancestor = target;
+          for (let depth = 0; depth < 8 && ancestor; depth += 1) {
+            ancestors.push({ depth, node: compactDiagnosticNode(ancestor) });
+            ancestor = parentOf(ancestor);
+          }
+          const children = query(target, '*').slice(0, 24).map(element => ({
+            node: compactDiagnosticNode(element),
+            label: labelOf(element).slice(0, 100)
+          }));
+          return {
+            target: compactDiagnosticNode(target),
+            targetPseudoBefore: pseudoDiagnostic(target, '::before'),
+            targetPseudoAfter: pseudoDiagnostic(target, '::after'),
+            children,
+            ancestors,
+            hit: compactDiagnosticNode(
+              typeof document.elementFromPoint === 'function'
+                ? document.elementFromPoint(eventX, eventY) : null
+            ),
+            activeElement: compactDiagnosticNode(document.activeElement)
+          };
+        })();
         const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
         const eventTarget = (() => {
           if (!pointUsed || typeof document.elementFromPoint !== 'function') return target;
@@ -622,7 +697,8 @@ func nativeApprovalComponentActionResult(
           targetLabel: labelOf(target),
           pointUsed: pointUsed || !!rect,
           inputPoint: pointUsed ? { x: eventX, y: eventY } : null,
-          hiddenFallback
+          hiddenFallback,
+          componentDiagnostics
         };
       }
       const targetAtPoint = target;
@@ -1374,6 +1450,13 @@ func dedicatedApprovalWithNativeInput(
         "task=approval-watcher stage=approval-native-component-return action=trigger "
           + "ok=\(componentOK) mode=\(componentMode) error=\(componentError)"
       )
+      if let diagnostics = componentResult?["componentDiagnostics"] as? [String: Any],
+         let diagnosticsJSON = jsonString(diagnostics) {
+        queueTrace(
+          "task=approval-watcher stage=approval-native-component-diagnostics "
+            + String(diagnosticsJSON.prefix(6000))
+        )
+      }
       nativeTriggerComponentLastMode = componentResult?["mode"] as? String ?? "none"
       nativeTriggerComponentLastError = componentResult?["error"] as? String ?? "none"
       componentInputPoint = approvalPoint(componentResult?["inputPoint"]) ?? triggerPoint
