@@ -1015,7 +1015,7 @@ test('allow-once approval works when controls are plain clickable card nodes', a
   const detection = await runInNewContext(detectionScript, { document });
   assert.equal(detection.ok, true);
   assert.equal(detection.found, true);
-  assert.deepEqual(detection.componentActionKeys, ['allow_once']);
+  assert.deepEqual([...detection.componentActionKeys], ['allow_once']);
   assert.equal(detection.componentTargetMessageIdPresent, true);
   const result = await runInNewContext(approvalScript, {
     document,
@@ -1080,7 +1080,7 @@ test('allow-once approval works for attached controls before hidden-renderer lay
   const detection = await runInNewContext(detectionScript, { document });
   assert.equal(detection.ok, true);
   assert.equal(detection.found, true);
-  assert.deepEqual(detection.componentActionKeys, ['allow_once']);
+  assert.deepEqual([...detection.componentActionKeys], ['allow_once']);
   assert.equal(detection.componentTargetMessageIdPresent, true);
   const result = await runInNewContext(approvalScript, {
     document,
