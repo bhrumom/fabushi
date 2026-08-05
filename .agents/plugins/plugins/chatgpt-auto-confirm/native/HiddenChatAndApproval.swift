@@ -1299,7 +1299,14 @@ func detectDedicatedAuthorizationJS() -> String {
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
       && (element.offsetWidth || element.offsetHeight || element.getClientRects?.().length));
-    const visible = element => rendered(element) && !element.disabled;
+    // A hidden Electron renderer can expose an attached permission card before
+    // layout has produced a non-zero rect. It is still safe to inspect and
+    // dispatch the card's own events when the node is attached and paired with
+    // the card's allow/reject labels; container scoping below prevents page
+    // copy from becoming an approval candidate.
+    const visible = element => !!(element
+      && !element.disabled
+      && (rendered(element) || element.isConnected !== false));
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
     const labelParts = element => [
       element?.getAttribute?.('aria-label'),
@@ -1500,7 +1507,13 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       .replace(/[\s\u21b5\u00a0]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
       && (element.offsetWidth || element.offsetHeight || element.getClientRects?.().length));
-    const visible = element => rendered(element) && !element.disabled;
+    // Hidden ChatGPT renderer cards may be attached before they receive layout
+    // geometry. Treat those card-owned controls as actionable as long as they
+    // remain connected and enabled; collectCard still requires the surrounding
+    // authorization/reject evidence before any event is dispatched.
+    const visible = element => !!(element
+      && !element.disabled
+      && (rendered(element) || element.isConnected !== false));
     const parentOf = element => element?.parentElement || element?.parentNode?.host || null;
     const labelParts = element => [
       element?.getAttribute?.('aria-label'),
@@ -1667,8 +1680,8 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     const confirmCardClosed = async (candidate, card) => {
       for (let index = 0; index < 30; index += 1) {
         await sleep(100);
-        if (!candidate.isConnected || !rendered(candidate)) return true;
-        if (card?.container && (!card.container.isConnected || !rendered(card.container))) return true;
+        if (!candidate.isConnected || !visible(candidate)) return true;
+        if (card?.container && (!card.container.isConnected || !visible(card.container))) return true;
         if (!collectCard(candidate)) return true;
       }
       return false;
