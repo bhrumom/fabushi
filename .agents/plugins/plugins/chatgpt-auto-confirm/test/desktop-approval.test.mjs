@@ -395,6 +395,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /submenuExtraHighSelected: true/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
   assert.match(nativeSource, /allPrefixedModelChoices\('Extra High'\)/);
+  assert.match(nativeSource, /quickChatKeyboardTarget/);
+  assert.match(nativeSource, /dispatchQuickChatArrowRight/);
+  assert.match(nativeSource, /quick-chat-thinking-keyboard-selection/);
   assert.match(nativeSource, /dispatchPointerClick\(picker\)/);
   assert.match(nativeSource, /model switcher is a Radix trigger/);
   assert.match(nativeSource, /\['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'\]\.some/);
@@ -411,6 +414,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource,
     /let maxConcurrent = min\(4, max\(1, state\.queueMaxConcurrent \?\? 2\)\)/);
   assert.match(nativeSource, /createIndependentQueueWorkerTarget/);
+  assert.match(nativeSource, /targetId != controllerTargetId/);
+  assert.match(nativeSource,
+    /queueAllowsVisibleDedicatedRenderer\(\) && !runningOnGitHubActions\(\)/);
   assert.match(nativeSource, /headless-parallel-hidden-window-begin/);
   assert.match(nativeSource, /headless-parallel-hidden-window-complete/);
   assert.match(nativeSource, /parallel-headless-chat-windows/);
