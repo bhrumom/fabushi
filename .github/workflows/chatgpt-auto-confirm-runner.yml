@@ -228,7 +228,7 @@ jobs:
           detach_mount() {
             local attempt
             for attempt in 1 2 3 4 5; do
-              if hdiutil detach "$mount_dir" -wait; then
+              if hdiutil detach "$mount_dir"; then
                 mounted=false
                 return 0
               fi
@@ -237,7 +237,7 @@ jobs:
             done
 
             echo "::warning::ChatGPT DMG is still busy; attempting a forced detach."
-            if hdiutil detach "$mount_dir" -force -wait; then
+            if hdiutil detach "$mount_dir" -force; then
               mounted=false
               return 0
             fi
