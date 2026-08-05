@@ -474,6 +474,8 @@ func nativeApprovalComponentActionResult(
             element.getAttribute?.('aria-expanded') ?? '-'}`
           : 'none';
         const triggerCount = componentControls.filter(element => hasMenuStructure(element)).length;
+        const documentControls = query(document, selector).length;
+        const documentButtons = query(document, 'button').length;
         return {
           ok: false,
           action,
@@ -481,6 +483,7 @@ func nativeApprovalComponentActionResult(
             ? 'approval_trigger_component_missing'
             : 'session_option_component_missing')
             + `:requested=${requested}|point=${brief(pointTarget)}|selected=${brief(selectedApproval)}|root=${brief(componentRoot)}|controls=${componentControls.length}|triggers=${triggerCount}`
+            + `|documentControls=${documentControls}|documentButtons=${documentButtons}|body=${!!document.body}|ready=${document.readyState || 'none'}`
         };
       }
       const ownKeys = node => {
@@ -528,16 +531,23 @@ func nativeApprovalComponentActionResult(
       // calling click(), which would always grant Allow once.
       if (action === 'trigger' && sameAllowControl && hasMenuStructure(target)) {
         const rect = target.getBoundingClientRect?.();
-        const pointUsed = pointAvailable && Number.isFinite(\#(x))
-          && Number.isFinite(\#(y)) && (\#(x) > 0 || \#(y) > 0);
-        const eventX = pointUsed
-          ? \#(x)
-          : rect && rect.width > 0
-            ? rect.right - Math.min(8, Math.max(4, rect.width * 0.08))
-            : 0;
-        const eventY = pointUsed
-          ? \#(y)
-          : rect && rect.height > 0 ? rect.top + rect.height / 2 : 0;
+        // The detector's point belongs to the previous DOM generation and
+        // can be stale after React remounts the card. Use the current live
+        // component rect for the split-button semantic event whenever layout
+        // exists; the point is only a structural hint for finding the node.
+        const rectPointUsable = !!(rect
+          && Number.isFinite(rect.left) && Number.isFinite(rect.top)
+          && Number.isFinite(rect.width) && Number.isFinite(rect.height)
+          && rect.width > 0 && rect.height > 0);
+        const pointUsed = rectPointUsable || (pointAvailable
+          && Number.isFinite(\#(x)) && Number.isFinite(\#(y))
+          && (\#(x) > 0 || \#(y) > 0));
+        const eventX = rectPointUsable
+          ? rect.right - Math.min(8, Math.max(4, rect.width * 0.08))
+          : pointUsed ? \#(x) : 0;
+        const eventY = rectPointUsable
+          ? rect.top + rect.height / 2
+          : pointUsed ? \#(y) : 0;
         const hiddenFallback = !rect || rect.width <= 0 || rect.height <= 0;
         let clickEvent = null;
         try {
@@ -734,11 +744,31 @@ func nativeApprovalComponentActionResult(
       return ["ok": false, "action": action, "error": "approval_cdp_probe_failed"]
     }
     queueTrace("task=approval-watcher stage=approval-native-component-eval-begin")
-    let componentResult = cdpValuePersistent(
+    var componentResult = cdpValuePersistent(
       wsURLString: wsURL,
       expression: directComponentExpression,
       timeout: 2.5
     )
+    // React may remove and reinsert the authorization card between the
+    // detector and the first action evaluation. Re-enter the same live
+    // renderer briefly so the structural lookup observes the new component
+    // generation; this remains CDP-only and never scrolls or touches OS input.
+    for retry in 0..<3 {
+      let actionError = componentResult?["error"] as? String ?? ""
+      let transientMissing = actionError.hasPrefix("approval_trigger_component_missing")
+        || actionError.hasPrefix("session_option_component_missing")
+      guard componentResult?["ok"] as? Bool != true, transientMissing else { break }
+      Thread.sleep(forTimeInterval: 0.12)
+      queueTrace(
+        "task=approval-watcher stage=approval-native-component-rescan "
+          + "action=\(action) retry=\(retry + 1)"
+      )
+      componentResult = cdpValuePersistent(
+        wsURLString: wsURL,
+        expression: directComponentExpression,
+        timeout: 2.5
+      )
+    }
     queueTrace(
       "task=approval-watcher stage=approval-native-component-eval-return "
         + "found=\(componentResult != nil)"
