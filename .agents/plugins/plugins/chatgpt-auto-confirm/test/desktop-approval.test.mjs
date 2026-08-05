@@ -960,7 +960,7 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
   assert.equal(clicks.includes('allow'), false);
 });
 
-test('allow-once approval works when controls are plain clickable card nodes', async () => {
+test('allow-once approval works from the component allow control without card text', async () => {
   const clicks = [];
   class FakeEvent {
     constructor(type) { this.type = type; }
@@ -996,18 +996,16 @@ test('allow-once approval works when controls are plain clickable card nodes', a
       return true;
     }
   }
-  const deny = new FakeElement('deny', 'Deny', { role: 'button' });
   const allow = attachApprovalComponent(
     new FakeElement('allow', 'Allow once', { role: 'button' }),
   );
-  const card = new FakeElement('card', 'Allow ChatGPT to use bhrum2?');
-  card.querySelectorAll = () => [deny, allow];
-  deny.parentElement = card;
+  const card = new FakeElement('card', 'unrelated surrounding copy');
+  card.querySelectorAll = () => [allow];
   allow.parentElement = card;
   const document = {
     querySelectorAll(selector) {
       if (selector === '*' || selector.includes('button') || selector.includes('[role="button"]')) {
-        return [deny, allow];
+        return [allow];
       }
       return [];
     },
