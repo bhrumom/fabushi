@@ -159,6 +159,20 @@ func cdpValuePersistent(
   )
   guard let response,
         let outer = response["result"] as? [String: Any] else { return nil }
+  if let exception = outer["exceptionDetails"] {
+    queueTrace(
+      "task=approval-watcher stage=approval-cdp-wrapper-exception "
+        + String(String(describing: exception).prefix(1200))
+    )
+  }
+  if let inner = outer["result"] as? [String: Any] {
+    queueTrace(
+      "task=approval-watcher stage=approval-cdp-wrapper-result "
+        + "type=\(inner["type"] as? String ?? "none") "
+        + "subtype=\(inner["subtype"] as? String ?? "none") "
+        + "hasValue=\(inner["value"] != nil)"
+    )
+  }
   if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
     return sanitizeJSONValue(value) as? [String: Any]
   }
