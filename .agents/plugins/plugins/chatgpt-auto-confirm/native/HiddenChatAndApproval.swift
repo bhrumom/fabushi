@@ -1416,6 +1416,50 @@ func detectDedicatedAuthorizationJS() -> String {
         return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
       });
     };
+    const isOneShot = value => /\bonce\b|one time|this time|一次|本次|此次/.test(normalize(value));
+    const isGenericConfirm = value => {
+      const normalized = withoutShortcut(value);
+      return normalized === 'confirm' || normalized === '确认';
+    };
+    const isExplicitAllowLabel = value => {
+      const normalized = withoutShortcut(value);
+      return isAllowLabel(normalized) && !isGenericConfirm(normalized);
+    };
+    const approvalLabel = element => {
+      const parts = labelParts(element);
+      return parts.find(isExplicitAllowLabel)
+        || parts.find(isAllowLabel)
+        || parts[0]
+        || '';
+    };
+    const sharesComponent = (left, right) => {
+      let leftAncestor = parentOf(left);
+      for (let leftDepth = 0; leftDepth < 6 && leftAncestor; leftDepth += 1) {
+        let rightAncestor = parentOf(right);
+        for (let rightDepth = 0; rightDepth < 6 && rightAncestor; rightDepth += 1) {
+          if (leftAncestor === rightAncestor) return true;
+          rightAncestor = parentOf(rightAncestor);
+        }
+        leftAncestor = parentOf(leftAncestor);
+      }
+      return false;
+    };
+    const isMenuTrigger = (button, candidate) => {
+      if (!button || button === candidate || !hasClickSemantics(button)) return false;
+      const value = labelText(button);
+      const structural = isSessionScope(value)
+        || button.getAttribute?.('aria-haspopup') === 'menu'
+        || button.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|popover/.test(normalize(
+          button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
+            || button.getAttribute?.('class') || ''
+        ));
+      const iconOnlyCompanion = !value && sharesComponent(button, candidate);
+      const labeledSplitCompanion = isOneShot(value)
+        && isOneShot(labelText(candidate))
+        && sharesComponent(button, candidate);
+      return structural || iconOnlyCompanion || labeledSplitCompanion;
+    };
     const approvalComponentData = element => {
       const ownKeys = node => {
         try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
@@ -1475,7 +1519,7 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const interactive = allInteractive();
     const candidates = interactive
-      .map((button, index) => ({ button, index, label: label(button) }))
+      .map((button, index) => ({ button, index, label: approvalLabel(button) }))
       .filter(candidate => hasAllowLabel(candidate.button));
     const cardFor = candidate => {
       let container = parentOf(candidate.button);
@@ -1507,6 +1551,9 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const cards = candidates.map(cardFor).filter(Boolean);
     const card = cards[0];
+    const selectedButton = card?.cardButtons.find(button =>
+      isExplicitAllowLabel(approvalLabel(button))
+    ) || card?.cardButtons.find(hasAllowLabel) || candidates[0]?.button;
     const componentProbe = interactive
       .map(button => approvalComponentData(button))
       .filter(Boolean);
@@ -1546,25 +1593,14 @@ func detectDedicatedAuthorizationJS() -> String {
       found: true,
       candidates: candidates.length,
       candidateLabels: candidates.map(item => item.label),
-      selectedLabel: label(cards[0].cardButtons.find(hasAllowLabel) || candidates[0].button),
+      selectedLabel: approvalLabel(selectedButton),
       cardButtonLabels: card.cardLabels.filter(Boolean),
       sessionScopeLabels: card.cardLabels.filter(value => isSessionScope(value)),
       menuTriggerLabels: card.cardButtons.filter(button => {
-        const value = labelText(button);
-        return !isAllowLabel(value) && !isRejectLabel(value)
-          && (isSessionScope(value)
-            || button.getAttribute?.('aria-haspopup') === 'menu'
-            || button.getAttribute?.('aria-expanded') !== null
-            || /menu|dropdown|chevron|more/.test(normalize(
-              button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
-                || button.getAttribute?.('class') || ''
-            )));
-      }).map(label).filter(Boolean),
+        return isMenuTrigger(button, selectedButton);
+      }).map(button => approvalLabel(button) || '[unlabeled companion]'),
       menuTriggerCount: card.cardButtons.filter(button =>
-        !hasAllowLabel(button) && !hasRejectLabel(button)
-          && (isSessionScope(labelText(button))
-            || button.getAttribute?.('aria-haspopup') === 'menu'
-            || button.getAttribute?.('aria-expanded') !== null)
+        isMenuTrigger(button, selectedButton)
       ).length,
       unlabeledControlCount: card.cardButtons.filter(button =>
         !hasAllowLabel(button) && !hasRejectLabel(button) && !label(button)
@@ -1707,6 +1743,49 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         return typeof props?.onClick === 'function' || typeof props?.onKeyDown === 'function';
       });
     };
+    const isGenericConfirm = value => {
+      const normalized = withoutShortcut(value);
+      return normalized === 'confirm' || normalized === '确认';
+    };
+    const isExplicitAllowLabel = value => {
+      const normalized = withoutShortcut(value);
+      return isAllowLabel(normalized) && !isGenericConfirm(normalized);
+    };
+    const approvalLabel = element => {
+      const parts = labelParts(element);
+      return parts.find(isExplicitAllowLabel)
+        || parts.find(isAllowLabel)
+        || parts[0]
+        || '';
+    };
+    const sharesComponent = (left, right) => {
+      let leftAncestor = parentOf(left);
+      for (let leftDepth = 0; leftDepth < 6 && leftAncestor; leftDepth += 1) {
+        let rightAncestor = parentOf(right);
+        for (let rightDepth = 0; rightDepth < 6 && rightAncestor; rightDepth += 1) {
+          if (leftAncestor === rightAncestor) return true;
+          rightAncestor = parentOf(rightAncestor);
+        }
+        leftAncestor = parentOf(leftAncestor);
+      }
+      return false;
+    };
+    const isMenuTrigger = (button, candidate) => {
+      if (!button || button === candidate || !hasClickSemantics(button)) return false;
+      const value = labelText(button);
+      const structural = isSessionScope(value)
+        || button.getAttribute?.('aria-haspopup') === 'menu'
+        || button.getAttribute?.('aria-expanded') !== null
+        || /menu|dropdown|chevron|caret|arrow|more|popover/.test(normalize(
+          button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
+            || button.getAttribute?.('class') || ''
+        ));
+      const iconOnlyCompanion = !value && sharesComponent(button, candidate);
+      const labeledSplitCompanion = isOneShot(value)
+        && isOneShot(labelText(candidate))
+        && sharesComponent(button, candidate);
+      return structural || iconOnlyCompanion || labeledSplitCompanion;
+    };
     const approvalComponentData = element => {
       const ownKeys = node => {
         try { return Object.getOwnPropertyNames(node); } catch (_) { return []; }
@@ -1781,6 +1860,16 @@ func autoApproveDedicatedAuthorizationJS() -> String {
         ...pressed, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true
       }));
       candidate.dispatchEvent(new MouseEvent('mouseup', { ...pressed, buttons: 0 }));
+      // Dispatching an untrusted MouseEvent alone is not enough for every
+      // React/Chromium renderer. Use the element's native activation path when
+      // available; the synthetic event remains the fallback for test doubles
+      // and custom elements without HTMLElement.click().
+      try {
+        if (typeof candidate.click === 'function') {
+          candidate.click();
+          return;
+        }
+      } catch (_) {}
       candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
     };
     const click = candidate => {
@@ -1830,14 +1919,24 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     let lastMenuCandidates = [];
     for (let cardIndex = 0; cardIndex < maxCards; cardIndex += 1) {
       const candidates = allInteractive()
-        .map((button, index) => ({ button, index, label: label(button) }))
+        .map((button, index) => ({ button, index, label: approvalLabel(button) }))
         .filter(candidate => hasAllowLabel(candidate.button))
         .map(candidate => ({ ...candidate, card: collectCard(candidate.button) }))
         .filter(candidate => candidate.card)
+        .filter(candidate => {
+          const hasExplicitAllow = candidate.card.cardButtons.some(button =>
+            isExplicitAllowLabel(approvalLabel(button))
+          );
+          return !hasExplicitAllow || isExplicitAllowLabel(candidate.label);
+        })
         .sort((left, right) => {
+          const leftGeneric = isGenericConfirm(left.label) ? 1 : 0;
+          const rightGeneric = isGenericConfirm(right.label) ? 1 : 0;
           const leftOneShot = isOneShot(left.label) ? 1 : 0;
           const rightOneShot = isOneShot(right.label) ? 1 : 0;
-          return leftOneShot - rightOneShot || left.index - right.index;
+          return leftGeneric - rightGeneric
+            || rightOneShot - leftOneShot
+            || left.index - right.index;
         });
       const candidateLabels = candidates.map(candidate => candidate.label);
       const candidate = candidates[0];
@@ -1846,23 +1945,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       const card = candidate.card;
       const cardButtons = card.cardButtons;
       const sessionControl = cardButtons.find(button =>
-        button !== candidate.button && isSessionScope(labelText(button))
-      ) || cardButtons.find(button => {
-        if (button === candidate.button) return false;
-        const value = labelText(button);
-        return !isAllowLabel(value) && !isRejectLabel(value) && (
-          button.getAttribute?.('aria-haspopup') === 'menu'
-            || button.getAttribute?.('aria-expanded') !== null
-                || /menu|dropdown|chevron|more/.test(normalize(
-              button.getAttribute?.('data-testid') || button.getAttribute?.('data-slot')
-                || button.getAttribute?.('class') || ''
-            ))
-        );
-      }) || cardButtons.find(button =>
-        isOneShot(candidate.label)
-          && button !== candidate.button
-          && !labelText(button)
-          && hasClickSemantics(button)
+        isMenuTrigger(button, candidate.button)
       );
 
       if (sessionControl) {
