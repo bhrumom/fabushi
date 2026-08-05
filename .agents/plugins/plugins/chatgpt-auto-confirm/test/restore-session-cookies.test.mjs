@@ -20,12 +20,14 @@ class FakeCDPServer {
     replaceOnAuthFailure = false,
     stuckOverlay = false,
     navigationFailure = false,
+    rootTargetFailures = 0,
   }) {
     this.targets = [appTarget('initial', initialURL)];
     this.loginPrompt = loginPrompt;
     this.replaceOnAuthFailure = replaceOnAuthFailure;
     this.stuckOverlay = stuckOverlay;
     this.navigationFailure = navigationFailure;
+    this.rootTargetFailures = rootTargetFailures;
     this.failAuthEvaluation = replaceOnAuthFailure;
     this.connections = [];
     this.closedSockets = 0;
@@ -50,6 +52,10 @@ class FakeCDPServer {
 
   createRootTarget = async () => {
     this.rootTargetCreations += 1;
+    if (this.rootTargetCreations <= this.rootTargetFailures) {
+      this.targets = [];
+      return null;
+    }
     this.replaceTarget('after-root-create', 'app://-/index.html?initialRoute=%2F');
     return 'after-root-create';
   };
@@ -208,11 +214,12 @@ test('creates a fresh root target when overlay navigation retires the renderer',
   const server = new FakeCDPServer({
     initialURL: 'app://-/index.html?initialRoute=%2Favatar-overlay',
     navigationFailure: true,
+    rootTargetFailures: 1,
   });
 
   const output = await run(server, { headless: true });
   assert.match(output, /^Verified authenticated desktop shell/);
-  assert.ok(server.rootTargetCreations >= 1);
+  assert.ok(server.rootTargetCreations >= 2);
   assert.ok(server.connections.some(item => item.target?.id === 'after-root-create'));
 });
 
