@@ -2979,6 +2979,15 @@ func startAutomationTask(
   queueTrace(
     "task=\(task.id) stage=\(previousConversationId == nil ? "prepare-new-chat" : "prepare-continuation") complete"
   )
+  let modelSelectionBeforeScreenshot = captureHiddenChatScreenshot(
+    port: port,
+    targetId: targetId,
+    label: "model-selection-before"
+  )
+  queueTrace(
+    "task=\(task.id) stage=model-selection-before "
+      + "screenshot=\(modelSelectionBeforeScreenshot ?? "none")"
+  )
   let attempt = task.attempts + 1
   task.appliedRevision = max(1, task.currentRevision ?? 1)
   task.appliedSpecDigest = task.specDigest
@@ -3020,11 +3029,33 @@ func startAutomationTask(
     } else {
       stageDetails = "[]"
     }
+    let failureScreenshot = captureHiddenChatScreenshot(
+      port: port,
+      targetId: targetId,
+      label: "model-selection-failed"
+    )
+    let pageDiagnostic = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: pageDiagnosticJS(),
+      timeout: 5.0
+    )
+    var failureEvidence = sendResult
+    failureEvidence["screenshotPath"] = failureScreenshot as Any
+    failureEvidence["modelSelectionBeforeScreenshot"] = modelSelectionBeforeScreenshot as Any
+    failureEvidence["pageDiagnostic"] = pageDiagnostic as Any
+    task.lastResultJSON = jsonString(failureEvidence)
+    writeQueueConversationDiagnostic(task, finalReason: "start_failed")
+    queueTrace(
+      "task=\(task.id) stage=model-selection diagnostics "
+        + "screenshot=\(failureScreenshot ?? "none") "
+        + "beforeScreenshot=\(modelSelectionBeforeScreenshot ?? "none")"
+    )
     throw NSError(
       domain: "chatgpt-auto-confirm",
       code: 23,
       userInfo: [
-        NSLocalizedDescriptionKey: "任务 \(task.id) 页面发送失败（\(stage): \(error)） candidates: \(candidates) stages: \(stageDetails)"
+        NSLocalizedDescriptionKey: "任务 \(task.id) 页面发送失败（\(stage): \(error)） candidates: \(candidates) stages: \(stageDetails) screenshot: \(failureScreenshot ?? "none")"
       ]
     )
   }
