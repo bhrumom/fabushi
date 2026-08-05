@@ -185,11 +185,10 @@ func dedicatedApprovalWithNativeInput(
   // untrusted DOM path, retry the exact component-root geometry with trusted
   // input. A self split-button returns native_input_required instead of ever
   // falling through to the one-shot Allow once activation.
-  if let result,
-     result["confirmed"] as? Bool != true,
-     let retryPoint = approvalPoint(result["menuTriggerPoint"]) ?? triggerPoint,
-     (result["error"] as? String == "session_scope_menu_not_opened"
-       || result["error"] as? String == "session_scope_native_input_required") {
+  if result?["confirmed"] as? Bool != true,
+     let retryPoint = approvalPoint(result?["menuTriggerPoint"]) ?? triggerPoint,
+     (result?["error"] as? String == "session_scope_menu_not_opened"
+       || result?["error"] as? String == "session_scope_native_input_required") {
     nativeTriggerClicked = nativeApprovalClick(
       port: port,
       targetId: targetId,
