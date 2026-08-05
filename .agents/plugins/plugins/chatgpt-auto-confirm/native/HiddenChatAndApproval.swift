@@ -1729,7 +1729,7 @@ func detectDedicatedAuthorizationJS() -> String {
       const sameButton = button === candidate;
       if (sameButton) {
         return hasClickSemantics(button)
-          && isOneShot(labelText(candidate))
+          && (isOneShot(labelText(candidate)) || isAllowLabel(labelText(candidate)))
           && hasMenuStructure(button);
       }
       const sameContainer = !!(container
@@ -2026,9 +2026,18 @@ func detectDedicatedAuthorizationJS() -> String {
     };
     const cards = candidates.map(cardFor).filter(Boolean);
     const card = cards[0];
-    const selectedButton = card?.cardButtons.find(button =>
-      isExplicitAllowLabel(approvalLabel(button))
-    ) || card?.cardButtons.find(hasAllowLabel) || candidates[0]?.button;
+    const allowControlScore = button => {
+      const value = approvalLabel(button);
+      return (hasClickSemantics(button) ? 1000 : 0)
+        + (hasMenuStructure(button) ? 100 : 0)
+        + (isArrowLike(button) ? 20 : 0)
+        + (isOneShot(value) ? 10 : 0)
+        - Math.min(40, labelText(button).length / 10);
+    };
+    const selectedButton = card?.cardButtons
+      .filter(button => isExplicitAllowLabel(approvalLabel(button)) || hasAllowLabel(button))
+      .sort((left, right) => allowControlScore(right) - allowControlScore(left))[0]
+      || candidates[0]?.button;
     const componentProbe = interactive
       .map(button => approvalComponentData(button))
       .filter(Boolean);
@@ -2297,7 +2306,7 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
       const sameButton = button === candidate;
       if (sameButton) {
         return hasClickSemantics(button)
-          && isOneShot(labelText(candidate))
+          && (isOneShot(labelText(candidate)) || isAllowLabel(labelText(candidate)))
           && hasMenuStructure(button);
       }
       const sameContainer = !!(container
@@ -2649,8 +2658,14 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
           const rightGeneric = isGenericConfirm(right.label) ? 1 : 0;
           const leftOneShot = isOneShot(left.label) ? 1 : 0;
           const rightOneShot = isOneShot(right.label) ? 1 : 0;
-          return leftGeneric - rightGeneric
+          const leftClickable = hasClickSemantics(left.button) ? 1 : 0;
+          const rightClickable = hasClickSemantics(right.button) ? 1 : 0;
+          const leftMenuStructure = hasMenuStructure(left.button) ? 1 : 0;
+          const rightMenuStructure = hasMenuStructure(right.button) ? 1 : 0;
+          return rightClickable - leftClickable
+            || rightMenuStructure - leftMenuStructure
             || rightOneShot - leftOneShot
+            || leftGeneric - rightGeneric
             || left.index - right.index;
         });
       const candidateLabels = candidates.map(candidate => candidate.label);
