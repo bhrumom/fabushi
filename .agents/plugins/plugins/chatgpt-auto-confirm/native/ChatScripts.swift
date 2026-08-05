@@ -516,6 +516,55 @@ func sendMessageJS(
       });
     }
 
+    function quickChatLabel(picker) {
+      return normalize([
+        picker?.textContent,
+        picker?.getAttribute('aria-label'),
+        picker?.getAttribute('title')
+      ].filter(Boolean).join(' ')).toLowerCase();
+    }
+
+    function quickChatStrongMode(value) {
+      const text = normalize(value).toLowerCase();
+      return text.includes('thinking')
+        || text.includes('思考')
+        || text.includes('extra high')
+        || text.includes('极高')
+        || text.includes('额外高');
+    }
+
+    function quickChatKeyboardTarget() {
+      const candidates = [
+        document.activeElement,
+        ...document.querySelectorAll(
+          '[role="slider"], [aria-valuenow], [aria-label*="of 5"], '
+            + '[aria-label*="adjust power"], [aria-label*="调整强度"], '
+            + '[tabindex], button, [role="button"]'
+        )
+      ].filter((element, index, all) => element && all.indexOf(element) === index);
+      return candidates.find(element => {
+        if (!visible(element)) return false;
+        const label = quickChatLabel(element);
+        return /(?:of 5|adjust power|调整强度|model|effort|instant|thinking|extra high|高|思考)/i.test(label);
+      }) || null;
+    }
+
+    function dispatchQuickChatArrowRight(element) {
+      if (!element) return false;
+      element.focus?.();
+      const event = {
+        bubbles: true,
+        cancelable: true,
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        keyCode: 39,
+        which: 39
+      };
+      element.dispatchEvent(new KeyboardEvent('keydown', event));
+      element.dispatchEvent(new KeyboardEvent('keyup', event));
+      return true;
+    }
+
     function selectedChoice(element) {
       if (!element) return false;
       const selectedValues = [
@@ -608,6 +657,8 @@ func sendMessageJS(
         );
       if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
+        let quickChatKeyboardAttempts = 0;
+        let quickChatKeyboardTargetLabel = '';
         let quickChatConfirmed = selectedLabel === 'extra high'
           || selectedLabel === '极高'
           || selectedLabel.startsWith('extra high ')
@@ -619,25 +670,45 @@ func sendMessageJS(
           // on pointerdown; HTMLElement.click() alone leaves the menu closed.
           dispatchPointerClick(picker);
           await sleep(500);
-          const extraHighChoice = [
+          // Some desktop builds expose Thinking as a normal menu item; newer
+          // builds expose the same control as a five-position model/effort
+          // slider whose only accessible text says "1 of 5". Try the stable
+          // menu item first, then use the control's documented ArrowRight
+          // interaction and rediscover the picker after every navigation.
+          const quickChatChoice = [
+            ...allPrefixedModelChoices('Thinking'),
+            ...allPrefixedModelChoices('思考'),
             ...allPrefixedModelChoices('Extra High'),
             ...allPrefixedModelChoices('极高'),
             ...allPrefixedModelChoices('Extra\\u00a0High'),
             ...allPrefixedModelChoices('额外高')
           ][0] || null;
-          if (extraHighChoice) {
-            if (!selectedChoice(extraHighChoice)) extraHighChoice.click();
+          if (quickChatChoice) {
+            if (!selectedChoice(quickChatChoice)) quickChatChoice.click();
             quickChatChoiceClicked = true;
             await sleep(350);
           }
           picker = modelPickerButton();
-          selectedLabel = normalize(picker?.textContent).toLowerCase();
-          quickChatConfirmed = selectedLabel === 'extra high'
-            || selectedLabel === '极高'
-            || selectedLabel.startsWith('extra high ')
-            || selectedLabel === 'extra\\u00a0high'
-            || selectedLabel === '额外高'
-            || selectedLabel.startsWith('extra\\u00a0high ');
+          selectedLabel = quickChatLabel(picker);
+          quickChatConfirmed = quickChatStrongMode(selectedLabel)
+            || selectedChoice(quickChatChoice);
+          for (let attempt = 0; attempt < 4 && !quickChatConfirmed; attempt += 1) {
+            if (visibleModelMenus().length === 0) {
+              picker = modelPickerButton();
+              if (picker) {
+                dispatchPointerClick(picker);
+                await sleep(250);
+              }
+            }
+            const keyboardTarget = quickChatKeyboardTarget() || picker;
+            quickChatKeyboardTargetLabel = quickChatLabel(keyboardTarget).slice(0, 240);
+            if (!dispatchQuickChatArrowRight(keyboardTarget)) break;
+            quickChatKeyboardAttempts += 1;
+            await sleep(450);
+            picker = modelPickerButton();
+            selectedLabel = quickChatLabel(picker);
+            quickChatConfirmed = quickChatStrongMode(selectedLabel);
+          }
         }
         if (!quickChatConfirmed) {
           return {
@@ -650,6 +721,8 @@ func sendMessageJS(
             pickerBefore,
             selectedLabel,
             quickChatChoiceClicked,
+            quickChatKeyboardAttempts,
+            quickChatKeyboardTargetLabel,
             visibleMenuText: visibleModelMenus()
               .map(menu => normalize(menu.textContent).slice(0, 500)),
             surface: chatSurfaceEvidence()
@@ -663,8 +736,12 @@ func sendMessageJS(
           reasoningConfirmed: true,
           pickerBefore,
           selectedLabel,
-          pickerEvidence: 'quick-chat-extra-high-selection',
+          pickerEvidence: quickChatKeyboardAttempts > 0
+            ? 'quick-chat-thinking-keyboard-selection'
+            : 'quick-chat-extra-high-selection',
           quickChatChoiceClicked,
+          quickChatKeyboardAttempts,
+          quickChatKeyboardTargetLabel,
           verificationModelSelected: true,
           submenuExtraHighSelected: true,
           submenuHighSelected: true,

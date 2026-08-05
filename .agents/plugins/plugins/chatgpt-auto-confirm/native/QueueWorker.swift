@@ -49,6 +49,10 @@ func queueAllowsVisibleDedicatedRenderer() -> Bool {
   return environment["GITHUB_ACTIONS"]?.lowercased() == "true"
 }
 
+func runningOnGitHubActions() -> Bool {
+  ProcessInfo.processInfo.environment["GITHUB_ACTIONS"]?.lowercased() == "true"
+}
+
 func cgWindowNumber(_ value: Any?) -> CGFloat? {
   if let number = value as? NSNumber {
     return CGFloat(number.doubleValue)
@@ -2332,6 +2336,10 @@ func existingHeadlessParallelQueueTarget(
       return target["type"] as? String == "page"
         && (target["url"] as? String ?? "").hasPrefix("app://-/index.html")
         && !queueOwnedTargetIds.contains(targetId)
+        // The controller renderer owns the authenticated desktop session and
+        // must never become a task renderer. Closing it during task cleanup
+        // leaves the next retry with only an empty bridge-less shell.
+        && targetId != controllerTargetId
         && target["webSocketDebuggerUrl"] as? String != nil
     }
     .sorted { lhs, rhs in
@@ -2542,14 +2550,12 @@ func createIndependentQueueWorkerTarget(
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let hostedAccountId = hostedAccountValue.isEmpty ? nil : hostedAccountValue
   if let effectiveAccountId = explicitAccountId ?? hostedAccountId {
-    // GitHub Actions has already authenticated the primary ChatGPT process.
-    // Create independent normal BrowserWindows in that process on a headless
-    // runner: the official quick-chat prewarm RPC clears its previous window
-    // whenever it starts the next one, while a second Electron process can
-    // expose only an empty app:// root target. Each task still receives its
-    // own renderer and conversation; local desktop account sessions keep the
-    // isolated-process path below.
-    if queueAllowsVisibleDedicatedRenderer() {
+    // A local headless desktop run can create an independent BrowserWindow in
+    // the authenticated process. Hosted Actions deliberately uses the
+    // dedicated-process path below: the primary renderer is the controller,
+    // and borrowing it would let task cleanup close the controller or leave a
+    // bridge-less window for the next retry.
+    if queueAllowsVisibleDedicatedRenderer() && !runningOnGitHubActions() {
       queueTrace(
         "worker-create stage=headless-parallel-hidden-window-begin "
           + "account=\(effectiveAccountId)"
