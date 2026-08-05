@@ -459,6 +459,33 @@ struct CDPClient {
     return true
   }
 
+  @discardableResult
+  static func dispatchKeyPress(
+    wsURLString: String,
+    key: String,
+    code: String,
+    windowsVirtualKeyCode: Int,
+    nativeVirtualKeyCode: Int,
+    timeout: TimeInterval = 4.0
+  ) -> Bool {
+    let keyCode = "\"key\":\(jsonStringLiteral(key)),\"code\":\(jsonStringLiteral(code)),"
+      + "\"windowsVirtualKeyCode\":\(windowsVirtualKeyCode),"
+      + "\"nativeVirtualKeyCode\":\(nativeVirtualKeyCode),\"macCharCode\":0"
+    let events = [
+      "{\"type\":\"keyDown\",\(keyCode)}",
+      "{\"type\":\"keyUp\",\(keyCode)}",
+    ]
+    for paramsJSON in events {
+      guard let response = sendCommand(
+        wsURLString: wsURLString,
+        method: "Input.dispatchKeyEvent",
+        paramsJSON: paramsJSON,
+        timeout: timeout
+      ), response["error"] == nil else { return false }
+    }
+    return true
+  }
+
   static func allCookies(wsURLString: String, timeout: TimeInterval = 5.0) -> [[String: Any]] {
     guard let response = sendCommand(
       wsURLString: wsURLString,

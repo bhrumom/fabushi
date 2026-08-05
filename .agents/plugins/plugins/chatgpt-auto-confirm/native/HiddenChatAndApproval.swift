@@ -168,6 +168,50 @@ func nativeApprovalClick(
   return CDPClient.dispatchMouseClick(wsURLString: wsURL, x: point.x, y: point.y)
 }
 
+func nativeApprovalArrowKey(
+  port: Int,
+  targetId: String,
+  point: (x: Double, y: Double)
+) -> Bool {
+  guard let wsURL = cdpWebSocketURL(port: port, targetId: targetId) else { return false }
+  let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.x)
+  let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point.y)
+  let focusExpression = #"""
+  (() => {
+    const hit = document.elementFromPoint(\#(x), \#(y));
+    const target = hit?.closest?.(
+      '[aria-haspopup], [aria-expanded], [role="button"], button'
+    ) || hit;
+    if (!target || typeof target.focus !== 'function') return { ok: false };
+    target.focus({ preventScroll: true });
+    return {
+      ok: document.activeElement === target || target.contains?.(document.activeElement),
+      tag: target.tagName || '',
+      expanded: target.getAttribute?.('aria-expanded') ?? null,
+      hasPopup: target.getAttribute?.('aria-haspopup') ?? null
+    };
+  })()
+  """#
+  guard cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: focusExpression,
+    timeout: 4.0
+  )?["ok"] as? Bool == true else { return false }
+  _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+  _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+  // ArrowDown is the non-destructive native activation for a disclosure/menu
+  // control. It never invokes the primary Allow once action on a split card.
+  return CDPClient.dispatchKeyPress(
+    wsURLString: wsURL,
+    key: "ArrowDown",
+    code: "ArrowDown",
+    windowsVirtualKeyCode: 40,
+    nativeVirtualKeyCode: 125
+  )
+}
+
 func nativeApprovalDOMClick(
   port: Int,
   targetId: String,
@@ -213,64 +257,74 @@ func dedicatedApprovalWithNativeInput(
   }
 
   let triggerPoint = approvalPoint(detection["menuTriggerPoint"])
+  let menuTriggerIsSelectedButton = detection["menuTriggerIsSelectedButton"] as? Bool == true
   var nativeTriggerClicked = false
-  if let triggerPoint,
-     (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
-    // The real permission control can render its disclosure arrow as a CSS
-    // affordance inside the same button. Use CDP input for that split region;
-    // DOM-dispatched events are untrusted and were activating neither menu.
-    nativeTriggerClicked = nativeApprovalClick(
-      port: port,
-      targetId: targetId,
-      point: triggerPoint
-    )
+  var nativeTriggerClickAttempts = 0
+  var nativeTriggerClickSuccesses = 0
+  var nativeTriggerKeyAttempts = 0
+  var nativeTriggerKeySuccesses = 0
+  var nativeTriggerKeyUsed = false
+  func annotateNativeTrigger(_ result: inout [String: Any]) {
+    result["nativeTriggerClickAttempts"] = nativeTriggerClickAttempts
+    result["nativeTriggerClickSuccesses"] = nativeTriggerClickSuccesses
+    result["nativeTriggerKeyAttempts"] = nativeTriggerKeyAttempts
+    result["nativeTriggerKeySuccesses"] = nativeTriggerKeySuccesses
+    if nativeTriggerClicked { result["nativeTriggerClicked"] = true }
+    if nativeTriggerKeyUsed { result["nativeTriggerKeyUsed"] = true }
   }
 
-  // React renders the session menu asynchronously after the trusted pointer
-  // release. Poll the existing approval JS before sending another trigger
-  // click; a second click can close a menu that the first click just opened.
-  if nativeTriggerClicked {
-    Thread.sleep(forTimeInterval: 0.35)
-  }
-  var result = evaluateSessionScope()
-
-  if result?["error"] as? String == "session_scope_native_input_required" {
-    for _ in 0..<12 {
-      Thread.sleep(forTimeInterval: 0.25)
-      result = evaluateSessionScope()
-      if result?["error"] as? String != "session_scope_native_input_required" {
-        break
-      }
-    }
-  }
-
-  // If a separate arrow control was present but did not open its menu on the
-  // untrusted DOM path, retry the exact component-root geometry with trusted
-  // input. A self split-button returns native_input_required instead of ever
-  // falling through to the one-shot Allow once activation.
-  if result?["confirmed"] as? Bool != true,
-     !nativeTriggerClicked,
-     let retryPoint = approvalPoint(result?["menuTriggerPoint"]) ?? triggerPoint,
-     (result?["error"] as? String == "session_scope_menu_not_opened"
-       || result?["error"] as? String == "session_scope_native_input_required") {
-    nativeTriggerClicked = nativeApprovalClick(
-      port: port,
-      targetId: targetId,
-      point: retryPoint
-    ) || nativeTriggerClicked
-    if nativeTriggerClicked {
-      Thread.sleep(forTimeInterval: 0.35)
-    }
-    result = evaluateSessionScope()
-    if result?["error"] as? String == "session_scope_native_input_required" {
+  func pollSessionScope(_ initial: [String: Any]?) -> [String: Any]? {
+    var current = initial
+    if current?["error"] as? String == "session_scope_native_input_required" {
       for _ in 0..<12 {
         Thread.sleep(forTimeInterval: 0.25)
-        result = evaluateSessionScope()
-        if result?["error"] as? String != "session_scope_native_input_required" {
+        current = evaluateSessionScope()
+        if current?["error"] as? String != "session_scope_native_input_required" {
           break
         }
       }
     }
+    return current
+  }
+
+  var result: [String: Any]?
+  if let triggerPoint,
+     (detection["menuTriggerCount"] as? Int ?? 0) > 0 {
+    // A same-button split control exposes the disclosure through its native
+    // menu semantics. ArrowDown is a trusted, non-primary activation for
+    // that component and avoids sending the main Allow once action when the
+    // renderer has no separate arrow DOM node.
+    if menuTriggerIsSelectedButton {
+      nativeTriggerKeyAttempts += 1
+      if nativeApprovalArrowKey(port: port, targetId: targetId, point: triggerPoint) {
+        nativeTriggerKeySuccesses += 1
+        nativeTriggerKeyUsed = true
+        Thread.sleep(forTimeInterval: 0.35)
+        result = pollSessionScope(evaluateSessionScope())
+      }
+    }
+
+    let hasSessionOption = approvalPoint(result?["sessionOptionPoint"]) != nil
+    let cardMissing = result?["error"] as? String == "session_scope_card_not_found_after_trigger"
+    let keyEvaluationFailed = nativeTriggerKeyUsed && result == nil
+    if !hasSessionOption && !cardMissing && !keyEvaluationFailed {
+      nativeTriggerClickAttempts += 1
+      let clicked = nativeApprovalClick(
+        port: port,
+        targetId: targetId,
+        point: triggerPoint
+      )
+      nativeTriggerClicked = clicked || nativeTriggerClicked
+      if clicked {
+        nativeTriggerClickSuccesses += 1
+        Thread.sleep(forTimeInterval: 0.35)
+      }
+      result = pollSessionScope(evaluateSessionScope())
+    }
+  }
+
+  if result == nil {
+    result = pollSessionScope(evaluateSessionScope())
   }
 
   guard var finalResult = result else {
@@ -281,10 +335,10 @@ func dedicatedApprovalWithNativeInput(
       "strategy": "session-scope",
       "error": "session_scope_cdp_eval_failed",
     ]
-    if nativeTriggerClicked { failure["nativeTriggerClicked"] = true }
+    annotateNativeTrigger(&failure)
     return failure
   }
-  if nativeTriggerClicked { finalResult["nativeTriggerClicked"] = true }
+  annotateNativeTrigger(&finalResult)
 
   // The menu item must be activated with trusted input while the menu is
   // still open. The previous implementation first dispatched a synthetic
@@ -299,6 +353,7 @@ func dedicatedApprovalWithNativeInput(
   var lastSessionOptionPoint: Any?
   var lastSessionOptionRect: Any?
   func annotateNativeInput(_ result: inout [String: Any]) {
+    annotateNativeTrigger(&result)
     result["nativeOptionClickAttempts"] = nativeOptionClickAttempts
     result["nativeOptionClickSuccesses"] = nativeOptionClickSuccesses
     result["nativeOptionDOMFallbackAttempts"] = nativeOptionDOMFallbackAttempts
@@ -2166,6 +2221,7 @@ func detectDedicatedAuthorizationJS() -> String {
       selectedButtonRect,
       menuTriggerRect,
       menuTriggerPoint: menuTriggerPoint(menuTrigger, selectedButton),
+      menuTriggerIsSelectedButton: menuTrigger === selectedButton,
       cardCount: cards.length,
       interactiveCount: interactive.length,
       detectionStrategy: 'interactive-dom-shadow-iframe'
@@ -2737,7 +2793,17 @@ func autoApproveDedicatedAuthorizationJS(nativeOnly: Bool = false) -> String {
         });
       const candidateLabels = candidates.map(candidate => candidate.label);
       const candidate = candidates[0];
-      if (!candidate) break;
+      if (!candidate) {
+        if (nativeOnly) {
+          return {
+            ok: false, clicked: false, confirmed: false,
+            strategy: 'session-scope',
+            error: 'session_scope_card_not_found_after_trigger',
+            cardsApproved: 0, cardsRemaining: maxCards
+          };
+        }
+        break;
+      }
 
       const card = candidate.card;
       const cardButtons = card.cardButtons;
