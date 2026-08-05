@@ -321,16 +321,21 @@ func nativeApprovalComponentActionResult(
   wsURLString: String,
   label: String?
 ) -> [String: Any]? {
+  queueTrace("task=approval-watcher stage=approval-native-component-function-enter action=\(action)")
   let wsURL = wsURLString
+  queueTrace("task=approval-watcher stage=approval-native-component-url-ready action=\(action)")
   let x = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.x ?? 0)
   let y = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), point?.y ?? 0)
   let pointAvailableLiteral = point == nil ? "false" : "true"
+  queueTrace("task=approval-watcher stage=approval-native-component-coordinates-ready action=\(action)")
   let requestedLabel = label ?? ""
   let requestedLabelLiteral = (try? JSONSerialization.data(withJSONObject: requestedLabel))
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
   let actionLiteral = (try? JSONSerialization.data(withJSONObject: action))
     .flatMap { String(data: $0, encoding: .utf8) } ?? "\"option\""
+  queueTrace("task=approval-watcher stage=approval-native-component-labels-ready action=\(action)")
   if action == "trigger" || action == "option" {
+    queueTrace("task=approval-watcher stage=approval-native-component-expression-begin action=\(action)")
     let directComponentExpression = #"""
     (() => {
       const action = \#(actionLiteral);
@@ -638,6 +643,7 @@ func nativeApprovalComponentActionResult(
       };
     })()
     """#
+    queueTrace("task=approval-watcher stage=approval-native-component-expression-ready action=\(action)")
     queueTrace("task=approval-watcher stage=approval-native-component-probe-begin")
     let componentProbe = cdpValuePersistent(
       wsURLString: wsURL,
