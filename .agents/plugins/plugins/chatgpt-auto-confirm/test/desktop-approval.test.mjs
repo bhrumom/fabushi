@@ -960,6 +960,82 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
   assert.equal(clicks.includes('allow'), false);
 });
 
+test('session-scoped approval prefers the explicit Allow once split control over generic confirm', async () => {
+  const clicks = [];
+  let menuOpen = false;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(id, text, attributes = {}) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.attributes = attributes;
+      this.disabled = false;
+      this.offsetWidth = id === 'session-trigger' ? 24 : 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: this.offsetWidth, height: this.offsetHeight };
+    }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type !== 'click') return true;
+      clicks.push(this.id);
+      if (this.id === 'session-trigger') menuOpen = true;
+      if (this.id === 'session-option') {
+        allow.isConnected = false;
+        allow.offsetWidth = 0;
+        allow.offsetHeight = 0;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('deny', 'Deny', { role: 'button' });
+  const allow = new FakeElement('allow', 'Allow once', { role: 'button' });
+  const sessionTrigger = new FakeElement(
+    'session-trigger',
+    'Allow once',
+    { role: 'button', 'aria-haspopup': 'menu' },
+  );
+  const genericConfirm = new FakeElement('generic-confirm', 'Confirm', { role: 'button' });
+  const sessionOption = new FakeElement(
+    'session-option',
+    'Allow for this conversation',
+    { role: 'menuitem' },
+  );
+  const card = new FakeElement('card', 'approval card');
+  card.querySelectorAll = () => [deny, allow, sessionTrigger, genericConfirm];
+  for (const element of [deny, allow, sessionTrigger, genericConfirm]) {
+    element.parentElement = card;
+  }
+  const document = {
+    querySelectorAll(selector) {
+      if (selector === '[role="button"]') {
+        return [deny, allow, sessionTrigger, genericConfirm];
+      }
+      if (selector.includes('[role="menuitem"]')) return menuOpen ? [sessionOption] : [];
+      return [];
+    },
+  };
+  const result = await runInNewContext(approvalScript, {
+    document,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmed, true);
+  assert.equal(result.strategy, 'session-scope');
+  assert.deepEqual(clicks, ['session-trigger', 'session-option']);
+  assert.equal(clicks.includes('generic-confirm'), false);
+});
+
 test('allow-once approval works from the component allow control without card text', async () => {
   const clicks = [];
   class FakeEvent {
