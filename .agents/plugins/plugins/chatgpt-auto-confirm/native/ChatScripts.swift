@@ -525,7 +525,7 @@ func sendMessageJS(
     }
 
     function quickChatStrongMode(value) {
-      const text = normalize(value).toLowerCase();
+      const text = normalize(value).toLowerCase().replace(/[-_]+/g, ' ');
       return text.includes('thinking')
         || text.includes('思考')
         || text.includes('extra high')
@@ -535,11 +535,48 @@ func sendMessageJS(
 
     function quickChatSliderElements() {
       return [...document.querySelectorAll(
-        'input[type="range"], [role="slider"], [aria-valuenow], [aria-label*="of 5"], '
-          + '[aria-label*="adjust power"], [aria-label*="调整强度"]'
+        '[data-reasoning-slider="true"], input[type="range"], [role="slider"], '
+          + '[aria-valuenow], [aria-label*="of 5"], [aria-label*="adjust power"], '
+          + '[aria-label*="调整强度"]'
       )].filter((element, index, all) => {
         return element && all.indexOf(element) === index && visible(element);
       });
+    }
+
+    function quickChatSliderState(element = null) {
+      const candidates = [
+        element,
+        ...(element?.querySelectorAll?.('[role="slider"], [aria-valuenow]') || []),
+        ...quickChatSliderElements()
+      ].filter((item, index, all) => item && all.indexOf(item) === index);
+      const slider = candidates.find(item => item.getAttribute('aria-valuenow') != null);
+      if (!slider) return null;
+      const now = Number(slider.getAttribute('aria-valuenow'));
+      const min = Number(slider.getAttribute('aria-valuemin'));
+      const max = Number(slider.getAttribute('aria-valuemax'));
+      return {
+        element: slider,
+        now: Number.isFinite(now) ? now : null,
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+        ariaValueText: slider.getAttribute('aria-valuetext') || ''
+      };
+    }
+
+    function quickChatSelectionConfirmed(picker, keyboardTarget = null) {
+      const pickerValues = [
+        quickChatLabel(picker),
+        picker?.getAttribute('data-selected-reasoning-effort') || '',
+        picker?.getAttribute('data-selected-model') || ''
+      ];
+      if (quickChatStrongMode(pickerValues.join(' '))) return true;
+      const sliderState = quickChatSliderState(keyboardTarget);
+      // ChatGPT's five-position control is exposed as a 0..4 Radix slider;
+      // Extra High is the penultimate position (the final one is Pro).
+      return sliderState?.max != null
+        && sliderState?.now != null
+        && sliderState.max >= 2
+        && sliderState.now === sliderState.max - 1;
     }
 
     function quickChatElementEvidence(element) {
@@ -599,7 +636,7 @@ func sendMessageJS(
       return candidates.find(element => {
         if (!visible(element)) return false;
         const label = quickChatLabel(element);
-        return /(?:of 5|adjust power|调整强度|model|effort|instant|thinking|extra high|高|思考)/i.test(label);
+        return /(?:of 5|adjust power|调整强度|power|model|effort|instant|thinking|extra high|高|思考)/i.test(label);
       }) || null;
     }
 
@@ -772,9 +809,15 @@ func sendMessageJS(
           }
           picker = modelPickerButton();
           selectedLabel = quickChatLabel(picker);
-          quickChatConfirmed = quickChatStrongMode(selectedLabel)
+          quickChatConfirmed = quickChatSelectionConfirmed(picker)
             || selectedChoice(quickChatChoice);
-          for (let attempt = 0; attempt < 4 && !quickChatConfirmed; attempt += 1) {
+          const initialKeyboardTarget = quickChatKeyboardTarget() || picker;
+          const initialSliderState = quickChatSliderState(initialKeyboardTarget);
+          const desiredSliderSteps = initialSliderState?.max != null
+            && initialSliderState?.now != null
+            ? Math.max(0, Math.min(4, initialSliderState.max - 1 - initialSliderState.now))
+            : 4;
+          for (let attempt = 0; attempt < desiredSliderSteps && !quickChatConfirmed; attempt += 1) {
             if (visibleModelMenus().length === 0) {
               picker = modelPickerButton();
               if (picker) {
@@ -789,7 +832,7 @@ func sendMessageJS(
             await sleep(450);
             picker = modelPickerButton();
             selectedLabel = quickChatLabel(picker);
-            quickChatConfirmed = quickChatStrongMode(selectedLabel);
+            quickChatConfirmed = quickChatSelectionConfirmed(picker, keyboardTarget);
           }
           if (!quickChatConfirmed) {
             // The five-position control commits its value on Enter in some
@@ -800,7 +843,7 @@ func sendMessageJS(
             await sleep(500);
             picker = modelPickerButton();
             selectedLabel = quickChatLabel(picker);
-            quickChatConfirmed = quickChatStrongMode(selectedLabel);
+            quickChatConfirmed = quickChatSelectionConfirmed(picker, keyboardTarget);
           }
         }
         if (!quickChatConfirmed) {
