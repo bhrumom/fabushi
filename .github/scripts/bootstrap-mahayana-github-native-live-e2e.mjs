@@ -271,7 +271,10 @@ async function configureActions(repository) {
   await api(`/repos/${repository.full_name}/actions/permissions/workflow`, {
     method: 'PUT',
     expected: [204],
-    body: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: true },
+    // Organization policy may reject can_approve_pull_request_reviews. The
+    // acceptance topology only needs a trusted workflow to create Draft PRs;
+    // approval remains a human CODEOWNERS/ruleset action.
+    body: { default_workflow_permissions: 'read' },
   });
   await api(`/repos/${repository.full_name}/environments/production`, {
     method: 'PUT',
