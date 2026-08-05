@@ -66,8 +66,11 @@ func traceQueueApproval(
     "menuCandidates": result["menuCandidates"] ?? [],
     "menuTriggerPoint": result["menuTriggerPoint"] ?? NSNull(),
     "sessionOptionPoint": result["sessionOptionPoint"] ?? NSNull(),
+    "sessionOptionClickPoint": result["sessionOptionClickPoint"] ?? NSNull(),
     "nativeTriggerClicked": result["nativeTriggerClicked"] ?? false,
     "nativeInput": result["nativeInput"] ?? false,
+    "nativeOptionClickAttempts": result["nativeOptionClickAttempts"] ?? 0,
+    "nativeOptionClickSuccesses": result["nativeOptionClickSuccesses"] ?? 0,
     "cardsApproved": result["cardsApproved"] ?? 0,
     "cardsRemaining": result["cardsRemaining"] ?? 0,
   ]) ?? "{\"labels\":[]}"
@@ -147,6 +150,11 @@ func approveDedicatedAuthorizationWithDiagnostics(
     queueTrace(
       "task=\(taskId) stage=approval-\(stage)-unconfirmed "
         + "strategy=\(result?["strategy"] as? String ?? "per-card") "
+        + "clicked=\(result?["clicked"] as? Bool == true) "
+        + "confirmed=\(result?["confirmed"] as? Bool == true) "
+        + "nativeInput=\(result?["nativeInput"] as? Bool == true) "
+        + "nativeOptionClickAttempts=\(result?["nativeOptionClickAttempts"] as? Int ?? 0) "
+        + "nativeOptionClickSuccesses=\(result?["nativeOptionClickSuccesses"] as? Int ?? 0) "
         + "beforeScreenshot=\(screenshotPath ?? "none") "
         + "afterScreenshot=\(afterPath ?? "none") "
         + "error=\(result?["error"] as? String ?? "none")"
