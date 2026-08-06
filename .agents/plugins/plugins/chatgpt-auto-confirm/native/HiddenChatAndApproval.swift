@@ -1295,7 +1295,7 @@ func autoConfirmChatContinuationJS() -> String {
 func detectDedicatedAuthorizationJS() -> String {
   #"""
   (() => {
-    const normalize = value => (value || '').replace(/[\s↵]+/g, ' ').trim().toLowerCase();
+    const normalize = value => (value || '').replace(/[\s↵⏎]+/g, ' ').trim().toLowerCase();
     const visible = element => !!(element
       && !element.disabled
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
@@ -1399,7 +1399,7 @@ func autoApproveDedicatedAuthorizationJS() -> String {
   #"""
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    const normalize = value => (value || '').replace(/[\s\u21b5]+/g, ' ').trim().toLowerCase();
+    const normalize = value => (value || '').replace(/[\s\u21b5\u23ce]+/g, ' ').trim().toLowerCase();
     const rendered = element => !!(element
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
     const visible = element => rendered(element) && !element.disabled;
