@@ -1,15 +1,15 @@
 {
   "protocol": "mahayana.github-native-live-e2e.v1",
-  "generatedAt": "2026-08-05T23:25:04.493Z",
+  "generatedAt": "2026-08-06T00:00:32.418Z",
   "status": "failed",
   "errorCode": "github_native_live_e2e_failed",
-  "message": "Error: trusted upstream workflow run 31056040587 concluded failure: https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10/actions/runs/31056040587\n    at waitForOpenPullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:161:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async createAiFix (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:392:16)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:540:14)",
+  "message": "Error: trusted upstream workflow run 31058115296 concluded failure: https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10/actions/runs/31058115296\n    at waitForOpenPullRequest (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:161:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async createAiFix (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:392:16)\n    at async main (file:///home/runner/work/fabushi/fabushi/.github/scripts/run-mahayana-github-native-live-e2e.mjs:540:14)",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "31055847383",
+    "runId": "31057951982",
     "runAttempt": "1",
-    "sourceCommit": "c6ec525ff1eccd95d43addbcc5c53c84a258cfa6",
+    "sourceCommit": "28e32fc8df9967def5b3cb4656982510e53c64d4",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/31055847383"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/31057951982"
   }
 }
