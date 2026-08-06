@@ -1,211 +1,110 @@
-# PRD：可热安装的本地 Web MCP Apps 小程序市场
+# PRD：GitHub 原生共创与共享 Cloudflare Pages 小程序市场
 
 ## 1. 产品目标
 
-大乘小程序统一为可签名下载、安装到本地、独立版本更新和回滚的 MCP Apps。
-
-移动端、桌面 WebView 和普通 Web/PWA 尽可能运行同一套本地网页包：
+大乘小程序统一为可审计源码、可签名下载、可本地安装、可独立更新与回滚的 MCP Apps。源码与社区协作基于公开 GitHub 组织；AI 的 GitHub 操作使用官方 GitHub MCP/连接器；所有已批准小程序包统一由一个共享 Cloudflare Pages 项目分发。
 
 ```text
-MCP Apps View
-+ Local Web MCP Runtime
-+ signed immutable package
-+ local installation
-+ hot update
+公开 GitHub 小程序仓库
+→ 可信 GitHub Actions 构建与 Release
+→ 中央验证和全量静态快照
+→ 单一共享 Cloudflare Pages
+→ 客户端下载、验证、安装与运行
 ```
-
-MCP Apps 负责统一 UI、Tool、Resource 和 Host 通信；小程序业务逻辑可以运行在本地 JavaScript/TypeScript/WASM Runtime 中，不要求所有插件逻辑都预编译进大乘主 App，也不要求部署到 Cloudflare Runtime。
 
 ## 2. 产品原则
 
-- 一个小程序一个稳定插件 ID；
-- 一个版本一个签名、不可变的本地安装包；
-- 移动端和 Web 共用同一网页 UI 与 Web Runtime；
-- 页面按钮和聊天输入调用同一组 MCP Tool；
-- 小程序网页包可以独立热更新，不要求每次更新主 App；
-- 主 App 只提供通用 Host、安装器、沙箱、签名校验和政策允许的通用能力；
-- Cloudflare 负责市场、包分发、签名元数据、撤销、更新和可选远程 API；
-- 不用远程网页替代已经安装的本地网页；
-- 不通过模拟网页点击实现聊天调用；
-- 不把热更新做成绕过应用商店审核的任意代码下载器。
+- 一个小程序一个稳定 plugin ID；默认一个公开 GitHub 仓库对应一个主要小程序。
+- 一个版本对应一个不可变内容哈希和一组已签名构件。
+- GitHub 交互不得依赖自建 MCP Server；使用官方 GitHub MCP/连接器及 GitHub 原生 Actions/API。
+- 多个项目、多个版本的包共同放在一个 Cloudflare Pages 项目，按 plugin ID/version/SHA 隔离。
+- 不为每个小程序创建 Pages 项目，不使用 R2。
+- 页面按钮和聊天输入调用同一组 MCP Tool；UI 与 runtime 可分离，但属于同一签名 Release。
+- 主 App 只提供通用 Host、安装器、沙箱、签名校验和获准能力。
+- Pages 只分发静态 catalog、manifest、签名、provenance 和安装包，不承担有状态业务 runtime。
 
-## 3. 一个插件包
+## 3. 共享 Pages 信息架构
 
 ```text
-plugin package
-├── plugin.json
-├── runtime.json
-├── permissions.json
-├── tools.json
-├── ui/
-├── runtime/web/
-├── skills/
-├── provenance.json
-└── signatures/
+/catalog/v1/index.json
+/catalog/v1/revocations.json
+/apps/<plugin-id>/index.json
+/apps/<plugin-id>/latest.json
+/apps/<plugin-id>/releases/<version>/<sha256>/manifest.json
+/apps/<plugin-id>/releases/<version>/<sha256>/package.zip
+/apps/<plugin-id>/releases/<version>/<sha256>/signature.json
+/apps/<plugin-id>/releases/<version>/<sha256>/provenance.json
 ```
 
-### `ui/`
+`latest.json` 可以变化，但历史版本目录禁止覆盖。发布、撤销或目录变化时，中央工作流重新生成完整静态站点并部署到同一个 Pages 项目。
 
-标准 MCP Apps View：
-
-- `io.modelcontextprotocol/ui`；
-- `ui://`；
-- `text/html;profile=mcp-app`；
-- `_meta.ui.resourceUri`；
-- AppBridge；
-- sandbox；
-- CSP；
-- model/app Tool visibility。
-
-### `runtime/web/`
-
-本地 Web MCP Runtime：
-
-- JavaScript/TypeScript/WASM；
-- 运行于 Dedicated Worker、MessagePort 或等价隔离执行环境；
-- 实现 `tools/list`、`tools/call` 和本地 workflow；
-- 只能访问声明并获批的网络和存储；
-- 不直接读取 Host Secret；
-- 不直接操作宿主界面。
-
-## 4. 安装体验
+## 4. 发布者体验
 
 ```text
-市场浏览
-→ 用户点击安装
-→ 下载版本+SHA 不可变包
-→ 验证签名、来源、权限、CSP 和哈希
-→ 安装到本地插件目录
-→ 注册 UI、Tool 和 Runtime
-→ 本地打开
+创建或 Fork 公开小程序仓库
+→ AI/开发者在分支修改
+→ PR 无密钥测试
+→ 维护者审核合并
+→ 受保护 tag/Release
+→ 可信 Actions 构建 Release assets
+→ 中央分发工作流验证
+→ 共享 Pages 发布
 ```
 
-用户应看到：
+普通发布者不需要 Cloudflare API Token，也不创建自己的 Pages 项目。正式版本必须记录 GitHub repository ID、commit、tree hash、许可证、workflow、run、artifact SHA、SBOM 和 provenance。
 
-- 插件身份；
-- 版本；
-- 发布者；
-- 执行位置：本地网页；
-- 网络域名；
-- 数据与隐私权限；
-- 是否支持离线；
-- 更新和回滚状态。
-
-## 5. 移动端
-
-移动端从 App 私有目录加载已安装网页包，通过安全本地 Origin 渲染 WebView。
+## 5. 安装体验
 
 ```text
-本地插件包
-→ 本地 WebView
-→ MCP Apps AppBridge
-→ MCP Host
-→ Local Web MCP Runtime Worker
+市场读取共享 Pages catalog
+→ 用户选择小程序和版本
+→ 下载匹配平台的不可变包
+→ 校验 catalog 签名、SHA-256、大小、plugin ID、version、权限、来源和撤销状态
+→ 安全解包到 staging
+→ 原子激活
 ```
 
-移动端不需要为每个插件预编译专属业务逻辑。只要功能可以通过标准 Web API、JavaScript/WASM 和获准网络请求完成，就可以随插件包更新。
+用户应看到发布者、源码仓库、许可证、版本、执行位置、权限、下载大小、来源证明、更新和回滚状态。
 
-## 6. Web 端
+## 6. GitHub 共创
 
-普通 Web/PWA 使用同一网页包与 Runtime：
+市场和客户端提供查看源码、报告问题、让 AI 诊断、让 AI 修复、Fork 并自定义、创建 Draft PR、发布派生 App、同步上游和比较差异。
 
-- Service Worker；
-- Cache Storage；
-- IndexedDB/OPFS；
-- 本地版本清单；
-- 重新下载与恢复策略。
+- AI 只能在用户 Fork 或授权分支写入。
+- 未经用户确认不得创建公开 Issue/PR。
+- Fork PR 无 Secret、只读 Token、无生产 OIDC。
+- PR 合并不等于发布。
+- 派生 App 必须更换 plugin ID 和签名身份。
 
-浏览器存储可能被系统清理，因此 Web 端必须支持重新拉取签名版本和恢复插件状态。
+## 7. 运行模型
 
-## 7. 聊天驱动
+同一市场允许 `local-web`、`desktop-stdio`、`hybrid` 和明确声明的远程 runtime。移动/Web 默认优先本地网页或 WASM；ChatGPT 自动确认可仅支持 desktop native。无论运行位置如何，安装包都从共享 Pages 分发。
 
-用户在聊天框发送指令时：
+## 8. 安全与合规
+
+- 包路径不可变，同版本不同内容发布失败。
+- 权限扩大必须重新确认。
+- 撤销版本不能新安装或升级。
+- 压缩包必须防路径穿越、链接逃逸、设备文件和压缩炸弹。
+- Pages 限制在构建前检查；超限时发布失败或采用已签名分片，不得自动回退 R2。
+- 公开源码不等于可信，可信度来自受保护仓库、可信 CI、commit 绑定、attestation、签名和审核。
+
+## 9. 首批验收项目
+
+至少选择两个独立公开小程序仓库，其中一个覆盖本地 Web/WASM 或通用 MCP App，另一个可覆盖 desktop native。两者发布多个版本，并同时进入同一个共享 Pages 项目。
+
+## 10. 成功标准
 
 ```text
-Host/Agent 解析意图
-→ 调用插件公开的 MCP Tool
-→ Local Web Runtime 执行
-→ 返回 structuredContent
-→ UI 展示进度和结果
+两个以上公开仓库
+→ 各自可信 Release
+→ 中央验证
+→ 单一 Pages 项目同时承载
+→ catalog 发现
+→ 多平台下载与校验
+→ 安装和运行
+→ 更新与回滚
+→ 撤销生效
 ```
 
-页面按钮也调用相同 Tool。不得为聊天模式维护第二套业务逻辑。
-
-## 8. 全球法布施
-
-如果全球法布施现有网页已经可以完成发送，则它必须作为首个 `local-web` 官方插件迁移：
-
-- iOS、Android、桌面和 Web 共用同一个包；
-- `send/status/cancel/logs` 由本地 Web Runtime 实现；
-- 发送队列和状态保存在插件本地存储；
-- 页面点击与聊天指令调用同一 Tool；
-- 无网络时能打开 UI、查看队列和编辑任务；
-- 网络恢复后继续执行；
-- 更新网页功能不发布新主 App。
-
-## 9. 主 App 需要更新的情况
-
-以下通常可以独立更新：
-
-- UI；
-- Web Tool 逻辑；
-- 表单和规则；
-- Skills；
-- 普通 HTTPS 请求；
-- JavaScript/WASM；
-- 插件私有数据迁移。
-
-以下可能要求更新主 App 或获得平台许可：
-
-- 新原生平台 API；
-- 相机、蓝牙、通讯录、短信等受限能力；
-- 辅助功能或进程控制；
-- 长期后台执行；
-- 越过 Web 沙箱的文件和系统访问。
-
-## 10. 桌面特殊插件
-
-ChatGPT 自动确认无法仅靠普通网页 Runtime 操作本机 ChatGPT renderer，因此继续采用 `desktop-stdio`。
-
-同一市场允许：
-
-- `local-web`；
-- `desktop-stdio`；
-- `hybrid`；
-- `remote-edge`。
-
-但移动/Web 默认优先 `local-web`。
-
-## 11. 商店合规
-
-大乘必须把该能力公开描述为 HTML5/JavaScript 小程序市场，并提供：
-
-- 完整软件索引；
-- 插件元数据与深链；
-- 发布审核；
-- 隐私和权限逐插件同意；
-- 内容分级；
-- 举报和封禁；
-- 审核账号；
-- 签名、撤销和恶意代码处置。
-
-不得允许插件下载后获得未经批准的任意原生平台 API，也不得通过远程更新隐藏商店审核时未披露的功能。
-
-## 12. 成功标准
-
-全球法布施必须证明：
-
-```text
-同一网页包
-→ iOS 本地安装运行
-→ Android 本地安装运行
-→ 桌面 WebView 本地运行
-→ 普通 Web/PWA 本地运行
-→ 聊天 Tool 调用
-→ 页面 Tool 调用
-→ 热更新
-→ 回滚
-→ 撤销
-```
-
-并且更新小程序网页功能时不需要发布新的大乘主 App。
+更新小程序功能时不需要发布新的大乘主 App，也不创建新的插件分发 Pages 项目。
