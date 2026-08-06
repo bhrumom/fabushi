@@ -1,48 +1,54 @@
-# 大乘 GitHub 原生共创、多构件 MCP Apps 任务
+# 大乘 GitHub 原生共创与共享 Cloudflare Pages 小程序市场
 
 任务 ID：`mahayana-marketplace-cloudflare-20260730`  
-目标版本：`goalVersion = 9`  
-文档状态：已完成产品审核，批准全面实施与验收。
+目标版本：`goalVersion = 11`  
+状态：已批准实施与真实验收。
 
 ## 一句话目标
 
-> 每个大乘小程序既是可安装的标准 MCP App，也是可 Fork、可由 AI 修改、可提 Pull Request、可独立派生发布的 GitHub 仓库；源码共创开放，正式插件身份和发布供应链受保护。
+> 每个小程序由公开 GitHub 仓库承载源码并通过可信 GitHub Actions 发布；所有项目的已批准安装包、版本清单和签名统一放入一个共享 Cloudflare Pages 项目，客户端从该站点安全下载和安装。
 
-## 最高优先级设计
+## 权威优先级
 
-1. `GITHUB_NATIVE_MCP_APP_COLLABORATION.md`：GitHub 仓库、Fork、PR、AI 修复、派生发布和供应链安全；
-2. `MULTI_ARTIFACT_MCP_APP.md`：一个插件身份和版本包含 common、native CLI、web-wasm 等按平台选择的构件；
-3. `LOCAL_WEB_MCP_RUNTIME.md`：移动端/Web 下载本地网页和 WASM 包运行；
-4. `LOCAL_FIRST_MCP_APPS.md`：本地优先执行；
-5. `MCP_APPS_ONLY.md`：MCP Apps UI、Host、安全和旧协议删除。
+1. `SHARED_CLOUDFLARE_PAGES_DISTRIBUTION.md`：最终发布与分发架构；
+2. `PRD.md`：产品目标；
+3. `ACCEPTANCE.md`：完成标准；
+4. `PUBLISHING_WORKFLOW.md`：端到端发布流程；
+5. `GITHUB_NATIVE_MCP_APP_COLLABORATION.md`：Fork、PR、AI 修复与派生发布；
+6. `MULTI_ARTIFACT_MCP_APP.md`、`LOCAL_WEB_MCP_RUNTIME.md`、`LOCAL_FIRST_MCP_APPS.md`、`MCP_APPS_ONLY.md`：安装包、运行时和 Host 约束。
 
-## GitHub 共创原则
+任何旧文档出现“每插件一个 Pages 项目”“插件自己的 Cloudflare 下载站点”“自建 GitHub MCP”“R2 分发”时，均以本任务目标为准并应被迁移或删除。
 
-- 市场版本绑定稳定 GitHub repository ID、精确 commit、tree hash 和 SPDX license；
-- 用户可以报告 Issue、Fork、让 AI 修复并创建 Draft PR；
-- AI 只能在用户 Fork 或授权分支修改，不能直接推送上游受保护分支；
-- Fork PR 只运行 `pull_request` 无 Secret、只读 Token、隔离环境 CI；
-- 禁止在有 Secret/写权限的 `pull_request_target` 中 checkout 或执行 Fork 代码；
-- PR 合并不等于发布；只有上游受保护分支、受保护标签和可信 Release workflow 能发布正式版本；
-- 正式发布使用 OIDC、SBOM、artifact attestations、provenance、source commit 绑定和市场签名；
-- Fork 可贡献回上游，也可更换 plugin ID 后发布自己的派生 App；
-- 派生 App 必须展示上游来源、许可证、差异、权限变化和同步状态，不能复用上游官方身份或签名。
+## 不可变架构决策
 
-## 多构件运行原则
+- GitHub 操作只使用官方 GitHub MCP/连接器和 GitHub 原生能力，不开发自定义 GitHub MCP Server。
+- 默认一个公开源码仓库对应一个主要小程序；正式版本绑定 repository ID、commit、tree hash、许可证、workflow 和 run。
+- 每个源码仓库通过可信 Actions 生成不可变 GitHub Release assets、SBOM、provenance 和 attestation。
+- 中央发布工作流验证所有资产并生成全量静态站点快照。
+- 平台只维护一个小程序分发 Cloudflare Pages 项目；多个项目和多个历史版本共享同一域名，路径按 plugin ID/version/SHA 隔离。
+- 禁止每插件创建一个 Pages 项目，禁止 R2，禁止同版本覆盖。
+- Pages 只负责静态 catalog 与安装包分发；本地或远程 MCP Runtime 与分发层分离。
 
-同一个全球法布施 Release 包含：
+## 目标目录
 
-- `common`：MCP Apps UI、Tools、权限、Skills 和工作流；
-- `native-*`：macOS、Windows、Linux 的本地 CLI；
-- `web-wasm`：iOS、Android、桌面 WebView 和普通 Web/PWA 的本地网页/WASM Runtime。
+```text
+/catalog/v1/index.json
+/catalog/v1/revocations.json
+/apps/<plugin-id>/index.json
+/apps/<plugin-id>/latest.json
+/apps/<plugin-id>/releases/<version>/<sha256>/manifest.json
+/apps/<plugin-id>/releases/<version>/<sha256>/package.zip
+/apps/<plugin-id>/releases/<version>/<sha256>/signature.json
+/apps/<plugin-id>/releases/<version>/<sha256>/provenance.json
+```
 
-平台安装器只下载当前平台需要的最小构件，但所有构件共享同一插件 ID、版本和 Tool Contract。
+## GitHub 共创与供应链
 
-## 审核状态
+- 用户可以查看源码、报告 Issue、Fork、让 AI 在 Fork 分支修复并创建 Draft PR。
+- Fork PR 使用 `pull_request`、只读 Token、无 Secret、无生产 OIDC；不得在特权 `pull_request_target` 中执行 Fork 代码。
+- PR 合并不等于发布；正式发布来自受保护上游分支、受保护 tag/Release 和可信工作流。
+- 派生 App 必须更换 plugin ID 和发布者身份，并保留上游来源、许可证、权限差异和同步状态。
 
-本任务方案已经产品审核通过，自 `goalVersion = 9` 起进入全面实施与验收：
+## 完成条件
 
-- 按受保护分支、Pull Request、CODEOWNERS 和 ruleset 流程推进实现与合并；
-- 启动并持续执行所需 GitHub Actions、真实发布和跨平台验收；
-- 所有正式 Release 继续遵守可信工作流、OIDC、SBOM、artifact attestations、provenance 和人工/环境审批；
-- 只有全部强制验收项均取得可复核真实证据后，任务状态才可报告为完成。
+至少两个独立公开小程序仓库必须真实发布多个版本，并被同一个 Cloudflare Pages 项目同时托管。客户端必须证明目录发现、下载、签名与哈希校验、安全安装、运行、更新、回滚和撤销；重复版本不同内容必须失败，且不得出现第二个插件分发 Pages 项目或 R2。
