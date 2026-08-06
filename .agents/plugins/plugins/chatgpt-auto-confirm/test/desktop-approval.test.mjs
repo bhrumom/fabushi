@@ -676,6 +676,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /waiting_for_network_recovery/);
   assert.match(nativeSource, /queueNetworkRecovery/);
   assert.match(nativeSource, /SCNetworkReachabilityCreateWithName/);
+  assert.match(nativeSource, /request failed with status 429/);
+  assert.match(nativeSource, /too many requests/);
+  assert.match(nativeSource, /recoverySignal == nil/);
   assert.match(nativeSource, /next_connector/);
   assert.match(nativeSource, /云端 GitHub 状态必须通过 GitHub 连接器核验/);
   assert.match(nativeSource, /本地 checkout、Git\/gh 元数据与安全同步必须使用 bhrum2/);

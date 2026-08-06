@@ -547,6 +547,18 @@ func monitorAutomationTask(
      let chatURL = liveStatus["chatUrl"] as? String {
     task.chatURL = chatURL
   }
+  let completedActivity = reply["completedActivity"] as? String ?? ""
+  let visibleContent = reply["content"] as? String ?? ""
+  let connectionText = [
+    visibleContent,
+    completedActivity,
+    reply["devspaceActivity"] as? String ?? "",
+    // `pageContent` also contains the queue's own user instruction, which
+    // deliberately documents network errors. Inspect only assistant/tool
+    // activity so the prompt can never trigger a false network outage.
+    reply["thinking"] as? String ?? ""
+  ].joined(separator: "\n")
+  let recoverySignal = networkRecoverySignal(connectionText)
   let activitySignature = reply["activitySignature"] as? String ?? ""
   let activityCharCount = reply["activityCharCount"] as? Int ?? 0
   if !activitySignature.isEmpty && activitySignature != task.lastActivitySignature {
@@ -557,10 +569,12 @@ func monitorAutomationTask(
     // real task progress or postpone interruption recovery.
     if activityCharCount >= 80 {
       task.lastProgressAt = now
-      state.queueNetworkFailureCount = 0
-      state.queueNetworkStatus = "online"
-      state.queueNetworkLastError = nil
-      state.queueNetworkWaitUntil = nil
+      if recoverySignal == nil {
+        state.queueNetworkFailureCount = 0
+        state.queueNetworkStatus = "online"
+        state.queueNetworkLastError = nil
+        state.queueNetworkWaitUntil = nil
+      }
     }
   }
   task.updatedAt = now
@@ -588,18 +602,7 @@ func monitorAutomationTask(
     return
   }
 
-  let completedActivity = reply["completedActivity"] as? String ?? ""
-  let visibleContent = reply["content"] as? String ?? ""
-  let connectionText = [
-    visibleContent,
-    completedActivity,
-    reply["devspaceActivity"] as? String ?? "",
-    // `pageContent` also contains the queue's own user instruction, which
-    // deliberately documents network errors. Inspect only assistant/tool
-    // activity so the prompt can never trigger a false network outage.
-    reply["thinking"] as? String ?? ""
-  ].joined(separator: "\n")
-  if let signal = networkRecoverySignal(connectionText) {
+  if let signal = recoverySignal {
     closeDedicatedAutomationTarget(task, state: state)
     queueNetworkRecovery(&task, state: &state, reason: signal)
     return

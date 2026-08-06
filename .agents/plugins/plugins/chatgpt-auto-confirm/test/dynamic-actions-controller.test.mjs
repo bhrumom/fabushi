@@ -32,6 +32,7 @@ test('persistent Actions runner polls the main-branch task control file', () => 
   assert.match(controller, /entry\.sha/);
   assert.match(controller, /createHash\('sha256'\)/);
   assert.match(controller, /pollSeconds \* 1_000/);
+  assert.match(controller, /ACTION_DISABLE_TASK_REFRESH: 'true'/);
 });
 
 test('goal versions are idempotent and dependencies use desired runtime ids', () => {
