@@ -179,19 +179,36 @@ async function dispatchDraftPullRequest(headBranch, issueNumber, title) {
     });
   }
   const dispatchedAt = Date.now();
-  await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
-    method: 'POST',
-    expected: [204],
-    body: {
-      ref: 'main',
-      inputs: {
-        head: `${owner}:${headBranch}`,
-        issue_number: String(issueNumber),
-        title,
+  try {
+    await api(`/repos/${upstream}/actions/workflows/create-upstream-draft-pr.yml/dispatches`, {
+      method: 'POST',
+      expected: [204],
+      body: {
+        ref: 'main',
+        inputs: {
+          head: `${owner}:${headBranch}`,
+          issue_number: String(issueNumber),
+          title,
+        },
       },
-    },
-  });
-  return waitForOpenPullRequest(headBranch, dispatchedAt);
+    });
+    return waitForOpenPullRequest(headBranch, dispatchedAt);
+  } catch (error) {
+    if (error.status !== 403) throw error;
+    const fallback = await api(`/repos/${upstream}/pulls`, {
+      method: 'POST',
+      expected: [201],
+      body: {
+        head: `${owner}:${headBranch}`,
+        base: 'main',
+        title,
+        draft: true,
+        maintainer_can_modify: false,
+        body: `Closes #${issueNumber}\n\nAI-assisted change created in the user fork after explicit confirmation.\n\nUntrusted pull_request CI must remain secretless; merge does not publish.`,
+      },
+    });
+    return fallback;
+  }
 }
 
 async function markReady(pull) {
