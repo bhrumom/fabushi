@@ -1,6 +1,6 @@
 {
   "protocol": "mahayana.github-native-live-e2e.bootstrap.v1",
-  "generatedAt": "2026-08-06T00:11:06.651Z",
+  "generatedAt": "2026-08-06T00:24:51.626Z",
   "actor": {
     "login": "bhrum",
     "id": 222737880
@@ -11,8 +11,8 @@
     "url": "https://github.com/bhrumom/mahayana-mcp-app-collaboration-v10",
     "visibility": "public",
     "defaultBranch": "main",
-    "sourceCommit": "0ea8d2145620bd7291247349ab0eb98283cf1708",
-    "sourceTreeHash": "8219261fddfd1a902e2315d5e497f1328b26b977",
+    "sourceCommit": "0aa4198906301bf5267b25a30a09ee128d6310a8",
+    "sourceTreeHash": "bea57a3f2826816e9961fdb84af810b820642dc9",
     "pluginId": "io.mahayana.test.github-native-collaboration",
     "version": "1.0.0",
     "licenseSpdx": "Apache-2.0"
@@ -23,7 +23,7 @@
     "url": "https://github.com/bhrum/mahayana-mcp-app-collaboration-v10",
     "parentId": 1320090998,
     "parentFullName": "bhrumom/mahayana-mcp-app-collaboration-v10",
-    "mainCommit": "0ea8d2145620bd7291247349ab0eb98283cf1708",
+    "mainCommit": "0aa4198906301bf5267b25a30a09ee128d6310a8",
     "sync": {
       "message": "Successfully fetched and fast-forwarded from upstream bhrumom:main.",
       "merge_type": "fast-forward",
@@ -52,10 +52,10 @@
   "status": "success",
   "workflow": {
     "repository": "bhrumom/fabushi",
-    "runId": "31058820972",
+    "runId": "31059569482",
     "runAttempt": "1",
-    "sourceCommit": "830f39dccfc72cacd2b172c11a48b4fb84897dfb",
+    "sourceCommit": "72f09a477f5663502c5962f58e62fc2fd8049ac6",
     "ref": "refs/heads/codex/mahayana-marketplace-cloudflare-v10",
-    "url": "https://github.com/bhrumom/fabushi/actions/runs/31058820972"
+    "url": "https://github.com/bhrumom/fabushi/actions/runs/31059569482"
   }
 }
