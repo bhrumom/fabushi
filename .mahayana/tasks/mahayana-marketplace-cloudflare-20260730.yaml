@@ -1,34 +1,40 @@
 schema_version: 1
 task_id: mahayana-marketplace-cloudflare-20260730
-revision: 3
-title: 完善大乘 CLI 云端小程序市场
+revision: 11
+title: GitHub 原生小程序市场与共享 Cloudflare Pages 分发
 repository:
   owner: bhrumom
   name: fabushi
   pull_request: 1753
   branch: codex/mahayana-marketplace-parallel-20260726-r16
 goal:
-  summary: 实现普通发布者可使用、可安全安装和运行的大乘 CLI 云端小程序市场。
+  summary: 使用公开 GitHub 组织、官方 GitHub MCP 和单一共享 Cloudflare Pages 项目，实现多个小程序的可信构建、目录、下载、安装、更新、回滚和撤销。
 specifications:
+  - .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/SHARED_CLOUDFLARE_PAGES_DISTRIBUTION.md
+  - .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/README.md
+  - .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/PRD.md
+  - .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/ACCEPTANCE.md
   - docs/plugin-marketplace.md
 requirements:
-  - 每个小程序是独立的 Cloudflare Pages 或 Worker 部署单元
-  - 每个版本对应不可变安装包
+  - GitHub 交互必须使用官方 GitHub MCP 或 GitHub 原生 Actions/API，不得自建 GitHub MCP Server
+  - 默认一个公开 GitHub 仓库对应一个主要小程序，正式版本绑定 repository ID、精确 commit、tree hash、许可证、workflow 和 run
+  - 所有小程序安装包、manifest、签名、provenance、catalog 和撤销列表放入同一个 Cloudflare Pages 项目
+  - 禁止为每个小程序创建独立的插件分发 Pages 项目
   - 禁止将插件包存入 R2
-  - CLI 从小程序自己的 Cloudflare 站点直接下载
-  - 市场只负责身份、审核、索引、签名和撤销
-  - 普通用户默认使用平台托管发布
-  - 发布使用 GitHub Actions OIDC 和短期凭证
-  - 安装必须校验签名、SHA-256、大小、版本和权限
+  - 每个版本使用 plugin ID、version 和 SHA-256 组成不可变路径，同版本不同内容必须失败
+  - 各源码仓库使用可信 GitHub Actions 生成 Release assets，中央发布工作流校验后生成共享 Pages 的完整静态快照
+  - 客户端从共享 Pages 域名直接下载，并校验签名、SHA-256、大小、版本、权限、来源和撤销状态
+  - Fork PR 使用只读 Token、无 Secret、无生产 OIDC；正式发布只能来自受保护上游分支、tag 和可信工作流
 acceptance:
-  - 使用真实测试账号登录
-  - 发布真实小程序
-  - 市场浏览可发现
-  - CLI 直连下载成功
-  - 安全校验成功
-  - 安装后能够运行
-  - 重复版本不同内容必须失败
-  - 撤销版本必须无法安装
+  - 至少两个独立公开小程序仓库发布真实版本
+  - 两个项目的多个版本同时出现在一个共享 Cloudflare Pages 项目中
+  - catalog 可发现并区分两个项目及其版本
+  - CLI、桌面或 Host 从共享 Pages 下载、校验、安装并运行成功
+  - GitHub 操作使用官方 GitHub MCP 或原生 GitHub 能力
+  - 重复版本不同内容发布失败
+  - 撤销版本无法安装，未撤销历史版本仍可复现下载
+  - Fork PR 无法读取 Secret、写上游或发布正式构件
+  - 没有第二个插件分发 Pages 项目，没有使用 R2
 update_policy:
   apply_mode: next_chat
   interrupt_running_chat: false
