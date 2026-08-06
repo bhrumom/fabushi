@@ -43,56 +43,56 @@ jobs:
               raise SystemExit('claim timeout insertion point not found')
 
           pattern = re.compile(
-              r"    if \(queued\.length > 0 && runningCount < maxConcurrent\) \{\n"
+              r"  if \(queued\.length > 0 && runningCount < maxConcurrent\) \{\n"
               r".*?"
-              r"      native\('queue_pause'\);\n"
-              r"    \}\n",
+              r"    native\('queue_pause'\);\n"
+              r"  \}\n",
               re.S,
           )
-          replacement = """    if (queued.length > 0 && runningCount < maxConcurrent) {
-              if (!child || child.exitCode !== null) {
-                process.stdout.write(`TASK_CHAT_BOUNDARY_DEFERRED ${JSON.stringify({
-                  reason,
-                  revision: sync.revision,
-                  queuedIds: queued.map(task => task.id),
-                  action: 'wait_for_child_controller',
-                })}\\n`);
-                return sync;
-              }
-              process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+          replacement = """  if (queued.length > 0 && runningCount < maxConcurrent) {
+            if (!child || child.exitCode !== null) {
+              process.stdout.write(`TASK_CHAT_BOUNDARY_DEFERRED ${JSON.stringify({
                 reason,
                 revision: sync.revision,
                 queuedIds: queued.map(task => task.id),
-                runningCount,
-                maxConcurrent,
-                action: 'resume_until_task_claimed',
-                claimTimeoutSeconds: taskClaimSeconds,
+                action: 'wait_for_child_controller',
               })}\\n`);
-              native('queue_resume', {
-                maxConcurrent,
-                reviewGate: control.reviewGate ?? false,
-              });
-              const queuedIds = new Set(queued.map(task => task.id));
-              const claimDeadline = Date.now() + taskClaimSeconds * 1_000;
-              let claimedIds = [];
-              while (Date.now() < claimDeadline && child?.exitCode === null) {
-                await sleep(1_000);
-                const current = native('queue_status');
-                const currentTasks = Array.isArray(current.tasks) ? current.tasks : [];
-                claimedIds = currentTasks
-                  .filter(task => queuedIds.has(task.id) && task.status !== 'queued')
-                  .map(task => task.id);
-                if (claimedIds.length > 0) break;
-              }
-              native('queue_pause');
-              process.stdout.write(`TASK_CHAT_CLAIM ${JSON.stringify({
-                reason,
-                queuedIds: [...queuedIds],
-                claimedIds,
-                claimed: claimedIds.length > 0,
-                childExitCode: child?.exitCode ?? null,
-              })}\\n`);
+              return sync;
             }
+            process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+              reason,
+              revision: sync.revision,
+              queuedIds: queued.map(task => task.id),
+              runningCount,
+              maxConcurrent,
+              action: 'resume_until_task_claimed',
+              claimTimeoutSeconds: taskClaimSeconds,
+            })}\\n`);
+            native('queue_resume', {
+              maxConcurrent,
+              reviewGate: control.reviewGate ?? false,
+            });
+            const queuedIds = new Set(queued.map(task => task.id));
+            const claimDeadline = Date.now() + taskClaimSeconds * 1_000;
+            let claimedIds = [];
+            while (Date.now() < claimDeadline && child?.exitCode === null) {
+              await sleep(1_000);
+              const current = native('queue_status');
+              const currentTasks = Array.isArray(current.tasks) ? current.tasks : [];
+              claimedIds = currentTasks
+                .filter(task => queuedIds.has(task.id) && task.status !== 'queued')
+                .map(task => task.id);
+              if (claimedIds.length > 0) break;
+            }
+            native('queue_pause');
+            process.stdout.write(`TASK_CHAT_CLAIM ${JSON.stringify({
+              reason,
+              queuedIds: [...queuedIds],
+              claimedIds,
+              claimed: claimedIds.length > 0,
+              childExitCode: child?.exitCode ?? null,
+            })}\\n`);
+          }
           """
           source, count = pattern.subn(replacement, source, count=1)
           if count != 1:
