@@ -263,8 +263,10 @@ func networkRecoverySignal(_ value: String) -> String? {
     "internet disconnected", "could not resolve host", "dns lookup failed",
     "connection reset", "connection refused", "connection timed out",
     "upstream 502", "http 502", "http 503", "http 504",
+    "request failed with status 429", "http 429", "too many requests",
     "devspace_tool_timeout", "网络断开", "网络不可用", "无法解析主机",
-    "连接被重置", "连接超时", "上游 502", "上游 503", "上游 504"
+    "连接被重置", "连接超时", "上游 502", "上游 503", "上游 504",
+    "请求过于频繁"
   ]
   guard let marker = markers.first(where: { text.contains($0) }) else { return nil }
   return marker

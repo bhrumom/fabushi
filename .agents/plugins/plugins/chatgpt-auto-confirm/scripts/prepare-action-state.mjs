@@ -38,18 +38,31 @@ for (const task of state.automationTasks || []) {
   task.workerProfilePath = null;
   task.resultPath = null;
   if (task.status === 'running') {
-    // Keep both the active state and Chat identity across hosted runner
-    // rotation. monitorAutomationTask recreates only the hidden renderer,
-    // navigates back to this durable conversation, confirms pending
-    // authorization, and observes its real terminal state. Re-queuing here
-    // would skip that recovery and create a new Chat before the prior one had
-    // actually finished.
-    // Refresh only the handoff heartbeat so the startup watchdog does not
-    // declare the task stale before the first monitor pass can reattach.
-    task.lastProgressAt = new Date().toISOString();
-    task.lastError = 'github_actions_runner_continuation';
-    const note = 'GitHub Actions 已在新托管 Runner 中接管。请从同一 checkout 的最新落盘进度继续。';
-    task.reviewFeedback = [task.reviewFeedback, note].filter(Boolean).join('\n\n');
+    if (String(task.conversationId || '').startsWith('local-chatgpt:')) {
+      // A local-only id belongs to the renderer on the previous hosted VM.
+      // It has no server route to restore, so preserving it as running makes
+      // every continuation stare at a provisional Chat that can never appear
+      // in the account sidebar. Requeue once and create a fresh Chat instead.
+      task.status = 'queued';
+      task.startedAt = null;
+      task.lastProgressAt = null;
+      task.conversationId = null;
+      task.chatURL = null;
+      task.lastError = 'github_actions_local_chat_requeued';
+      const note = '上一托管 Runner 只留下本地临时 Chat，无法恢复；请在新 Chat 中从同一 checkout 的落盘进度继续。';
+      task.reviewFeedback = [task.reviewFeedback, note].filter(Boolean).join('\n\n');
+    } else {
+      // Keep both the active state and durable Chat identity across hosted
+      // runner rotation. monitorAutomationTask recreates only the hidden
+      // renderer, navigates back to this conversation, confirms pending
+      // authorization, and observes its real terminal state.
+      // Refresh only the handoff heartbeat so the startup watchdog does not
+      // declare the task stale before the first monitor pass can reattach.
+      task.lastProgressAt = new Date().toISOString();
+      task.lastError = 'github_actions_runner_continuation';
+      const note = 'GitHub Actions 已在新托管 Runner 中接管。请从同一 checkout 的最新落盘进度继续。';
+      task.reviewFeedback = [task.reviewFeedback, note].filter(Boolean).join('\n\n');
+    }
   }
   if (['failed', 'blocked'].includes(task.status)) {
     task.status = 'queued';
