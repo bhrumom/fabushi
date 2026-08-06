@@ -1005,7 +1005,7 @@ func launchDedicatedQueueChatProcess(
   }
 }
 
-func hideDedicatedProcessForPort(_ port: Int) -> Bool {
+func dedicatedProcessIdForPort(_ port: Int) -> pid_t? {
   let process = Process()
   let output = Pipe()
   process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -1017,12 +1017,12 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
     try process.run()
     process.waitUntilExit()
   } catch {
-    return false
+    return nil
   }
   guard let text = String(
     data: output.fileHandleForReading.readDataToEndOfFile(),
     encoding: .utf8
-  ) else { return false }
+  ) else { return nil }
   let portMarker = "--remote-debugging-port=\(port)"
   for line in text.split(separator: "\n") {
     guard line.contains(portMarker),
@@ -1030,23 +1030,42 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
       continue
     }
     let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
-    guard let first = fields.first, let processID = pid_t(String(first)) else { continue }
-    let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
-    let hide = Process()
-    hide.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-    hide.arguments = ["-e", script]
-    hide.standardInput = FileHandle.nullDevice
-    hide.standardOutput = FileHandle.nullDevice
-    hide.standardError = FileHandle.nullDevice
-    do {
-      try hide.run()
-      hide.waitUntilExit()
-      return hide.terminationStatus == 0
-    } catch {
-      return false
+    if let first = fields.first, let processID = pid_t(String(first)) {
+      return processID
     }
   }
-  return false
+  return nil
+}
+
+func dedicatedProcessIsHiddenForPort(_ port: Int) -> Bool {
+  guard let processID = dedicatedProcessIdForPort(port) else { return false }
+  return NSWorkspace.shared.runningApplications.first(where: {
+    $0.processIdentifier == processID && !$0.isTerminated
+  })?.isHidden == true
+}
+
+func hideDedicatedProcessForPort(_ port: Int) -> Bool {
+  guard let processID = dedicatedProcessIdForPort(port) else { return false }
+  if let application = NSWorkspace.shared.runningApplications.first(where: {
+    $0.processIdentifier == processID && !$0.isTerminated
+  }) {
+    _ = application.hide()
+    if application.isHidden { return true }
+  }
+  let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
+  let hide = Process()
+  hide.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+  hide.arguments = ["-e", script]
+  hide.standardInput = FileHandle.nullDevice
+  hide.standardOutput = FileHandle.nullDevice
+  hide.standardError = FileHandle.nullDevice
+  do {
+    try hide.run()
+    hide.waitUntilExit()
+    return hide.terminationStatus == 0 && dedicatedProcessIsHiddenForPort(port)
+  } catch {
+    return false
+  }
 }
 
 func dedicatedQueueChatTarget(port: Int) -> String? {
@@ -1115,10 +1134,18 @@ func dedicatedQueueChatTarget(port: Int) -> String? {
       }
       if bridge, ready == "complete", textLength > 100,
          visibility != "hidden" {
-        if attempt % 8 == 0 {
-          _ = hideDedicatedProcessForPort(port)
-        }
+        let appHidden = attempt % 8 == 0
+          ? hideDedicatedProcessForPort(port)
+          : dedicatedProcessIsHiddenForPort(port)
         _ = CDPClient.setWebLifecycleHidden(wsURLString: wsURL)
+        if appHidden {
+          let visibilityLabel = visibility ?? "unknown"
+          queueTrace(
+            "worker-create stage=dedicated-chat-target-os-hidden "
+              + "port=\(port) target=\(targetId) visibility=\(visibilityLabel)"
+          )
+          return targetId
+        }
         continue
       }
       if bridge, ready == "complete", textLength > 100, visibility == "hidden" {
@@ -1195,7 +1222,9 @@ func createDedicatedParallelQueueWorkerTarget(
       targetId: targetId,
       refreshLifecycle: true
     )
-    if prepared?["ok"] as? Bool == true, runtimeState == .hidden {
+    let workerHidden = runtimeState == .hidden
+      || (runtimeState == .visible && dedicatedProcessIsHiddenForPort(port))
+    if prepared?["ok"] as? Bool == true, workerHidden {
       state.queueWorkerPort = port
       state.queueWorkerTargetId = targetId
       state.queueWorkerProfilePath = profilePath
