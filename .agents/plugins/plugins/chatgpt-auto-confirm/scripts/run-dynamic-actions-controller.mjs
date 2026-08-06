@@ -438,6 +438,10 @@ while (!stopping && Date.now() < deadline) {
       env: {
         ...process.env,
         ACTION_SESSION_SECONDS: String(Math.min(remainingSeconds, 20_100)),
+        // The outer dynamic controller owns versioned task reconciliation.
+        // Disable the legacy child refresher so it neither targets the
+        // logical id nor tries to inline a specification larger than 60 KB.
+        ACTION_DISABLE_TASK_REFRESH: 'true',
       },
       stdio: ['ignore', 'inherit', 'inherit'],
     });
