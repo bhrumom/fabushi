@@ -65,7 +65,9 @@ test('every new Chat is dispatched only after a fresh control read', () => {
   assert.match(controller, /native\('queue_pause'\);[\s\S]*const control = fetchControl\(\)/);
   assert.match(controller, /start: false/);
   assert.match(controller, /native\('queue_resume'/);
-  assert.match(controller, /await sleep\(1_000\);\r?\n\s+native\('queue_pause'\)/);
+  assert.match(controller, /resume_until_task_claimed/);
+  assert.match(controller, /claimDeadline[\s\S]*native\('queue_pause'\)/);
+  assert.match(controller, /wait_for_child_controller/);
   assert.match(controller, /runningEnded[\s\S]*previous_chat_finished/);
   assert.match(controller, /queued_chat_boundary/);
 });
@@ -73,7 +75,7 @@ test('every new Chat is dispatched only after a fresh control read', () => {
 test('unchanged tasks continue while changed tasks replace only at the boundary', () => {
   assert.match(controller, /if \(exact\) \{/);
   assert.match(controller, /staleVersion && !isTerminal\(current\)/);
-  assert.match(controller, /action: 'resume_after_fresh_control_read'/);
+  assert.match(controller, /action: 'resume_until_task_claimed'/);
   assert.match(controller, /queue_pause does not interrupt running Chats/);
 });
 
