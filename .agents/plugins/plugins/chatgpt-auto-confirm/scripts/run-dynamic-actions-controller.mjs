@@ -18,6 +18,9 @@ const pollSeconds = Math.max(15, Number(
 const boundaryRetrySeconds = Math.max(2, Number(
   process.env.CHATGPT_AUTO_CONFIRM_TASK_BOUNDARY_RETRY_SECONDS || 5,
 ));
+const taskClaimSeconds = Math.min(180, Math.max(5, Number(
+  process.env.CHATGPT_AUTO_CONFIRM_TASK_CLAIM_SECONDS || 60,
+)));
 const sessionSeconds = Math.min(
   20_700,
   Math.max(300, Number(process.env.ACTION_SESSION_SECONDS || 20_100)),
@@ -316,24 +319,52 @@ const dispatchFreshRound = async reason => {
   )));
 
   if (queued.length > 0 && runningCount < maxConcurrent) {
-    process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+  if (!child || child.exitCode !== null) {
+    process.stdout.write(`TASK_CHAT_BOUNDARY_DEFERRED ${JSON.stringify({
       reason,
       revision: sync.revision,
       queuedIds: queued.map(task => task.id),
-      runningCount,
-      maxConcurrent,
-      action: 'resume_after_fresh_control_read',
-    })}\n`);
-    native('queue_resume', {
-      maxConcurrent,
-      reviewGate: control.reviewGate ?? false,
-    });
-    // Let the watcher select eligible queued work. If it is already inside
-    // startAutomationTask, queue_pause waits for that locked send to finish and
-    // then closes the gate before any later Chat can be selected.
-    await sleep(1_000);
-    native('queue_pause');
+      action: 'wait_for_child_controller',
+    })}
+`);
+    return sync;
   }
+  process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+    reason,
+    revision: sync.revision,
+    queuedIds: queued.map(task => task.id),
+    runningCount,
+    maxConcurrent,
+    action: 'resume_until_task_claimed',
+    claimTimeoutSeconds: taskClaimSeconds,
+  })}
+`);
+  native('queue_resume', {
+    maxConcurrent,
+    reviewGate: control.reviewGate ?? false,
+  });
+  const queuedIds = new Set(queued.map(task => task.id));
+  const claimDeadline = Date.now() + taskClaimSeconds * 1_000;
+  let claimedIds = [];
+  while (Date.now() < claimDeadline && child?.exitCode === null) {
+    await sleep(1_000);
+    const current = native('queue_status');
+    const currentTasks = Array.isArray(current.tasks) ? current.tasks : [];
+    claimedIds = currentTasks
+      .filter(task => queuedIds.has(task.id) && task.status !== 'queued')
+      .map(task => task.id);
+    if (claimedIds.length > 0) break;
+  }
+  native('queue_pause');
+  process.stdout.write(`TASK_CHAT_CLAIM ${JSON.stringify({
+    reason,
+    queuedIds: [...queuedIds],
+    claimedIds,
+    claimed: claimedIds.length > 0,
+    childExitCode: child?.exitCode ?? null,
+  })}
+`);
+}
   return sync;
 };
 
