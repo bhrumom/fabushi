@@ -1,0 +1,101 @@
+name: Finalize Actions queue fix
+
+on:
+  push:
+    branches:
+      - codex/fix-actions-queue-boundary
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/fix-actions-queue-boundary
+          fetch-depth: 0
+      - name: Format controller and update tests
+        shell: python
+        run: |
+          from pathlib import Path
+
+          controller_path = Path('.agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-dynamic-actions-controller.mjs')
+          source = controller_path.read_text()
+          start = source.index('  if (queued.length > 0 && runningCount < maxConcurrent) {', source.index('const dispatchFreshRound'))
+          end = source.index('  return sync;\n};', start)
+          block = r"""  if (queued.length > 0 && runningCount < maxConcurrent) {
+            if (!child || child.exitCode !== null) {
+              process.stdout.write(`TASK_CHAT_BOUNDARY_DEFERRED ${JSON.stringify({
+                reason,
+                revision: sync.revision,
+                queuedIds: queued.map(task => task.id),
+                action: 'wait_for_child_controller',
+              })}\n`);
+              return sync;
+            }
+            process.stdout.write(`TASK_CHAT_BOUNDARY ${JSON.stringify({
+              reason,
+              revision: sync.revision,
+              queuedIds: queued.map(task => task.id),
+              runningCount,
+              maxConcurrent,
+              action: 'resume_until_task_claimed',
+              claimTimeoutSeconds: taskClaimSeconds,
+            })}\n`);
+            native('queue_resume', {
+              maxConcurrent,
+              reviewGate: control.reviewGate ?? false,
+            });
+            const queuedIds = new Set(queued.map(task => task.id));
+            const claimDeadline = Date.now() + taskClaimSeconds * 1_000;
+            let claimedIds = [];
+            while (Date.now() < claimDeadline && child?.exitCode === null) {
+              await sleep(1_000);
+              const current = native('queue_status');
+              const currentTasks = Array.isArray(current.tasks) ? current.tasks : [];
+              claimedIds = currentTasks
+                .filter(task => queuedIds.has(task.id) && task.status !== 'queued')
+                .map(task => task.id);
+              if (claimedIds.length > 0) break;
+            }
+            native('queue_pause');
+            process.stdout.write(`TASK_CHAT_CLAIM ${JSON.stringify({
+              reason,
+              queuedIds: [...queuedIds],
+              claimedIds,
+              claimed: claimedIds.length > 0,
+              childExitCode: child?.exitCode ?? null,
+            })}\n`);
+          }
+"""
+          controller_path.write_text(source[:start] + block + source[end:])
+
+          test_path = Path('.agents/plugins/plugins/chatgpt-auto-confirm/test/dynamic-actions-controller.test.mjs')
+          tests = test_path.read_text()
+          tests = tests.replace(
+            "  assert.match(controller, /await sleep\\(1_000\\);\\r?\\n\\s+native\\('queue_pause'\\)/);",
+            "  assert.match(controller, /resume_until_task_claimed/);\n  assert.match(controller, /claimDeadline[\\s\\S]*native\\('queue_pause'\\)/);\n  assert.match(controller, /wait_for_child_controller/);",
+          )
+          tests = tests.replace(
+            "  assert.match(controller, /action: 'resume_after_fresh_control_read'/);",
+            "  assert.match(controller, /action: 'resume_until_task_claimed'/);",
+          )
+          test_path.write_text(tests)
+      - name: Run full runtime tests
+        working-directory: .agents/plugins/plugins/chatgpt-auto-confirm
+        run: npm test
+      - name: Validate diff
+        run: |
+          node --check .agents/plugins/plugins/chatgpt-auto-confirm/scripts/run-dynamic-actions-controller.mjs
+          git diff --check
+      - name: Commit final fix
+        run: |
+          rm -f .github/workflows/finalize-actions-queue-fix.yml .github/queue-fix-finalize-trigger
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "test(actions): cover bounded Chat task claims"
+          git push origin HEAD:codex/fix-actions-queue-boundary
