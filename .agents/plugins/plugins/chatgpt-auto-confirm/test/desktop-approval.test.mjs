@@ -933,6 +933,57 @@ test('session-scoped approval opens the adjacent menu and selects the conversati
   assert.equal(clicks.includes('allow'), false);
 });
 
+test('allow-once approval ignores the rendered Enter keyboard hint', async () => {
+  const clicks = [];
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(id, text) {
+      this.id = id;
+      this.innerText = text;
+      this.textContent = text;
+      this.disabled = false;
+      this.offsetWidth = 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute() { return null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: this.offsetWidth, height: this.offsetHeight };
+    }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type !== 'click') return true;
+      clicks.push(this.id);
+      if (this.id === 'allow-once') {
+        this.isConnected = false;
+        this.offsetWidth = 0;
+        this.offsetHeight = 0;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('deny', 'Deny\nEscape');
+  const allowOnce = new FakeElement('allow-once', 'Allow once\n⏎');
+  const card = new FakeElement('card', 'Allow ChatGPT to use bhrum2?');
+  card.querySelectorAll = () => [deny, allowOnce];
+  deny.parentElement = card;
+  allowOnce.parentElement = card;
+  const document = { querySelectorAll: selector => selector === 'button' ? [deny, allowOnce] : [] };
+  const result = await runInNewContext(approvalScript, {
+    document, PointerEvent: FakeEvent, MouseEvent: FakeEvent, setTimeout,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.confirmed, true);
+  assert.equal(result.strategy, 'single-approval');
+  assert.equal(result.label, 'allow once');
+  assert.deepEqual(clicks, ['allow-once']);
+  assert.match(chatScriptsSource, /\\u21b5\\u23ce/);
+});
+
 test('approval decisions do not inspect or block card contents', () => {
   assert.match(nativeSource, /allRecognizedApprovalsEnabled/);
   assert.match(nativeSource, /自动确认所有 ChatGPT 授权卡/);

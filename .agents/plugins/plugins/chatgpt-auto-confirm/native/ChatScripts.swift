@@ -1769,7 +1769,9 @@ func getReplyJS() -> String {
     }
 
     const approvalButton = [...main.querySelectorAll('button, a, [role="button"]')].find(button => {
-      const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '').trim().toLowerCase();
+      const text = (button.innerText || button.getAttribute('aria-label') || button.getAttribute('title') || '')
+        .replace(/[\s\u21b5\u23ce]+/g, ' ')
+        .trim().toLowerCase();
       return visible(button) && [
         '完全访问', 'full access', 'allow', 'allow once',
         '允许', '允许一次', 'approve', 'approve once',
