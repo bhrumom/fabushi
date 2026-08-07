@@ -73,11 +73,11 @@ jobs:
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Download and verify pre-PairIP signed ChatGPT candidate
+      - name: Download and verify latest pre-PairIP signed ChatGPT candidate
         shell: bash
         env:
-          CHATGPT_ANDROID_VERSION_NAME: 1.2023.256
-          CHATGPT_ANDROID_VERSION_CODE: '48'
+          CHATGPT_ANDROID_VERSION_NAME: 1.2024.366
+          CHATGPT_ANDROID_VERSION_CODE: '2436601'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
