@@ -118,8 +118,25 @@ jobs:
             echo "$sdk_root/platform-tools"
             echo "$sdk_root/emulator"
           } >> "$GITHUB_PATH"
+
+          # The current ubuntu-24.04 image does not include libpulse.so.0, but
+          # the Android QEMU binary links against it even when we launch with
+          # -noaudio. Install only the required runtime library.
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libpulse0
+
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" 'platform-tools' 'emulator' "$AVD_PACKAGE"
+
+          qemu_bin="$sdk_root/emulator/qemu/linux-x86_64/qemu-system-x86_64"
+          test -x "$qemu_bin"
+          missing=$(ldd "$qemu_bin" | awk '/not found/{print $1}')
+          if [[ -n "$missing" ]]; then
+            echo "::error::Android emulator has unresolved shared libraries: $missing"
+            ldd "$qemu_bin" || true
+            exit 1
+          fi
+
           "$sdk_root/emulator/emulator" -version | head -n 1
           "$sdk_root/platform-tools/adb" version | head -n 1
 
