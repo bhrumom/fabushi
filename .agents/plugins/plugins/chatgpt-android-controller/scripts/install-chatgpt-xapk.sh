@@ -3,6 +3,7 @@ set -euo pipefail
 
 archive="${1:?usage: install-chatgpt-xapk.sh <xapk>}"
 package_name="${CHATGPT_ANDROID_PACKAGE:-com.openai.chatgpt}"
+installer_package="${CHATGPT_ANDROID_INSTALLER_PACKAGE:-com.android.vending}"
 adb_bin="${ADB_BIN:-adb}"
 sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 aapt_bin=$(find "$sdk_root/build-tools" -type f -name aapt -perm -u+x -print 2>/dev/null | sort -V | tail -n 1)
@@ -89,10 +90,11 @@ selected=("$base" "$abi_split")
 [[ -n "$density_split" ]] && selected+=("$density_split")
 [[ -n "$language_split" ]] && selected+=("$language_split")
 
-printf 'Installing ChatGPT XAPK splits for abilist=%s density=%s locale=%s:\n' "$abilist" "$density" "${locale:-unknown}"
+printf 'Installing ChatGPT XAPK splits for abilist=%s density=%s locale=%s installer=%s:\n' \
+  "$abilist" "$density" "${locale:-unknown}" "$installer_package"
 printf '  %s\n' "${selected[@]##*/}"
 
-"$adb_bin" install-multiple -r "${selected[@]}"
+"$adb_bin" install-multiple -r -i "$installer_package" "${selected[@]}"
 if ! "$adb_bin" shell pm path "$package_name" | tr -d '\r' | grep -q '^package:'; then
   echo "$package_name was not installed after install-multiple." >&2
   exit 1
