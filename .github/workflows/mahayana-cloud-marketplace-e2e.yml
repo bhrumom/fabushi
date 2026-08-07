@@ -153,6 +153,9 @@ jobs:
           manifest="$PLUGIN_DIR/.codex-plugin/plugin.json"
           jq --arg version "$PLUGIN_VERSION" '.version = $version' "$manifest" > "$RUNNER_TEMP/plugin-manifest.json"
           mv "$RUNNER_TEMP/plugin-manifest.json" "$manifest"
+          package="$PLUGIN_DIR/package.json"
+          jq --arg version "$PLUGIN_VERSION" '.version = $version' "$package" > "$RUNNER_TEMP/plugin-package.json"
+          mv "$RUNNER_TEMP/plugin-package.json" "$package"
           "$cli" login test
           "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" | tee "$RUNNER_TEMP/publish.log"
           python3 - "$RUNNER_TEMP/publish.log" "$RUNNER_TEMP/publish.json" <<'PY'
