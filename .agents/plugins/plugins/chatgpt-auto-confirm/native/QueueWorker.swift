@@ -298,6 +298,12 @@ func queueTargetStateIsUsableForQueue(
       && (
         workerMode == parallelDedicatedProcessQueueWorkerMode
           || workerMode == parallelHeadlessWindowQueueWorkerMode
+          // The hosted controller fallback deliberately borrows the primary
+          // renderer after proving it is a real Chat surface. GitHub Actions
+          // has no interactive user who can collide with that visible page,
+          // and shared mode prevents task cleanup from closing it.
+          || (runningOnGitHubActions()
+            && workerMode == sharedConversationQueueWorkerMode)
       )
   case .missing, .hiddenNonChat, .suspended:
     return false
