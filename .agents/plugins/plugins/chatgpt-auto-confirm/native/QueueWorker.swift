@@ -2648,6 +2648,92 @@ func createHeadlessParallelQueueWorkerTarget(
   return nil
 }
 
+func createHostedControllerQueueWorkerTarget(
+  _ state: inout PluginState
+) -> (port: Int, targetId: String, profilePath: String)? {
+  // The persistent Actions runner executes one queue task at a time. If the
+  // quick-chat service cannot create its hidden window (for example when the
+  // workspace has exhausted Codex/Work credits), the already authenticated
+  // primary renderer is the only Electron-backed surface guaranteed to
+  // remain available. Reuse it only while no task is running, and mark it as
+  // shared so task cleanup never closes ChatGPT's primary window.
+  guard runningOnGitHubActions(),
+        !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
+        let controller = sharedChatController(&state) else {
+    state.lastError = "hosted_controller_unavailable_or_busy"
+    return nil
+  }
+
+  queueTrace(
+    "worker-create stage=hosted-controller-fallback-prepare-begin "
+      + "port=\(controller.port) target=\(controller.targetId)"
+  )
+  var selection = selectChatOnPrimaryController(
+    port: controller.port,
+    targetId: controller.targetId
+  )
+  var lastPrepared: [String: Any]?
+  for _ in 0..<40 {
+    let confirmedChatMode = selection?["alreadySelected"] as? Bool == true
+    lastPrepared = cdpValue(
+      port: controller.port,
+      targetId: controller.targetId,
+      expression: prepareBackgroundChatJS(
+        newChat: false,
+        confirmedChatMode: confirmedChatMode
+      ),
+      timeout: 5.0
+    )
+    let runtimeState = queueTargetRuntimeState(
+      port: controller.port,
+      targetId: controller.targetId,
+      refreshLifecycle: true
+    )
+    if lastPrepared?["ok"] as? Bool == true,
+       runtimeState == .visible || runtimeState == .hidden {
+      state.backgroundAppPort = controller.port
+      state.backgroundChatTargetId = controller.targetId
+      state.backgroundProfilePath = controller.profilePath
+      state.queueWorkerPort = controller.port
+      state.queueWorkerTargetId = controller.targetId
+      state.queueWorkerProfilePath = controller.profilePath
+      state.queueWorkerMode = sharedConversationQueueWorkerMode
+      state.lastError = nil
+      queueTrace(
+        "worker-create stage=hosted-controller-fallback-prepare-complete "
+          + "target=\(controller.targetId) "
+          + "visibility=\(queueTargetRuntimeStateName(runtimeState))"
+      )
+      return (controller.port, controller.targetId, controller.profilePath)
+    }
+    if lastPrepared?["error"] as? String == "not_chat_surface" {
+      selection = selectChatOnPrimaryController(
+        port: controller.port,
+        targetId: controller.targetId
+      )
+    }
+    Thread.sleep(forTimeInterval: 0.35)
+  }
+
+  let diagnosticScreenshot = captureHiddenChatScreenshot(
+    port: controller.port,
+    targetId: controller.targetId,
+    label: "hosted-controller-not-chat"
+  ) ?? "none"
+  state.lastError = [
+    "hosted_controller_not_chat",
+    "prepare=\(lastPrepared?["error"] as? String ?? "no_result")",
+    "hasInput=\(lastPrepared?["hasInput"] as? Bool ?? false)",
+    "workComposer=\(lastPrepared?["workComposer"] as? Bool ?? false)",
+    "screenshot=\(diagnosticScreenshot)",
+  ].joined(separator: ":")
+  queueTrace(
+    "worker-create stage=hosted-controller-fallback-prepare-failed "
+      + "error=\(state.lastError ?? "unknown")"
+  )
+  return nil
+}
+
 func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
@@ -2714,6 +2800,23 @@ func createIndependentQueueWorkerTarget(
       queueTrace(
         "worker-create stage=hosted-headless-window-fallback-failed "
           + "account=\(effectiveAccountId) error=\(fallbackError)"
+      )
+      queueTrace(
+        "worker-create stage=hosted-controller-fallback-begin "
+          + "account=\(effectiveAccountId)"
+      )
+      if let controllerFallback = createHostedControllerQueueWorkerTarget(&state) {
+        queueTrace(
+          "worker-create stage=hosted-controller-fallback-complete "
+            + "account=\(effectiveAccountId) target=\(controllerFallback.targetId)"
+        )
+        return controllerFallback
+      }
+      let controllerFallbackError = state.lastError ?? "unknown"
+      state.lastError = "\(prewarmError); hosted_headless_fallback=\(fallbackError); hosted_controller_fallback=\(controllerFallbackError)"
+      queueTrace(
+        "worker-create stage=hosted-controller-fallback-failed "
+          + "account=\(effectiveAccountId) error=\(controllerFallbackError)"
       )
       return nil
     }
@@ -2882,7 +2985,9 @@ func startAutomationTask(
     ? normalizedConversationId(task.conversationId)
     : nil
   defer {
-    if !taskOwnsTarget, let port, let targetId {
+    if !taskOwnsTarget,
+       state.queueWorkerMode != sharedConversationQueueWorkerMode,
+       let port, let targetId {
       _ = CDPClient.closeTarget(targetId, portOverride: port)
     }
     if !taskOwnsTarget, let workerProfilePath {
