@@ -118,9 +118,22 @@ jobs:
             echo "$sdk_root/platform-tools"
             echo "$sdk_root/emulator"
           } >> "$GITHUB_PATH"
+
+          # Android Emulator's Linux launcher links PulseAudio even with
+          # -noaudio. Install only the missing host runtime library.
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libpulse0
+
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" 'platform-tools' 'emulator' "$AVD_PACKAGE"
-          "$sdk_root/emulator/emulator" -version | head -n 1
+
+          emulator_bin="$sdk_root/emulator/emulator"
+          test -x "$emulator_bin"
+          if ! emulator_version=$("$emulator_bin" -version 2>&1); then
+            printf '%s\n' "$emulator_version"
+            exit 1
+          fi
+          printf '%s\n' "$emulator_version" | head -n 1
           "$sdk_root/platform-tools/adb" version | head -n 1
 
       - name: Restore or create AVD
