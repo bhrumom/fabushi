@@ -2,8 +2,8 @@
   "mcpServers": {
     "chatgpt-android-controller-local": {
       "type": "stdio",
-      "command": "./runtime/cli/fabushi-plugin-cli",
-      "args": ["--plugin", "chatgpt-android-controller", "mcp-serve"],
+      "command": "node",
+      "args": ["--experimental-strip-types", "server/index.ts"],
       "cwd": "."
     }
   }
