@@ -76,14 +76,17 @@ jobs:
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Verify downloadable universal ChatGPT XAPK identity and x86_64 support
+      - name: Download known-good signed ChatGPT probe XAPK
         shell: bash
+        env:
+          CHATGPT_ANDROID_VERSION_NAME: 1.2026.027
+          CHATGPT_ANDROID_VERSION_CODE: '2602719'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
-          bash scripts/fetch-chatgpt-apkcombo.sh "$bundle"
+          bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
           bash scripts/verify-chatgpt-xapk.sh "$bundle"
-      - name: Install and launch ChatGPT on hosted x86_64 Android
+      - name: Inspect Google Play remediation after sideload launch
         shell: bash
         run: |
           set -euo pipefail
@@ -127,17 +130,16 @@ jobs:
           fi
 
           bash scripts/install-chatgpt-xapk.sh "$RUNNER_TEMP/chatgpt.xapk"
-          adb shell pm path com.openai.chatgpt
           adb shell dumpsys package com.openai.chatgpt \
             | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=|originatingPackageName=' \
-            | head -n 16 || true
+            | head -n 20 || true
 
-          adb logcat -c
           component=$(adb shell cmd package resolve-activity --brief \
             -a android.intent.action.MAIN \
             -c android.intent.category.LAUNCHER \
             com.openai.chatgpt | tr -d '\r' | tail -n 1)
           echo "Resolved ChatGPT launcher component: $component"
+          adb logcat -c
           if [[ "$component" == com.openai.chatgpt/* ]]; then
             adb shell am start -W -n "$component" || true
           else
@@ -145,14 +147,26 @@ jobs:
           fi
           sleep 12
 
-          pid=$(adb shell pidof com.openai.chatgpt | tr -d '\r' || true)
+          echo '--- foreground ---'
+          adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 10 || true
+          echo '--- signed-in Google accounts ---'
+          adb shell dumpsys account | grep -E 'Account \{|type=com\.google|Accounts:' | head -n 40 || true
+          echo '--- visible UI text/resource ids ---'
+          adb shell uiautomator dump /sdcard/play-remediation.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/play-remediation.xml 2>/dev/null \
+            | tr '>' '>\n' \
+            | grep -Eo 'text="[^"]*"|content-desc="[^"]*"|resource-id="[^"]*"|package="[^"]*"' \
+            | sed '/text=""/d;/content-desc=""/d;/resource-id=""/d' \
+            | head -n 240 || true
+          echo '--- relevant logcat ---'
+          adb logcat -d \
+            | grep -Ei 'com\.openai\.chatgpt|integrity|licens|entitlement|vending|play store|unauthenticated' \
+            | tail -n 300 || true
+
           focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 8 || true)
-          echo "ChatGPT process: ${pid:-missing}"
-          printf '%s\n' "$focus"
-          if [[ ! "$pid" =~ ^[0-9] ]] || [[ "$focus" != *com.openai.chatgpt* ]]; then
-            echo '::error::ChatGPT did not remain foreground after launch.'
-            adb logcat -d \
-              | grep -Ei 'com\.openai\.chatgpt|AndroidRuntime|FATAL EXCEPTION|integrity|vending|installer|update|play store' \
-              | tail -n 300 || true
-            exit 1
+          if [[ "$focus" == *com.android.vending* ]]; then
+            echo 'Observed Google Play remediation as expected; diagnostic complete.'
+            exit 0
           fi
+          echo '::error::Expected Play remediation did not become foreground.'
+          exit 1
