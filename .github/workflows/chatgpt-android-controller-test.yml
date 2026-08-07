@@ -31,6 +31,7 @@ jobs:
       - run: npm test
       - run: bash -n scripts/avd-state.sh
       - run: bash -n scripts/fetch-chatgpt-apkpure.sh
+      - run: bash -n scripts/fetch-chatgpt-apkcombo.sh
       - run: bash -n scripts/verify-chatgpt-xapk.sh
       - run: bash -n scripts/install-chatgpt-xapk.sh
       - name: Verify hosted Android emulator runtime
@@ -75,12 +76,12 @@ jobs:
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Verify downloadable ChatGPT XAPK identity and x86_64 support
+      - name: Verify downloadable universal ChatGPT XAPK identity and x86_64 support
         shell: bash
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
-          bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
+          bash scripts/fetch-chatgpt-apkcombo.sh "$bundle"
           bash scripts/verify-chatgpt-xapk.sh "$bundle"
       - name: Install and launch ChatGPT on hosted x86_64 Android
         shell: bash
@@ -128,14 +129,30 @@ jobs:
           bash scripts/install-chatgpt-xapk.sh "$RUNNER_TEMP/chatgpt.xapk"
           adb shell pm path com.openai.chatgpt
           adb shell dumpsys package com.openai.chatgpt \
-            | grep -E 'versionName=|versionCode=' | head -n 4
+            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=|originatingPackageName=' \
+            | head -n 16 || true
 
-          adb shell monkey -p com.openai.chatgpt -c android.intent.category.LAUNCHER 1 >/dev/null
-          sleep 8
-          if ! adb shell pidof com.openai.chatgpt | tr -d '\r' | grep -Eq '^[0-9]'; then
-            echo '::error::ChatGPT installed but did not stay running after launch.'
-            adb shell dumpsys activity activities | tail -n 120 || true
+          adb logcat -c
+          component=$(adb shell cmd package resolve-activity --brief \
+            -a android.intent.action.MAIN \
+            -c android.intent.category.LAUNCHER \
+            com.openai.chatgpt | tr -d '\r' | tail -n 1)
+          echo "Resolved ChatGPT launcher component: $component"
+          if [[ "$component" == com.openai.chatgpt/* ]]; then
+            adb shell am start -W -n "$component" || true
+          else
+            adb shell monkey -p com.openai.chatgpt -c android.intent.category.LAUNCHER 1 >/dev/null || true
+          fi
+          sleep 12
+
+          pid=$(adb shell pidof com.openai.chatgpt | tr -d '\r' || true)
+          focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 8 || true)
+          echo "ChatGPT process: ${pid:-missing}"
+          printf '%s\n' "$focus"
+          if [[ ! "$pid" =~ ^[0-9] ]] || [[ "$focus" != *com.openai.chatgpt* ]]; then
+            echo '::error::ChatGPT did not remain foreground after launch.'
+            adb logcat -d \
+              | grep -Ei 'com\.openai\.chatgpt|AndroidRuntime|FATAL EXCEPTION|integrity|vending|installer|update|play store' \
+              | tail -n 300 || true
             exit 1
           fi
-          echo "ChatGPT process: $(adb shell pidof com.openai.chatgpt | tr -d '\r')"
-          adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 8 || true
