@@ -8,7 +8,48 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v84"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v85"
+let defaultMaxTaskContinuations = 6
+let automaticApprovalWindowSeconds: TimeInterval = 120
+let maxAutomaticApprovalsPerWindow = 8
+let duplicateApprovalGraceSeconds: TimeInterval = 30
+let retainedApprovalFingerprintCount = 100
+
+func prunedAutomaticApprovalTimestamps(
+  _ values: [String]?,
+  now: Date = Date()
+) -> [String] {
+  (values ?? []).filter { value in
+    guard let date = isoFormatter.date(from: value) else { return false }
+    return now.timeIntervalSince(date) <= automaticApprovalWindowSeconds
+  }
+}
+
+func approvalFingerprint(_ detection: [String: Any]?) -> String? {
+  guard let value = detection?["cardFingerprint"] as? String else { return nil }
+  let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+  return normalized.isEmpty ? nil : String(normalized.prefix(96))
+}
+
+func recordHandledApprovalFingerprint(
+  _ fingerprint: String,
+  fingerprints: inout [String]?,
+  timestamps: inout [String]?,
+  lastFingerprint: inout String?,
+  lastApprovedAt: inout String?,
+  now: Date = Date()
+) {
+  var handled = fingerprints ?? []
+  handled.removeAll { $0 == fingerprint }
+  handled.append(fingerprint)
+  fingerprints = Array(handled.suffix(retainedApprovalFingerprintCount))
+  var recent = prunedAutomaticApprovalTimestamps(timestamps, now: now)
+  let timestamp = isoFormatter.string(from: now)
+  recent.append(timestamp)
+  timestamps = recent
+  lastFingerprint = fingerprint
+  lastApprovedAt = timestamp
+}
 
 func queueStateURL() -> URL {
   if let override = ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"],
@@ -145,13 +186,14 @@ func loadQueueState() -> PluginState {
         var state = try? decoder.decode(PluginState.self, from: data) else {
     return PluginState()
   }
-  // `0` is the durable queue meaning for unlimited report-driven Chat
-  // continuations. Migrate only the previous default on pre-v35 state; keep
-  // explicit finite limits and all already-migrated task settings intact.
+  // Unlimited continuations previously allowed a stale task to send thousands
+  // of fresh Chats. Every queue now has a finite circuit breaker; migrate old
+  // zero/unlimited and legacy defaults when the runtime revision changes.
   if state.queueRuntimeRevision != currentQueueRuntimeRevision,
      var tasks = state.automationTasks {
-    for index in tasks.indices where tasks[index].maxTaskContinuations == 8 {
-      tasks[index].maxTaskContinuations = 0
+    for index in tasks.indices where tasks[index].maxTaskContinuations <= 0
+        || tasks[index].maxTaskContinuations == 8 {
+      tasks[index].maxTaskContinuations = defaultMaxTaskContinuations
     }
     state.automationTasks = tasks
   }
@@ -272,11 +314,32 @@ func networkRecoverySignal(_ value: String) -> String? {
   return marker
 }
 
+func isRequestRateLimitSignal(_ value: String) -> Bool {
+  let text = value.lowercased()
+  return text.contains("request failed with status 429")
+    || text.contains("http 429")
+    || text.contains("too many requests")
+    || text.contains("请求过于频繁")
+}
+
 func queueNetworkRecovery(
   _ task: inout AutomationTask,
   state: inout PluginState,
   reason: String
 ) {
+  if isRequestRateLimitSignal(reason) {
+    let now = isoFormatter.string(from: Date())
+    state.queuePaused = true
+    state.queueNetworkStatus = "rate_limited"
+    state.queueNetworkLastError = String(reason.prefix(240))
+    state.queueNetworkWaitUntil = nil
+    task.status = "blocked"
+    task.lastError = "request_rate_limit_circuit_open"
+    task.updatedAt = now
+    task.finishedAt = now
+    queueTrace("task=\(task.id) stage=network-rate-limit-blocked reason=\(reason)")
+    return
+  }
   // Use the regular continuation reset so the next operation is always a
   // fresh Chat, then defer only that continuation while connectivity recovers.
   queueContinuation(&task, report: nil, reason: "network_recovery")

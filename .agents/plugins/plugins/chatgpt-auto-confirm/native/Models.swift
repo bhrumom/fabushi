@@ -60,6 +60,12 @@ struct PluginState: Codable {
   var queueNetworkLastError: String?
   var queueNetworkFailureCount: Int?
   var queueNetworkWaitUntil: String?
+  // Approval safety is persisted so a renderer re-mount or watcher restart
+  // cannot turn the same authorization request into another click.
+  var handledApprovalFingerprints: [String]?
+  var automaticApprovalTimestamps: [String]?
+  var lastAutomaticApprovalFingerprint: String?
+  var lastAutomaticApprovalAt: String?
 }
 
 struct AutomationTaskReport: Codable {
@@ -174,6 +180,12 @@ struct AutomationTask: Codable {
   // later Actions run can distinguish fresh progress from an old renderer.
   var watchdogLastRecoveryAt: String? = nil
   var watchdogRecoveryCount: Int? = nil
+  // Queue approvals use the same durable safety boundary as the general
+  // watcher, but are isolated per task/conversation.
+  var handledApprovalFingerprints: [String]? = nil
+  var automaticApprovalTimestamps: [String]? = nil
+  var lastAutomaticApprovalFingerprint: String? = nil
+  var lastAutomaticApprovalAt: String? = nil
 }
 
 struct Candidate {

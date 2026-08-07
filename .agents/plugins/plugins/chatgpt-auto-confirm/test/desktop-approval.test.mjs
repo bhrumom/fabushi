@@ -172,7 +172,7 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.equal(params.stagnationTimeout, 10800);
   assert.equal(params.maxRecoveryAttempts, 5);
   assert.equal(params.autoContinueIncomplete, true);
-  assert.equal(params.maxTaskContinuations, 0);
+  assert.equal(params.maxTaskContinuations, 6);
   assert.match(nativeSource, /"thinking_progress"/);
   assert.match(nativeSource, /stopCurrentResponseJS/);
   assert.match(nativeSource, /continueInNewTaskJS/);
@@ -365,7 +365,13 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /worker_exited_without_result/);
   assert.match(nativeSource, /monitorAutomationTask/);
   assert.match(nativeSource, /virtual-list parent/);
-  assert.match(nativeSource, /maxTaskContinuations > 0/);
+  assert.match(nativeSource, /let continuationLimit = max\(1, task\.maxTaskContinuations\)/);
+  assert.match(nativeSource, /approval_duplicate_circuit_open/);
+  assert.match(nativeSource, /approval_rate_circuit_open/);
+  assert.match(nativeSource, /background_chat_closed_requires_restart/);
+  assert.match(nativeSource, /queue_worker_closed_requires_retry/);
+  assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_ALLOW_VISIBLE_AX/);
+  assert.match(nativeSource, /requestIdentityAvailable/);
   assert.match(nativeSource, /watchdogTaskHasNonRecoverableFailure/);
   assert.match(nativeSource, /connector_selection_not_confirmed/);
   assert.match(nativeSource, /activeConversationId is shared by every visible row/);
@@ -748,7 +754,8 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /"internalActionIsPrimary": true/);
   assert.match(nativeSource, /"operatesHiddenPages": true/);
   assert.match(nativeSource, /loadedApprovalTargets/);
-  assert.match(nativeSource, /"scansEveryLoadedRenderer": true/);
+  assert.match(nativeSource, /"scansEveryLoadedRenderer": false/);
+  assert.match(nativeSource, /"visibleRendererAccess": false/);
   assert.match(nativeSource, /Runtime\.evaluate does not activate the app/);
   assert.match(nativeSource, /withWatcherLifecycleLock/);
   assert.match(nativeSource, /idleSystemSleepDisabled/);
@@ -1006,6 +1013,58 @@ test('allow-once approval ignores the rendered Enter keyboard hint', async () =>
   assert.equal(result.label, 'allow once');
   assert.deepEqual(clicks, ['allow-once']);
   assert.match(chatScriptsSource, /\\u21b5\\u23ce/);
+});
+
+test('approval re-render with the same request fingerprint is not confirmed as closed', async () => {
+  let activeAllow;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(text) {
+      this.innerText = text;
+      this.textContent = text;
+      this.disabled = false;
+      this.offsetWidth = 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute() { return null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() { return { left: 0, top: 0, width: 80, height: 24 }; }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type === 'click' && this === activeAllow) {
+        this.isConnected = false;
+        const replacement = new FakeElement('Allow once');
+        replacement.parentElement = card;
+        activeAllow = replacement;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('Deny');
+  const card = new FakeElement('Allow ChatGPT to use bhrum2?');
+  activeAllow = new FakeElement('Allow once');
+  deny.parentElement = card;
+  activeAllow.parentElement = card;
+  card.querySelectorAll = () => [deny, activeAllow];
+  const document = {
+    querySelectorAll(selector) {
+      return selector === 'button' ? [deny, activeAllow] : [];
+    },
+  };
+  const immediateTimeout = callback => { callback(); return 0; };
+  const result = await runInNewContext(approvalScript, {
+    document,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout: immediateTimeout,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.confirmed, false);
+  assert.equal(result.error, 'approval_click_not_confirmed');
 });
 
 test('approval decisions do not inspect or block card contents', () => {

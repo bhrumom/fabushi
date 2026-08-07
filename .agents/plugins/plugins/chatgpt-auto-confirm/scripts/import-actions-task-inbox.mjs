@@ -160,7 +160,7 @@ for (const task of incoming) {
     resourceLocks: task.resourceLocks || [],
     priority: task.priority || 0,
     timeout: task.timeout || 21600,
-    maxTaskContinuations: task.maxTaskContinuations ?? 20,
+    maxTaskContinuations: Math.min(20, Math.max(1, task.maxTaskContinuations ?? 6)),
     maxRuntimeRetries: task.maxRuntimeRetries ?? 2,
     attempts: 0,
     reviewRound: 0,

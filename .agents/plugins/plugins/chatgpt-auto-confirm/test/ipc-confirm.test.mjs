@@ -257,7 +257,8 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   assert.equal(statusRes.ipc.cdp.connected, true);
   assert.equal(statusRes.ipc.cdp.pageTargetCount, 2);
   assert.equal(statusRes.loadedRendererCount, 2);
-  assert.equal(statusRes.safety.scansEveryLoadedRenderer, true);
+  assert.equal(statusRes.safety.scansEveryLoadedRenderer, false);
+  assert.equal(statusRes.safety.visibleRendererAccess, false);
   assert.equal(statusRes.ipc.primaryPath, 'CDP WebSocket & Unix IPC 主路径');
   assert.equal(statusRes.safety.ipcIsPrimaryPath, true);
   assert.equal(statusRes.safety.axPressIsFallback, true);

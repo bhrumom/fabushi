@@ -1036,7 +1036,10 @@ case "queue_enqueue":
           resourceLocks: raw["resourceLocks"] as? [String] ?? [],
           priority: min(100, max(-100, raw["priority"] as? Int ?? 0)),
           timeout: min(maxChatWatchTimeoutSeconds, max(60, raw["timeout"] as? Int ?? defaultChatWatchTimeoutSeconds)),
-          maxTaskContinuations: max(0, raw["maxTaskContinuations"] as? Int ?? 0),
+          maxTaskContinuations: min(
+            20,
+            max(1, raw["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
+          ),
           maxRuntimeRetries: min(5, max(0, raw["maxRuntimeRetries"] as? Int ?? 2)),
           attempts: 0,
           reviewRound: 0,
@@ -2164,7 +2167,10 @@ case "send_and_watch":
   let stagnationTimeout = min(defaultChatStagnationTimeoutSeconds, max(60, params["stagnationTimeout"] as? Int ?? defaultChatStagnationTimeoutSeconds))
   let maxRecoveryAttempts = min(5, max(0, params["maxRecoveryAttempts"] as? Int ?? 5))
   let autoContinueIncomplete = params["autoContinueIncomplete"] as? Bool ?? true
-  let maxTaskContinuations = max(0, params["maxTaskContinuations"] as? Int ?? 0)
+  let maxTaskContinuations = min(
+    20,
+    max(1, params["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
+  )
   let continuationDepth = max(0, params["continuationDepth"] as? Int ?? 0)
   let originalGoal = (params["originalGoal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? message
   let reportFingerprints = params["reportFingerprints"] as? [String] ?? []
@@ -2690,7 +2696,7 @@ case "send_and_watch":
       .lowercased()
       .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     let hasNextTask = !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let continuationAllowed = maxTaskContinuations == 0 || continuationDepth < maxTaskContinuations
+    let continuationAllowed = continuationDepth < maxTaskContinuations
     if !hasNextTask {
       resultPayload["errorCode"] = "task_continuation_unavailable"
       resultPayload["message"] = "未完成报告缺少 next_task，小程序无法构造下一轮 Chat 续作。"

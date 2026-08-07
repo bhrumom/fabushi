@@ -35,9 +35,17 @@ func scan(_ state: inout PluginState) -> [String: Any] {
   let ipcPending = ipcResult?["pending"] as? Int ?? 0
   let ipcBlocked = ipcResult?["blocked"] as? Int ?? 0
   let ipcUnmatched = ipcResult?["unmatched"] as? Int ?? 0
-  if ProcessInfo.processInfo.environment["CHATGPT_AUTO_CONFIRM_DISABLE_AX"] == "1",
-     let ipcResult {
-    return ipcResult
+  let visibleAXEnabled = ProcessInfo.processInfo.environment[
+    "CHATGPT_AUTO_CONFIRM_ALLOW_VISIBLE_AX"
+  ] == "1"
+  if !visibleAXEnabled {
+    if let ipcResult { return ipcResult }
+    state.lastError = nil
+    return [
+      "ok": true, "candidates": 0, "approved": 0, "pending": 0,
+      "blocked": 0, "unmatched": 0, "backgroundOnly": true,
+      "pageChanged": false, "visibleFallbackDisabled": true,
+    ]
   }
   guard AXIsProcessTrusted() else {
     if let ipcResult { return ipcResult }
@@ -238,10 +246,13 @@ func statusPayload(_ state: PluginState) -> [String: Any] {
       "ipcIsPrimaryPath": true,
       "internalActionIsPrimary": true,
       "operatesHiddenPages": true,
-      "scansEveryLoadedRenderer": true,
+      "scansEveryLoadedRenderer": false,
+      "visibleRendererAccess": false,
       "requiresPriorTracking": false,
       "changesVisiblePage": false,
-      "axPressIsFallback": true,
+      "axPressIsFallback": ProcessInfo.processInfo.environment[
+        "CHATGPT_AUTO_CONFIRM_ALLOW_VISIBLE_AX"
+      ] == "1",
       "axPressVisibleForegroundOnly": true,
       "axPressNeverTargetsHiddenElements": true,
     ],
@@ -363,4 +374,3 @@ func withWatcherLifecycleLock<T>(_ body: () throws -> T) throws -> T {
   }
   return try body()
 }
-
