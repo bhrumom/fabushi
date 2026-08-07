@@ -78,6 +78,7 @@ jobs:
         env:
           CHATGPT_ANDROID_VERSION_NAME: 1.2024.366
           CHATGPT_ANDROID_VERSION_CODE: '2436601'
+          CHATGPT_ANDROID_REQUIRE_X86_64: 'false'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
