@@ -1,0 +1,99 @@
+name: ChatGPT Android XAPK Probe
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkpure.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/verify-chatgpt-xapk.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/install-chatgpt-xapk.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-chatgpt-xapk-candidates.sh'
+      - '.github/workflows/chatgpt-android-xapk-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve Android SDK and install emulator
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager_bin=$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -perm -u+x -print | sort -V | tail -n 1)
+          test -x "$sdkmanager_bin"
+          tools_bin=$(dirname "$sdkmanager_bin")
+          {
+            echo "ANDROID_HOME=$sdk_root"
+            echo "ANDROID_SDK_ROOT=$sdk_root"
+          } >> "$GITHUB_ENV"
+          {
+            echo "$tools_bin"
+            echo "$sdk_root/platform-tools"
+            echo "$sdk_root/emulator"
+          } >> "$GITHUB_PATH"
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libpulse0
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          "$sdkmanager_bin" emulator 'build-tools;35.0.0' 'system-images;android-35;google_apis_playstore;x86_64'
+      - name: Boot Android 35 Play Store x86_64 emulator
+        id: emulator
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/chatgpt-probe-avd"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | avdmanager create avd --force \
+            --name chatgpt-probe \
+            --package 'system-images;android-35;google_apis_playstore;x86_64' \
+            --device pixel_7
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+          log="$RUNNER_TEMP/chatgpt-probe-emulator.log"
+          nohup emulator -avd chatgpt-probe \
+            -no-window -noaudio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 3072 >"$log" 2>&1 &
+          echo "pid=$!" >> "$GITHUB_OUTPUT"
+          adb wait-for-device
+          booted=false
+          for attempt in $(seq 1 180); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$booted" != true ]]; then
+            tail -n 120 "$log" || true
+            exit 1
+          fi
+          adb devices -l
+      - name: Probe ordinary-sideload ChatGPT versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/fetch-chatgpt-apkpure.sh
+          bash -n scripts/verify-chatgpt-xapk.sh
+          bash -n scripts/install-chatgpt-xapk.sh
+          bash -n scripts/probe-chatgpt-xapk-candidates.sh
+          bash scripts/probe-chatgpt-xapk-candidates.sh
+          cat "$RUNNER_TEMP/chatgpt-xapk-selected.env"
+      - name: Stop emulator
+        if: always()
+        working-directory: .
+        shell: bash
+        run: |
+          adb emu kill || true
+          pid='${{ steps.emulator.outputs.pid }}'
+          if [[ -n "$pid" ]]; then
+            kill "$pid" >/dev/null 2>&1 || true
+          fi
