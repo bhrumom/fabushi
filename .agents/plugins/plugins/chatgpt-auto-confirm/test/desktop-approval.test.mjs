@@ -368,7 +368,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /userContent: userContent\.substring/);
   assert.match(nativeSource, /identitySource == "portal"/);
   assert.match(nativeSource, /conversationSource/);
-  assert.match(nativeSource, /portalConversationId\s*\n\s*\|\| activeConversationId/);
+  assert.match(nativeSource, /activeConversationId\s*\n\s*\|\| portalConversationId/);
   assert.match(nativeSource, /freshly prepared blank Chat owns a stable local id/);
   assert.match(nativeSource, /never replace a local id with/);
   assert.match(nativeSource, /appendTextPreservingConnector/);
