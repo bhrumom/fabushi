@@ -150,6 +150,9 @@ jobs:
         run: |
           set -euo pipefail
           cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          manifest="$PLUGIN_DIR/.codex-plugin/plugin.json"
+          jq --arg version "$PLUGIN_VERSION" '.version = $version' "$manifest" > "$RUNNER_TEMP/plugin-manifest.json"
+          mv "$RUNNER_TEMP/plugin-manifest.json" "$manifest"
           "$cli" login test
           "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" | tee "$RUNNER_TEMP/publish.log"
           python3 - "$RUNNER_TEMP/publish.log" "$RUNNER_TEMP/publish.json" <<'PY'
