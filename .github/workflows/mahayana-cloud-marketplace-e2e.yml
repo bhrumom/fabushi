@@ -16,7 +16,10 @@ env:
   PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
   PLUGIN_DIR: examples/mahayana-cloud-marketplace/hello-market-plugin
   PLUGIN_ID: cloud-market-hello
-  PLUGIN_VERSION: 1.0.0
+  # Marketplace releases are immutable. A fixed version makes every later E2E
+  # run fail with version_already_exists before it can exercise install/revoke.
+  # run_attempt also keeps an explicit rerun unique after a late-stage failure.
+  PLUGIN_VERSION: 0.${{ github.run_id }}.${{ github.run_attempt }}
 
 jobs:
   cloud-marketplace-e2e:
