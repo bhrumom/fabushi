@@ -1,0 +1,29 @@
+name: ChatGPT Android Controller
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/**'
+      - '.github/workflows/chatgpt-android-controller-test.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/**'
+      - '.github/workflows/chatgpt-android-controller-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
