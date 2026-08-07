@@ -318,7 +318,7 @@ func monitorAutomationTask(
   var workerPort = task.workerPort ?? state.queueWorkerPort
   var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
   if workerPort == nil || workerTargetId == nil {
-    if !runningOnGitHubActions {
+    if !runningOnGitHubActions() {
       let now = isoFormatter.string(from: Date())
       state.queuePaused = true
       task.status = "blocked"
@@ -385,7 +385,7 @@ func monitorAutomationTask(
       return
     }
 
-    if !runningOnGitHubActions {
+    if !runningOnGitHubActions() {
       let now = isoFormatter.string(from: Date())
       state.queuePaused = true
       task.status = "blocked"

@@ -1979,7 +1979,7 @@ func ensureHiddenChatTarget(
     ]
   }
 
-  if !runningOnGitHubActions,
+  if !runningOnGitHubActions(),
      queueTargetRuntimeState(
        port: port,
        targetId: targetId,
@@ -2017,7 +2017,7 @@ func keepApprovalBackgroundEndpointAlive(_ state: inout PluginState) {
     // plugin-owned ChatGPT instance. Respect that decision and require an
     // explicit start instead of reopening an app behind the user's back.
     state.backgroundChatTargetId = nil
-    if !runningOnGitHubActions {
+    if !runningOnGitHubActions() {
       state.enabled = false
       state.lastError = "background_chat_closed_requires_restart"
       return
