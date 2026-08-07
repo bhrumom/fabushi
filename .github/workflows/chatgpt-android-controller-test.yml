@@ -30,3 +30,26 @@ jobs:
           node-version: '22'
       - run: npm test
       - run: bash -n scripts/avd-state.sh
+      - name: Verify hosted Android SDK discovery
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Android SDK root: $sdk_root"
+          test -d "$sdk_root"
+          sdkmanager_bin=$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -perm -u+x -print \
+            | sort -V | tail -n 1)
+          echo "sdkmanager: ${sdkmanager_bin:-missing}"
+          test -n "$sdkmanager_bin"
+          test -x "$sdkmanager_bin"
+          tools_bin=$(dirname "$sdkmanager_bin")
+          test -x "$tools_bin/avdmanager"
+          test -x "$sdk_root/platform-tools/adb"
+          "$sdkmanager_bin" --version
+          "$sdk_root/platform-tools/adb" version | head -n 1
+          if [[ -x "$sdk_root/emulator/emulator" ]]; then
+            "$sdk_root/emulator/emulator" -version | head -n 1
+          else
+            echo 'Android emulator is not preinstalled; the APK runner installs it with sdkmanager.'
+          fi
