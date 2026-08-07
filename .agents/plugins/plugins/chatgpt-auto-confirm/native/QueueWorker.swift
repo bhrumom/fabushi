@@ -2678,19 +2678,44 @@ func createIndependentQueueWorkerTarget(
         "worker-create stage=hosted-prewarm-worker-begin "
           + "account=\(effectiveAccountId)"
       )
-      guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
+      if let worker = createQueueWorkerTarget(&state, reuseExisting: false) {
+        state.queueWorkerMode = sharedConversationQueueWorkerMode
         queueTrace(
-          "worker-create stage=hosted-prewarm-worker-failed "
-            + "account=\(effectiveAccountId) error=\(state.lastError ?? "unknown")"
+          "worker-create stage=hosted-prewarm-worker-complete "
+            + "account=\(effectiveAccountId) target=\(worker.targetId)"
         )
-        return nil
+        return worker
       }
-      state.queueWorkerMode = sharedConversationQueueWorkerMode
+      let prewarmError = state.lastError ?? "unknown"
       queueTrace(
-        "worker-create stage=hosted-prewarm-worker-complete "
-          + "account=\(effectiveAccountId) target=\(worker.targetId)"
+        "worker-create stage=hosted-prewarm-worker-failed "
+          + "account=\(effectiveAccountId) error=\(prewarmError)"
       )
-      return worker
+      // A workspace can exhaust Codex/Work credits while ordinary Chat is
+      // still available. In that state ChatGPT's official quick-chat prewarm
+      // window renders only an Oops/Try again page. Fall back to a normal,
+      // independently owned BrowserWindow in the same authenticated process,
+      // then explicitly select Chat. This keeps account and task isolation;
+      // it never borrows the controller or another task's renderer.
+      queueTrace(
+        "worker-create stage=hosted-headless-window-fallback-begin "
+          + "account=\(effectiveAccountId)"
+      )
+      if let fallback = createHeadlessParallelQueueWorkerTarget(&state) {
+        state.queueWorkerMode = parallelHeadlessWindowQueueWorkerMode
+        queueTrace(
+          "worker-create stage=hosted-headless-window-fallback-complete "
+            + "account=\(effectiveAccountId) target=\(fallback.targetId)"
+        )
+        return fallback
+      }
+      let fallbackError = state.lastError ?? "unknown"
+      state.lastError = "\(prewarmError); hosted_headless_fallback=\(fallbackError)"
+      queueTrace(
+        "worker-create stage=hosted-headless-window-fallback-failed "
+          + "account=\(effectiveAccountId) error=\(fallbackError)"
+      )
+      return nil
     }
     // A local headless desktop run can create an independent BrowserWindow in
     // the authenticated process. The parallel Actions smoke keeps the
