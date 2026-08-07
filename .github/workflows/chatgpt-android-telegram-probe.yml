@@ -1,0 +1,47 @@
+name: ChatGPT Android Telegram Mirror Probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/chatgpt-android-telegram-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - name: Inspect public Telegram post with ChatGPT 1.0.0016
+        shell: bash
+        run: |
+          set -euo pipefail
+          page="$RUNNER_TEMP/telegram.html"
+          curl --fail --location --silent --show-error --retry 3 \
+            --connect-timeout 20 --max-time 90 \
+            --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36' \
+            'https://t.me/s/ksc666?before=6706' --output "$page"
+          test -s "$page"
+          python3 - "$page" <<'PY'
+          from pathlib import Path
+          import re, sys
+          p=Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
+          needle='ChatGPT_1.0.0016.xapk'
+          i=p.find(needle)
+          print('page_bytes=', len(p), 'needle_index=', i)
+          if i < 0:
+              raise SystemExit('ChatGPT legacy attachment not found in Telegram page')
+          chunk=p[max(0,i-3500):i+3500]
+          # Print only structural tags/URLs around the known public attachment.
+          urls=[]
+          for m in re.finditer(r'''(?:href|src|data-[\w-]+)=["']([^"']+)["']''', chunk, re.I):
+              u=m.group(1)
+              if u not in urls:
+                  urls.append(u)
+          for u in urls:
+              print('candidate=', u)
+          print('has_document_class=', 'tgme_widget_message_document' in chunk)
+          print('has_post_6704=', 'ksc666/6704' in chunk)
+          PY
