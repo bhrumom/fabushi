@@ -32,6 +32,7 @@ jobs:
       - run: bash -n scripts/avd-state.sh
       - run: bash -n scripts/fetch-chatgpt-apkpure.sh
       - run: bash -n scripts/verify-chatgpt-xapk.sh
+      - run: bash -n scripts/install-chatgpt-xapk.sh
       - name: Verify hosted Android emulator runtime
         working-directory: .
         shell: bash
@@ -48,11 +49,21 @@ jobs:
           tools_bin=$(dirname "$sdkmanager_bin")
           test -x "$tools_bin/avdmanager"
           test -x "$sdk_root/platform-tools/adb"
+          {
+            echo "ANDROID_HOME=$sdk_root"
+            echo "ANDROID_SDK_ROOT=$sdk_root"
+          } >> "$GITHUB_ENV"
+          {
+            echo "$tools_bin"
+            echo "$sdk_root/platform-tools"
+            echo "$sdk_root/emulator"
+          } >> "$GITHUB_PATH"
 
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends libpulse0
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
-          "$sdkmanager_bin" emulator 'build-tools;35.0.0'
+          "$sdkmanager_bin" emulator 'build-tools;35.0.0' \
+            'system-images;android-35;google_apis_playstore;x86_64'
 
           emulator_bin="$sdk_root/emulator/emulator"
           test -x "$emulator_bin"
@@ -71,3 +82,60 @@ jobs:
           bundle="$RUNNER_TEMP/chatgpt.xapk"
           bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
           bash scripts/verify-chatgpt-xapk.sh "$bundle"
+      - name: Install and launch ChatGPT on hosted x86_64 Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/chatgpt-install-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | avdmanager create avd --force \
+            --name chatgpt-install-smoke \
+            --package 'system-images;android-35;google_apis_playstore;x86_64' \
+            --device pixel_7
+
+          if [[ ! -e /dev/kvm ]]; then
+            echo '::error::/dev/kvm is unavailable on the hosted runner.'
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+
+          log="$RUNNER_TEMP/chatgpt-install-emulator.log"
+          nohup emulator -avd chatgpt-install-smoke \
+            -no-window -noaudio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 3072 >"$log" 2>&1 &
+          emulator_pid=$!
+          cleanup() {
+            adb emu kill >/dev/null 2>&1 || true
+            kill "$emulator_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          adb wait-for-device
+          booted=false
+          for attempt in $(seq 1 180); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$booted" != true ]]; then
+            echo '::error::Hosted Android emulator did not finish booting.'
+            tail -n 120 "$log" || true
+            exit 1
+          fi
+
+          bash scripts/install-chatgpt-xapk.sh "$RUNNER_TEMP/chatgpt.xapk"
+          adb shell pm path com.openai.chatgpt
+          adb shell dumpsys package com.openai.chatgpt \
+            | grep -E 'versionName=|versionCode=' | head -n 4
+
+          adb shell monkey -p com.openai.chatgpt -c android.intent.category.LAUNCHER 1 >/dev/null
+          sleep 8
+          if ! adb shell pidof com.openai.chatgpt | tr -d '\r' | grep -Eq '^[0-9]'; then
+            echo '::error::ChatGPT installed but did not stay running after launch.'
+            adb shell dumpsys activity activities | tail -n 120 || true
+            exit 1
+          fi
+          echo "ChatGPT process: $(adb shell pidof com.openai.chatgpt | tr -d '\r')"
+          adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 8 || true
