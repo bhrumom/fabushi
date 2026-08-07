@@ -21,6 +21,7 @@ class FakeCDPServer {
     stuckOverlay = false,
     navigationFailure = false,
     rootTargetFailures = 0,
+    controllerReady = true,
   }) {
     this.targets = [appTarget('initial', initialURL)];
     this.loginPrompt = loginPrompt;
@@ -28,6 +29,7 @@ class FakeCDPServer {
     this.stuckOverlay = stuckOverlay;
     this.navigationFailure = navigationFailure;
     this.rootTargetFailures = rootTargetFailures;
+    this.controllerReady = controllerReady;
     this.failAuthEvaluation = replaceOnAuthFailure;
     this.connections = [];
     this.closedSockets = 0;
@@ -85,6 +87,10 @@ class FakeCDPServer {
               readyState: 'complete',
               url: target?.url || '',
               visibility: 'visible',
+              hasChat: this.controllerReady,
+              hasWork: false,
+              currentMode: '',
+              workComposer: false,
             },
           },
         },
@@ -233,6 +239,19 @@ test('recovers when the active renderer fails during Runtime.evaluate', async ()
 
   assert.match(output, /^Verified authenticated desktop shell/);
   assert.ok(server.connections.some(item => item.target?.id === 'after-cdp-failure'));
+});
+
+
+test('does not accept a non-login placeholder shell without controller controls', async () => {
+  const server = new FakeCDPServer({
+    initialURL: 'app://-/index.html?initialRoute=%2F',
+    controllerReady: false,
+  });
+
+  await assert.rejects(
+    run(server, { verificationTimeoutMs: 4_000 }),
+    /Authenticated desktop shell was not verified/,
+  );
 });
 
 test('does not accept a real login prompt as an authenticated shell', async () => {
