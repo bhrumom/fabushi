@@ -65,6 +65,10 @@ const rendererRecoveryMetadata = readFileSync(
   new URL('../skills/recover-actions-chatgpt-renderer/agents/openai.yaml', import.meta.url),
   'utf8',
 );
+const syncCredentialSkill = readFileSync(
+  new URL('../skills/sync-action-credentials/SKILL.md', import.meta.url),
+  'utf8',
+);
 
 test('home contract', () => {
   assert.equal(HOME.schema, 'mahayana.miniapp.home.v1');
@@ -98,6 +102,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(actionsWorkflow, /timeout-minutes: 355/);
   assert.match(actionsWorkflow, /CHATGPT_CODEX_AUTH_B64/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_COOKIES_B64/);
+  assert.match(syncCredentialSkill, /Codex 凭证与 ChatGPT Session.*独立且都必需/);
+  assert.match(syncCredentialSkill, /Work → Chat/);
+  assert.match(syncCredentialSkill, /不得把 Work usage 页面当作 Chat 页面/);
   assert.match(actionsWorkflow, /restore-session-cookies\.mjs/);
   assert.match(actionsWorkflow, /CHATGPT_SESSION_MODE=restore-and-verify/);
   assert.match(actionsWorkflow, /Verify authenticated ChatGPT session/);

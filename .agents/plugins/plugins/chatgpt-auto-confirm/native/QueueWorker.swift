@@ -1184,12 +1184,19 @@ func resetStaleChatModeIfNeeded(
     expression: composerSurfaceStateJS(),
     timeout: 5.0
   )
-  guard initial?["workComposer"] as? Bool == true else { return initial }
+  let initialHasInput = initial?["hasInput"] as? Bool == true
+  let initialChatModel = initial?["chatModel"] as? Bool == true
+  let initialQuickChat = initial?["quickChatRoot"] as? Bool == true
+  let initialWorkComposer = initial?["workComposer"] as? Bool == true
+  let initialChatReady = initialHasInput && !initialWorkComposer
+    && (initialChatModel || initialQuickChat)
+  guard !initialChatReady else { return initial }
 
-  // The hosted shell can persist "chat" while the mounted composer is still
-  // Work. Re-selecting ChatGPT is then a no-op because the atom already has
-  // that value. Use the real compact mode menu to cross the state boundary
-  // through Codex once, then return to Chat before creating the hidden window.
+  // The hosted shell can persist "chat" while the mounted page is still Work
+  // or while no composer has mounted at all. Re-selecting ChatGPT is then a
+  // no-op because the atom already has that value. Use the real Chat/Work
+  // control to cross the state boundary through Work once, then return to
+  // Chat and require a real Chat composer before creating the hidden window.
   queueTrace("worker-create stage=\(stage) reset-stale-mode begin")
   var codexSelection: [String: Any]?
   for _ in 0..<12 {
@@ -2652,8 +2659,8 @@ func createHostedControllerQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
   // The persistent Actions runner executes one queue task at a time. If the
-  // quick-chat service cannot create its hidden window (for example when the
-  // workspace has exhausted Codex/Work credits), the already authenticated
+  // quick-chat service cannot create its hidden window after the real
+  // Work-to-Chat transition, the already authenticated
   // primary renderer is the only Electron-backed surface guaranteed to
   // remain available. Reuse it only while no task is running, and mark it as
   // shared so task cleanup never closes ChatGPT's primary window.
@@ -2777,12 +2784,11 @@ func createIndependentQueueWorkerTarget(
         "worker-create stage=hosted-prewarm-worker-failed "
           + "account=\(effectiveAccountId) error=\(prewarmError)"
       )
-      // A workspace can exhaust Codex/Work credits while ordinary Chat is
-      // still available. In that state ChatGPT's official quick-chat prewarm
-      // window renders only an Oops/Try again page. Fall back to a normal,
-      // independently owned BrowserWindow in the same authenticated process,
-      // then explicitly select Chat. This keeps account and task isolation;
-      // it never borrows the controller or another task's renderer.
+      // If the official quick-chat prewarm window cannot mount a Chat surface,
+      // try a normal independently owned BrowserWindow in the same verified
+      // dual-credential process. The caller has already forced a real
+      // Work-to-Chat transition; this fallback preserves task isolation and
+      // never treats a Work usage page as a valid Chat surface.
       queueTrace(
         "worker-create stage=hosted-headless-window-fallback-begin "
           + "account=\(effectiveAccountId)"
