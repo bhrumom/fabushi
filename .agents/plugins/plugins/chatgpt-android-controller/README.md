@@ -51,7 +51,7 @@ adb devices -l
 安装 Appium/UiAutomator2：
 
 ```bash
-node scripts/setup-appium.mjs
+npm run setup:appium
 npx appium
 ```
 
@@ -63,14 +63,16 @@ export CHATGPT_ANDROID_APPIUM_URL=http://127.0.0.1:4723
 
 ## 本地 MCP
 
+`.mcp.json` 直接使用 Node 启动本插件，不依赖旧版插件打包的 `fabushi-plugin-cli` 二进制：
+
 ```bash
-./runtime/cli/fabushi-plugin-cli --plugin chatgpt-android-controller mcp-serve
+node --experimental-strip-types --import ./runtime/safety-patches.ts server/index.ts
 ```
 
-或者直接调试 server：
+也可以直接使用 package script：
 
 ```bash
-node --experimental-strip-types server/index.ts
+npm start
 ```
 
 ## 常用流程
@@ -92,6 +94,8 @@ node --experimental-strip-types server/index.ts
 ```json
 {"name":"start","arguments":{"intervalMs":750,"approveAll":true}}
 ```
+
+watcher 只会在 ChatGPT 已经位于 Android 前台时扫描授权卡，不会为了后台扫描抢走用户当前正在使用的其他 App。
 
 发消息并等待：
 
@@ -122,7 +126,7 @@ node --experimental-strip-types server/index.ts
 }
 ```
 
-不同设备可以并行；同一设备同一时间只调度一个任务，避免两个 ChatGPT UI 操作互相覆盖。
+不同设备可以并行；同一设备同一时间只调度一个任务，避免两个 ChatGPT UI 操作互相覆盖。运行中的任务收到 `cancel_task` 后，会在下一轮轮询中退出并保持 `cancelled` 状态。
 
 ## 选择器策略
 
@@ -135,6 +139,8 @@ node --experimental-strip-types server/index.ts
 5. 找到目标节点后才根据其实时 `bounds` 点击
 
 因此分辨率变化不会直接破坏流程。ChatGPT Android UI 更新后，通常只需要扩展语义标签/selector，而不是重新录坐标。
+
+`send_and_watch` 会记录发送前页面基线，并排除刚发送的用户消息，避免把用户消息误判成 ChatGPT 已完成回复。
 
 ## 状态与隐私
 
@@ -173,3 +179,7 @@ GitHub Actions
 ```
 
 这样登录状态留在设备本身，不需要把 ChatGPT 私有凭据上传 GitHub Secrets。
+
+## 验证边界
+
+仓库内单元测试与契约检查覆盖 MCP 启动、UI hierarchy 解析和选择器基础逻辑。真实 ChatGPT Android UI 的 resource-id、Apps/connector 菜单和回复节点仍需要在连接具体 Android 设备后做一次 smoke 校准；不同 ChatGPT App 版本可能需要补充语义 selector。
