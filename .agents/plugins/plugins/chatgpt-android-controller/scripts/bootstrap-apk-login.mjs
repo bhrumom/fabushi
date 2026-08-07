@@ -143,6 +143,32 @@ async function clickKnown(labels, attempts = 4) {
   return false;
 }
 
+async function dismissChromeFirstRun() {
+  if (foregroundPackage() !== CHROME_PACKAGE) return 0;
+  const acceptLabels = [
+    'Accept & continue', 'Accept and continue', 'Agree & continue',
+    '接受并继续', '接受並繼續', '同意并继续', '同意並繼續',
+  ];
+  const skipLabels = [
+    'Use without an account', 'Continue without an account',
+    'No thanks', 'Not now', 'Skip',
+    '不使用账号', '不使用帳號', '不用账号', '不用帳號',
+    '暂不', '暫不', '跳过', '跳過',
+  ];
+  let clicks = 0;
+  for (let round = 0; round < 6; round += 1) {
+    if (foregroundPackage() !== CHROME_PACKAGE) break;
+    const accepted = await clickKnown(acceptLabels, 1);
+    if (accepted) clicks += 1;
+    const skipped = await clickKnown(skipLabels, 1);
+    if (skipped) clicks += 1;
+    if (!accepted && !skipped) break;
+    await sleep(500);
+  }
+  if (clicks > 0) trace('chrome-first-run-cleared', { clicks });
+  return clicks;
+}
+
 function apkSurface() {
   const nodes = dumpNodes();
   const loginLabels = [
@@ -318,6 +344,9 @@ export async function bootstrapApkLogin() {
     const foreground = foregroundPackage();
     if (foreground === CHROME_PACKAGE || foreground === 'com.google.android.gms') break;
     await sleep(500);
+  }
+  if (foregroundPackage() === CHROME_PACKAGE) {
+    await dismissChromeFirstRun();
   }
   trace('apk-login-flow-opened', { foregroundPackage: foregroundPackage() });
   captureScreenshot('apk-login-browser-opened');
