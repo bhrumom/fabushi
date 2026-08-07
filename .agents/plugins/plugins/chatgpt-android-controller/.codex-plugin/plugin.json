@@ -16,17 +16,6 @@
     "github-actions"
   ],
   "mcpServers": "./.mcp.json",
-  "runtimeVariants": [
-    {
-      "id": "local-node",
-      "server": "chatgpt-android-controller-local",
-      "platforms": [
-        "cli",
-        "desktop"
-      ],
-      "priority": 300
-    }
-  ],
   "interface": {
     "displayName": "ChatGPT Android 自动化",
     "shortDescription": "持续操控 Android ChatGPT APK，自动确认、发消息并运行可恢复任务队列",
