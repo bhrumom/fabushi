@@ -1,0 +1,371 @@
+name: ChatGPT Android APK continuous runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: Logical Android account scope for isolated encrypted AVD state
+        required: false
+        default: default
+        type: string
+      smoke_only:
+        description: Verify APK login and one real ChatGPT reply, then stop
+        required: false
+        default: false
+        type: boolean
+      continuous:
+        description: Dispatch another run after checkpointing this run
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/**'
+      - '.github/workflows/chatgpt-android-apk-runner.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: chatgpt-android-apk-${{ inputs.account_id || 'default' }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run authenticated ChatGPT Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    environment:
+      # Reuse the existing desktop credential environment for the one-time APK
+      # bootstrap. The rolling Android login state is encrypted before caching.
+      name: chatgpt-auto-confirm-legacy
+    env:
+      AVD_NAME: mahayana-chatgpt
+      AVD_PACKAGE: system-images;android-35;google_apis_playstore;x86_64
+      CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+      CHATGPT_ANDROID_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
+      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+      GH_TOKEN: ${{ github.token }}
+      STATE_SCOPE: ${{ inputs.account_id || 'default' }}
+      SMOKE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke_only || false }}
+      CONTINUOUS: ${{ github.event_name == 'workflow_dispatch' && inputs.continuous || true }}
+
+    steps:
+      - name: Checkout trusted implementation
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare private runtime paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          avd_root="$RUNNER_TEMP/chatgpt-android-avd"
+          state_dir="$RUNNER_TEMP/chatgpt-android-state"
+          diagnostics="$RUNNER_TEMP/chatgpt-android-diagnostics"
+          mkdir -p "$avd_root" "$state_dir" "$diagnostics"
+          chmod 700 "$avd_root" "$state_dir" "$diagnostics"
+          {
+            echo "avd_root=$avd_root"
+            echo "state_file=$state_dir/state.enc"
+            echo "diagnostics=$diagnostics"
+            echo "controller_state=$avd_root/controller-state.json"
+          } >> "$GITHUB_OUTPUT"
+          echo "ANDROID_AVD_HOME=$avd_root" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_AVD_ROOT=$avd_root" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_STATE_FILE=$state_dir/state.enc" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_DIAGNOSTICS_DIR=$diagnostics" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_TRACE_PATH=$diagnostics/apk-trace.jsonl" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_CONTROLLER_STATE=$avd_root/controller-state.json" >> "$GITHUB_ENV"
+          echo "CHATGPT_ANDROID_RUNNER_TRACE=$diagnostics/runner-trace.jsonl" >> "$GITHUB_ENV"
+
+      - name: Restore latest encrypted Android state cache
+        id: restore_state
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.paths.outputs.state_file }}
+          key: chatgpt-android-avd-${{ runner.os }}-${{ env.STATE_SCOPE }}-${{ github.run_id }}
+          restore-keys: |
+            chatgpt-android-avd-${{ runner.os }}-${{ env.STATE_SCOPE }}-
+
+      - name: Install Android emulator system image
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'emulator' "$AVD_PACKAGE"
+          emulator -version | head -n 1
+          adb version | head -n 1
+
+      - name: Restore or create AVD
+        id: avd
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_ANDROID_STATE_KEY"
+          if [[ -s "$CHATGPT_ANDROID_STATE_FILE" ]]; then
+            bash scripts/avd-state.sh restore
+            echo 'restored=true' >> "$GITHUB_OUTPUT"
+          else
+            rm -rf "$CHATGPT_ANDROID_AVD_ROOT"
+            mkdir -p "$CHATGPT_ANDROID_AVD_ROOT"
+            printf 'no\n' | avdmanager create avd --force \
+              --name "$AVD_NAME" --package "$AVD_PACKAGE" --device 'pixel_7'
+            echo 'restored=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          ini="$CHATGPT_ANDROID_AVD_ROOT/$AVD_NAME.ini"
+          avd_dir="$CHATGPT_ANDROID_AVD_ROOT/$AVD_NAME.avd"
+          test -f "$ini"
+          test -d "$avd_dir"
+          # The content directory is restored at the same logical location but
+          # rewrite the absolute path defensively for a fresh hosted runner.
+          sed -i "s|^path=.*|path=$avd_dir|" "$ini"
+          grep -q '^path=' "$ini"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo '::error::/dev/kvm is unavailable on this runner.'
+            exit 1
+          fi
+
+      - name: Boot persistent Android emulator
+        id: emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="${{ steps.paths.outputs.diagnostics }}/emulator.log"
+          nohup emulator -avd "$AVD_NAME" \
+            -no-window -noaudio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 4096 \
+            >"$log" 2>&1 &
+          pid=$!
+          echo "pid=$pid" >> "$GITHUB_OUTPUT"
+          adb wait-for-device
+          booted=false
+          for attempt in $(seq 1 180); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
+              booted=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$booted" != true ]]; then
+            echo '::error::Android emulator did not finish booting.'
+            tail -n 120 "$log" || true
+            exit 1
+          fi
+          adb shell input keyevent 82 || true
+          adb devices -l
+
+      - name: Ensure official ChatGPT APK is installed
+        id: apk
+        shell: bash
+        env:
+          APK_URL: ${{ secrets.CHATGPT_ANDROID_APK_URL }}
+          APK_SHA256: ${{ secrets.CHATGPT_ANDROID_APK_SHA256 }}
+        run: |
+          set -euo pipefail
+          if adb shell pm path "$CHATGPT_ANDROID_PACKAGE" | grep -q '^package:'; then
+            echo 'source=restored-avd' >> "$GITHUB_OUTPUT"
+            echo 'ChatGPT APK already exists in restored Android state.'
+            exit 0
+          fi
+
+          if [[ -z "${APK_URL:-}" || -z "${APK_SHA256:-}" ]]; then
+            echo '::error::Fresh AVD has no ChatGPT APK. Configure CHATGPT_ANDROID_APK_URL and CHATGPT_ANDROID_APK_SHA256 in the chatgpt-auto-confirm-legacy environment, or restore an authenticated AVD cache.'
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$APK_URL"
+          apk_bundle="$RUNNER_TEMP/chatgpt-android-package"
+          curl --fail --location --silent --show-error --retry 3 \
+            "$APK_URL" --output "$apk_bundle"
+          actual=$(sha256sum "$apk_bundle" | awk '{print $1}')
+          if [[ "${actual,,}" != "${APK_SHA256,,}" ]]; then
+            echo '::error::ChatGPT Android package SHA-256 does not match configured checksum.'
+            exit 1
+          fi
+
+          install_dir="$RUNNER_TEMP/chatgpt-apks"
+          mkdir -p "$install_dir"
+          if unzip -t "$apk_bundle" >/dev/null 2>&1; then
+            unzip -q "$apk_bundle" -d "$install_dir"
+            mapfile -t apks < <(find "$install_dir" -type f -name '*.apk' -print | sort)
+            if (( ${#apks[@]} == 0 )); then
+              echo '::error::The verified package archive contains no APK files.'
+              exit 1
+            fi
+            adb install-multiple -r "${apks[@]}"
+          else
+            adb install -r "$apk_bundle"
+          fi
+          adb shell pm path "$CHATGPT_ANDROID_PACKAGE" | grep -q '^package:'
+          echo 'source=verified-secret-url' >> "$GITHUB_OUTPUT"
+
+      - name: Verify or bootstrap APK login state
+        id: auth
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: |
+          set -euo pipefail
+          authenticated=false
+          if node scripts/verify-apk-session.mjs; then
+            authenticated=true
+            echo 'Restored AVD already contains an authenticated ChatGPT APK session.'
+          else
+            echo 'Restored/fresh APK is not authenticated; trying the APK login flow with the existing ChatGPT session seed.'
+            if [[ -z "${CHATGPT_SESSION_COOKIES_B64:-}" ]]; then
+              echo '::error::CHATGPT_SESSION_COOKIES_B64 is unavailable for the one-time APK bootstrap.'
+              exit 1
+            fi
+            node scripts/bootstrap-apk-login.mjs
+            node scripts/verify-apk-session.mjs
+            authenticated=true
+          fi
+          echo "authenticated=$authenticated" >> "$GITHUB_OUTPUT"
+
+      - name: Install Appium UiAutomator2
+        if: ${{ steps.auth.outputs.authenticated == 'true' }}
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: npm run setup:appium
+
+      - name: Start Appium
+        if: ${{ steps.auth.outputs.authenticated == 'true' }}
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: |
+          set -euo pipefail
+          log="${{ steps.paths.outputs.diagnostics }}/appium.log"
+          nohup npx appium --log-timestamp --log-no-colors >"$log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4723/status >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          tail -n 100 "$log" || true
+          exit 1
+
+      - name: Run real APK message smoke
+        if: ${{ steps.auth.outputs.authenticated == 'true' }}
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: node --experimental-strip-types --import ./runtime/safety-patches.ts scripts/apk-smoke.ts
+
+      - name: Run dynamic persistent Android task queue
+        if: ${{ steps.auth.outputs.authenticated == 'true' && env.SMOKE_ONLY != 'true' }}
+        shell: bash
+        working-directory: .
+        env:
+          CHATGPT_ANDROID_RUNNER_SECONDS: '18600'
+          CHATGPT_ANDROID_RUNNER_POLL_SECONDS: '30'
+        run: node --experimental-strip-types --import ./.agents/plugins/plugins/chatgpt-android-controller/runtime/safety-patches.ts ./.agents/plugins/plugins/chatgpt-android-controller/scripts/action-runner.ts
+
+      - name: Capture final APK evidence
+        if: always()
+        continue-on-error: true
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: node scripts/verify-apk-session.mjs
+
+      - name: Stop emulator cleanly
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          adb emu kill || true
+          pid='${{ steps.emulator.outputs.pid }}'
+          if [[ -n "$pid" ]]; then
+            for attempt in $(seq 1 60); do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+          fi
+
+      - name: Checkpoint encrypted APK login and queue state
+        id: checkpoint
+        if: ${{ always() && steps.auth.outputs.authenticated == 'true' }}
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: |
+          set -euo pipefail
+          bash scripts/avd-state.sh pack
+          test -s "$CHATGPT_ANDROID_STATE_FILE"
+          bytes=$(wc -c < "$CHATGPT_ANDROID_STATE_FILE" | tr -d ' ')
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "Encrypted Android state bytes: $bytes"
+
+      - name: Save encrypted Android state cache
+        if: ${{ always() && steps.checkpoint.outputs.bytes != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.paths.outputs.state_file }}
+          key: chatgpt-android-avd-${{ runner.os }}-${{ env.STATE_SCOPE }}-${{ github.run_id }}
+
+      - name: Encrypt diagnostics
+        id: diagnostics
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics='${{ steps.paths.outputs.diagnostics }}'
+          output="$RUNNER_TEMP/chatgpt-android-diagnostics.enc"
+          if [[ -z "$CHATGPT_ANDROID_STATE_KEY" || ! -d "$diagnostics" ]]; then
+            exit 0
+          fi
+          tar -C "$diagnostics" -czf - . \
+            | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
+                -pass env:CHATGPT_ANDROID_STATE_KEY -out "$output"
+          chmod 600 "$output"
+          echo "path=$output" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted screenshots and detailed traces
+        if: ${{ always() && steps.diagnostics.outputs.path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-android-diagnostics-${{ env.STATE_SCOPE }}-${{ github.run_id }}
+          path: ${{ steps.diagnostics.outputs.path }}
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Write run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## ChatGPT Android APK runner'
+            echo
+            echo "- AVD restored from rolling encrypted cache: ${{ steps.avd.outputs.restored }}"
+            echo "- APK source: ${{ steps.apk.outputs.source }}"
+            echo "- APK authenticated: ${{ steps.auth.outputs.authenticated }}"
+            echo "- Encrypted state checkpoint bytes: ${{ steps.checkpoint.outputs.bytes }}"
+            echo "- Run id: $GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Continue on a fresh hosted runner
+        if: ${{ success() && env.CONTINUOUS == 'true' && env.SMOKE_ONLY != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run chatgpt-android-apk-runner.yml \
+            --ref main \
+            -f account_id="$STATE_SCOPE" \
+            -f smoke_only=false \
+            -f continuous=true
