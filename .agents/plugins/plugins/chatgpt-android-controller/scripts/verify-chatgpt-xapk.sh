@@ -4,6 +4,7 @@ set -euo pipefail
 archive="${1:?usage: verify-chatgpt-xapk.sh <xapk>}"
 expected_package="${CHATGPT_ANDROID_PACKAGE:-com.openai.chatgpt}"
 expected_cert="${CHATGPT_ANDROID_CERT_SHA256:-b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c}"
+require_x86_64="${CHATGPT_ANDROID_REQUIRE_X86_64:-true}"
 sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 
 test -s "$archive"
@@ -70,10 +71,10 @@ if (( base_count != 1 )); then
   echo "Expected exactly one base APK, found $base_count." >&2
   exit 1
 fi
-if (( x86_64_evidence == 0 )); then
+if [[ "$require_x86_64" == true ]] && (( x86_64_evidence == 0 )); then
   echo 'Verified package has no x86_64 split/native-library evidence.' >&2
   exit 1
 fi
 
-printf 'Verified ChatGPT XAPK package=%s apk_count=%d cert_sha256=%s x86_64_evidence=%d\n' \
-  "$expected_package" "${#apks[@]}" "${expected_cert,,}" "$x86_64_evidence"
+printf 'Verified ChatGPT XAPK package=%s apk_count=%d cert_sha256=%s x86_64_evidence=%d require_x86_64=%s\n' \
+  "$expected_package" "${#apks[@]}" "${expected_cert,,}" "$x86_64_evidence" "$require_x86_64"
