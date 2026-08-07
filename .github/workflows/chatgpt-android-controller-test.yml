@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - run: npm test
       - run: bash -n scripts/avd-state.sh
-      - run: bash -n scripts/fetch-chatgpt-apkcombo.sh
+      - run: bash -n scripts/fetch-chatgpt-apkpure.sh
       - name: Verify hosted Android emulator runtime
         working-directory: .
         shell: bash
@@ -67,14 +67,14 @@ jobs:
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
         shell: bash
         env:
-          CHATGPT_ANDROID_VERSION_NAME: '1.2026.202'
-          CHATGPT_ANDROID_VERSION_CODE: '2620225'
+          CHATGPT_ANDROID_VERSION_NAME: '1.2026.027'
+          CHATGPT_ANDROID_VERSION_CODE: '2602719'
           CHATGPT_ANDROID_EXPECTED_CERT_SHA256: 'b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
           extract="$RUNNER_TEMP/chatgpt-xapk"
-          bash scripts/fetch-chatgpt-apkcombo.sh "$bundle"
+          bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
           mkdir -p "$extract"
           unzip -q "$bundle" -d "$extract"
           mapfile -t apks < <(find "$extract" -type f -name '*.apk' -print | sort)
@@ -113,5 +113,10 @@ jobs:
             echo '::error::No APK in the archive declares com.openai.chatgpt.'
             exit 1
           fi
-          "$aapt" dump badging "$base" | head -n 4
+          badging=$("$aapt" dump badging "$base")
+          printf '%s\n' "$badging" | head -n 4
+          if ! grep -q "versionCode='2602719'" <<<"$badging"; then
+            echo '::error::Downloaded base APK versionCode does not match 2602719.'
+            exit 1
+          fi
           echo "Verified ChatGPT XAPK base: $(basename "$base")"
