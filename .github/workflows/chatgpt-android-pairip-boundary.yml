@@ -1,0 +1,86 @@
+name: ChatGPT Android PairIP Boundary
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkpure.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/verify-chatgpt-xapk.sh'
+      - '.github/workflows/chatgpt-android-pairip-boundary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+    steps:
+      - uses: actions/checkout@v5
+      - name: Scan earliest signed ChatGPT Android builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt=$(find "$sdk_root/build-tools" -type f -name aapt -perm -u+x -print | sort -V | tail -n 1)
+          apksigner=$(find "$sdk_root/build-tools" -type f -name apksigner -perm -u+x -print | sort -V | tail -n 1)
+          test -x "$aapt"
+          test -x "$apksigner"
+
+          candidates=(
+            '1.0.0037:37'
+            '1.0.0031:31'
+            '1.0.0028:28'
+            '1.0.0023:23'
+            '1.0.0022:22'
+            '1.0.0016:16'
+          )
+          found_unprotected=false
+          for entry in "${candidates[@]}"; do
+            version=${entry%%:*}
+            code=${entry##*:}
+            bundle="$RUNNER_TEMP/chatgpt-$code.xapk"
+            work="$RUNNER_TEMP/chatgpt-$code"
+            rm -rf "$work" "$bundle"
+            mkdir -p "$work"
+            echo "=== $version ($code) ==="
+            if ! CHATGPT_ANDROID_VERSION_NAME="$version" CHATGPT_ANDROID_VERSION_CODE="$code" \
+                bash scripts/fetch-chatgpt-apkpure.sh "$bundle"; then
+              echo "download=failed"
+              continue
+            fi
+            if ! bash scripts/verify-chatgpt-xapk.sh "$bundle"; then
+              echo "identity=failed"
+              continue
+            fi
+            unzip -q "$bundle" -d "$work"
+            base=''
+            while IFS= read -r apk; do
+              first=$($aapt dump badging "$apk" 2>/dev/null | head -n 1 || true)
+              if [[ "$first" == *"package: name='com.openai.chatgpt'"* && "$first" != *" split='"* ]]; then
+                base="$apk"
+                break
+              fi
+            done < <(find "$work" -type f -name '*.apk' -print | sort)
+            test -n "$base"
+
+            manifest=$($aapt dump xmltree "$base" AndroidManifest.xml 2>/dev/null || true)
+            pairip_manifest=false
+            pairip_dex=false
+            if grep -qi 'com\.pairip\.licensecheck' <<<"$manifest"; then
+              pairip_manifest=true
+            fi
+            if unzip -p "$base" 'classes*.dex' 2>/dev/null | grep -aEq 'com[/\.]pairip[/\.]licensecheck|Lcom/pairip/licensecheck'; then
+              pairip_dex=true
+            fi
+            echo "pairip_manifest=$pairip_manifest pairip_dex=$pairip_dex base=$(basename "$base")"
+            if [[ "$pairip_manifest" == false && "$pairip_dex" == false ]]; then
+              echo "UNPROTECTED_CANDIDATE=$version:$code"
+              found_unprotected=true
+            fi
+          done
+          if [[ "$found_unprotected" == false ]]; then
+            echo 'All downloadable earliest candidates contain PairIP protection or failed source verification.'
+          fi
