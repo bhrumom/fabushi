@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkpure.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkmirror-0016.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/verify-chatgpt-xapk.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/check-chatgpt-pairip.sh'
       - '.github/workflows/chatgpt-android-pairip-boundary.yml'
@@ -27,6 +28,24 @@ jobs:
           sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           aapt=$(find "$sdk_root/build-tools" -type f -name aapt -perm -u+x -print | sort -V | tail -n 1)
           test -x "$aapt"
+
+          echo '=== 1.0.0016 (16) from APKMirror ==='
+          first_bundle="$RUNNER_TEMP/chatgpt-16.apkm"
+          if bash scripts/fetch-chatgpt-apkmirror-0016.sh "$first_bundle"; then
+            bash scripts/verify-chatgpt-xapk.sh "$first_bundle"
+            set +e
+            first_pairip_output=$(bash scripts/check-chatgpt-pairip.sh "$first_bundle" 2>&1)
+            first_pairip_status=$?
+            set -e
+            printf '%s\n' "$first_pairip_output"
+            case "$first_pairip_status" in
+              0) echo 'UNPROTECTED_CANDIDATE=1.0.0016:16' ;;
+              2) echo 'PAIRIP_PROTECTED=1.0.0016:16' ;;
+              *) echo "pairip_scan=failed version=1.0.0016 status=$first_pairip_status" ;;
+            esac
+          else
+            echo 'APKMirror 1.0.0016 download=failed'
+          fi
 
           candidates=(
             '1.2024.366:2436601'
