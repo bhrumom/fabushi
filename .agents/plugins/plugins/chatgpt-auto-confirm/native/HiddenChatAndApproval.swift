@@ -9,6 +9,8 @@ func loadedApprovalTargets(_ state: PluginState) -> [CDPApprovalTarget] {
   // proved hidden. Scanning the primary debugging endpoint also included the
   // user's visible Chat, so startup could click controls on the displayed page
   // while still reporting `backgroundOnly=true`.
+  // Runtime.evaluate does not activate the app, but renderer ownership and
+  // hidden-window state are still mandatory before any page script may run.
   guard let port = state.backgroundAppPort,
         let targetId = state.backgroundChatTargetId,
         queueTargetRuntimeState(

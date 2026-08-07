@@ -36,6 +36,10 @@ const readSpecSnapshot = (task) => {
 const incoming = incomingRaw.map((task) => ({
   ...task,
   revision: Math.max(1, Number(task?.revision || 1)),
+  maxTaskContinuations: Math.min(
+    20,
+    Math.max(1, Number(task?.maxTaskContinuations ?? 6)),
+  ),
   ...readSpecSnapshot(task),
 }));
 const incomingIds = new Set(incoming.map(task => task?.id).filter(Boolean));
@@ -160,7 +164,7 @@ for (const task of incoming) {
     resourceLocks: task.resourceLocks || [],
     priority: task.priority || 0,
     timeout: task.timeout || 21600,
-    maxTaskContinuations: Math.min(20, Math.max(1, task.maxTaskContinuations ?? 6)),
+    maxTaskContinuations: task.maxTaskContinuations,
     maxRuntimeRetries: task.maxRuntimeRetries ?? 2,
     attempts: 0,
     reviewRound: 0,
