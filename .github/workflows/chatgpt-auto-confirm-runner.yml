@@ -221,9 +221,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 \
-            https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg \
-            --output "$RUNNER_TEMP/ChatGPT.dmg"
+          installer_path="$RUNNER_TEMP/ChatGPT.dmg"
+          installer_tmp="$installer_path.download"
+          minimum_installer_bytes=$((50 * 1024 * 1024))
+          installer_urls=(
+            "https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg"
+            "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
+          )
+          installer_ready=false
+          for installer_url in "${installer_urls[@]}"; do
+            rm -f "$installer_tmp"
+            if ! curl --fail --location --retry 3 --retry-all-errors \
+              "$installer_url" --output "$installer_tmp"; then
+              echo "::warning::ChatGPT installer download failed from $installer_url."
+              continue
+            fi
+            installer_bytes=$(stat -f '%z' "$installer_tmp")
+            if (( installer_bytes < minimum_installer_bytes )); then
+              echo "::warning::ChatGPT installer from $installer_url is only ${installer_bytes} bytes; trying the next official source."
+              continue
+            fi
+            if ! hdiutil imageinfo "$installer_tmp" >/dev/null; then
+              echo "::warning::ChatGPT installer from $installer_url is not a valid disk image; trying the next official source."
+              continue
+            fi
+            mv "$installer_tmp" "$installer_path"
+            installer_ready=true
+            break
+          done
+          if [[ "$installer_ready" != true ]]; then
+            echo "::error::No valid official ChatGPT desktop installer was available."
+            exit 1
+          fi
           mount_dir="$RUNNER_TEMP/chatgpt-mount"
           mkdir -p "$mount_dir"
           mounted=false
@@ -256,10 +285,23 @@ jobs:
             return "$exit_status"
           }
           trap cleanup_mount EXIT
-          hdiutil attach "$RUNNER_TEMP/ChatGPT.dmg" \
+          hdiutil attach "$installer_path" \
             -nobrowse -readonly -mountpoint "$mount_dir"
           mounted=true
-          ditto "$mount_dir/ChatGPT.app" /Applications/ChatGPT.app
+          app_source="$mount_dir/ChatGPT.app"
+          if [[ ! -d "$app_source" ]]; then
+            app_source=$(find "$mount_dir" -maxdepth 1 -type d -name '*.app' -print -quit)
+          fi
+          if [[ -z "$app_source" || ! -d "$app_source" ]]; then
+            echo "::error::The official installer did not contain a desktop app bundle."
+            exit 1
+          fi
+          bundle_id=$(defaults read "$app_source/Contents/Info" CFBundleIdentifier)
+          if [[ "$bundle_id" != "com.openai.codex" ]]; then
+            echo "::error::Unexpected desktop app bundle identifier: $bundle_id"
+            exit 1
+          fi
+          ditto "$app_source" /Applications/ChatGPT.app
           detach_mount
           trap - EXIT
           xattr -dr com.apple.quarantine /Applications/ChatGPT.app || true
