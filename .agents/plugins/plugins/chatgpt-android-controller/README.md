@@ -1,185 +1,146 @@
 # ChatGPT Android 自动化
 
-这是一个独立于 `chatgpt-auto-confirm` 的新 Mahayana 小程序。旧 macOS/Electron 版本不修改；本插件专门控制真实 Android 设备或 Android Emulator 上的 ChatGPT App。
+这是独立于 `chatgpt-auto-confirm` 的新 Mahayana 小程序。旧 macOS/Electron 版本保持不变；本插件直接操控 **Android ChatGPT APK**，并以 GitHub-hosted Actions + Android Emulator 作为主要持续运行环境。
 
-## 技术选型
+## 架构
 
-主运行时使用 **TypeScript / Node.js**，设备层使用 **ADB + Appium UiAutomator2**：
+主运行时使用 **TypeScript / Node.js**，Android UI 使用 **ADB + Appium 3 / UiAutomator2**：
 
-- Mahayana/MCP 本身已经运行 Node.js，TypeScript 可以直接复用现有插件协议和部署方式。
-- ADB 负责设备发现、启动 App、前台检查、点击回退和 UI hierarchy 读取。
-- Appium UiAutomator2 负责可靠的 Android accessibility/UI 自动化，尤其是 Unicode/中文输入。
-- 不引入 Rust/JNI；也不需要在手机上长期安装自研 AccessibilityService。
+```text
+GitHub Actions (ubuntu-24.04)
+  -> Android Emulator / AVD
+  -> ChatGPT Android APK (com.openai.chatgpt)
+  -> ADB + Appium UiAutomator2
+  -> chatgpt-android-controller
+  -> 持久化任务队列
+```
 
-Android 官方 UiAutomator 支持跨进程检查和操作用户 App；Appium 的 UiAutomator2 driver 将这些能力暴露为稳定的 WebDriver 服务。
+选择 TypeScript 而不是纯 Rust/Kotlin，是因为 Mahayana/MCP 已经是 Node 插件运行时，控制器运行在 Runner/桌面宿主侧。Android 的跨应用 UI 能力交给 ADB/UiAutomator2，不额外维护 Rust/JNI 或自研 AccessibilityService。
 
-## 能力
+## APK 登录态复用
+
+登录成功的唯一验收条件是：
+
+1. 前台包名是 `com.openai.chatgpt`；
+2. APK 页面不存在登录/注册控件；
+3. APK 内检测到真实 Chat composer。
+
+**浏览器页面不是登录成功条件。**
+
+GitHub-hosted Runner 每一轮结束前会冷关 Emulator，将 AVD 内容目录整体打包，其中包括 Android 用户数据、ChatGPT APK 私有状态、设备设置和 controller queue state。打包结果使用 `CHATGPT_AUTO_CONFIRM_STATE_KEY` 加密后才进入 Actions cache。
+
+下一轮 Runner 恢复加密 AVD 后直接启动 ChatGPT APK。如果 APK composer 仍然可用，就直接继续任务，不重复登录。
+
+如果没有可恢复 AVD，或 APK 登录已失效，`bootstrap-apk-login.mjs` 会从 **APK 自己的登录按钮**进入官方认证流程。已有 `CHATGPT_SESSION_COOKIES_B64` 仅可作为这次认证流程的 bootstrap 输入；最终必须回到 ChatGPT APK 并再次通过 composer 验证才算成功。之后保存新的完整 AVD 状态，后续轮次优先直接恢复 APK 登录态。
+
+插件不会读取或打印 ChatGPT APK 私有 token/Cookie，也不会把未加密 AVD 数据上传到 artifact/cache。
+
+## 持续 GitHub Actions
+
+`.github/workflows/chatgpt-android-apk-runner.yml` 实现分段持续运行：
+
+1. 恢复最近的加密 AVD state；没有则创建 Android 35 Play Store AVD。
+2. 启动 Emulator，并检查 `com.openai.chatgpt`。
+3. restored AVD 已包含 APK 时直接复用；fresh AVD 使用受控 APK URL + SHA-256 强校验安装。
+4. 验证 APK 登录；必要时执行 APK login bootstrap。
+5. 启动 Appium UiAutomator2。
+6. 真正从 APK 发一条 smoke 消息，并要求 ChatGPT 回复唯一 marker。
+7. smoke 通过后启动动态持久任务队列。
+8. 每轮约运行 5 小时后停止 Emulator、加密 checkpoint，再 `workflow_dispatch` 下一轮 Runner。
+
+因此单个 GitHub-hosted job 的生命周期不会丢失长期任务状态。
+
+fresh AVD 需要在受保护 Environment 中配置：
+
+- `CHATGPT_ANDROID_APK_URL`
+- `CHATGPT_ANDROID_APK_SHA256`
+- 已有 `CHATGPT_AUTO_CONFIRM_STATE_KEY`
+- 首次 APK bootstrap 可复用已有 `CHATGPT_SESSION_COOKIES_B64`
+
+仓库不会硬编码第三方 APK 镜像。APK URL 下载后必须先通过配置的 SHA-256，才允许 `adb install` / `adb install-multiple`。
+
+## Action 证据与调试
+
+控制台日志只记录脱敏信息，例如：
+
+- 当前阶段和错误码
+- foreground package
+- UI node / editable / login-control 数量
+- Appium/ADB 可用状态
+- 队列任务状态计数
+- smoke marker 是否观察到
+- AVD checkpoint 密文大小
+
+完整截图、ChatGPT package logcat、Appium 日志和 Emulator 日志写入 diagnostics 目录。上传 artifact 前先用 `CHATGPT_AUTO_CONFIRM_STATE_KEY` 加密，仓库里不保存明文截图或 Chat 内容。
+
+关键脚本：
+
+- `scripts/verify-apk-session.mjs`：验证 APK 登录状态并采集证据
+- `scripts/bootstrap-apk-login.mjs`：从 APK 官方登录入口恢复登录
+- `scripts/avd-state.sh`：加密保存/恢复完整 AVD 状态
+- `scripts/apk-smoke.ts`：真实发送消息并验证 ChatGPT 回复 marker
+- `scripts/action-runner.ts`：持续读取任务 inbox、对账并运行队列
+
+## 自动化能力
 
 - 多 Android 设备槽位（兼容旧版 `account_*` 命名）
 - 自动扫描并点击 `Allow once / 允许一次 / 允許一次`
-- watcher：`start / stop / status / scan_once / relaunch_and_confirm`
-- 本地脱敏审计日志
+- `start / stop / status / scan_once / relaunch_and_confirm`
 - `send_message / add_connector / get_reply / chat_status / send_and_watch`
-- 持久化任务队列：入队、依赖、优先级、多设备并行、暂停、恢复、验收、反馈重跑、取消、watchdog
-- GitHub Actions/self-hosted runner 模式
+- 持久化任务队列：依赖、优先级、多设备并发、暂停/恢复、验收、反馈重跑、取消、watchdog
+- 动态读取 `chatgpt-auto-confirm/tasks/actions-inbox.json`，在 Runner 不重启的情况下吸收任务 revision 更新
 
-### Android 与旧 macOS 版的关键差异
+watcher 只在 ChatGPT 已经位于 Android 前台时扫描，不会为了后台扫描抢走另一 App。`send_and_watch` 会记录发送前页面基线，排除刚发送的用户消息，避免把用户 prompt 误判成助手回复。
 
-Android 应用沙箱不允许本插件读取 ChatGPT App 的私有 Cookie/Token，因此以下旧工具仍保留以兼容调用方，但会返回明确的 `android_app_sandbox`：
+## 选择器策略
 
-- `account_login_link`
-- `account_sync`
-- `sync_actions_credentials`
-- `login_and_sync_actions`
+插件不以固定屏幕坐标作为主要识别方式。每次操作抓取 Android accessibility hierarchy，优先匹配：
 
-Android 版不需要复制这些凭据。ChatGPT 登录状态由每台 Android 设备自身保存；CI/Actions 通过 self-hosted runner 连接设备后直接操作 App。
+1. `text`
+2. `content-description`
+3. `resource-id`
+4. 控件类型（如 `EditText`）
+5. 最后使用目标节点实时 `bounds` 点击
 
-## 环境要求
+ChatGPT Android UI 更新后，通常只需要补充语义 selector，而不是重新录制整套坐标。
 
-1. Node.js >= 22.6
-2. Android platform-tools (`adb`)
-3. 手机开启开发者选项和 USB/Wi-Fi 调试
-4. Android ChatGPT App 已安装
-5. 推荐 Appium 3 + UiAutomator2 driver
+## 本地调试
 
-检查设备：
+需要 Node.js >= 22.6、Android platform-tools 和已连接的 Android 设备/Emulator。
 
 ```bash
 adb devices -l
-```
-
-安装 Appium/UiAutomator2：
-
-```bash
 npm run setup:appium
 npx appium
+npm start
 ```
 
-默认 Appium 地址为 `http://127.0.0.1:4723`。可覆盖：
+默认 Appium 地址为 `http://127.0.0.1:4723`，可通过 `CHATGPT_ANDROID_APPIUM_URL` 覆盖。
 
-```bash
-export CHATGPT_ANDROID_APPIUM_URL=http://127.0.0.1:4723
-```
-
-## 本地 MCP
-
-`.mcp.json` 直接使用 Node 启动本插件，不依赖旧版插件打包的 `fabushi-plugin-cli` 二进制：
+MCP server 由 `.mcp.json` 直接通过 Node 启动：
 
 ```bash
 node --experimental-strip-types --import ./runtime/safety-patches.ts server/index.ts
 ```
 
-也可以直接使用 package script：
-
-```bash
-npm start
-```
-
-## 常用流程
-
-注册唯一连接的手机：
-
-```json
-{"name":"account_add","arguments":{"label":"Pixel 主账号"}}
-```
-
-多台手机时指定 serial：
-
-```json
-{"name":"account_add","arguments":{"serial":"emulator-5554","label":"模拟器 A"}}
-```
-
-启动自动确认：
-
-```json
-{"name":"start","arguments":{"intervalMs":750,"approveAll":true}}
-```
-
-watcher 只会在 ChatGPT 已经位于 Android 前台时扫描授权卡，不会为了后台扫描抢走用户当前正在使用的其他 App。
-
-发消息并等待：
-
-```json
-{
-  "name":"send_and_watch",
-  "arguments":{
-    "message":"检查当前仓库状态并汇报",
-    "connector":"GitHub",
-    "timeout":21600
-  }
-}
-```
-
-任务队列：
-
-```json
-{
-  "name":"enqueue_tasks",
-  "arguments":{
-    "start":true,
-    "maxConcurrent":2,
-    "tasks":[
-      {"id":"task-a","title":"任务 A","prompt":"完成任务 A","accountId":"acct_..."},
-      {"id":"task-b","title":"任务 B","prompt":"完成任务 B","accountId":"acct_..."}
-    ]
-  }
-}
-```
-
-不同设备可以并行；同一设备同一时间只调度一个任务，避免两个 ChatGPT UI 操作互相覆盖。运行中的任务收到 `cancel_task` 后，会在下一轮轮询中退出并保持 `cancelled` 状态。
-
-## 选择器策略
-
-插件不把屏幕坐标作为主识别方式。每次操作先抓 Android accessibility hierarchy，再按以下语义匹配：
-
-1. `text`
-2. `content-description`
-3. `resource-id`
-4. 控件类型（例如 `EditText`）
-5. 找到目标节点后才根据其实时 `bounds` 点击
-
-因此分辨率变化不会直接破坏流程。ChatGPT Android UI 更新后，通常只需要扩展语义标签/selector，而不是重新录坐标。
-
-`send_and_watch` 会记录发送前页面基线，并排除刚发送的用户消息，避免把用户消息误判成 ChatGPT 已完成回复。
-
 ## 状态与隐私
 
-默认状态文件：
+本地默认状态：
 
 ```text
 ~/.mahayana/chatgpt-android-controller/state.json
-```
-
-默认审计文件：
-
-```text
 ~/.mahayana/chatgpt-android-controller/audit.log
 ```
 
 审计只记录动作类型、设备槽位、字符数和错误，不记录消息正文、Cookie 或 Token。
 
-可用环境变量：
+主要环境变量：
 
 - `CHATGPT_ANDROID_CONTROLLER_STATE`
 - `CHATGPT_ANDROID_CONTROLLER_AUDIT`
 - `CHATGPT_ANDROID_ADB`
 - `CHATGPT_ANDROID_APPIUM_URL`
 - `CHATGPT_ANDROID_PACKAGE`（默认 `com.openai.chatgpt`）
-
-## GitHub Actions
-
-推荐使用一台长期连接 Android 手机/模拟器的 self-hosted runner：
-
-```text
-GitHub Actions
-  -> self-hosted runner
-  -> Mahayana chatgpt-android-controller
-  -> ADB / Appium UiAutomator2
-  -> ChatGPT Android App
-```
-
-这样登录状态留在设备本身，不需要把 ChatGPT 私有凭据上传 GitHub Secrets。
-
-## 验证边界
-
-仓库内单元测试与契约检查覆盖 MCP 启动、UI hierarchy 解析和选择器基础逻辑。真实 ChatGPT Android UI 的 resource-id、Apps/connector 菜单和回复节点仍需要在连接具体 Android 设备后做一次 smoke 校准；不同 ChatGPT App 版本可能需要补充语义 selector。
+- `CHATGPT_ANDROID_STATE_KEY`
+- `CHATGPT_ANDROID_AVD_ROOT`
+- `CHATGPT_ANDROID_STATE_FILE`
