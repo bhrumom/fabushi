@@ -52,15 +52,13 @@ jobs:
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" emulator
 
-          qemu_bin="$sdk_root/emulator/qemu/linux-x86_64/qemu-system-x86_64"
-          test -x "$qemu_bin"
-          missing=$(ldd "$qemu_bin" | awk '/not found/{print $1}')
-          if [[ -n "$missing" ]]; then
-            echo "::error::Android emulator has unresolved shared libraries: $missing"
-            ldd "$qemu_bin" || true
+          emulator_bin="$sdk_root/emulator/emulator"
+          test -x "$emulator_bin"
+          if ! emulator_version=$("$emulator_bin" -version 2>&1); then
+            printf '%s\n' "$emulator_version"
             exit 1
           fi
 
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
-          "$sdk_root/emulator/emulator" -version | head -n 1
+          printf '%s\n' "$emulator_version" | head -n 1
