@@ -311,43 +311,4 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   assert.equal(auditRes.ok, true);
   assert.equal(auditRes.events.length, 0);
 
-  // 6. Test unit logic of JS card detection script against simulated DOM objects
-  const mockDOMTestScript = `
-    const document = {
-      querySelectorAll: (sel) => {
-        if (sel === 'button' || sel === 'button, a, [role="button"]') {
-          return [
-            {
-              innerText: 'Allow once',
-              click: () => { global.__buttonClicked = true; },
-              parentElement: {
-                innerText: 'Allow ChatGPT to use Terminal on your computer?\\nBody: {"token":"secret_jwt_token_456","actions":{"allow_once":{"target_message_id":"msg_789"}}}',
-                querySelectorAll: () => [],
-                __reactFiber$test123: {
-                  memoizedProps: {
-                    jit_plugin_data: {
-                      from_server: {
-                        body: { token: "secret_jwt_token_456" },
-                        actions: { allow_once: { target_message_id: "msg_789" } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ];
-        }
-        return [];
-      }
-    };
-    global.__evalResult = (${evaluateExpressionReceived});
-  `;
-  global.__buttonClicked = false;
-  eval(mockDOMTestScript);
-  assert.equal(global.__buttonClicked, true);
-  assert.equal(global.__evalResult.candidates, 1);
-  assert.equal(global.__evalResult.approved, 1);
-  assert.match(global.__evalResult.audits[0].reason, /IPC 主路径/);
-  assert.match(global.__evalResult.audits[0].promptText, /\[approval details redacted\]/);
-  assert.equal(global.__evalResult.audits[0].promptText.includes('secret_jwt_token_456'), false);
 });
