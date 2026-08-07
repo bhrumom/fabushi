@@ -1,0 +1,39 @@
+name: Mahayana GitHub Native Marketplace Contract
+
+on:
+  pull_request:
+    paths:
+      - 'fabushi/web/src/marketplace/github-native-contract.js'
+      - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
+      - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
+      - 'templates/mahayana-mcp-app-github-native/**'
+  push:
+    branches:
+      - codex/mahayana-marketplace-cloudflare-20260730-v9
+    paths:
+      - 'fabushi/web/src/marketplace/github-native-contract.js'
+      - 'fabushi/web/tests/github-native-marketplace-contract.test.js'
+      - '.github/workflows/mahayana-github-native-marketplace-contract.yml'
+      - 'templates/mahayana-mcp-app-github-native/**'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: GitHub-native MCP App contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run contract tests
+        run: node --test fabushi/web/tests/github-native-marketplace-contract.test.js
