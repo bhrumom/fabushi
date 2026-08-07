@@ -688,15 +688,34 @@ func resolveDispatchedConversationJS(
     );
     const rowCandidates = () => {
       const values = [];
-      const rows = [...document.querySelectorAll('[data-thread-title="true"]')]
-        .map(title => title.closest('[role="button"]'))
-        .filter(Boolean);
+      const rows = [...new Set(
+        [...document.querySelectorAll(
+          '[data-thread-title="true"], a[href*="/c/"], a[href*="/work/conversation/"]'
+        )]
+          .map(element => element.closest('[role="button"], a[href]'))
+          .filter(Boolean)
+      )];
       for (const row of rows) {
-        const title = (row.querySelector('[data-thread-title="true"]')?.textContent || '').trim();
+        const title = (
+          row.querySelector('[data-thread-title="true"]')?.textContent
+            || row.textContent || ''
+        ).trim();
         const fiberKey = Object.keys(row).find(key => key.startsWith('__reactFiber$'));
         let fiber = fiberKey ? row[fiberKey] : null;
         const identities = [];
         const durableIds = [];
+        for (const attribute of ['data-conversation-id', 'data-thread-id']) {
+          identities.push(row.getAttribute(attribute));
+        }
+        const routeValues = [
+          row.getAttribute('href'),
+          ...[...row.querySelectorAll('a[href]')].map(anchor => anchor.getAttribute('href'))
+        ];
+        for (const route of routeValues) {
+          if (typeof route !== 'string') continue;
+          const match = route.match(/\\/(?:c|work\\/conversation)\\/([^/?#]+)/);
+          if (match) identities.push(match[1]), durableIds.push(match[1]);
+        }
         for (let depth = 0; fiber && depth < 8; depth += 1, fiber = fiber.return) {
           const props = fiber.memoizedProps || {};
           identities.push(props.conversationId, props.conversation?.id);
@@ -705,7 +724,7 @@ func resolveDispatchedConversationJS(
           }
           for (const route of [props.route, props.shortcutKey]) {
             if (typeof route !== 'string') continue;
-            const match = route.match(/^\\/work\\/conversation\\/([^/?#]+)/);
+            const match = route.match(/\\/(?:c|work\\/conversation)\\/([^/?#]+)/);
             if (match) identities.push(match[1]);
           }
         }
