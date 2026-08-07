@@ -165,7 +165,8 @@ const authenticatedControllerIsReady = state =>
   !state.asksForLogin
   && state.bridge
   && state.readyState === 'complete'
-  && state.bodyLength > 50;
+  && state.bodyLength > 50
+  && !!(state.currentMode || state.workComposer || state.hasChat || state.hasWork);
 
 const listTargets = async (fetchImpl, port) =>
   fetchImpl(`http://127.0.0.1:${port}/json/list`, {
@@ -553,12 +554,15 @@ const sessionStateExpression = `(() => {
   const controls = [...document.querySelectorAll(
     'button, [role="button"], [role="tab"], [aria-label]'
   )].filter(visible);
-  const labels = controls.map(element => normalize([
+  // Keep label sources independent. Electron controls frequently expose the
+  // same visible label through innerText and textContent; concatenating them
+  // turns "Chat" into "Chat Chat" and breaks exact control detection.
+  const labels = controls.flatMap(element => [
     element.innerText,
     element.textContent,
     element.getAttribute('aria-label'),
     element.getAttribute('title')
-  ].filter(Boolean).join(' ')));
+  ]).map(normalize).filter(Boolean);
   const exact = label => labels.some(value => value.toLowerCase() === label);
   const hasChat = exact('chat') || exact('聊天');
   const hasWork = exact('work') || exact('工作');

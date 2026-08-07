@@ -148,9 +148,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   assert.match(restoreSessionScript, /Optional CDP command/);
   assert.match(restoreSessionScript, /authenticatedControllerIsReady/);
   assert.match(restoreSessionScript, /!state\.asksForLogin/);
-  assert.doesNotMatch(
+  assert.match(
     restoreSessionScript,
-    /lastState\.currentMode\s*\|\|\s*lastState\.workComposer/,
+    /state\.currentMode\s*\|\|\s*state\.workComposer\s*\|\|\s*state\.hasChat\s*\|\|\s*state\.hasWork/,
   );
   assert.doesNotMatch(restoreSessionScript, /call\([^\n]*['"]Page\.setWebLifecycleState['"]/);
   assert.doesNotMatch(actionsWorkflow, /pkill -x ChatGPT/);
@@ -161,6 +161,9 @@ test('continuous Actions runner preserves secrets and chains incomplete sessions
   );
   assert.doesNotMatch(actionsWorkflow, /login_status=\$\(/);
   assert.match(actionsWorkflow, /Build native queue runtime/);
+  assert.match(actionsWorkflow, /native-auth-verify\.log/);
+  assert.match(actionsWorkflow, /native-auth-targets\.json/);
+  assert.match(actionsWorkflow, /Native ChatGPT authentication verification failed/);
   assert.match(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_STATE_KEY/);
   assert.doesNotMatch(actionsWorkflow, /CHATGPT_AUTO_CONFIRM_INITIAL_STATE_B64/);
   assert.match(actionsWorkflow, /\{"automationTasks":\[\]\}/);

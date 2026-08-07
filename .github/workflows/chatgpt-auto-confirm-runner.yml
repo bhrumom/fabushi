@@ -353,13 +353,27 @@ jobs:
         if: ${{ inputs.cancel_task_id == '' }}
         id: auth_verify
         timeout-minutes: 6
+        shell: bash
         env:
           CHATGPT_AUTO_CONFIRM_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_QUEUE_STATE: ${{ steps.paths.outputs.state_path }}
           CHATGPT_AUTO_CONFIRM_CDP_PORT: ${{ env.CHATGPT_CDP_PORT }}
           CHATGPT_AUTO_CONFIRM_BACKGROUND_PORT: ${{ env.CHATGPT_CDP_PORT }}
           CHATGPT_AUTO_CONFIRM_PROFILE_PATH: ${{ steps.paths.outputs.profile_dir }}
-        run: .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login
+          DIAGNOSTICS_DIR: ${{ steps.paths.outputs.runtime_dir }}/diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIAGNOSTICS_DIR"
+          log="$DIAGNOSTICS_DIR/native-auth-verify.log"
+          targets="$DIAGNOSTICS_DIR/native-auth-targets.json"
+          curl --silent --show-error --max-time 5 \
+            "http://127.0.0.1:$CHATGPT_AUTO_CONFIRM_CDP_PORT/json/list" \
+            > "$targets" || printf '%s\n' '[]' > "$targets"
+          if ! .agents/plugins/plugins/chatgpt-auto-confirm/runtime/macos/chatgpt-auto-confirm verify_chatgpt_login \
+            > >(tee "$log") 2> >(tee -a "$log" >&2); then
+            echo "::error::Native ChatGPT authentication verification failed. See $log and $targets in the diagnostic artifact."
+            exit 1
+          fi
 
       - name: Export and encrypt refreshed account credentials
         if: ${{ inputs.cancel_task_id == '' && inputs.account_id != '' && steps.auth_verify.outcome == 'success' }}
