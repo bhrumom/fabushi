@@ -1315,6 +1315,14 @@ func detectDedicatedAuthorizationJS() -> String {
   #"""
   (() => {
     const normalize = value => (value || '').replace(/[\s↵⏎]+/g, ' ').trim().toLowerCase();
+    const fingerprint = value => {
+      let hash = 2166136261;
+      for (const character of value) {
+        hash ^= character.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+    };
     const visible = element => !!(element
       && !element.disabled
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
@@ -1392,6 +1400,7 @@ func detectDedicatedAuthorizationJS() -> String {
           sessionScopeLabels,
           menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
           menuTriggerCount: menuTriggers.length,
+          cardFingerprint: fingerprint(cardText),
           unlabeledControlCount: nonDecisionControls.filter(button => !label(button)).length
         };
       }

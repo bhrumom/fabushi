@@ -34,6 +34,7 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "sessionScopeLabels": detection["sessionScopeLabels"] ?? [],
     "menuTriggerLabels": detection["menuTriggerLabels"] ?? [],
     "menuTriggerCount": detection["menuTriggerCount"] ?? 0,
+    "cardFingerprint": detection["cardFingerprint"] ?? "",
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
   ]) ?? "{}"
   return "detection=\(details)"
@@ -360,13 +361,26 @@ func monitorAutomationTask(
   // A permission card can replace the normal conversation body temporarily.
   // Confirm it before restoring a task through its exact hidden-page route, so
   // an unloaded conversation cannot suppress automatic authorization.
-  _ = approveDedicatedAuthorizationWithDiagnostics(
+  let now = isoFormatter.string(from: Date())
+  let approval = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
     taskId: task.id,
     stage: "before-read"
   )
-  let now = isoFormatter.string(from: Date())
+  // The authorization card is replaced asynchronously after a confirmed
+  // decision. Reading the conversation during that renderer transition can
+  // fail even though the click succeeded, which used to leave a false
+  // queue_monitor_cdp_failed error and immediately poll the next card. Treat
+  // the confirmed authorization itself as progress and resume normal
+  // conversation monitoring on the next queue tick.
+  if approval?["clicked"] as? Bool == true,
+     approval?["confirmed"] as? Bool == true {
+    task.lastError = nil
+    task.lastProgressAt = now
+    task.updatedAt = now
+    return
+  }
   guard var liveStatus = cdpValue(
           port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
     task.lastError = "queue_monitor_cdp_failed"
