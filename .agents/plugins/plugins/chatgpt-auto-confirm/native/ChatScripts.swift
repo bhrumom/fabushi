@@ -1382,11 +1382,17 @@ func sendMessageJS(
     result.dispatchOnly = true;
     result.ok = true;
     result.url = window.location.href || '';
-    const activeRow = [...document.querySelectorAll('[data-thread-title="true"]')]
+    const activeRowAnchor = document.querySelector(
+      'a[aria-current="page"][href*="/c/"], a[aria-current="page"][href*="/work/conversation/"]'
+    );
+    const activeRow = activeRowAnchor || [...document.querySelectorAll('[data-thread-title="true"]')]
       .map(title => title.closest('[role="button"]'))
       .find(row => row?.getAttribute('aria-current') === 'page');
     const activeRowConversationIds = [];
     if (activeRow) {
+      const hrefMatch = activeRow.getAttribute('href')
+        ?.match(/\\/(?:c|work\\/conversation)\\/([^/?#]+)/);
+      if (hrefMatch) activeRowConversationIds.push(decodeURIComponent(hrefMatch[1]));
       const fiberKey = Object.keys(activeRow).find(key => key.startsWith('__reactFiber$'));
       let fiber = fiberKey ? activeRow[fiberKey] : null;
       for (let depth = 0; fiber && depth < 8; depth += 1, fiber = fiber.return) {
@@ -1981,11 +1987,17 @@ func chatStatusJS() -> String {
   const portalConversationId = portalConversation.startsWith('chatgpt:')
     ? portalConversation.slice('chatgpt:'.length)
     : portalConversation;
-  const activeRow = [...document.querySelectorAll('[data-thread-title="true"]')]
+  const activeRowAnchor = document.querySelector(
+    'a[aria-current="page"][href*="/c/"], a[aria-current="page"][href*="/work/conversation/"]'
+  );
+  const activeRow = activeRowAnchor || [...document.querySelectorAll('[data-thread-title="true"]')]
     .map(title => title.closest('[role="button"]'))
     .find(row => row?.getAttribute('aria-current') === 'page');
   const activeRowConversationIds = [];
   if (activeRow) {
+    const hrefMatch = activeRow.getAttribute('href')
+      ?.match(/\\/(?:c|work\\/conversation)\\/([^/?#]+)/);
+    if (hrefMatch) activeRowConversationIds.push(decodeURIComponent(hrefMatch[1]));
     const fiberKey = Object.keys(activeRow).find(key => key.startsWith('__reactFiber$'));
     let fiber = fiberKey ? activeRow[fiberKey] : null;
     for (let depth = 0; fiber && depth < 8; depth += 1, fiber = fiber.return) {
@@ -1998,12 +2010,17 @@ func chatStatusJS() -> String {
     || activeRowConversationIds[0]
     || null;
   const conversationId = routeConversationId
-    || portalConversationId
+    || (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
+      ? portalConversationId : null)
     || activeConversationId
+    || portalConversationId
     || null;
   const conversationSource = routeConversationId
     ? 'route'
-    : (portalConversationId ? 'portal' : (activeConversationId ? 'active-row' : 'none'));
+    : (portalConversationId && !portalConversationId.startsWith('local-chatgpt:')
+      ? 'portal'
+      : (activeConversationId ? 'active-row'
+        : (portalConversationId ? 'portal-local' : 'none')));
   const chatUrl = conversationId && !conversationId.startsWith('local-chatgpt:')
     ? `https://chatgpt.com/c/${conversationId}`
     : null;

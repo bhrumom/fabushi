@@ -420,9 +420,10 @@ func monitorAutomationTask(
       // authoritative enough to replace that local id; an active-row-only id
       // must not bind the task to the stale sidebar conversation.
       let identitySource = liveStatus["conversationSource"] as? String
-      let canPromoteLocalId = !conversationId.hasPrefix("local-chatgpt:")
-        || identitySource == "route"
-        || identitySource == "portal"
+      let canPromoteLocalId = !observed.hasPrefix("local-chatgpt:")
+        && (!conversationId.hasPrefix("local-chatgpt:")
+          || identitySource == "route"
+          || identitySource == "portal")
       if canPromoteLocalId {
         if !monitoringReview {
           task.conversationId = observed
