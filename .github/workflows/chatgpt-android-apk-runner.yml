@@ -173,7 +173,7 @@ jobs:
           adb shell input keyevent 82 || true
           adb devices -l
 
-      - name: Ensure official ChatGPT APK is installed
+      - name: Ensure pinned ChatGPT APK is installed
         id: apk
         shell: bash
         env:
@@ -202,16 +202,20 @@ jobs:
           fi
 
           install_dir="$RUNNER_TEMP/chatgpt-apks"
+          archive_entries="$RUNNER_TEMP/chatgpt-package-entries.txt"
           mkdir -p "$install_dir"
-          if unzip -t "$apk_bundle" >/dev/null 2>&1; then
+          if unzip -Z1 "$apk_bundle" >"$archive_entries" 2>/dev/null \
+              && grep -Eq '\.apk$' "$archive_entries"; then
             unzip -q "$apk_bundle" -d "$install_dir"
             mapfile -t apks < <(find "$install_dir" -type f -name '*.apk' -print | sort)
             if (( ${#apks[@]} == 0 )); then
-              echo '::error::The verified package archive contains no APK files.'
+              echo '::error::The verified split package archive contains no APK files.'
               exit 1
             fi
             adb install-multiple -r "${apks[@]}"
           else
+            # A regular APK is itself a ZIP file, so ZIP validity alone cannot
+            # distinguish it from an .apks/split archive.
             adb install -r "$apk_bundle"
           fi
           adb shell pm path "$CHATGPT_ANDROID_PACKAGE" | grep -q '^package:'
