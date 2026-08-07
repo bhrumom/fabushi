@@ -16,6 +16,8 @@
 4. `LOCAL_FIRST_MCP_APPS.md`：本地优先执行；
 5. `MCP_APPS_ONLY.md`：MCP Apps UI、Host、安全和旧协议删除。
 
+所有市场发布、父级 Release Manifest、构件 provenance、SBOM 与 attestations 必须绑定同一精确 source commit。
+
 ## GitHub 共创原则
 
 - 市场版本绑定稳定 GitHub repository ID、精确 commit、tree hash 和 SPDX license；
