@@ -2,68 +2,77 @@
 set -euo pipefail
 
 page_url="${CHATGPT_APKCOMBO_PAGE_URL:-https://apkcombo.com/chatgpt/com.openai.chatgpt/download/apk}"
-version_name="${CHATGPT_ANDROID_VERSION_NAME:-1.2026.202}"
-version_code="${CHATGPT_ANDROID_VERSION_CODE:-2620225}"
-output="${1:-${RUNNER_TEMP:-/tmp}/chatgpt-${version_name}.xapk}"
+requested_version="${CHATGPT_ANDROID_VERSION_NAME:-}"
+requested_code="${CHATGPT_ANDROID_VERSION_CODE:-}"
+output="${1:-${RUNNER_TEMP:-/tmp}/chatgpt-latest.xapk}"
 page="$(mktemp)"
-trap 'rm -f "$page"' EXIT
+meta="$(mktemp)"
+trap 'rm -f "$page" "$meta"' EXIT
 
 curl --fail --location --silent --show-error --retry 3 \
+  --connect-timeout 30 --max-time 120 \
   --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36' \
   --header 'Accept-Language: en-US,en;q=0.9' \
   "$page_url" --output "$page"
 
-download_url="$({
-  python3 - "$page" "$version_name" "$version_code" <<'PY'
+python3 - "$page" "$requested_version" "$requested_code" >"$meta" <<'PY'
 from __future__ import annotations
 
 import html
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 page = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-version_name = sys.argv[2]
-version_code = sys.argv[3]
+requested_version = sys.argv[2].strip()
+requested_code = sys.argv[3].strip()
 
 hrefs = re.findall(r'''href=["']([^"']+)["']''', page, flags=re.I)
-candidates: list[tuple[int, str]] = []
+candidates: list[tuple[int, str, str, str]] = []
 for raw in hrefs:
     href = html.unescape(raw)
     if "/r2?u=" not in href:
         continue
     absolute = urljoin("https://apkcombo.com", href)
     parsed = urlparse(absolute)
-    target = parse_qs(parsed.query).get("u", [""])[0]
-    score = 0
-    haystack = f"{absolute} {target}"
-    if "com.openai.chatgpt" in haystack:
-        score += 4
-    if version_name in haystack:
-        score += 4
-    if version_code in haystack:
-        score += 8
-    candidates.append((score, absolute))
+    target = unquote(parse_qs(parsed.query).get("u", [""])[0])
+    if "com.openai.chatgpt" not in target:
+        continue
+    match = re.search(r"/com\.openai\.chatgpt/([^/]+)/([0-9]+)[^/]*\.apks(?:\?|$)", target)
+    if not match:
+        continue
+    version_name, version_code = match.group(1), match.group(2)
+    if requested_version and version_name != requested_version:
+        continue
+    if requested_code and version_code != requested_code:
+        continue
+    candidates.append((int(version_code), version_name, version_code, absolute))
 
 if not candidates:
-    raise SystemExit("APKCombo page did not expose any /r2 download links")
+    extra = ""
+    if requested_version or requested_code:
+        extra = f" for requested version={requested_version or '*'} code={requested_code or '*'}"
+    raise SystemExit(f"APKCombo page exposed no ChatGPT XAPK download candidate{extra}")
 
 candidates.sort(key=lambda item: item[0], reverse=True)
-best_score, best_url = candidates[0]
-if best_score < 4:
-    raise SystemExit("APKCombo download candidates did not match com.openai.chatgpt")
-print(best_url)
+_, version_name, version_code, download_url = candidates[0]
+print(version_name)
+print(version_code)
+print(download_url)
 PY
-} | tail -n 1)"
 
-if [[ -z "$download_url" ]]; then
-  echo 'Unable to resolve an APKCombo download URL.' >&2
+version_name=$(sed -n '1p' "$meta")
+version_code=$(sed -n '2p' "$meta")
+download_url=$(sed -n '3p' "$meta")
+if [[ -z "$version_name" || -z "$version_code" || -z "$download_url" ]]; then
+  echo 'Unable to resolve a complete APKCombo download candidate.' >&2
   exit 1
 fi
 
-# The /r2 URL contains a short-lived storage signature. Do not print it.
+# The /r2 URL contains a short-lived Cloudflare R2 signature. Never print it.
 curl --fail --location --silent --show-error --retry 3 \
+  --connect-timeout 30 --max-time 300 \
   --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36' \
   "$download_url" --output "$output"
 
