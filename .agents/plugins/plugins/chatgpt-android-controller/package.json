@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types server/index.ts",
+    "start": "node --experimental-strip-types --import ./runtime/safety-patches.ts server/index.ts",
     "setup:appium": "node scripts/setup-appium.mjs",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
