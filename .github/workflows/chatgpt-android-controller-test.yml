@@ -33,6 +33,7 @@ jobs:
       - run: bash -n scripts/fetch-chatgpt-apkpure.sh
       - run: bash -n scripts/fetch-chatgpt-apkcombo.sh
       - run: bash -n scripts/verify-chatgpt-xapk.sh
+      - run: bash -n scripts/check-chatgpt-pairip.sh
       - run: bash -n scripts/install-chatgpt-xapk.sh
       - name: Verify hosted Android emulator runtime
         working-directory: .
@@ -68,25 +69,22 @@ jobs:
 
           emulator_bin="$sdk_root/emulator/emulator"
           test -x "$emulator_bin"
-          if ! emulator_version=$("$emulator_bin" -version 2>&1); then
-            printf '%s\n' "$emulator_version"
-            exit 1
-          fi
-
+          emulator_version=$("$emulator_bin" -version 2>&1)
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Download known-good signed ChatGPT probe XAPK
+      - name: Download and verify pre-PairIP signed ChatGPT candidate
         shell: bash
         env:
-          CHATGPT_ANDROID_VERSION_NAME: 1.2026.027
-          CHATGPT_ANDROID_VERSION_CODE: '2602719'
+          CHATGPT_ANDROID_VERSION_NAME: 1.2023.256
+          CHATGPT_ANDROID_VERSION_CODE: '48'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
           bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
           bash scripts/verify-chatgpt-xapk.sh "$bundle"
-      - name: Inspect Google Play remediation after sideload launch
+          bash scripts/check-chatgpt-pairip.sh "$bundle"
+      - name: Launch pre-PairIP ChatGPT on hosted x86_64 Android
         shell: bash
         run: |
           set -euo pipefail
@@ -131,7 +129,7 @@ jobs:
 
           bash scripts/install-chatgpt-xapk.sh "$RUNNER_TEMP/chatgpt.xapk"
           adb shell dumpsys package com.openai.chatgpt \
-            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=|originatingPackageName=' \
+            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=' \
             | head -n 20 || true
 
           component=$(adb shell cmd package resolve-activity --brief \
@@ -140,33 +138,30 @@ jobs:
             com.openai.chatgpt | tr -d '\r' | tail -n 1)
           echo "Resolved ChatGPT launcher component: $component"
           adb logcat -c
-          if [[ "$component" == com.openai.chatgpt/* ]]; then
-            adb shell am start -W -n "$component" || true
-          else
-            adb shell monkey -p com.openai.chatgpt -c android.intent.category.LAUNCHER 1 >/dev/null || true
-          fi
-          sleep 12
+          adb shell am start -W -n "$component" || true
+          sleep 15
 
           echo '--- foreground ---'
-          adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 10 || true
-          echo '--- signed-in Google accounts ---'
-          adb shell dumpsys account | grep -E 'Account \{|type=com\.google|Accounts:' | head -n 40 || true
-          echo '--- visible UI text/resource ids ---'
-          adb shell uiautomator dump /sdcard/play-remediation.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/play-remediation.xml 2>/dev/null \
+          focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 10 || true)
+          printf '%s\n' "$focus"
+          echo '--- visible ChatGPT UI ---'
+          adb shell uiautomator dump /sdcard/chatgpt-ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/chatgpt-ui.xml 2>/dev/null \
             | tr '>' '>\n' \
             | grep -Eo 'text="[^"]*"|content-desc="[^"]*"|resource-id="[^"]*"|package="[^"]*"' \
             | sed '/text=""/d;/content-desc=""/d;/resource-id=""/d' \
-            | head -n 240 || true
+            | head -n 260 || true
           echo '--- relevant logcat ---'
           adb logcat -d \
-            | grep -Ei 'com\.openai\.chatgpt|integrity|licens|entitlement|vending|play store|unauthenticated' \
+            | grep -Ei 'com\.openai\.chatgpt|AndroidRuntime|FATAL EXCEPTION|pairip|licens|vending|update|required|unsupported' \
             | tail -n 300 || true
 
-          focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 8 || true)
           if [[ "$focus" == *com.android.vending* ]]; then
-            echo 'Observed Google Play remediation as expected; diagnostic complete.'
-            exit 0
+            echo '::error::Pre-PairIP candidate still redirected to Google Play.'
+            exit 1
           fi
-          echo '::error::Expected Play remediation did not become foreground.'
-          exit 1
+          if [[ "$focus" != *com.openai.chatgpt* ]]; then
+            echo '::error::Pre-PairIP candidate did not remain in ChatGPT.'
+            exit 1
+          fi
+          echo 'Pre-PairIP signed ChatGPT remained foreground successfully.'
