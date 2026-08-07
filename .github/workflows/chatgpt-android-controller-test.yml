@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - run: npm test
       - run: bash -n scripts/avd-state.sh
-      - name: Verify hosted Android SDK discovery
+      - name: Verify hosted Android emulator runtime
         working-directory: .
         shell: bash
         run: |
@@ -46,10 +46,19 @@ jobs:
           tools_bin=$(dirname "$sdkmanager_bin")
           test -x "$tools_bin/avdmanager"
           test -x "$sdk_root/platform-tools/adb"
+
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libpulse0
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          "$sdkmanager_bin" emulator
+
+          emulator_bin="$sdk_root/emulator/emulator"
+          test -x "$emulator_bin"
+          if ! emulator_version=$("$emulator_bin" -version 2>&1); then
+            printf '%s\n' "$emulator_version"
+            exit 1
+          fi
+
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
-          if [[ -x "$sdk_root/emulator/emulator" ]]; then
-            "$sdk_root/emulator/emulator" -version | head -n 1
-          else
-            echo 'Android emulator is not preinstalled; the APK runner installs it with sdkmanager.'
-          fi
+          printf '%s\n' "$emulator_version" | head -n 1
