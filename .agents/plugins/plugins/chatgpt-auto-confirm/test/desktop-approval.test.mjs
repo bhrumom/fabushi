@@ -236,6 +236,8 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /detectDedicatedAuthorizationJS/);
   assert.match(nativeSource, /sessionScopeLabels/);
   assert.match(nativeSource, /menuTriggerCount/);
+  assert.match(nativeSource, /cardFingerprint/);
+  assert.match(nativeSource, /fnv1a32:/);
   assert.match(nativeSource, /session-scope/);
   assert.match(nativeSource, /session_scope_option_not_found/);
   assert.match(nativeSource, /dispatchPointerClick\(sessionControl\)/);
@@ -243,6 +245,10 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /sessionScopeLabel/);
   assert.match(nativeSource, /timeout: 8\.0/);
   assert.match(nativeSource, /strategy=per-card/);
+  assert.match(
+    nativeSource,
+    /approval\?\["confirmed"\] as\? Bool == true[\s\S]*task\.lastError = nil[\s\S]*task\.lastProgressAt = now[\s\S]*return/,
+  );
   assert.match(nativeSource, /approval-watcher-before/);
   assert.match(nativeSource, /approval-ipc-detected/);
   assert.match(nativeSource, /approval-.*-before/);
