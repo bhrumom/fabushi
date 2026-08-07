@@ -28,13 +28,23 @@ fi
 base_count=0
 x86_64_evidence=0
 for apk in "${apks[@]}"; do
-  cert=$("$apksigner_bin" verify --print-certs "$apk" 2>/dev/null \
-    | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+  signer_output=$("$apksigner_bin" verify --print-certs "$apk" 2>&1) || {
+    echo "apksigner rejected $(basename "$apk")." >&2
+    printf '%s\n' "$signer_output" | tail -n 20 >&2
+    exit 1
+  }
+  cert_line=$(printf '%s\n' "$signer_output" | grep -im1 'certificate SHA-256 digest' || true)
+  cert=$(printf '%s\n' "$cert_line" \
+    | grep -Eo '[0-9A-Fa-f]{64}' \
     | head -n 1 \
-    | tr '[:upper:]' '[:lower:]' \
-    | tr -d ':[:space:]')
+    | tr '[:upper:]' '[:lower:]' || true)
   if [[ -z "$cert" || "$cert" != "${expected_cert,,}" ]]; then
     echo "Unexpected signing certificate in $(basename "$apk"): ${cert:-missing}" >&2
+    if [[ -n "$cert_line" ]]; then
+      printf 'Certificate output: %s\n' "$cert_line" >&2
+    else
+      printf '%s\n' "$signer_output" | grep -i 'certificate' | head -n 8 >&2 || true
+    fi
     exit 1
   fi
 
