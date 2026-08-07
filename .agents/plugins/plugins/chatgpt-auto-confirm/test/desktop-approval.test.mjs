@@ -665,6 +665,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /new Set\(\['try again', '重试', '再试一次'\]\)/);
   assert.match(nativeSource, /transientErrorRetryCount < 3/);
   assert.match(nativeSource, /hosted-headless-window-fallback-begin/);
+  assert.match(nativeSource, /hosted-controller-fallback-begin/);
+  assert.match(nativeSource, /createHostedControllerQueueWorkerTarget/);
+  assert.match(nativeSource, /hosted_controller_unavailable_or_busy/);
+  assert.match(nativeSource, /state\.queueWorkerMode = sharedConversationQueueWorkerMode/);
   assert.match(nativeSource, /createHeadlessParallelQueueWorkerTarget\(&state\)/);
   assert.match(nativeSource, /hosted_headless_fallback=/);
   assert.match(nativeSource, /first id absent from the baseline.*is unsafe/);
