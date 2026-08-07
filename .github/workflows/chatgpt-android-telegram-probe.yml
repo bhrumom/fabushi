@@ -28,20 +28,19 @@ jobs:
           from pathlib import Path
           import re, sys
           p=Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
-          needle='ChatGPT_1.0.0016.xapk'
-          i=p.find(needle)
-          print('page_bytes=', len(p), 'needle_index=', i)
-          if i < 0:
-              raise SystemExit('ChatGPT legacy attachment not found in Telegram page')
-          chunk=p[max(0,i-3500):i+3500]
-          # Print only structural tags/URLs around the known public attachment.
-          urls=[]
-          for m in re.finditer(r'''(?:href|src|data-[\w-]+)=["']([^"']+)["']''', chunk, re.I):
-              u=m.group(1)
-              if u not in urls:
-                  urls.append(u)
-          for u in urls:
-              print('candidate=', u)
-          print('has_document_class=', 'tgme_widget_message_document' in chunk)
-          print('has_post_6704=', 'ksc666/6704' in chunk)
+          marker='data-post="ksc666/6704"'
+          start=p.find(marker)
+          if start < 0:
+              raise SystemExit('Telegram post 6704 not found')
+          next_post=p.find('data-post="ksc666/6705"', start)
+          if next_post < 0:
+              next_post=min(len(p), start+20000)
+          block=p[start:next_post]
+          print('post_block_bytes=', len(block))
+          for tag in re.findall(r'<[^>]+>', block, flags=re.S):
+              flat=' '.join(tag.split())
+              low=flat.lower()
+              if any(k in low for k in ('document', 'data-view=', 'download', 'href=', 'data-', 'file')):
+                  print('TAG', flat[:4000])
+          print('filename_present=', 'ChatGPT_1.0.0016.xapk' in block)
           PY
