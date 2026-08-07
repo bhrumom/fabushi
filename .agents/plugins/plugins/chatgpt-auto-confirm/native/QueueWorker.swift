@@ -815,6 +815,7 @@ func openBackgroundQueueWindow(
   // current ChatGPT builds the full Chat surface can take more than 30 seconds
   // to mount even though its document and preload bridge are already ready.
   var lastReady: [String: Any]?
+  var transientErrorRetryCount = 0
   for _ in 0..<600 {
     let ready = cdpValue(
       port: port,
@@ -866,6 +867,46 @@ func openBackgroundQueueWindow(
        href?.contains("initialRoute=%2F") == true {
       queueTrace("worker-create stage=hidden-shell-ready target=\(targetId)")
       return targetId
+    }
+    let buttonLabels = ready?["buttonLabels"] as? [String] ?? []
+    let safeText = (ready?["safeText"] as? String ?? "").lowercased()
+    let hasTransientError = buttonLabels.contains { label in
+      let normalized = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return normalized == "try again" || normalized == "重试" || normalized == "再试一次"
+    } && (safeText.contains("oops") || safeText.contains("error") || safeText.contains("出错"))
+    if hasTransientError, transientErrorRetryCount < 3 {
+      let retry = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: """
+        (() => {
+          const normalize = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+          const allowed = new Set(['try again', '重试', '再试一次']);
+          const button = [...document.querySelectorAll('button, [role="button"]')]
+            .find(node => allowed.has(normalize([
+              node.innerText,
+              node.getAttribute('aria-label'),
+              node.getAttribute('title')
+            ].filter(Boolean).join(' ')))
+              && !node.disabled
+              && node.getAttribute('aria-disabled') !== 'true');
+          if (!button) return { clicked: false };
+          const label = normalize(button.innerText || button.getAttribute('aria-label'));
+          button.click();
+          return { clicked: true, label };
+        })()
+        """,
+        timeout: 4.0
+      )
+      if retry?["clicked"] as? Bool == true {
+        transientErrorRetryCount += 1
+        queueTrace(
+          "worker-create stage=prewarm-transient-error-retry "
+            + "attempt=\(transientErrorRetryCount) label=\(retry?["label"] as? String ?? "unknown")"
+        )
+        Thread.sleep(forTimeInterval: 2.0)
+        continue
+      }
     }
     Thread.sleep(forTimeInterval: 0.1)
   }
