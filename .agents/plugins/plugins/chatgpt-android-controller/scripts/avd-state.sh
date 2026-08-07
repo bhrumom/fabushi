@@ -24,7 +24,9 @@ case "$mode" in
     name="$(basename "$avd_root")"
     tmp="${state_file}.tmp"
     rm -f "$tmp"
-    tar -C "$parent" -czf - "$name" \
+    # userdata-qemu.img is usually sparse. Preserve sparse extents before
+    # compression so rolling encrypted state stays small enough for Actions.
+    tar --sparse -C "$parent" -czf - "$name" \
       | openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
           -pass env:CHATGPT_ANDROID_STATE_KEY -out "$tmp"
     chmod 600 "$tmp"
@@ -42,7 +44,7 @@ case "$mode" in
     rm -rf "$avd_root"
     openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
       -pass env:CHATGPT_ANDROID_STATE_KEY -in "$state_file" \
-      | tar -C "$parent" -xzf -
+      | tar --sparse -C "$parent" -xzf -
     if [[ ! -d "$avd_root" ]]; then
       echo "Restored archive did not contain expected AVD root" >&2
       exit 5
