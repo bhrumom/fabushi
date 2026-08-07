@@ -296,12 +296,16 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
       const controls = [...document.querySelectorAll(
         'button, [role="button"], [role="tab"], [aria-label]'
       )];
-      const labels = controls.map(element => normalize([
+      // Keep each label source independent. Electron controls commonly expose
+      // the same visible value through both innerText and textContent; joining
+      // them turns "Chat" into "Chat Chat" and "Try again" into
+      // "Try again Try again", defeating exact control recognition.
+      const labels = controls.flatMap(element => [
         element.innerText,
         element.textContent,
         element.getAttribute('aria-label'),
         element.getAttribute('title')
-      ].filter(Boolean).join(' ')));
+      ]).map(normalize).filter(Boolean);
       const exact = label => labels.some(value => value.toLowerCase() === label);
       const hasChat = exact('chat') || exact('聊天');
       const hasWork = exact('work') || exact('工作');
@@ -352,12 +356,12 @@ func retryActionsDesktopTransientError(_ target: ActionsLoginTarget) -> Bool {
     (() => {
       const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
       const allowed = new Set(['try again', '重试', '再试一次']);
+      const label = node => normalize(
+        node.getAttribute('aria-label') || node.innerText || node.textContent
+          || node.getAttribute('title')
+      );
       const button = [...document.querySelectorAll('button, [role="button"]')]
-        .find(node => allowed.has(normalize([
-          node.innerText,
-          node.getAttribute('aria-label'),
-          node.getAttribute('title')
-        ].filter(Boolean).join(' ')))
+        .find(node => allowed.has(label(node))
           && !node.disabled
           && node.getAttribute('aria-disabled') !== 'true');
       if (!button) return { found: false };

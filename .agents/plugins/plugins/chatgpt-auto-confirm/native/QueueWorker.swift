@@ -888,16 +888,16 @@ func openBackgroundQueueWindow(
         (() => {
           const normalize = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
           const allowed = new Set(['try again', '重试', '再试一次']);
+          const labelFor = node => normalize(
+            node.getAttribute('aria-label') || node.innerText || node.textContent
+              || node.getAttribute('title')
+          );
           const button = [...document.querySelectorAll('button, [role="button"]')]
-            .find(node => allowed.has(normalize([
-              node.innerText,
-              node.getAttribute('aria-label'),
-              node.getAttribute('title')
-            ].filter(Boolean).join(' ')))
+            .find(node => allowed.has(labelFor(node))
               && !node.disabled
               && node.getAttribute('aria-disabled') !== 'true');
           if (!button) return { found: false };
-          const label = normalize(button.innerText || button.getAttribute('aria-label'));
+          const label = labelFor(button);
           const rect = button.getBoundingClientRect();
           return {
             found: true,
