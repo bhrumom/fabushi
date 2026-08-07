@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version_name="${CHATGPT_ANDROID_VERSION_NAME:-1.2026.202}"
-version_code="${CHATGPT_ANDROID_VERSION_CODE:-2620225}"
+version_name="${CHATGPT_ANDROID_VERSION_NAME:-1.2025.364}"
+version_code="${CHATGPT_ANDROID_VERSION_CODE:-2536400}"
 output="${1:-${RUNNER_TEMP:-/tmp}/chatgpt-${version_name}.xapk}"
 url="https://d.apkpure.net/b/XAPK/com.openai.chatgpt?versionCode=${version_code}"
 
