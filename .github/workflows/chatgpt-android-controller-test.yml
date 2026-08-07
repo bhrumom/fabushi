@@ -5,25 +5,28 @@ on:
     paths:
       - '.agents/plugins/plugins/chatgpt-android-controller/**'
       - '.github/workflows/chatgpt-android-controller-test.yml'
+      - '.github/workflows/chatgpt-android-apk-runner.yml'
   push:
     branches:
       - main
     paths:
       - '.agents/plugins/plugins/chatgpt-android-controller/**'
       - '.github/workflows/chatgpt-android-controller-test.yml'
+      - '.github/workflows/chatgpt-android-apk-runner.yml'
 
 permissions:
   contents: read
 
 jobs:
   node-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm test
+      - run: bash -n scripts/avd-state.sh
