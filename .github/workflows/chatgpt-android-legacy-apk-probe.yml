@@ -1,0 +1,76 @@
+name: ChatGPT Android Legacy APK Probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/chatgpt-android-legacy-apk-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe earliest ChatGPT builds through APK endpoint
+        shell: bash
+        env:
+          EXPECTED_CERT: b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          apksigner=$(find "$sdk_root/build-tools" -type f -name apksigner -perm -u+x -print | sort -V | tail -n 1)
+          aapt=$(find "$sdk_root/build-tools" -type f -name aapt -perm -u+x -print | sort -V | tail -n 1)
+          test -x "$apksigner"
+          test -x "$aapt"
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36'
+
+          for code in 37 31 28 23 22 16; do
+            apk="$RUNNER_TEMP/chatgpt-$code.apk"
+            echo "=== APK endpoint versionCode=$code ==="
+            rm -f "$apk"
+            set +e
+            http=$(curl --location --silent --show-error --retry 2 --retry-all-errors \
+              --connect-timeout 20 --max-time 120 \
+              --user-agent "$ua" \
+              --header 'Accept: application/vnd.android.package-archive,application/octet-stream,*/*;q=0.8' \
+              --write-out '%{http_code}' \
+              "https://d.apkpure.net/b/APK/com.openai.chatgpt?versionCode=$code" \
+              --output "$apk")
+            rc=$?
+            set -e
+            size=$(wc -c < "$apk" 2>/dev/null | tr -d ' ' || echo 0)
+            echo "curl_status=$rc http_status=${http:-unknown} bytes=${size:-0}"
+            if (( rc != 0 )) || [[ ! "$http" =~ ^2 ]] || [[ ! -s "$apk" ]]; then
+              echo 'download=failed'
+              continue
+            fi
+
+            signer=$($apksigner verify --print-certs "$apk" 2>&1 || true)
+            cert=$(printf '%s\n' "$signer" | grep -im1 'certificate SHA-256 digest' \
+              | grep -Eo '[0-9A-Fa-f]{64}' | head -n 1 | tr '[:upper:]' '[:lower:]' || true)
+            badging=$($aapt dump badging "$apk" 2>/dev/null || true)
+            package=$(printf '%s\n' "$badging" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
+            version=$(printf '%s\n' "$badging" | sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" | head -n 1)
+            echo "package=${package:-missing} version=${version:-missing} cert=${cert:-missing}"
+            if [[ "$package" != com.openai.chatgpt || "$cert" != "$EXPECTED_CERT" ]]; then
+              echo 'identity=failed'
+              continue
+            fi
+
+            pairip_manifest=false
+            pairip_dex=false
+            if $aapt dump xmltree "$apk" AndroidManifest.xml 2>/dev/null | grep -qiE 'com\.pairip|pairip\.licensecheck|LicenseActivity'; then
+              pairip_manifest=true
+            fi
+            if unzip -p "$apk" 'classes*.dex' 2>/dev/null | grep -aEq 'com[/\.]pairip[/\.]licensecheck|Lcom/pairip/licensecheck'; then
+              pairip_dex=true
+            fi
+            x86=false
+            if unzip -Z1 "$apk" 2>/dev/null | grep -q '^lib/x86_64/'; then
+              x86=true
+            fi
+            echo "pairip_manifest=$pairip_manifest pairip_dex=$pairip_dex x86_64=$x86 sha256=$(sha256sum "$apk" | awk '{print $1}')"
+          done
