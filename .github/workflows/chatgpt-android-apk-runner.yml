@@ -38,19 +38,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 355
     environment:
-      # Reuse the existing desktop credential environment for the one-time APK
-      # bootstrap. The rolling Android login state is encrypted before caching.
+      # Reuse the existing desktop credential environment only for the one-time
+      # APK bootstrap. Secrets are injected on the minimum individual steps and
+      # are never inherited by Appium/npm installation or third-party actions.
       name: chatgpt-auto-confirm-legacy
     env:
       AVD_NAME: mahayana-chatgpt
       AVD_PACKAGE: system-images;android-35;google_apis_playstore;x86_64
       CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
-      CHATGPT_ANDROID_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
-      CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
-      GH_TOKEN: ${{ github.token }}
       STATE_SCOPE: ${{ inputs.account_id || 'default' }}
-      SMOKE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke_only || false }}
-      CONTINUOUS: ${{ github.event_name == 'workflow_dispatch' && inputs.continuous || true }}
+      SMOKE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke_only }}
+      CONTINUOUS: ${{ github.event_name == 'workflow_dispatch' && inputs.continuous || github.event_name != 'workflow_dispatch' }}
 
     steps:
       - name: Checkout trusted implementation
@@ -109,6 +107,8 @@ jobs:
         id: avd
         shell: bash
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          CHATGPT_ANDROID_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: |
           set -euo pipefail
           test -n "$CHATGPT_ANDROID_STATE_KEY"
@@ -221,6 +221,11 @@ jobs:
         id: auth
         shell: bash
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          # This legacy desktop session is only an initial transport into the
+          # APK's own official authentication flow. APK composer verification
+          # is still the sole login success condition.
+          CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
         run: |
           set -euo pipefail
           authenticated=false
@@ -303,8 +308,11 @@ jobs:
         if: ${{ always() && steps.auth.outputs.authenticated == 'true' }}
         shell: bash
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          CHATGPT_ANDROID_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: |
           set -euo pipefail
+          test -n "$CHATGPT_ANDROID_STATE_KEY"
           bash scripts/avd-state.sh pack
           test -s "$CHATGPT_ANDROID_STATE_FILE"
           bytes=$(wc -c < "$CHATGPT_ANDROID_STATE_FILE" | tr -d ' ')
@@ -323,6 +331,8 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
+        env:
+          CHATGPT_ANDROID_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: |
           set -euo pipefail
           diagnostics='${{ steps.paths.outputs.diagnostics }}'
@@ -362,6 +372,8 @@ jobs:
       - name: Continue on a fresh hosted runner
         if: ${{ success() && env.CONTINUOUS == 'true' && env.SMOKE_ONLY != 'true' }}
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh workflow run chatgpt-android-apk-runner.yml \
