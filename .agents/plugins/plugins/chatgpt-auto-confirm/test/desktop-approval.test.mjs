@@ -669,6 +669,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /createHostedControllerQueueWorkerTarget/);
   assert.match(nativeSource, /hosted_controller_unavailable_or_busy/);
   assert.match(nativeSource, /state\.queueWorkerMode = sharedConversationQueueWorkerMode/);
+  assert.match(nativeSource,
+    /runningOnGitHubActions\(\)[\s\S]*?workerMode == sharedConversationQueueWorkerMode/);
   assert.match(nativeSource, /initialChatReady/);
   assert.match(nativeSource, /Work-to-Chat transition/);
   assert.match(nativeSource, /createHeadlessParallelQueueWorkerTarget\(&state\)/);
