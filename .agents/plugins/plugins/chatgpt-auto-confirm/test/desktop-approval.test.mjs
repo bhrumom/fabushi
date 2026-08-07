@@ -238,6 +238,9 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /menuTriggerCount/);
   assert.match(nativeSource, /cardFingerprint/);
   assert.match(nativeSource, /fnv1a32:/);
+  assert.match(nativeSource, /Input\.dispatchMouseEvent/);
+  assert.match(nativeSource, /retryActionsDesktopTransientError/);
+  assert.match(nativeSource, /state\["authenticated"\] as\? Bool \?\? false/);
   assert.match(nativeSource, /session-scope/);
   assert.match(nativeSource, /session_scope_option_not_found/);
   assert.match(nativeSource, /dispatchPointerClick\(sessionControl\)/);

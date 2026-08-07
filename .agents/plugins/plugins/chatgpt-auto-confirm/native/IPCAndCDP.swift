@@ -422,6 +422,41 @@ struct CDPClient {
     )
   }
 
+  @discardableResult
+  static func clickTarget(
+    _ targetId: String,
+    x: Double,
+    y: Double,
+    portOverride: Int? = nil
+  ) -> Bool {
+    guard x.isFinite, y.isFinite,
+          let target = fetchTargets(portOverride: portOverride).first(where: {
+            $0["id"] as? String == targetId
+          }),
+          let wsURL = target["webSocketDebuggerUrl"] as? String else { return false }
+    let coordinates = String(
+      format: "\"x\":%.3f,\"y\":%.3f",
+      locale: Locale(identifier: "en_US_POSIX"),
+      x,
+      y
+    )
+    let pressed = "{\"type\":\"mousePressed\",\(coordinates),\"button\":\"left\",\"buttons\":1,\"clickCount\":1}"
+    let released = "{\"type\":\"mouseReleased\",\(coordinates),\"button\":\"left\",\"buttons\":0,\"clickCount\":1}"
+    guard let pressedResponse = sendCommand(
+      wsURLString: wsURL,
+      method: "Input.dispatchMouseEvent",
+      paramsJSON: pressed,
+      timeout: 4.0
+    ), pressedResponse["error"] == nil else { return false }
+    guard let releasedResponse = sendCommand(
+      wsURLString: wsURL,
+      method: "Input.dispatchMouseEvent",
+      paramsJSON: released,
+      timeout: 4.0
+    ) else { return false }
+    return releasedResponse["error"] == nil
+  }
+
   static func allCookies(wsURLString: String, timeout: TimeInterval = 5.0) -> [[String: Any]] {
     guard let response = sendCommand(
       wsURLString: wsURLString,
