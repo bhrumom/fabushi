@@ -31,6 +31,7 @@ jobs:
       - run: npm test
       - run: bash -n scripts/avd-state.sh
       - run: bash -n scripts/fetch-chatgpt-apkpure.sh
+      - run: bash -n scripts/verify-chatgpt-xapk.sh
       - name: Verify hosted Android emulator runtime
         working-directory: .
         shell: bash
@@ -63,60 +64,10 @@ jobs:
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Verify downloadable ChatGPT XAPK identity
-        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+      - name: Verify downloadable ChatGPT XAPK identity and x86_64 support
         shell: bash
-        env:
-          CHATGPT_ANDROID_VERSION_NAME: '1.2026.027'
-          CHATGPT_ANDROID_VERSION_CODE: '2602719'
-          CHATGPT_ANDROID_EXPECTED_CERT_SHA256: 'b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c'
         run: |
           set -euo pipefail
           bundle="$RUNNER_TEMP/chatgpt.xapk"
-          extract="$RUNNER_TEMP/chatgpt-xapk"
           bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
-          mkdir -p "$extract"
-          unzip -q "$bundle" -d "$extract"
-          mapfile -t apks < <(find "$extract" -type f -name '*.apk' -print | sort)
-          if (( ${#apks[@]} == 0 )); then
-            echo '::error::Downloaded XAPK has no APK entries.'
-            exit 1
-          fi
-          printf 'XAPK APK entries (%s):\n' "${#apks[@]}"
-          printf '%s\n' "${apks[@]##*/}"
-
-          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          apksigner=$(find "$sdk_root/build-tools" -type f -name apksigner -perm -u+x -print | sort -V | tail -n 1)
-          aapt=$(find "$sdk_root/build-tools" -type f -name aapt -perm -u+x -print | sort -V | tail -n 1)
-          test -x "$apksigner"
-          test -x "$aapt"
-
-          for apk in "${apks[@]}"; do
-            cert=$(
-              "$apksigner" verify --print-certs "$apk" 2>/dev/null \
-                | awk -F': ' '/certificate SHA-256 digest:/ {print tolower($2); exit}'
-            )
-            if [[ "$cert" != "$CHATGPT_ANDROID_EXPECTED_CERT_SHA256" ]]; then
-              echo "::error::Unexpected signing certificate for $(basename "$apk"): ${cert:-missing}"
-              exit 1
-            fi
-          done
-
-          base=''
-          for apk in "${apks[@]}"; do
-            if "$aapt" dump badging "$apk" 2>/dev/null | grep -q "package: name='com.openai.chatgpt'"; then
-              base="$apk"
-              break
-            fi
-          done
-          if [[ -z "$base" ]]; then
-            echo '::error::No APK in the archive declares com.openai.chatgpt.'
-            exit 1
-          fi
-          badging=$("$aapt" dump badging "$base")
-          printf '%s\n' "$badging" | head -n 4
-          if ! grep -q "versionCode='2602719'" <<<"$badging"; then
-            echo '::error::Downloaded base APK versionCode does not match 2602719.'
-            exit 1
-          fi
-          echo "Verified ChatGPT XAPK base: $(basename "$base")"
+          bash scripts/verify-chatgpt-xapk.sh "$bundle"
