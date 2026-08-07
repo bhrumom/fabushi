@@ -3,8 +3,8 @@ set -euo pipefail
 
 package_name="${CHATGPT_ANDROID_PACKAGE:-com.openai.chatgpt}"
 result_file="${CHATGPT_ANDROID_CANDIDATE_RESULT:-${RUNNER_TEMP:-/tmp}/chatgpt-xapk-selected.env}"
-# Newest first. Each package is independently verified against the fixed
-# Google Play App Signing certificate before it is installed.
+# Newest first. Each downloaded package is independently verified against the
+# fixed Google Play App Signing certificate before it is installed.
 candidates=(
   '1.2026.020:2602017'
   '1.2026.013:2601320'
@@ -12,6 +12,11 @@ candidates=(
   '1.2025.364:2536400'
   '1.2025.336:2533628'
   '1.0.0037:37'
+  '1.0.0031:31'
+  '1.0.0028:28'
+  '1.0.0023:23'
+  '1.0.0022:22'
+  '1.0.0016:16'
 )
 
 mkdir -p "$(dirname "$result_file")"
