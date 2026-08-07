@@ -16,7 +16,7 @@
       "connector": "GitHub",
       "priority": 90,
       "timeout": 21600,
-      "maxTaskContinuations": 0,
+      "maxTaskContinuations": 6,
       "maxRuntimeRetries": 2,
       "dependsOn": [],
       "resourceLocks": [

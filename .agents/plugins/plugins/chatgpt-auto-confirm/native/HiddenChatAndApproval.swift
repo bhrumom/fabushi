@@ -5,28 +5,21 @@ import Foundation
 import SystemConfiguration
 
 func loadedApprovalTargets(_ state: PluginState) -> [CDPApprovalTarget] {
-  // Browser extensions run inside every loaded tab rather than selecting one
-  // visible tab. Reproduce that behavior for ChatGPT/Electron: enumerate every
-  // loaded renderer on each known debugging endpoint and evaluate the approval
-  // handler in place. Runtime.evaluate does not activate the app, focus a
-  // window, click the sidebar, or change the current conversation.
-  var ports: [Int] = [CDPClient.port()]
-  if let backgroundPort = state.backgroundAppPort {
-    ports.append(backgroundPort)
-  }
-  var seenPorts = Set<Int>()
-  var seenTargets = Set<String>()
-  var values: [CDPApprovalTarget] = []
-  for port in ports where seenPorts.insert(port).inserted {
-    for target in CDPClient.fetchTargets(portOverride: port)
-      where isLoadedApprovalRendererTarget(target) {
-      guard let targetId = target["id"] as? String else { continue }
-      let identity = "\(port):\(targetId)"
-      guard seenTargets.insert(identity).inserted else { continue }
-      values.append(CDPApprovalTarget(port: port, target: target))
-    }
-  }
-  return values
+  // The general watcher may act only on the exact renderer it created and
+  // proved hidden. Scanning the primary debugging endpoint also included the
+  // user's visible Chat, so startup could click controls on the displayed page
+  // while still reporting `backgroundOnly=true`.
+  guard let port = state.backgroundAppPort,
+        let targetId = state.backgroundChatTargetId,
+        queueTargetRuntimeState(
+          port: port,
+          targetId: targetId,
+          refreshLifecycle: false
+        ) == .hidden,
+        let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId && isLoadedApprovalRendererTarget($0)
+        }) else { return [] }
+  return [CDPApprovalTarget(port: port, target: target)]
 }
 
 func normalizedChatURL(_ rawValue: String?) -> String? {
@@ -1323,6 +1316,30 @@ func detectDedicatedAuthorizationJS() -> String {
       }
       return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
     };
+    const approvalRequestIdentity = element => {
+      let domNode = element;
+      for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
+        const reactKeys = Object.keys(domNode).filter(key =>
+          key.startsWith('__reactFiber$') || key.startsWith('__reactProps$')
+        );
+        for (const reactKey of reactKeys) {
+          let reactNode = domNode[reactKey];
+          for (let fiberIndex = 0; fiberIndex < 20 && reactNode; fiberIndex += 1) {
+            const props = reactNode.memoizedProps || reactNode.pendingProps
+              || reactNode.props || reactNode;
+            const pluginData = props?.jit_plugin_data || props?.pluginData
+              || props?.card?.jit_plugin_data;
+            const allowOnce = pluginData?.from_server?.actions?.allow_once;
+            const identity = allowOnce?.target_message_id || allowOnce?.targetMessageId
+              || props?.target_message_id || props?.targetMessageId;
+            if (identity) return String(identity);
+            reactNode = reactNode.return;
+          }
+        }
+        domNode = domNode.parentElement;
+      }
+      return '';
+    };
     const visible = element => !!(element
       && !element.disabled
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
@@ -1390,6 +1407,7 @@ func detectDedicatedAuthorizationJS() -> String {
         const sessionScopeLabels = cardLabels.filter(value =>
           value && sessionHints.some(hint => value.includes(hint))
         );
+        const requestIdentity = approvalRequestIdentity(candidate.button);
         return {
           ok: true,
           found: true,
@@ -1400,7 +1418,10 @@ func detectDedicatedAuthorizationJS() -> String {
           sessionScopeLabels,
           menuTriggerLabels: menuTriggers.map(label).filter(Boolean),
           menuTriggerCount: menuTriggers.length,
-          cardFingerprint: fingerprint(cardText),
+          cardFingerprint: fingerprint(requestIdentity
+            ? `request:${requestIdentity}`
+            : `card:${cardText}`),
+          requestIdentityAvailable: !!requestIdentity,
           unlabeledControlCount: nonDecisionControls.filter(button => !label(button)).length
         };
       }
@@ -1417,6 +1438,8 @@ func detectDedicatedAuthorizationJS() -> String {
       sessionScopeLabels: [],
       menuTriggerLabels: [],
       menuTriggerCount: 0,
+      cardFingerprint: fingerprint(`label:${candidate.label}`),
+      requestIdentityAvailable: false,
       unlabeledControlCount: 0
     };
   })()
@@ -1428,7 +1451,15 @@ func autoApproveDedicatedAuthorizationJS() -> String {
   (async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const normalize = value => (value || '').replace(/[\s\u21b5\u23ce]+/g, ' ').trim().toLowerCase();
-    const rendered = element => !!(element
+    const fingerprint = value => {
+      let hash = 2166136261;
+      for (const character of value) {
+        hash ^= character.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+    };
+    const rendered = element => !!(element && element.isConnected !== false
       && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
     const visible = element => rendered(element) && !element.disabled;
     const allowed = new Set([
@@ -1456,6 +1487,49 @@ func autoApproveDedicatedAuthorizationJS() -> String {
     );
     const isSessionScope = value => !!value
       && sessionHints.some(hint => value.includes(hint));
+    const approvalRequestIdentity = element => {
+      let domNode = element;
+      for (let ancestorIndex = 0; ancestorIndex < 15 && domNode; ancestorIndex += 1) {
+        const reactKeys = Object.keys(domNode).filter(key =>
+          key.startsWith('__reactFiber$') || key.startsWith('__reactProps$')
+        );
+        for (const reactKey of reactKeys) {
+          let reactNode = domNode[reactKey];
+          for (let fiberIndex = 0; fiberIndex < 20 && reactNode; fiberIndex += 1) {
+            const props = reactNode.memoizedProps || reactNode.pendingProps
+              || reactNode.props || reactNode;
+            const pluginData = props?.jit_plugin_data || props?.pluginData
+              || props?.card?.jit_plugin_data;
+            const allowOnce = pluginData?.from_server?.actions?.allow_once;
+            const identity = allowOnce?.target_message_id || allowOnce?.targetMessageId
+              || props?.target_message_id || props?.targetMessageId;
+            if (identity) return String(identity);
+            reactNode = reactNode.return;
+          }
+        }
+        domNode = domNode.parentElement;
+      }
+      return '';
+    };
+    const approvalCardFingerprint = button => {
+      let card = button?.parentElement;
+      for (let index = 0; index < 15 && card; index += 1) {
+        const cardButtons = [...card.querySelectorAll('button, a, [role="button"]')]
+          .filter(visible);
+        const cardLabels = cardButtons.map(label);
+        const cardText = normalize(card.innerText || card.textContent || '');
+        if (cardLabels.some(value => rejectLabels.has(value))
+            || cardText.includes('allow chatgpt to use')
+            || cardText.includes('\u5141\u8bb8 chatgpt \u4f7f\u7528')) {
+          const requestIdentity = approvalRequestIdentity(button);
+          return fingerprint(requestIdentity
+            ? `request:${requestIdentity}`
+            : `card:${cardText}`);
+        }
+        card = card.parentElement;
+      }
+      return '';
+    };
     const dispatchPointerClick = candidate => {
       const rect = candidate.getBoundingClientRect?.();
       const clientX = rect ? rect.left + Math.min(12, Math.max(1, rect.width / 2)) : 1;
@@ -1475,9 +1549,20 @@ func autoApproveDedicatedAuthorizationJS() -> String {
       candidate.dispatchEvent(new MouseEvent('click', { ...pressed, buttons: 0 }));
     };
     const confirmCardClosed = async candidate => {
-      for (let index = 0; index < 30; index += 1) {
+      const expectedFingerprint = approvalCardFingerprint(candidate);
+      let stableMissingSamples = 0;
+      for (let index = 0; index < 40; index += 1) {
         await sleep(100);
-        if (!candidate.isConnected || !rendered(candidate)) return true;
+        const matchingRequestStillRendered = expectedFingerprint && [...document.querySelectorAll('button')]
+          .filter(visible)
+          .filter(button => allowed.has(label(button)))
+          .some(button => approvalCardFingerprint(button) === expectedFingerprint);
+        if (!matchingRequestStillRendered) {
+          stableMissingSamples += 1;
+          if (stableMissingSamples >= 5) return true;
+        } else {
+          stableMissingSamples = 0;
+        }
       }
       return false;
     };
@@ -1894,6 +1979,22 @@ func ensureHiddenChatTarget(
     ]
   }
 
+  if !runningOnGitHubActions,
+     queueTargetRuntimeState(
+       port: port,
+       targetId: targetId,
+       refreshLifecycle: false
+     ) != .hidden {
+    state.lastError = "background_chat_visibility_not_hidden"
+    return [
+      "ok": false,
+      "errorCode": "background_chat_visibility_not_hidden",
+      "message": "专用 ChatGPT 页面未保持隐藏；已拒绝启动，避免影响当前可见页面。",
+      "backgroundOnly": true,
+      "workerUsed": false,
+    ]
+  }
+
   state.backgroundAppPort = port
   state.backgroundProfilePath = profilePath
   state.backgroundChatTargetId = targetId
@@ -1912,10 +2013,15 @@ func keepApprovalBackgroundEndpointAlive(_ state: inout PluginState) {
           $0["id"] as? String == targetId
         }),
         let wsURL = target["webSocketDebuggerUrl"] as? String else {
-    // A renderer can be reclaimed while the watcher survives. Clear only the
-    // stale target reference and immediately rebuild the plugin-owned endpoint
-    // instead of waiting for the user to foreground a ChatGPT window.
+    // Locally, a missing endpoint can mean the user intentionally quit the
+    // plugin-owned ChatGPT instance. Respect that decision and require an
+    // explicit start instead of reopening an app behind the user's back.
     state.backgroundChatTargetId = nil
+    if !runningOnGitHubActions {
+      state.enabled = false
+      state.lastError = "background_chat_closed_requires_restart"
+      return
+    }
     _ = ensureHiddenChatTarget(&state)
     return
   }
@@ -2140,6 +2246,9 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
             promptText: auditPrompt
           });
         }
+        // Handle at most one authorization request per watcher tick. The
+        // native rate limiter persists the decision before the next scan.
+        break;
       }
     }
 
@@ -2183,6 +2292,51 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
           + approvalDetectionTraceFields(detectionValue)
       )
     }
+    if let fingerprint = approvalFingerprint(approvalDetection) {
+      let currentDate = Date()
+      if (state.handledApprovalFingerprints ?? []).contains(fingerprint) {
+        let repeatedFor = state.lastAutomaticApprovalFingerprint == fingerprint
+          ? state.lastAutomaticApprovalAt
+            .flatMap(isoFormatter.date(from:))
+            .map { currentDate.timeIntervalSince($0) }
+          : nil
+        totalCandidates += 1
+        if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+          state.enabled = false
+          state.lastError = "approval_duplicate_circuit_open"
+          totalBlocked += 1
+          queueTrace(
+            "task=approval-watcher stage=approval-ipc-blocked "
+              + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
+          )
+        } else {
+          totalPending += 1
+          state.lastError = "approval_duplicate_suppressed"
+          queueTrace(
+            "task=approval-watcher stage=approval-ipc-skipped "
+              + "reason=duplicate fingerprint=\(fingerprint)"
+          )
+        }
+        continue
+      }
+      let recentApprovals = prunedAutomaticApprovalTimestamps(
+        state.automaticApprovalTimestamps,
+        now: currentDate
+      )
+      state.automaticApprovalTimestamps = recentApprovals
+      if recentApprovals.count >= maxAutomaticApprovalsPerWindow {
+        state.enabled = false
+        state.lastError = "approval_rate_circuit_open"
+        totalCandidates += 1
+        totalBlocked += 1
+        queueTrace(
+          "task=approval-watcher stage=approval-ipc-blocked "
+            + "reason=rate count=\(recentApprovals.count) "
+            + "window=\(Int(automaticApprovalWindowSeconds))"
+        )
+        continue
+      }
+    }
     guard let evalRes = CDPClient.evaluate(wsURLString: wsURL, expression: jsScript),
           let result = evalRes["result"] as? [String: Any],
           let value = ((result["result"] as? [String: Any])?["value"] ?? result["value"]) as? [String: Any] else { continue }
@@ -2200,6 +2354,16 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     totalUnmatched += u
     totalInternalActions += internalActions
     totalDOMEvents += domEvents
+    if a > 0, let fingerprint = approvalFingerprint(approvalDetection) {
+      recordHandledApprovalFingerprint(
+        fingerprint,
+        fingerprints: &state.handledApprovalFingerprints,
+        timestamps: &state.automaticApprovalTimestamps,
+        lastFingerprint: &state.lastAutomaticApprovalFingerprint,
+        lastApprovedAt: &state.lastAutomaticApprovalAt,
+        now: Date()
+      )
+    }
 
     if approvalDetection != nil || a > 0 || b > 0 {
       queueTrace(
@@ -2251,7 +2415,7 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
 
   if totalCandidates > 0 {
     if state.audit.count > 100 { state.audit.removeFirst(state.audit.count - 100) }
-    state.lastError = nil
+    if state.enabled { state.lastError = nil }
     return [
       "ok": true, "candidates": totalCandidates, "approved": totalApproved,
       "pending": totalPending, "blocked": totalBlocked, "unmatched": totalUnmatched,

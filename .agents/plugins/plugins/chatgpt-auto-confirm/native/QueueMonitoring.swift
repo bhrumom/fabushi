@@ -35,6 +35,7 @@ func approvalDetectionTraceFields(_ detection: [String: Any]?) -> String {
     "menuTriggerLabels": detection["menuTriggerLabels"] ?? [],
     "menuTriggerCount": detection["menuTriggerCount"] ?? 0,
     "cardFingerprint": detection["cardFingerprint"] ?? "",
+    "requestIdentityAvailable": detection["requestIdentityAvailable"] ?? false,
     "unlabeledControlCount": detection["unlabeledControlCount"] ?? 0,
   ]) ?? "{}"
   return "detection=\(details)"
@@ -73,9 +74,11 @@ func traceQueueApproval(
 func approveDedicatedAuthorizationWithDiagnostics(
   port: Int,
   targetId: String,
-  taskId: String,
+  task: inout AutomationTask,
+  state: inout PluginState,
   stage: String
 ) -> [String: Any]? {
+  let taskId = task.id
   let detection = cdpValue(
     port: port,
     targetId: targetId,
@@ -83,6 +86,76 @@ func approveDedicatedAuthorizationWithDiagnostics(
     timeout: 4.0
   )
   guard detection?["found"] as? Bool == true else { return nil }
+
+  let currentDate = Date()
+  let now = isoFormatter.string(from: currentDate)
+  let fingerprint = approvalFingerprint(detection)
+  if let fingerprint,
+     (task.handledApprovalFingerprints ?? []).contains(fingerprint) {
+    let repeatedFor = task.lastAutomaticApprovalFingerprint == fingerprint
+      ? task.lastAutomaticApprovalAt
+        .flatMap(isoFormatter.date(from:))
+        .map { currentDate.timeIntervalSince($0) }
+      : nil
+    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+      state.queuePaused = true
+      task.status = "blocked"
+      task.lastError = "approval_duplicate_circuit_open"
+      task.updatedAt = now
+      task.finishedAt = now
+      queueTrace(
+        "task=\(taskId) stage=approval-\(stage)-blocked "
+          + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
+      )
+      return [
+        "ok": false,
+        "clicked": false,
+        "confirmed": false,
+        "skipped": true,
+        "circuitOpen": true,
+        "error": "approval_duplicate_circuit_open",
+      ]
+    }
+    task.lastError = "approval_duplicate_suppressed"
+    task.updatedAt = now
+    queueTrace(
+      "task=\(taskId) stage=approval-\(stage)-skipped "
+        + "reason=duplicate fingerprint=\(fingerprint)"
+    )
+    return [
+      "ok": true,
+      "clicked": false,
+      "confirmed": false,
+      "skipped": true,
+      "error": "approval_duplicate_suppressed",
+    ]
+  }
+
+  let recentApprovals = prunedAutomaticApprovalTimestamps(
+    task.automaticApprovalTimestamps,
+    now: currentDate
+  )
+  task.automaticApprovalTimestamps = recentApprovals
+  if recentApprovals.count >= maxAutomaticApprovalsPerWindow {
+    state.queuePaused = true
+    task.status = "blocked"
+    task.lastError = "approval_rate_circuit_open"
+    task.updatedAt = now
+    task.finishedAt = now
+    queueTrace(
+      "task=\(taskId) stage=approval-\(stage)-blocked "
+        + "reason=rate count=\(recentApprovals.count) "
+        + "window=\(Int(automaticApprovalWindowSeconds))"
+    )
+    return [
+      "ok": false,
+      "clicked": false,
+      "confirmed": false,
+      "skipped": true,
+      "circuitOpen": true,
+      "error": "approval_rate_circuit_open",
+    ]
+  }
 
   let safeTask = approvalDiagnosticToken(taskId)
   let safeStage = approvalDiagnosticToken(stage)
@@ -98,12 +171,23 @@ func approveDedicatedAuthorizationWithDiagnostics(
       + approvalDetectionTraceFields(detection)
   )
 
-  let result = cdpValue(
+  var result = cdpValue(
     port: port,
     targetId: targetId,
     expression: autoApproveDedicatedAuthorizationJS(),
     timeout: 8.0
   )
+  if result?["clicked"] as? Bool == true, let fingerprint {
+    recordHandledApprovalFingerprint(
+      fingerprint,
+      fingerprints: &task.handledApprovalFingerprints,
+      timestamps: &task.automaticApprovalTimestamps,
+      lastFingerprint: &task.lastAutomaticApprovalFingerprint,
+      lastApprovedAt: &task.lastAutomaticApprovalAt,
+      now: currentDate
+    )
+    result?["cardFingerprint"] = fingerprint
+  }
   traceQueueApproval(
     result,
     taskId: taskId,
@@ -137,10 +221,11 @@ func queueContinuation(
   writeQueueConversationDiagnostic(task, finalReason: reason)
   let now = isoFormatter.string(from: Date())
   let depth = task.continuationDepth ?? 0
-  if task.maxTaskContinuations > 0 && depth >= task.maxTaskContinuations {
+  let continuationLimit = max(1, task.maxTaskContinuations)
+  if depth >= continuationLimit {
     queueTrace(
       "task=\(task.id) stage=continuation-blocked reason=\(reason) "
-        + "depth=\(depth) max=\(task.maxTaskContinuations)"
+        + "depth=\(depth) max=\(continuationLimit)"
     )
     task.status = "blocked"
     task.lastError = "task_continuation_limit_reached"
@@ -233,6 +318,16 @@ func monitorAutomationTask(
   var workerPort = task.workerPort ?? state.queueWorkerPort
   var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
   if workerPort == nil || workerTargetId == nil {
+    if !runningOnGitHubActions {
+      let now = isoFormatter.string(from: Date())
+      state.queuePaused = true
+      task.status = "blocked"
+      task.hiddenWorkerLastError = "queue_worker_closed_requires_retry"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = now
+      task.finishedAt = now
+      return
+    }
     if let recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) {
       workerPort = recoveredWorker.port
       workerTargetId = recoveredWorker.targetId
@@ -282,9 +377,22 @@ func monitorAutomationTask(
       // A dedicated hosted worker is the one explicit exception: its copied
       // profile has no user-facing page and may remain visible on Actions.
       state.queuePaused = true
+      task.status = "blocked"
       task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
       task.lastError = task.hiddenWorkerLastError
       task.updatedAt = isoFormatter.string(from: Date())
+      task.finishedAt = task.updatedAt
+      return
+    }
+
+    if !runningOnGitHubActions {
+      let now = isoFormatter.string(from: Date())
+      state.queuePaused = true
+      task.status = "blocked"
+      task.hiddenWorkerLastError = "queue_worker_closed_requires_retry"
+      task.lastError = task.hiddenWorkerLastError
+      task.updatedAt = now
+      task.finishedAt = now
       return
     }
 
@@ -365,9 +473,13 @@ func monitorAutomationTask(
   let approval = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
-    taskId: task.id,
+    task: &task,
+    state: &state,
     stage: "before-read"
   )
+  if approval?["circuitOpen"] as? Bool == true || task.status == "blocked" {
+    return
+  }
   // The authorization card is replaced asynchronously after a confirmed
   // decision. Reading the conversation during that renderer transition can
   // fail even though the click succeeded, which used to leave a false
@@ -543,12 +655,16 @@ func monitorAutomationTask(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  _ = approveDedicatedAuthorizationWithDiagnostics(
+  let afterReadApproval = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
-    taskId: task.id,
+    task: &task,
+    state: &state,
     stage: "after-read"
   )
+  if afterReadApproval?["circuitOpen"] as? Bool == true || task.status == "blocked" {
+    return
+  }
   task.lastError = nil
   // A new local id is the authoritative identity. The sidebar can keep the
   // previous row marked current briefly, so never replace a local id with
@@ -735,6 +851,10 @@ func runQueueIteration(_ state: inout PluginState) {
   var tasks = state.automationTasks ?? []
   let now = isoFormatter.string(from: Date())
   let currentDate = Date()
+  guard state.queueEnabled == true, state.queuePaused != true else {
+    state.automationTasks = tasks
+    return
+  }
   let hasRunningTasks = tasks.contains { $0.status == "running" }
   if state.queueWorkerMode == sharedConversationQueueWorkerMode
       || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
@@ -809,10 +929,6 @@ func runQueueIteration(_ state: inout PluginState) {
     }
   }
 
-  guard state.queueEnabled == true, state.queuePaused != true else {
-    state.automationTasks = tasks
-    return
-  }
   if tasks.isEmpty {
     state.queueEnabled = false
     stopQueueWorker(&state)
