@@ -49,10 +49,17 @@ function installed() {
 }
 
 function currentPackage() {
-  const result = adbShell(['dumpsys', 'window', 'windows']);
-  const text = result.ok ? String(result.stdout || '') : '';
+  const activity = adbShell(['dumpsys', 'activity', 'activities']);
+  const activityText = activity.ok ? String(activity.stdout || '') : '';
+  const fromActivity = activityText.match(/mResumedActivity:.*?\s([A-Za-z0-9._]+)\//)?.[1]
+    || activityText.match(/topResumedActivity=.*?\s([A-Za-z0-9._]+)\//)?.[1]
+    || activityText.match(/ResumedActivity:.*?\s([A-Za-z0-9._]+)\//)?.[1];
+  if (fromActivity) return fromActivity;
+
+  const window = adbShell(['dumpsys', 'window', 'windows']);
+  const text = window.ok ? String(window.stdout || '') : '';
   return text.match(/mCurrentFocus=Window\{[^}]*\s([A-Za-z0-9._]+)\//)?.[1]
-    || text.match(/mFocusedApp=.*\s([A-Za-z0-9._]+)\//)?.[1]
+    || text.match(/mFocusedApp=.*?\s([A-Za-z0-9._]+)\//)?.[1]
     || null;
 }
 
