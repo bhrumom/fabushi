@@ -571,6 +571,10 @@ const sessionStateExpression = `(() => {
   ) || '';
   const asksForLogin = /(^|\\n)(log in|sign up|登录|登入|註冊|注册)(\\n|$)/i.test(bodyText);
   const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+  const safeText = bodyText.slice(0, 500);
+  const htmlLength = document.documentElement?.outerHTML?.length || 0;
+  const scriptCount = document.scripts?.length || 0;
+  const inputCount = document.querySelectorAll('textarea, input, [contenteditable="true"]').length;
   return {
     hasChat,
     hasWork,
@@ -578,6 +582,11 @@ const sessionStateExpression = `(() => {
     asksForLogin,
     workComposer,
     bodyLength: bodyText.length,
+    safeText,
+    htmlLength,
+    scriptCount,
+    inputCount,
+    controlLabels: labels.slice(0, 24),
     url: location.href,
     bridge: !!window.electronBridge,
     visibility: document.visibilityState,
