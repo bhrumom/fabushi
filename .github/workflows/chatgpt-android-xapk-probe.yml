@@ -49,8 +49,8 @@ jobs:
         id: package
         shell: bash
         env:
-          CHATGPT_ANDROID_VERSION_NAME: 1.2026.202
-          CHATGPT_ANDROID_VERSION_CODE: '2620225'
+          CHATGPT_ANDROID_VERSION_NAME: 1.2026.216
+          CHATGPT_ANDROID_VERSION_CODE: '2621621'
           CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
         run: |
           set -euo pipefail
