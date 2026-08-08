@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-08-02.10",
+  "revision": "2026-08-08.11",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,13 +8,13 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 10,
-      "revision": 10,
+      "goalVersion": 11,
+      "revision": 11,
       "applyMode": "next_chat",
-      "title": "全面迁移大乘小程序至 GitHub 原生共创的多构件 MCP Apps 架构",
+      "title": "本地生成后双 GitHub 出口的大乘 MCP Apps 上线架构",
       "promptTemplate": "continue-to-complete",
       "connector": "GitHub",
-      "priority": 90,
+      "priority": 95,
       "timeout": 21600,
       "maxTaskContinuations": 0,
       "maxRuntimeRetries": 2,
@@ -23,6 +23,8 @@
         "worktree:mahayana-marketplace",
         "service:mahayana-marketplace",
         "service:mahayana-plugin-publishing",
+        "service:official-github-hosting",
+        "runtime:local-miniapp-workspace",
         "extension:mcp-apps-2026-01-26",
         "source:github-native-mcp-app-collaboration",
         "runtime:mahayana-multi-artifact-mcp-apps",
@@ -31,16 +33,17 @@
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
       "specSources": [
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_GENERATION_GITHUB_DEPLOYMENT.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/GITHUB_NATIVE_MCP_APP_COLLABORATION.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MULTI_ARTIFACT_MCP_APP.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_WEB_MCP_RUNTIME.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_FIRST_MCP_APPS.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MCP_APPS_ONLY.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/ACCEPTANCE.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/API_CONTRACT.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/DATA_MODEL.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/GITHUB_NATIVE_MCP_APP_COLLABORATION.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_FIRST_MCP_APPS.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_WEB_MCP_RUNTIME.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MCP_APPS_ONLY.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MCP_APPS_REFERENCES.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MIGRATION_PLAN.md",
-        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MULTI_ARTIFACT_MCP_APP.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/PRD.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/PUBLISHING_WORKFLOW.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/README.md",
@@ -49,7 +52,7 @@
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/TECHNICAL_DESIGN.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/UI_UX.md"
       ],
-      "prompt": "在 fabushi 仓库中把全部大乘小程序、宿主、插件模板、市场、源码协作、发布和安装运行系统全面迁移为 GitHub 原生共创的单一身份多构件 MCP Apps 架构。开始前必须阅读任务目录全部文件，其中 GITHUB_NATIVE_MCP_APP_COLLABORATION.md 是源码仓库、Fork、Pull Request、AI 修复、派生发布和供应链安全的最高优先级约束，MULTI_ARTIFACT_MCP_APP.md 是构件、安装和平台选择约束，LOCAL_WEB_MCP_RUNTIME.md 是移动/Web 运行约束，LOCAL_FIRST_MCP_APPS.md 是本地优先约束，MCP_APPS_ONLY.md 是 UI、Host、安全和旧协议删除约束；其他文档与它们冲突时以这五份文件为准。每个正式小程序必须绑定可验证 GitHub repository ID、owner/name、默认分支、精确 source commit、tree hash、许可证和可选 monorepo subdirectory；市场版本、provenance、父级 Release Manifest、native CLI/web-wasm 构件和 artifact attestations 必须绑定同一 source commit。开源小程序必须提供标准仓库模板、CONTRIBUTING、SECURITY、LICENSE、CODEOWNERS、Issue/PR 模板、无密钥 Fork PR CI、受信任 main/release workflow、Tool Contract、MCP Apps conformance、多构件构建、SBOM 和 attestation。市场和客户端必须提供查看源码、报告问题、让 AI 诊断、让 AI 修复、Fork 并自定义、创建上游 Draft PR、发布为派生 App、同步上游和比较差异。AI 只能在用户 Fork 或获授权分支修改，必须运行测试、关联 Issue、报告权限/Tool Contract/构件差异，未经用户确认不得公开 Issue/PR，不得提交敏感日志，不得直接推送上游受保护分支或自动合并。来自 Fork 的代码必须使用 pull_request 无 Secret、只读 GITHUB_TOKEN 和隔离 runner 测试；禁止使用具有 Secret/写权限的 pull_request_target checkout、构建或执行 Fork 代码，也不得把不受信任构件带入特权 workflow。PR 合并不等于发布；正式更新只能由受保护上游默认分支、受保护 tag/release 和可信 reusable workflow 触发，使用 OIDC 短期凭证、SBOM、artifact attestations、source commit 绑定、市场签名和人工/环境审批。仓库必须使用 ruleset、必需检查、CODEOWNERS、stale approval dismissal、工作流/权限/发布清单敏感路径审批和受保护发布标签。Fork 用户可把修改贡献回上游，也可独立发布派生 App，但必须更换 plugin ID 和发布者命名空间，使用自己的签名/OIDC/更新通道，遵守 SPDX license、NOTICE 和商标要求，并在市场记录 upstream plugin/repository/commit、fork repository、差异、权限变化和同步状态；不得复用上游官方身份、徽章或签名。无明确许可证的源码可见仓库不得提供一键公开派生发布。现有单一 plugin ID/version/Tool Contract/MCP Apps UI + common/native CLI/web-wasm 多构件模型保持不变：全球法布施同一 Release 提供桌面 native CLI 和移动/Web web-wasm，平台安装器只下载最小兼容构件；ChatGPT 自动确认可仅支持 desktop native。所有 UI 采用 MCP Apps stable 2026-01-26；仍须删除旧 session、SDK v1、自定义 iframe bridge 和旧插件兼容执行。必须创建真实公开测试小程序仓库并完成：市场绑定源码；用户 Fork；AI 根据真实 Issue 修复；无 Secret PR CI；创建上游 Draft PR；CODEOWNERS/ruleset 阻止未审批合并；上游审核合并；可信 release workflow 发布新多构件版本；Fork 更换 plugin ID 独立发布派生 App；市场展示来源、许可证、派生关系和差异；AI 同步上游并解决冲突；恶意 Fork PR 无法读取 Secret、写上游、污染发布或生成正式构件。所有证据来自 GitHub 仓库、Pull Requests、Actions、attestations、真实市场响应和真实安装包。不要只更新文档、只做仓库链接、只写 mock、允许 PR 自动发布、允许 Fork 复用原 plugin ID，或只做接口单测；持续实现、修复和验证直到全部强制验收项满足。"
+      "prompt": "在 bhrumom/fabushi 中持续完成大乘小程序的本地生成、GitHub 上线、市场发布和本地运行系统。开始前必须阅读任务目录全部文件，并按以下优先级处理冲突：LOCAL_GENERATION_GITHUB_DEPLOYMENT.md 最高，其次 GITHUB_NATIVE_MCP_APP_COLLABORATION.md、MULTI_ARTIFACT_MCP_APP.md、LOCAL_WEB_MCP_RUNTIME.md、LOCAL_FIRST_MCP_APPS.md、MCP_APPS_ONLY.md。用户在联系人/机器人聊天中与 AI 生成或修改小程序时，源码必须首先写入用户设备的本地工作区并可本地运行，生成过程不得依赖 GitHub 登录、GitHub 连接器或网络；没有用户明确执行上线/部署/发布动作，不得静默创建远程仓库或上传源码。上线时必须支持两个真实目标：一、official-managed-github：用户只需登录法布施账号，不需要 GitHub 账号，由可信法布施后端使用官方 GitHub App/组织安装短期凭证，通过受认证 API 在 bhrumom 组织下为该小程序创建独立规范化仓库、写入本地源码快照、记录稳定 repository ID/commit/tree hash，并配置仓库模板、Actions、CODEOWNERS、ruleset 和可信 Release；组织 PAT 或可写 Token 不得下发客户端。二、user-github：只有用户在聊天框加号/连接器入口选择 GitHub 官方连接器并明确要求部署到自己的 GitHub 时，才通过 GitHub 官方 MCP/连接器使用用户授权身份创建或更新用户个人账号或其明确选择的组织仓库；用户 GitHub access token、refresh token、connector secret 不得复制、记录或长期保存到法布施后端，法布施只登记非敏感 repository ID、owner/name、branch、commit、tree hash 和发布状态。GitHub 连接器未连接或权限不足不得阻塞官方托管路径，上线失败不得破坏本地工作区。每个新项目首次上线必须显示目标 owner/repository，不得因为曾连接 GitHub 就静默选择用户账号；已上线项目再次修改时推送前显示目标仓库和分支，远程有未知提交必须先 fetch/compare，再 merge/rebase，禁止强推覆盖。官方托管仓库名不得包含邮箱、手机号、真实姓名等 PII，使用 slug + 不可猜测 publicId；发布前必须做 Secret 扫描和敏感文件 denylist，.env、凭证、本地数据库、聊天记录、缓存和构建产物默认不得上传。源码首次推送成功不等于正式发布；正式市场版本仍必须绑定稳定 GitHub repository ID、精确 source commit、tree hash、SPDX license、父级 Release Manifest、provenance、SBOM、artifact attestations 和签名，并继续通过受保护默认分支、protected tag/release、可信 reusable workflow、OIDC 和人工/环境审批发布 common/native-*/web-wasm 多构件；客户端按平台下载最小构件并本地运行。Fork/PR 安全模型继续保持：AI 只能在用户 Fork 或授权分支修改，Fork PR 使用 pull_request、无 Secret、只读 GITHUB_TOKEN 和隔离 runner，禁止特权 pull_request_target 执行 Fork 代码；PR 合并不等于发布；CODEOWNERS、ruleset、stale approval dismissal 和敏感路径审批必须真实生效。必须取得真实端到端证据：完全不连接 GitHub 的新用户登录法布施后通过聊天生成真实 MCP App，代码先写入本地且断网仍可打开/修改/运行；点击官方托管上线后无需 GitHub 账号即可在 bhrumom 下创建真实独立仓库，首个 commit 与本地发布快照 hash 可复核且不含敏感内容，并继续走 Actions/Release/市场；同一个本地项目再通过 GitHub 官方连接器部署到测试用户自己的 GitHub，证明用户 GitHub 凭证不进入法布施 API、数据库、日志或 artifact；连接器断开后本地项目和官方托管项目仍正常；已部署项目再次修改能安全同步远程分叉；最终 Release、市场来源、repository ID、source commit、tree hash、SBOM、attestation 和真实安装包全部一致。不要只更新文档、只写 mock、只做接口单测或复用旧云端生成逻辑；持续实现、修复、跑 GitHub Actions、建立真实仓库并验收，直到全部强制验收项满足。"
     }
   ]
 }
