@@ -65,7 +65,7 @@ import html
 import re
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 page = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
 version_name = sys.argv[2]
@@ -79,7 +79,10 @@ for raw in hrefs:
         continue
     wrapper = urljoin("https://apkcombo.com", href)
     parsed = urlparse(wrapper)
-    target = unquote(parse_qs(parsed.query).get("u", [""])[0])
+    # parse_qs already percent-decodes the u= parameter exactly once. A second
+    # urllib.parse.unquote() corrupts the inner signed R2 URL by turning the
+    # percent-encoded Content-Disposition spaces/quotes into raw URL bytes.
+    target = parse_qs(parsed.query).get("u", [""])[0]
     if not target:
         continue
     target_parsed = urlparse(target)
