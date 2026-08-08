@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version_name="${CHATGPT_ANDROID_VERSION_NAME:-1.2026.202}"
-version_code="${CHATGPT_ANDROID_VERSION_CODE:-2620225}"
+version_name="${CHATGPT_ANDROID_VERSION_NAME:-1.2026.216}"
+version_code="${CHATGPT_ANDROID_VERSION_CODE:-2621621}"
 page_url="${CHATGPT_APKCOMBO_PAGE_URL:-https://apkcombo.com/chatgpt/com.openai.chatgpt/download/apk}"
 output="${1:-${RUNNER_TEMP:-/tmp}/chatgpt-${version_name}.xapk}"
 page="$(mktemp)"
@@ -63,8 +63,6 @@ if not candidates:
         f"APKCombo did not expose a fresh universal ChatGPT download for version={version_name} code={version_code}"
     )
 
-# Multiple identical entries can be present. Use the last one because APKCombo
-# normally renders the most recently resolved link later in the variant list.
 wrapper, target = candidates[-1]
 print(wrapper)
 print(target)
