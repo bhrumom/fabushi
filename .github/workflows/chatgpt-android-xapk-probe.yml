@@ -96,6 +96,25 @@ jobs:
           set -euo pipefail
           export ANDROID_AVD_HOME="$RUNNER_TEMP/chatgpt-probe-avd"
           echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+
+          # The Android Emulator copies the host ADB public key into a fresh
+          # emulator data image during first boot. Make that key deterministic
+          # before AVD creation/launch, and start the adb server with the same
+          # key search path so the connection can authenticate non-interactively.
+          adb_key_dir="$HOME/.android"
+          mkdir -p "$adb_key_dir"
+          chmod 700 "$adb_key_dir"
+          rm -f "$adb_key_dir/adbkey" "$adb_key_dir/adbkey.pub"
+          adb keygen "$adb_key_dir/adbkey" >/dev/null
+          chmod 600 "$adb_key_dir/adbkey"
+          chmod 644 "$adb_key_dir/adbkey.pub"
+          export ADB_VENDOR_KEYS="$adb_key_dir"
+          echo "ADB_VENDOR_KEYS=$adb_key_dir" >> "$GITHUB_ENV"
+          adb kill-server >/dev/null 2>&1 || true
+          adb start-server >/dev/null
+          test -s "$adb_key_dir/adbkey"
+          test -s "$adb_key_dir/adbkey.pub"
+
           mkdir -p "$ANDROID_AVD_HOME"
           printf 'no\n' | avdmanager create avd --force \
             --name chatgpt-probe \
@@ -117,14 +136,18 @@ jobs:
               tail -n 160 "$log" || true
               exit 1
             fi
-            if adb get-state 2>/dev/null | grep -q '^device$'; then
+            state=$(adb devices | awk '$1 ~ /^emulator-/ {print $2; exit}')
+            if [[ "$state" == 'device' ]]; then
               attached=true
               break
+            fi
+            if [[ "$state" == 'unauthorized' ]]; then
+              echo "ADB transport is still authorizing (attempt $attempt)."
             fi
             sleep 2
           done
           if [[ "$attached" != true ]]; then
-            echo '::error::Android emulator did not attach to ADB within 180 seconds.'
+            echo '::error::Android emulator did not attach to ADB as an authorized device within 180 seconds.'
             adb devices -l || true
             tail -n 160 "$log" || true
             exit 1
