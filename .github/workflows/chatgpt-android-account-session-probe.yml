@@ -7,6 +7,7 @@ on:
     paths:
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/seed-chrome-session.mjs'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/restore-latest-account-credentials.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-codex-auth-refresh.mjs'
       - '.github/workflows/chatgpt-android-account-session-probe.yml'
 
 permissions:
@@ -36,6 +37,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHATGPT_AUTO_CONFIRM_STATE_KEY: ${{ secrets.CHATGPT_AUTO_CONFIRM_STATE_KEY }}
         run: bash .agents/plugins/plugins/chatgpt-android-controller/scripts/restore-latest-account-credentials.sh
+
+      - name: Force-refresh official ChatGPT OAuth with Codex app-server
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        run: |
+          set -euo pipefail
+          codex_home="$RUNNER_TEMP/codex-auth-probe"
+          mkdir -p "$codex_home"
+          chmod 700 "$codex_home"
+          printf '%s' "$CHATGPT_CODEX_AUTH_B64" | base64 -d > "$codex_home/auth.json"
+          chmod 600 "$codex_home/auth.json"
+          npm install --global --ignore-scripts @openai/codex@0.146.0
+          CODEX_HOME="$codex_home" node scripts/probe-codex-auth-refresh.mjs
+          test -s "$codex_home/auth.json"
+          refreshed_auth_b64=$(base64 < "$codex_home/auth.json" | tr -d '\r\n')
+          test -n "$refreshed_auth_b64"
+          printf '::add-mask::%s\n' "$refreshed_auth_b64"
+          printf 'CHATGPT_CODEX_AUTH_B64=%s\n' "$refreshed_auth_b64" >> "$GITHUB_ENV"
+          rm -f "$codex_home/auth.json"
 
       - name: Install Android emulator runtime
         shell: bash
