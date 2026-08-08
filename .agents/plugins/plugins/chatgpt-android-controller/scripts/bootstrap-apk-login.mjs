@@ -360,6 +360,17 @@ async function waitForApkReturn(timeoutMs = 90_000) {
   return { ...apkSurface(), lastForeground };
 }
 
+function preseedOfficialBrowserSession() {
+  const script = resolve(dirname(process.argv[1]), 'seed-chrome-session.mjs');
+  const result = run(process.execPath, [script], 120_000);
+  if (result.stdout) process.stdout.write(String(result.stdout));
+  if (result.stderr) process.stderr.write(String(result.stderr));
+  if (!result.ok) {
+    throw new Error(`Official Chrome session preseed failed with status ${result.status ?? 'unknown'}`);
+  }
+  trace('official-browser-session-preseeded');
+}
+
 export async function bootstrapApkLogin() {
   trace('start', {
     packageName: CHATGPT_PACKAGE,
@@ -382,18 +393,36 @@ export async function bootstrapApkLogin() {
   captureScreenshot(initial.authenticated ? 'apk-already-authenticated' : 'apk-login-required');
   if (initial.authenticated) return { ok: true, reusedExistingApkState: true, surface: initial };
 
+  // Seed the real system Chrome profile first. Current ChatGPT Android builds can
+  // host the OAuth UI inside the app and expose no debuggable auth target after
+  // the login tap, but the official browser authentication flow can still reuse
+  // an already-authenticated Chrome profile.
+  preseedOfficialBrowserSession();
+
+  const relaunch = adbShell(['monkey', '-p', CHATGPT_PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1']);
+  if (!relaunch.ok) return { ok: false, errorCode: 'chatgpt_apk_relaunch_failed_after_browser_seed' };
+  await sleep(1_500);
+
   const clicked = await clickKnown([
     'Log in or sign up', 'Log in', 'Sign in',
     '登录或注册', '登入或註冊', '登录', '登入',
   ], 6);
   if (!clicked) return { ok: false, errorCode: 'apk_login_control_not_found', surface: initial };
 
-  const browserDeadline = Date.now() + 30_000;
-  let lastForeground = null;
+  // Give the official auth flow a chance to consume the already-seeded Chrome
+  // session and return before trying a live CDP fallback.
+  const preseededReturn = await waitForApkReturn(30_000);
+  if (preseededReturn.authenticated) {
+    trace('apk-login-return-from-preseed', preseededReturn);
+    captureScreenshot('apk-login-success');
+    return { ok: true, errorCode: null, reusedExistingApkState: false, surface: preseededReturn };
+  }
+
+  const browserDeadline = Date.now() + 10_000;
   while (Date.now() < browserDeadline) {
-    lastForeground = foregroundPackage();
+    const foreground = foregroundPackage();
     const sockets = devtoolsSockets();
-    if (lastForeground === CHROME_PACKAGE || lastForeground === 'com.google.android.gms' || sockets.length > 0) break;
+    if (foreground === CHROME_PACKAGE || foreground === 'com.google.android.gms' || sockets.length > 0) break;
     await sleep(500);
   }
   if (foregroundPackage() === CHROME_PACKAGE) {
