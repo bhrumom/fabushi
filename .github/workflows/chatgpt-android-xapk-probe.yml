@@ -7,7 +7,6 @@ on:
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/check-chatgpt-pairip.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/install-chatgpt-xapk.sh'
       - '.github/workflows/chatgpt-android-xapk-probe.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,6 +20,8 @@ jobs:
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Resolve Android SDK and install emulator
         working-directory: .
@@ -46,25 +47,22 @@ jobs:
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" emulator 'build-tools;35.0.0' 'system-images;android-35;google_apis_playstore;x86_64'
 
-      - name: Download and verify pinned ChatGPT draft-release seed
+      - name: Download and verify pinned ChatGPT seed
         id: package
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          CHATGPT_SEED_URL: ${{ secrets.CHATGPT_ANDROID_PROBE_URL }}
           CHATGPT_ANDROID_VERSION_NAME: 1.2026.216
           CHATGPT_ANDROID_VERSION_CODE: '2621621'
           CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
-          CHATGPT_SEED_ASSET_ID: '505956541'
           CHATGPT_SEED_SHA256: f05de63132003e59e72fa1f6010801a8bfcea950e8d42e394f9caebc161207d0
         run: |
           set -euo pipefail
+          test -n "${CHATGPT_SEED_URL:-}"
+          printf '::add-mask::%s\n' "$CHATGPT_SEED_URL"
           bundle="$RUNNER_TEMP/chatgpt-current.apks"
-          api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$CHATGPT_SEED_ASSET_ID"
           curl --fail --location --silent --show-error --retry 3 \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header 'Accept: application/octet-stream' \
-            --header 'X-GitHub-Api-Version: 2022-11-28' \
-            "$api" --output "$bundle"
+            "$CHATGPT_SEED_URL" --output "$bundle"
           test -s "$bundle"
           actual=$(sha256sum "$bundle" | awk '{print tolower($1)}')
           if [[ "$actual" != "${CHATGPT_SEED_SHA256,,}" ]]; then
