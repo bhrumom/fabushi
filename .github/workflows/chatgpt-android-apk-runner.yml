@@ -46,6 +46,10 @@ jobs:
       AVD_NAME: mahayana-chatgpt
       AVD_PACKAGE: system-images;android-35;google_apis_playstore;x86_64
       CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+      CHATGPT_ANDROID_VERSION_NAME: '1.2026.216'
+      CHATGPT_ANDROID_VERSION_CODE: '2621621'
+      CHATGPT_ANDROID_CERT_SHA256: b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c
+      CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
       STATE_SCOPE: ${{ inputs.account_id || 'default' }}
       SMOKE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke_only }}
       CONTINUOUS: ${{ github.event_name == 'workflow_dispatch' && inputs.continuous || github.event_name != 'workflow_dispatch' }}
@@ -125,7 +129,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libpulse0
 
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
-          "$sdkmanager_bin" 'platform-tools' 'emulator' "$AVD_PACKAGE"
+          "$sdkmanager_bin" 'platform-tools' 'emulator' 'build-tools;35.0.0' "$AVD_PACKAGE"
 
           emulator_bin="$sdk_root/emulator/emulator"
           test -x "$emulator_bin"
@@ -165,6 +169,31 @@ jobs:
           sed -i "s|^path=.*|path=$avd_dir|" "$ini"
           grep -q '^path=' "$ini"
 
+      - name: Prepare persistent ADB host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep the host key inside the encrypted AVD root. A restored guest
+          # trusts the same key on the next hosted runner, so ADB access rolls
+          # forward together with the Android login state instead of requiring
+          # a fresh authorization dialog on every machine.
+          adb_key_dir="$CHATGPT_ANDROID_AVD_ROOT/host-adb"
+          mkdir -p "$adb_key_dir" "$HOME/.android"
+          chmod 700 "$adb_key_dir" "$HOME/.android"
+          if [[ ! -s "$adb_key_dir/adbkey" || ! -s "$adb_key_dir/adbkey.pub" ]]; then
+            rm -f "$adb_key_dir/adbkey" "$adb_key_dir/adbkey.pub"
+            adb keygen "$adb_key_dir/adbkey" >/dev/null
+          fi
+          chmod 600 "$adb_key_dir/adbkey"
+          chmod 644 "$adb_key_dir/adbkey.pub"
+          cp -f "$adb_key_dir/adbkey" "$HOME/.android/adbkey"
+          cp -f "$adb_key_dir/adbkey.pub" "$HOME/.android/adbkey.pub"
+          chmod 600 "$HOME/.android/adbkey"
+          chmod 644 "$HOME/.android/adbkey.pub"
+          echo "ADB_VENDOR_KEYS=$adb_key_dir" >> "$GITHUB_ENV"
+          adb kill-server >/dev/null 2>&1 || true
+          ADB_VENDOR_KEYS="$adb_key_dir" adb start-server >/dev/null
+
       - name: Enable KVM
         shell: bash
         run: |
@@ -189,9 +218,35 @@ jobs:
             >"$log" 2>&1 &
           pid=$!
           echo "pid=$pid" >> "$GITHUB_OUTPUT"
-          adb wait-for-device
+
+          attached=false
+          for attempt in $(seq 1 90); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo '::error::Android emulator exited before ADB attached.'
+              tail -n 160 "$log" || true
+              exit 1
+            fi
+            state=$(adb devices | awk '$1 ~ /^emulator-/ {print $2; exit}')
+            if [[ "$state" == 'device' ]]; then
+              attached=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$attached" != true ]]; then
+            echo '::error::Android emulator did not attach to ADB as an authorized device.'
+            adb devices -l || true
+            tail -n 160 "$log" || true
+            exit 1
+          fi
+
           booted=false
           for attempt in $(seq 1 180); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo '::error::Android emulator exited during boot.'
+              tail -n 160 "$log" || true
+              exit 1
+            fi
             if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
               booted=true
               break
@@ -200,15 +255,24 @@ jobs:
           done
           if [[ "$booted" != true ]]; then
             echo '::error::Android emulator did not finish booting.'
-            tail -n 120 "$log" || true
+            tail -n 160 "$log" || true
             exit 1
           fi
+
+          # Headless hosted emulators can transiently ANR the Pixel launcher
+          # during cold boot. Suppress system crash/ANR dialogs so they cannot
+          # cover ChatGPT's own UI and create a false login failure.
+          adb shell settings put global hide_error_dialogs 1 || true
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
           adb shell input keyevent 82 || true
           adb devices -l
 
       - name: Ensure pinned ChatGPT APK is installed
         id: apk
         shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
         env:
           APK_URL: ${{ secrets.CHATGPT_ANDROID_APK_URL }}
           APK_SHA256: ${{ secrets.CHATGPT_ANDROID_APK_SHA256 }}
@@ -221,38 +285,43 @@ jobs:
           fi
 
           if [[ -z "${APK_URL:-}" || -z "${APK_SHA256:-}" ]]; then
-            echo '::error::Fresh AVD has no ChatGPT APK. Configure CHATGPT_ANDROID_APK_URL and CHATGPT_ANDROID_APK_SHA256 in the chatgpt-auto-confirm-legacy environment, or restore an authenticated AVD cache.'
+            echo '::error::Fresh AVD has no ChatGPT APK and the verified bootstrap seed is unavailable.'
             exit 1
           fi
           printf '::add-mask::%s\n' "$APK_URL"
-          apk_bundle="$RUNNER_TEMP/chatgpt-android-package"
+          apk_bundle="$RUNNER_TEMP/chatgpt-android-package.apks"
           curl --fail --location --silent --show-error --retry 3 \
             "$APK_URL" --output "$apk_bundle"
-          actual=$(sha256sum "$apk_bundle" | awk '{print $1}')
-          if [[ "${actual,,}" != "${APK_SHA256,,}" ]]; then
-            echo '::error::ChatGPT Android package SHA-256 does not match configured checksum.'
+          actual=$(sha256sum "$apk_bundle" | awk '{print tolower($1)}')
+          if [[ "$actual" != "${APK_SHA256,,}" ]]; then
+            echo "::error::ChatGPT Android package SHA-256 mismatch: $actual"
             exit 1
           fi
+          echo "Verified seed transport bytes=$(wc -c < "$apk_bundle" | tr -d ' ') sha256=$actual"
 
-          install_dir="$RUNNER_TEMP/chatgpt-apks"
-          archive_entries="$RUNNER_TEMP/chatgpt-package-entries.txt"
-          mkdir -p "$install_dir"
-          if unzip -Z1 "$apk_bundle" >"$archive_entries" 2>/dev/null \
-              && grep -Eq '\.apk$' "$archive_entries"; then
-            unzip -q "$apk_bundle" -d "$install_dir"
-            mapfile -t apks < <(find "$install_dir" -type f -name '*.apk' -print | sort)
-            if (( ${#apks[@]} == 0 )); then
-              echo '::error::The verified split package archive contains no APK files.'
-              exit 1
-            fi
-            adb install-multiple -r "${apks[@]}"
-          else
-            # A regular APK is itself a ZIP file, so ZIP validity alone cannot
-            # distinguish it from an .apks/split archive.
-            adb install -r "$apk_bundle"
+          # Transport origin is not trusted. Verify the real Android identity
+          # before installation: package, pinned version, x86_64 split and the
+          # Google Play App Signing certificate used by com.openai.chatgpt.
+          bash scripts/verify-chatgpt-xapk.sh "$apk_bundle"
+          set +e
+          pairip_output=$(bash scripts/check-chatgpt-pairip.sh "$apk_bundle" 2>&1)
+          pairip_status=$?
+          set -e
+          printf '%s\n' "$pairip_output"
+          if [[ "$pairip_status" == 2 ]]; then
+            echo '::error::Pinned ChatGPT package contains PAIRIP markers; refusing an unsupported protected sideload path.'
+            exit 1
+          elif [[ "$pairip_status" != 0 ]]; then
+            echo "::error::PAIRIP inspection failed with status $pairip_status"
+            exit "$pairip_status"
           fi
+
+          bash scripts/install-chatgpt-xapk.sh "$apk_bundle"
           adb shell pm path "$CHATGPT_ANDROID_PACKAGE" | grep -q '^package:'
-          echo 'source=verified-secret-url' >> "$GITHUB_OUTPUT"
+          adb shell dumpsys package "$CHATGPT_ANDROID_PACKAGE" \
+            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=' \
+            | head -n 20 || true
+          echo 'source=verified-pinned-xapk' >> "$GITHUB_OUTPUT"
 
       - name: Verify or bootstrap APK login state
         id: auth
