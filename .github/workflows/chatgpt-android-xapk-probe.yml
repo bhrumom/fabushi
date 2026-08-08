@@ -3,10 +3,10 @@ name: ChatGPT Android XAPK Probe
 on:
   pull_request:
     paths:
-      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkpure.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkcombo.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/verify-chatgpt-xapk.sh'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/check-chatgpt-pairip.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/install-chatgpt-xapk.sh'
-      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-chatgpt-xapk-candidates.sh'
       - '.github/workflows/chatgpt-android-xapk-probe.yml'
 
 permissions:
@@ -21,6 +21,7 @@ jobs:
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
     steps:
       - uses: actions/checkout@v5
+
       - name: Resolve Android SDK and install emulator
         working-directory: .
         shell: bash
@@ -43,6 +44,35 @@ jobs:
           sudo apt-get install -y --no-install-recommends libpulse0
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" emulator 'build-tools;35.0.0' 'system-images;android-35;google_apis_playstore;x86_64'
+
+      - name: Download and verify current ChatGPT universal XAPK
+        id: package
+        shell: bash
+        env:
+          CHATGPT_ANDROID_VERSION_NAME: 1.2026.202
+          CHATGPT_ANDROID_VERSION_CODE: '2620225'
+          CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/chatgpt-current.xapk"
+          bash -n scripts/fetch-chatgpt-apkcombo.sh
+          bash -n scripts/verify-chatgpt-xapk.sh
+          bash -n scripts/check-chatgpt-pairip.sh
+          bash -n scripts/install-chatgpt-xapk.sh
+          bash scripts/fetch-chatgpt-apkcombo.sh "$bundle"
+          bash scripts/verify-chatgpt-xapk.sh "$bundle"
+          set +e
+          pairip_output=$(bash scripts/check-chatgpt-pairip.sh "$bundle" 2>&1)
+          pairip_status=$?
+          set -e
+          printf '%s\n' "$pairip_output"
+          case "$pairip_status" in
+            0) echo 'pairip=false' >> "$GITHUB_OUTPUT" ;;
+            2) echo 'pairip=true' >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::PAIRIP inspection failed with status $pairip_status"; exit "$pairip_status" ;;
+          esac
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+
       - name: Boot Android 35 Play Store x86_64 emulator
         id: emulator
         working-directory: .
@@ -76,17 +106,56 @@ jobs:
             tail -n 120 "$log" || true
             exit 1
           fi
+          adb shell input keyevent 82 || true
           adb devices -l
-      - name: Probe ordinary-sideload ChatGPT versions
+
+      - name: Install and launch verified ChatGPT package
         shell: bash
+        env:
+          CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
         run: |
           set -euo pipefail
-          bash -n scripts/fetch-chatgpt-apkpure.sh
-          bash -n scripts/verify-chatgpt-xapk.sh
-          bash -n scripts/install-chatgpt-xapk.sh
-          bash -n scripts/probe-chatgpt-xapk-candidates.sh
-          bash scripts/probe-chatgpt-xapk-candidates.sh
-          cat "$RUNNER_TEMP/chatgpt-xapk-selected.env"
+          bundle='${{ steps.package.outputs.bundle }}'
+          bash scripts/install-chatgpt-xapk.sh "$bundle"
+          adb shell dumpsys package com.openai.chatgpt \
+            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=' \
+            | head -n 20 || true
+
+          component=$(adb shell cmd package resolve-activity --brief \
+            -a android.intent.action.MAIN \
+            -c android.intent.category.LAUNCHER \
+            com.openai.chatgpt | tr -d '\r' | tail -n 1)
+          echo "Resolved ChatGPT launcher component: $component"
+          test -n "$component"
+          adb logcat -c
+          adb shell am start -W -n "$component" || true
+          sleep 15
+
+          echo '--- foreground ---'
+          focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 10 || true)
+          printf '%s\n' "$focus"
+          echo '--- visible UI ---'
+          adb shell uiautomator dump /sdcard/chatgpt-ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/chatgpt-ui.xml 2>/dev/null \
+            | sed 's/></>\n</g' \
+            | grep -Eo 'text="[^"]*"|content-desc="[^"]*"|resource-id="[^"]*"|package="[^"]*"' \
+            | sed '/text=""/d;/content-desc=""/d;/resource-id=""/d' \
+            | head -n 260 || true
+          echo '--- relevant logcat ---'
+          adb logcat -d \
+            | grep -Ei 'com\.openai\.chatgpt|AndroidRuntime|FATAL EXCEPTION|pairip|licens|vending|integrity|installer|play' \
+            | tail -n 320 || true
+
+          if [[ "$focus" == *com.openai.chatgpt* ]]; then
+            echo 'launch_state=chatgpt-foreground'
+          elif [[ "$focus" == *com.android.vending* ]]; then
+            echo '::error::Verified ChatGPT bundle redirected to Google Play after ordinary sideload.'
+            exit 2
+          else
+            echo '::error::Verified ChatGPT bundle did not remain in the ChatGPT foreground.'
+            exit 3
+          fi
+
       - name: Stop emulator
         if: always()
         working-directory: .
