@@ -209,6 +209,56 @@ async function connectCdp(wsUrl) {
   return { socket, call };
 }
 
+async function probeServerSession(connection) {
+  const expression = `(async () => {
+    const result = {
+      httpStatus: null,
+      responseOk: false,
+      authenticated: null,
+      sessionKeyCount: 0,
+      loginVisible: false,
+      composerVisible: false,
+      locationHost: location.host,
+    };
+    const text = String(document.body?.innerText || '');
+    result.loginVisible = /(^|\\n)(log in|sign up)(\\n|$)/i.test(text);
+    result.composerVisible = !!document.querySelector('#prompt-textarea, textarea, [contenteditable="true"]');
+    try {
+      const response = await fetch('/api/auth/session', {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'accept': 'application/json' },
+      });
+      result.httpStatus = response.status;
+      result.responseOk = response.ok;
+      let body = null;
+      try { body = await response.json(); } catch {}
+      if (body && typeof body === 'object') {
+        result.sessionKeyCount = Object.keys(body).length;
+        result.authenticated = Boolean(body.user || body.accessToken || body.expires);
+      } else if (response.ok) {
+        result.authenticated = false;
+      }
+    } catch {}
+    return result;
+  })()`;
+  const evaluation = await connection.call('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  }, 20_000);
+  const value = evaluation.result?.value || {};
+  return {
+    httpStatus: Number.isInteger(value.httpStatus) ? value.httpStatus : null,
+    responseOk: value.responseOk === true,
+    authenticated: typeof value.authenticated === 'boolean' ? value.authenticated : null,
+    sessionKeyCount: Number.isInteger(value.sessionKeyCount) ? value.sessionKeyCount : 0,
+    loginVisible: value.loginVisible === true,
+    composerVisible: value.composerVisible === true,
+    locationHost: String(value.locationHost || '').slice(0, 120),
+  };
+}
+
 async function seedChromeSession() {
   const cookies = decodeCookies();
   const launch = adbShell(['am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', 'https://chatgpt.com/', '-p', CHROME_PACKAGE], 30_000);
@@ -231,11 +281,16 @@ async function seedChromeSession() {
       : 0;
     await connection.call('Page.navigate', { url: 'https://chatgpt.com/' }, 20_000);
     await sleep(5000);
+    const sessionProbe = await probeServerSession(connection);
     trace('session-seeded', {
       socketName,
       restoredCookieCount: matching,
       foregroundPackage: foregroundPackage(),
     });
+    trace('server-session-probe', sessionProbe);
+    if (sessionProbe.httpStatus === 200 && sessionProbe.authenticated === false) {
+      throw new Error('Restored browser cookies are not server-authenticated');
+    }
   } finally {
     connection.socket.close();
   }
