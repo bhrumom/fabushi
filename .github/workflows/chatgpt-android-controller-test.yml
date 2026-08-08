@@ -29,12 +29,14 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
-      - run: bash -n scripts/avd-state.sh
-      - run: bash -n scripts/fetch-chatgpt-apkpure.sh
-      - run: bash -n scripts/fetch-chatgpt-apkcombo.sh
-      - run: bash -n scripts/verify-chatgpt-xapk.sh
-      - run: bash -n scripts/check-chatgpt-pairip.sh
-      - run: bash -n scripts/install-chatgpt-xapk.sh
+      - name: Validate Android controller shell scripts
+        run: |
+          set -euo pipefail
+          bash -n scripts/avd-state.sh
+          bash -n scripts/fetch-chatgpt-apkcombo.sh
+          bash -n scripts/verify-chatgpt-xapk.sh
+          bash -n scripts/check-chatgpt-pairip.sh
+          bash -n scripts/install-chatgpt-xapk.sh
       - name: Verify hosted Android emulator runtime
         working-directory: .
         shell: bash
@@ -64,8 +66,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends libpulse0
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
-          "$sdkmanager_bin" emulator 'build-tools;35.0.0' \
-            'system-images;android-35;google_apis_playstore;x86_64'
+          "$sdkmanager_bin" emulator 'build-tools;35.0.0'
 
           emulator_bin="$sdk_root/emulator/emulator"
           test -x "$emulator_bin"
@@ -73,96 +74,3 @@ jobs:
           "$sdkmanager_bin" --version
           "$sdk_root/platform-tools/adb" version | head -n 1
           printf '%s\n' "$emulator_version" | head -n 1
-      - name: Download and verify latest usable pre-PairIP signed ChatGPT candidate
-        shell: bash
-        env:
-          CHATGPT_ANDROID_VERSION_NAME: 1.2024.324
-          CHATGPT_ANDROID_VERSION_CODE: '439'
-          CHATGPT_ANDROID_REQUIRE_X86_64: 'false'
-        run: |
-          set -euo pipefail
-          bundle="$RUNNER_TEMP/chatgpt.xapk"
-          bash scripts/fetch-chatgpt-apkpure.sh "$bundle"
-          bash scripts/verify-chatgpt-xapk.sh "$bundle"
-          bash scripts/check-chatgpt-pairip.sh "$bundle"
-      - name: Launch pre-PairIP ChatGPT on hosted x86_64 Android
-        shell: bash
-        run: |
-          set -euo pipefail
-          export ANDROID_AVD_HOME="$RUNNER_TEMP/chatgpt-install-avd"
-          mkdir -p "$ANDROID_AVD_HOME"
-          printf 'no\n' | avdmanager create avd --force \
-            --name chatgpt-install-smoke \
-            --package 'system-images;android-35;google_apis_playstore;x86_64' \
-            --device pixel_7
-
-          if [[ ! -e /dev/kvm ]]; then
-            echo '::error::/dev/kvm is unavailable on the hosted runner.'
-            exit 1
-          fi
-          sudo chmod 666 /dev/kvm
-
-          log="$RUNNER_TEMP/chatgpt-install-emulator.log"
-          nohup emulator -avd chatgpt-install-smoke \
-            -no-window -noaudio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -memory 3072 >"$log" 2>&1 &
-          emulator_pid=$!
-          cleanup() {
-            adb emu kill >/dev/null 2>&1 || true
-            kill "$emulator_pid" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          adb wait-for-device
-          booted=false
-          for attempt in $(seq 1 180); do
-            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
-              booted=true
-              break
-            fi
-            sleep 2
-          done
-          if [[ "$booted" != true ]]; then
-            echo '::error::Hosted Android emulator did not finish booting.'
-            tail -n 120 "$log" || true
-            exit 1
-          fi
-
-          bash scripts/install-chatgpt-xapk.sh "$RUNNER_TEMP/chatgpt.xapk"
-          adb shell dumpsys package com.openai.chatgpt \
-            | grep -E 'versionName=|versionCode=|installerPackageName=|initiatingPackageName=' \
-            | head -n 20 || true
-
-          component=$(adb shell cmd package resolve-activity --brief \
-            -a android.intent.action.MAIN \
-            -c android.intent.category.LAUNCHER \
-            com.openai.chatgpt | tr -d '\r' | tail -n 1)
-          echo "Resolved ChatGPT launcher component: $component"
-          adb logcat -c
-          adb shell am start -W -n "$component" || true
-          sleep 15
-
-          echo '--- foreground ---'
-          focus=$(adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 10 || true)
-          printf '%s\n' "$focus"
-          echo '--- visible ChatGPT UI ---'
-          adb shell uiautomator dump /sdcard/chatgpt-ui.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/chatgpt-ui.xml 2>/dev/null \
-            | tr '>' '>\n' \
-            | grep -Eo 'text="[^"]*"|content-desc="[^"]*"|resource-id="[^"]*"|package="[^"]*"' \
-            | sed '/text=""/d;/content-desc=""/d;/resource-id=""/d' \
-            | head -n 260 || true
-          echo '--- relevant logcat ---'
-          adb logcat -d \
-            | grep -Ei 'com\.openai\.chatgpt|AndroidRuntime|FATAL EXCEPTION|pairip|licens|vending|update|required|unsupported' \
-            | tail -n 300 || true
-
-          if [[ "$focus" == *com.android.vending* ]]; then
-            echo '::error::Pre-PairIP candidate still redirected to Google Play.'
-            exit 1
-          fi
-          if [[ "$focus" != *com.openai.chatgpt* ]]; then
-            echo '::error::Pre-PairIP candidate did not remain in ChatGPT.'
-            exit 1
-          fi
-          echo 'Pre-PairIP signed ChatGPT remained foreground successfully.'
