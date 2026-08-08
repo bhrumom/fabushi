@@ -6,6 +6,8 @@ on:
       - fix/chatgpt-android-apkcombo-source
     paths:
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-apk-auth-surface.mjs'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-apk-identity-login.mjs'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/seed-chrome-session.mjs'
       - '.github/workflows/chatgpt-android-login-surface-probe.yml'
 
 permissions:
@@ -120,12 +122,27 @@ jobs:
           CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
         run: bash scripts/install-chatgpt-xapk.sh '${{ steps.apk.outputs.bundle }}'
 
-      - name: Trace native login surfaces
+      - name: Probe real identity continuation
         shell: bash
         working-directory: .agents/plugins/plugins/chatgpt-android-controller
         env:
           CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
-        run: node scripts/probe-apk-auth-surface.mjs
+          CHATGPT_SESSION_COOKIES_B64: ${{ secrets.CHATGPT_SESSION_COOKIES_B64 }}
+          CHATGPT_CODEX_AUTH_B64: ${{ secrets.CHATGPT_CODEX_AUTH_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$CHATGPT_SESSION_COOKIES_B64"
+          test -n "$CHATGPT_CODEX_AUTH_B64"
+          node scripts/probe-apk-identity-login.mjs
+
+      - name: Verify resulting APK session
+        continue-on-error: true
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+          CHATGPT_ANDROID_DIAGNOSTICS_DIR: ${{ runner.temp }}/identity-probe-diagnostics
+        run: node scripts/verify-apk-session.mjs
 
       - name: Stop emulator
         if: always()
