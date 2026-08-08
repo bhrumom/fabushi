@@ -1,7 +1,13 @@
 name: ChatGPT Android Account Session Probe
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/chatgpt-android-apkcombo-source
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/seed-chrome-session.mjs'
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/restore-latest-account-credentials.sh'
+      - '.github/workflows/chatgpt-android-account-session-probe.yml'
 
 permissions:
   actions: read
