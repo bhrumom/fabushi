@@ -3,11 +3,11 @@ name: ChatGPT Android XAPK Probe
 on:
   pull_request:
     paths:
-      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/fetch-chatgpt-apkcombo.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/verify-chatgpt-xapk.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/check-chatgpt-pairip.sh'
       - '.agents/plugins/plugins/chatgpt-android-controller/scripts/install-chatgpt-xapk.sh'
       - '.github/workflows/chatgpt-android-xapk-probe.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +31,7 @@ jobs:
           sdkmanager_bin=$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -perm -u+x -print | sort -V | tail -n 1)
           test -x "$sdkmanager_bin"
           tools_bin=$(dirname "$sdkmanager_bin")
+          test -x "$tools_bin/avdmanager"
           {
             echo "ANDROID_HOME=$sdk_root"
             echo "ANDROID_SDK_ROOT=$sdk_root"
@@ -45,22 +46,38 @@ jobs:
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" emulator 'build-tools;35.0.0' 'system-images;android-35;google_apis_playstore;x86_64'
 
-      - name: Download and verify current ChatGPT universal XAPK
+      - name: Download and verify pinned ChatGPT draft-release seed
         id: package
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           CHATGPT_ANDROID_VERSION_NAME: 1.2026.216
           CHATGPT_ANDROID_VERSION_CODE: '2621621'
           CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
+          CHATGPT_SEED_ASSET_ID: '505956541'
+          CHATGPT_SEED_SHA256: f05de63132003e59e72fa1f6010801a8bfcea950e8d42e394f9caebc161207d0
         run: |
           set -euo pipefail
-          bundle="$RUNNER_TEMP/chatgpt-current.xapk"
-          bash -n scripts/fetch-chatgpt-apkcombo.sh
+          bundle="$RUNNER_TEMP/chatgpt-current.apks"
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$CHATGPT_SEED_ASSET_ID"
+          curl --fail --location --silent --show-error --retry 3 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/octet-stream' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "$api" --output "$bundle"
+          test -s "$bundle"
+          actual=$(sha256sum "$bundle" | awk '{print tolower($1)}')
+          if [[ "$actual" != "${CHATGPT_SEED_SHA256,,}" ]]; then
+            echo "::error::Pinned ChatGPT seed SHA-256 mismatch: $actual"
+            exit 1
+          fi
+          echo "Pinned ChatGPT seed bytes=$(wc -c < "$bundle" | tr -d ' ') sha256=$actual"
+
           bash -n scripts/verify-chatgpt-xapk.sh
           bash -n scripts/check-chatgpt-pairip.sh
           bash -n scripts/install-chatgpt-xapk.sh
-          bash scripts/fetch-chatgpt-apkcombo.sh "$bundle"
           bash scripts/verify-chatgpt-xapk.sh "$bundle"
+
           set +e
           pairip_output=$(bash scripts/check-chatgpt-pairip.sh "$bundle" 2>&1)
           pairip_status=$?
