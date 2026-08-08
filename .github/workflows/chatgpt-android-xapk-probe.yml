@@ -107,10 +107,36 @@ jobs:
           nohup emulator -avd chatgpt-probe \
             -no-window -noaudio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -memory 3072 >"$log" 2>&1 &
-          echo "pid=$!" >> "$GITHUB_OUTPUT"
-          adb wait-for-device
+          pid=$!
+          echo "pid=$pid" >> "$GITHUB_OUTPUT"
+
+          attached=false
+          for attempt in $(seq 1 90); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo '::error::Android emulator process exited before ADB attached.'
+              tail -n 160 "$log" || true
+              exit 1
+            fi
+            if adb get-state 2>/dev/null | grep -q '^device$'; then
+              attached=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$attached" != true ]]; then
+            echo '::error::Android emulator did not attach to ADB within 180 seconds.'
+            adb devices -l || true
+            tail -n 160 "$log" || true
+            exit 1
+          fi
+
           booted=false
           for attempt in $(seq 1 180); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo '::error::Android emulator process exited during boot.'
+              tail -n 160 "$log" || true
+              exit 1
+            fi
             if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == '1' ]]; then
               booted=true
               break
@@ -118,7 +144,9 @@ jobs:
             sleep 2
           done
           if [[ "$booted" != true ]]; then
-            tail -n 120 "$log" || true
+            echo '::error::Android emulator attached to ADB but did not finish booting.'
+            adb shell getprop 2>/dev/null | tail -n 80 || true
+            tail -n 160 "$log" || true
             exit 1
           fi
           adb shell input keyevent 82 || true
