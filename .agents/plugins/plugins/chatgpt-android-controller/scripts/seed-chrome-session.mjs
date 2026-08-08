@@ -73,6 +73,15 @@ function dumpNodes() {
   return nodes;
 }
 
+function uiState() {
+  const nodes = dumpNodes();
+  return {
+    foregroundPackage: foregroundPackage(),
+    nodeCount: nodes.length,
+    uiPackages: [...new Set(nodes.map(node => node.packageName).filter(Boolean))].slice(0, 8),
+  };
+}
+
 function normalize(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
 }
@@ -95,20 +104,33 @@ async function clickKnown(labels) {
   return true;
 }
 
+function openChrome() {
+  void adbShell(['pm', 'enable', CHROME_PACKAGE], 10_000);
+  return adbShell([
+    'am', 'start', '-W', '-a', 'android.intent.action.VIEW',
+    '-d', 'https://chatgpt.com/', '-p', CHROME_PACKAGE,
+  ], 30_000);
+}
+
 async function dismissChromeFirstRun() {
   const accept = ['Accept & continue', 'Accept and continue', 'Agree & continue', '接受并继续', '接受並繼續', '同意并继续', '同意並繼續'];
   const skip = ['Use without an account', 'Continue without an account', 'No thanks', 'Not now', 'Skip', '不使用账号', '不使用帳號', '不用账号', '不用帳號', '暂不', '暫不', '跳过', '跳過'];
   let clicks = 0;
-  for (let round = 0; round < 8; round += 1) {
-    if (foregroundPackage() !== CHROME_PACKAGE) break;
+  for (let round = 0; round < 10; round += 1) {
     const accepted = await clickKnown(accept);
     const skipped = await clickKnown(skip);
     if (accepted) clicks += 1;
     if (skipped) clicks += 1;
-    if (!accepted && !skipped) break;
+    // A system or first-run surface can temporarily own focus. Re-issue the
+    // explicit Chrome VIEW intent instead of assuming foreground ownership.
+    if (accepted || skipped || round % 2 === 1) {
+      openChrome();
+      await sleep(900);
+    }
+    if (!accepted && !skipped && round >= 3 && foregroundPackage() === CHROME_PACKAGE) break;
     await sleep(500);
   }
-  trace('chrome-first-run', { clicks });
+  trace('chrome-first-run', { clicks, ...uiState() });
 }
 
 function decodeCookies() {
@@ -160,10 +182,12 @@ async function fetchTargets() {
   }
 }
 
-async function discoverChromeTarget(timeoutMs = 30_000) {
+async function discoverChromeTarget(timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs;
   let lastSockets = [];
+  let attempt = 0;
   while (Date.now() < deadline) {
+    attempt += 1;
     lastSockets = devtoolsSockets();
     for (const socketName of lastSockets) {
       void adb(['forward', '--remove', `tcp:${CDP_PORT}`], 5000);
@@ -174,6 +198,10 @@ async function discoverChromeTarget(timeoutMs = 30_000) {
         || targets.find(item => item?.webSocketDebuggerUrl && item.type === 'page')
         || targets.find(item => item?.webSocketDebuggerUrl);
       if (target) return { socketName, target };
+    }
+    if (attempt % 6 === 0) {
+      openChrome();
+      trace('chrome-cdp-retry', { attempt, socketCount: lastSockets.length, ...uiState() });
     }
     await sleep(500);
   }
@@ -261,14 +289,16 @@ async function probeServerSession(connection) {
 
 async function seedChromeSession() {
   const cookies = decodeCookies();
-  const launch = adbShell(['am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', 'https://chatgpt.com/', '-p', CHROME_PACKAGE], 30_000);
+  const launch = openChrome();
   if (!launch.ok) throw new Error('Unable to launch Chrome for session seeding');
   await sleep(1500);
+  trace('chrome-opened', uiState());
   await dismissChromeFirstRun();
 
   // Re-open after first-run UI is cleared so Chrome definitely owns a normal tab.
-  adbShell(['am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', 'https://chatgpt.com/', '-p', CHROME_PACKAGE], 30_000);
-  await sleep(1500);
+  openChrome();
+  await sleep(2500);
+  trace('chrome-before-cdp', { socketCount: devtoolsSockets().length, ...uiState() });
   const { socketName, target } = await discoverChromeTarget();
   const connection = await connectCdp(target.webSocketDebuggerUrl);
   try {
