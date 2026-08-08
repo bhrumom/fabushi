@@ -7,17 +7,56 @@ page_url="${CHATGPT_APKCOMBO_PAGE_URL:-https://apkcombo.com/chatgpt/com.openai.c
 output="${1:-${RUNNER_TEMP:-/tmp}/chatgpt-${version_name}.xapk}"
 page="$(mktemp)"
 meta="$(mktemp)"
-trap 'rm -f "$page" "$meta"' EXIT
+profile="$(mktemp -d)"
+trap 'rm -f "$page" "$meta"; rm -rf "$profile"' EXIT
 
-ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/139 Safari/537.36'
+ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
 
-curl --fail --location --silent --show-error --retry 4 --retry-all-errors \
-  --connect-timeout 20 --max-time 120 \
-  --user-agent "$ua" \
-  --header 'Accept-Language: en-US,en;q=0.9' \
-  --header 'Cache-Control: no-cache' \
-  --header 'Pragma: no-cache' \
-  "$page_url" --output "$page"
+fetch_page_with_curl() {
+  curl --fail --location --silent --show-error --retry 2 --retry-all-errors \
+    --connect-timeout 20 --max-time 90 \
+    --user-agent "$ua" \
+    --header 'Accept-Language: en-US,en;q=0.9' \
+    --header 'Cache-Control: no-cache' \
+    --header 'Pragma: no-cache' \
+    "$page_url" --output "$page"
+}
+
+fetch_page_with_chrome() {
+  local chrome=''
+  for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      chrome=$(command -v "$candidate")
+      break
+    fi
+  done
+  if [[ -z "$chrome" ]]; then
+    echo 'APKCombo blocked curl and no Chrome/Chromium executable is available.' >&2
+    return 1
+  fi
+  echo "APKCombo curl access was blocked; resolving the public download page with $(basename "$chrome") headless."
+  "$chrome" \
+    --headless=new \
+    --no-sandbox \
+    --disable-gpu \
+    --disable-dev-shm-usage \
+    --disable-background-networking \
+    --disable-component-update \
+    --disable-default-apps \
+    --disable-extensions \
+    --disable-sync \
+    --no-first-run \
+    --user-data-dir="$profile" \
+    --user-agent="$ua" \
+    --virtual-time-budget=8000 \
+    --dump-dom "$page_url" >"$page"
+  test -s "$page"
+}
+
+if ! fetch_page_with_curl; then
+  : >"$page"
+  fetch_page_with_chrome
+fi
 
 python3 - "$page" "$version_name" "$version_code" >"$meta" <<'PY'
 from __future__ import annotations
@@ -59,8 +98,10 @@ for raw in hrefs:
     candidates.append((wrapper, target))
 
 if not candidates:
+    title = re.search(r"<title[^>]*>(.*?)</title>", page, flags=re.I | re.S)
+    title_text = re.sub(r"\s+", " ", html.unescape(title.group(1))).strip() if title else "missing"
     raise SystemExit(
-        f"APKCombo did not expose a fresh universal ChatGPT download for version={version_name} code={version_code}"
+        f"APKCombo page exposed no matching R2 ChatGPT link for version={version_name} code={version_code}; title={title_text}"
     )
 
 wrapper, target = candidates[-1]
@@ -75,7 +116,7 @@ if [[ -z "$wrapper_url" || -z "$download_url" ]]; then
   exit 1
 fi
 
-# The target includes short-lived AWS query credentials. Never echo either URL.
+# The target contains short-lived AWS query credentials. Never echo either URL.
 curl --fail --location --silent --show-error --retry 4 --retry-all-errors \
   --connect-timeout 20 --max-time 360 \
   --user-agent "$ua" \
