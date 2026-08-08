@@ -4,6 +4,8 @@ set -euo pipefail
 archive="${1:?usage: verify-chatgpt-xapk.sh <xapk>}"
 expected_package="${CHATGPT_ANDROID_PACKAGE:-com.openai.chatgpt}"
 expected_cert="${CHATGPT_ANDROID_CERT_SHA256:-b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c}"
+expected_version_name="${CHATGPT_ANDROID_VERSION_NAME:-}"
+expected_version_code="${CHATGPT_ANDROID_VERSION_CODE:-}"
 require_x86_64="${CHATGPT_ANDROID_REQUIRE_X86_64:-true}"
 sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 
@@ -28,6 +30,8 @@ fi
 
 base_count=0
 x86_64_evidence=0
+verified_version_name=''
+verified_version_code=''
 for apk in "${apks[@]}"; do
   signer_output=$("$apksigner_bin" verify --print-certs "$apk" 2>&1) || {
     echo "apksigner rejected $(basename "$apk")." >&2
@@ -59,6 +63,16 @@ for apk in "${apks[@]}"; do
   first_line=$(printf '%s\n' "$badging" | head -n 1)
   if [[ "$first_line" != *" split='"* ]]; then
     base_count=$((base_count + 1))
+    verified_version_name=$(printf '%s\n' "$first_line" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+    verified_version_code=$(printf '%s\n' "$first_line" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
+    if [[ -n "$expected_version_name" && "$verified_version_name" != "$expected_version_name" ]]; then
+      echo "Unexpected ChatGPT versionName in base APK: got=${verified_version_name:-missing} expected=$expected_version_name" >&2
+      exit 1
+    fi
+    if [[ -n "$expected_version_code" && "$verified_version_code" != "$expected_version_code" ]]; then
+      echo "Unexpected ChatGPT versionCode in base APK: got=${verified_version_code:-missing} expected=$expected_version_code" >&2
+      exit 1
+    fi
   fi
 
   if [[ "$(basename "$apk")" == *x86_64* ]] \
@@ -76,5 +90,6 @@ if [[ "$require_x86_64" == true ]] && (( x86_64_evidence == 0 )); then
   exit 1
 fi
 
-printf 'Verified ChatGPT XAPK package=%s apk_count=%d cert_sha256=%s x86_64_evidence=%d require_x86_64=%s\n' \
-  "$expected_package" "${#apks[@]}" "${expected_cert,,}" "$x86_64_evidence" "$require_x86_64"
+printf 'Verified ChatGPT XAPK package=%s version=%s code=%s apk_count=%d cert_sha256=%s x86_64_evidence=%d require_x86_64=%s\n' \
+  "$expected_package" "${verified_version_name:-unknown}" "${verified_version_code:-unknown}" "${#apks[@]}" \
+  "${expected_cert,,}" "$x86_64_evidence" "$require_x86_64"
