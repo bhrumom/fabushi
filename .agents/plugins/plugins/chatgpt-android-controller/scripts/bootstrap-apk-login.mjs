@@ -52,10 +52,17 @@ function packageInstalled(packageName) {
 }
 
 function foregroundPackage() {
-  const result = adbShell(['dumpsys', 'window', 'windows']);
-  const text = result.ok ? String(result.stdout || '') : '';
-  return text.match(/mCurrentFocus=Window\{[^}]*\s([A-Za-z0-9._]+)\//)?.[1]
-    || text.match(/mFocusedApp=.*\s([A-Za-z0-9._]+)\//)?.[1]
+  const activity = adbShell(['dumpsys', 'activity', 'activities']);
+  const activityText = activity.ok ? String(activity.stdout || '') : '';
+  const fromActivity = activityText.match(/mResumedActivity:.*?\s([A-Za-z0-9._]+)\//)?.[1]
+    || activityText.match(/topResumedActivity=.*?\s([A-Za-z0-9._]+)\//)?.[1]
+    || activityText.match(/ResumedActivity:.*?\s([A-Za-z0-9._]+)\//)?.[1];
+  if (fromActivity) return fromActivity;
+
+  const window = adbShell(['dumpsys', 'window', 'windows']);
+  const windowText = window.ok ? String(window.stdout || '') : '';
+  return windowText.match(/mCurrentFocus=Window\{[^}]*\s([A-Za-z0-9._]+)\//)?.[1]
+    || windowText.match(/mFocusedApp=.*?\s([A-Za-z0-9._]+)\//)?.[1]
     || null;
 }
 
@@ -180,12 +187,13 @@ function apkSurface() {
     || nodes.some(node => /message|prompt|composer|ask chatgpt|发送消息|傳送訊息/i.test(
       `${node.text} ${node.description} ${node.resourceId}`,
     ));
+  const foreground = foregroundPackage();
   return {
-    foregroundPackage: foregroundPackage(),
+    foregroundPackage: foreground,
     asksForLogin,
     hasComposer,
     nodeCount: nodes.length,
-    authenticated: foregroundPackage() === CHATGPT_PACKAGE && !asksForLogin && hasComposer,
+    authenticated: foreground === CHATGPT_PACKAGE && !asksForLogin && hasComposer,
   };
 }
 
@@ -219,6 +227,69 @@ function decodeCookies() {
   return normalized;
 }
 
+function devtoolsSockets() {
+  const result = adbShell(['cat', '/proc/net/unix'], 10_000);
+  if (!result.ok) return [];
+  const sockets = [];
+  for (const line of String(result.stdout || '').split(/\r?\n/)) {
+    const match = line.match(/@([^\s]*devtools_remote[^\s]*)\s*$/i);
+    if (match?.[1]) sockets.push(match[1]);
+  }
+  return [...new Set(sockets)].sort((a, b) => {
+    const score = value => value === 'chrome_devtools_remote' ? 0
+      : value.startsWith('chrome_devtools_remote') ? 1
+        : value.startsWith('webview_devtools_remote') ? 2 : 3;
+    return score(a) - score(b) || a.localeCompare(b);
+  });
+}
+
+async function fetchTargets(timeout = 2_500) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`, {
+      signal: AbortSignal.timeout(timeout),
+    });
+    if (!response.ok) return [];
+    const targets = await response.json();
+    return Array.isArray(targets) ? targets : [];
+  } catch {
+    return [];
+  }
+}
+
+async function discoverAuthTarget(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastSocketKey = '';
+  let lastTargetCount = 0;
+  while (Date.now() < deadline) {
+    const sockets = devtoolsSockets();
+    const socketKey = sockets.join(',');
+    if (socketKey !== lastSocketKey) {
+      lastSocketKey = socketKey;
+      trace('auth-devtools-sockets', {
+        count: sockets.length,
+        sockets: sockets.slice(0, 12),
+        foregroundPackage: foregroundPackage(),
+        uiPackages: [...new Set(dumpNodes().map(node => node.packageName).filter(Boolean))].slice(0, 8),
+      });
+    }
+
+    for (const socketName of sockets) {
+      void adb(['forward', '--remove', `tcp:${CDP_PORT}`], 5_000);
+      const forward = adb(['forward', `tcp:${CDP_PORT}`, `localabstract:${socketName}`], 10_000);
+      if (!forward.ok) continue;
+      const targets = await fetchTargets();
+      lastTargetCount = Math.max(lastTargetCount, targets.length);
+      const pages = targets.filter(item => item?.webSocketDebuggerUrl);
+      const target = pages.find(item => /openai|chatgpt|auth/i.test(String(item.url || '')))
+        || pages.find(item => item.type === 'page')
+        || pages.at(-1);
+      if (target) return { socketName, target };
+    }
+    await sleep(500);
+  }
+  throw new Error(`No browser auth target was exposed; sockets=${lastSocketKey || 'none'} targetCount=${lastTargetCount}`);
+}
+
 async function connectCdp(wsUrl) {
   const socket = new WebSocket(wsUrl);
   await new Promise((resolvePromise, reject) => {
@@ -248,34 +319,12 @@ async function connectCdp(wsUrl) {
   return { socket, call };
 }
 
-async function waitForAuthTarget(timeoutMs = 30_000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastCount = 0;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`, {
-        signal: AbortSignal.timeout(3_000),
-      });
-      if (response.ok) {
-        const targets = await response.json();
-        lastCount = targets.length;
-        const pages = targets.filter(item => item.type === 'page' && item.webSocketDebuggerUrl);
-        const target = pages.find(item => /openai|chatgpt|auth/i.test(String(item.url || '')))
-          || pages.at(-1);
-        if (target) return target;
-      }
-    } catch {}
-    await sleep(500);
-  }
-  throw new Error(`No browser auth target was exposed; targetCount=${lastCount}`);
-}
-
 async function injectIntoCurrentAuthFlow(cookies) {
-  const forward = adb(['forward', `tcp:${CDP_PORT}`, 'localabstract:chrome_devtools_remote']);
-  if (!forward.ok) throw new Error(String(forward.stderr || '').trim() || 'Unable to forward Chrome CDP');
-  const target = await waitForAuthTarget();
+  const { socketName, target } = await discoverAuthTarget();
   const url = String(target.url || '');
   trace('auth-browser-target', {
+    socketName,
+    type: target.type || null,
     scheme: url.split(':')[0] || null,
     hostClass: /openai\.com/i.test(url) ? 'openai.com' : /chatgpt\.com/i.test(url) ? 'chatgpt.com' : 'other',
   });
@@ -340,15 +389,21 @@ export async function bootstrapApkLogin() {
   if (!clicked) return { ok: false, errorCode: 'apk_login_control_not_found', surface: initial };
 
   const browserDeadline = Date.now() + 30_000;
+  let lastForeground = null;
   while (Date.now() < browserDeadline) {
-    const foreground = foregroundPackage();
-    if (foreground === CHROME_PACKAGE || foreground === 'com.google.android.gms') break;
+    lastForeground = foregroundPackage();
+    const sockets = devtoolsSockets();
+    if (lastForeground === CHROME_PACKAGE || lastForeground === 'com.google.android.gms' || sockets.length > 0) break;
     await sleep(500);
   }
   if (foregroundPackage() === CHROME_PACKAGE) {
     await dismissChromeFirstRun();
   }
-  trace('apk-login-flow-opened', { foregroundPackage: foregroundPackage() });
+  trace('apk-login-flow-opened', {
+    foregroundPackage: foregroundPackage(),
+    uiPackages: [...new Set(dumpNodes().map(node => node.packageName).filter(Boolean))].slice(0, 8),
+    devtoolsSocketCount: devtoolsSockets().length,
+  });
   captureScreenshot('apk-login-browser-opened');
 
   const cookies = decodeCookies();
