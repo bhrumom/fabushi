@@ -1,0 +1,77 @@
+name: ChatGPT Android Auth Static Probe
+
+on:
+  push:
+    branches:
+      - fix/chatgpt-android-apkcombo-source
+    paths:
+      - '.github/workflows/chatgpt-android-auth-static-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Download pinned ChatGPT seed
+        shell: bash
+        env:
+          APK_URL: ${{ secrets.CHATGPT_ANDROID_APK_URL }}
+          APK_SHA256: ${{ secrets.CHATGPT_ANDROID_APK_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "${APK_URL:-}"
+          test -n "${APK_SHA256:-}"
+          printf '::add-mask::%s\n' "$APK_URL"
+          bundle="$RUNNER_TEMP/chatgpt.apks"
+          curl --fail --location --silent --show-error --retry 3 "$APK_URL" -o "$bundle"
+          actual=$(sha256sum "$bundle" | awk '{print tolower($1)}')
+          [[ "$actual" == "${APK_SHA256,,}" ]]
+          mkdir -p "$RUNNER_TEMP/chatgpt-bundle"
+          unzip -q "$bundle" -d "$RUNNER_TEMP/chatgpt-bundle"
+          base=$(find "$RUNNER_TEMP/chatgpt-bundle" -type f \( -name 'base.apk' -o -name 'com.openai.chatgpt.apk' \) -print -quit)
+          if [[ -z "$base" ]]; then
+            base=$(find "$RUNNER_TEMP/chatgpt-bundle" -type f -name '*.apk' -printf '%s %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)
+          fi
+          test -s "$base"
+          echo "CHATGPT_BASE_APK=$base" >> "$GITHUB_ENV"
+          echo "Verified base APK bytes=$(wc -c < "$base" | tr -d ' ')"
+
+      - name: Decompile auth implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y >/dev/null
+          sudo apt-get install -y --no-install-recommends default-jre-headless >/dev/null
+          release=$(curl --fail --silent --show-error --location https://api.github.com/repos/skylot/jadx/releases/latest)
+          url=$(printf '%s' "$release" | python3 -c "import json,sys; x=json.load(sys.stdin); print(next(a['browser_download_url'] for a in x['assets'] if a['name'].startswith('jadx-') and a['name'].endswith('.zip') and 'gui' not in a['name']))")
+          curl --fail --silent --show-error --location "$url" -o "$RUNNER_TEMP/jadx.zip"
+          mkdir -p "$RUNNER_TEMP/jadx"
+          unzip -q "$RUNNER_TEMP/jadx.zip" -d "$RUNNER_TEMP/jadx"
+          "$RUNNER_TEMP/jadx/bin/jadx" --no-res --show-bad-code --threads-count 2 \
+            -d "$RUNNER_TEMP/jadx-out" "$CHATGPT_BASE_APK" >/dev/null 2>&1 || true
+          test -d "$RUNNER_TEMP/jadx-out/sources"
+
+          echo '--- Auth0/OpenAI auth sources ---'
+          grep -RIlE 'com\.auth0|WebAuthProvider|AuthenticationActivity|auth\.openai\.com|oauth/token' \
+            "$RUNNER_TEMP/jadx-out/sources" | head -n 120 || true
+          echo '--- Auth Tab / ephemeral call sites ---'
+          matches=$(grep -RInE 'setEphemeralBrowsingEnabled|EXTRA_ENABLE_EPHEMERAL_BROWSING|AuthTabIntent|newAuthTabSession|isAuthTabSupported|CATEGORY_AUTH_TAB' \
+            "$RUNNER_TEMP/jadx-out/sources" || true)
+          printf '%s\n' "$matches" | head -n 240
+          test -n "$matches"
+
+          # Produce a compact conclusion without exposing OAuth state, URL query
+          # strings, account data, or credentials.
+          if printf '%s\n' "$matches" | grep -q 'setEphemeralBrowsingEnabled(true)'; then
+            echo 'AUTH_TAB_EPHEMERAL_LITERAL_TRUE=true'
+          else
+            echo 'AUTH_TAB_EPHEMERAL_LITERAL_TRUE=false'
+          fi
+          echo "AUTH_TAB_CALLSITE_COUNT=$(printf '%s\n' "$matches" | grep -c 'AuthTabIntent\|setEphemeralBrowsingEnabled\|isAuthTabSupported' || true)"
