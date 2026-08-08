@@ -1,0 +1,136 @@
+name: ChatGPT Android Login Surface Probe
+
+on:
+  push:
+    branches:
+      - fix/chatgpt-android-apkcombo-source
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/scripts/probe-apk-auth-surface.mjs'
+      - '.github/workflows/chatgpt-android-login-surface-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install Android runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          sdkmanager_bin=$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -perm -u+x -print | sort -V | tail -n 1)
+          test -x "$sdkmanager_bin"
+          tools_bin=$(dirname "$sdkmanager_bin")
+          {
+            echo "ANDROID_HOME=$sdk_root"
+            echo "ANDROID_SDK_ROOT=$sdk_root"
+          } >> "$GITHUB_ENV"
+          {
+            echo "$tools_bin"
+            echo "$sdk_root/platform-tools"
+            echo "$sdk_root/emulator"
+          } >> "$GITHUB_PATH"
+          sudo apt-get update -y >/dev/null
+          sudo apt-get install -y --no-install-recommends libpulse0 >/dev/null
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          "$sdkmanager_bin" emulator 'build-tools;35.0.0' 'system-images;android-35;google_apis_playstore;x86_64' >/dev/null
+
+      - name: Download and verify pinned ChatGPT package
+        id: apk
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          APK_URL: ${{ secrets.CHATGPT_ANDROID_APK_URL }}
+          APK_SHA256: ${{ secrets.CHATGPT_ANDROID_APK_SHA256 }}
+          CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+          CHATGPT_ANDROID_VERSION_NAME: '1.2026.216'
+          CHATGPT_ANDROID_VERSION_CODE: '2621621'
+          CHATGPT_ANDROID_CERT_SHA256: b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c
+          CHATGPT_ANDROID_REQUIRE_X86_64: 'true'
+        run: |
+          set -euo pipefail
+          test -n "${APK_URL:-}"
+          test -n "${APK_SHA256:-}"
+          printf '::add-mask::%s\n' "$APK_URL"
+          bundle="$RUNNER_TEMP/chatgpt-login-probe.apks"
+          curl --fail --location --silent --show-error --retry 3 "$APK_URL" -o "$bundle"
+          actual=$(sha256sum "$bundle" | awk '{print tolower($1)}')
+          [[ "$actual" == "${APK_SHA256,,}" ]]
+          bash scripts/verify-chatgpt-xapk.sh "$bundle"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Boot clean Play Store emulator
+        id: emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/chatgpt-login-surface-avd"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          mkdir -p "$ANDROID_AVD_HOME" "$HOME/.android"
+          chmod 700 "$ANDROID_AVD_HOME" "$HOME/.android"
+          rm -f "$HOME/.android/adbkey" "$HOME/.android/adbkey.pub"
+          adb keygen "$HOME/.android/adbkey" >/dev/null
+          chmod 600 "$HOME/.android/adbkey"
+          chmod 644 "$HOME/.android/adbkey.pub"
+          echo "ADB_VENDOR_KEYS=$HOME/.android" >> "$GITHUB_ENV"
+          adb kill-server >/dev/null 2>&1 || true
+          ADB_VENDOR_KEYS="$HOME/.android" adb start-server >/dev/null
+          printf 'no\n' | avdmanager create avd --force \
+            --name login-surface \
+            --package 'system-images;android-35;google_apis_playstore;x86_64' \
+            --device pixel_7
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+          log="$RUNNER_TEMP/login-surface-emulator.log"
+          nohup emulator -avd login-surface -no-window -noaudio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 3072 >"$log" 2>&1 &
+          pid=$!
+          echo "pid=$pid" >> "$GITHUB_OUTPUT"
+          attached=false
+          for attempt in $(seq 1 90); do
+            if ! kill -0 "$pid" 2>/dev/null; then tail -n 120 "$log"; exit 1; fi
+            state=$(adb devices | awk '$1 ~ /^emulator-/ {print $2; exit}')
+            if [[ "$state" == device ]]; then attached=true; break; fi
+            sleep 2
+          done
+          [[ "$attached" == true ]]
+          booted=false
+          for attempt in $(seq 1 180); do
+            if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then booted=true; break; fi
+            sleep 2
+          done
+          [[ "$booted" == true ]]
+          adb shell settings put global hide_error_dialogs 1 || true
+          adb shell settings put global window_animation_scale 0 || true
+          adb shell settings put global transition_animation_scale 0 || true
+          adb shell settings put global animator_duration_scale 0 || true
+          adb shell input keyevent 82 || true
+
+      - name: Install verified ChatGPT splits
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+        run: bash scripts/install-chatgpt-xapk.sh '${{ steps.apk.outputs.bundle }}'
+
+      - name: Trace native login surfaces
+        shell: bash
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+        env:
+          CHATGPT_ANDROID_PACKAGE: com.openai.chatgpt
+        run: node scripts/probe-apk-auth-surface.mjs
+
+      - name: Stop emulator
+        if: always()
+        shell: bash
+        run: |
+          adb emu kill || true
+          pid='${{ steps.emulator.outputs.pid }}'
+          [[ -z "$pid" ]] || kill "$pid" >/dev/null 2>&1 || true
