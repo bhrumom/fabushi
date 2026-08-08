@@ -61,17 +61,34 @@ jobs:
           echo '--- Auth0/OpenAI auth sources ---'
           grep -RIlE 'com\.auth0|WebAuthProvider|AuthenticationActivity|auth\.openai\.com|oauth/token' \
             "$RUNNER_TEMP/jadx-out/sources" | head -n 120 || true
-          echo '--- Auth Tab / ephemeral call sites ---'
-          matches=$(grep -RInE 'setEphemeralBrowsingEnabled|EXTRA_ENABLE_EPHEMERAL_BROWSING|AuthTabIntent|newAuthTabSession|isAuthTabSupported|CATEGORY_AUTH_TAB' \
-            "$RUNNER_TEMP/jadx-out/sources" || true)
-          printf '%s\n' "$matches" | head -n 240
-          test -n "$matches"
 
-          # Produce a compact conclusion without exposing OAuth state, URL query
-          # strings, account data, or credentials.
-          if printf '%s\n' "$matches" | grep -q 'setEphemeralBrowsingEnabled(true)'; then
-            echo 'AUTH_TAB_EPHEMERAL_LITERAL_TRUE=true'
+          echo '--- Library Auth Tab / ephemeral APIs ---'
+          library_matches=$(grep -RInE 'withEphemeralBrowsing|setEphemeralBrowsingEnabled|EXTRA_ENABLE_EPHEMERAL_BROWSING|withAuthTab|AuthTabIntent|newAuthTabSession|isAuthTabSupported|CATEGORY_AUTH_TAB' \
+            "$RUNNER_TEMP/jadx-out/sources/com/auth0" "$RUNNER_TEMP/jadx-out/sources/androidx" 2>/dev/null || true)
+          printf '%s\n' "$library_matches" | head -n 240
+
+          echo '--- OpenAI application opt-in call sites ---'
+          app_matches=$(grep -RInE '\.withEphemeralBrowsing\(|withEphemeralBrowsing\(|\.withAuthTab\(|withAuthTab\(|setEphemeralBrowsingEnabled\(' \
+            "$RUNNER_TEMP/jadx-out/sources/com/openai" 2>/dev/null || true)
+          printf '%s\n' "$app_matches" | head -n 240
+
+          app_ephemeral_count=$(printf '%s\n' "$app_matches" | grep -c 'withEphemeralBrowsing\|setEphemeralBrowsingEnabled' || true)
+          app_authtab_count=$(printf '%s\n' "$app_matches" | grep -c 'withAuthTab' || true)
+          library_ephemeral_count=$(printf '%s\n' "$library_matches" | grep -c 'withEphemeralBrowsing\|setEphemeralBrowsingEnabled\|EXTRA_ENABLE_EPHEMERAL_BROWSING' || true)
+          library_authtab_count=$(printf '%s\n' "$library_matches" | grep -c 'withAuthTab\|AuthTabIntent\|isAuthTabSupported\|CATEGORY_AUTH_TAB' || true)
+
+          echo "OPENAI_APP_EPHEMERAL_OPT_IN_COUNT=$app_ephemeral_count"
+          echo "OPENAI_APP_AUTHTAB_OPT_IN_COUNT=$app_authtab_count"
+          echo "AUTH_LIBRARY_EPHEMERAL_API_COUNT=$library_ephemeral_count"
+          echo "AUTH_LIBRARY_AUTHTAB_API_COUNT=$library_authtab_count"
+
+          if (( app_ephemeral_count > 0 )); then
+            echo 'OPENAI_APP_EPHEMERAL_BROWSING_OPT_IN=true'
           else
-            echo 'AUTH_TAB_EPHEMERAL_LITERAL_TRUE=false'
+            echo 'OPENAI_APP_EPHEMERAL_BROWSING_OPT_IN=false'
           fi
-          echo "AUTH_TAB_CALLSITE_COUNT=$(printf '%s\n' "$matches" | grep -c 'AuthTabIntent\|setEphemeralBrowsingEnabled\|isAuthTabSupported' || true)"
+          if (( app_authtab_count > 0 )); then
+            echo 'OPENAI_APP_AUTH_TAB_OPT_IN=true'
+          else
+            echo 'OPENAI_APP_AUTH_TAB_OPT_IN=false'
+          fi
