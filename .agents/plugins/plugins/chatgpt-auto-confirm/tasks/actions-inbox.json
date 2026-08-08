@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "revision": "2026-08-08.11",
+  "revision": "2026-08-08.12",
   "keepAlive": true,
   "authoritative": true,
   "maxConcurrent": 2,
@@ -8,8 +8,8 @@
   "tasks": [
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
-      "goalVersion": 11,
-      "revision": 11,
+      "goalVersion": 12,
+      "revision": 12,
       "applyMode": "next_chat",
       "title": "本地生成后双 GitHub 出口的大乘 MCP Apps 上线架构",
       "promptTemplate": "continue-to-complete",
@@ -33,6 +33,7 @@
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730",
       "specSources": [
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/PROJECT_CONTROL_SHEETS.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/LOCAL_GENERATION_GITHUB_DEPLOYMENT.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/GITHUB_NATIVE_MCP_APP_COLLABORATION.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/MULTI_ARTIFACT_MCP_APP.md",
@@ -52,7 +53,7 @@
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/TECHNICAL_DESIGN.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730/UI_UX.md"
       ],
-      "prompt": "在 bhrumom/fabushi 中持续完成大乘小程序的本地生成、GitHub 上线、市场发布和本地运行系统。开始前必须阅读任务目录全部文件，并按以下优先级处理冲突：LOCAL_GENERATION_GITHUB_DEPLOYMENT.md 最高，其次 GITHUB_NATIVE_MCP_APP_COLLABORATION.md、MULTI_ARTIFACT_MCP_APP.md、LOCAL_WEB_MCP_RUNTIME.md、LOCAL_FIRST_MCP_APPS.md、MCP_APPS_ONLY.md。用户在联系人/机器人聊天中与 AI 生成或修改小程序时，源码必须首先写入用户设备的本地工作区并可本地运行，生成过程不得依赖 GitHub 登录、GitHub 连接器或网络；没有用户明确执行上线/部署/发布动作，不得静默创建远程仓库或上传源码。上线时必须支持两个真实目标：一、official-managed-github：用户只需登录法布施账号，不需要 GitHub 账号，由可信法布施后端使用官方 GitHub App/组织安装短期凭证，通过受认证 API 在 bhrumom 组织下为该小程序创建独立规范化仓库、写入本地源码快照、记录稳定 repository ID/commit/tree hash，并配置仓库模板、Actions、CODEOWNERS、ruleset 和可信 Release；组织 PAT 或可写 Token 不得下发客户端。二、user-github：只有用户在聊天框加号/连接器入口选择 GitHub 官方连接器并明确要求部署到自己的 GitHub 时，才通过 GitHub 官方 MCP/连接器使用用户授权身份创建或更新用户个人账号或其明确选择的组织仓库；用户 GitHub access token、refresh token、connector secret 不得复制、记录或长期保存到法布施后端，法布施只登记非敏感 repository ID、owner/name、branch、commit、tree hash 和发布状态。GitHub 连接器未连接或权限不足不得阻塞官方托管路径，上线失败不得破坏本地工作区。每个新项目首次上线必须显示目标 owner/repository，不得因为曾连接 GitHub 就静默选择用户账号；已上线项目再次修改时推送前显示目标仓库和分支，远程有未知提交必须先 fetch/compare，再 merge/rebase，禁止强推覆盖。官方托管仓库名不得包含邮箱、手机号、真实姓名等 PII，使用 slug + 不可猜测 publicId；发布前必须做 Secret 扫描和敏感文件 denylist，.env、凭证、本地数据库、聊天记录、缓存和构建产物默认不得上传。源码首次推送成功不等于正式发布；正式市场版本仍必须绑定稳定 GitHub repository ID、精确 source commit、tree hash、SPDX license、父级 Release Manifest、provenance、SBOM、artifact attestations 和签名，并继续通过受保护默认分支、protected tag/release、可信 reusable workflow、OIDC 和人工/环境审批发布 common/native-*/web-wasm 多构件；客户端按平台下载最小构件并本地运行。Fork/PR 安全模型继续保持：AI 只能在用户 Fork 或授权分支修改，Fork PR 使用 pull_request、无 Secret、只读 GITHUB_TOKEN 和隔离 runner，禁止特权 pull_request_target 执行 Fork 代码；PR 合并不等于发布；CODEOWNERS、ruleset、stale approval dismissal 和敏感路径审批必须真实生效。必须取得真实端到端证据：完全不连接 GitHub 的新用户登录法布施后通过聊天生成真实 MCP App，代码先写入本地且断网仍可打开/修改/运行；点击官方托管上线后无需 GitHub 账号即可在 bhrumom 下创建真实独立仓库，首个 commit 与本地发布快照 hash 可复核且不含敏感内容，并继续走 Actions/Release/市场；同一个本地项目再通过 GitHub 官方连接器部署到测试用户自己的 GitHub，证明用户 GitHub 凭证不进入法布施 API、数据库、日志或 artifact；连接器断开后本地项目和官方托管项目仍正常；已部署项目再次修改能安全同步远程分叉；最终 Release、市场来源、repository ID、source commit、tree hash、SBOM、attestation 和真实安装包全部一致。不要只更新文档、只写 mock、只做接口单测或复用旧云端生成逻辑；持续实现、修复、跑 GitHub Actions、建立真实仓库并验收，直到全部强制验收项满足。"
+      "prompt": "在 bhrumom/fabushi 中持续完成大乘小程序的本地生成、双 GitHub 上线、市场发布和本地运行系统。项目管理必须遵守 PROJECT_CONTROL_SHEETS.md：Google Sheets《法布施｜全项目任务总控与验收台账》是所有项目的单一管理入口；Gmail 只做通知和汇报入口且原则上只引用这一张总控表；Drive 保存权威任务文件和阶段文档；Calendar 只负责排期；GitHub/GitHub Actions 是代码与自动验收事实源。每轮开始先读取总控 Sheets 的项目、阶段、待执行原子任务，再读取对应 Drive、Calendar 和 GitHub 真实状态；只执行未通过任务。每个原子任务必须有稳定 Task ID、明确业务验收标准、required check 或等价自动证据、commit/PR/workflow run/Release 证据。只有自动验收成功且业务标准满足并已回写 Sheets 才能打勾；阶段进度和项目总进度必须按通过的必需原子任务由公式计算，不得主观填写。每轮执行后必须更新原子任务状态、GitHub 证据、阻塞、下一动作、最近汇报，并在汇报记录追加一行。若 Sheets 与 GitHub 不一致，先以 GitHub 工程事实纠正 Sheets 后再继续。工程产品规则继续以 LOCAL_GENERATION_GITHUB_DEPLOYMENT.md 为最高产品约束：源码先本地生成和运行，只有用户明确上线后才选择 official-managed-github 或 user-github；官方托管使用可信 GitHub App/API 控制面，用户 GitHub 通过官方连接器/MCP 使用用户授权身份且凭证不得进入 Fabushi 后端；上线失败不得破坏本地工作区；正式发布继续经过受保护分支、trusted builder、OIDC、SBOM、attestation、provenance 和多平台真实 E2E。不要只更新文档、只写 mock 或主观报告完成；持续实现、跑 Actions、取得真实证据并回写总控表，直到所有必需原子任务自动验收通过。"
     }
   ]
 }
