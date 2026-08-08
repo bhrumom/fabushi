@@ -1,0 +1,46 @@
+name: Mahayana GitHub Identity Probe
+
+on:
+  push:
+    branches:
+      - codex/mahayana-marketplace-cloudflare-v10
+    paths:
+      - '.github/workflows/mahayana-github-identity-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GHCR_PROBE_TOKEN: ${{ secrets.GHCR_TOKEN }}
+    steps:
+      - name: Report sanitized GitHub token identity capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GHCR_PROBE_TOKEN:-}" ]; then
+            echo 'ghcr_token_present=false'
+            exit 0
+          fi
+          response="$(curl --fail-with-body --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GHCR_PROBE_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/user)"
+          user_id="$(printf '%s' "$response" | jq -r '.id // 0')"
+          if [ "$user_id" = '222737880' ]; then
+            echo 'ghcr_token_identity_distinct=false'
+          else
+            echo 'ghcr_token_identity_distinct=true'
+          fi
+          echo "ghcr_token_user_id=${user_id}"
+          repo="$(curl --fail-with-body --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GHCR_PROBE_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/repos/bhrumom/mahayana-mcp-app-collaboration-v10)"
+          printf 'ghcr_token_repo_pull=%s\n' "$(printf '%s' "$repo" | jq -r '.permissions.pull // false')"
+          printf 'ghcr_token_repo_push=%s\n' "$(printf '%s' "$repo" | jq -r '.permissions.push // false')"
