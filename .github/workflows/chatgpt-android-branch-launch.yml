@@ -1,0 +1,29 @@
+name: Launch ChatGPT Android feature runner
+
+on:
+  push:
+    branches:
+      - fix/chatgpt-android-apkcombo-source
+    paths:
+      - '.github/workflows/chatgpt-android-branch-launch.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch feature-branch Android runner
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run chatgpt-android-apk-runner.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref fix/chatgpt-android-apkcombo-source \
+            -f account_id=default \
+            -f smoke_only=false \
+            -f continuous=true
