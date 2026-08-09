@@ -93,6 +93,40 @@ jobs:
           if-no-files-found: error
 
 
+  safe-source-snapshot:
+    name: v12 / T02.2 safe-source-snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run safe source snapshot assertions
+        run: node --test fabushi/web/tests/miniapp-safe-source-snapshot-contract.test.js
+      - name: Write evidence marker
+        run: |
+          mkdir -p .mahayana/evidence/v12
+          python3 - <<'PY2'
+          import json, os
+          from datetime import datetime, timezone
+          with open('.mahayana/evidence/v12/T02.2.json', 'w', encoding='utf-8') as f:
+              json.dump({
+                'taskId': 'T02.2',
+                'checkName': 'v12 / T02.2 safe-source-snapshot',
+                'commit': os.environ['GITHUB_SHA'],
+                'runUrl': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+                'assertions': ['secret rejection', 'unsafe path rejection', 'deterministic snapshot contract'],
+                'externalReceipts': [],
+                'completedAt': datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
+              }, f, indent=2)
+          PY2
+      - name: Upload T02.2 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-v12-T02.2-evidence
+          path: .mahayana/evidence/v12/T02.2.json
+          if-no-files-found: error
+
   managed-org-boundary:
     name: v12 / T01.2 managed-org-boundary
     runs-on: ubuntu-latest
