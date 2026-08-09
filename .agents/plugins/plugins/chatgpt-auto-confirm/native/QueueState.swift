@@ -8,8 +8,10 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v85"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v91"
 let defaultMaxTaskContinuations = 6
+let minimumAutomaticContinuationDelaySeconds = 30
+let repeatedIncompleteReportCircuitThreshold = 3
 let automaticApprovalWindowSeconds: TimeInterval = 120
 let maxAutomaticApprovalsPerWindow = 8
 let duplicateApprovalGraceSeconds: TimeInterval = 30

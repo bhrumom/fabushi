@@ -493,14 +493,34 @@ func monitorAutomationTask(
     task.updatedAt = now
     return
   }
-  guard var liveStatus = cdpValue(
-          port: port, targetId: targetId, expression: chatStatusJS(), timeout: 5.0) else {
+  let statusRead = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: chatStatusJS(),
+    timeout: 5.0
+  )
+  guard var liveStatus = statusRead.value else {
+    queueTrace(
+      "task=\(task.id) stage=monitor-cdp-failed read=chat-status "
+        + "port=\(port) target=\(targetId) "
+        + "error=\(statusRead.error ?? "unknown")"
+    )
     task.lastError = "queue_monitor_cdp_failed"
     task.updatedAt = isoFormatter.string(from: Date())
     return
   }
-  guard let reply = cdpValue(
-          port: port, targetId: targetId, expression: getReplyJS(), timeout: 6.0) else {
+  let replyRead = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: getReplyJS(),
+    timeout: 6.0
+  )
+  guard let reply = replyRead.value else {
+    queueTrace(
+      "task=\(task.id) stage=monitor-cdp-failed read=reply "
+        + "port=\(port) target=\(targetId) "
+        + "error=\(replyRead.error ?? "unknown")"
+    )
     task.lastError = "queue_monitor_cdp_failed"
     task.updatedAt = now
     return
@@ -513,12 +533,13 @@ func monitorAutomationTask(
     reply["userContent"] as? String ?? "",
   ].joined(separator: "\n")
   let hasCurrentDispatchMarker = currentPageContent.contains(dispatchMarker)
+  let terminalDecision = queueReplyTerminalDecision(reply)
   let replyIsActivelyResponding = reply["streaming"] as? Bool == true
     || reply["stopAvailable"] as? Bool == true
     || reply["waitingForApproval"] as? Bool == true
     || reply["devspaceWaiting"] as? Bool == true
   let replyIsPending = reply["pending"] as? Bool == true
-  let responseIsInFlight = replyIsActivelyResponding || replyIsPending
+  let responseIsInFlight = terminalDecision.responseIsInFlight
   let dispatchAge = task.startedAt
     .flatMap(isoFormatter.date(from:))
     .map { Date().timeIntervalSince($0) } ?? 0
@@ -740,11 +761,22 @@ func monitorAutomationTask(
   }
   let reportText = completedActivity.isEmpty ? visibleContent : completedActivity
   let parsedReport = parseTaskReport(reportText).flatMap(automationReport)
-  let terminalIncomplete = reply["terminalIncomplete"] as? Bool == true
-    || reply["explicitlyIncomplete"] as? Bool == true
-  let terminal = reply["done"] as? Bool == true
-    || reply["completionCandidate"] as? Bool == true
-    || terminalIncomplete
+  let terminalIncomplete = terminalDecision.terminalIncomplete
+  let terminal = terminalDecision.terminal
+  let hasClosedTaskReport = reply["hasClosedTaskReport"] as? Bool == true
+  if terminal, hasClosedTaskReport, parsedReport == nil {
+    queueTrace(
+      "task=\(task.id) stage=report-parse-failed action=blocked "
+        + "reason=closed_task_report_unparseable"
+    )
+    writeQueueConversationDiagnostic(task, finalReason: "task_report_parse_failed")
+    closeDedicatedAutomationTarget(task, state: state)
+    task.status = "blocked"
+    task.lastError = "task_report_parse_failed"
+    task.finishedAt = now
+    task.updatedAt = now
+    return
+  }
   if terminal, !automationTaskRevisionIsCurrent(task, report: parsedReport) {
     let currentRevision = max(1, task.currentRevision ?? 1)
     let appliedRevision = max(1, parsedReport?.appliedTaskRevision ?? task.appliedRevision ?? 1)
@@ -831,19 +863,15 @@ func monitorAutomationTask(
         )
       }
       // An active ChatGPT stream may legitimately spend a long time inside a
-      // connector. Never click Stop or close its renderer merely because no
-      // visible text changed; queue a separate fresh Chat while preserving the
-      // old response for a late completion.
+      // connector. Never click Stop or close its renderer, and never start a
+      // second Chat merely because visible text stopped changing. The current Chat
+      // remains authoritative until it reaches a real terminal state or an
+      // explicit transport/runtime recovery path takes over.
       task.lastError = activeStallError
       task.updatedAt = now
+      return
     }
-    // Preserve the unchanged Chat and start the continuation in a separate
-    // fresh Chat. The old renderer may still finish or receive a late result.
-    queueContinuation(
-      &task,
-      report: nil,
-      reason: responseIsInFlight ? "page_stalled_but_response_active" : "page_stalled"
-    )
+    queueContinuation(&task, report: nil, reason: "page_stalled")
   }
 }
 
