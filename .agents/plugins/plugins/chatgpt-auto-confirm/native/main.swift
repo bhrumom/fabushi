@@ -296,12 +296,16 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
       const controls = [...document.querySelectorAll(
         'button, [role="button"], [role="tab"], [aria-label]'
       )];
-      const labels = controls.map(element => normalize([
+      // Keep each label source independent. Electron controls commonly expose
+      // the same visible value through both innerText and textContent; joining
+      // them turns "Chat" into "Chat Chat" and "Try again" into
+      // "Try again Try again", defeating exact control recognition.
+      const labels = controls.flatMap(element => [
         element.innerText,
         element.textContent,
         element.getAttribute('aria-label'),
         element.getAttribute('title')
-      ].filter(Boolean).join(' ')));
+      ]).map(normalize).filter(Boolean);
       const exact = label => labels.some(value => value.toLowerCase() === label);
       const hasChat = exact('chat') || exact('聊天');
       const hasWork = exact('work') || exact('工作');
@@ -310,6 +314,10 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
       ) || '';
       const asksForLogin = /(^|\n)(log in|sign up|登录|登入|註冊|注册)(\n|$)/i.test(bodyText);
       const workComposer = !!document.querySelector('[data-codex-composer="true"]');
+      const retryAvailable = labels.some(value => {
+        const normalized = value.toLowerCase();
+        return normalized === 'try again' || normalized === '重试' || normalized === '再试一次';
+      }) && /oops|error|出错/i.test(bodyText);
       const appOrigin = location.protocol === 'app:';
       const bridge = !!window.electronBridge;
       const authenticated = appOrigin && bridge && !asksForLogin
@@ -324,6 +332,7 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
         hasWork,
         workComposer,
         currentMode: currentMode.slice(0, 160),
+        retryAvailable,
         bodyLength: bodyText.length,
         url: location.href,
         readyState: document.readyState
@@ -335,11 +344,41 @@ func actionsDesktopState(_ target: ActionsLoginTarget) -> [String: Any]? {
 }
 
 func actionsControllerShellIsReady(_ state: [String: Any]) -> Bool {
-  (state["appOrigin"] as? Bool ?? false)
-    && (state["bridge"] as? Bool ?? false)
-    && !(state["asksForLogin"] as? Bool ?? false)
-    && state["readyState"] as? String == "complete"
-    && (state["bodyLength"] as? Int ?? 0) > 50
+  state["authenticated"] as? Bool ?? false
+}
+
+@discardableResult
+func retryActionsDesktopTransientError(_ target: ActionsLoginTarget) -> Bool {
+  guard let retry = cdpValue(
+    port: target.port,
+    targetId: target.targetId,
+    expression: #"""
+    (() => {
+      const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const allowed = new Set(['try again', '重试', '再试一次']);
+      const label = node => normalize(
+        node.getAttribute('aria-label') || node.innerText || node.textContent
+          || node.getAttribute('title')
+      );
+      const button = [...document.querySelectorAll('button, [role="button"]')]
+        .find(node => allowed.has(label(node))
+          && !node.disabled
+          && node.getAttribute('aria-disabled') !== 'true');
+      if (!button) return { found: false };
+      const rect = button.getBoundingClientRect();
+      return {
+        found: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    })()
+    """#,
+    timeout: 4.0
+  ), retry["found"] as? Bool == true,
+     let x = (retry["x"] as? NSNumber)?.doubleValue,
+     let y = (retry["y"] as? NSNumber)?.doubleValue else { return false }
+  _ = CDPClient.activateTarget(target.targetId, portOverride: target.port)
+  return CDPClient.clickTarget(target.targetId, x: x, y: y, portOverride: target.port)
 }
 
 func base64URLDecodedData(_ value: String) -> Data? {
@@ -1325,6 +1364,11 @@ case "verify_chatgpt_login":
       if actionsControllerShellIsReady(controllerState) {
         controllerVerified = true
         break
+      }
+      if controllerState["retryAvailable"] as? Bool == true,
+         retryActionsDesktopTransientError(target) {
+        Thread.sleep(forTimeInterval: 2)
+        continue
       }
     }
     desktopTarget = actionsDesktopTarget() ?? desktopTarget

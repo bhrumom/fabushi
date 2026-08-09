@@ -1,0 +1,64 @@
+name: ChatGPT Android Controller
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/**'
+      - '.github/workflows/chatgpt-android-controller-test.yml'
+      - '.github/workflows/chatgpt-android-apk-runner.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.agents/plugins/plugins/chatgpt-android-controller/**'
+      - '.github/workflows/chatgpt-android-controller-test.yml'
+      - '.github/workflows/chatgpt-android-apk-runner.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: .agents/plugins/plugins/chatgpt-android-controller
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - run: bash -n scripts/avd-state.sh
+      - name: Verify hosted Android emulator runtime
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Android SDK root: $sdk_root"
+          test -d "$sdk_root"
+          sdkmanager_bin=$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/sdkmanager' -perm -u+x -print \
+            | sort -V | tail -n 1)
+          echo "sdkmanager: ${sdkmanager_bin:-missing}"
+          test -n "$sdkmanager_bin"
+          test -x "$sdkmanager_bin"
+          tools_bin=$(dirname "$sdkmanager_bin")
+          test -x "$tools_bin/avdmanager"
+          test -x "$sdk_root/platform-tools/adb"
+
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libpulse0
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          "$sdkmanager_bin" emulator
+
+          emulator_bin="$sdk_root/emulator/emulator"
+          test -x "$emulator_bin"
+          if ! emulator_version=$("$emulator_bin" -version 2>&1); then
+            printf '%s\n' "$emulator_version"
+            exit 1
+          fi
+
+          "$sdkmanager_bin" --version
+          "$sdk_root/platform-tools/adb" version | head -n 1
+          printf '%s\n' "$emulator_version" | head -n 1
