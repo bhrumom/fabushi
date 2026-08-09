@@ -2765,8 +2765,8 @@ func createHostedControllerQueueWorkerTarget(
   // primary renderer is the only Electron-backed surface guaranteed to
   // remain available. Reuse it only while no task is running, and mark it as
   // shared so task cleanup never closes ChatGPT's primary window.
-  guard runningOnGitHubActions(),
-        !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
+  let hosted = runningOnGitHubActions()
+  guard !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
         let controller = sharedChatController(&state) else {
     state.lastError = "hosted_controller_unavailable_or_busy"
     return nil
@@ -2798,7 +2798,7 @@ func createHostedControllerQueueWorkerTarget(
       refreshLifecycle: true
     )
     if lastPrepared?["ok"] as? Bool == true,
-       runtimeState == .visible || runtimeState == .hidden {
+       runtimeState == .hidden || (hosted && runtimeState == .visible) {
       state.backgroundAppPort = controller.port
       state.backgroundChatTargetId = controller.targetId
       state.backgroundProfilePath = controller.profilePath
@@ -3011,11 +3011,28 @@ func createIndependentQueueWorkerTarget(
   }
   // Reuse the authenticated ChatGPT desktop process and ask its official
   // prewarm service to create a fresh hidden app renderer.
-  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
-    return nil
+  if let worker = createQueueWorkerTarget(&state, reuseExisting: false) {
+    state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
+    return worker
   }
-  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
-  return worker
+  let prewarmError = state.lastError ?? "unknown"
+  queueTrace(
+    "worker-create stage=local-controller-fallback-begin "
+      + "prewarmError=\(prewarmError)"
+  )
+  if let controllerFallback = createHostedControllerQueueWorkerTarget(&state) {
+    queueTrace(
+      "worker-create stage=local-controller-fallback-complete "
+        + "target=\(controllerFallback.targetId)"
+    )
+    return controllerFallback
+  }
+  let fallbackError = state.lastError ?? "unknown"
+  state.lastError = "\(prewarmError); local_controller_fallback=\(fallbackError)"
+  queueTrace(
+    "worker-create stage=local-controller-fallback-failed error=\(fallbackError)"
+  )
+  return nil
 }
 
 func stopQueueWorker(_ state: inout PluginState) {
