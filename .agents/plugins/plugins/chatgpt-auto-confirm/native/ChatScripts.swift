@@ -487,17 +487,63 @@ func sendMessageJS(
         || text.includes('思考')
         || text.includes('extra high')
         || text.includes('极高')
-        || text.includes('额外高');
+        || text.includes('極高')
+        || text.includes('额外高')
+        || text.includes('額外高');
+    }
+
+    function desiredModelMentioned(value) {
+      const text = normalize(value).toLowerCase();
+      const exact = desiredModel.toLowerCase();
+      const withoutGPTPrefix = exact.replace(/^gpt[-\\s]*/, '');
+      return text.includes(exact)
+        || (withoutGPTPrefix.length > 0 && text.includes(withoutGPTPrefix));
+    }
+
+    function visibleModelEvidenceText() {
+      return visibleModelMenus()
+        .map(menu => normalize([
+          menu.textContent,
+          menu.getAttribute('aria-label'),
+          menu.getAttribute('title')
+        ].filter(Boolean).join(' ')))
+        .join(' ');
     }
 
     function quickChatSliderElements() {
       return [...document.querySelectorAll(
         '[data-reasoning-slider="true"], input[type="range"], [role="slider"], '
           + '[aria-valuenow], [aria-label*="of 5"], [aria-label*="adjust power"], '
-          + '[aria-label*="调整强度"]'
+          + '[aria-label*="调整强度"], [aria-label*="調整強度"], '
+          + '[aria-label*="共 5 项"], [aria-label*="共5项"], '
+          + '[aria-label*="共 5 項"], [aria-label*="共5項"]'
       )].filter((element, index, all) => {
         return element && all.indexOf(element) === index && visible(element);
       });
+    }
+
+    function quickChatIndexedState(element = null) {
+      const candidates = [
+        element,
+        ...quickChatSliderElements(),
+        document.activeElement
+      ].filter((item, index, all) => item && all.indexOf(item) === index);
+      for (const item of candidates) {
+        const text = normalize([
+          item.getAttribute?.('aria-label'),
+          item.getAttribute?.('aria-valuetext'),
+          item.textContent
+        ].filter(Boolean).join(' ')).toLowerCase();
+        const english = text.match(/(?:^|\\s)(\\d+)\\s*(?:of|\\/)\\s*(\\d+)(?:\\s|$)/i);
+        const chinese = text.match(/第\\s*(\\d+)\\s*[项項][，,\\s]*共\\s*(\\d+)\\s*[项項]/);
+        const match = english || chinese;
+        if (!match) continue;
+        const position = Number(match[1]);
+        const total = Number(match[2]);
+        if (!Number.isFinite(position) || !Number.isFinite(total) || total < 2) continue;
+        return {element: item, position, total, text};
+      }
+      return null;
     }
 
     function quickChatSliderState(element = null) {
@@ -507,16 +553,31 @@ func sendMessageJS(
         ...quickChatSliderElements()
       ].filter((item, index, all) => item && all.indexOf(item) === index);
       const slider = candidates.find(item => item.getAttribute('aria-valuenow') != null);
-      if (!slider) return null;
-      const now = Number(slider.getAttribute('aria-valuenow'));
-      const min = Number(slider.getAttribute('aria-valuemin'));
-      const max = Number(slider.getAttribute('aria-valuemax'));
+      if (slider) {
+        const now = Number(slider.getAttribute('aria-valuenow'));
+        const min = Number(slider.getAttribute('aria-valuemin'));
+        const max = Number(slider.getAttribute('aria-valuemax'));
+        return {
+          element: slider,
+          now: Number.isFinite(now) ? now : null,
+          min: Number.isFinite(min) ? min : null,
+          max: Number.isFinite(max) ? max : null,
+          ariaValueText: slider.getAttribute('aria-valuetext') || ''
+        };
+      }
+      // The localized ChatGPT 5.6 picker may expose only accessibility text
+      // such as "1 of 5" or "第 1 项，共 5 项" instead of aria-valuenow.
+      // Normalize that 1-based position to the same 0..max state used by the
+      // Radix slider path so Extra High remains the penultimate position.
+      const indexed = quickChatIndexedState(element);
+      if (!indexed) return null;
       return {
-        element: slider,
-        now: Number.isFinite(now) ? now : null,
-        min: Number.isFinite(min) ? min : null,
-        max: Number.isFinite(max) ? max : null,
-        ariaValueText: slider.getAttribute('aria-valuetext') || ''
+        element: indexed.element,
+        now: indexed.position - 1,
+        min: 0,
+        max: indexed.total - 1,
+        ariaValueText: indexed.text,
+        indexedOnly: true
       };
     }
 
@@ -530,7 +591,8 @@ func sendMessageJS(
       const sliderState = quickChatSliderState(keyboardTarget);
       // ChatGPT's five-position control is exposed as a 0..4 Radix slider;
       // Extra High is the penultimate position (the final one is Pro).
-      return sliderState?.max != null
+      return sliderState?.indexedOnly !== true
+        && sliderState?.max != null
         && sliderState?.now != null
         && sliderState.max >= 2
         && sliderState.now === sliderState.max - 1;
@@ -727,10 +789,20 @@ func sendMessageJS(
       // GPT-5.6 Sol reasoning menu. Require its strongest reasoning choice
       // before sending, while the task contract separately requires downstream
       // Codex/devspace execution to use GPT-5.6 Sol / Extra High.
+      const pickerEvidenceText = normalize([
+        pickerBefore,
+        selectedLabel,
+        visibleModelEvidenceText()
+      ].filter(Boolean).join(' ')).toLowerCase();
       const quickChatModelSurface = !!quickChatRoot()
-        || ['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'].some(label =>
-          selectedLabel === label || selectedLabel.startsWith(`${label} `)
-        );
+        || ['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '極高', '额外高', '額外高', '极速', '快速', '思考', '专业', '專業'].some(label =>
+          pickerEvidenceText.includes(label)
+        )
+        || pickerEvidenceText.includes('推理强度')
+        || pickerEvidenceText.includes('推理強度')
+        || pickerEvidenceText.includes('of 5')
+        || pickerEvidenceText.includes('共 5 项')
+        || pickerEvidenceText.includes('共5项');
       if (quickChatModelSurface) {
         let quickChatChoiceClicked = false;
         let quickChatKeyboardAttempts = 0;
@@ -770,10 +842,11 @@ func sendMessageJS(
             || selectedChoice(quickChatChoice);
           const initialKeyboardTarget = quickChatKeyboardTarget() || picker;
           const initialSliderState = quickChatSliderState(initialKeyboardTarget);
-          const desiredSliderSteps = initialSliderState?.max != null
-            && initialSliderState?.now != null
-            ? Math.max(0, Math.min(4, initialSliderState.max - 1 - initialSliderState.now))
-            : 4;
+          const desiredSliderSteps = initialSliderState?.indexedOnly === true
+            ? 6
+            : initialSliderState?.max != null && initialSliderState?.now != null
+              ? Math.max(0, Math.min(6, initialSliderState.max - 1 - initialSliderState.now))
+              : 6;
           for (let attempt = 0; attempt < desiredSliderSteps && !quickChatConfirmed; attempt += 1) {
             if (visibleModelMenus().length === 0) {
               picker = modelPickerButton();
@@ -897,6 +970,24 @@ func sendMessageJS(
           if (!selectedChoice(highChoice)) highChoice.click();
           highChoiceClicked = true;
           await sleep(350);
+        }
+
+        // New localized GPT-5.6 picker: the menu exposes the model and
+        // reasoning slider as a single composite row (for example
+        // "5.6 Sol 推理强度中") and no longer renders an Extra High button.
+        // Use the same keyboard interaction as the accessibility slider,
+        // but only confirm after the visible strength label changes.
+        if (!highChoiceClicked) {
+          const menuText = visibleModelEvidenceText().toLowerCase();
+          if (menuText.includes('推理强度') || menuText.includes('reasoning strength')) {
+            const target = quickChatKeyboardTarget() || picker;
+            for (let attempt = 0; attempt < 6 && !reasoningConfirmed; attempt += 1) {
+              dispatchQuickChatArrowRight(target);
+              await sleep(350);
+              const evidence = visibleModelEvidenceText().toLowerCase();
+              reasoningConfirmed = quickChatStrongMode(evidence);
+            }
+          }
         }
 
         picker = modelPickerButton();
@@ -1546,6 +1637,22 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       }
     }
     if (!button) {
+      const existingComposer = document.querySelector(
+        'textarea, [contenteditable="true"][role="textbox"], '
+          + '[contenteditable="true"][data-lexical-editor="true"]'
+      );
+      if (existingComposer && current) {
+        return {
+          ok: true,
+          continuationClicked: false,
+          existingBranch: true,
+          previousConversationId: current,
+          conversationId: current,
+          overflowOpened,
+          candidateControls: controls.map(label).filter(Boolean).slice(-20),
+          overflowCandidates
+        };
+      }
       return {
         ok: false,
         error: 'continue_in_new_task_button_not_found',
@@ -1741,7 +1848,8 @@ func getReplyJS() -> String {
       return visible(button) && [
         '完全访问', 'full access', 'allow', 'allow once',
         '允许', '允许一次', 'approve', 'approve once',
-        'confirm', '确认'
+        'confirm', '确认', '继续在此聊天', '继续聊天',
+        'continue in this chat', 'stay in this chat', 'continue here'
       ].includes(text);
     });
     const thinkingActive = !responseActionsComplete && !!latestThinking && (
@@ -1873,6 +1981,14 @@ func chatStatusJS() -> String {
   const textarea = scope.querySelector('#prompt-textarea')
     || document.querySelector('[contenteditable="true"]');
   const hasInput = !!textarea;
+  const normalize = value => (value || '').replace(/[\s\u21b5\u23ce]+/g, ' ').trim().toLowerCase();
+  const continueInChatButton = [...document.querySelectorAll('button, a, [role="button"]')]
+    .find(button => [
+      '继续在此聊天', '继续聊天', 'continue in this chat',
+      'stay in this chat', 'continue here'
+    ].includes(normalize(
+      button.innerText || button.textContent || button.getAttribute('aria-label')
+    )));
 
   const stopBtn = scope.querySelector('[data-testid="stop-button"]')
     || scope.querySelector('[aria-label="Stop streaming"]')
@@ -1993,9 +2109,10 @@ func chatStatusJS() -> String {
     streaming: streaming,
     mode: mode,
     chatMode: (!!quickChatRoot || currentChatGPTMode || chatModel || webChat)
-      && hasInput && !workComposer,
+      && (hasInput || !!continueInChatButton) && !workComposer,
     surface: (!!quickChatRoot || currentChatGPTMode || chatModel || webChat)
-      && hasInput && !workComposer ? 'chat' : 'not-chat',
+      && (hasInput || !!continueInChatButton) && !workComposer ? 'chat' : 'not-chat',
+    continueInChatPrompt: !!continueInChatButton,
     backgroundOnly: true,
     workerUsed: false,
     title: title || '',

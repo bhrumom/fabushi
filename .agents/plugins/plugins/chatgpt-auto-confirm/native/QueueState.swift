@@ -8,7 +8,7 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v91"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v92"
 let defaultMaxTaskContinuations = 6
 let minimumAutomaticContinuationDelaySeconds = 30
 let repeatedIncompleteReportCircuitThreshold = 3
@@ -392,6 +392,13 @@ func chatOnlyInstruction(_ value: String) -> String {
     .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+func taskSpecSourceList(_ task: AutomationTask) -> String {
+  guard let sources = task.specSources, !sources.isEmpty else {
+    return "（无外部规范文件）"
+  }
+  return sources.map { "- \($0)" }.joined(separator: "\n")
+}
+
 func automationTaskMessage(_ task: AutomationTask) -> String {
   let revision = max(1, task.appliedRevision ?? task.currentRevision ?? 1)
   let digest = task.appliedSpecDigest ?? task.specDigest ?? ""
@@ -416,13 +423,10 @@ func automationTaskMessage(_ task: AutomationTask) -> String {
     sections.append("当前规范摘要指纹：\(digest)")
   }
   if let sources = task.specSources, !sources.isEmpty {
-    sections.append("当前规范来源：\(sources.joined(separator: ", "))")
+    sections.append("当前规范文件（不要把正文复制进提示词；开始工作前通过当前 checkout 逐一读取，并以这些文件的实际内容为准）：\n\(sources.map { "- \($0)" }.joined(separator: "\n"))")
   }
   if let directive = task.pendingDirective, !directive.isEmpty {
     sections.append("本修订追加指令：\n\(directive)")
-  }
-  if let snapshot = task.specSnapshot, !snapshot.isEmpty {
-    sections.append("当前规范快照（以此内容为准）：\n\(snapshot)")
   }
   sections.append("完成和未完成机器报告都必须包含 task_id=\(task.id)、applied_task_revision=\(revision) 和 applied_spec_digest=\(digest)。缺少这些字段或使用旧修订的报告都不会被接受。")
   sections.append("任务发送轮次：\(task.attempts + 1)。")
@@ -457,8 +461,8 @@ func automationReviewMessage(
   被验收结果应用修订：\(report.appliedTaskRevision ?? task.appliedRevision ?? 1)
   被验收结果规范指纹：\(report.appliedSpecDigest ?? task.appliedSpecDigest ?? "")
 
-  最新规范快照：
-  \(task.specSnapshot ?? "（无外部规范快照）")
+  当前规范文件（不要把正文复制进提示词；请在当前 checkout 中逐一读取后验收）：
+  \(taskSpecSourceList(task))
 
   验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)
 
@@ -474,16 +478,43 @@ func startAutomationReview(
   _ task: inout AutomationTask,
   report: AutomationTaskReport,
   port: Int,
-  targetId: String
+  targetId: String,
+  state: PluginState
 ) -> Bool {
-  guard let prepared = prepareNewChatTarget(
-    port: port,
-    targetId: targetId,
-    timeout: 6.0,
-    allowBlankConversationReuse: true
-  ), prepared["ok"] as? Bool == true else {
+  guard let parentConversationId = normalizedConversationId(task.conversationId) else {
+    queueTrace("task=\(task.id) stage=review-branch failed reason=missing_parent_conversation")
     return false
   }
+  let restoration = restoreHiddenConversation(
+    port: port,
+    targetId: targetId,
+    conversationId: parentConversationId,
+    allowVisible: queueTargetStateIsUsableForQueue(
+      .visible,
+      workerMode: state.queueWorkerMode
+    )
+  )
+  guard restoration["ok"] as? Bool == true else {
+    queueTrace(
+      "task=\(task.id) stage=review-branch failed "
+        + "reason=parent_restore_failed error=\(restoration["error"] as? String ?? "unknown")"
+    )
+    return false
+  }
+  guard let prepared = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: continueInNewTaskJS(expectedConversationId: parentConversationId),
+    timeout: 35.0
+  ), prepared["ok"] as? Bool == true else {
+    queueTrace("task=\(task.id) stage=review-branch failed reason=branch_not_confirmed")
+    return false
+  }
+  queueTrace(
+    "task=\(task.id) stage=review-branch complete "
+      + "parentConversation=\(parentConversationId) "
+      + "conversation=\(prepared["conversationId"] as? String ?? "none")"
+  )
   let outbound = messageWithTaskReportContract(
     automationReviewMessage(task, report: report),
     taskId: task.id,

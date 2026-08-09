@@ -635,6 +635,28 @@ func syncLiveActionsCredentials(
   }
 }
 
+func captureLiveDesktopAccountCredentials() throws -> (auth: Data, cookies: Data) {
+  let authURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".codex/auth.json")
+  guard let auth = try? Data(contentsOf: authURL), accountAuthDataIsUsable(auth) else {
+    throw NSError(domain: "chatgpt-auto-confirm", code: 706,
+      userInfo: [NSLocalizedDescriptionKey: "当前桌面会话没有可用 Codex 凭据"])
+  }
+  guard let target = actionsDesktopTarget(),
+        let state = actionsDesktopState(target),
+        state["authenticated"] as? Bool == true else {
+    throw NSError(domain: "chatgpt-auto-confirm", code: 707,
+      userInfo: [NSLocalizedDescriptionKey: "当前 ChatGPT renderer 未登录"])
+  }
+  let cookies = CDPClient.allCookies(wsURLString: target.wsURL, timeout: 8.0)
+  guard !cookies.isEmpty,
+        let cookieData = try? JSONSerialization.data(withJSONObject: ["cookies": cookies], options: [.sortedKeys]) else {
+    throw NSError(domain: "chatgpt-auto-confirm", code: 708,
+      userInfo: [NSLocalizedDescriptionKey: "当前 renderer 没有可导出的 Cookie"])
+  }
+  return (auth, cookieData)
+}
+
 func accountStatusPayload(_ account: AccountRecord) -> [String: Any] {
   let hasAuth = accountAuthData(account) != nil
   let hasCookies = accountCookieData(account) != nil
@@ -1299,6 +1321,10 @@ case "queue_update":
         tasks[index].workerProfilePath = nil
         tasks[index].resultPath = nil
         tasks[index].report = nil
+        if let reviewConversationId = normalizedConversationId(tasks[index].reviewConversationId) {
+          tasks[index].conversationId = reviewConversationId
+          tasks[index].chatURL = "https://chatgpt.com/c/\(reviewConversationId)"
+        }
         tasks[index].reviewConversationId = nil
         tasks[index].reviewStatus = nil
         tasks[index].reviewReport = nil
@@ -1524,18 +1550,20 @@ case "account_sync":
   let waitSeconds = min(1_800, max(30, params["waitSeconds"] as? Int ?? 600))
   let startRunner = params["start"] as? Bool ?? true
   do {
-    // A profile created by an interrupted first-time login can still contain
-    // a valid Codex auth.json even when the Keychain write was interrupted.
-    // Use that file only as a local re-login seed; accountCommitSession still
-    // requires a fresh renderer cookie capture and atomically repopulates the
-    // Keychain before the account is considered synchronized.
-    guard let storedAuth = accountAuthData(account)
-      ?? (try? Data(contentsOf: accountCodexAuthURL(account))) else {
-      throw NSError(domain: "chatgpt-auto-confirm", code: 705, userInfo: [NSLocalizedDescriptionKey: "账号没有可恢复的 Codex 凭据，请重新登录。"])
-    }
+    // Always prefer the currently open ChatGPT desktop session. Do not
+    // bootstrap an expired isolated profile: doing that caused repeated
+    // Keychain prompts and stale account recovery loops.
+    let live = try captureLiveDesktopAccountCredentials()
+    try accountStoreCredentials(account, authData: live.auth, cookieData: live.cookies)
     try accountCreateDirectories(account)
-    try storedAuth.write(to: accountCodexAuthURL(account), options: .atomic)
-    let session = try accountCredentialSession(account, waitSeconds: waitSeconds, openLoginWindow: false)
+    try live.auth.write(to: accountCodexAuthURL(account), options: .atomic)
+    let session = AccountLoginSession(
+      account: account,
+      port: 0,
+      target: actionsDesktopTarget()!,
+      authData: live.auth,
+      cookieData: live.cookies
+    )
     accountCommitSession(session, label: account.label, startRunner: startRunner)
   } catch {
     output(["ok": false, "errorCode": "account_sync_failed", "message": "账号同步未完成；没有覆盖现有凭据。"], exitCode: 1)
@@ -1919,6 +1947,13 @@ case "queue_retry":
           stopQueueWorker(&state)
         }
       }
+      if let reviewConversationId = normalizedConversationId(tasks[index].reviewConversationId) {
+        // A review Chat is another branch of the same task. If recovery starts
+        // from that state, continue the branch chain from the latest review
+        // conversation rather than falling back to the older work branch.
+        tasks[index].conversationId = reviewConversationId
+        tasks[index].chatURL = "https://chatgpt.com/c/\(reviewConversationId)"
+      }
       if tasks[index].status != "queued", ["cancelled", "waiting", "blocked", "failed"].contains(tasks[index].status) {
         // An explicit operator retry is a fresh recovery budget. Keep the
         // checkout and audit history, but do not let an old continuation
@@ -2239,16 +2274,16 @@ case "send_and_watch":
     }
     selectedAccount = account
   } else {
-    selectedAccount = resolveAccount(nil)
+    // An omitted accountId means "continue with the already verified hidden
+    // instance", not "silently switch to the registry default". Switching
+    // profiles here changes the CDP port after chat_status has proved a
+    // specific process/target pair and can route the send to another app.
+    selectedAccount = nil
   }
   if let account = selectedAccount {
     state.backgroundProfilePath = account.profilePath
     state.backgroundCodexHomePath = account.codexHomePath
     state.backgroundAppPort = accountAvailableCDPPort()
-  } else if loadAccounts().isEmpty {
-    state.backgroundProfilePath = nil
-    state.backgroundCodexHomePath = nil
-    state.backgroundAppPort = nil
   }
   let prepared = ensureHiddenChatTarget(
     &state,
@@ -2413,6 +2448,29 @@ case "send_and_watch":
   Thread.sleep(forTimeInterval: 1.5)
 
   while Date() < deadline {
+    // ChatGPT may pause a coding-capable connector behind a routing prompt.
+    // The only safe choice for this worker is "Continue in this chat"; make
+    // that trusted CDP click before surface validation so the transient lack
+    // of a composer is not mistaken for a handoff to Work.
+    if let continuation = cdpEvaluateOnChatGPT(
+      autoConfirmChatContinuationJS(),
+      preferredURL: activeChatURL
+    ), continuation["clicked"] as? Bool == true,
+       let port = state.backgroundAppPort,
+       let targetId = state.backgroundChatTargetId {
+      _ = dispatchRecommendedCDPClick(
+        continuation,
+        port: port,
+        targetId: targetId
+      )
+      lastPageChangeAt = Date()
+      emitProgress([
+        "event": "continue_in_chat",
+        "backgroundOnly": true,
+        "workerUsed": false,
+      ])
+      Thread.sleep(forTimeInterval: 0.6)
+    }
     // The hidden renderer must remain on the real Chat surface for the whole
     // run. A handoff or navigation can otherwise expose a Work composer after
     // the initial send. Abort immediately; never approve or type on Work.
@@ -2545,7 +2603,7 @@ case "send_and_watch":
         recoveryAttempts += 1
         // Do not click Stop or close the unchanged Chat. Start the next round
         // directly; the old renderer remains available for a late completion.
-        var continuationPreparation = cdpEvaluateOnChatGPT(
+        let continuationPreparation = cdpEvaluateOnChatGPT(
           continueInNewTaskJS(
             expectedConversationId: normalizedConversationId(
               finalReply["conversationId"] as? String
@@ -2554,23 +2612,7 @@ case "send_and_watch":
           timeout: 35.0,
           preferredURL: activeChatURL
         ) ?? ["ok": false, "error": "continue_in_new_task_cdp_failed"]
-        var continuationMode = "continue_in_new_task"
-        if continuationPreparation["ok"] as? Bool != true,
-           let port = state.backgroundAppPort,
-           let targetId = state.backgroundChatTargetId,
-           var freshChat = prepareNewChatTarget(
-             port: port,
-             targetId: targetId,
-             timeout: 35.0,
-             allowBlankConversationReuse: false
-           ) {
-          continuationMode = "fresh_chat_fallback"
-          freshChat["fallbackFrom"] = continuationPreparation["error"] as Any
-          freshChat["previousConversationId"] = normalizedConversationId(
-            finalReply["conversationId"] as? String
-          ) as Any
-          continuationPreparation = freshChat
-        }
+        let continuationMode = "branch_in_new_chat"
         let recoveryResult: [String: Any]
         if continuationPreparation["ok"] as? Bool == true {
           recoveryResult = cdpEvaluateOnChatGPT(
@@ -2589,8 +2631,8 @@ case "send_and_watch":
           recoveryResult = [
             "ok": false,
             "error": continuationPreparation["error"]
-              ?? "new_chat_not_confirmed",
-            "failedStage": "new_chat",
+              ?? "same_task_branch_not_confirmed",
+            "failedStage": "branch_in_new_chat",
           ]
         }
         let recoveryEvent: [String: Any] = [

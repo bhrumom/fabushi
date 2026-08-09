@@ -298,12 +298,12 @@ func queueTargetStateIsUsableForQueue(
       && (
         workerMode == parallelDedicatedProcessQueueWorkerMode
           || workerMode == parallelHeadlessWindowQueueWorkerMode
-          // The hosted controller fallback deliberately borrows the primary
-          // renderer after proving it is a real Chat surface. GitHub Actions
-          // has no interactive user who can collide with that visible page,
-          // and shared mode prevents task cleanup from closing it.
-          || (runningOnGitHubActions()
-            && workerMode == sharedConversationQueueWorkerMode)
+          // The shared controller fallback deliberately borrows the primary
+          // renderer after proving it is a real Chat surface. It is reachable
+          // only when queueAllowsVisibleDedicatedRenderer() has been explicitly
+          // enabled (or on GitHub Actions), and shared mode prevents task
+          // cleanup from closing that borrowed renderer.
+          || workerMode == sharedConversationQueueWorkerMode
       )
   case .missing, .hiddenNonChat, .suspended:
     return false
@@ -323,6 +323,7 @@ func queueTargetRuntimeState(
   targetId: String,
   refreshLifecycle: Bool
 ) -> QueueTargetRuntimeState {
+  _ = resumeDedicatedProcessForPort(port)
   guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
     $0["id"] as? String == targetId
   }), let wsURL = target["webSocketDebuggerUrl"] as? String else {
@@ -342,14 +343,34 @@ func queueTargetRuntimeState(
     // Quick Chat is rendered above the existing Work page. The Work composer
     // remains mounted behind the overlay and must not disqualify the active
     // Quick Chat surface.
-    const currentChatGPTMode = !!window.__mahayanaConfirmedChatGPTMode;
+    const currentChatGPTMode = window.__mahayanaConfirmedChatGPTMode === true
+      || [...document.querySelectorAll('button, a, [role="button"]')]
+      .some(button => {
+        const label = [
+          button.innerText,
+          button.textContent,
+          button.getAttribute('aria-label'),
+          button.getAttribute('title')
+        ].filter(Boolean).join(' ').toLowerCase();
+        return label.includes('current mode: chatgpt')
+          || (label.includes('当前模式') && label.includes('chatgpt'));
+      });
     const workComposer = !quickChatRoot
       && !!document.querySelector('[data-codex-composer="true"]');
     const chatModel = [...document.querySelectorAll('button')].some(button => {
       const label = button.getAttribute('aria-label') || '';
       return label.includes('ChatGPT 模型') || /select chatgpt model/i.test(label);
     });
-    const chatMode = (!!quickChatRoot || chatModel || currentChatGPTMode)
+    const webChat = window.location.protocol === 'https:'
+      && window.location.hostname === 'chatgpt.com';
+    const chatMode = (
+      !!quickChatRoot
+        || !!document.querySelector('#prompt-textarea')
+        || chatModel
+        || currentChatGPTMode
+        || webChat
+        || window.location.protocol === 'chatgpt:'
+    )
       && !!textarea && !workComposer;
     return {
       bridge: !!window.electronBridge,
@@ -367,7 +388,8 @@ func queueTargetRuntimeState(
     expression: expression,
     timeout: 3.0
   )
-  if initial?["visibility"] as? String == "visible" {
+  if initial?["visibility"] as? String == "visible",
+     !dedicatedProcessIsHiddenForPort(port) {
     return .visible
   }
   if refreshLifecycle {
@@ -376,7 +398,8 @@ func queueTargetRuntimeState(
   let probe = refreshLifecycle
     ? cdpValue(port: port, targetId: targetId, expression: expression, timeout: 3.0)
     : initial
-  if probe?["visibility"] as? String == "visible" {
+  if probe?["visibility"] as? String == "visible",
+     !dedicatedProcessIsHiddenForPort(port) {
     return .visible
   }
   let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
@@ -384,7 +407,9 @@ func queueTargetRuntimeState(
   let href = probe?["href"] as? String ?? ""
   let eventLoopDelayMs = (probe?["eventLoopDelayMs"] as? NSNumber)?.doubleValue
     ?? Double.greatestFiniteMagnitude
-  if bridge && visibility == "hidden"
+  let rendererOwnedByHiddenProcess = visibility == "hidden"
+    || dedicatedProcessIsHiddenForPort(port)
+  if bridge && rendererOwnedByHiddenProcess
       && href.hasPrefix("app://-/index.html")
       && eventLoopDelayMs < 2_500 {
     let chatMode = (probe?["chatMode"] as? NSNumber)?.boolValue ?? false
@@ -880,57 +905,66 @@ func openBackgroundQueueWindow(
       let normalized = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       return normalized == "try again" || normalized == "重试" || normalized == "再试一次"
     } && (safeText.contains("oops") || safeText.contains("error") || safeText.contains("出错"))
-    if hasTransientError, transientErrorRetryCount < 3 {
-      let retry = cdpValue(
-        port: port,
-        targetId: targetId,
-        expression: """
-        (() => {
-          const normalize = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-          const allowed = new Set(['try again', '重试', '再试一次']);
-          const labelFor = node => normalize(
-            node.getAttribute('aria-label') || node.innerText || node.textContent
-              || node.getAttribute('title')
-          );
-          const button = [...document.querySelectorAll('button, [role="button"]')]
-            .find(node => allowed.has(labelFor(node))
-              && !node.disabled
-              && node.getAttribute('aria-disabled') !== 'true');
-          if (!button) return { found: false };
-          const label = labelFor(button);
-          const rect = button.getBoundingClientRect();
-          return {
-            found: true,
-            label,
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-          };
-        })()
-        """,
-        timeout: 4.0
+    if hasTransientError {
+      if transientErrorRetryCount < 3 {
+        let retry = cdpValue(
+          port: port,
+          targetId: targetId,
+          expression: """
+          (() => {
+            const normalize = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+            const allowed = new Set(['try again', '重试', '再试一次']);
+            const labelFor = node => normalize(
+              node.getAttribute('aria-label') || node.innerText || node.textContent
+                || node.getAttribute('title')
+            );
+            const button = [...document.querySelectorAll('button, [role="button"]')]
+              .find(node => allowed.has(labelFor(node))
+                && !node.disabled
+                && node.getAttribute('aria-disabled') !== 'true');
+            if (!button) return { found: false };
+            const label = labelFor(button);
+            const rect = button.getBoundingClientRect();
+            return {
+              found: true,
+              label,
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2
+            };
+          })()
+          """,
+          timeout: 4.0
+        )
+        let retryClicked: Bool
+        if retry?["found"] as? Bool == true,
+           let x = (retry?["x"] as? NSNumber)?.doubleValue,
+           let y = (retry?["y"] as? NSNumber)?.doubleValue {
+          retryClicked = CDPClient.clickTarget(
+            targetId,
+            x: x,
+            y: y,
+            portOverride: port
+          )
+        } else {
+          retryClicked = false
+        }
+        if retryClicked {
+          transientErrorRetryCount += 1
+          queueTrace(
+            "worker-create stage=prewarm-transient-error-retry "
+              + "attempt=\(transientErrorRetryCount) label=\(retry?["label"] as? String ?? "unknown")"
+          )
+          Thread.sleep(forTimeInterval: 2.0)
+          continue
+        }
+      }
+      failure = "prewarm_transient_error_persistent"
+      queueTrace(
+        "worker-create stage=prewarm-transient-error-failed "
+          + "attempts=\(transientErrorRetryCount)"
       )
-      let retryClicked: Bool
-      if retry?["found"] as? Bool == true,
-         let x = (retry?["x"] as? NSNumber)?.doubleValue,
-         let y = (retry?["y"] as? NSNumber)?.doubleValue {
-        retryClicked = CDPClient.clickTarget(
-          targetId,
-          x: x,
-          y: y,
-          portOverride: port
-        )
-      } else {
-        retryClicked = false
-      }
-      if retryClicked {
-        transientErrorRetryCount += 1
-        queueTrace(
-          "worker-create stage=prewarm-transient-error-retry "
-            + "attempt=\(transientErrorRetryCount) label=\(retry?["label"] as? String ?? "unknown")"
-        )
-        Thread.sleep(forTimeInterval: 2.0)
-        continue
-      }
+      _ = CDPClient.closeTarget(targetId, portOverride: port)
+      return nil
     }
     Thread.sleep(forTimeInterval: 0.1)
   }
@@ -1179,6 +1213,11 @@ func selectChatOnPrimaryController(
       expression: clickChatJS(),
       timeout: 4.0
     )
+    if selection?["nativeClickRecommended"] as? Bool == true,
+       let x = (selection?["x"] as? NSNumber)?.doubleValue,
+       let y = (selection?["y"] as? NSNumber)?.doubleValue {
+      _ = CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port)
+    }
     if selection?["alreadySelected"] as? Bool == true { return selection }
     if selection?["retryAfterModeSwitch"] as? Bool == true {
       Thread.sleep(forTimeInterval: 0.8)
@@ -1230,6 +1269,11 @@ func resetStaleChatModeIfNeeded(
       expression: clickCodexModeJS(),
       timeout: 5.0
     )
+    if codexSelection?["nativeClickRecommended"] as? Bool == true,
+       let x = (codexSelection?["x"] as? NSNumber)?.doubleValue,
+       let y = (codexSelection?["y"] as? NSNumber)?.doubleValue {
+      _ = CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port)
+    }
     if codexSelection?["dispatchOnly"] as? Bool == true { break }
     if codexSelection?["retryAfterModeSwitch"] as? Bool == true {
       Thread.sleep(forTimeInterval: 0.6)
@@ -1254,6 +1298,11 @@ func resetStaleChatModeIfNeeded(
       expression: clickChatJS(),
       timeout: 5.0
     )
+    if chatSelection?["nativeClickRecommended"] as? Bool == true,
+       let x = (chatSelection?["x"] as? NSNumber)?.doubleValue,
+       let y = (chatSelection?["y"] as? NSNumber)?.doubleValue {
+      _ = CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port)
+    }
     if chatSelection?["alreadySelected"] as? Bool == true { break }
     if chatSelection?["retryAfterModeSwitch"] as? Bool == true
         || chatSelection?["dispatchOnly"] as? Bool == true {
@@ -1763,10 +1812,25 @@ func launchDedicatedQueueChatProcess(
 }
 
 func hideDedicatedProcessForPort(_ port: Int) -> Bool {
+  guard let processID = dedicatedProcessIDForPort(port),
+        let application = NSRunningApplication(processIdentifier: processID) else {
+    return false
+  }
+  _ = application.hide()
+  for _ in 0..<20 {
+    if application.isHidden { return true }
+    Thread.sleep(forTimeInterval: 0.05)
+  }
+  return application.isHidden
+}
+
+func dedicatedProcessIDForPort(_ port: Int) -> pid_t? {
+  // Avoid piping the full process table and waiting before consuming it. On
+  // busy hosts that pipe can fill and deadlock the watcher indefinitely.
   let process = Process()
   let output = Pipe()
-  process.executableURL = URL(fileURLWithPath: "/bin/ps")
-  process.arguments = ["-axo", "pid=,command="]
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+  process.arguments = ["-f", "--", "--remote-debugging-port=\(port)"]
   process.standardInput = FileHandle.nullDevice
   process.standardOutput = output
   process.standardError = FileHandle.nullDevice
@@ -1774,36 +1838,62 @@ func hideDedicatedProcessForPort(_ port: Int) -> Bool {
     try process.run()
     process.waitUntilExit()
   } catch {
-    return false
+    return nil
   }
   guard let text = String(
     data: output.fileHandleForReading.readDataToEndOfFile(),
     encoding: .utf8
-  ) else { return false }
-  let portMarker = "--remote-debugging-port=\(port)"
-  for line in text.split(separator: "\n") {
-    guard line.contains(portMarker),
-          line.contains("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT") else {
-      continue
-    }
-    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
-    guard let first = fields.first, let processID = pid_t(String(first)) else { continue }
-    let script = "tell application \"System Events\" to set visible of first process whose unix id is \(processID) to false"
-    let hide = Process()
-    hide.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-    hide.arguments = ["-e", script]
-    hide.standardInput = FileHandle.nullDevice
-    hide.standardOutput = FileHandle.nullDevice
-    hide.standardError = FileHandle.nullDevice
+  ) else { return nil }
+  func parentProcessID(_ processID: pid_t) -> pid_t? {
+    let parentLookup = Process()
+    let parentOutput = Pipe()
+    parentLookup.executableURL = URL(fileURLWithPath: "/bin/ps")
+    parentLookup.arguments = ["-p", String(processID), "-o", "ppid="]
+    parentLookup.standardInput = FileHandle.nullDevice
+    parentLookup.standardOutput = parentOutput
+    parentLookup.standardError = FileHandle.nullDevice
     do {
-      try hide.run()
-      hide.waitUntilExit()
-      return hide.terminationStatus == 0
+      try parentLookup.run()
+      parentLookup.waitUntilExit()
+      let data = parentOutput.fileHandleForReading.readDataToEndOfFile()
+      let value = String(data: data, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      return pid_t(value)
     } catch {
-      return false
+      return nil
     }
   }
-  return false
+  for line in text.split(separator: "\n") {
+    guard let matchedProcessID = pid_t(
+      line.trimmingCharacters(in: .whitespacesAndNewlines)
+    ) else { continue }
+    // Electron exposes the debugging-port flag reliably on renderer children,
+    // but macOS pgrep may omit the app's main process even when `ps` shows the
+    // same argument there. Resolve the renderer's parent and validate it as the
+    // exact ChatGPT executable before using it as the dedicated GUI process.
+    for processID in [matchedProcessID, parentProcessID(matchedProcessID)].compactMap({ $0 }) {
+      guard let application = NSRunningApplication(processIdentifier: processID),
+            application.executableURL?.path == "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT" else {
+        continue
+      }
+      return processID
+    }
+  }
+  return nil
+}
+
+func dedicatedProcessIsHiddenForPort(_ port: Int) -> Bool {
+  guard let processID = dedicatedProcessIDForPort(port),
+        let application = NSRunningApplication(processIdentifier: processID) else {
+    return false
+  }
+  return application.isHidden
+}
+
+@discardableResult
+func resumeDedicatedProcessForPort(_ port: Int) -> Bool {
+  guard let processID = dedicatedProcessIDForPort(port) else { return false }
+  return kill(processID, SIGCONT) == 0
 }
 
 @discardableResult
@@ -2756,18 +2846,16 @@ func createHeadlessParallelQueueWorkerTarget(
   return nil
 }
 
-func createHostedControllerQueueWorkerTarget(
+func createSharedControllerQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
-  // The persistent Actions runner executes one queue task at a time. If the
-  // quick-chat service cannot create its hidden window after the real
-  // Work-to-Chat transition, the already authenticated
-  // primary renderer is the only Electron-backed surface guaranteed to
-  // remain available. Reuse it only while no task is running, and mark it as
-  // shared so task cleanup never closes ChatGPT's primary window.
-  guard runningOnGitHubActions(),
+  // A single-task runner may use the already authenticated primary renderer
+  // after an explicit headless/local opt-in. Reuse it only while no task is
+  // running, and mark it shared so cleanup never closes ChatGPT's primary
+  // window. Normal interactive desktop runs remain excluded.
+  guard (runningOnGitHubActions() || queueAllowsVisibleDedicatedRenderer()),
         !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
-        let controller = sharedChatController(&state) else {
+        var controller = sharedChatController(&state) else {
     state.lastError = "hosted_controller_unavailable_or_busy"
     return nil
   }
@@ -2780,6 +2868,13 @@ func createHostedControllerQueueWorkerTarget(
     port: controller.port,
     targetId: controller.targetId
   )
+  // A top-level Chat/Work transition can replace the Electron renderer. The
+  // old target may stay in /json briefly, but further Runtime.evaluate calls
+  // against it observe the stale Work shell. Re-discover the authenticated
+  // controller after every selection boundary before probing the composer.
+  if let refreshed = sharedChatController(&state) {
+    controller = refreshed
+  }
   var lastPrepared: [String: Any]?
   for _ in 0..<40 {
     let confirmedChatMode = selection?["alreadySelected"] as? Bool == true
@@ -2819,6 +2914,10 @@ func createHostedControllerQueueWorkerTarget(
         port: controller.port,
         targetId: controller.targetId
       )
+      Thread.sleep(forTimeInterval: 0.5)
+      if let refreshed = sharedChatController(&state) {
+        controller = refreshed
+      }
     }
     Thread.sleep(forTimeInterval: 0.35)
   }
@@ -2912,7 +3011,7 @@ func createIndependentQueueWorkerTarget(
         "worker-create stage=hosted-controller-fallback-begin "
           + "account=\(effectiveAccountId)"
       )
-      if let controllerFallback = createHostedControllerQueueWorkerTarget(&state) {
+      if let controllerFallback = createSharedControllerQueueWorkerTarget(&state) {
         queueTrace(
           "worker-create stage=hosted-controller-fallback-complete "
             + "account=\(effectiveAccountId) target=\(controllerFallback.targetId)"
@@ -2933,6 +3032,47 @@ func createIndependentQueueWorkerTarget(
     // profile and renderer; persistent hosted runs use the verified prewarm
     // path above.
     if queueAllowsVisibleDedicatedRenderer() && !runningOnGitHubActions() {
+      // The official quick-chat prewarm service is the only local path that
+      // guarantees Electron's preload bridge on a newly-created hidden
+      // BrowserWindow. Browser-level Target.createTarget can return a valid
+      // app:// document without electronBridge, so prefer prewarm whenever no
+      // other queue task is already using its single hidden window. Overlap
+      // still falls through to the isolated parallel-window implementation.
+      let hasRunningTask = (state.automationTasks ?? []).contains {
+        $0.status == "running"
+      }
+      if !hasRunningTask {
+        queueTrace(
+          "worker-create stage=local-prewarm-hidden-window-begin "
+            + "account=\(effectiveAccountId)"
+        )
+        if let worker = createQueueWorkerTarget(&state, reuseExisting: false) {
+          queueTrace(
+            "worker-create stage=local-prewarm-hidden-window-complete "
+              + "account=\(effectiveAccountId) target=\(worker.targetId)"
+          )
+          return worker
+        }
+        queueTrace(
+          "worker-create stage=local-prewarm-hidden-window-failed "
+            + "account=\(effectiveAccountId) error=\(state.lastError ?? "unknown")"
+        )
+        queueTrace(
+          "worker-create stage=local-controller-fallback-begin "
+            + "account=\(effectiveAccountId)"
+        )
+        if let controllerFallback = createSharedControllerQueueWorkerTarget(&state) {
+          queueTrace(
+            "worker-create stage=local-controller-fallback-complete "
+              + "account=\(effectiveAccountId) target=\(controllerFallback.targetId)"
+          )
+          return controllerFallback
+        }
+        queueTrace(
+          "worker-create stage=local-controller-fallback-failed "
+            + "account=\(effectiveAccountId) error=\(state.lastError ?? "unknown")"
+        )
+      }
       queueTrace(
         "worker-create stage=headless-parallel-hidden-window-begin "
           + "account=\(effectiveAccountId)"
@@ -3088,9 +3228,12 @@ func startAutomationTask(
   var targetId: String?
   var workerProfilePath: String?
   var taskOwnsTarget = false
-  let previousConversationId = (task.continuationDepth ?? 0) > 0
-    ? normalizedConversationId(task.conversationId)
-    : nil
+  // A task gets exactly one top-level Chat. Once a durable conversation exists,
+  // every later round for that same task (continuation, retry, revision, or
+  // review handoff) must branch from the latest task conversation. The
+  // continuation counter is only a retry budget; it must never decide whether
+  // an existing task is allowed to create another top-level Chat.
+  let previousConversationId = normalizedConversationId(task.conversationId)
   defer {
     if !taskOwnsTarget,
        state.queueWorkerMode != sharedConversationQueueWorkerMode,
@@ -3120,7 +3263,7 @@ func startAutomationTask(
   task.workerTargetId = nil
   task.workerProfilePath = nil
   queueTrace("task=\(task.id) stage=create-worker begin")
-  guard var worker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) else {
+  guard let worker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) else {
     let detail = state.lastError ?? "unknown"
     throw NSError(
       domain: "chatgpt-auto-confirm",
@@ -3134,7 +3277,7 @@ func startAutomationTask(
   port = worker.port
   targetId = worker.targetId
   workerProfilePath = worker.profilePath
-  if let previousConversationId, !preserveStalledChat {
+  if let previousConversationId {
     queueTrace(
       "task=\(task.id) stage=prepare-continuation begin "
         + "previousConversation=\(previousConversationId)"
@@ -3174,57 +3317,41 @@ func startAutomationTask(
         + "newConversation=\(prepared?["conversationId"] as? String ?? "none") "
         + "error=\(prepared?["error"] as? String ?? "none")"
     )
+    if prepared?["ok"] as? Bool != true, preserveStalledChat {
+      let firstError = prepared?["error"] as? String ?? "continuation_no_result"
+      queueTrace(
+        "task=\(task.id) stage=prepare-continuation branch-retry-after-stall "
+          + "reason=\(firstError)"
+      )
+      _ = cdpValue(
+        port: worker.port,
+        targetId: worker.targetId,
+        expression: stopCurrentResponseJS(),
+        timeout: 15.0
+      )
+      Thread.sleep(forTimeInterval: 0.8)
+      prepared = cdpValue(
+        port: worker.port,
+        targetId: worker.targetId,
+        expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
+        timeout: 35.0
+      )
+    }
     if prepared?["ok"] as? Bool != true {
       let continuationError = prepared?["error"] as? String ?? "continuation_no_result"
-      preparationFailure = continuationError
+      preparationFailure = "same_task_branch_not_confirmed:\(continuationError)"
       let screenshot = captureHiddenChatScreenshot(
         port: worker.port,
         targetId: worker.targetId,
-        label: "continuation-fallback"
+        label: "same-task-branch-failed"
       )
       queueTrace(
-        "task=\(task.id) stage=prepare-continuation fallback=new-chat "
+        "task=\(task.id) stage=prepare-continuation branch-required "
           + "reason=\(continuationError) "
-          + "screenshot=\(screenshot ?? "none")"
+          + "screenshot=\(screenshot ?? "none") "
+          + "action=retry-without-fresh-chat"
       )
-      let staleTargetId = worker.targetId
-      let stalePort = worker.port
-      let staleClosed = CDPClient.closeTarget(staleTargetId, portOverride: stalePort)
-      queueTrace(
-        "task=\(task.id) stage=prepare-continuation fallback=recreate-worker "
-          + "begin staleTarget=\(staleTargetId) closed=\(staleClosed)"
-      )
-      port = nil
-      targetId = nil
-      workerProfilePath = nil
-      if let replacement = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) {
-        worker = replacement
-        port = replacement.port
-        targetId = replacement.targetId
-        workerProfilePath = replacement.profilePath
-        queueTrace(
-          "task=\(task.id) stage=prepare-continuation fallback=recreate-worker "
-            + "complete target=\(replacement.targetId)"
-        )
-        if var fallback = prepareNewChatTarget(
-          port: replacement.port,
-          targetId: replacement.targetId,
-          timeout: 4.0,
-          allowBlankConversationReuse: true
-        ) {
-          fallback["continuationFallback"] = true
-          fallback["continuationFailure"] = continuationError
-          fallback["previousConversationId"] = previousConversationId
-          fallback["replacementTarget"] = true
-          prepared = fallback
-        } else {
-          preparationFailure = "continuation_fallback_new_chat_failed"
-          prepared = nil
-        }
-      } else {
-        preparationFailure = "continuation_fallback_worker_create_failed"
-        prepared = nil
-      }
+      prepared = nil
     }
   } else {
     if preserveStalledChat {
