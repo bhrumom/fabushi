@@ -15,32 +15,60 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GHCR_PROBE_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      OFFICIAL_SITE_RELEASE_PAT: ${{ secrets.OFFICIAL_SITE_RELEASE_PAT }}
+      VERSION_POLICY_AUTOMATION_TOKEN: ${{ secrets.VERSION_POLICY_AUTOMATION_TOKEN }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
     steps:
-      - name: Report sanitized GitHub token identity capability
+      - name: Report sanitized GitHub token identities and repository capabilities
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${GHCR_PROBE_TOKEN:-}" ]; then
-            echo 'ghcr_token_present=false'
-            exit 0
-          fi
-          response="$(curl --fail-with-body --silent --show-error \
-            -H 'Accept: application/vnd.github+json' \
-            -H "Authorization: Bearer ${GHCR_PROBE_TOKEN}" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            https://api.github.com/user)"
-          user_id="$(printf '%s' "$response" | jq -r '.id // 0')"
-          if [ "$user_id" = '222737880' ]; then
-            echo 'ghcr_token_identity_distinct=false'
-          else
-            echo 'ghcr_token_identity_distinct=true'
-          fi
-          echo "ghcr_token_user_id=${user_id}"
-          repo="$(curl --fail-with-body --silent --show-error \
-            -H 'Accept: application/vnd.github+json' \
-            -H "Authorization: Bearer ${GHCR_PROBE_TOKEN}" \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            https://api.github.com/repos/bhrumom/mahayana-mcp-app-collaboration-v10)"
-          printf 'ghcr_token_repo_pull=%s\n' "$(printf '%s' "$repo" | jq -r '.permissions.pull // false')"
-          printf 'ghcr_token_repo_push=%s\n' "$(printf '%s' "$repo" | jq -r '.permissions.push // false')"
+          probe_token() {
+            local label="$1"
+            local token="$2"
+            if [ -z "$token" ]; then
+              printf '%s_present=false\n' "$label"
+              return 0
+            fi
+            printf '%s_present=true\n' "$label"
+
+            local user_file repo_file user_status repo_status user_id login
+            user_file="$(mktemp)"
+            repo_file="$(mktemp)"
+            user_status="$(curl --silent --show-error --output "$user_file" --write-out '%{http_code}' \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${token}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              https://api.github.com/user || true)"
+            printf '%s_user_http=%s\n' "$label" "$user_status"
+            if [ "$user_status" != '200' ]; then
+              rm -f "$user_file" "$repo_file"
+              return 0
+            fi
+            user_id="$(jq -r '.id // 0' "$user_file")"
+            login="$(jq -r '.login // ""' "$user_file")"
+            printf '%s_user_id=%s\n' "$label" "$user_id"
+            printf '%s_login=%s\n' "$label" "$login"
+            if [ "$user_id" = '222737880' ]; then
+              printf '%s_identity_distinct=false\n' "$label"
+            else
+              printf '%s_identity_distinct=true\n' "$label"
+            fi
+
+            repo_status="$(curl --silent --show-error --output "$repo_file" --write-out '%{http_code}' \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${token}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              https://api.github.com/repos/bhrumom/mahayana-mcp-app-collaboration-v10 || true)"
+            printf '%s_repo_http=%s\n' "$label" "$repo_status"
+            if [ "$repo_status" = '200' ]; then
+              printf '%s_repo_pull=%s\n' "$label" "$(jq -r '.permissions.pull // false' "$repo_file")"
+              printf '%s_repo_push=%s\n' "$label" "$(jq -r '.permissions.push // false' "$repo_file")"
+              printf '%s_repo_admin=%s\n' "$label" "$(jq -r '.permissions.admin // false' "$repo_file")"
+            fi
+            rm -f "$user_file" "$repo_file"
+          }
+
+          probe_token official_site_release_pat "${OFFICIAL_SITE_RELEASE_PAT:-}"
+          probe_token version_policy_automation_token "${VERSION_POLICY_AUTOMATION_TOKEN:-}"
+          probe_token ghcr_token "${GHCR_TOKEN:-}"
