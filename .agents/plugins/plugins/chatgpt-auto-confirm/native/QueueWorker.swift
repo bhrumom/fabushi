@@ -472,6 +472,9 @@ func sharedChatController(
     (state.automationTasks ?? []).compactMap(\.workerTargetId)
       + [state.queueWorkerTargetId].compactMap { $0 }
   )
+  let mayReuseSerialSharedController =
+    state.queueWorkerMode == sharedConversationQueueWorkerMode
+      && !(state.automationTasks ?? []).contains(where: { $0.status == "running" })
   let discoveryStartedAt = Date()
   let discoveryDeadline = discoveryStartedAt.addingTimeInterval(30.0)
   var discoveryProbeAttempts = 0
@@ -496,7 +499,9 @@ func sharedChatController(
       guard target["type"] as? String == "page",
             (target["url"] as? String ?? "").hasPrefix("app://-/index.html"),
             let targetId = target["id"] as? String,
-            !queueOwnedTargetIds.contains(targetId) else { continue }
+            !queueOwnedTargetIds.contains(targetId)
+              || (mayReuseSerialSharedController
+                && targetId == state.queueWorkerTargetId) else { continue }
       discoveryProbeAttempts += 1
       let remaining = discoveryDeadline.timeIntervalSinceNow
       guard remaining > 0 else { break }
@@ -3151,11 +3156,39 @@ func createIndependentQueueWorkerTarget(
   }
   // Reuse the authenticated ChatGPT desktop process and ask its official
   // prewarm service to create a fresh hidden app renderer.
-  guard let worker = createQueueWorkerTarget(&state, reuseExisting: false) else {
-    return nil
+  if let worker = createQueueWorkerTarget(&state, reuseExisting: false) {
+    state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
+    return worker
   }
-  state.queueWorkerMode = parallelHiddenWindowQueueWorkerMode
-  return worker
+  let prewarmError = state.lastError ?? "unknown"
+  queueTrace(
+    "worker-create stage=unassigned-prewarm-worker-failed error=\(prewarmError)"
+  )
+
+  // Tasks imported before account routing was introduced may not have an
+  // accountId. They still run inside the already prepared, hidden ChatGPT
+  // controller. When the official quick-chat prewarm renderer lands on its
+  // transient error page, recover through that authenticated controller just
+  // like an explicitly assigned local task instead of failing before the
+  // fallback branch above can run.
+  if queueAllowsVisibleDedicatedRenderer() {
+    queueTrace("worker-create stage=unassigned-controller-fallback-begin")
+    if let controllerFallback = createSharedControllerQueueWorkerTarget(&state) {
+      queueTrace(
+        "worker-create stage=unassigned-controller-fallback-complete "
+          + "target=\(controllerFallback.targetId)"
+      )
+      return controllerFallback
+    }
+    let controllerError = state.lastError ?? "unknown"
+    state.lastError = "\(prewarmError); unassigned_controller_fallback=\(controllerError)"
+    queueTrace(
+      "worker-create stage=unassigned-controller-fallback-failed error=\(controllerError)"
+    )
+  } else {
+    state.lastError = prewarmError
+  }
+  return nil
 }
 
 func stopQueueWorker(_ state: inout PluginState) {

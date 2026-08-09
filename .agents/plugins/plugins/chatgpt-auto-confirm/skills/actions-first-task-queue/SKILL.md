@@ -1,17 +1,19 @@
 ---
 name: actions-first-task-queue
-description: Run long-lived coding, GitHub release, deployment, or plugin-marketplace tasks through the Chat task queue with GitHub Actions as the only place for project tests, builds, packaging, installation, and artifact validation. Use when a task must avoid local resource use, skip unrelated large files, recover from repeated blockers, wait for external jobs, or continue automatically in a new Chat.
+description: "Run long-lived coding, release, deployment, or plugin-marketplace tasks through the Chat task queue. Build and test where the queue is running: local queues use the local checkout and local toolchain; GitHub Actions queues build and test only inside Actions. Use when work must recover from blockers, wait for external jobs, or continue automatically in a new Chat."
 ---
 
-# Actions-First Task Queue
+# Location-Aware Task Queue
 
 Use the `chatgpt-auto-confirm` queue as the controller. Send work and independent acceptance to fresh **Chat** conversations only; do not use a Work/worker page as a fallback. One queue-owned ChatGPT process creates an isolated hidden Chat for each running task. Tasks without dependency or resource-lock conflicts may run concurrently; page actions remain isolated inside their owning hidden Chat.
 
-## Run work remotely
+## Build and test where the controller runs
 
-- Make GitHub Actions the source of truth for every project test, build, package, install check, release artifact, and deployment verification.
-- Do not run project test/build/package/install commands, dependency downloads, or artifact-producing commands locally. Local work is limited to reading code plus Git and `gh` metadata needed to prepare or inspect the remote run.
-- Add or repair workflow configuration when the required remote validation does not exist, then push and inspect the resulting Action run, logs, checks, and artifacts.
+- When the queue controller and target checkout are running locally, run the required tests, builds, packaging, install checks, and runtime replacement locally. Do not send a local build to GitHub Actions merely because a workflow exists.
+- When the queue controller is running inside GitHub Actions, keep project tests, builds, packaging, install checks, artifacts, and deployment verification inside that Actions run. Do not move them onto a user's machine.
+- Use GitHub Actions as the source of truth for releases, deployments, protected-branch checks, cloud credentials, or acceptance evidence that inherently belongs to GitHub, regardless of where the controller runs.
+- Detect execution location from the actual runtime (`GITHUB_ACTIONS=true` for Actions), not from the task's repository hosting or connector name.
+- Add or repair workflow configuration only when cloud validation is genuinely required or the controller is already running in Actions.
 
 ## Route connectors and recover connectivity
 

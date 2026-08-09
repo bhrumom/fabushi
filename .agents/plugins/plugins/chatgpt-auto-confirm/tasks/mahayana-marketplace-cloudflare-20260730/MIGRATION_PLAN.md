@@ -1,5 +1,7 @@
 # 迁移计划：全面切换到 MCP Apps
 
+> v12.2 范围说明：本文件中的 Cloudflare Worker 步骤只适用于选择远程 Cloudflare runtime 的项目；local-only 和 GitHub Pages 静态项目不创建 Worker。新增本地 Workspace、双 GitHub 源码路径和部署路由按 `LOCAL_GENERATION_GITHUB_DEPLOYMENT.md` 与 `EXECUTION_TASKS_V12.md` 实施。
+
 ## 1. 原则
 
 - 不运行期双栈；

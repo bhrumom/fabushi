@@ -8,13 +8,14 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v92"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v95"
 let defaultMaxTaskContinuations = 6
 let minimumAutomaticContinuationDelaySeconds = 30
 let repeatedIncompleteReportCircuitThreshold = 3
 let automaticApprovalWindowSeconds: TimeInterval = 120
 let maxAutomaticApprovalsPerWindow = 8
 let duplicateApprovalGraceSeconds: TimeInterval = 30
+let maxAutomaticApprovalAttemptsPerFingerprint = 3
 let retainedApprovalFingerprintCount = 100
 
 func prunedAutomaticApprovalTimestamps(
@@ -36,6 +37,7 @@ func approvalFingerprint(_ detection: [String: Any]?) -> String? {
 func recordHandledApprovalFingerprint(
   _ fingerprint: String,
   fingerprints: inout [String]?,
+  fingerprintAttempts: inout [String: Int]?,
   timestamps: inout [String]?,
   lastFingerprint: inout String?,
   lastApprovedAt: inout String?,
@@ -45,6 +47,10 @@ func recordHandledApprovalFingerprint(
   handled.removeAll { $0 == fingerprint }
   handled.append(fingerprint)
   fingerprints = Array(handled.suffix(retainedApprovalFingerprintCount))
+  var attempts = fingerprintAttempts ?? [:]
+  attempts[fingerprint] = (attempts[fingerprint] ?? 0) + 1
+  attempts = attempts.filter { handled.contains($0.key) }
+  fingerprintAttempts = attempts
   var recent = prunedAutomaticApprovalTimestamps(timestamps, now: now)
   let timestamp = isoFormatter.string(from: now)
   recent.append(timestamp)
@@ -831,6 +837,26 @@ func startQueueWatcher(_ state: inout PluginState) throws {
   var environment = ProcessInfo.processInfo.environment
   environment["CHATGPT_AUTO_CONFIRM_STATE"] = queueStateURL().path
   environment["CHATGPT_AUTO_CONFIRM_QUEUE_STATE"] = queueStateURL().path
+  // A local queue watcher is allowed to reuse its controller only when the
+  // general confirmer has already proved that exact renderer is hidden. This
+  // carries the safety decision into the detached watcher automatically, so
+  // local queue retries do not depend on callers remembering a HEADLESS env.
+  let approvalState = generalApprovalStateForQueue()
+  let backgroundPort = state.backgroundAppPort ?? approvalState?.backgroundAppPort
+  let backgroundTargetId = state.backgroundChatTargetId
+    ?? approvalState?.backgroundChatTargetId
+  let verifiedBackgroundController = approvalState?.enabled == true
+    && approvalState?.backgroundAppPort == backgroundPort
+    && approvalState?.backgroundChatTargetId == backgroundTargetId
+    && approvalState?.backgroundProfilePath != nil
+  if let backgroundPort, let backgroundTargetId,
+     verifiedBackgroundController,
+     CDPClient.fetchTargets(portOverride: backgroundPort).contains(where: {
+       $0["id"] as? String == backgroundTargetId
+         && ($0["url"] as? String ?? "").hasPrefix("app://-/index.html")
+     }) {
+    environment["CHATGPT_AUTO_CONFIRM_HEADLESS"] = "1"
+  }
   process.environment = environment
   try process.run()
   state.queueWatcherPid = process.processIdentifier

@@ -1,5 +1,30 @@
 # UI/UX：MCP Apps-only 小程序发布、市场与运行
 
+> v12.2 纠偏：用户首先看到本地生成和运行体验；GitHub 与 Cloudflare 都不是生成前置条件。源码目标和网页运行目标必须分步说明，完整流程见 `LOCAL_GENERATION_GITHUB_DEPLOYMENT.md`。
+
+## 0. AI 生成与首次上线
+
+AI 生成/修改完成后默认显示：
+
+```text
+✓ 已保存到本地
+[运行] [继续修改] [上线]
+```
+
+点击“上线”才展示：
+
+```text
+源码保存到哪里？
+● 法布施托管（推荐，无需 GitHub 账号）
+○ 我的 GitHub（GitHub 官方连接器）
+
+网页运行
+● 自动选择（显示 Pages / Cloudflare / 仅本地及原因）
+○ 暂不部署网页
+```
+
+公开源码、启用 GitHub Pages、切换 owner 和提交市场审核分别需要明确同意。错误页首先确认“本地代码仍安全”，再给出重试、切换目标或继续本地。
+
 ## 1. 用户认知
 
 用户看到的是“小程序”，不需要理解 MCP transport、Cloudflare Worker 或旧协议。所有小程序都使用同一种 MCP Apps 体验，不展示“旧版/新版运行模式”切换。
@@ -19,6 +44,8 @@
 
 ```bash
 mahayana plugin init
+mahayana plugin run
+mahayana plugin deploy
 mahayana plugin test
 mahayana plugin publish --stage
 mahayana plugin release
@@ -70,10 +97,10 @@ mahayana plugin revoke <version>
 
 ```text
 1/9 验证账号与插件身份
-2/9 验证 GitHub OIDC
+2/9 验证源码仓库与 GitHub OIDC（正式发布时）
 3/9 构建 MCP App
 4/9 扫描依赖和 Secret
-5/9 部署 stateless Cloudflare Worker
+5/9 按计划部署 GitHub Pages / Cloudflare / 外部目标（或跳过网页部署）
 6/9 验证 legacy: reject
 7/9 验证 ui://、AppBridge、sandbox 与 CSP
 8/9 生成 provenance、SHA 和签名输入
