@@ -48,49 +48,6 @@ func messageWithTaskReportContract(
     )
 }
 
-func parseTaskReport(_ content: String) -> [String: Any]? {
-  guard let start = content.range(of: "MAHAYANA_TASK_REPORT_V1_BEGIN", options: .backwards),
-        let end = content.range(of: "MAHAYANA_TASK_REPORT_V1_END", range: start.upperBound..<content.endIndex),
-        start.upperBound <= end.lowerBound else { return nil }
-  var raw = String(content[start.upperBound..<end.lowerBound])
-    .trimmingCharacters(in: .whitespacesAndNewlines)
-  if raw.hasPrefix("```json") { raw.removeFirst(7) }
-  else if raw.hasPrefix("```") { raw.removeFirst(3) }
-  if raw.hasSuffix("```") { raw.removeLast(3) }
-  raw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-  guard let data = raw.data(using: .utf8),
-        let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        report["protocol"] as? String == "mahayana.task-report.v1",
-        let taskId = report["task_id"] as? String,
-        !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        let appliedRevision = report["applied_task_revision"] as? Int,
-        appliedRevision >= 1,
-        let appliedDigest = report["applied_spec_digest"] as? String,
-        !appliedDigest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        let status = report["status"] as? String,
-        ["complete", "incomplete", "blocked"].contains(status),
-        report["summary"] is String,
-        let completed = report["completed"] as? [String],
-        let remaining = report["remaining"] as? [String],
-        let blockers = report["blockers"] as? [String],
-        report["verification"] is [String],
-        let nextTask = report["next_task"] as? String,
-        completed.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-        remaining.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-        blockers.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-    return nil
-  }
-  let waitSeconds = report["wait_seconds"] as? Int ?? 0
-  guard (0...604_800).contains(waitSeconds) else { return nil }
-  if status == "complete" {
-    guard remaining.isEmpty, blockers.isEmpty,
-          nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-  } else {
-    guard !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-  }
-  return report
-}
-
 func continuationFromTaskReport(
   _ report: [String: Any], originalGoal: String, iteration: Int
 ) -> String {
@@ -1738,6 +1695,7 @@ func getReplyJS() -> String {
       moreActions: hasResponseControl([
         /^more actions(?:\s|$)/,
         /^more(?:\s|$)/,
+        /^显示更多(?:\s|$)/,
         /^更多(?:操作|动作)?(?:\s|$)/,
       ]),
       like: hasResponseControl([
@@ -1745,12 +1703,14 @@ func getReplyJS() -> String {
         /^good response(?:\s|$)/,
         /^喜欢(?:\s|$)/,
         /^好的回答(?:\s|$)/,
+        /^回复优秀(?:\s|$)/,
       ]),
       dislike: hasResponseControl([
         /^dislike(?:\s|$)/,
         /^bad response(?:\s|$)/,
         /^不喜欢(?:\s|$)/,
         /^不好的回答(?:\s|$)/,
+        /^回复不佳(?:\s|$)/,
       ]),
     };
     const responseActionsComplete = responseActions.copy
@@ -1851,14 +1811,13 @@ func getReplyJS() -> String {
       && userMessageCount > 0
       && completedActivity.length > 0
       && !toolOnlyCompletedActivity
-      && !explicitlyIncomplete
-      && (explicitFinalResult || structuredComplete);
+      && (structuredComplete || (!explicitlyIncomplete && explicitFinalResult));
     const terminalIncomplete = (!active || hasClosedTaskReport)
       && !waitingForApproval
       && !stopBtn
       && responseActionsComplete
       && userMessageCount > 0
-      && (structuredIncomplete || explicitlyIncomplete)
+      && (structuredIncomplete || (!hasClosedTaskReport && explicitlyIncomplete))
       && (hasClosedTaskReport || done || (!!latestCompletedThinking && completedActivity.length > 0));
     const visibleContent = done ? content : '';
 
@@ -1996,7 +1955,7 @@ func chatStatusJS() -> String {
   const activeRowConversationIds = [];
   if (activeRow) {
     const hrefMatch = activeRow.getAttribute('href')
-      ?.match(/\\/(?:c|work\\/conversation)\\/([^/?#]+)/);
+      ?.match(/\/(?:c|work\/conversation)\/([^/?#]+)/);
     if (hrefMatch) activeRowConversationIds.push(decodeURIComponent(hrefMatch[1]));
     const fiberKey = Object.keys(activeRow).find(key => key.startsWith('__reactFiber$'));
     let fiber = fiberKey ? activeRow[fiberKey] : null;

@@ -41,6 +41,14 @@ const renderInterpolatedSwiftScript = (script, expected) => script
   .replace('\\(expected)', JSON.stringify(expected))
   .replaceAll('\\\\', '\\');
 
+const queueMonitoringSource = readFileSync(
+  new URL('../native/QueueMonitoring.swift', import.meta.url),
+  'utf8',
+);
+const queueTerminalDecisionSource = readFileSync(
+  new URL('../native/QueueTerminalDecision.swift', import.meta.url),
+  'utf8',
+);
 const nativeDirectory = new URL('../native/', import.meta.url);
 const nativeSource = readdirSync(nativeDirectory)
   .filter(name => name.endsWith('.swift'))
@@ -292,6 +300,26 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /toolOnlyCompletedActivity/);
   assert.match(nativeSource, /explicitlyIncomplete/);
   assert.match(nativeSource, /terminalIncomplete/);
+  assert.match(
+    queueTerminalDecisionSource,
+    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true\s+let terminalEvidence =/,
+  );
+  assert.doesNotMatch(
+    queueTerminalDecisionSource,
+    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true\s*\|\|\s*reply\["explicitlyIncomplete"\]/,
+  );
+  assert.match(
+    queueTerminalDecisionSource,
+    /terminal: !responseIsInFlight && terminalEvidence/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /let responseIsInFlight = terminalDecision\.responseIsInFlight/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /if responseIsInFlight \{[\s\S]*page_stalled_but_response_active[\s\S]*return\s*\}\s*queueContinuation\(&task, report: nil, reason: "page_stalled"\)/,
+  );
   assert.match(nativeSource, /chat_finished_incomplete/);
   assert.match(nativeSource, /MAHAYANA_TASK_REPORT_V1_BEGIN/);
   assert.match(nativeSource, /hasClosedTaskReport/);
@@ -304,7 +332,18 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /liveSurface\["chatMode"\]/);
   assert.match(nativeSource, /never approve or type on Work/);
   assert.match(nativeSource, /explicitFinalResult/);
-  assert.match(nativeSource, /&& !explicitlyIncomplete\s*&& \(explicitFinalResult \|\| structuredComplete\)/);
+  assert.match(
+    nativeSource,
+    /&& \(structuredComplete \|\| \(!explicitlyIncomplete && explicitFinalResult\)\)/,
+  );
+  assert.match(
+    nativeSource,
+    /structuredIncomplete \|\| \(!hasClosedTaskReport && explicitlyIncomplete\)/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /if terminal, hasClosedTaskReport, parsedReport == nil \{[\s\S]*stage=report-parse-failed action=blocked[\s\S]*task\.status = "blocked"[\s\S]*task\.lastError = "task_report_parse_failed"[\s\S]*return/,
+  );
   assert.match(nativeSource, /尚未\.\{0,12\}完成/);
   assert.match(nativeSource, /Date\(\)\.timeIntervalSince\(candidateSince\) >= 4\.0/);
   assert.doesNotMatch(nativeSource,
@@ -480,6 +519,18 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
   assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
   assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
+  assert.match(nativeSource, /dedicatedTaskWorkerProcessRecords/);
+  assert.match(nativeSource, /profileTail\.range\(of: " --"\)/);
+  assert.doesNotMatch(nativeSource, /profileTail\.prefix \{ !\$0\.isWhitespace \}/);
+  assert.match(nativeSource, /processReservedPorts/);
+  assert.match(nativeSource, /dedicated-process-bootstrap-launchservices/);
+  assert.match(
+    nativeSource,
+    /bootstrapAttempt == 1[\s\S]*launchDedicatedQueueChatProcess\([\s\S]*else \{[\s\S]*launchDedicatedQueueChatProcessViaLaunchServices/,
+  );
+  assert.match(nativeSource, /dedicated-process-terminate-force/);
+  assert.match(nativeSource, /dedicated-process-terminated/);
+  assert.match(nativeSource, /dedicated-process-terminate-failed/);
   assert.match(nativeSource, /let shouldNavigate = \(/);
   assert.match(nativeSource, /ready == "complete"/);
   assert.match(nativeSource, /setHiddenPageFocusEmulation/);

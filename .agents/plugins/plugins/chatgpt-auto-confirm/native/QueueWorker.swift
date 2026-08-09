@@ -1277,8 +1277,62 @@ func resetStaleChatModeIfNeeded(
   )
 }
 
+func dedicatedTaskWorkerProcessRecords() -> [(pid: pid_t, profilePath: String, port: Int)] {
+  let process = Process()
+  let output = Pipe()
+  process.executableURL = URL(fileURLWithPath: "/bin/ps")
+  process.arguments = ["-axo", "pid=,command="]
+  process.standardInput = FileHandle.nullDevice
+  process.standardOutput = output
+  process.standardError = FileHandle.nullDevice
+  do {
+    try process.run()
+    process.waitUntilExit()
+  } catch {
+    return []
+  }
+  guard let text = String(
+    data: output.fileHandleForReading.readDataToEndOfFile(),
+    encoding: .utf8
+  ) else { return [] }
+
+  let executableMarker = "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
+  let workerMarker = "/task-queue/workers/"
+  var records: [(pid: pid_t, profilePath: String, port: Int)] = []
+  for lineSlice in text.split(separator: "\n") {
+    let line = String(lineSlice)
+    guard line.contains(executableMarker), line.contains(workerMarker) else { continue }
+    let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+    guard let first = fields.first, let pid = pid_t(String(first)) else { continue }
+    guard let profileRange = line.range(of: "--user-data-dir=") else { continue }
+    let profileStart = profileRange.upperBound
+    let profileTail = line[profileStart...]
+    // `ps` prints the command line without preserving argv boundaries, and the
+    // macOS Application Support path contains spaces.  Stop at the next long
+    // option instead of the first whitespace so worker processes can be found
+    // and terminated before a bootstrap retry.
+    let profilePath: String
+    if let nextArgument = profileTail.range(of: " --") {
+      profilePath = String(profileTail[..<nextArgument.lowerBound])
+    } else {
+      profilePath = String(profileTail)
+    }
+    guard profilePath.contains(workerMarker) else { continue }
+    guard let portRange = line.range(of: "--remote-debugging-port=") else { continue }
+    let portStart = portRange.upperBound
+    let portTail = line[portStart...]
+    let portText = String(portTail.prefix { $0.isNumber })
+    guard let port = Int(portText) else { continue }
+    records.append((pid: pid, profilePath: profilePath, port: port))
+  }
+  return records
+}
+
 func dedicatedQueueWorkerPort() -> Int? {
-  for port in 9330..<9380 where CDPClient.fetchTargets(portOverride: port).isEmpty {
+  let processReservedPorts = Set(dedicatedTaskWorkerProcessRecords().map(\.port))
+  for port in 9330..<9380
+    where !processReservedPorts.contains(port)
+      && CDPClient.fetchTargets(portOverride: port).isEmpty {
     return port
   }
   return nil
@@ -2112,11 +2166,29 @@ func createDedicatedParallelQueueWorkerTarget(
       "worker-create stage=dedicated-process-launch begin "
         + "port=\(port) attempt=\(bootstrapAttempt)"
     )
-    let launched = launchDedicatedQueueChatProcess(
-      profilePath: profilePath,
-      port: port,
-      codexHomePath: codexHomePath
-    )
+    let launched: Bool
+    if bootstrapAttempt == 1 {
+      launched = launchDedicatedQueueChatProcess(
+        profilePath: profilePath,
+        port: port,
+        codexHomePath: codexHomePath
+      )
+    } else {
+      // A direct Electron launch can expose app:// targets without attaching
+      // ChatGPT's preload bridge. Retrying the exact same launch path simply
+      // reproduces that broken shell. After the failed worker is fully gone,
+      // make the bounded second attempt through LaunchServices so macOS runs
+      // the normal application bootstrap and preload lifecycle.
+      queueTrace(
+        "worker-create stage=dedicated-process-bootstrap-launchservices "
+          + "port=\(port) attempt=\(bootstrapAttempt)"
+      )
+      launched = launchDedicatedQueueChatProcessViaLaunchServices(
+        profilePath: profilePath,
+        port: port,
+        codexHomePath: codexHomePath
+      )
+    }
     if launched, let candidate = dedicatedQueueChatTarget(port: port) {
       targetId = candidate
       break
@@ -3331,19 +3403,63 @@ func startAutomationTask(
 
 func terminateDedicatedChatProcess(profilePath: String) {
   guard profilePath.contains("/task-queue/workers/") else { return }
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-  process.arguments = ["-TERM", "-f", "--user-data-dir=\(profilePath)"]
-  process.standardInput = FileHandle.nullDevice
-  process.standardOutput = FileHandle.nullDevice
-  process.standardError = FileHandle.nullDevice
-  try? process.run()
-  process.waitUntilExit()
+
+  func matchingProcessIds() -> [pid_t] {
+    dedicatedTaskWorkerProcessRecords()
+      .filter { $0.profilePath == profilePath }
+      .map(\.pid)
+  }
+
+  let trackedPorts = dedicatedQueueChatLaunchers.compactMap { port, launcher -> Int? in
+    let marker = "--user-data-dir=\(profilePath)"
+    return launcher.arguments?.contains(marker) == true ? port : nil
+  }
+  var processIds = matchingProcessIds()
+  for pid in processIds where watcherIsAlive(pid) {
+    _ = kill(pid, SIGTERM)
+  }
+
+  let gracefulDeadline = Date().addingTimeInterval(2.0)
+  while Date() < gracefulDeadline {
+    processIds = matchingProcessIds().filter { watcherIsAlive($0) }
+    if processIds.isEmpty { break }
+    Thread.sleep(forTimeInterval: 0.1)
+  }
+
+  processIds = matchingProcessIds().filter { watcherIsAlive($0) }
+  if !processIds.isEmpty {
+    queueTrace(
+      "worker-create stage=dedicated-process-terminate-force "
+        + "count=\(processIds.count)"
+    )
+    for pid in processIds {
+      _ = kill(pid, SIGKILL)
+    }
+    let forcedDeadline = Date().addingTimeInterval(1.0)
+    while Date() < forcedDeadline {
+      processIds = matchingProcessIds().filter { watcherIsAlive($0) }
+      if processIds.isEmpty { break }
+      Thread.sleep(forTimeInterval: 0.1)
+    }
+  }
+
+  for port in trackedPorts {
+    dedicatedQueueChatLaunchers.removeValue(forKey: port)
+  }
   dedicatedQueueChatLaunchers = dedicatedQueueChatLaunchers.filter { _, launcher in
     launcher.isRunning
   }
-  Thread.sleep(forTimeInterval: 0.2)
-  try? FileManager.default.removeItem(atPath: profilePath)
+
+  let remaining = matchingProcessIds().filter { watcherIsAlive($0) }
+  if remaining.isEmpty {
+    try? FileManager.default.removeItem(atPath: profilePath)
+    queueTrace("worker-create stage=dedicated-process-terminated")
+  } else {
+    queueTrace(
+      "worker-create stage=dedicated-process-terminate-failed "
+        + "count=\(remaining.count)"
+    )
+  }
 }
 
 func stopAutomationWorker(_ task: AutomationTask, state: PluginState) {

@@ -95,28 +95,75 @@ func ensureChatTarget(_ rawValue: String?, in state: inout PluginState) -> Strin
   return chatURL
 }
 
+struct CDPValueReadResult {
+  let value: [String: Any]?
+  let error: String?
+}
+
+func cdpValueRead(
+  port: Int,
+  targetId: String,
+  expression: String,
+  timeout: TimeInterval = 5.0
+) -> CDPValueReadResult {
+  let targets = CDPClient.fetchTargets(portOverride: port)
+  guard let target = targets.first(where: { $0["id"] as? String == targetId }) else {
+    return CDPValueReadResult(
+      value: nil,
+      error: "target_missing:port=\(port):targets=\(targets.count)"
+    )
+  }
+  guard let wsURL = target["webSocketDebuggerUrl"] as? String else {
+    return CDPValueReadResult(value: nil, error: "target_websocket_missing")
+  }
+  guard let response = CDPClient.evaluate(
+    wsURLString: wsURL,
+    expression: expression,
+    timeout: timeout
+  ) else {
+    return CDPValueReadResult(value: nil, error: "evaluate_timeout_or_transport_failure")
+  }
+  if let protocolError = response["error"] as? [String: Any] {
+    let message = protocolError["message"] as? String ?? "unknown"
+    return CDPValueReadResult(value: nil, error: "evaluate_protocol_error:\(message)")
+  }
+  guard let outer = response["result"] as? [String: Any] else {
+    return CDPValueReadResult(value: nil, error: "evaluate_result_missing")
+  }
+  if let exception = outer["exceptionDetails"] as? [String: Any] {
+    let text = (exception["exception"] as? [String: Any])?["description"] as? String
+      ?? exception["text"] as? String
+      ?? "unknown"
+    return CDPValueReadResult(value: nil, error: "javascript_exception:\(text)")
+  }
+  if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
+    return CDPValueReadResult(
+      value: sanitizeJSONValue(value) as? [String: Any],
+      error: nil
+    )
+  }
+  if let value = outer["value"] as? [String: Any] {
+    return CDPValueReadResult(
+      value: sanitizeJSONValue(value) as? [String: Any],
+      error: nil
+    )
+  }
+  let remoteType = (outer["result"] as? [String: Any])?["type"] as? String ?? "unknown"
+  return CDPValueReadResult(value: nil, error: "evaluate_value_not_object:type=\(remoteType)")
+}
+
 func cdpValue(
   port: Int,
   targetId: String,
   expression: String,
   timeout: TimeInterval = 5.0
 ) -> [String: Any]? {
-  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
-    $0["id"] as? String == targetId
-  }), let wsURL = target["webSocketDebuggerUrl"] as? String,
-        let response = CDPClient.evaluate(
-          wsURLString: wsURL,
-          expression: expression,
-          timeout: timeout
-        ),
-        let outer = response["result"] as? [String: Any] else { return nil }
-  if let value = (outer["result"] as? [String: Any])?["value"] as? [String: Any] {
-    return sanitizeJSONValue(value) as? [String: Any]
-  }
-  if let value = outer["value"] as? [String: Any] {
-    return sanitizeJSONValue(value) as? [String: Any]
-  }
-  return nil
+  cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: expression,
+    timeout: timeout
+  ).value
 }
 
 func pageDiagnosticJS() -> String {
