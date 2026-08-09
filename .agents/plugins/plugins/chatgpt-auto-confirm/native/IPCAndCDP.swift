@@ -457,6 +457,37 @@ struct CDPClient {
     return releasedResponse["error"] == nil
   }
 
+  @discardableResult
+  static func dispatchArrowKey(
+    wsURLString: String,
+    key: String,
+    timeout: TimeInterval = 4.0
+  ) -> Bool {
+    let virtualKeyCode: Int
+    switch key {
+    case "ArrowLeft": virtualKeyCode = 37
+    case "ArrowRight": virtualKeyCode = 39
+    default: return false
+    }
+    let params = "{\"type\":\"keyDown\",\"key\":\(jsonStringLiteral(key)),"
+      + "\"code\":\(jsonStringLiteral(key)),\"windowsVirtualKeyCode\":\(virtualKeyCode),"
+      + "\"nativeVirtualKeyCode\":\(virtualKeyCode)}"
+    guard let keyDown = sendCommand(
+      wsURLString: wsURLString,
+      method: "Input.dispatchKeyEvent",
+      paramsJSON: params,
+      timeout: timeout
+    ), keyDown["error"] == nil else { return false }
+    let keyUpParams = params.replacingOccurrences(of: "\"keyDown\"", with: "\"keyUp\"")
+    guard let keyUp = sendCommand(
+      wsURLString: wsURLString,
+      method: "Input.dispatchKeyEvent",
+      paramsJSON: keyUpParams,
+      timeout: timeout
+    ) else { return false }
+    return keyUp["error"] == nil
+  }
+
   static func allCookies(wsURLString: String, timeout: TimeInterval = 5.0) -> [[String: Any]] {
     guard let response = sendCommand(
       wsURLString: wsURLString,

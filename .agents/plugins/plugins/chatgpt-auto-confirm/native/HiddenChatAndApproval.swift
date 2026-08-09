@@ -158,12 +158,129 @@ func cdpValue(
   expression: String,
   timeout: TimeInterval = 5.0
 ) -> [String: Any]? {
-  cdpValueRead(
+  let initial = cdpValueRead(
     port: port,
     targetId: targetId,
     expression: expression,
     timeout: timeout
   ).value
+  guard let initial else { return nil }
+  let modelSelectionErrors: Set<String> = [
+    "reasoning_high_not_selected",
+    "quick_chat_thinking_not_selected",
+  ]
+  guard initial["failedStage"] as? String == "model_selection",
+        let error = initial["error"] as? String,
+        modelSelectionErrors.contains(error),
+        selectExtraHighReasoningWithTrustedCDP(port: port, targetId: targetId) else {
+    return initial
+  }
+  // Model selection fails before connector insertion or message input, so it is
+  // safe to evaluate the send script once more after the trusted CDP repair.
+  return cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: expression,
+    timeout: timeout
+  ).value ?? initial
+}
+
+private func selectExtraHighReasoningWithTrustedCDP(port: Int, targetId: String) -> Bool {
+  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId
+        }),
+        let wsURL = target["webSocketDebuggerUrl"] as? String else { return false }
+
+  let discoveryJS = #"""
+  (() => {
+    const visible = element => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const picker = [...document.querySelectorAll('button[aria-haspopup="menu"], button[aria-label]')]
+      .find(element => visible(element) && /chatgpt model|选择 chatgpt 模型|選擇 chatgpt 模型/i.test(
+        `${element.getAttribute('aria-label') || ''} ${element.textContent || ''}`
+      ));
+    const menu = [...document.querySelectorAll('[role="menu"]')].find(visible);
+    const rect = picker?.getBoundingClientRect();
+    return {
+      menuOpen: !!menu,
+      pickerX: rect ? rect.x + rect.width / 2 : null,
+      pickerY: rect ? rect.y + rect.height / 2 : null
+    };
+  })()
+  """#
+  guard var discovery = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: discoveryJS
+  ).value else { return false }
+  if discovery["menuOpen"] as? Bool != true {
+    guard let x = (discovery["pickerX"] as? NSNumber)?.doubleValue,
+          let y = (discovery["pickerY"] as? NSNumber)?.doubleValue,
+          CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port) else { return false }
+    Thread.sleep(forTimeInterval: 0.45)
+    discovery = cdpValueRead(
+      port: port,
+      targetId: targetId,
+      expression: discoveryJS
+    ).value ?? [:]
+    guard discovery["menuOpen"] as? Bool == true else { return false }
+  }
+
+  let focusAndReadJS = #"""
+  (() => {
+    const control = document.querySelector('[data-reasoning-slider="true"]');
+    control?.focus();
+    const slider = document.querySelector('[data-model-picker-power-slider] [role="slider"]');
+    const status = control?.parentElement?.querySelector('[role="status"]')
+      || document.querySelector('[role="menu"] [role="status"]');
+    const indexed = (status?.textContent || '').match(/第\s*(\d+)\s*[项項][，,\s]*共\s*(\d+)\s*[项項]/);
+    return {
+      focused: document.activeElement === control,
+      now: Number(slider?.getAttribute('aria-valuenow') ?? (indexed ? Number(indexed[1]) - 1 : NaN)),
+      max: Number(slider?.getAttribute('aria-valuemax') ?? (indexed ? Number(indexed[2]) - 1 : NaN))
+    };
+  })()
+  """#
+  guard let state = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: focusAndReadJS
+  ).value,
+        state["focused"] as? Bool == true,
+        let now = (state["now"] as? NSNumber)?.doubleValue,
+        let max = (state["max"] as? NSNumber)?.doubleValue,
+        now.isFinite, max.isFinite, max >= 2 else { return false }
+  let desired = Int(max) - 1
+  let current = Int(now)
+  let key = current <= desired ? "ArrowRight" : "ArrowLeft"
+  for _ in 0..<abs(desired - current) {
+    guard CDPClient.dispatchArrowKey(wsURLString: wsURL, key: key) else { return false }
+    Thread.sleep(forTimeInterval: 0.2)
+  }
+  Thread.sleep(forTimeInterval: 0.35)
+
+  let verificationJS = #"""
+  (() => {
+    const picker = [...document.querySelectorAll('button[aria-haspopup="menu"], button[aria-label]')]
+      .find(element => /chatgpt model|选择 chatgpt 模型|選擇 chatgpt 模型/i.test(
+        `${element.getAttribute('aria-label') || ''} ${element.textContent || ''}`
+      ));
+    const label = `${picker?.textContent || ''} ${picker?.getAttribute('data-selected-reasoning-effort') || ''}`.toLowerCase();
+    const slider = document.querySelector('[data-model-picker-power-slider] [role="slider"]');
+    const now = Number(slider?.getAttribute('aria-valuenow'));
+    const max = Number(slider?.getAttribute('aria-valuemax'));
+    return {ok: /extra high|极高|極高|额外高|額外高/.test(label)
+      || (Number.isFinite(now) && Number.isFinite(max) && now === max - 1)};
+  })()
+  """#
+  return cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: verificationJS
+  ).value?["ok"] as? Bool == true
 }
 
 func pageDiagnosticJS() -> String {
