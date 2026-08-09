@@ -256,11 +256,12 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   assert.equal(statusRes.ipc.cdp.available, true);
   assert.equal(statusRes.ipc.cdp.connected, true);
   assert.equal(statusRes.ipc.cdp.pageTargetCount, 2);
-  assert.equal(statusRes.loadedRendererCount, 2);
-  assert.equal(statusRes.safety.scansEveryLoadedRenderer, true);
+  assert.equal(statusRes.loadedRendererCount, 0);
+  assert.equal(statusRes.safety.scansEveryLoadedRenderer, false);
+  assert.equal(statusRes.safety.visibleRendererAccess, false);
   assert.equal(statusRes.ipc.primaryPath, 'CDP WebSocket & Unix IPC 主路径');
   assert.equal(statusRes.safety.ipcIsPrimaryPath, true);
-  assert.equal(statusRes.safety.axPressIsFallback, true);
+  assert.equal(statusRes.safety.axPressIsFallback, false);
   assert.equal(statusRes.safety.axPressVisibleForegroundOnly, true);
   assert.equal(statusRes.safety.axPressNeverTargetsHiddenElements, true);
   assert.equal(unixInitReceived, true);
@@ -287,7 +288,9 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   assert.equal(replyRes.content, '');
   assert.equal(replyRes.userMessageCount, 4);
 
-  // 4. Test scan command via Native Binary (IPC Primary Path)
+  // 4. A scan without an exact plugin-owned hidden target must not evaluate
+  // either loaded renderer, even when both are valid ChatGPT pages.
+  const evaluatedBeforeScan = [...evaluatedTargets].sort();
   const { stdout: scanStdout } = await execFileAsync(
     nativeBinary,
     ['scan', JSON.stringify({ approveAll: true })],
@@ -295,69 +298,17 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
   );
   const scanRes = JSON.parse(scanStdout);
   assert.equal(scanRes.ok, true);
-  assert.equal(scanRes.candidates, 2);
-  assert.equal(scanRes.approved, 2);
-  assert.equal(scanRes.loadedRendererCount, 2);
+  assert.equal(scanRes.candidates, 0);
+  assert.equal(scanRes.approved, 0);
+  assert.equal(scanRes.visibleFallbackDisabled, true);
   assert.equal(scanRes.pageChanged, false);
-  assert.equal(scanRes.ipcPrimaryPath, true);
-  assert.deepEqual([...evaluatedTargets].sort(), [
-    '/devtools/page/101',
-    '/devtools/page/202',
-  ]);
+  assert.deepEqual([...evaluatedTargets].sort(), evaluatedBeforeScan);
   assert.ok(evaluateExpressionReceived);
-  assert.match(evaluateExpressionReceived, /checkCardMatch/);
-  assert.match(evaluateExpressionReceived, /sanitizeContext/);
-  assert.match(evaluateExpressionReceived, /jit_plugin_data/);
 
-  // 5. Test audit_log to verify reason and token redaction
+  // 5. No authorization audit is emitted when no owned hidden renderer exists.
   const { stdout: auditStdout } = await execFileAsync(nativeBinary, ['audit', '10'], { env });
   const auditRes = JSON.parse(auditStdout);
   assert.equal(auditRes.ok, true);
-  assert.equal(auditRes.events.length, 1);
-  const entry = auditRes.events[0];
-  assert.equal(entry.decision, 'allow');
-  assert.equal(entry.clicked, true);
-  assert.match(entry.reason, /IPC 主路径：通用模式：已通过进程间通信自动确认/);
-  assert.match(entry.promptText, /Allow ChatGPT to use \[approval details redacted\] #c9e1f2a/);
-  assert.equal(entry.promptText.includes('token'), false);
+  assert.equal(auditRes.events.length, 0);
 
-  // 6. Test unit logic of JS card detection script against simulated DOM objects
-  const mockDOMTestScript = `
-    const document = {
-      querySelectorAll: (sel) => {
-        if (sel === 'button' || sel === 'button, a, [role="button"]') {
-          return [
-            {
-              innerText: 'Allow once',
-              click: () => { global.__buttonClicked = true; },
-              parentElement: {
-                innerText: 'Allow ChatGPT to use Terminal on your computer?\\nBody: {"token":"secret_jwt_token_456","actions":{"allow_once":{"target_message_id":"msg_789"}}}',
-                querySelectorAll: () => [],
-                __reactFiber$test123: {
-                  memoizedProps: {
-                    jit_plugin_data: {
-                      from_server: {
-                        body: { token: "secret_jwt_token_456" },
-                        actions: { allow_once: { target_message_id: "msg_789" } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ];
-        }
-        return [];
-      }
-    };
-    global.__evalResult = (${evaluateExpressionReceived});
-  `;
-  global.__buttonClicked = false;
-  eval(mockDOMTestScript);
-  assert.equal(global.__buttonClicked, true);
-  assert.equal(global.__evalResult.candidates, 1);
-  assert.equal(global.__evalResult.approved, 1);
-  assert.match(global.__evalResult.audits[0].reason, /IPC 主路径/);
-  assert.match(global.__evalResult.audits[0].promptText, /\[approval details redacted\]/);
-  assert.equal(global.__evalResult.audits[0].promptText.includes('secret_jwt_token_456'), false);
 });

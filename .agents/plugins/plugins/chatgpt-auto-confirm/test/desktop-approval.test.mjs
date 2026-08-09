@@ -41,6 +41,14 @@ const renderInterpolatedSwiftScript = (script, expected) => script
   .replace('\\(expected)', JSON.stringify(expected))
   .replaceAll('\\\\', '\\');
 
+const queueMonitoringSource = readFileSync(
+  new URL('../native/QueueMonitoring.swift', import.meta.url),
+  'utf8',
+);
+const queueTerminalDecisionSource = readFileSync(
+  new URL('../native/QueueTerminalDecision.swift', import.meta.url),
+  'utf8',
+);
 const nativeDirectory = new URL('../native/', import.meta.url);
 const nativeSource = readdirSync(nativeDirectory)
   .filter(name => name.endsWith('.swift'))
@@ -172,7 +180,7 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.equal(params.stagnationTimeout, 10800);
   assert.equal(params.maxRecoveryAttempts, 5);
   assert.equal(params.autoContinueIncomplete, true);
-  assert.equal(params.maxTaskContinuations, 0);
+  assert.equal(params.maxTaskContinuations, 6);
   assert.match(nativeSource, /"thinking_progress"/);
   assert.match(nativeSource, /stopCurrentResponseJS/);
   assert.match(nativeSource, /continueInNewTaskJS/);
@@ -292,6 +300,26 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /toolOnlyCompletedActivity/);
   assert.match(nativeSource, /explicitlyIncomplete/);
   assert.match(nativeSource, /terminalIncomplete/);
+  assert.match(
+    queueTerminalDecisionSource,
+    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true\s+let terminalEvidence =/,
+  );
+  assert.doesNotMatch(
+    queueTerminalDecisionSource,
+    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true\s*\|\|\s*reply\["explicitlyIncomplete"\]/,
+  );
+  assert.match(
+    queueTerminalDecisionSource,
+    /terminal: !responseIsInFlight && terminalEvidence/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /let responseIsInFlight = terminalDecision\.responseIsInFlight/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /if responseIsInFlight \{[\s\S]*page_stalled_but_response_active[\s\S]*return\s*\}\s*queueContinuation\(&task, report: nil, reason: "page_stalled"\)/,
+  );
   assert.match(nativeSource, /chat_finished_incomplete/);
   assert.match(nativeSource, /MAHAYANA_TASK_REPORT_V1_BEGIN/);
   assert.match(nativeSource, /hasClosedTaskReport/);
@@ -304,7 +332,18 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /liveSurface\["chatMode"\]/);
   assert.match(nativeSource, /never approve or type on Work/);
   assert.match(nativeSource, /explicitFinalResult/);
-  assert.match(nativeSource, /&& !explicitlyIncomplete\s*&& \(explicitFinalResult \|\| structuredComplete\)/);
+  assert.match(
+    nativeSource,
+    /&& \(structuredComplete \|\| \(!explicitlyIncomplete && explicitFinalResult\)\)/,
+  );
+  assert.match(
+    nativeSource,
+    /structuredIncomplete \|\| \(!hasClosedTaskReport && explicitlyIncomplete\)/,
+  );
+  assert.match(
+    queueMonitoringSource,
+    /if terminal, hasClosedTaskReport, parsedReport == nil \{[\s\S]*stage=report-parse-failed action=blocked[\s\S]*task\.status = "blocked"[\s\S]*task\.lastError = "task_report_parse_failed"[\s\S]*return/,
+  );
   assert.match(nativeSource, /尚未\.\{0,12\}完成/);
   assert.match(nativeSource, /Date\(\)\.timeIntervalSince\(candidateSince\) >= 4\.0/);
   assert.doesNotMatch(nativeSource,
@@ -370,7 +409,13 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /worker_exited_without_result/);
   assert.match(nativeSource, /monitorAutomationTask/);
   assert.match(nativeSource, /virtual-list parent/);
-  assert.match(nativeSource, /maxTaskContinuations > 0/);
+  assert.match(nativeSource, /let continuationLimit = max\(1, task\.maxTaskContinuations\)/);
+  assert.match(nativeSource, /approval_duplicate_circuit_open/);
+  assert.match(nativeSource, /approval_rate_circuit_open/);
+  assert.match(nativeSource, /background_chat_closed_requires_restart/);
+  assert.match(nativeSource, /queue_worker_closed_requires_retry/);
+  assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_ALLOW_VISIBLE_AX/);
+  assert.match(nativeSource, /requestIdentityAvailable/);
   assert.match(nativeSource, /watchdogTaskHasNonRecoverableFailure/);
   assert.match(nativeSource, /connector_selection_not_confirmed/);
   assert.match(nativeSource, /activeConversationId is shared by every visible row/);
@@ -474,6 +519,22 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /Do not replace a document that is still naturally loading/);
   assert.match(nativeSource, /dedicated-process-bootstrap-attempt/);
   assert.match(nativeSource, /dedicated-process-bootstrap-retry/);
+  assert.match(nativeSource, /dedicatedTaskWorkerProcessRecords/);
+  assert.match(nativeSource, /profileTail\.range\(of: " --"\)/);
+  assert.doesNotMatch(nativeSource, /profileTail\.prefix \{ !\$0\.isWhitespace \}/);
+  assert.match(
+    nativeSource,
+    /data = output\.fileHandleForReading\.readDataToEndOfFile\(\)[\s\S]*process\.waitUntilExit\(\)/,
+  );
+  assert.match(nativeSource, /processReservedPorts/);
+  assert.match(nativeSource, /dedicated-process-bootstrap-launchservices/);
+  assert.match(
+    nativeSource,
+    /bootstrapAttempt == 1[\s\S]*launchDedicatedQueueChatProcess\([\s\S]*else \{[\s\S]*launchDedicatedQueueChatProcessViaLaunchServices/,
+  );
+  assert.match(nativeSource, /dedicated-process-terminate-force/);
+  assert.match(nativeSource, /dedicated-process-terminated/);
+  assert.match(nativeSource, /dedicated-process-terminate-failed/);
   assert.match(nativeSource, /let shouldNavigate = \(/);
   assert.match(nativeSource, /ready == "complete"/);
   assert.match(nativeSource, /setHiddenPageFocusEmulation/);
@@ -753,7 +814,8 @@ test('native runtime stays in the background and never takes over the UI', () =>
   assert.match(nativeSource, /"internalActionIsPrimary": true/);
   assert.match(nativeSource, /"operatesHiddenPages": true/);
   assert.match(nativeSource, /loadedApprovalTargets/);
-  assert.match(nativeSource, /"scansEveryLoadedRenderer": true/);
+  assert.match(nativeSource, /"scansEveryLoadedRenderer": false/);
+  assert.match(nativeSource, /"visibleRendererAccess": false/);
   assert.match(nativeSource, /Runtime\.evaluate does not activate the app/);
   assert.match(nativeSource, /withWatcherLifecycleLock/);
   assert.match(nativeSource, /idleSystemSleepDisabled/);
@@ -1011,6 +1073,58 @@ test('allow-once approval ignores the rendered Enter keyboard hint', async () =>
   assert.equal(result.label, 'allow once');
   assert.deepEqual(clicks, ['allow-once']);
   assert.match(chatScriptsSource, /\\u21b5\\u23ce/);
+});
+
+test('approval re-render with the same request fingerprint is not confirmed as closed', async () => {
+  let activeAllow;
+  class FakeEvent {
+    constructor(type) { this.type = type; }
+  }
+  class FakeElement {
+    constructor(text) {
+      this.innerText = text;
+      this.textContent = text;
+      this.disabled = false;
+      this.offsetWidth = 80;
+      this.offsetHeight = 24;
+      this.isConnected = true;
+      this.parentElement = null;
+    }
+    getAttribute() { return null; }
+    getClientRects() { return this.isConnected ? [{}] : []; }
+    getBoundingClientRect() { return { left: 0, top: 0, width: 80, height: 24 }; }
+    querySelectorAll() { return []; }
+    dispatchEvent(event) {
+      if (event.type === 'click' && this === activeAllow) {
+        this.isConnected = false;
+        const replacement = new FakeElement('Allow once');
+        replacement.parentElement = card;
+        activeAllow = replacement;
+      }
+      return true;
+    }
+  }
+  const deny = new FakeElement('Deny');
+  const card = new FakeElement('Allow ChatGPT to use bhrum2?');
+  activeAllow = new FakeElement('Allow once');
+  deny.parentElement = card;
+  activeAllow.parentElement = card;
+  card.querySelectorAll = () => [deny, activeAllow];
+  const document = {
+    querySelectorAll(selector) {
+      return selector === 'button' ? [deny, activeAllow] : [];
+    },
+  };
+  const immediateTimeout = callback => { callback(); return 0; };
+  const result = await runInNewContext(approvalScript, {
+    document,
+    PointerEvent: FakeEvent,
+    MouseEvent: FakeEvent,
+    setTimeout: immediateTimeout,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.confirmed, false);
+  assert.equal(result.error, 'approval_click_not_confirmed');
 });
 
 test('approval decisions do not inspect or block card contents', () => {
