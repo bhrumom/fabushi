@@ -1285,14 +1285,19 @@ func dedicatedTaskWorkerProcessRecords() -> [(pid: pid_t, profilePath: String, p
   process.standardInput = FileHandle.nullDevice
   process.standardOutput = output
   process.standardError = FileHandle.nullDevice
+  let data: Data
   do {
     try process.run()
+    // Drain stdout before waiting.  `ps -axo ...` can exceed the pipe buffer on
+    // a busy machine (renderer command lines are especially large); waiting
+    // first would deadlock while the child is blocked writing the remainder.
+    data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
   } catch {
     return []
   }
   guard let text = String(
-    data: output.fileHandleForReading.readDataToEndOfFile(),
+    data: data,
     encoding: .utf8
   ) else { return [] }
 
