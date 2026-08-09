@@ -32,7 +32,7 @@ For long-lived release, deployment, marketplace, or CI work, also apply the bund
    - `maxRecoveryAttempts: 5`;
    - select GPT-5.6 Sol and Extra High reasoning effort for complex implementation tasks when the model selector is available;
    - `autoContinueIncomplete: true`;
-   - `maxTaskContinuations: 0` (continuous report-driven new-Chat continuation; `0` means no fixed cap);
+   - `maxTaskContinuations: 6` (finite report-driven new-Chat continuation; reaching the cap pauses for operator review);
    - `pollIntervalMs: 500`.
 3. Require `preparation.newChatClicked: true` before accepting any send.
 4. Read `thinking_progress` events as live status. Important fields are `thinking`, `activityCharCount`, `devspaceActivity`, `devspaceWaiting`, and `waitingForApproval`.
