@@ -522,6 +522,10 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dedicatedTaskWorkerProcessRecords/);
   assert.match(nativeSource, /profileTail\.range\(of: " --"\)/);
   assert.doesNotMatch(nativeSource, /profileTail\.prefix \{ !\$0\.isWhitespace \}/);
+  assert.match(
+    nativeSource,
+    /data = output\.fileHandleForReading\.readDataToEndOfFile\(\)[\s\S]*process\.waitUntilExit\(\)/,
+  );
   assert.match(nativeSource, /processReservedPorts/);
   assert.match(nativeSource, /dedicated-process-bootstrap-launchservices/);
   assert.match(
