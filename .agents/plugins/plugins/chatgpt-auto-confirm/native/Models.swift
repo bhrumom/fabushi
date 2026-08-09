@@ -63,6 +63,7 @@ struct PluginState: Codable {
   // Approval safety is persisted so a renderer re-mount or watcher restart
   // cannot turn the same authorization request into another click.
   var handledApprovalFingerprints: [String]?
+  var automaticApprovalFingerprintAttempts: [String: Int]?
   var automaticApprovalTimestamps: [String]?
   var lastAutomaticApprovalFingerprint: String?
   var lastAutomaticApprovalAt: String?
@@ -183,6 +184,7 @@ struct AutomationTask: Codable {
   // Queue approvals use the same durable safety boundary as the general
   // watcher, but are isolated per task/conversation.
   var handledApprovalFingerprints: [String]? = nil
+  var automaticApprovalFingerprintAttempts: [String: Int]? = nil
   var automaticApprovalTimestamps: [String]? = nil
   var lastAutomaticApprovalFingerprint: String? = nil
   var lastAutomaticApprovalAt: String? = nil

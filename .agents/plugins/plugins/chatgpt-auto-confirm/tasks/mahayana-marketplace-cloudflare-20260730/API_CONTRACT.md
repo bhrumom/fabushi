@@ -1,13 +1,68 @@
 # API 契约：MCP Apps-only 大乘市场 v2
 
+> v12.2 纠偏：市场 API 只处理正式版本；本地生成不调用远程 API。首次上线先走 `/v2/miniapps/deployment-intents`，把 source binding、build、web deployment 和 marketplace release 分开返回。下文旧示例中的 Cloudflare 字段视为 Cloudflare 路径示例，不再是所有发布的必填项。
+
+## 0. 本地项目上线控制面
+
+### `POST /v2/miniapps/deployment-intents`
+
+要求法布施用户登录和 `Idempotency-Key`。创建 intent 只生成计划，不得建仓或部署：
+
+```json
+{
+  "localProjectId": "local_01H...",
+  "sourceSnapshotSha256": "sha256:...",
+  "sourceTarget": "managed-github",
+  "repositoryVisibility": "private",
+  "hostingPreference": "auto",
+  "marketplaceIntent": "not-now"
+}
+```
+
+返回静态/动态能力分析、provider eligibility、费用/配额提示、计划版本和必需 consents。用户确认后调用：
+
+```http
+POST /v2/miniapps/deployment-intents/{intentId}/confirm
+```
+
+```json
+{
+  "acceptedPlanVersion": 3,
+  "expectedSourceSnapshotSha256": "sha256:...",
+  "consents": ["upload-source", "managed-custody"]
+}
+```
+
+服务端必须重算上传快照。返回对象至少分开包含：
+
+```json
+{
+  "sourceBinding": {
+    "provider": "github",
+    "actor": "platform",
+    "transport": "github-app-api",
+    "custody": "platform-managed",
+    "repositoryId": 123456,
+    "repository": "mahayana-hosted-01/miniapp-demo-7f31ab",
+    "commit": "<sha>",
+    "treeHash": "<tree>"
+  },
+  "build": { "status": "queued" },
+  "webDeployment": { "provider": "none", "status": "none" },
+  "marketplaceRelease": { "status": "none" }
+}
+```
+
+`sourceTarget=user-github` 的 GitHub 写入必须通过官方 GitHub MCP/连接器完成；登记接口只接受 repositoryId/commit/treeHash 等非敏感事实，拒绝 access token、refresh token 和 connector secret。
+
 ## 1. 通用规则
 
 - 基础路径：`/v2/marketplace`。
 - 写操作要求大乘账号认证；发布凭证交换要求 GitHub Actions OIDC。
 - 所有正式版本元数据规范化后签名。
-- 所有新发布接口只接受 MCP Apps + SDK v2 + stateless runtime。
+- 所有新发布接口只接受 MCP Apps；若声明远程 MCP runtime，则必须使用 SDK v2 + stateless runtime；local-only/静态网页版本不伪造远程 endpoint。
 - 不提供旧 MCP 发布 API、运行代理或 legacy negotiation。
-- 旧客户端访问 MCP runtime 时由插件 endpoint 返回 `MCP_APPS_HOST_UPGRADE_REQUIRED`。
+- 旧客户端访问已声明的远程 MCP runtime 时由插件 endpoint 返回 `MCP_APPS_HOST_UPGRADE_REQUIRED`。
 
 ## 2. 创建插件
 
@@ -57,11 +112,12 @@
 ```json
 {
   "version": "1.0.0",
-  "cloudflare": {
-    "projectId": "internal-reference",
-    "versionId": "...",
+  "hosting": {
+    "provider": "cloudflare-workers",
+    "providerProjectRef": "internal-reference",
+    "providerVersionId": "...",
     "previewUrl": "https://...",
-    "mcpUrl": "https://.../mcp"
+    "runtimeUrl": "https://.../mcp"
   },
   "runtime": {
     "kind": "mcp-app",
@@ -100,10 +156,10 @@
 1. 拉取 package/manifest/provenance；
 2. 验证 URL、size、SHA、pluginId、version 和 permissions；
 3. 验证 SDK v2 manifest；
-4. 调用 `/mcp` 执行 MCP Apps conformance；
+4. 对远程 MCP runtime 调用 `/mcp` 执行 conformance；对 `github-pages` 静态目标验证静态导出、base path、404、CSP 和资源完整性；
 5. 读取全部 `ui://` resources；
 6. 验证 MIME、CSP 和 tool visibility；
-7. 验证 production/preview endpoint 拒绝 legacy 请求；
+7. 对远程 MCP runtime 验证 production/preview endpoint 拒绝 legacy 请求；
 8. 验证 sandbox browser smoke；
 9. 验证 provenance。
 
@@ -113,7 +169,7 @@
 
 ### `POST /v2/marketplace/plugins/{pluginId}/releases/{version}/promote`
 
-只有 stage 全部通过、审核批准且 `legacyRejected = true` 时才能提升 production。
+只有 stage 全部通过且审核批准时才能提升 production；声明远程 MCP runtime 时额外要求 `legacyRejected = true`，纯本地/静态目标记录 `notApplicableReason`，不得伪造通过。
 
 ## 7. 浏览与详情
 
@@ -128,7 +184,7 @@
 - publisher/review tier；
 - production version；
 - MCP Apps compliance；
-- SDK v2/stateless/legacy rejected；
+- runtime profiles；远程 MCP 存在时展示 SDK v2/stateless/legacy rejected；
 - UI resources、display modes、CSP、tool visibility；
 - permissions、source、signature、revocation。
 
@@ -144,10 +200,14 @@
   "version": "1.0.0",
   "runtime": {
     "kind": "mcp-app",
-    "mcpSdk": "v2",
-    "transport": "stateless-http",
-    "legacy": false,
+    "profiles": ["local-native", "local-web-wasm"],
+    "remote": null,
     "extension": "io.modelcontextprotocol/ui"
+  },
+  "hosting": {
+    "provider": "github-pages",
+    "deploymentId": "...",
+    "artifactSha256": "sha256:..."
   },
   "ui": {
     "resources": ["ui://..."],
@@ -170,7 +230,7 @@
 
 只允许：
 
-- `307` 到签名元数据中的不可变 Cloudflare URL；或
+- `307` 到签名元数据中的不可变 provider/artifact URL；或
 - 返回直接 URL、SHA、size 和签名 metadata URL。
 
 市场不得长期代理包正文。
@@ -184,9 +244,10 @@
 ```json
 {
   "mcpApps": "passed",
-  "sdkV2": "passed",
-  "stateless": "passed",
-  "legacyRejected": "passed",
+  "sdkV2": "passed|not-applicable",
+  "stateless": "passed|not-applicable",
+  "legacyRejected": "passed|not-applicable",
+  "deploymentPolicy": "passed",
   "uiResources": "passed",
   "csp": "passed",
   "toolVisibility": "passed",

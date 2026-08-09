@@ -95,3 +95,24 @@ MCP Apps-only UI/runtime contract
 ```
 
 不得把 Cloudflare 文档更新时间误写为 MCP Apps 规范版本。当前任务正式采用 MCP Apps stable `2026-01-26`，Cloudflare runtime 使用实施时官方要求的精确 SDK v2 版本。
+
+## 9. 本地优先与部署容量（2026-08-09 核验）
+
+- GitHub 仓库限制：https://docs.github.com/en/repositories/creating-and-managing-repositories/repository-limits
+- GitHub Pages 限制：https://docs.github.com/en/enterprise-cloud@latest/pages/getting-started-with-github-pages/github-pages-limits
+- GitHub 方案与组织能力：https://docs.github.com/en/get-started/learning-about-github/githubs-plans
+- Cloudflare Pages 限制：https://developers.cloudflare.com/pages/platform/limits/
+- Cloudflare Pages Functions 计费：https://developers.cloudflare.com/pages/functions/pricing/
+- Cloudflare Workers 限制：https://developers.cloudflare.com/workers/platform/limits/
+
+采用：GitHub Free 组织可拥有不限量 public/private repositories 的套餐能力，但 GitHub 对单个账户/组织仍有 100,000 repositories 的产品上限，并在 50,000 后提示治理风险；因此不得把它设计成无上限存储。GitHub Pages 也有站点大小、带宽、构建频率和用途约束，且官方明确不允许将其作为在线业务、电子商务或商业 SaaS 的免费通用主机。
+
+Cloudflare Pages Free 当前每账户最多 100 个 Pages projects；静态资源请求免费，Pages Functions 计入 Workers 配额。结论是：本地运行消除不必要的云成本，GitHub Pages 承担合规的公开纯静态项目，Cloudflare 承担确需远程动态能力的项目，并对两者实施容量水位和迁移机制。
+
+## 10. Cloudflare OS 架构借鉴
+
+- 仓库：https://github.com/cloudflare/cloudflare-os
+- 本次评审固定 commit：`1cb5e3d9096589e38f3fcfaf3f2191aa95a4c592`
+- License：Apache-2.0
+
+借鉴其 Workspace 稳定身份、Blueprint 代码快照、source/instance 分离、能力授权、沙箱、provisional change、可恢复 action queue 和明确的人类审批；不照搬 Durable Objects、Dynamic Worker Facets 或每用户远程运行时。法布施以本地 Workspace/操作日志为低成本事实源，以 GitHub 为可选源码托管，以分级部署提供相近体验。

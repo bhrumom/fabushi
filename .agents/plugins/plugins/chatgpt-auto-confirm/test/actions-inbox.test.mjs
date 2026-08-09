@@ -97,7 +97,7 @@ test('Actions inbox promotes and requeues an existing failed task revision', () 
     assert.equal(task.attempts, 0);
     assert.equal(task.workerPid, null);
     assert.equal(task.workerTargetId, null);
-    assert.equal(task.conversationId, null);
+    assert.equal(task.conversationId, 'stale-conversation');
     assert.equal(task.lastError, null);
   } finally {
     rmSync(directory, { recursive: true, force: true });

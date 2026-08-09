@@ -7,7 +7,7 @@ description: Drive a coding task through the actual Chat surface of a hidden sec
 
 Use the `chatgpt-auto-confirm` plugin as the only controller. It operates a hidden second `ChatGPT.app` instance so the user's visible Work task is not switched or clicked.
 
-For long-lived release, deployment, marketplace, or CI work, also apply the bundled `actions-first-task-queue` skill: project tests, builds, packages, installs, and artifacts belong in GitHub Actions, and unrelated large files must not be staged or uploaded.
+For long-lived release, deployment, marketplace, or CI work, also apply the bundled `actions-first-task-queue` skill. A local controller builds and tests locally; a controller running in GitHub Actions builds and tests inside Actions. Releases, deployments, and GitHub-native acceptance evidence still use Actions when required. Unrelated large files must not be staged or uploaded.
 
 ## Non-negotiable boundaries
 

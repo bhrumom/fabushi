@@ -1,5 +1,7 @@
 # 验收标准：单一身份、多构件 MCP Apps 架构
 
+> v12.2 说明：本文件的原有多构件/MCP Apps 验收继续有效；新增本地生成、双 GitHub 源码路径与分级部署的 34 个强制门禁以 `EXECUTION_TASKS_V12.md` 为准。两者冲突时以后者为准。
+
 任务只有在所有必须项满足并提供真实平台证据后才能报告 `complete`。
 
 ## 1. 单一插件身份
@@ -138,3 +140,16 @@
 - 旧 Runtime 删除证据。
 
 缺少任一强制项时状态必须为 `incomplete`。
+
+## 14. 本地生成、源码托管与网页部署
+
+- [ ] AI 生成的首份代码在平台管理的本地 Workspace 落盘，断网可重开、修改和运行。
+- [ ] 未经用户明确执行上线，不创建 GitHub repo、Pages site、Cloudflare project 或其他远程资源。
+- [ ] 官方托管使用与 `bhrumom` 隔离的 managed user apps 组织，用户不需要 GitHub 账号。
+- [ ] “我的 GitHub”只使用官方 GitHub MCP/连接器，法布施 API、日志和数据库不接收用户 GitHub 凭证。
+- [ ] source provider/actor/transport 与 hosting provider 分字段保存，上传源码不被显示成网页已上线。
+- [ ] GitHub Pages 只接收用户明确同意公开、符合其用途政策的纯静态项目；不宣传无限容量。
+- [ ] 动态、鉴权、API、实时或私有场景保留 Cloudflare/外部托管路径。
+- [ ] managed org 容量、Actions、存储、滥用、归档、迁移和退出均有自动护栏。
+- [ ] 用户可以把官方托管项目无损迁移到自己的 GitHub，并保留 lineage。
+- [ ] 所有 34 个 `v12 / Txx.n` required checks 在 GitHub Actions 中真实通过。

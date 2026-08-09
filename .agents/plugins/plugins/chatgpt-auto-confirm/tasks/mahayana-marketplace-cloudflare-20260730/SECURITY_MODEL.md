@@ -71,7 +71,7 @@ Production 必须使用 SDK v2 `createMcpHandler` 与 `legacy:"reject"`。
 
 ## 6. Host、Origin 与 OAuth
 
-Cloudflare endpoint 必须：
+当 `hostingProvider` 为 Cloudflare 且存在远程 MCP endpoint 时必须：
 
 - 校验 Host allowlist；
 - 校验浏览器 Origin；
@@ -97,7 +97,7 @@ GitHub Actions OIDC 验证：
 
 ## 8. Provenance 与不可变发布
 
-provenance 绑定：仓库、commit、workflow、run、builder、artifact SHA、Cloudflare version/deployment。
+provenance 绑定：repository ID、commit/tree、snapshot、workflow、run、builder、artifact SHA、hosting provider/version/deployment（若存在）。
 
 正式 URL 包含 version 和 SHA；同一版本不可覆盖；`latest` 只作为指针；回滚只切 deployment，不改旧字节。
 
@@ -116,7 +116,7 @@ provenance 绑定：仓库、commit、workflow、run、builder、artifact SHA、
 
 ## 10. 包和安装安全
 
-- 只接受批准的 Cloudflare HTTPS 域名；
+- 只接受发布清单和 provider policy 批准的 HTTPS/artifact 来源；GitHub Pages、Cloudflare 和 external 分别执行 allowlist/所有权校验；
 - 限制重定向、大小和时间；
 - 校验内容类型、大小和 SHA；
 - 拒绝绝对路径、`..`、链接逃逸、设备文件、压缩炸弹、重复路径；
@@ -159,6 +159,6 @@ provenance 绑定：仓库、commit、workflow、run、builder、artifact SHA、
 
 ## 13. 审计
 
-记录：插件、版本、Host、resource URI、Tool、visibility、CSP、permission decision、OIDC 摘要、provenance、Cloudflare deployment、legacy rejection、升级要求、安装/撤销/回滚。
+记录：插件、版本、Host、resource URI、Tool、visibility、CSP、permission decision、OIDC 摘要、provenance、source binding、hosting provider/deployment、legacy rejection（若适用）、升级要求、安装/撤销/回滚。
 
 禁止记录 token、Secret、敏感输入和包正文。

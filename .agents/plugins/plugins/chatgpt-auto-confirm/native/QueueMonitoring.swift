@@ -97,7 +97,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
         .flatMap(isoFormatter.date(from:))
         .map { currentDate.timeIntervalSince($0) }
       : nil
-    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+    let attempts = task.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
+    if let repeatedFor,
+       repeatedFor >= duplicateApprovalGraceSeconds,
+       attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
       state.queuePaused = true
       task.status = "blocked"
       task.lastError = "approval_duplicate_circuit_open"
@@ -116,6 +119,13 @@ func approveDedicatedAuthorizationWithDiagnostics(
         "error": "approval_duplicate_circuit_open",
       ]
     }
+    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+      task.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
+      queueTrace(
+        "task=\(taskId) stage=approval-\(stage)-retry "
+          + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
+      )
+    } else {
     task.lastError = "approval_duplicate_suppressed"
     task.updatedAt = now
     queueTrace(
@@ -129,6 +139,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
       "skipped": true,
       "error": "approval_duplicate_suppressed",
     ]
+    }
   }
 
   let recentApprovals = prunedAutomaticApprovalTimestamps(
@@ -181,6 +192,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
     recordHandledApprovalFingerprint(
       fingerprint,
       fingerprints: &task.handledApprovalFingerprints,
+      fingerprintAttempts: &task.automaticApprovalFingerprintAttempts,
       timestamps: &task.automaticApprovalTimestamps,
       lastFingerprint: &task.lastAutomaticApprovalFingerprint,
       lastApprovedAt: &task.lastAutomaticApprovalAt,
@@ -354,11 +366,16 @@ func monitorAutomationTask(
   if runtimeState == .hiddenNonChat {
     // A hidden prewarm page may survive an internal app reload on Work. Ask
     // that hidden page to return to Chat before treating the renderer as lost.
-    _ = cdpValue(
+    let chatSelection = cdpValue(
       port: port,
       targetId: targetId,
       expression: clickChatJS(),
       timeout: 4.0
+    )
+    _ = dispatchRecommendedCDPClick(
+      chatSelection,
+      port: port,
+      targetId: targetId
     )
     runtimeState = queueTargetRuntimeState(
       port: port,
@@ -372,17 +389,25 @@ func monitorAutomationTask(
   )
   if !workerStateUsable {
     if runtimeState == .visible {
-      // Safety is fail-closed only for a genuinely visible page. Never close,
-      // navigate, confirm, stop, or type in a page the user may be operating.
-      // A dedicated hosted worker is the one explicit exception: its copied
-      // profile has no user-facing page and may remain visible on Actions.
-      state.queuePaused = true
-      task.status = "blocked"
-      task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
-      task.lastError = task.hiddenWorkerLastError
-      task.updatedAt = isoFormatter.string(from: Date())
-      task.finishedAt = task.updatedAt
-      return
+      // A shared controller intentionally reuses the authenticated primary
+      // renderer. It is not allowed to be treated as a hidden worker failure;
+      // this mode is explicitly selected by the queue and never closes or
+      // takes over an interactive page.
+      if state.queueWorkerMode == sharedConversationQueueWorkerMode {
+        queueTrace("task=\(task.id) stage=shared-controller-visible-accepted")
+      } else {
+        // Safety is fail-closed only for a genuinely visible page. Never close,
+        // navigate, confirm, stop, or type in a page the user may be operating.
+        // A dedicated hosted worker is the one explicit exception: its copied
+        // profile has no user-facing page and may remain visible on Actions.
+        state.queuePaused = true
+        task.status = "blocked"
+        task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
+        task.lastError = task.hiddenWorkerLastError
+        task.updatedAt = isoFormatter.string(from: Date())
+        task.finishedAt = task.updatedAt
+        return
+      }
     }
 
     if !runningOnGitHubActions() {
@@ -811,6 +836,12 @@ func monitorAutomationTask(
         task.finishedAt = now
         task.reviewedAt = now
       } else {
+        if let reviewConversationId = normalizedConversationId(task.reviewConversationId) {
+          // The review is another round of the same task. Make that branch the
+          // parent for the next work round so every same-task Chat stays in one
+          // branch chain instead of creating an unrelated top-level Chat.
+          task.conversationId = reviewConversationId
+        }
         task.reviewConversationId = nil
         task.reviewStatus = nil
         queueContinuation(&task, report: report, reason: "chat_review_\(report.status)")
@@ -823,11 +854,18 @@ func monitorAutomationTask(
         &task,
         report: report,
         port: port,
-        targetId: targetId
+        targetId: targetId,
+        state: state
       ) else {
-        task.status = "blocked"
-        task.lastError = "chat_review_start_failed"
-        task.finishedAt = now
+        // Review is another round of the same task and must be created as a
+        // branch. A transient menu/renderer failure must not turn that into a
+        // top-level Chat or permanently block the queue; keep monitoring the
+        // completed parent and retry the branch on the next pass.
+        task.status = "running"
+        task.lastError = "chat_review_branch_pending"
+        task.finishedAt = nil
+        task.updatedAt = now
+        task.lastProgressAt = now
         return
       }
       task.status = "running"
@@ -1270,8 +1308,13 @@ func recoverQueueWithWatchdog(
       tasks[index].workerStatePath = nil
       tasks[index].workerProfilePath = nil
       tasks[index].resultPath = nil
-      tasks[index].conversationId = nil
-      tasks[index].chatURL = nil
+      if let reviewConversationId = normalizedConversationId(tasks[index].reviewConversationId) {
+        tasks[index].conversationId = reviewConversationId
+        tasks[index].chatURL = "https://chatgpt.com/c/\(reviewConversationId)"
+      }
+      tasks[index].reviewConversationId = nil
+      tasks[index].reviewStatus = nil
+      tasks[index].reviewReport = nil
       tasks[index].waitingUntil = nil
       tasks[index].waitReason = nil
       tasks[index].lastProgressAt = nil

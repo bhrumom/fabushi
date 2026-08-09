@@ -174,7 +174,13 @@ test('CDP WebSocket & Unix IPC primary path integration test', async t => {
           if (msg.method === 'Runtime.evaluate') {
             evaluateExpressionReceived = msg.params?.expression;
             const expression = msg.params?.expression ?? '';
-            const value = expression.includes('userMessageCount')
+            const value = expression.includes('alreadySelected')
+              ? {
+                  ok: true,
+                  alreadySelected: true,
+                  selectedLabel: 'chat-surface-validated',
+                }
+              : expression.includes('userMessageCount')
               ? {
                   ok: true,
                   content: '',
