@@ -93,3 +93,40 @@ jobs:
           name: mahayana-v12-T01.2-evidence
           path: .mahayana/evidence/v12/T01.2.json
           if-no-files-found: error
+
+
+  marketplace-source-labels:
+    name: v12 / T01.3 marketplace-source-labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run marketplace source label assertions
+        run: node --test fabushi/web/tests/miniapp-deployment-identity-contract.test.js
+      - name: Write evidence marker
+        run: |
+          mkdir -p .mahayana/evidence/v12
+          python3 - <<'PY2'
+          import json, os
+          from datetime import datetime, timezone
+          evidence = {
+              "taskId": "T01.3",
+              "checkName": "v12 / T01.3 marketplace-source-labels",
+              "commit": os.environ["GITHUB_SHA"],
+              "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "assertions": ["official user managed local source labels"],
+              "externalReceipts": [],
+              "completedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          with open(".mahayana/evidence/v12/T01.3.json", "w", encoding="utf-8") as handle:
+              json.dump(evidence, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY2
+      - name: Upload T01.3 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-v12-T01.3-evidence
+          path: .mahayana/evidence/v12/T01.3.json
+          if-no-files-found: error
