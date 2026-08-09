@@ -15,6 +15,20 @@ export const INTERNAL_SOURCE_TARGETS = Object.freeze([
   'official-source-github',
 ]);
 
+export const SOURCE_CUSTODIES = Object.freeze(['device', 'platform-managed', 'user-owned']);
+export const SOURCE_PROVIDERS = Object.freeze(['local', 'github']);
+export const SOURCE_ACTORS = Object.freeze(['user', 'platform']);
+export const SOURCE_TRANSPORTS = Object.freeze(['local-fs', 'github-mcp', 'github-app-api']);
+export const HOSTING_PROVIDERS = Object.freeze([
+  'none',
+  'github-pages',
+  'cloudflare-pages',
+  'cloudflare-workers',
+  'external',
+]);
+export const RUNTIME_PROFILES = Object.freeze(['local-native', 'local-web-wasm', 'web-static', 'remote-edge']);
+export const OFFICIAL_STATUSES = Object.freeze(['official', 'community', 'unverified']);
+
 export const DEPLOYMENT_STATES = Object.freeze([
   'local-only',
   'source-hosted',
@@ -67,6 +81,45 @@ function optionalString(value, field, max = 256) {
   return requiredString(value, field, max);
 }
 
+function normalizeOfficialStatus(value) {
+  const raw = requiredString(value, 'officialStatus').toLowerCase();
+  const status = raw === 'user' ? 'community' : raw;
+  if (!OFFICIAL_STATUSES.includes(status)) {
+    fail('official_status_invalid', 'officialStatus must be official, community, or unverified');
+  }
+  return status;
+}
+
+function normalizeHostingFields(value = {}) {
+  let hostingProvider = requiredString(value.hostingProvider ?? 'none', 'hostingProvider').toLowerCase();
+  if (hostingProvider === 'cloudflare') hostingProvider = 'cloudflare-workers';
+  if (!HOSTING_PROVIDERS.includes(hostingProvider)) {
+    fail('hosting_provider_invalid', 'unsupported hosting provider', { hostingProvider });
+  }
+  const defaultRuntimeProfile = hostingProvider === 'none'
+    ? 'local-web-wasm'
+    : hostingProvider === 'cloudflare-workers'
+      ? 'remote-edge'
+      : 'web-static';
+  const runtimeProfile = requiredString(value.runtimeProfile ?? defaultRuntimeProfile, 'runtimeProfile').toLowerCase();
+  if (!RUNTIME_PROFILES.includes(runtimeProfile)) {
+    fail('runtime_profile_invalid', 'unsupported runtime profile', { runtimeProfile });
+  }
+  if (['github-pages', 'cloudflare-pages'].includes(hostingProvider) && runtimeProfile !== 'web-static') {
+    fail('hosting_runtime_mismatch', 'static hosting requires runtimeProfile=web-static', { hostingProvider, runtimeProfile });
+  }
+  if (hostingProvider === 'cloudflare-workers' && runtimeProfile !== 'remote-edge') {
+    fail('hosting_runtime_mismatch', 'Cloudflare Workers requires runtimeProfile=remote-edge', { hostingProvider, runtimeProfile });
+  }
+  return { hostingProvider, runtimeProfile };
+}
+
+function assertDerivedField(value, field, expected, code) {
+  if (value != null && String(value).trim() !== expected) {
+    fail(code, `${field} is derived from deploymentTarget and cannot be spoofed`, { expected });
+  }
+}
+
 function normalizeOwner(value, field) {
   const owner = requiredString(value, field, 39);
   if (!SAFE_OWNER.test(owner)) fail('repository_owner_invalid', `${field} is not a valid GitHub owner`, { field });
@@ -112,88 +165,90 @@ export function normalizeMiniAppIdentity(value, config = {}) {
   }
   const author = requiredString(value.author, 'author', 160);
   const publisher = requiredString(value.publisher, 'publisher', 160);
-  const officialStatus = requiredString(value.officialStatus, 'officialStatus');
-  if (!['official', 'user'].includes(officialStatus)) {
-    fail('official_status_invalid', 'officialStatus must be official or user');
-  }
+  const officialStatus = normalizeOfficialStatus(value.officialStatus);
+  const { hostingProvider, runtimeProfile } = normalizeHostingFields(value);
+
+  let sourceHost;
+  let sourceCustody;
+  let sourceProvider;
+  let sourceActor;
+  let sourceTransport;
+  let repositoryOwner = null;
+  let repositoryName = null;
+  let repositoryId = null;
 
   if (deploymentTarget === 'local-only') {
-    if (value.repositoryOwner || value.repositoryName || value.repositoryId || value.provider === 'github') {
+    sourceHost = 'local';
+    sourceCustody = 'device';
+    sourceProvider = 'local';
+    sourceActor = 'user';
+    sourceTransport = 'local-fs';
+    if (value.repositoryOwner || value.repositoryName || value.repositoryId || value.provider === 'github' || value.sourceProvider === 'github') {
       fail('local_remote_identity_conflict', 'local-only projects cannot claim a remote repository identity');
     }
-    return {
-      author,
-      sourceHost: 'local',
-      provider: 'local',
-      repositoryOwner: null,
-      repositoryName: null,
-      repositoryId: null,
-      publisher,
-      officialStatus,
-      deploymentTarget,
-      actor: 'user',
-      transport: 'local-workspace',
-    };
-  }
-
-  const provider = requiredString(value.provider ?? 'github', 'provider').toLowerCase();
-  const sourceHost = requiredString(value.sourceHost ?? 'github', 'sourceHost').toLowerCase();
-  if (provider !== 'github' || sourceHost !== 'github') {
-    fail('github_provider_required', 'hosted source records must use provider=github and sourceHost=github');
-  }
-  const repositoryOwner = normalizeOwner(value.repositoryOwner, 'repositoryOwner');
-  const repositoryName = normalizeRepositoryName(value.repositoryName, 'repositoryName');
-  const repositoryId = Number(value.repositoryId);
-  if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0) {
-    fail('repository_id_invalid', 'repositoryId must be a positive GitHub repository ID');
-  }
-
-  let actor;
-  let transport;
-  if (deploymentTarget === 'official-managed-github') {
-    const owners = assertManagedUserAppsOwner(config);
-    if (repositoryOwner.toLowerCase() !== owners.managedUserAppsOwner.toLowerCase()) {
-      fail('managed_owner_mismatch', 'managed user source must use the configured managed user apps organization');
+    if (officialStatus === 'official') {
+      fail('official_badge_forbidden', 'local-only user projects cannot claim official status');
     }
-    if (officialStatus !== 'user') {
-      fail('official_badge_forbidden', 'managed user apps cannot claim official status');
-    }
-    actor = 'fabushi-service';
-    transport = 'github-app-api';
-  } else if (deploymentTarget === 'user-github') {
-    if (officialStatus !== 'user') {
-      fail('official_badge_forbidden', 'user GitHub apps cannot claim official status');
-    }
-    actor = 'user';
-    transport = 'github-mcp';
   } else {
-    const officialSourceOwner = normalizeOwner(config.officialSourceOwner ?? 'bhrumom', 'officialSourceOwner');
-    if (repositoryOwner.toLowerCase() !== officialSourceOwner.toLowerCase() || officialStatus !== 'official') {
-      fail('official_source_identity_invalid', 'official source identity must be owned by the official source organization');
+    sourceHost = 'github';
+    sourceProvider = 'github';
+    repositoryOwner = normalizeOwner(value.repositoryOwner, 'repositoryOwner');
+    repositoryName = normalizeRepositoryName(value.repositoryName, 'repositoryName');
+    repositoryId = Number(value.repositoryId);
+    if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0) {
+      fail('repository_id_invalid', 'repositoryId must be a positive GitHub repository ID');
     }
-    actor = 'fabushi-service';
-    transport = 'github-app-api';
+
+    if (deploymentTarget === 'official-managed-github') {
+      const owners = assertManagedUserAppsOwner(config);
+      if (repositoryOwner.toLowerCase() !== owners.managedUserAppsOwner.toLowerCase()) {
+        fail('managed_owner_mismatch', 'managed user source must use the configured managed user apps organization');
+      }
+      if (officialStatus === 'official') {
+        fail('official_badge_forbidden', 'managed user apps cannot claim official status');
+      }
+      sourceCustody = 'platform-managed';
+      sourceActor = 'platform';
+      sourceTransport = 'github-app-api';
+    } else if (deploymentTarget === 'user-github') {
+      if (officialStatus === 'official') {
+        fail('official_badge_forbidden', 'user GitHub apps cannot claim official status');
+      }
+      sourceCustody = 'user-owned';
+      sourceActor = 'user';
+      sourceTransport = 'github-mcp';
+    } else {
+      const officialSourceOwner = normalizeOwner(config.officialSourceOwner ?? 'bhrumom', 'officialSourceOwner');
+      if (repositoryOwner.toLowerCase() !== officialSourceOwner.toLowerCase() || officialStatus !== 'official') {
+        fail('official_source_identity_invalid', 'official source identity must be official and owned by the official source organization');
+      }
+      sourceCustody = 'platform-managed';
+      sourceActor = 'platform';
+      sourceTransport = 'github-app-api';
+    }
   }
 
-  if (value.actor != null && String(value.actor).trim() !== actor) {
-    fail('source_actor_mismatch', 'source actor is derived from deployment target and cannot be spoofed', { expected: actor });
-  }
-  if (value.transport != null && String(value.transport).trim() !== transport) {
-    fail('source_transport_mismatch', 'source transport is derived from deployment target and cannot be spoofed', { expected: transport });
-  }
+  assertDerivedField(value.sourceHost, 'sourceHost', sourceHost, 'source_host_mismatch');
+  assertDerivedField(value.sourceCustody, 'sourceCustody', sourceCustody, 'source_custody_mismatch');
+  assertDerivedField(value.sourceProvider ?? value.provider, 'sourceProvider', sourceProvider, 'source_provider_mismatch');
+  assertDerivedField(value.sourceActor ?? value.actor, 'sourceActor', sourceActor, 'source_actor_mismatch');
+  assertDerivedField(value.sourceTransport ?? value.transport, 'sourceTransport', sourceTransport, 'source_transport_mismatch');
 
   return {
     author,
     sourceHost,
-    provider,
+    sourceCustody,
+    sourceProvider,
+    sourceActor,
+    sourceTransport,
     repositoryOwner,
     repositoryName,
     repositoryId,
     publisher,
     officialStatus,
+    hostingProvider,
+    runtimeProfile,
     deploymentTarget,
-    actor,
-    transport,
   };
 }
 
@@ -329,16 +384,24 @@ export function remoteSyncDecision({ lastPushedCommit, remoteHeadCommit, remoteC
 
 export function normalizeRuntimeDeployment(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('runtime_deployment_invalid', 'runtime deployment must be an object');
-  const target = requiredString(value.target ?? 'none', 'runtime.target');
-  if (!['none', 'github-pages', 'cloudflare'].includes(target)) fail('runtime_target_invalid', 'unsupported runtime deployment target');
-  if (target === 'github-pages') {
+  const requestedHostingProvider = value.hostingProvider ?? value.target ?? 'none';
+  const { hostingProvider, runtimeProfile } = normalizeHostingFields({
+    hostingProvider: requestedHostingProvider,
+    runtimeProfile: value.runtimeProfile,
+  });
+  if (hostingProvider === 'github-pages') {
     if (value.userConfirmedPublic !== true || value.staticOnly !== true || value.pagesPolicyEligible !== true) {
       fail('github_pages_policy_rejected', 'GitHub Pages requires explicit public consent and a policy-eligible static app');
     }
   }
-  if (target === 'none' && value.publicUrl) fail('runtime_target_invalid', 'runtime target none cannot claim a public URL');
+  if (hostingProvider === 'cloudflare-pages' && value.staticOnly !== true) {
+    fail('cloudflare_pages_dynamic_rejected', 'Cloudflare Pages is reserved for static hosting in this deployment contract');
+  }
+  if (hostingProvider === 'none' && value.publicUrl) fail('runtime_target_invalid', 'hosting provider none cannot claim a public URL');
   return {
-    target,
+    hostingProvider,
+    runtimeProfile,
+    target: hostingProvider,
     publicUrl: optionalString(value.publicUrl, 'runtime.publicUrl', 2048),
     staticOnly: value.staticOnly === true,
     userConfirmedPublic: value.userConfirmedPublic === true,
@@ -436,14 +499,17 @@ export function marketplaceSourceLabels(value, config = {}) {
   return {
     author: identity.author,
     sourceHosting,
+    sourceCustody: identity.sourceCustody,
     repository,
     repositoryId: identity.repositoryId,
     publisher: identity.publisher,
     badge: identity.officialStatus === 'official' ? 'official' : 'user-work',
     officialStatus: identity.officialStatus,
-    provider: identity.provider,
-    actor: identity.actor,
-    transport: identity.transport,
+    sourceProvider: identity.sourceProvider,
+    sourceActor: identity.sourceActor,
+    sourceTransport: identity.sourceTransport,
+    hostingProvider: identity.hostingProvider,
+    runtimeProfile: identity.runtimeProfile,
   };
 }
 
