@@ -161,11 +161,10 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /continuation_conversation_click_failed/);
   assert.match(nativeSource, /restoreHiddenConversation/);
   assert.match(nativeSource, /strategy=.*restoration/);
-  assert.match(nativeSource, /fallback=recreate-worker/);
-  assert.match(nativeSource, /continuation_fallback_new_chat_failed/);
+  assert.match(nativeSource, /branch-required/);
+  assert.match(nativeSource, /same_task_branch_not_confirmed/);
   assert.match(nativeSource, /blankConversationReused/);
-  assert.match(nativeSource, /fallback=new-chat/);
-  assert.match(nativeSource, /continuationFallback/);
+  assert.doesNotMatch(nativeSource, /continuationFallback/);
   assert.doesNotMatch(nativeSource, /queueUsesHostedRenderer|CHATGPT_AUTO_CONFIRM_HOSTED/);
   assert.doesNotMatch(nativeSource, /无法恢复上一轮会话，未点击/);
 });
@@ -186,8 +185,9 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /continueInNewTaskJS/);
   assert.match(nativeSource, /prepareNewChatTarget/);
   assert.match(nativeSource, /oldChatPreserved/);
+  assert.match(nativeSource, /branch_in_new_chat/);
   assert.match(nativeSource, /stopRequested/);
-  assert.match(nativeSource, /fresh_chat_fallback/);
+  assert.doesNotMatch(nativeSource, /fresh_chat_fallback/);
   const stallRecoveryStart = nativeSource.indexOf(
     'if Date().timeIntervalSince(lastPageChangeAt)',
   );
@@ -205,6 +205,18 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /继续在此聊天/);
   assert.match(nativeSource, /autoConfirmChatContinuationJS/);
   assert.match(nativeSource, /surface: 'chat'/);
+  assert.match(nativeSource, /continueInChatPrompt/);
+  assert.match(
+    nativeSource,
+    /expression: autoConfirmChatContinuationJS\(\)[\s\S]*dispatchRecommendedCDPClick\([\s\S]*chatContinuation/,
+  );
+  assert.match(
+    nativeSource,
+    /autoConfirmChatContinuationJS\(\)[\s\S]*chatStatusJS\(\)/,
+  );
+  assert.match(nativeSource, /An omitted accountId means/);
+  assert.match(nativeSource, /selectedAccount = nil/);
+  assert.match(nativeSource, /parentProcessID\(matchedProcessID\)/);
   assert.doesNotMatch(nativeSource, /expression: autoConfirmWorkHandoffJS\(\)/);
   assert.match(nativeSource, /REDACTED_API_KEY/);
   assert.match(nativeSource, /connector_selection_not_confirmed/);
@@ -460,10 +472,12 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /dispatchQuickChatEnter/);
   assert.match(nativeSource, /modelSelectionEvidence/);
   assert.match(nativeSource, /dispatchQuickChatArrowRight/);
+  assert.match(nativeSource, /Input\.dispatchKeyEvent/);
+  assert.match(nativeSource, /selectExtraHighReasoningWithTrustedCDP/);
   assert.match(nativeSource, /quick-chat-thinking-keyboard-selection/);
   assert.match(nativeSource, /dispatchPointerClick\(picker\)/);
   assert.match(nativeSource, /model switcher is a Radix trigger/);
-  assert.match(nativeSource, /\['instant', 'thinking', 'pro', 'extra high', 'high', 'medium', '极高', '额外高'\]\.some/);
+  assert.match(nativeSource, /quickChatStrongMode/);
   assert.match(nativeSource, /composer\?\.contains\(left\)/);
   assert.doesNotMatch(nativeSource, /pickerEvidence: 'quick-chat-host-selection'/);
   assert.match(nativeSource, /pickerEvidence: 'selected_button_state'/);
@@ -738,11 +752,11 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /transientErrorRetryCount < 3/);
   assert.match(nativeSource, /hosted-headless-window-fallback-begin/);
   assert.match(nativeSource, /hosted-controller-fallback-begin/);
-  assert.match(nativeSource, /createHostedControllerQueueWorkerTarget/);
+  assert.match(nativeSource, /createSharedControllerQueueWorkerTarget/);
   assert.match(nativeSource, /hosted_controller_unavailable_or_busy/);
   assert.match(nativeSource, /state\.queueWorkerMode = sharedConversationQueueWorkerMode/);
   assert.match(nativeSource,
-    /runningOnGitHubActions\(\)[\s\S]*?workerMode == sharedConversationQueueWorkerMode/);
+    /queueAllowsVisibleDedicatedRenderer\(\)[\s\S]*?workerMode == sharedConversationQueueWorkerMode/);
   assert.match(nativeSource, /initialChatReady/);
   assert.match(nativeSource, /Work-to-Chat transition/);
   assert.match(nativeSource, /createHeadlessParallelQueueWorkerTarget\(&state\)/);

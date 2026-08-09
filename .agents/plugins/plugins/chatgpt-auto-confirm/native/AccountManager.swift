@@ -187,7 +187,11 @@ func accountPublicPayload(_ account: AccountRecord) -> [String: Any] {
 }
 
 enum AccountVault {
-  static let service = "com.fabushi.chatgpt-auto-confirm"
+  // v2 intentionally starts a fresh Keychain ACL after the runtime moved from
+  // linker ad-hoc signing to a stable Apple Development signature. Reusing the
+  // old service would keep the old CDHash-bound ACL and macOS would continue
+  // asking for the login-keychain password after every rebuilt binary.
+  static let service = "com.fabushi.chatgpt-auto-confirm.v2"
 
   static func key(_ accountId: String, _ name: String) -> String {
     "\(accountId):\(name)"

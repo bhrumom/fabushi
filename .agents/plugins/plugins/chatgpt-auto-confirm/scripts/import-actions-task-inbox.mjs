@@ -59,6 +59,16 @@ const requeued = [];
 const revised = [];
 
 const resetExecution = (task) => {
+  const reviewConversationId = String(task.reviewConversationId || '').trim();
+  if (reviewConversationId) {
+    // A review Chat is a branch of this same task. Recovery/revision must
+    // continue from the newest branch instead of erasing the task identity and
+    // creating another top-level Chat.
+    task.conversationId = reviewConversationId;
+    if (!reviewConversationId.startsWith('local-chatgpt:')) {
+      task.chatURL = `https://chatgpt.com/c/${reviewConversationId}`;
+    }
+  }
   task.attempts = 0;
   task.status = 'queued';
   task.startedAt = null;
@@ -69,11 +79,9 @@ const resetExecution = (task) => {
   task.workerStatePath = null;
   task.workerProfilePath = null;
   task.resultPath = null;
-  task.conversationId = null;
   task.reviewConversationId = null;
   task.reviewStatus = null;
   task.reviewReport = null;
-  task.chatURL = null;
   task.report = null;
   task.lastResultJSON = null;
   task.lastActivitySignature = null;
