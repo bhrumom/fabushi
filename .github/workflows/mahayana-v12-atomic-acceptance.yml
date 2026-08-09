@@ -1,0 +1,33 @@
+name: Mahayana v12 atomic acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'fabushi/web/src/miniapps/**'
+      - 'fabushi/web/tests/miniapp-deployment-identity-contract.test.js'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**'
+      - '.github/workflows/mahayana-v12-atomic-acceptance.yml'
+  push:
+    branches:
+      - codex/mahayana-marketplace-cloudflare-v10
+
+permissions:
+  contents: read
+
+jobs:
+  identity-schema:
+    name: v12 / T01.1 identity-schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run identity schema contract assertions
+        run: node --test fabushi/web/tests/miniapp-deployment-identity-contract.test.js
+      - name: Write evidence marker
+        run: |
+          mkdir -p .mahayana/evidence/v12
+          cat > .mahayana/evidence/v12/T01.1.json <<'EOF'
+          {"taskId":"T01.1","checkName":"v12 / T01.1 identity-schema","assertions":["identity contract tests"],"externalReceipts":[]}
+          EOF
