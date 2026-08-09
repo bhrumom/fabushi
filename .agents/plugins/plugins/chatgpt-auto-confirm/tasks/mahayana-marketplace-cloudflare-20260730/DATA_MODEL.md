@@ -1,5 +1,74 @@
 # 数据模型：MCP Apps-only 大乘市场 v2
 
+> v12.2 纠偏：`LocalWorkspace` 是设备端第一事实源；源码托管、构建、网页部署和市场版本为正交实体。旧的 Cloudflare-only `plugin_deployments` 不能继续作为新写入模型。
+
+## 0. 本地优先与双 GitHub 核心实体
+
+设备端 `local_workspaces` 至少保存 `local_project_id`、`app_id`、`plugin_id`、`workspace_revision`、`accepted_tree_hash` 和各层 sync 状态；真实磁盘路径不得上传。
+
+服务端新增或使用等价模型：
+
+```text
+miniapp_identities
+  app_id immutable
+  plugin_id
+  author_subject_id
+  publisher_subject_id nullable
+  official_status official | community | unverified
+  lineage_id
+
+source_snapshots
+  snapshot_id
+  app_id
+  archive_sha256
+  tree_hash
+  file_manifest_json
+  scanner_version
+  created_at
+
+source_bindings
+  source_binding_id
+  app_id
+  snapshot_id
+  provider local | github
+  actor user | platform
+  transport local-fs | github-mcp | github-app-api
+  custody device | platform-managed | user-owned
+  managed_org_id nullable
+  repository_id nullable
+  repository_owner nullable
+  repository_name nullable
+  commit_sha nullable
+  tree_hash
+  state none | consented | syncing | hosted | diverged | failed | outcome-unknown
+
+web_deployments
+  web_deployment_id
+  app_id
+  build_id
+  provider none | github-pages | cloudflare-pages | cloudflare-workers | external
+  runtime_profile local-native | local-web-wasm | web-static | remote-edge
+  policy_decision_json
+  provider_project_ref nullable
+  provider_deployment_id nullable
+  public_url nullable
+  state none | queued | deploying | deployed | failed | rolled-back
+
+deployment_intents
+  intent_id
+  app_id
+  idempotency_key unique per subject
+  plan_version
+  expected_snapshot_sha256
+  source_target managed-github | user-github
+  requested_visibility private | public
+  hosting_preference auto | none | github-pages | cloudflare | external
+  consents_json
+  status planned | confirmed | applying | applied | rejected | failed | outcome-unknown
+```
+
+GitHub `repository_id` 是远程来源主键；owner/name 是可变 locator。`source_host/repository_owner/publisher/official_status` 必须分开，任何一个都不能推导其他字段。
+
 ## 1. 设计原则
 
 - 插件身份、版本、部署和审核分离；
@@ -44,12 +113,12 @@ updated_at
 
 `production_version` 只能引用已批准、未撤销且 MCP Apps 合规的 release。
 
-## 4. `plugin_deployments`
+## 4. `plugin_deployments`（兼容投影）
 
 ```text
 id
 plugin_uuid
-provider cloudflare
+provider none | github_pages | cloudflare_pages | cloudflare_workers | external
 mode managed | self_hosted
 provider_project_ref
 service_name
@@ -60,7 +129,7 @@ created_at
 updated_at
 ```
 
-每个插件一个 active 主服务；不同插件不得共享写凭证、Secret 或数据库边界。
+该表只保留给既有查询兼容，权威新写入为 `web_deployments`。每个插件可以没有网页部署，也可以有 preview/production/history；不得把 source binding 写入本表。不同用户的不受信任服务端代码不得共享平台写凭证、Secret 或数据库边界。
 
 ## 5. `plugin_releases`
 
@@ -80,9 +149,11 @@ provenance_url
 homepage_url
 runtime_url
 runtime_kind              mcp-app
-mcp_sdk_major             2
-transport_mode            stateless-http
-legacy_allowed            false
+runtime_profiles_json
+hosting_provider          none | github_pages | cloudflare_pages | cloudflare_workers | external
+remote_mcp_sdk_major      nullable
+remote_transport_mode     nullable
+remote_legacy_allowed     nullable
 mcp_apps_extension        io.modelcontextprotocol/ui
 ui_resources_json
 ui_mime_types_json
@@ -115,9 +186,9 @@ UNIQUE(package_url)
 正式 release 的数据库约束必须保证：
 
 - `runtime_kind = 'mcp-app'`；
-- `mcp_sdk_major = 2`；
-- `transport_mode = 'stateless-http'`；
-- `legacy_allowed = false`；
+- `runtime_profiles_json` 至少声明一个真实构件/运行 profile；
+- 若 `hosting_provider IN ('cloudflare_workers', 'external')` 且存在远程 MCP，则 `remote_mcp_sdk_major = 2`、`remote_transport_mode = 'stateless-http'`、`remote_legacy_allowed = false`；
+- 若 `hosting_provider IN ('none', 'github_pages', 'cloudflare_pages')` 且没有远程 MCP，则上述 remote 字段为空，不得伪造 endpoint；
 - extension、UI resource 和 MIME 非空。
 
 ## 6. `plugin_release_deployments`
@@ -125,19 +196,23 @@ UNIQUE(package_url)
 ```text
 id
 release_id
+provider none | github_pages | cloudflare_pages | cloudflare_workers | external
 provider_version_id
 provider_deployment_id
 deployment_stage preview | production | rollback
-preview_url
-mcp_url
-legacy_rejection_verified boolean
-stateless_cross_edge_verified boolean
+public_url nullable
+mcp_url nullable
+artifact_sha256
+policy_decision_json
+legacy_rejection_verified nullable boolean
+stateless_cross_edge_verified nullable boolean
+static_export_verified nullable boolean
 created_by
 created_at
 superseded_at
 ```
 
-Production 只能引用 `legacy_rejection_verified = true` 的记录。
+远程 MCP production 只能引用 `legacy_rejection_verified = true` 且 `stateless_cross_edge_verified = true` 的记录；静态 production 只能引用 `static_export_verified = true` 且 Pages/Cloudflare policy gate 通过的记录；`provider=none` 不创建远程 deployment receipt。
 
 ## 7. `plugin_ui_resources`
 

@@ -4,6 +4,8 @@
 
 本文件是任务 `mahayana-marketplace-cloudflare-20260730` 的最高优先级源码协作、Fork、Pull Request、AI 修复和派生发布约束。
 
+> v12.2 范围纠偏：本文件只适用于用户已经明确上传的 source snapshot 或正式市场版本。local-only 小程序不要求 GitHub 仓库；managed 用户仓库必须进入与 `bhrumom` 隔离的 managed user apps 组织。生成、上传、网页部署和市场发布的优先规则见 `LOCAL_GENERATION_GITHUB_DEPLOYMENT.md`。
+
 它建立在以下架构之上：
 
 1. `MCP_APPS_ONLY.md`：统一 MCP Apps UI、Host 与安全协议；
@@ -13,9 +15,9 @@
 
 核心结论：
 
-> 一个大乘小程序同时是一个可安装 MCP App 和一个可协作 GitHub 仓库。源码可被社区 Fork、修改和提 PR；正式插件身份、签名和更新通道由发布者控制。Fork 可以贡献回上游，也可以更换插件身份后独立发布为派生 App。
+> 一个完成源码托管或进入市场的大乘小程序，同时是可安装 MCP App 和可协作 GitHub 仓库；local-only 阶段仍以设备 Workspace 为事实源。源码可被社区 Fork、修改和提 PR；正式插件身份、签名和更新通道由发布者控制。Fork 可以贡献回上游，也可以更换插件身份后独立发布为派生 App。
 
-## 1. 一个小程序对应一个规范化源码仓库
+## 1. 一个已托管小程序对应一个规范化源码仓库
 
 正式市场版本必须绑定可验证的源码仓库身份：
 

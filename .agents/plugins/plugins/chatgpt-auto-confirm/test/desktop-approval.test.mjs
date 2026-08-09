@@ -423,6 +423,8 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /virtual-list parent/);
   assert.match(nativeSource, /let continuationLimit = max\(1, task\.maxTaskContinuations\)/);
   assert.match(nativeSource, /approval_duplicate_circuit_open/);
+  assert.match(nativeSource, /maxAutomaticApprovalAttemptsPerFingerprint = 3/);
+  assert.match(nativeSource, /reason=persistent fingerprint/);
   assert.match(nativeSource, /approval_rate_circuit_open/);
   assert.match(nativeSource, /background_chat_closed_requires_restart/);
   assert.match(nativeSource, /queue_worker_closed_requires_retry/);
@@ -752,6 +754,12 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /transientErrorRetryCount < 3/);
   assert.match(nativeSource, /hosted-headless-window-fallback-begin/);
   assert.match(nativeSource, /hosted-controller-fallback-begin/);
+  assert.match(nativeSource, /unassigned-controller-fallback-begin/);
+  assert.match(nativeSource, /mayReuseSerialSharedController/);
+  assert.match(nativeSource, /targetId == state\.queueWorkerTargetId/);
+  assert.match(nativeSource, /unassigned_controller_fallback=/);
+  assert.match(nativeSource, /environment\["CHATGPT_AUTO_CONFIRM_HEADLESS"\] = "1"/);
+  assert.match(nativeSource, /general confirmer has already proved that exact renderer is hidden/);
   assert.match(nativeSource, /createSharedControllerQueueWorkerTarget/);
   assert.match(nativeSource, /hosted_controller_unavailable_or_busy/);
   assert.match(nativeSource, /state\.queueWorkerMode = sharedConversationQueueWorkerMode/);

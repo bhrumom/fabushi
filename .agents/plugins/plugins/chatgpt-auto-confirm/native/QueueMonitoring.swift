@@ -97,7 +97,10 @@ func approveDedicatedAuthorizationWithDiagnostics(
         .flatMap(isoFormatter.date(from:))
         .map { currentDate.timeIntervalSince($0) }
       : nil
-    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+    let attempts = task.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
+    if let repeatedFor,
+       repeatedFor >= duplicateApprovalGraceSeconds,
+       attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
       state.queuePaused = true
       task.status = "blocked"
       task.lastError = "approval_duplicate_circuit_open"
@@ -116,6 +119,13 @@ func approveDedicatedAuthorizationWithDiagnostics(
         "error": "approval_duplicate_circuit_open",
       ]
     }
+    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+      task.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
+      queueTrace(
+        "task=\(taskId) stage=approval-\(stage)-retry "
+          + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
+      )
+    } else {
     task.lastError = "approval_duplicate_suppressed"
     task.updatedAt = now
     queueTrace(
@@ -129,6 +139,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
       "skipped": true,
       "error": "approval_duplicate_suppressed",
     ]
+    }
   }
 
   let recentApprovals = prunedAutomaticApprovalTimestamps(
@@ -181,6 +192,7 @@ func approveDedicatedAuthorizationWithDiagnostics(
     recordHandledApprovalFingerprint(
       fingerprint,
       fingerprints: &task.handledApprovalFingerprints,
+      fingerprintAttempts: &task.automaticApprovalFingerprintAttempts,
       timestamps: &task.automaticApprovalTimestamps,
       lastFingerprint: &task.lastAutomaticApprovalFingerprint,
       lastApprovedAt: &task.lastAutomaticApprovalAt,

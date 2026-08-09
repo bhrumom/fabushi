@@ -2659,13 +2659,23 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
             .map { currentDate.timeIntervalSince($0) }
           : nil
         totalCandidates += 1
-        if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+        let attempts = state.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
+        if let repeatedFor,
+           repeatedFor >= duplicateApprovalGraceSeconds,
+           attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
           state.enabled = false
           state.lastError = "approval_duplicate_circuit_open"
           totalBlocked += 1
           queueTrace(
             "task=approval-watcher stage=approval-ipc-blocked "
               + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
+          )
+          continue
+        } else if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+          state.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
+          queueTrace(
+            "task=approval-watcher stage=approval-ipc-retry "
+              + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
           )
         } else {
           totalPending += 1
@@ -2674,8 +2684,8 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
             "task=approval-watcher stage=approval-ipc-skipped "
               + "reason=duplicate fingerprint=\(fingerprint)"
           )
+          continue
         }
-        continue
       }
       let recentApprovals = prunedAutomaticApprovalTimestamps(
         state.automaticApprovalTimestamps,
@@ -2716,6 +2726,7 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       recordHandledApprovalFingerprint(
         fingerprint,
         fingerprints: &state.handledApprovalFingerprints,
+        fingerprintAttempts: &state.automaticApprovalFingerprintAttempts,
         timestamps: &state.automaticApprovalTimestamps,
         lastFingerprint: &state.lastAutomaticApprovalFingerprint,
         lastApprovedAt: &state.lastAutomaticApprovalAt,
