@@ -65,6 +65,14 @@
       "platforms": ["cli", "desktop"]
     },
     {
+      "id": "chatgpt-android-controller",
+      "version": "0.1.0",
+      "title": "ChatGPT Android 自动化",
+      "description": "在 GitHub Actions 或桌面宿主中持续操控 Android ChatGPT APK，复用加密登录态并运行可恢复任务队列",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-android-controller/",
+      "platforms": ["cli", "desktop"]
+    },
+    {
       "id": "computer-cleaner",
       "version": "0.1.0",
       "title": "电脑清理器",

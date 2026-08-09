@@ -888,23 +888,41 @@ func openBackgroundQueueWindow(
         (() => {
           const normalize = value => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
           const allowed = new Set(['try again', '重试', '再试一次']);
+          const labelFor = node => normalize(
+            node.getAttribute('aria-label') || node.innerText || node.textContent
+              || node.getAttribute('title')
+          );
           const button = [...document.querySelectorAll('button, [role="button"]')]
-            .find(node => allowed.has(normalize([
-              node.innerText,
-              node.getAttribute('aria-label'),
-              node.getAttribute('title')
-            ].filter(Boolean).join(' ')))
+            .find(node => allowed.has(labelFor(node))
               && !node.disabled
               && node.getAttribute('aria-disabled') !== 'true');
-          if (!button) return { clicked: false };
-          const label = normalize(button.innerText || button.getAttribute('aria-label'));
-          button.click();
-          return { clicked: true, label };
+          if (!button) return { found: false };
+          const label = labelFor(button);
+          const rect = button.getBoundingClientRect();
+          return {
+            found: true,
+            label,
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+          };
         })()
         """,
         timeout: 4.0
       )
-      if retry?["clicked"] as? Bool == true {
+      let retryClicked: Bool
+      if retry?["found"] as? Bool == true,
+         let x = (retry?["x"] as? NSNumber)?.doubleValue,
+         let y = (retry?["y"] as? NSNumber)?.doubleValue {
+        retryClicked = CDPClient.clickTarget(
+          targetId,
+          x: x,
+          y: y,
+          portOverride: port
+        )
+      } else {
+        retryClicked = false
+      }
+      if retryClicked {
         transientErrorRetryCount += 1
         queueTrace(
           "worker-create stage=prewarm-transient-error-retry "
