@@ -4,7 +4,7 @@ export const HOME = {
   "app": {
     "id": "chatgpt-auto-confirm",
     "title": "ChatGPT 自动确认",
-    "version": "1.0.0+codex.20260809131437"
+    "version": "1.0.0+codex.20260809132958"
   },
   "welcome": {
     "id": "welcome",
