@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'fabushi/web/src/miniapps/**'
-      - 'fabushi/web/tests/miniapp-deployment-identity-contract.test.js'
+      - 'fabushi/web/tests/miniapp-deployment-identity-*.test.*'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**'
       - '.github/workflows/mahayana-v12-atomic-acceptance.yml'
   push:
@@ -25,9 +25,35 @@ jobs:
           node-version: 22
       - name: Run identity schema contract assertions
         run: node --test fabushi/web/tests/miniapp-deployment-identity-contract.test.js
+      - name: Run identity migration round-trip
+        run: python3 fabushi/web/tests/miniapp-deployment-identity-migration.test.py
       - name: Write evidence marker
         run: |
           mkdir -p .mahayana/evidence/v12
-          cat > .mahayana/evidence/v12/T01.1.json <<'EOF'
-          {"taskId":"T01.1","checkName":"v12 / T01.1 identity-schema","assertions":["identity contract tests"],"externalReceipts":[]}
-          EOF
+          python3 - <<'PY2'
+          import json, os
+          from datetime import datetime, timezone
+          evidence = {
+              "taskId": "T01.1",
+              "checkName": "v12 / T01.1 identity-schema",
+              "commit": os.environ["GITHUB_SHA"],
+              "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "assertions": [
+                  "identity contract fixtures",
+                  "serialization round-trip",
+                  "source-hosting separation",
+                  "SQLite migration round-trip",
+              ],
+              "externalReceipts": [],
+              "completedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          }
+          with open(".mahayana/evidence/v12/T01.1.json", "w", encoding="utf-8") as handle:
+              json.dump(evidence, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY2
+      - name: Upload T01.1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-v12-T01.1-evidence
+          path: .mahayana/evidence/v12/T01.1.json
+          if-no-files-found: error
