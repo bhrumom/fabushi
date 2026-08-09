@@ -1,5 +1,7 @@
 # PRD：可热安装的本地 Web MCP Apps 小程序市场
 
+> v12.2 产品补充：AI 代码先进入本地 Workspace，只有用户明确上线才创建 GitHub source binding 或网页 deployment；源码目标与运行目标分开选择。完整产品和成本决策见 `LOCAL_GENERATION_GITHUB_DEPLOYMENT.md`。
+
 ## 1. 产品目标
 
 大乘小程序统一为可签名下载、安装到本地、独立版本更新和回滚的 MCP Apps。
@@ -24,7 +26,7 @@ MCP Apps 负责统一 UI、Tool、Resource 和 Host 通信；小程序业务逻�
 - 页面按钮和聊天输入调用同一组 MCP Tool；
 - 小程序网页包可以独立热更新，不要求每次更新主 App；
 - 主 App 只提供通用 Host、安装器、沙箱、签名校验和政策允许的通用能力；
-- Cloudflare 负责市场、包分发、签名元数据、撤销、更新和可选远程 API；
+- 市场控制平面负责签名元数据、撤销和更新；不可变包可由受信任 provider 分发；Cloudflare 继续承载现有控制面和可选远程 API，但不是每个用户项目的必选资源；
 - 不用远程网页替代已经安装的本地网页；
 - 不通过模拟网页点击实现聊天调用；
 - 不把热更新做成绕过应用商店审核的任意代码下载器。

@@ -304,7 +304,7 @@ Host 按以下顺序选择 Runtime：
 
 ## 9. 市场和发布模型
 
-所有插件仍通过 Cloudflare/市场获得：
+所有已发布插件仍通过市场和发布清单声明的受信任 artifact provider 获得（现有 Cloudflare 分发可继续保留）：
 
 - 签名版本元数据；
 - 不可变安装包 URL；

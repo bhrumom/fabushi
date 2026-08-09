@@ -158,12 +158,129 @@ func cdpValue(
   expression: String,
   timeout: TimeInterval = 5.0
 ) -> [String: Any]? {
-  cdpValueRead(
+  let initial = cdpValueRead(
     port: port,
     targetId: targetId,
     expression: expression,
     timeout: timeout
   ).value
+  guard let initial else { return nil }
+  let modelSelectionErrors: Set<String> = [
+    "reasoning_high_not_selected",
+    "quick_chat_thinking_not_selected",
+  ]
+  guard initial["failedStage"] as? String == "model_selection",
+        let error = initial["error"] as? String,
+        modelSelectionErrors.contains(error),
+        selectExtraHighReasoningWithTrustedCDP(port: port, targetId: targetId) else {
+    return initial
+  }
+  // Model selection fails before connector insertion or message input, so it is
+  // safe to evaluate the send script once more after the trusted CDP repair.
+  return cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: expression,
+    timeout: timeout
+  ).value ?? initial
+}
+
+private func selectExtraHighReasoningWithTrustedCDP(port: Int, targetId: String) -> Bool {
+  guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+          $0["id"] as? String == targetId
+        }),
+        let wsURL = target["webSocketDebuggerUrl"] as? String else { return false }
+
+  let discoveryJS = #"""
+  (() => {
+    const visible = element => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const picker = [...document.querySelectorAll('button[aria-haspopup="menu"], button[aria-label]')]
+      .find(element => visible(element) && /chatgpt model|选择 chatgpt 模型|選擇 chatgpt 模型/i.test(
+        `${element.getAttribute('aria-label') || ''} ${element.textContent || ''}`
+      ));
+    const menu = [...document.querySelectorAll('[role="menu"]')].find(visible);
+    const rect = picker?.getBoundingClientRect();
+    return {
+      menuOpen: !!menu,
+      pickerX: rect ? rect.x + rect.width / 2 : null,
+      pickerY: rect ? rect.y + rect.height / 2 : null
+    };
+  })()
+  """#
+  guard var discovery = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: discoveryJS
+  ).value else { return false }
+  if discovery["menuOpen"] as? Bool != true {
+    guard let x = (discovery["pickerX"] as? NSNumber)?.doubleValue,
+          let y = (discovery["pickerY"] as? NSNumber)?.doubleValue,
+          CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port) else { return false }
+    Thread.sleep(forTimeInterval: 0.45)
+    discovery = cdpValueRead(
+      port: port,
+      targetId: targetId,
+      expression: discoveryJS
+    ).value ?? [:]
+    guard discovery["menuOpen"] as? Bool == true else { return false }
+  }
+
+  let focusAndReadJS = #"""
+  (() => {
+    const control = document.querySelector('[data-reasoning-slider="true"]');
+    control?.focus();
+    const slider = document.querySelector('[data-model-picker-power-slider] [role="slider"]');
+    const status = control?.parentElement?.querySelector('[role="status"]')
+      || document.querySelector('[role="menu"] [role="status"]');
+    const indexed = (status?.textContent || '').match(/第\s*(\d+)\s*[项項][，,\s]*共\s*(\d+)\s*[项項]/);
+    return {
+      focused: document.activeElement === control,
+      now: Number(slider?.getAttribute('aria-valuenow') ?? (indexed ? Number(indexed[1]) - 1 : NaN)),
+      max: Number(slider?.getAttribute('aria-valuemax') ?? (indexed ? Number(indexed[2]) - 1 : NaN))
+    };
+  })()
+  """#
+  guard let state = cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: focusAndReadJS
+  ).value,
+        state["focused"] as? Bool == true,
+        let now = (state["now"] as? NSNumber)?.doubleValue,
+        let max = (state["max"] as? NSNumber)?.doubleValue,
+        now.isFinite, max.isFinite, max >= 2 else { return false }
+  let desired = Int(max) - 1
+  let current = Int(now)
+  let key = current <= desired ? "ArrowRight" : "ArrowLeft"
+  for _ in 0..<abs(desired - current) {
+    guard CDPClient.dispatchArrowKey(wsURLString: wsURL, key: key) else { return false }
+    Thread.sleep(forTimeInterval: 0.2)
+  }
+  Thread.sleep(forTimeInterval: 0.35)
+
+  let verificationJS = #"""
+  (() => {
+    const picker = [...document.querySelectorAll('button[aria-haspopup="menu"], button[aria-label]')]
+      .find(element => /chatgpt model|选择 chatgpt 模型|選擇 chatgpt 模型/i.test(
+        `${element.getAttribute('aria-label') || ''} ${element.textContent || ''}`
+      ));
+    const label = `${picker?.textContent || ''} ${picker?.getAttribute('data-selected-reasoning-effort') || ''}`.toLowerCase();
+    const slider = document.querySelector('[data-model-picker-power-slider] [role="slider"]');
+    const now = Number(slider?.getAttribute('aria-valuenow'));
+    const max = Number(slider?.getAttribute('aria-valuemax'));
+    return {ok: /extra high|极高|極高|额外高|額外高/.test(label)
+      || (Number.isFinite(now) && Number.isFinite(max) && now === max - 1)};
+  })()
+  """#
+  return cdpValueRead(
+    port: port,
+    targetId: targetId,
+    expression: verificationJS
+  ).value?["ok"] as? Bool == true
 }
 
 func pageDiagnosticJS() -> String {
@@ -848,6 +965,17 @@ func clickNewChatJS() -> String {
       window.location.href = isMac ? 'chatgpt://work/' : '/';
       return { ok: true, newChatClicked: true, previousConversationId, fallbackNavigated: true };
     }
+    const rect = button.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      return {
+        ok: true,
+        newChatClicked: true,
+        previousConversationId,
+        nativeClickRecommended: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    }
     button.click();
     return { ok: true, newChatClicked: true, previousConversationId };
   })()
@@ -1035,6 +1163,57 @@ func clickChatJS() -> String {
         modeControls
       };
     }
+    // Switching the app shell to ChatGPT can leave the previously selected
+    // Work conversation mounted in the content pane. In that state the mode
+    // switch is already correct; opening it again only loops. Starting a new
+    // Chat from the ChatGPT sidebar is the transition that replaces the stale
+    // Work composer with the real Chat composer.
+    if (currentChatGPTMode && surface.workComposer) {
+      const newChatButton = candidates().find(candidate =>
+        labelsFor(candidate).some(label => label === 'new chat' || label === '新聊天')
+      );
+      if (newChatButton) {
+        const rect = newChatButton.getBoundingClientRect();
+        return {
+          ok: false,
+          error: 'chat_surface_new_chat_dispatched',
+          retryAfterModeSwitch: true,
+          nativeClickRecommended: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2
+        };
+      }
+    }
+    const modeSwitch = candidates().find(candidate =>
+      labelsFor(candidate).some(label =>
+        label.includes('switch mode, current mode:')
+        || label.includes('切换模式')
+        || label.includes('当前模式')
+      )
+    );
+    const modeSwitchOpen = modeSwitch
+      && (modeSwitch.getAttribute('aria-expanded') === 'true'
+        || modeSwitch.getAttribute('data-state') === 'open');
+    // Closed Radix menus keep old text nodes mounted. Looking for a generic
+    // leaf named "Chat" before opening the real mode switch can therefore
+    // select stale/off-surface content. Always open the identified top-level
+    // switch first, then resolve its visible ChatGPT menu item on the next CDP
+    // evaluation.
+    if (modeSwitch && !modeSwitchOpen) {
+      window.__mahayanaChatModeSwitchAttempted = true;
+      setTimeout(() => {
+        try { dispatchPointerClick(modeSwitch); } catch (_) {}
+      }, 0);
+      const rect = modeSwitch.getBoundingClientRect();
+      return {
+        ok: false,
+        error: 'mode_switch_dispatched',
+        retryAfterModeSwitch: true,
+        nativeClickRecommended: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    }
     const exactChat = () => modeTabs()
       .filter(candidate =>
         labelsFor(candidate).some(label => isChatLabel(label))
@@ -1043,24 +1222,10 @@ func clickChatJS() -> String {
       .sort((lhs, rhs) => modeTabScore(rhs) - modeTabScore(lhs))[0];
     let button = exactChat();
     if (!button) {
-      const modeSwitch = candidates().find(candidate =>
-        labelsFor(candidate).some(label =>
-          label.includes('switch mode, current mode:')
-          || label.includes('切换模式')
-          || label.includes('当前模式')
-        )
-      );
       if (modeSwitch) {
-        // Opening the switcher can itself replace the renderer. Return before
-        // dispatching the click, then let the caller evaluate the new page and
-        // select the ChatGPT menu item in a fresh execution context.
-        window.__mahayanaChatModeSwitchAttempted = true;
-        setTimeout(() => {
-          try { dispatchPointerClick(modeSwitch); } catch (_) {}
-        }, 0);
         return {
           ok: false,
-          error: 'mode_switch_dispatched',
+          error: 'chat_mode_choice_not_found_after_switch',
           retryAfterModeSwitch: true
         };
       }
@@ -1088,13 +1253,17 @@ func clickChatJS() -> String {
     // click after this evaluation returns so a destroyed execution context is
     // not mistaken for a failed mode selection. The caller independently
     // waits for and validates the resulting hidden Chat surface.
+    const rect = button.getBoundingClientRect();
     setTimeout(() => {
-      try { button.click(); } catch (_) {}
-    }, 0);
+      try { dispatchPointerClick(button); } catch (_) {}
+    }, 200);
     return {
       ok: true,
       chatSelected: true,
       dispatchOnly: true,
+      nativeClickRecommended: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
       selectedLabel: normalize(
         button.innerText || button.getAttribute('aria-label') || button.getAttribute('title')
       ),
@@ -1103,6 +1272,22 @@ func clickChatJS() -> String {
     };
   })()
   """#
+}
+
+/// React's Chat/Work mode switch can ignore synthetic DOM clicks even though
+/// Runtime.evaluate reports that the correct control was found. Mirror the
+/// successful queue-worker path by completing those clicks through CDP's
+/// native input domain whenever the page returns viewport coordinates.
+@discardableResult
+func dispatchRecommendedCDPClick(
+  _ result: [String: Any]?,
+  port: Int,
+  targetId: String
+) -> Bool {
+  guard result?["nativeClickRecommended"] as? Bool == true,
+        let x = (result?["x"] as? NSNumber)?.doubleValue,
+        let y = (result?["y"] as? NSNumber)?.doubleValue else { return false }
+  return CDPClient.clickTarget(targetId, x: x, y: y, portOverride: port)
 }
 
 func clickCodexModeJS() -> String {
@@ -1178,12 +1363,16 @@ func clickCodexModeJS() -> String {
       });
     }
     if (target) {
+      const rect = target.getBoundingClientRect();
       setTimeout(() => {
-        try { target.click(); } catch (_) {}
-      }, 0);
+        try { dispatchPointerClick(target); } catch (_) {}
+      }, 200);
       return {
         ok: true,
         dispatchOnly: true,
+        nativeClickRecommended: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
         selectedLabel: normalize(
           target.innerText || target.getAttribute('aria-label') || target.getAttribute('title')
         )
@@ -1200,10 +1389,14 @@ func clickCodexModeJS() -> String {
       setTimeout(() => {
         try { dispatchPointerClick(modeSwitch); } catch (_) {}
       }, 0);
+      const rect = modeSwitch.getBoundingClientRect();
       return {
         ok: false,
         error: 'mode_switch_dispatched',
-        retryAfterModeSwitch: true
+        retryAfterModeSwitch: true,
+        nativeClickRecommended: true,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
       };
     }
     return {
@@ -1345,10 +1538,16 @@ func autoConfirmChatContinuationJS() -> String {
       return allowed.has(normalize(button.innerText || button.textContent || button.getAttribute('aria-label')));
     });
     if (!button) return { ok: true, clicked: false, surface: 'chat' };
-    setTimeout(() => {
-      try { button.click(); } catch (_) {}
-    }, 0);
-    return { ok: true, clicked: true, dispatchOnly: true, surface: 'chat' };
+    const rect = button.getBoundingClientRect();
+    return {
+      ok: true,
+      clicked: true,
+      dispatchOnly: true,
+      nativeClickRecommended: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      surface: 'chat'
+    };
   })()
   """#
 }
@@ -1756,12 +1955,18 @@ func prepareNewChatTarget(
     guard result?["ok"] as? Bool == true else { return false }
     return result?["alreadySelected"] as? Bool == true
   }
-  var chatModeConfirmed = confirmedChatSelection(cdpValue(
+  let initialChatSelection = cdpValue(
     port: port,
     targetId: targetId,
     expression: clickChatJS(),
     timeout: timeout
-  ))
+  )
+  _ = dispatchRecommendedCDPClick(
+    initialChatSelection,
+    port: port,
+    targetId: targetId
+  )
+  var chatModeConfirmed = confirmedChatSelection(initialChatSelection)
   var baseline: [String: Any]?
   for _ in 0..<40 {
     baseline = cdpValue(
@@ -1775,12 +1980,19 @@ func prepareNewChatTarget(
     )
     if baseline?["ok"] as? Bool == true { break }
     if baseline?["error"] as? String == "not_chat_surface" {
-      chatModeConfirmed = confirmedChatSelection(cdpValue(
+      let retryChatSelection = cdpValue(
         port: port,
         targetId: targetId,
         expression: clickChatJS(),
         timeout: timeout
-      )) || chatModeConfirmed
+      )
+      _ = dispatchRecommendedCDPClick(
+        retryChatSelection,
+        port: port,
+        targetId: targetId
+      )
+      chatModeConfirmed = confirmedChatSelection(retryChatSelection)
+        || chatModeConfirmed
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
@@ -1821,6 +2033,7 @@ func prepareNewChatTarget(
     expression: clickNewChatJS(),
     timeout: timeout
   ), clicked["ok"] as? Bool == true else { return nil }
+  _ = dispatchRecommendedCDPClick(clicked, port: port, targetId: targetId)
   let previous = clicked["previousConversationId"] as? String ?? previousConversationId
 
   var stableConversationId: String?
@@ -1943,7 +2156,7 @@ func ensureHiddenChatTarget(
     }
   }
 
-  guard let targetId = mainTarget?["id"] as? String else {
+  guard var targetId = mainTarget?["id"] as? String else {
     state.lastError = "background_chat_target_unavailable"
     return [
       "ok": false,
@@ -1955,16 +2168,55 @@ func ensureHiddenChatTarget(
     ]
   }
 
-  // The hidden window can reopen on Work. Switch the mode synchronously so
-  // the following composer probe never awaits across a renderer transition.
-  let initialChatSelection = cdpValue(
-    port: port,
-    targetId: targetId,
-    expression: clickChatJS(),
-    timeout: 4.0
-  )
-  var chatModeConfirmed = initialChatSelection?["ok"] as? Bool == true
-    && initialChatSelection?["alreadySelected"] as? Bool == true
+  func rebindAfterRendererReplacement() {
+    let liveTargets = CDPClient.fetchTargets(portOverride: port)
+    if liveTargets.contains(where: { $0["id"] as? String == targetId }) { return }
+    if let replacement = liveTargets.first(where: eligibleTarget)?["id"] as? String {
+      targetId = replacement
+    }
+  }
+  func wakeCurrentTargetWithoutShowingIt() {
+    _ = resumeDedicatedProcessForPort(port)
+    guard let target = CDPClient.fetchTargets(portOverride: port).first(where: {
+      $0["id"] as? String == targetId
+    }), let wsURL = target["webSocketDebuggerUrl"] as? String else { return }
+    _ = CDPClient.setWebLifecycleActive(wsURLString: wsURL)
+    _ = CDPClient.setHiddenPageFocusEmulation(wsURLString: wsURL)
+    _ = CDPClient.setHiddenPageUserActive(wsURLString: wsURL)
+  }
+
+  // The hidden window can reopen on Work. Opening the Radix mode picker and
+  // selecting ChatGPT are separate native CDP clicks. Selecting ChatGPT may
+  // also replace the page target, so rediscover the plugin-owned app root
+  // before every retry and require the replacement renderer to prove Chat.
+  var initialChatSelection: [String: Any]?
+  var chatModeConfirmed = false
+  for _ in 0..<30 {
+    rebindAfterRendererReplacement()
+    wakeCurrentTargetWithoutShowingIt()
+    initialChatSelection = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: clickChatJS(),
+      timeout: 4.0
+    )
+    _ = dispatchRecommendedCDPClick(
+      initialChatSelection,
+      port: port,
+      targetId: targetId
+    )
+    if initialChatSelection?["ok"] as? Bool == true,
+       initialChatSelection?["alreadySelected"] as? Bool == true {
+      chatModeConfirmed = true
+      break
+    }
+    Thread.sleep(forTimeInterval:
+      initialChatSelection?["dispatchOnly"] as? Bool == true
+        || initialChatSelection?["retryAfterModeSwitch"] as? Bool == true
+        ? 0.6 : 0.25
+    )
+    rebindAfterRendererReplacement()
+  }
 
   if let conversationId, !conversationId.isEmpty {
     let selected = cdpValue(
@@ -1985,12 +2237,37 @@ func ensureHiddenChatTarget(
     }
   }
 
+  // A connector can replace the composer with a "Continue in this chat"
+  // routing card. Resolve that Chat-local transition before requiring the
+  // composer, including for chat_status and resumeExisting entry paths.
+  let chatContinuation = cdpValue(
+    port: port,
+    targetId: targetId,
+    expression: autoConfirmChatContinuationJS(),
+    timeout: 4.0
+  )
+  if chatContinuation?["clicked"] as? Bool == true {
+    _ = dispatchRecommendedCDPClick(
+      chatContinuation,
+      port: port,
+      targetId: targetId
+    )
+    Thread.sleep(forTimeInterval: 0.8)
+    rebindAfterRendererReplacement()
+  }
+
   let prepared: [String: Any]?
   if newChat {
-    prepared = prepareNewChatTarget(port: port, targetId: targetId, allowBlankConversationReuse: true)
+    // Direct outbound sends promise a newly created Chat and main.swift
+    // verifies newChatClicked. Reusing an existing blank composer here makes
+    // preparation look successful but is then correctly rejected by that
+    // contract, so require the sidebar action for this path.
+    prepared = prepareNewChatTarget(port: port, targetId: targetId, allowBlankConversationReuse: false)
   } else {
     var current: [String: Any]?
     for _ in 0..<40 {
+      rebindAfterRendererReplacement()
+      wakeCurrentTargetWithoutShowingIt()
       current = cdpValue(
         port: port,
         targetId: targetId,
@@ -2009,6 +2286,13 @@ func ensureHiddenChatTarget(
           expression: clickChatJS(),
           timeout: 4.0
         )
+        _ = dispatchRecommendedCDPClick(
+          retrySelection,
+          port: port,
+          targetId: targetId
+        )
+        Thread.sleep(forTimeInterval: 0.35)
+        rebindAfterRendererReplacement()
         chatModeConfirmed = chatModeConfirmed
           || (retrySelection?["alreadySelected"] as? Bool == true)
       }
@@ -2028,7 +2312,32 @@ func ensureHiddenChatTarget(
     ]
   }
 
+  // Switching the dedicated Electron instance from Codex to Chat can make its
+  // BrowserWindow visible again even when it was launched with `open -j`.
+  // Re-hide the process identified by this private debugging port, then wait
+  // for the renderer itself to report document.visibilityState == "hidden".
+  // This runs only after the Chat surface is confirmed and never targets the
+  // user's primary ChatGPT process.
   if !runningOnGitHubActions(),
+     !allowTestWebTarget,
+     queueTargetRuntimeState(
+       port: port,
+       targetId: targetId,
+       refreshLifecycle: false
+     ) == .visible {
+    _ = hideDedicatedProcessForPort(port)
+    for _ in 0..<40 {
+      if queueTargetRuntimeState(
+        port: port,
+        targetId: targetId,
+        refreshLifecycle: false
+      ) == .hidden { break }
+      Thread.sleep(forTimeInterval: 0.05)
+    }
+  }
+
+  if !runningOnGitHubActions(),
+     !allowTestWebTarget,
      queueTargetRuntimeState(
        port: port,
        targetId: targetId,
@@ -2350,13 +2659,23 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
             .map { currentDate.timeIntervalSince($0) }
           : nil
         totalCandidates += 1
-        if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+        let attempts = state.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
+        if let repeatedFor,
+           repeatedFor >= duplicateApprovalGraceSeconds,
+           attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
           state.enabled = false
           state.lastError = "approval_duplicate_circuit_open"
           totalBlocked += 1
           queueTrace(
             "task=approval-watcher stage=approval-ipc-blocked "
               + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
+          )
+          continue
+        } else if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
+          state.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
+          queueTrace(
+            "task=approval-watcher stage=approval-ipc-retry "
+              + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
           )
         } else {
           totalPending += 1
@@ -2365,8 +2684,8 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
             "task=approval-watcher stage=approval-ipc-skipped "
               + "reason=duplicate fingerprint=\(fingerprint)"
           )
+          continue
         }
-        continue
       }
       let recentApprovals = prunedAutomaticApprovalTimestamps(
         state.automaticApprovalTimestamps,
@@ -2407,6 +2726,7 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
       recordHandledApprovalFingerprint(
         fingerprint,
         fingerprints: &state.handledApprovalFingerprints,
+        fingerprintAttempts: &state.automaticApprovalFingerprintAttempts,
         timestamps: &state.automaticApprovalTimestamps,
         lastFingerprint: &state.lastAutomaticApprovalFingerprint,
         lastApprovedAt: &state.lastAutomaticApprovalAt,

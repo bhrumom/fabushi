@@ -1,16 +1,34 @@
 # 发布流程：MCP Apps-only 大乘小程序
 
+> v12.2 纠偏：本文件只描述用户明确上线后的构建与发布阶段。生成代码时不得创建 GitHub 或 Cloudflare 资源。源码托管目标与网页运行目标必须分开建模；完整规则见 `LOCAL_GENERATION_GITHUB_DEPLOYMENT.md`。
+
 ## 1. 默认体验
 
 ```bash
-mahayana login
 mahayana plugin init
-mahayana plugin test
-mahayana plugin publish --stage
-mahayana plugin release
+mahayana plugin run
+mahayana plugin deploy
 ```
 
-平台负责 MCP Apps 模板、SDK v2 Worker、Cloudflare 项目、构建、扫描、不可变包、签名、provenance 和审核。自托管是高级选项。
+`init`、AI 生成、编辑和 `run` 都只操作本地 Workspace。`deploy` 才进入上线向导，先选择源码托管方，再由能力分类器建议运行目标：
+
+```text
+源码：官方 managed GitHub | 我的 GitHub
+运行：仅本地 | GitHub Pages（合规公开静态） | Cloudflare（动态/生产） | 外部托管
+```
+
+平台负责模板、安全快照、构建、扫描、不可变包、签名、provenance 和审核。任何默认选择都不得代替用户对上传、公开可见性和首次部署的明确确认。
+
+### 1.1 自动部署路由
+
+| 项目能力 | 默认建议 | 强制条件 |
+| --- | --- | --- |
+| 不需要公开 URL | 仅本地 | 不创建远程运行资源 |
+| 纯静态、无 Secret/服务端/API、用户同意公开且符合 GitHub Pages 政策 | GitHub Pages | public repo、静态导出、CSP 与大小/带宽门禁 |
+| 动态 API、鉴权、实时、服务端 Secret、私有源码或 Pages 不适用 | Cloudflare | 受信任部署、配额、运行隔离与回滚 |
+| 用户指定自己的基础设施 | 外部托管 | 所有权验证、健康检查、provenance |
+
+GitHub Pages 不得用于 GitHub 明确排除的在线业务、电子商务或商业 SaaS 通用托管，也不得在 UI 中宣传为“无限”。
 
 ## 2. `plugin init`
 
@@ -85,14 +103,14 @@ permissions:
 4. 构建 UI resources 和 Worker；
 5. 扫描依赖、Secret、CSP 和权限；
 6. 获取 OIDC token 并交换短期发布凭证；
-7. 创建/读取每插件独立 Cloudflare 项目；
-8. 部署 preview Worker version；
-9. 验证 `/mcp` 正常调用；
-10. 验证 legacy 请求被拒绝；
+7. 根据已确认的 deployment plan 选择 GitHub Pages、Cloudflare、外部托管或无远程运行目标；
+8. 构建不可变 preview artifact，并只在目标需要时创建/更新运行资源；
+9. 对远程 MCP 目标验证 `/mcp`，对静态目标验证静态导出、CSP、404/base path 与资源完整性；
+10. 对远程 MCP 目标验证 legacy 请求被拒绝；
 11. 读取并渲染 `ui://` resource；
 12. 验证 AppBridge、sandbox、CSP 和 visibility；
 13. 生成不可变 package/manifest/provenance；
-14. 从公网重新获取并核对字节；
+14. 从实际发布目标重新获取并核对字节；
 15. 提交 stage release 和证据包。
 
 Stage 不得进入公开搜索。
@@ -114,17 +132,23 @@ Stage 不得进入公开搜索。
 
 Production 不重新构建，只提升已验证的不可变 stage。
 
-## 6. 托管 Cloudflare
+## 6. 托管运行目标
 
-每插件一个稳定项目：
+### 6.1 GitHub Pages
 
-```text
-plugin ID → plugin UUID → Cloudflare project/service
-```
+- 仅接收静态导出产物；不得携带服务端 Secret、写 API 或动态 MCP 服务；
+- GitHub Free 组织的 Pages 路径要求公开仓库，因此必须单独取得公开源码/站点与许可证确认；
+- 发布到 `/<repo>/` 时必须验证 `basePath`、资产 URL、SPA fallback、404、CSP 和缓存；
+- 记录 Pages deployment、commit、artifact digest 和最终 URL；
+- 触发仓库/站点/带宽/构建软硬限制时自动停止新建并给出 Cloudflare、外部托管或仅本地选项。
 
-每次发布创建 version/deployment，不创建永久新项目。
+### 6.2 Cloudflare
 
-平台凭证只存在于受保护环境，不下发给发布者、不写日志、定期轮换。
+Cloudflare 保留为动态、鉴权、API、实时和其他 Pages 不适用项目的生产运行平面。免费 Pages 每账户项目数有限，禁止把“每个生成项目都创建一个 Pages 项目”作为默认架构。
+
+启动阶段只为确需远程动态运行的已审核项目创建独立服务，并设置平台配额；项目量接近账户限制前，必须完成共享控制面/受控多租户或 Workers for Platforms 的成本评审，不得靠更多隐藏账户规避限制。
+
+每次发布创建 version/deployment，不为每个版本创建永久新项目。平台凭证只存在于受保护环境，不下发给发布者、不写日志、定期轮换。
 
 ## 7. 自托管
 
@@ -180,7 +204,7 @@ external-host-smoke.json
 deployment-summary.json
 ```
 
-收据记录 plugin/version、repository/commit/workflow/run、Cloudflare project/version/deployment、immutable URLs、SHA/size、MCP Apps/SDK 版本、signature、review 和 smoke results。
+收据记录 plugin/version、repository ID/commit/workflow/run、source target、hosting provider、provider deployment ID/URL、immutable artifact SHA/size、MCP Apps/SDK 版本、signature、review 和 smoke results。没有远程运行目标时显式记录 `hostingProvider=none`，不得伪造 Cloudflare 字段。
 
 ## 10. 回滚与撤销
 
