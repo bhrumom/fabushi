@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "name": "global-fabushi-search-open",
+  "steps": [
+    {
+      "name": "attached",
+      "action": "capture"
+    },
+    {
+      "name": "chat-list-ready",
+      "action": "wait",
+      "timeoutSeconds": 60,
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.chat.list"
+      }
+    },
+    {
+      "name": "search-ready",
+      "action": "tap",
+      "timeoutSeconds": 60,
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.chat.search"
+      }
+    },
+    {
+      "name": "search-entered",
+      "action": "type",
+      "timeoutSeconds": 60,
+      "text": "{{query}}",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.chat.search"
+      }
+    },
+    {
+      "name": "miniapp-found",
+      "action": "wait",
+      "timeoutSeconds": 90,
+      "locator": {
+        "using": "-ios predicate string",
+        "value": "name BEGINSWITH 'e2e.miniapp.result.'"
+      }
+    },
+    {
+      "name": "miniapp-open",
+      "action": "tap",
+      "timeoutSeconds": 30,
+      "locator": {
+        "using": "-ios predicate string",
+        "value": "name BEGINSWITH 'e2e.miniapp.result.'"
+      }
+    },
+    {
+      "name": "miniapp-chat-ready",
+      "action": "wait",
+      "timeoutSeconds": 90,
+      "locator": {
+        "using": "-ios predicate string",
+        "value": "name BEGINSWITH 'e2e.miniapp.chat.'"
+      }
+    }
+  ]
+}
