@@ -12,6 +12,8 @@ use mahayana_platform_core::DelegatedTokenRequest;
 use mahayana_platform_core::Entitlement;
 use mahayana_platform_core::PurchaseRequest;
 use mahayana_platform_core::Quote;
+use mahayana_plugin_host::install_marketplace_bundle_to_codex_home;
+use mahayana_plugin_host::marketplace_install_inspect;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Map;
@@ -276,6 +278,123 @@ impl MahayanaProductClient {
             ));
         }
         Ok(bytes)
+    }
+
+    /// Resolve one authoritative marketplace release and install it into the
+    /// Codex home used by the actual application runtime. This is the single
+    /// production installation path for native app surfaces; tests must call
+    /// this command through the same product FFI rather than copying files.
+    pub fn marketplace_install(
+        &self,
+        plugin_id: &str,
+        requested_version: Option<&str>,
+        platform: &str,
+        codex_home: &Path,
+    ) -> Result<Value, ProductError> {
+        let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+        let platform = safe_marketplace_platform(platform)?;
+        let listing = self.marketplace_browse(Some(plugin_id), Some(platform))?;
+        let plugin = listing
+            .get("plugins")
+            .and_then(Value::as_array)
+            .and_then(|plugins| {
+                plugins.iter().find(|plugin| {
+                    plugin.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
+                })
+            })
+            .ok_or_else(|| {
+                ProductError::Response(format!(
+                    "marketplace has no approved {platform} release for plugin {plugin_id}"
+                ))
+            })?;
+        let version = requested_version
+            .map(safe_marketplace_version)
+            .transpose()?
+            .map(str::to_string)
+            .or_else(|| {
+                plugin
+                    .get("latestVersion")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| {
+                ProductError::Response("marketplace entry has no release version".into())
+            })?;
+        let metadata = self.marketplace_release_metadata(plugin_id, &version)?;
+        if metadata.get("pluginId").and_then(Value::as_str) != Some(plugin_id)
+            || metadata.get("version").and_then(Value::as_str) != Some(version.as_str())
+        {
+            return Err(ProductError::Response(
+                "marketplace release identity does not match the requested plugin".into(),
+            ));
+        }
+        let supports_platform = metadata
+            .get("platforms")
+            .and_then(Value::as_array)
+            .is_some_and(|platforms| {
+                platforms
+                    .iter()
+                    .any(|value| value.as_str() == Some(platform))
+            });
+        if !supports_platform {
+            return Err(ProductError::Response(format!(
+                "marketplace release does not support requested platform {platform}"
+            )));
+        }
+        let package_sha256 = metadata
+            .get("packageSha256")
+            .and_then(Value::as_str)
+            .map(safe_sha256)
+            .transpose()?
+            .ok_or_else(|| {
+                ProductError::Response("marketplace release has no packageSha256".into())
+            })?;
+        let package_size = metadata
+            .get("packageSize")
+            .and_then(Value::as_u64)
+            .filter(|size| *size > 0 && *size <= 50 * 1024 * 1024)
+            .ok_or_else(|| {
+                ProductError::Response("marketplace release has invalid packageSize".into())
+            })?;
+        let source = metadata
+            .get("source")
+            .filter(|source| source.is_object())
+            .cloned()
+            .or_else(|| {
+                metadata
+                    .get("releaseManifest")
+                    .and_then(|manifest| manifest.get("source"))
+                    .filter(|source| source.is_object())
+                    .cloned()
+            })
+            .ok_or_else(|| {
+                ProductError::Response("marketplace release has no verified source identity".into())
+            })?;
+        let archive = self.download_marketplace_plugin(
+            plugin_id,
+            &version,
+            usize::try_from(package_size)
+                .map_err(|_| ProductError::InvalidParameter("packageSize"))?,
+        )?;
+        install_marketplace_bundle_to_codex_home(
+            codex_home,
+            plugin_id,
+            &version,
+            package_sha256,
+            package_size,
+            &archive,
+            &source,
+        )
+        .map_err(ProductError::Response)
+    }
+
+    pub fn marketplace_inspect(
+        &self,
+        plugin_id: &str,
+        codex_home: &Path,
+    ) -> Result<Value, ProductError> {
+        let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+        marketplace_install_inspect(codex_home, plugin_id).map_err(ProductError::Response)
     }
 
     /// Wait until a newly deployed Cloudflare plugin site serves the exact
@@ -568,6 +687,29 @@ impl MahayanaProductClient {
                     "/api/social/messages",
                     &[("contactId", contact), ("limit", &limit)],
                 )
+            }
+            "mahayana.marketplace.search" => {
+                let query = required_string(request, "query")?;
+                let platform = required_string(request, "platform")?;
+                self.marketplace_browse(Some(query), Some(platform))
+            }
+            "mahayana.marketplace.install" => {
+                let plugin_id = required_string(request, "pluginId")?;
+                let platform = required_string(request, "platform")?;
+                let codex_home =
+                    safe_absolute_local_path(required_string(request, "codexHome")?, "codexHome")?;
+                self.marketplace_install(
+                    plugin_id,
+                    optional_string(request, "version"),
+                    platform,
+                    &codex_home,
+                )
+            }
+            "mahayana.marketplace.inspect" => {
+                let plugin_id = required_string(request, "pluginId")?;
+                let codex_home =
+                    safe_absolute_local_path(required_string(request, "codexHome")?, "codexHome")?;
+                self.marketplace_inspect(plugin_id, &codex_home)
             }
             "mahayana.messages.send" => {
                 let contact = required_string(request, "contact")?;
@@ -1515,6 +1657,18 @@ fn safe_platform_path(value: &str) -> Result<&str, ProductError> {
         .ok_or(ProductError::InvalidParameter("path"))
 }
 
+fn safe_absolute_local_path(value: &str, name: &'static str) -> Result<PathBuf, ProductError> {
+    let path = PathBuf::from(non_empty(value, name)?);
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(ProductError::InvalidParameter(name));
+    }
+    Ok(path)
+}
+
 fn decode_value<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ProductError> {
     serde_json::from_value(value).map_err(|error| ProductError::Response(error.to_string()))
 }
@@ -1633,6 +1787,19 @@ pub fn redact_secrets(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_install_paths_must_be_absolute_without_parent_traversal() {
+        assert!(safe_absolute_local_path("/tmp/app/codex", "codexHome").is_ok());
+        assert_eq!(
+            safe_absolute_local_path("../codex", "codexHome"),
+            Err(ProductError::InvalidParameter("codexHome"))
+        );
+        assert_eq!(
+            safe_absolute_local_path("/tmp/app/../codex", "codexHome"),
+            Err(ProductError::InvalidParameter("codexHome"))
+        );
+    }
 
     #[test]
     fn redaction_removes_nested_account_tokens() {

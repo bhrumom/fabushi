@@ -11,6 +11,12 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
+pub mod marketplace_installer;
+pub use marketplace_installer::{
+    install_marketplace_bundle_to_codex_home, marketplace_install_inspect,
+    marketplace_install_receipt,
+};
+
 #[derive(Debug, Clone)]
 pub struct LocalPlugin {
     pub codex: codex_core_plugins::manifest::PluginManifest,

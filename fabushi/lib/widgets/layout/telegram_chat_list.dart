@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../features/auth/application/auth_model.dart';
 import '../../services/mini_app_registry_service.dart';
+import '../../services/miniapp/mahayana_marketplace_service.dart';
 import '../../services/social_friend_service.dart';
 import '../../services/telegram/telegram_chat_session.dart';
 import '../social/social_feature_bot.dart';
@@ -36,6 +37,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
   List<SocialFeatureBot> _bots = defaultSocialMiniAppBots();
   bool _isLoadingFriends = false;
   bool _isLoadingBots = false;
+  final Set<String> _installingMiniApps = <String>{};
   String _filter = '';
   int _selectedTabIndex = 0;
   final TelegramChatSession _telegramSession = TelegramChatSession.instance;
@@ -108,6 +110,51 @@ class _TelegramChatListState extends State<TelegramChatList> {
     });
   }
 
+
+  Future<void> _installBot(SocialFeatureBot bot) async {
+    final pluginId = bot.stableMiniAppId.replaceFirst(RegExp(r'^official\.'), '');
+    if (_installingMiniApps.contains(pluginId)) return;
+    setState(() => _installingMiniApps.add(pluginId));
+    try {
+      final installed = await MahayanaMarketplaceService.instance.install(pluginId);
+      final verified = await MahayanaMarketplaceService.instance.inspect(pluginId);
+      if (installed['installed'] != true ||
+          verified['installed'] != true ||
+          verified['pluginId']?.toString() != pluginId) {
+        throw StateError('市场安装完成后没有得到可验证的本地安装回执');
+      }
+      await _loadBots();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('安装 ${bot.title} 失败：$error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _installingMiniApps.remove(pluginId));
+    }
+  }
+
+  Widget? _buildInstallAction(SocialFeatureBot bot) {
+    if (bot.isLocallyInstalled) return null;
+    final pluginId = bot.stableMiniAppId.replaceFirst(RegExp(r'^official\.'), '');
+    final installing = _installingMiniApps.contains(pluginId);
+    return Semantics(
+      identifier: 'e2e.miniapp.install.$pluginId',
+      button: true,
+      child: TextButton(
+        onPressed: installing ? null : () => _installBot(bot),
+        child: installing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('安装'),
+      ),
+    );
+  }
+
   List<SocialFriendContact> get _filteredFriends {
     final query = _filter.toLowerCase();
     if (query.isEmpty) return _friends;
@@ -174,12 +221,16 @@ class _TelegramChatListState extends State<TelegramChatList> {
                         Semantics(
                           identifier: _miniAppResultE2eId(bot),
                           button: true,
+                          container: true,
+                          explicitChildNodes: true,
+                          onTap: () => widget.onBotSelected(bot),
                           child: _ChatTile(
                             title: bot.title,
                             subtitle: bot.subtitle,
                             avatarColor: bot.avatarColor,
                             icon: bot.icon,
                             selected: widget.selectedBot == bot.stableBotId,
+                            trailing: _buildInstallAction(bot),
                             onTap: () => widget.onBotSelected(bot),
                           ),
                         ),
@@ -324,6 +375,7 @@ class _ChatTile extends StatelessWidget {
     required this.selected,
     this.timeString,
     this.unreadCount = 0,
+    this.trailing,
     required this.onTap,
   });
 
@@ -335,6 +387,7 @@ class _ChatTile extends StatelessWidget {
   final bool selected;
   final String? timeString;
   final int unreadCount;
+  final Widget? trailing;
   final VoidCallback onTap;
 
   @override
@@ -419,6 +472,7 @@ class _ChatTile extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (trailing != null) trailing!,
                       if (unreadCount > 0)
                         Container(
                           padding: const EdgeInsets.symmetric(

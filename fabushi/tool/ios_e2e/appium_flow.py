@@ -149,6 +149,25 @@ class AppiumClient:
             f"Timed out waiting for using={using!r} value={value!r}: {last_error}"
         )
 
+    def wait_absent(
+        self,
+        using: str,
+        value: str,
+        *,
+        timeout: float = 5,
+        poll: float = 0.5,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                self.find(using, value)
+            except WebDriverError:
+                return
+            time.sleep(poll)
+        raise WebDriverError(
+            f"Element remained present using={using!r} value={value!r}"
+        )
+
     def click(self, element_id: str) -> None:
         self.request("POST", self._session_path(f"/element/{element_id}/click"), {})
 
@@ -182,6 +201,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--query", default="全球法布施")
+    parser.add_argument("--plugin-id", default="global-dharma")
     parser.add_argument("--server-url", default="http://127.0.0.1:4723")
     parser.add_argument("--artifacts", required=True)
     return parser.parse_args()
@@ -230,7 +250,11 @@ def main() -> int:
     timeline_path.write_text("", encoding="utf-8")
 
     flow = load_flow(Path(args.flow))
-    variables = {"query": args.query, "bundleId": args.bundle_id}
+    variables = {
+        "query": args.query,
+        "pluginId": args.plugin_id,
+        "bundleId": args.bundle_id,
+    }
     client = AppiumClient(args.server_url, args.udid, args.bundle_id)
     step_index = 0
 
@@ -268,6 +292,9 @@ def main() -> int:
         if locator is not None:
             using = render(str(locator["using"]), variables)
             value = render(str(locator["value"]), variables)
+            if action == "assertAbsent":
+                client.wait_absent(using, value, timeout=timeout)
+                return
             element_id = client.wait_for(using, value, timeout=timeout)
         if action in {"capture", "wait", "assertPresent"}:
             return

@@ -87,7 +87,9 @@ class MahayanaCodexRuntime {
       );
     }
     final result = await executeProduct(request);
-    if (type == 'mahayana.auth.logout' || result['sessionStored'] == true) {
+    if (type == 'mahayana.auth.logout' ||
+        type == 'mahayana.marketplace.install' ||
+        result['sessionStored'] == true) {
       await _closeExistingRuntime();
     }
     return result;

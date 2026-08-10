@@ -1,65 +1,101 @@
 {
   "schemaVersion": 1,
-  "name": "global-fabushi-search-open",
+  "name": "global-fabushi-production-install-search-open",
   "steps": [
     {
-      "name": "attached",
+      "name": "initial-app-state",
       "action": "capture"
     },
     {
-      "name": "chat-list-ready",
+      "name": "wait-chat-search",
       "action": "wait",
-      "timeoutSeconds": 60,
-      "locator": {
-        "using": "accessibility id",
-        "value": "e2e.chat.list"
-      }
-    },
-    {
-      "name": "search-ready",
-      "action": "tap",
-      "timeoutSeconds": 60,
       "locator": {
         "using": "accessibility id",
         "value": "e2e.chat.search"
-      }
+      },
+      "timeoutSeconds": 60
     },
     {
-      "name": "search-entered",
+      "name": "search-global-fabushi",
       "action": "type",
-      "timeoutSeconds": 60,
-      "text": "{{query}}",
       "locator": {
         "using": "accessibility id",
         "value": "e2e.chat.search"
-      }
+      },
+      "text": "{{query}}"
     },
     {
-      "name": "installed-miniapp-found",
-      "action": "wait",
-      "timeoutSeconds": 90,
+      "name": "wait-target-registry-result",
+      "action": "assertPresent",
       "locator": {
-        "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.result.' AND name ENDSWITH '.installed'"
-      }
+        "using": "accessibility id",
+        "value": "e2e.miniapp.result.{{pluginId}}.registry"
+      },
+      "timeoutSeconds": 60
     },
     {
-      "name": "installed-miniapp-open",
+      "name": "assert-target-is-not-preinstalled",
+      "action": "assertAbsent",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.miniapp.result.{{pluginId}}.installed"
+      },
+      "timeoutSeconds": 3
+    },
+    {
+      "name": "install-target-through-app",
       "action": "tap",
-      "timeoutSeconds": 30,
       "locator": {
-        "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.result.' AND name ENDSWITH '.installed'"
+        "using": "accessibility id",
+        "value": "e2e.miniapp.install.{{pluginId}}"
       }
     },
     {
-      "name": "installed-miniapp-chat-ready",
-      "action": "wait",
-      "timeoutSeconds": 90,
+      "name": "wait-verified-installed-result",
+      "action": "assertPresent",
       "locator": {
-        "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.chat.' AND name ENDSWITH '.installed'"
+        "using": "accessibility id",
+        "value": "e2e.miniapp.result.{{pluginId}}.installed"
+      },
+      "timeoutSeconds": 120
+    },
+    {
+      "name": "open-installed-chat",
+      "action": "tap",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.miniapp.result.{{pluginId}}.installed"
       }
+    },
+    {
+      "name": "wait-installed-chat",
+      "action": "assertPresent",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.miniapp.chat.{{pluginId}}.installed"
+      },
+      "timeoutSeconds": 60
+    },
+    {
+      "name": "open-miniapp-host",
+      "action": "tap",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.miniapp.open.{{pluginId}}"
+      }
+    },
+    {
+      "name": "wait-webview-runtime-ready",
+      "action": "assertPresent",
+      "locator": {
+        "using": "accessibility id",
+        "value": "e2e.miniapp.host.{{pluginId}}.ready"
+      },
+      "timeoutSeconds": 120
+    },
+    {
+      "name": "final-ready-state",
+      "action": "capture"
     }
   ]
 }
