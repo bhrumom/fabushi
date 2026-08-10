@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMcpAppIdentity, createWebDeployment, isDeployed } from '../src/domain/mcp-app-identity.js';
+import { createMcpAppIdentity, createSourceBinding, createWebDeployment, isDeployed } from '../src/domain/mcp-app-identity.js';
 
 test('source hosted does not imply web deployed', () => {
   const identity = createMcpAppIdentity({
@@ -15,6 +15,21 @@ test('source hosted does not imply web deployed', () => {
   assert.equal(isDeployed(deployment), false);
 });
 
+test('keeps github app transport separate from hosting', () => {
+  const binding = createSourceBinding({
+    provider: 'github',
+    actor: 'platform',
+    transport: 'github-app-api',
+    repositoryId: 99,
+  });
+  assert.equal(binding.transport, 'github-app-api');
+  assert.equal(createWebDeployment({ hostingProvider: 'cloudflare-workers', state: 'deployed' }).hostingProvider, 'cloudflare-workers');
+});
+
 test('rejects invalid hosting provider', () => {
   assert.throws(() => createWebDeployment({ hostingProvider: 'github', state: 'deployed' }));
+});
+
+test('rejects github binding without repository identity', () => {
+  assert.throws(() => createSourceBinding({ provider: 'github', actor: 'user', transport: 'github-mcp' }));
 });
