@@ -14,7 +14,7 @@ tags: [指南, 任务队列, 自动续作]
 2. 用 `enqueue_tasks` 一次加入多个任务。任务会进入持久队列，并与通用确认共用同一个已登录的 ChatGPT 实例。每个运行中任务使用独立的隐藏预热页面；无依赖且资源锁不冲突的任务按 `maxConcurrent` 并行执行。
 3. 每轮结束都只输出同一个 `mahayana.task-report.v1` 模板。阶段完成使用 `status=incomplete`、`all_tasks_complete=false`；跨 Chat 等待也在同一模板填写 `wait_seconds` 与 `wait_reason`。`completed` 只表示已做事项，不会停止任务。
 4. 只有同一模板同时满足 `status=complete`、`all_tasks_complete=true`、`remaining=[]`、`blockers=[]`、`wait_seconds=0`、`next_task=""`，程序才会启动独立验收；验收也满足同样条件后任务才进入终态。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。
-5. 每个 Chat 开始时读取立项邮件线程，接收 `1315518325@qq.com` 的新增要求。不会因每轮结束机械发邮件；只有产生可核验的实质进展、任务全部完成，或需要人工提供信息、权限与决策时才回复同一线程。
+5. 每个 Chat 开始时使用 Gmail 按任务 id 只读检查 `1315518325@qq.com` 的新增要求。禁止发送立项、进展和完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复“需人工介入”邮件。
 
 ## 中断恢复
 
