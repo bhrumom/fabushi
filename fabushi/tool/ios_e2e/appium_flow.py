@@ -174,7 +174,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--udid", required=True)
     parser.add_argument("--bundle-id", required=True)
-    parser.add_argument("--flow", required=True)
+    parser.add_argument(
+        "--flow",
+        default=str(
+            Path(__file__).with_name("flows")
+            / "global_fabushi_search_open.v1.json"
+        ),
+    )
     parser.add_argument("--query", default="全球法布施")
     parser.add_argument("--server-url", default="http://127.0.0.1:4723")
     parser.add_argument("--artifacts", required=True)
