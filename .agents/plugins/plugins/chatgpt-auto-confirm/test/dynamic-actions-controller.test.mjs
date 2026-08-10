@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const controller = readFileSync(
@@ -48,7 +48,7 @@ test('goal versions are idempotent and dependencies use desired runtime ids', ()
   assert.ok(inbox.maxConcurrent >= 2);
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.goalVersion)));
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.revision)));
-  assert.ok(inbox.tasks.every(task => Array.isArray(task.specSources) && task.specSources.length > 0));
+  assert.ok(inbox.tasks.every(task => task.specSources === undefined || Array.isArray(task.specSources)));
   assert.ok(inbox.tasks.every(task => task.repository === 'bhrumom/fabushi'));
   assert.ok(inbox.tasks.every(task => typeof task.codeDirectory === 'string'));
 });
@@ -98,9 +98,9 @@ test('every dispatched work Chat receives one machine report contract', () => {
   assert.doesNotMatch(controller, /MAHAYANA_TASK_WAIT_V1/);
   assert.match(controller, /"task_id":\$\{taskId\}/);
   assert.match(controller, /\.mahayana-project-email\.json/);
-  assert.match(controller, /第一轮、续作轮和验收轮开始时都必须读取同一线程/);
-  assert.match(controller, /不要每轮机械发邮件/);
-  assert.match(controller, /可核验的实质进展/);
+  assert.match(controller, /第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id/);
+  assert.match(controller, /禁止发送立项、进展或完成邮件/);
+  assert.match(controller, /只有确实需要人工提供信息、权限、凭证或决策时/);
 });
 
 test('every round names the model, repository, task path, code path, and code-change gate', () => {
@@ -112,41 +112,16 @@ test('every round names the model, repository, task path, code path, and code-ch
   assert.match(controller, /必须产生可核验的代码变更/);
 });
 
-test('each task sends one document folder path and link without document bodies', () => {
+test('task documents are optional and document bodies stay out of prompts', () => {
   assert.match(controller, /task\.documentDirectory/);
   assert.match(controller, /\/tree\/\$\{controlRef\}\/\$\{directory\}/);
   assert.match(controller, /只在消息中提供目录路径和文件夹链接/);
+  assert.match(controller, /本任务没有配置任务文档/);
+  assert.match(controller, /documentDirectory[\s\S]*\? directoryEntries\(documentDirectory\)[\s\S]*: \[\]/);
   assert.doesNotMatch(controller, /specificationFiles|specificationURLs/);
-  assert.ok(inbox.tasks.every(task => typeof task.documentDirectory === 'string'));
-
-  for (const task of inbox.tasks) {
-    const relative = task.documentDirectory.replace(
-      '.agents/plugins/plugins/chatgpt-auto-confirm/',
-      '../',
-    );
-    const directoryURL = new URL(relative.endsWith('/') ? relative : `${relative}/`, import.meta.url);
-    const files = readdirSync(directoryURL).sort();
-    assert.ok(files.length >= 2, `${task.id} should have multiple documents`);
-    assert.ok(files.includes('README.md'));
-    assert.ok(files.includes('PRD.md'));
-  }
+  assert.doesNotMatch(controller, /documentDirectory_and_codeDirectory_are_required/);
 });
 
-test('document folders can contain PRD, technical, UI and acceptance files', () => {
-  const task = inbox.tasks[0];
-  const relative = task.documentDirectory.replace(
-    '.agents/plugins/plugins/chatgpt-auto-confirm/',
-    '../',
-  );
-  const directoryURL = new URL(`${relative}/`, import.meta.url);
-  const files = readdirSync(directoryURL).sort();
-  for (const required of [
-    'ACCEPTANCE.md',
-    'PRD.md',
-    'README.md',
-    'TECHNICAL_DESIGN.md',
-    'UI_UX.md',
-  ]) {
-    assert.ok(files.includes(required), `missing required task document: ${required}`);
-  }
+test('no standard task document names are required', () => {
+  assert.doesNotMatch(controller, /README\.md|PRD\.md|TECHNICAL_DESIGN\.md|UI_UX\.md/);
 });

@@ -939,7 +939,7 @@ func monitorAutomationTask(
     let appliedRevision = max(1, parsedReport?.appliedTaskRevision ?? task.appliedRevision ?? 1)
     closeDedicatedAutomationTarget(task, state: state)
     restartAutomationTaskForUpdatedGoal(&task)
-    task.reviewFeedback = "上一轮基于 revision \(appliedRevision)，任务已更新到 revision \(currentRevision)。小程序已停止旧分支续作；下一轮新建 Chat、重新立项并发送更新后的完整目标与任务目录。"
+    task.reviewFeedback = "上一轮基于 revision \(appliedRevision)，任务已更新到 revision \(currentRevision)。小程序已停止旧分支续作；下一轮新建 Chat 并发送更新后的完整目标及已配置任务文件（如有）。"
     queueTrace("task=\(task.id) stage=task-revision-superseded action=fresh-project-chat")
     return
   }

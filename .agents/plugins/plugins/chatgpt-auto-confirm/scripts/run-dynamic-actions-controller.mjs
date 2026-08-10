@@ -77,9 +77,12 @@ const fetchControl = () => {
     return directoryCache.get(directory);
   };
   control.tasks = (Array.isArray(control.tasks) ? control.tasks : []).map(task => {
+    const documentDirectory = normalizedDirectory(task.documentDirectory);
     const sources = Array.isArray(task.specSources) && task.specSources.length > 0
       ? task.specSources.map(source => String(source || '').replace(/^\/+/, ''))
-      : directoryEntries(normalizedDirectory(task.documentDirectory)).map(entry => entry.path);
+      : documentDirectory
+        ? directoryEntries(documentDirectory).map(entry => entry.path)
+        : [];
     const files = sources.map(source => {
       const directory = path.posix.dirname(source);
       const entry = directoryEntries(directory).find(candidate => candidate.path === source);
@@ -127,7 +130,14 @@ const normalizedDirectory = value => String(value || '')
 
 const taskDocumentBlock = task => {
   const directory = normalizedDirectory(task.documentDirectory);
-  if (!directory) return '';
+  if (!directory) {
+    return [
+      '本任务没有配置任务文档；这是合法状态，不得因此拒绝、暂停或要求补建文档。',
+      '以本轮消息中的完整任务目标、当前 revision/规范摘要、代码仓库和代码目录为准，直接读取代码并实施。',
+      '共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能；只有配置了任务文件时才读取任务文件。',
+      `邮件只读与人工介入：每轮可使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。`,
+    ].join('\n');
+  }
   const directoryURL = `https://github.com/${repository}/tree/${controlRef}/${directory}`;
   const additionalURLs = Array.isArray(task.documentURLs)
     ? task.documentURLs.map(value => String(value || '').trim()).filter(Boolean)
@@ -143,7 +153,7 @@ const taskDocumentBlock = task => {
     `当前规范摘要：${task._specDigest || 'unavailable'}。`,
     `规范文件：${(task._specFiles || []).join('、') || directory}`,
     `共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和任务目录全部文件。`,
-    `邮件记录：${directory}/.mahayana-project-email.json。第一轮没有 threadId 时由 Chat 使用 Gmail 向 1315518325@qq.com 创建立项邮件并写回。第一轮、续作轮和验收轮开始时都必须读取同一线程，检查 1315518325@qq.com 的新增要求。不要每轮机械发邮件；只有产生可核验的实质进展、整个任务完成，或需要人工提供信息/权限/凭证/决策时才回复。只读检查、计划、无改动失败或未变化等待不得发邮件，也不得重复同一进展。`,
+    `邮件只读与人工介入：第一轮、续作轮和验收轮开始时使用 Gmail 按任务 id ${task.id} 检查 1315518325@qq.com 的新增要求。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 [需人工介入][${task.id}] 邮件。若已存在人工介入线程，可把 threadId/messageId 记录到 ${directory}/.mahayana-project-email.json；没有线程时不得为了创建记录而发信。`,
   ].join('\n');
 };
 
@@ -161,7 +171,9 @@ const taskPrompt = (control, task) => [
   `逻辑任务：${task.id}；目标版本：${taskRevision(task)}；规范摘要：${task._specDigest}。`,
   `本轮发送前必须重新确认模型 GPT-5.6 Sol、推理强度 Extra High；第一轮、续作和验收轮都相同。`,
   `本轮必须使用 GitHub 连接器读取和修改仓库 ${task.repository || repository}（https://github.com/${task.repository || repository}）。`,
-  `任务文件在仓库路径 ${normalizedDirectory(task.documentDirectory)}；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。先读任务文件和现有代码，再直接实现。`,
+  normalizedDirectory(task.documentDirectory)
+    ? `任务文件在仓库路径 ${normalizedDirectory(task.documentDirectory)}；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。先读已配置的任务文件和现有代码，再直接实现。`
+    : `本任务未配置任务文件；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。直接根据本轮完整目标读取现有代码并实现，不得要求补建任务文档。`,
   `除非正在等待已启动的外部作业或确有人工卡点，本轮必须产生可核验的代码变更并运行相应测试；只阅读、检查、规划、发邮件或汇报结果都不算工作，不得因此结束。`,
   task.prompt,
   taskDocumentBlock(task),
@@ -186,12 +198,11 @@ const reconcileControl = control => {
 
   for (const task of desiredTasks) {
     if (!task?.id || !task?.title || !task?.prompt || !task?.repository ||
-        !normalizedDirectory(task.documentDirectory) ||
         !normalizedDirectory(task.codeDirectory)) {
       process.stderr.write(
         `TASK_CONTROL_INVALID_TASK ${JSON.stringify({
           id: task?.id || null,
-          reason: 'id_title_prompt_repository_documentDirectory_and_codeDirectory_are_required',
+          reason: 'id_title_prompt_repository_and_codeDirectory_are_required',
         })}\n`,
       );
       continue;

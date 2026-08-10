@@ -56,7 +56,7 @@ The 3-hour timer applies only while ChatGPT still appears to be running. If gene
 
 Do not let an unfinished Chat stop while useful work can continue. Whenever a Chat must end, it must use the single `MAHAYANA_TASK_REPORT_V1` envelope for every state. Partial work uses `status=incomplete` and `all_tasks_complete=false`; genuine cross-Chat waiting additionally sets `wait_seconds` and `wait_reason`. A successful result uses the same envelope with `status=complete` and `all_tasks_complete=true`. The controller must never treat entries in `completed` as proof that the entire task is complete.
 
-At the start of every first, continuation, and review Chat, read the recorded Gmail project thread and apply new requirements from `1315518325@qq.com`. Do not send a progress email at every Chat boundary. Reply only for substantive verifiable progress, full completion, or a human-only information/permission blocker; do not duplicate unchanged status or wait emails.
+At the start of every first, continuation, and review Chat, use Gmail to search by task id and apply new requirements from `1315518325@qq.com`. Never send project-initiation, progress, milestone, completion, routine failure, or wait emails. Create or reply to `[需人工介入][task-id]` only when work cannot continue without human-only information, permission, credentials, or a decision; do not duplicate the same unresolved request.
 
 Do not end a working Chat merely because Actions, deployments, releases, or remote checks are still running. Continue polling inside the task Chat. When external waiting must cross Chats, return the same report envelope with a realistic delay and `all_tasks_complete=false`.
 
