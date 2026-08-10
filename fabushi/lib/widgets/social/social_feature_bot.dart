@@ -26,6 +26,7 @@ class SocialFeatureBot {
     this.botId,
     this.miniAppId,
     this.miniAppEntryUrl = '',
+    this.localPluginPath = '',
     this.kind,
     this.permissions = const [],
     this.source = MiniAppSource.official,
@@ -35,6 +36,7 @@ class SocialFeatureBot {
   final String? botId;
   final String? miniAppId;
   final String miniAppEntryUrl;
+  final String localPluginPath;
   final String title;
   final String subtitle;
   final String initials;
@@ -50,6 +52,8 @@ class SocialFeatureBot {
   String get stableBotId => botId ?? type.name;
   String get stableMiniAppId => miniAppId ?? type.name;
   String get stableMiniAppEntryUrl => miniAppEntryUrl.trim();
+  bool get isLocallyInstalled => localPluginPath.trim().isNotEmpty;
+  String get e2eInstallProvenance => isLocallyInstalled ? 'installed' : 'registry';
   MiniAppBotKind get effectiveKind {
     final explicit = kind;
     if (explicit != null) return explicit;
@@ -88,6 +92,7 @@ class SocialFeatureBot {
       botId: bot.botId,
       miniAppId: bot.miniAppId,
       miniAppEntryUrl: manifest?.entryUrl ?? '',
+      localPluginPath: manifest?.pluginPath ?? '',
       title: bot.title,
       subtitle: bot.subtitle,
       initials: bot.initials,
