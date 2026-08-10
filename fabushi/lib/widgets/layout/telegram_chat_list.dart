@@ -129,6 +129,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
     }).toList();
   }
 
+  String _miniAppResultE2eId(SocialFeatureBot bot) =>
+      'e2e.miniapp.result.${bot.stableMiniAppId}.${bot.e2eInstallProvenance}';
+
   @override
   Widget build(BuildContext context) {
     final width = widget.isMobile ? double.infinity : 320.0;
@@ -169,8 +172,7 @@ class _TelegramChatListState extends State<TelegramChatList> {
                       ),
                       for (final bot in bots)
                         Semantics(
-                          identifier:
-                              'e2e.miniapp.result.${bot.stableMiniAppId}',
+                          identifier: _miniAppResultE2eId(bot),
                           button: true,
                           child: _ChatTile(
                             title: bot.title,
