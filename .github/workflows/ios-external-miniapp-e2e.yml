@@ -1,0 +1,365 @@
+name: iOS External MiniApp E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'fabushi/lib/**'
+      - 'fabushi/ios/**'
+      - 'fabushi/tool/ios_e2e/**'
+      - 'third_party/mahayana/**'
+      - '.github/workflows/ios-external-miniapp-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-external-miniapp-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.41.9
+  BUNDLE_ID: com.ombhrum.fabushi
+  PLUGIN_QUERY: 全球法布施
+  MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
+
+jobs:
+  ios-external-miniapp-e2e:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Prepare diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p \
+            artifacts/cli \
+            artifacts/ios/screenshots \
+            artifacts/ios/page-source \
+            artifacts/logs
+
+      - name: Require test account credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TEST_ACCOUNT_TOKEN:-}" ]; then
+            echo "TEST_ACCOUNT_TOKEN or MAHAYANA_TEST_ACCOUNT_TOKEN must be configured for the real iOS E2E." >&2
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fabushi/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Appium XCUITest driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global appium@3
+          appium driver install xcuitest
+          appium --version | tee artifacts/logs/appium-version.txt
+          appium driver list --installed | tee artifacts/logs/appium-drivers.txt
+
+      - name: Build Mahayana CLI
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build \
+            --locked \
+            --release \
+            --manifest-path "$MAHAYANA_MANIFEST" \
+            --package mahayana-cli \
+            2>&1 | tee artifacts/cli/build.log
+
+      - name: Login test account and search real marketplace
+        id: marketplace
+        shell: bash
+        env:
+          MAHAYANA_HOME: ${{ runner.temp }}/mahayana-ios-e2e-host
+          MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          "$cli" login test > artifacts/cli/login.txt
+          "$cli" auth > artifacts/cli/auth.json
+          "$cli" marketplace search "$PLUGIN_QUERY" > artifacts/cli/marketplace-search.json
+
+          python3 - "$PLUGIN_QUERY" artifacts/cli/marketplace-search.json "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          query = sys.argv[1].casefold()
+          payload = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+
+          def objects(value):
+              if isinstance(value, dict):
+                  yield value
+                  for child in value.values():
+                      yield from objects(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      yield from objects(child)
+
+          candidates = []
+          for item in objects(payload):
+              plugin_id = item.get("pluginId") or item.get("id") or item.get("name")
+              if not isinstance(plugin_id, str) or not plugin_id.strip():
+                  continue
+              searchable = " ".join(
+                  str(item.get(key, ""))
+                  for key in ("title", "displayName", "name", "description", "pluginId", "id")
+              ).casefold()
+              score = 0
+              if query in searchable:
+                  score += 100
+              if str(item.get("status", item.get("reviewStatus", ""))).casefold() in {"official", "approved", "verified"}:
+                  score += 10
+              if item.get("official") is True:
+                  score += 10
+              candidates.append((score, plugin_id.strip(), item))
+
+          candidates.sort(key=lambda row: row[0], reverse=True)
+          if not candidates or candidates[0][0] < 100:
+              raise SystemExit("Marketplace search did not return a plugin matching 全球法布施")
+
+          _, plugin_id, item = candidates[0]
+          version = item.get("version") or item.get("latestVersion") or ""
+          with open(sys.argv[3], "a", encoding="utf-8") as output:
+              output.write(f"plugin_id={plugin_id}\n")
+              if version:
+                  output.write(f"plugin_version={version}\n")
+          Path("artifacts/cli/selected-marketplace-plugin.json").write_text(
+              json.dumps(item, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Selected marketplace plugin: {plugin_id} {version}")
+          PY
+
+      - name: Resolve clean iOS Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > artifacts/ios/available-devices.json
+          udid="$(python3 - artifacts/ios/available-devices.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          devices = []
+          for runtime, rows in data.get("devices", {}).items():
+              for row in rows:
+                  if row.get("isAvailable") and "iPhone" in row.get("name", ""):
+                      rank = 0
+                      name = row.get("name", "")
+                      for index, preferred in enumerate(("iPhone 16", "iPhone 15", "iPhone 14")):
+                          if preferred in name:
+                              rank = 100 - index
+                              break
+                      devices.append((rank, runtime, name, row["udid"]))
+          if not devices:
+              raise SystemExit("No available iPhone Simulator was found on the runner")
+          devices.sort(reverse=True)
+          print(devices[0][3])
+          PY
+          )"
+          xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+          xcrun simctl erase "$udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl io "$udid" screenshot artifacts/ios/screenshots/00-clean-simulator.png
+
+      - name: Build iOS Simulator app
+        working-directory: fabushi
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter pub get 2>&1 | tee ../artifacts/logs/flutter-pub-get.log
+          flutter build ios --simulator --debug --no-codesign 2>&1 \
+            | tee ../artifacts/logs/flutter-ios-build.log
+          test -d build/ios/iphonesimulator/Runner.app
+
+      - name: Install app into Simulator
+        id: app
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/fabushi/build/ios/iphonesimulator/Runner.app"
+          xcrun simctl install "$IOS_UDID" "$app"
+          app_home="$(xcrun simctl get_app_container "$IOS_UDID" "$BUNDLE_ID" data)"
+          test -d "$app_home"
+          printf 'app_home=%s\n' "$app_home" >> "$GITHUB_OUTPUT"
+          xcrun simctl io "$IOS_UDID" screenshot artifacts/ios/screenshots/01-app-installed.png
+
+      - name: Provision test account marker and external plugin in app sandbox
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+          APP_HOME: ${{ steps.app.outputs.app_home }}
+          PLUGIN_ID: ${{ steps.marketplace.outputs.plugin_id }}
+          MAHAYANA_HOME: ${{ runner.temp }}/mahayana-ios-e2e-host
+          MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          runtime_root="$APP_HOME/Library/Application Support/mahayana-runtime"
+          workspace="$runtime_root/workspace"
+          codex_plugins="$runtime_root/codex/plugins"
+          mkdir -p "$APP_HOME/.mahayana" "$workspace" "$codex_plugins"
+
+          # The marker proves that the environment-provisioned CI token is the
+          # same credential explicitly authorized for the fixed test account.
+          printf '%s' "$TEST_ACCOUNT_TOKEN" \
+            | shasum -a 256 \
+            | awk '{print $1}' \
+            > "$APP_HOME/.mahayana/test-account-login.sha256"
+          chmod 600 "$APP_HOME/.mahayana/test-account-login.sha256"
+
+          before_count="$(find "$codex_plugins" -type f -path '*/.codex-plugin/plugin.json' | wc -l | tr -d ' ')"
+          [ "$before_count" = "0" ] || { echo "Clean Simulator already contains user-installed plugins." >&2; exit 1; }
+
+          "$cli" marketplace install "$PLUGIN_ID" --repository "$workspace" \
+            > artifacts/cli/marketplace-install.json
+
+          manifest="$(find "$workspace/.agents/plugins" -type f -path '*/.codex-plugin/plugin.json' -print | head -n 1)"
+          [ -n "$manifest" ] || { echo "Marketplace install produced no plugin manifest." >&2; exit 1; }
+          plugin_root="$(dirname "$(dirname "$manifest")")"
+          destination="$codex_plugins/$(basename "$plugin_root")"
+          rm -rf "$destination"
+          cp -R "$plugin_root" "$destination"
+
+          cp "$manifest" artifacts/cli/installed-plugin-manifest.json
+          if [ -f "$workspace/.agents/plugins/marketplace.json" ]; then
+            cp "$workspace/.agents/plugins/marketplace.json" artifacts/cli/install-receipt-marketplace.json
+          fi
+          find "$workspace/.agents/plugins" -maxdepth 5 -type f -print \
+            | sort > artifacts/cli/installed-files.txt
+
+      - name: Start iOS diagnostics and launch app as test account
+        id: launch
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl spawn "$IOS_UDID" log stream \
+            --style json \
+            --level debug \
+            --predicate 'process == "Runner"' \
+            > artifacts/logs/ios-runner-live.jsonl 2>&1 &
+          echo $! > "$RUNNER_TEMP/ios-log-stream.pid"
+
+          xcrun simctl io "$IOS_UDID" recordVideo \
+            --codec=h264 artifacts/ios/e2e.mp4 \
+            > artifacts/logs/simulator-video.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/ios-video.pid"
+
+          # simctl forwards SIMCTL_CHILD_* values to the app without placing
+          # the credential in Appium capabilities or its diagnostic artifact.
+          SIMCTL_CHILD_MAHAYANA_TEST_ACCOUNT_TOKEN="$TEST_ACCOUNT_TOKEN" \
+            xcrun simctl launch --terminate-running-process "$IOS_UDID" "$BUNDLE_ID" \
+            > artifacts/logs/simctl-launch.txt
+          xcrun simctl io "$IOS_UDID" screenshot artifacts/ios/screenshots/02-app-launched.png
+
+      - name: Start Appium local WebDriver endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          appium \
+            --address 127.0.0.1 \
+            --port 4723 \
+            --log artifacts/logs/appium.log \
+            --log-timestamp \
+            > artifacts/logs/appium-console.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/appium.pid"
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          deadline = time.monotonic() + 60
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:4723/status', timeout=2) as response:
+                      payload = json.loads(response.read().decode('utf-8'))
+                  if payload.get('value', {}).get('ready') is True:
+                      raise SystemExit(0)
+              except Exception:
+                  time.sleep(1)
+          raise SystemExit('Appium did not become ready within 60 seconds')
+          PY
+
+      - name: Drive search and open flow through Appium
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -o pipefail
+          python3 fabushi/tool/ios_e2e/appium_flow.py \
+            --udid "$IOS_UDID" \
+            --bundle-id "$BUNDLE_ID" \
+            --query "$PLUGIN_QUERY" \
+            --artifacts artifacts/ios \
+            2>&1 | tee artifacts/logs/appium-flow.log
+
+      - name: Collect final diagnostics
+        if: always()
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set +e
+          if [ -f "$RUNNER_TEMP/ios-video.pid" ]; then
+            kill -INT "$(cat "$RUNNER_TEMP/ios-video.pid")" 2>/dev/null
+            sleep 2
+          fi
+          if [ -f "$RUNNER_TEMP/ios-log-stream.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/ios-log-stream.pid")" 2>/dev/null
+          fi
+          if [ -f "$RUNNER_TEMP/appium.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/appium.pid")" 2>/dev/null
+          fi
+          if [ -n "${IOS_UDID:-}" ]; then
+            xcrun simctl io "$IOS_UDID" screenshot artifacts/ios/screenshots/99-final.png
+            xcrun simctl spawn "$IOS_UDID" log show \
+              --last 20m \
+              --style json \
+              --predicate 'process == "Runner"' \
+              > artifacts/logs/ios-runner-final.jsonl 2>&1
+          fi
+
+      - name: Upload screenshots, video, CLI evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-external-miniapp-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 14
