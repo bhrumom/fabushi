@@ -32,7 +32,7 @@ For long-lived release, deployment, marketplace, or CI work, also apply the bund
    - `maxRecoveryAttempts: 5`;
    - select GPT-5.6 Sol and Extra High reasoning effort for complex implementation tasks when the model selector is available;
    - `autoContinueIncomplete: true`;
-   - `maxTaskContinuations: 6` (finite report-driven new-Chat continuation; reaching the cap pauses for operator review);
+   - `maxTaskContinuations: 0` (continue through fresh branch Chats until complete);
    - `pollIntervalMs: 500`.
 3. Require `preparation.newChatClicked: true` before accepting any send.
 4. Read `thinking_progress` events as live status. Important fields are `thinking`, `activityCharCount`, `devspaceActivity`, `devspaceWaiting`, and `waitingForApproval`.
@@ -54,9 +54,11 @@ A stall requires 3 continuous hours with no change in the visible thinking summa
 
 The 3-hour timer applies only while ChatGPT still appears to be running. If generation has stopped and the stable response explicitly says the task is unfinished, blocked, or failed, return immediately with `chat_finished_incomplete`, the visible response, and diagnostics. Never wait for the stall timer after the Chat has ended.
 
-Every unfinished handoff requires a `MAHAYANA_TASK_REPORT_V1` JSON report with `status`, `summary`, `completed`, `remaining`, `blockers`, `verification`, `wait_seconds`, `wait_reason`, `next_connector`, and `next_task`. A successful task result is sent to an independent acceptance Chat and does not require the machine report. When the report says `incomplete` or `blocked`, stop monitoring that finished Chat immediately and continue in a fresh Chat built from the original goal plus the report; never append to the finished conversation. A zero continuation cap means continue until complete or until the report lacks `next_task`. Repeated blockers must trigger diagnosis and an alternative path, or an exact list of required prerequisites, rather than merely stopping on a matching fingerprint.
+Do not let an unfinished Chat stop while useful work can continue. Whenever a Chat must end, it must use the single `MAHAYANA_TASK_REPORT_V1` envelope for every state. Partial work uses `status=incomplete` and `all_tasks_complete=false`; genuine cross-Chat waiting additionally sets `wait_seconds` and `wait_reason`. A successful result uses the same envelope with `status=complete` and `all_tasks_complete=true`. The controller must never treat entries in `completed` as proof that the entire task is complete.
 
-Do not end a working Chat merely because Actions, deployments, releases, or remote checks are still running. Continue polling inside the task Chat. Use a handoff report only when continuation is impossible. The report must then use `incomplete` or `blocked`, keep `wait_seconds` as 0, and include a concrete `next_task`.
+At the start of every first, continuation, and review Chat, read the recorded Gmail project thread and apply new requirements from `1315518325@qq.com`. Do not send a progress email at every Chat boundary. Reply only for substantive verifiable progress, full completion, or a human-only information/permission blocker; do not duplicate unchanged status or wait emails.
+
+Do not end a working Chat merely because Actions, deployments, releases, or remote checks are still running. Continue polling inside the task Chat. When external waiting must cross Chats, return the same report envelope with a realistic delay and `all_tasks_complete=false`.
 
 For GitHub-backed work, use the GitHub connector for cloud state and bhrum2 for the local checkout. Set `next_connector` when the next fresh Chat must switch between those contexts. Treat disconnects, DNS failures, upstream 502/503/504, and connector timeouts as a recoverable wait, not as completion or an instruction to repeat a failed request.
 

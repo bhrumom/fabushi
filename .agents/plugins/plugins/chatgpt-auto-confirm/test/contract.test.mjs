@@ -321,10 +321,15 @@ test('task prompt templates expose the strict report protocol', async () => {
   }));
   const payload = await response.json();
   assert.equal(payload.result.structuredContent.templates.length, 4);
+  const templateText = payload.result.structuredContent.templates
+    .map(template => template.promptPrefix).join('\n');
+  assert.match(templateText, /每一轮续作和验收 Chat 开始时/);
+  assert.match(templateText, /不要因为每轮 Chat 结束而机械发邮件/);
+  assert.match(templateText, /可核验的实质进展/);
   assert.equal(payload.result.structuredContent.reportProtocol.protocol, 'mahayana.task-report.v1');
   assert.deepEqual(payload.result.structuredContent.reportProtocol.fields, [
     'task_id', 'applied_task_revision', 'applied_spec_digest',
-    'summary', 'completed', 'remaining', 'blockers', 'verification',
+    'status', 'all_tasks_complete', 'summary', 'completed', 'remaining', 'blockers', 'verification',
     'wait_seconds', 'wait_reason', 'next_connector', 'next_task',
   ]);
 });

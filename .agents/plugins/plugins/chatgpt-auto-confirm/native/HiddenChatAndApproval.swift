@@ -168,6 +168,7 @@ func cdpValue(
   let modelSelectionErrors: Set<String> = [
     "reasoning_high_not_selected",
     "quick_chat_thinking_not_selected",
+    "quick_chat_target_model_not_selected",
   ]
   guard initial["failedStage"] as? String == "model_selection",
         let error = initial["error"] as? String,
@@ -499,7 +500,8 @@ func restoreHiddenConversation(
   targetId: String,
   conversationId: String,
   timeout: TimeInterval = 35.0,
-  allowVisible: Bool = false
+  allowVisible: Bool = false,
+  dispatchMarker: String? = nil
 ) -> [String: Any] {
   // Prefer the live sidebar. A direct Page.navigate on the hosted desktop
   // renderer can leave the app on its startup spinner, which also poisons the
@@ -524,6 +526,55 @@ func restoreHiddenConversation(
     return result
   }
 
+  // The desktop sidebar and portal id can lag behind the body after a long
+  // response. For a queue-owned renderer, the per-send marker in the current
+  // user bubble is stronger evidence than stale navigation metadata. Keep the
+  // current page and branch it directly instead of navigating away.
+  if let dispatchMarker,
+     let status = cdpValue(
+       port: port,
+       targetId: targetId,
+       expression: chatStatusJS(),
+       timeout: 5.0
+     ), status["chatMode"] as? Bool == true,
+     let reply = cdpValue(
+       port: port,
+       targetId: targetId,
+       expression: getReplyJS(),
+       timeout: 6.0
+     ) {
+    let pageText = [
+      reply["userContent"] as? String ?? "",
+      reply["pageContent"] as? String ?? "",
+    ].joined(separator: "\n")
+    if pageText.contains(dispatchMarker) {
+      // chatStatusJS intentionally prefers the initial route, but the hosted
+      // desktop app can keep that route stale after replacing the composer
+      // with a local conversation. The continuation guard reads the composer
+      // portal, so obtain the identity from that exact same source.
+      let composerIdentity = cdpValue(
+        port: port,
+        targetId: targetId,
+        expression: currentComposerConversationIdentityJS(),
+        timeout: 5.0
+      )
+      let liveConversationId = normalizedConversationId(
+        composerIdentity?["conversationId"] as? String
+      )
+      var result: [String: Any] = [
+        "ok": true,
+        "strategy": "current-dispatch-marker",
+        "selected": false,
+        "alreadyActive": true,
+        "dispatchMarkerConfirmed": true,
+      ]
+      if let liveConversationId {
+        result["conversationId"] = liveConversationId
+      }
+      return result
+    }
+  }
+
   let sidebarError = sidebar?["error"] as? String
     ?? "continuation_sidebar_selection_failed"
   let navigated = navigateHiddenConversation(
@@ -540,6 +591,23 @@ func restoreHiddenConversation(
     "sidebarError": sidebarError,
     "conversationId": conversationId,
   ]
+}
+
+func currentComposerConversationIdentityJS() -> String {
+  #"""
+  (() => {
+    const raw = document.querySelector('[data-above-composer-conversation-id]')
+      ?.getAttribute('data-above-composer-conversation-id') || '';
+    const conversationId = raw.startsWith('chatgpt:')
+      ? raw.slice('chatgpt:'.length)
+      : raw;
+    return {
+      ok: !!conversationId,
+      conversationId: conversationId || null,
+      source: conversationId ? 'composer-portal' : 'none'
+    };
+  })()
+  """#
 }
 
 func selectBackgroundConversationJS(_ conversationId: String) -> String {
@@ -724,7 +792,7 @@ func prepareBackgroundChatJS(
     if (\(newChatValue)) {
       // The desktop app has used all of these labels for the same action
       // across Chat/Work releases and locales.
-      const button = ['新聊天', '新建任务', '新任务', 'New chat', 'New task']
+      const button = ['新聊天', '新对话', '新建任务', '新任务', 'New chat', 'New conversation', 'New task']
         .map(exactButton).find(Boolean);
       if (!button) {
         result.error = 'new_chat_button_not_found';
@@ -794,9 +862,12 @@ func prepareBackgroundChatJS(
     const portalConversationId = portalConversation.startsWith('chatgpt:')
       ? portalConversation.slice('chatgpt:'.length)
       : portalConversation;
-    result.conversationId = routeMatch
-      ? decodeURIComponent(routeMatch[1])
-      : (portalConversationId || null);
+    // The Electron shell keeps initialRoute from the previously opened Chat
+    // after New conversation has already replaced the live renderer state.
+    // Prefer the portal owned by the current composer; use the route only
+    // while that live marker is absent during startup.
+    result.conversationId = portalConversationId
+      || (routeMatch ? decodeURIComponent(routeMatch[1]) : null);
     result.messageCount = document.querySelectorAll(
       '[data-message-author-role], [data-user-message-bubble], [data-local-conversation-final-assistant]'
     ).length;
@@ -958,7 +1029,7 @@ func clickNewChatJS() -> String {
       ].filter(Boolean).map(t => t.trim().toLowerCase());
       return labels.includes(target) || labels.some(l => l.includes(target));
     });
-    const button = ['新聊天', '新建任务', '新任务', 'new chat', 'new task']
+    const button = ['新聊天', '新对话', '新建任务', '新任务', 'new chat', 'new conversation', 'new task']
       .map(exactButton).find(Boolean) || document.querySelector('[href="/"]');
     if (!button) {
       const isMac = window.location.protocol === 'chatgpt:';
@@ -1997,7 +2068,13 @@ func prepareNewChatTarget(
     Thread.sleep(forTimeInterval: 0.25)
   }
   guard let baseline,
-        baseline["ok"] as? Bool == true else { return nil }
+        baseline["ok"] as? Bool == true else {
+    return [
+      "ok": false,
+      "error": "prepare_new_chat_baseline_failed:"
+        + (baseline?["error"] as? String ?? "no_result"),
+    ]
+  }
   let previousConversationId = baseline["conversationId"] as? String
   let baselineWasBlank = (baseline["messageCount"] as? Int ?? 1) == 0 &&
     (baseline["inputTextLength"] as? Int ?? 1) == 0
@@ -2032,13 +2109,25 @@ func prepareNewChatTarget(
     targetId: targetId,
     expression: clickNewChatJS(),
     timeout: timeout
-  ), clicked["ok"] as? Bool == true else { return nil }
+  ) else {
+    return ["ok": false, "error": "new_chat_click_no_result"]
+  }
+  guard clicked["ok"] as? Bool == true else {
+    return [
+      "ok": false,
+      "error": clicked["error"] as? String ?? "new_chat_click_failed",
+    ]
+  }
   _ = dispatchRecommendedCDPClick(clicked, port: port, targetId: targetId)
   let previous = clicked["previousConversationId"] as? String ?? previousConversationId
 
   var stableConversationId: String?
   var stableSamples = 0
-  for _ in 0..<80 {
+  // The desktop app can take slightly more than twenty seconds to replace a
+  // durable conversation id with its new local-chatgpt id after clicking New
+  // conversation. Keep this retry bounded, but allow forty seconds before
+  // declaring that the blank Chat was not created.
+  for _ in 0..<160 {
     let prepared = cdpValue(
       port: port,
       targetId: targetId,
@@ -2083,7 +2172,13 @@ func prepareNewChatTarget(
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
-  return nil
+  return [
+    "ok": false,
+    "error": "new_chat_creation_not_confirmed",
+    "previousConversationId": previous as Any,
+    "conversationId": stableConversationId as Any,
+    "stableSamples": stableSamples,
+  ]
 }
 
 @discardableResult
@@ -2653,39 +2748,14 @@ func scanIPC(_ state: inout PluginState) -> [String: Any]? {
     if let fingerprint = approvalFingerprint(approvalDetection) {
       let currentDate = Date()
       if (state.handledApprovalFingerprints ?? []).contains(fingerprint) {
-        let repeatedFor = state.lastAutomaticApprovalFingerprint == fingerprint
-          ? state.lastAutomaticApprovalAt
-            .flatMap(isoFormatter.date(from:))
-            .map { currentDate.timeIntervalSince($0) }
-          : nil
         totalCandidates += 1
-        let attempts = state.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
-        if let repeatedFor,
-           repeatedFor >= duplicateApprovalGraceSeconds,
-           attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
-          state.enabled = false
-          state.lastError = "approval_duplicate_circuit_open"
-          totalBlocked += 1
-          queueTrace(
-            "task=approval-watcher stage=approval-ipc-blocked "
-              + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
-          )
-          continue
-        } else if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
-          state.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
-          queueTrace(
-            "task=approval-watcher stage=approval-ipc-retry "
-              + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
-          )
-        } else {
-          totalPending += 1
-          state.lastError = "approval_duplicate_suppressed"
-          queueTrace(
-            "task=approval-watcher stage=approval-ipc-skipped "
-              + "reason=duplicate fingerprint=\(fingerprint)"
-          )
-          continue
-        }
+        totalPending += 1
+        state.lastError = nil
+        queueTrace(
+          "task=approval-watcher stage=approval-ipc-ignored "
+            + "reason=confirmed-renderer-ghost fingerprint=\(fingerprint)"
+        )
+        continue
       }
       let recentApprovals = prunedAutomaticApprovalTimestamps(
         state.automaticApprovalTimestamps,
