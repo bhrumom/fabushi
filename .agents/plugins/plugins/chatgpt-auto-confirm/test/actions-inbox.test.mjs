@@ -36,7 +36,7 @@ test('Actions inbox appends a dynamic task once and enables parallel scheduling'
     const state = JSON.parse(readFileSync(statePath, 'utf8'));
     assert.equal(state.automationTasks.length, 1);
     assert.equal(state.automationTasks[0].id, 'marketplace-parallel');
-    assert.equal(state.automationTasks[0].maxTaskContinuations, 1);
+    assert.equal(state.automationTasks[0].maxTaskContinuations, 0);
     assert.equal(state.queueMaxConcurrent, 2);
     assert.equal(state.queueReviewGate, false);
     assert.equal(state.queueEnabled, true);
@@ -97,7 +97,8 @@ test('Actions inbox promotes and requeues an existing failed task revision', () 
     assert.equal(task.attempts, 0);
     assert.equal(task.workerPid, null);
     assert.equal(task.workerTargetId, null);
-    assert.equal(task.conversationId, 'stale-conversation');
+    assert.equal(task.conversationId, null);
+    assert.equal(task.continuationDepth, 0);
     assert.equal(task.lastError, null);
   } finally {
     rmSync(directory, { recursive: true, force: true });

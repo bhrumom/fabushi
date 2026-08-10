@@ -9,11 +9,11 @@
     {
       "id": "mahayana-marketplace-cloudflare-20260730",
       "goalVersion": 12,
-      "revision": 19,
+      "revision": 22,
       "applyMode": "next_chat",
       "title": "本地优先生成、双 GitHub 源码托管与分级上线的大乘 MCP Apps 平台",
       "promptTemplate": "continue-to-complete",
-      "directive": "由小程序在每次派发前读取任务控制文件与全部规范文件并比较目标指纹。未更新时才沿原任务分支续作；目标或规范更新时必须新建 Chat，发送更新后的完整目标和任务目录，并重新创建立项邮件。第一轮、每一轮续作和验收轮发送前都必须重新选择 GPT-5.6 Sol 与 Extra High，并明确使用 GitHub 连接器操作 bhrumom/fabushi：任务文件在 .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730，实际代码根目录是 fabushi/web。T01.1 已开始的精确实现入口为 fabushi/web/migrations/20260810_mcp_app_identity_schema.sql、fabushi/web/src/domain/mcp-app-identity.js、fabushi/web/tests/mcp-app-identity.test.js；若远端尚无这些文件就创建，已有则从现有内容续改，不得再次只做定位。Chat 每轮都必须直接产生代码变更并运行对应测试；只阅读、检查、规划、发邮件或总结不算工作，除非正在等待已启动的外部作业或确有人工卡点，否则不得结束。若旧 Chat 没有产生任何助手回复而恢复器必须新开 Chat，新 Chat 必须重新发送完整目标，绝不能误发续作短提示。只有全部完成才回复完成模板，外部长期等待才回复简短等待指令。",
+      "directive": "由小程序在每次派发前读取任务控制文件与全部规范文件并比较目标指纹。未更新时才沿原任务分支续作；目标或规范更新时必须新建 Chat，发送更新后的完整目标和任务目录，并重新创建立项邮件。第一轮、每一轮续作和验收轮发送前都必须重新选择 GPT-5.6 Sol 与 Extra High，并明确使用 GitHub 连接器操作 bhrumom/fabushi：任务文件在 .agents/plugins/plugins/chatgpt-auto-confirm/tasks/mahayana-marketplace-cloudflare-20260730，实际代码根目录是 fabushi/web。T01.1 已开始的精确实现入口为 fabushi/web/migrations/20260810_mcp_app_identity_schema.sql、fabushi/web/src/domain/mcp-app-identity.js、fabushi/web/tests/mcp-app-identity.test.js；若远端尚无这些文件就创建，已有则从现有内容续改，不得再次只做定位。Chat 每轮都必须直接产生代码变更并运行对应测试；只阅读、检查、规划、发邮件或总结不算工作，除非正在等待已启动的外部作业或确有人工卡点，否则不得结束。若旧 Chat 没有产生任何助手回复而恢复器必须新开 Chat，新 Chat 必须重新发送完整目标，绝不能误发续作短提示。每轮结束只能使用同一个 MAHAYANA_TASK_REPORT_V1 模板；completed 仅表示已完成事项，绝不表示整个任务完成。只有整个任务的全部目标、验收和验证都完成时，才允许同时填写 status=complete 与 all_tasks_complete=true，并保证 remaining、blockers、next_task 为空且 wait_seconds=0。只完成一项、仍有剩余、外部等待或人工卡点时必须填写 all_tasks_complete=false，程序继续下一轮；禁止使用第二套未完成或等待模板。邮件方面，第一轮、每一轮续作和验收 Chat 开始时都必须先读取 .mahayana-project-email.json，并使用 Gmail 读取其中记录的立项线程，检查 1315518325@qq.com 是否有新增要求并纳入工作；不要因为每轮结束而机械发邮件。只有产生可核验的实质进展（代码实现、重要测试/构建/部署里程碑、commit/PR/release 或全部完成），或者确实需要人工提供信息、权限、凭证或决策时才回复同一线程；只读检查、计划、复述、无改动失败尝试或未变化等待不得发邮件，也不得重复同一进展。",
       "connector": "GitHub",
       "repository": "bhrumom/fabushi",
       "codeDirectory": "fabushi/web",

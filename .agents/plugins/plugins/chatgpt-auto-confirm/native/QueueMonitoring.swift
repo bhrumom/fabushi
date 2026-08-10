@@ -5,6 +5,16 @@ import Foundation
 import SystemConfiguration
 
 let queueChatStagnationTimeoutSeconds = 10_800
+let queueChatStartTimeoutSeconds = 300
+
+func taskReportIsFullyComplete(_ report: AutomationTaskReport) -> Bool {
+  report.status == "complete"
+    && report.allTasksComplete == true
+    && report.remaining.isEmpty
+    && report.blockers.isEmpty
+    && (report.waitSeconds ?? 0) == 0
+    && report.nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
 
 
 func taskReportFingerprint(_ report: AutomationTaskReport) -> String {
@@ -92,54 +102,23 @@ func approveDedicatedAuthorizationWithDiagnostics(
   let fingerprint = approvalFingerprint(detection)
   if let fingerprint,
      (task.handledApprovalFingerprints ?? []).contains(fingerprint) {
-    let repeatedFor = task.lastAutomaticApprovalFingerprint == fingerprint
-      ? task.lastAutomaticApprovalAt
-        .flatMap(isoFormatter.date(from:))
-        .map { currentDate.timeIntervalSince($0) }
-      : nil
-    let attempts = task.automaticApprovalFingerprintAttempts?[fingerprint] ?? 1
-    if let repeatedFor,
-       repeatedFor >= duplicateApprovalGraceSeconds,
-       attempts >= maxAutomaticApprovalAttemptsPerFingerprint {
-      state.queuePaused = true
-      task.status = "blocked"
-      task.lastError = "approval_duplicate_circuit_open"
-      task.updatedAt = now
-      task.finishedAt = now
-      queueTrace(
-        "task=\(taskId) stage=approval-\(stage)-blocked "
-          + "reason=duplicate fingerprint=\(fingerprint) age=\(Int(repeatedFor))"
-      )
-      return [
-        "ok": false,
-        "clicked": false,
-        "confirmed": false,
-        "skipped": true,
-        "circuitOpen": true,
-        "error": "approval_duplicate_circuit_open",
-      ]
-    }
-    if let repeatedFor, repeatedFor >= duplicateApprovalGraceSeconds {
-      task.handledApprovalFingerprints?.removeAll { $0 == fingerprint }
-      queueTrace(
-        "task=\(taskId) stage=approval-\(stage)-retry "
-          + "reason=persistent fingerprint=\(fingerprint) attempts=\(attempts)"
-      )
-    } else {
-    task.lastError = "approval_duplicate_suppressed"
+    // ChatGPT Desktop can remount a card after the confirmed click even
+    // though the underlying authorization already succeeded. A confirmed
+    // fingerprint is terminal for this queue task: never click it again and
+    // never pause otherwise healthy work because of the renderer ghost.
+    task.lastError = nil
     task.updatedAt = now
     queueTrace(
-      "task=\(taskId) stage=approval-\(stage)-skipped "
-        + "reason=duplicate fingerprint=\(fingerprint)"
+      "task=\(taskId) stage=approval-\(stage)-ignored "
+        + "reason=confirmed-renderer-ghost fingerprint=\(fingerprint)"
     )
     return [
       "ok": true,
       "clicked": false,
       "confirmed": false,
       "skipped": true,
-      "error": "approval_duplicate_suppressed",
+      "error": "confirmed_approval_renderer_ghost_ignored",
     ]
-    }
   }
 
   let recentApprovals = prunedAutomaticApprovalTimestamps(
@@ -188,7 +167,9 @@ func approveDedicatedAuthorizationWithDiagnostics(
     expression: autoApproveDedicatedAuthorizationJS(),
     timeout: 8.0
   )
-  if result?["clicked"] as? Bool == true, let fingerprint {
+  if result?["clicked"] as? Bool == true,
+     result?["confirmed"] as? Bool == true,
+     let fingerprint {
     recordHandledApprovalFingerprint(
       fingerprint,
       fingerprints: &task.handledApprovalFingerprints,
@@ -231,20 +212,15 @@ func queueContinuation(
   reason: String
 ) {
   writeQueueConversationDiagnostic(task, finalReason: reason)
-  let now = isoFormatter.string(from: Date())
+  let currentDate = Date()
+  let now = isoFormatter.string(from: currentDate)
   let depth = task.continuationDepth ?? 0
-  let continuationLimit = max(1, task.maxTaskContinuations)
-  if depth >= continuationLimit {
-    queueTrace(
-      "task=\(task.id) stage=continuation-blocked reason=\(reason) "
-        + "depth=\(depth) max=\(continuationLimit)"
-    )
-    task.status = "blocked"
-    task.lastError = "task_continuation_limit_reached"
-    task.updatedAt = now
-    task.finishedAt = now
-    return
-  }
+  let roundElapsedSeconds = task.startedAt
+    .flatMap(isoFormatter.date(from:))
+    .map { max(0, Int(currentDate.timeIntervalSince($0))) } ?? 0
+  // Keep depth for diagnostics, but do not use it as a lifetime limit. A
+  // fixed continuation budget makes every otherwise healthy 24-hour queue
+  // eventually stop merely because it crossed enough Chat boundaries.
   queueTrace(
     "task=\(task.id) stage=continuation-queued reason=\(reason) "
       + "depth=\(depth) nextDepth=\(depth + 1) "
@@ -293,6 +269,33 @@ func queueContinuation(
   task.reviewReport = nil
   task.lastActivitySignature = nil
   task.lastProgressAt = nil
+
+  // Fast terminal replies are usually inspection-only rounds. Do not flood
+  // ChatGPT with another branch immediately: require a minimum productive
+  // window and add a bounded repetition penalty for consecutive shallow
+  // handoffs. Renderer/navigation recovery reasons remain immediate.
+  let shallowTerminalReasons = [
+    "unfinished_reply_missing_continuation_report",
+    "terminal_reply_missing_task_report",
+    "chat_finished_incomplete",
+    "chat_finished_blocked",
+  ]
+  if shallowTerminalReasons.contains(reason), task.status == "queued" {
+    let productiveFloor = 600
+    let remainingFloor = max(60, productiveFloor - roundElapsedSeconds)
+    let repetitionPenalty = min(1_800, max(0, depth - 1) * 30)
+    let delay = max(remainingFloor, repetitionPenalty)
+    task.status = "waiting"
+    task.waitingUntil = isoFormatter.string(
+      from: currentDate.addingTimeInterval(Double(delay))
+    )
+    task.waitReason = "本轮仅运行 \(roundElapsedSeconds) 秒且任务未完成；退避约 \(delay) 秒后继续，避免快速空转与限流"
+    task.lastError = "waiting_after_short_unfinished_round"
+    queueTrace(
+      "task=\(task.id) stage=continuation-backoff elapsed=\(roundElapsedSeconds)s "
+        + "delay=\(delay)s depth=\(depth) reason=\(reason)"
+    )
+  }
 }
 
 func automationTaskRevisionIsCurrent(
@@ -309,6 +312,43 @@ func automationTaskRevisionIsCurrent(
   }
   return currentRevision == max(1, task.appliedRevision ?? 1)
     && currentDigest == (task.appliedSpecDigest ?? "")
+}
+
+func deferAutomationTaskForWorkerRecovery(
+  _ task: inout AutomationTask,
+  state: inout PluginState,
+  reason: String
+) {
+  let recoveryCount = min(10, (task.hiddenWorkerRecoveryCount ?? 0) + 1)
+  let delay = min(300, 15 * (1 << min(4, recoveryCount - 1)))
+  let now = isoFormatter.string(from: Date())
+  task.status = "waiting"
+  task.waitingUntil = isoFormatter.string(
+    from: Date().addingTimeInterval(Double(delay))
+  )
+  task.waitReason = "隐藏 Chat worker 自动恢复：\(reason)；约 \(delay) 秒后重试"
+  task.lastError = "waiting_for_queue_worker_recovery"
+  task.hiddenWorkerLastError = reason
+  task.hiddenWorkerRecoveryCount = recoveryCount
+  task.startedAt = nil
+  task.finishedAt = nil
+  task.workerPid = nil
+  task.workerPort = nil
+  task.workerTargetId = nil
+  task.workerStatePath = nil
+  task.workerProfilePath = nil
+  task.lastActivitySignature = nil
+  task.lastProgressAt = nil
+  task.updatedAt = now
+  task.reviewFeedback = [
+    task.reviewFeedback,
+    "隐藏 Chat worker 已由本地守护器自动重建。请从同一 checkout 的最新落盘进度继续，不要从头开始或重复已完成步骤。",
+  ].compactMap { $0 }.joined(separator: "\n\n")
+  state.queuePaused = false
+  queueTrace(
+    "task=\(task.id) stage=worker-recovery-deferred "
+      + "reason=\(reason) delay=\(delay)s count=\(recoveryCount)"
+  )
 }
 
 func monitorAutomationTask(
@@ -330,16 +370,6 @@ func monitorAutomationTask(
   var workerPort = task.workerPort ?? state.queueWorkerPort
   var workerTargetId = task.workerTargetId ?? state.queueWorkerTargetId
   if workerPort == nil || workerTargetId == nil {
-    if !runningOnGitHubActions() {
-      let now = isoFormatter.string(from: Date())
-      state.queuePaused = true
-      task.status = "blocked"
-      task.hiddenWorkerLastError = "queue_worker_closed_requires_retry"
-      task.lastError = task.hiddenWorkerLastError
-      task.updatedAt = now
-      task.finishedAt = now
-      return
-    }
     if let recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId) {
       workerPort = recoveredWorker.port
       workerTargetId = recoveredWorker.targetId
@@ -351,9 +381,11 @@ func monitorAutomationTask(
     }
   }
   guard let initialPort = workerPort, let initialTargetId = workerTargetId else {
-    task.hiddenWorkerLastError = "queue_monitor_requires_background_window"
-    task.lastError = task.hiddenWorkerLastError
-    task.updatedAt = isoFormatter.string(from: Date())
+    deferAutomationTaskForWorkerRecovery(
+      &task,
+      state: &state,
+      reason: "queue_monitor_requires_background_window"
+    )
     return
   }
   var port = initialPort
@@ -387,34 +419,33 @@ func monitorAutomationTask(
     runtimeState,
     workerMode: state.queueWorkerMode
   )
-  if !workerStateUsable {
+  // The local fallback uses the primary renderer of a separate queue-owned
+  // ChatGPT process. Electron can report that document as `visible` after an
+  // approval-card remount even though the background application and profile
+  // remain isolated from the user's visible ChatGPT process. Accept this
+  // narrow ownership match; never broaden visible-page access to another
+  // profile, port, target, or worker mode.
+  let queueOwnedSharedControllerVisible = runtimeState == .visible
+    && state.queueWorkerMode == sharedConversationQueueWorkerMode
+    && port == state.backgroundAppPort
+    && targetId == state.backgroundChatTargetId
+    && task.workerPort == port
+    && task.workerTargetId == targetId
+    && task.workerProfilePath == state.backgroundProfilePath
+    && state.queueWorkerProfilePath == state.backgroundProfilePath
+    && state.backgroundProfilePath == hiddenChatProfilePath()
+  let effectiveWorkerStateUsable = workerStateUsable || queueOwnedSharedControllerVisible
+  if queueOwnedSharedControllerVisible {
+    queueTrace("task=\(task.id) stage=queue-owned-shared-controller-visible-accepted")
+  }
+  if !effectiveWorkerStateUsable {
     if runtimeState == .visible {
-      // A shared controller intentionally reuses the authenticated primary
-      // renderer. It is not allowed to be treated as a hidden worker failure;
-      // this mode is explicitly selected by the queue and never closes or
-      // takes over an interactive page.
-      if state.queueWorkerMode == sharedConversationQueueWorkerMode {
-        queueTrace("task=\(task.id) stage=shared-controller-visible-accepted")
-      } else {
-        // Safety is fail-closed only for a genuinely visible page. Never close,
-        // navigate, confirm, stop, or type in a page the user may be operating.
-        // A dedicated hosted worker is the one explicit exception: its copied
-        // profile has no user-facing page and may remain visible on Actions.
-        state.queuePaused = true
-        task.status = "blocked"
-        task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
-        task.lastError = task.hiddenWorkerLastError
-        task.updatedAt = isoFormatter.string(from: Date())
-        task.finishedAt = task.updatedAt
-        return
-      }
-    }
-
-    if !runningOnGitHubActions() {
+      // Safety remains fail-closed for every visible renderer that does not
+      // exactly match the queue-owned background controller above.
       let now = isoFormatter.string(from: Date())
       state.queuePaused = true
       task.status = "blocked"
-      task.hiddenWorkerLastError = "queue_worker_closed_requires_retry"
+      task.hiddenWorkerLastError = "queue_worker_visibility_not_hidden"
       task.lastError = task.hiddenWorkerLastError
       task.updatedAt = now
       task.finishedAt = now
@@ -433,9 +464,11 @@ func monitorAutomationTask(
       recoveredWorker = createIndependentQueueWorkerTarget(&state, accountId: task.accountId)
     }
     guard let recoveredWorker else {
-      task.hiddenWorkerLastError = "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
-      task.lastError = task.hiddenWorkerLastError
-      task.updatedAt = isoFormatter.string(from: Date())
+      deferAutomationTaskForWorkerRecovery(
+        &task,
+        state: &state,
+        reason: "queue_monitor_hidden_target_rebuild_failed:\(failedRuntimeState)"
+      )
       return
     }
     port = recoveredWorker.port
@@ -540,7 +573,7 @@ func monitorAutomationTask(
     expression: getReplyJS(),
     timeout: 6.0
   )
-  guard let reply = replyRead.value else {
+  guard var reply = replyRead.value else {
     queueTrace(
       "task=\(task.id) stage=monitor-cdp-failed read=reply "
         + "port=\(port) target=\(targetId) "
@@ -550,6 +583,22 @@ func monitorAutomationTask(
     task.updatedAt = now
     return
   }
+  let confirmedApprovalGhost = approval?["error"] as? String
+    == "confirmed_approval_renderer_ghost_ignored"
+  if confirmedApprovalGhost,
+     reply["stopAvailable"] as? Bool != true {
+    // The user-approved request already succeeded; a remounted card is only a
+    // renderer ghost. Do not let it manufacture permanent streaming/pending
+    // state. The visible assistant result can now be evaluated normally and,
+    // if incomplete, handed to the continuation backoff.
+    reply["waitingForApproval"] = false
+    reply["devspaceWaiting"] = false
+    reply["streaming"] = false
+    reply["pending"] = false
+    if reply["explicitFinalResult"] as? Bool == true {
+      reply["done"] = true
+    }
+  }
   let dispatchMarker = monitoringReview
     ? "验收 Chat 标识：\(task.id)-\(task.attempts)-\(task.reviewRound)"
     : "任务发送轮次：\(task.attempts)"
@@ -558,6 +607,31 @@ func monitorAutomationTask(
     reply["userContent"] as? String ?? "",
   ].joined(separator: "\n")
   let hasCurrentDispatchMarker = currentPageContent.contains(dispatchMarker)
+  if hasCurrentDispatchMarker,
+     let resolved = cdpValue(
+       port: port,
+       targetId: targetId,
+       expression: resolveDispatchedConversationJS(
+         dispatchMarker: dispatchMarker,
+         localConversationId: normalizedConversationId(
+           monitoringReview ? task.reviewConversationId : task.conversationId
+         )
+       ),
+       timeout: 8.0
+     ),
+     let durableConversationId = normalizedConversationId(resolved["conversationId"] as? String) {
+    if monitoringReview {
+      task.reviewConversationId = durableConversationId
+    } else if task.conversationId != durableConversationId {
+      task.conversationId = durableConversationId
+      task.chatURL = "https://chatgpt.com/c/\(durableConversationId)"
+      queueTrace(
+        "task=\(task.id) stage=monitor-promoted-dispatch-conversation "
+          + "conversation=\(durableConversationId)"
+      )
+    }
+    liveStatus["conversationId"] = durableConversationId
+  }
   let terminalDecision = queueReplyTerminalDecision(reply)
   let replyIsActivelyResponding = reply["streaming"] as? Bool == true
     || reply["stopAvailable"] as? Bool == true
@@ -695,12 +769,50 @@ func monitorAutomationTask(
     }
     return
   }
-  _ = cdpValue(
+  let chatContinuation = cdpValue(
     port: port,
     targetId: targetId,
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
+  let chatContinuationDispatched = dispatchRecommendedCDPClick(
+    chatContinuation,
+    port: port,
+    targetId: targetId
+  )
+  if chatContinuation?["clicked"] as? Bool == true {
+    Thread.sleep(forTimeInterval: 0.6)
+    let continuationStatus = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: chatStatusJS(),
+      timeout: 5.0
+    )
+    let surface = continuationStatus?["surface"] as? String ?? "unknown"
+    let chatMode = continuationStatus?["chatMode"] as? Bool == true
+    queueTrace(
+      "task=\(task.id) stage=chat-continuation "
+        + "dispatched=\(chatContinuationDispatched) surface=\(surface) chatMode=\(chatMode)"
+    )
+    guard chatContinuationDispatched, surface == "chat", chatMode else {
+      let screenshot = captureHiddenChatScreenshot(
+        port: port,
+        targetId: targetId,
+        label: "chat-surface-drift"
+      )
+      state.queuePaused = true
+      task.status = "blocked"
+      task.lastError = "chat_surface_drift"
+      task.updatedAt = now
+      task.finishedAt = now
+      queueTrace(
+        "task=\(task.id) stage=chat-continuation-blocked "
+          + "reason=chat_surface_drift screenshot=\(screenshot ?? "none")"
+      )
+      return
+    }
+    task.lastProgressAt = now
+  }
   let afterReadApproval = approveDedicatedAuthorizationWithDiagnostics(
     port: port,
     targetId: targetId,
@@ -763,10 +875,10 @@ func monitorAutomationTask(
   ])
   writeQueueConversationDiagnostic(task)
 
-  // A sent Chat that never creates any assistant or tool activity can still be
-  // a long-running connector operation. Give it the same three-hour quiet
-  // window as any other Chat, then start a fresh Chat without touching the old
-  // renderer.
+  // A user bubble with no assistant/tool activity is not a long-running
+  // connector operation: ChatGPT never started the turn. Recover after five
+  // minutes. Once assistant/tool activity exists, the separate three-hour
+  // stagnation window below still protects legitimately long operations.
   let hasAssistantActivity = (reply["messageCount"] as? Int ?? 0) > 0
     || !(reply["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     || !(reply["devspaceActivity"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -774,7 +886,7 @@ func monitorAutomationTask(
   let isPending = reply["pending"] as? Bool == true
   if !hasAssistantActivity, !isStreaming, isPending,
      let lastProgressAt = task.lastProgressAt.flatMap(isoFormatter.date(from:)),
-     Date().timeIntervalSince(lastProgressAt) >= Double(queueChatStagnationTimeoutSeconds) {
+     Date().timeIntervalSince(lastProgressAt) >= Double(queueChatStartTimeoutSeconds) {
     queueContinuation(&task, report: nil, reason: "chat_start_no_reply")
     return
   }
@@ -786,28 +898,49 @@ func monitorAutomationTask(
   }
   let reportText = completedActivity.isEmpty ? visibleContent : completedActivity
   let parsedReport = parseTaskReport(reportText).flatMap(automationReport)
+  let parsedWait = parseTaskWait(reportText)
   let terminalIncomplete = terminalDecision.terminalIncomplete
   let terminal = terminalDecision.terminal
   let hasClosedTaskReport = reply["hasClosedTaskReport"] as? Bool == true
   if terminal, hasClosedTaskReport, parsedReport == nil {
     queueTrace(
-      "task=\(task.id) stage=report-parse-failed action=blocked "
-        + "reason=closed_task_report_unparseable"
+      "task=\(task.id) stage=report-parse-failed action=continue "
+        + "reason=closed_task_report_not_fully_complete"
     )
-    writeQueueConversationDiagnostic(task, finalReason: "task_report_parse_failed")
     closeDedicatedAutomationTarget(task, state: state)
-    task.status = "blocked"
-    task.lastError = "task_report_parse_failed"
-    task.finishedAt = now
+    queueContinuation(
+      &task,
+      report: nil,
+      reason: "closed_task_report_not_fully_complete"
+    )
+    return
+  }
+  if terminal, let wait = parsedWait,
+     wait["task_id"] as? String == task.id,
+     let waitSeconds = wait["wait_seconds"] as? Int,
+     let waitReason = wait["reason"] as? String {
+    closeDedicatedAutomationTarget(task, state: state)
+    queueContinuation(&task, report: nil, reason: "chat_requested_wait")
+    task.status = "waiting"
+    task.waitingUntil = isoFormatter.string(
+      from: Date().addingTimeInterval(Double(waitSeconds))
+    )
+    task.waitReason = waitReason
+    task.lastError = "waiting_for_external_result"
     task.updatedAt = now
+    queueTrace(
+      "task=\(task.id) stage=chat-requested-wait delay=\(waitSeconds)s "
+        + "reason=\(String(waitReason.prefix(200)))"
+    )
     return
   }
   if terminal, !automationTaskRevisionIsCurrent(task, report: parsedReport) {
     let currentRevision = max(1, task.currentRevision ?? 1)
     let appliedRevision = max(1, parsedReport?.appliedTaskRevision ?? task.appliedRevision ?? 1)
     closeDedicatedAutomationTarget(task, state: state)
-    queueContinuation(&task, report: nil, reason: "task_revision_superseded")
-    task.reviewFeedback = "上一轮基于 revision \(appliedRevision)，但任务已经更新到 revision \(currentRevision)。请读取最新规范快照，只补做新增或变化的验收要求。"
+    restartAutomationTaskForUpdatedGoal(&task)
+    task.reviewFeedback = "上一轮基于 revision \(appliedRevision)，任务已更新到 revision \(currentRevision)。小程序已停止旧分支续作；下一轮新建 Chat、重新立项并发送更新后的完整目标与任务目录。"
+    queueTrace("task=\(task.id) stage=task-revision-superseded action=fresh-project-chat")
     return
   }
   if terminal {
@@ -830,7 +963,7 @@ func monitorAutomationTask(
     if monitoringReview {
       task.reviewReport = report
       task.reviewStatus = report.status
-      if report.status == "complete" {
+      if taskReportIsFullyComplete(report) {
         task.status = "completed"
         task.lastError = nil
         task.finishedAt = now
@@ -849,7 +982,7 @@ func monitorAutomationTask(
       return
     }
     task.report = report
-    if report.status == "complete" {
+    if taskReportIsFullyComplete(report) {
       guard startAutomationReview(
         &task,
         report: report,
@@ -921,11 +1054,23 @@ func runQueueIteration(_ state: inout PluginState) {
     state.automationTasks = tasks
     return
   }
-  let hasRunningTasks = tasks.contains { $0.status == "running" }
+  // Update detection belongs to the miniapp. Re-read the authoritative task
+  // entry and every declared file before monitoring completion or dispatching
+  // another round. A changed goal immediately loses the old branch identity;
+  // the old server-side response may settle independently, but it can never
+  // complete or supply context to the new goal.
+  for index in tasks.indices where tasks[index].status != "cancelled" {
+    if refreshAutomationTaskDefinitionFromDisk(&tasks[index]) {
+      restartAutomationTaskForUpdatedGoal(&tasks[index])
+    }
+  }
+  let hasPendingQueueWork = tasks.contains {
+    $0.status == "queued" || $0.status == "running" || $0.status == "waiting"
+  }
   if state.queueWorkerMode == sharedConversationQueueWorkerMode
       || state.queueWorkerMode == parallelHiddenWindowQueueWorkerMode
       || state.queueWorkerMode == parallelHeadlessWindowQueueWorkerMode,
-     !hasRunningTasks {
+     !hasPendingQueueWork {
     // v82 restores the previously successful dedicated-process path. The
     // official quick-chat prewarm service owns only one window and closes it
     // when the next prewarm starts, so migrate both shared-renderer variants
@@ -945,7 +1090,7 @@ func runQueueIteration(_ state: inout PluginState) {
     state.queueWorkerMode = nil
   }
   if state.queueWorkerMode != nil && !queueUsesBackgroundWindow(state)
-      && !hasRunningTasks {
+      && !hasPendingQueueWork {
     // Migrate pre-v41 queues without touching a borrowed visible renderer. Any
     // running Chat must finish before the migration is allowed.
     if state.queueWorkerMode == legacyIsolatedQueueWorkerMode,
@@ -1057,16 +1202,18 @@ func runQueueIteration(_ state: inout PluginState) {
     } catch {
       queueTrace("task=\(tasks[index].id) stage=start-failed error=\(error.localizedDescription)")
       if let signal = networkRecoverySignal(error.localizedDescription) {
-        tasks[index].attempts += 1
         queueNetworkRecovery(&tasks[index], state: &state, reason: signal)
         continue
       }
-      tasks[index].updatedAt = now
-      tasks[index].attempts += 1
-      tasks[index].lastError = error.localizedDescription
-      tasks[index].status = tasks[index].attempts <= tasks[index].maxRuntimeRetries
-        ? "queued"
-        : "failed"
+      // `attempts` is the number embedded in a message that was actually sent.
+      // Renderer/setup failures happen before that send and must neither
+      // advance the marker nor exhaust a budget based on successful Chats.
+      // A capped delay lets a long-lived local queue recover indefinitely.
+      deferAutomationTaskForWorkerRecovery(
+        &tasks[index],
+        state: &state,
+        reason: error.localizedDescription
+      )
     }
   }
   state.automationTasks = tasks
@@ -1113,7 +1260,6 @@ func watchdogTaskHasNonRecoverableFailure(_ task: AutomationTask) -> Bool {
     task.hiddenWorkerLastError,
   ].compactMap { $0 }.joined(separator: " ").lowercased()
   return [
-    "task_continuation_limit_reached",
     "dependency_not_completed",
     "model_picker_not_found",
     "quick_chat_thinking_not_selected",
