@@ -536,3 +536,25 @@ export function assertReleaseTrustBoundary(value, config = {}) {
     identity,
   };
 }
+
+
+export const GITHUB_APP_TOKEN_POLICY = Object.freeze({
+  credentialType: 'installation-token',
+  clientReceivesCredential: false,
+  maxLifetime: 'short-lived',
+  forbidden: ['organization-pat', 'personal-access-token'],
+});
+
+export function assertGithubAppControlPlane(value = {}) {
+  const credentialType = String(value.credentialType ?? '').trim();
+  if (credentialType !== GITHUB_APP_TOKEN_POLICY.credentialType) {
+    fail('github_app_token_required', 'managed GitHub control plane requires short-lived GitHub App installation tokens');
+  }
+  if (value.clientReceivesCredential === true) {
+    fail('github_app_credential_exposure', 'GitHub App installation credentials cannot be sent to clients');
+  }
+  if (value.organizationPat === true || value.personalAccessToken === true) {
+    fail('github_app_pat_forbidden', 'organization PAT and personal access token are forbidden for managed control plane');
+  }
+  return { ...GITHUB_APP_TOKEN_POLICY };
+}
