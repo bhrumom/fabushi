@@ -18,11 +18,11 @@ func taskReportContract(
   return """
 
 MAHAYANA_TASK_REPORT_CONTRACT_V4
-每轮结束都只允许输出下面这一种模板，不要放进 Markdown 代码块。`completed` 只记录本轮或此前已完成的项目，绝不代表整个任务完成。只有任务目录中的全部目标、验收和必要验证都完成时，才可同时填写 `"status":"complete"` 和 `"all_tasks_complete":true`；此时 `remaining`、`blockers` 必须为空，`wait_seconds` 必须为 0，`next_task` 必须为空。只完成一项或仍有任何剩余工作时，必须填写 `"status":"incomplete"`、`"all_tasks_complete":false` 并写明 `remaining` 与 `next_task`，程序会继续下一轮。外部等待或人工卡点也使用同一模板，设置 `status` 为 `incomplete` 或 `blocked`、`all_tasks_complete` 为 false，并填写 `wait_seconds`、`wait_reason` 和 `next_task`。
+每轮结束都只允许输出下面这一种模板，不要放进 Markdown 代码块。`completed` 只记录本轮或此前已完成的项目，绝不代表整个任务完成。只有当前任务目标、已配置的验收和必要验证都完成时，才可同时填写 `"status":"complete"` 和 `"all_tasks_complete":true`；任务文件数量不受限制，也允许完全没有任务文件。此时 `remaining`、`blockers` 必须为空，`wait_seconds` 必须为 0，`next_task` 必须为空。只完成一项或仍有任何剩余工作时，必须填写 `"status":"incomplete"`、`"all_tasks_complete":false` 并写明 `remaining` 与 `next_task`，程序会继续下一轮。外部等待或人工卡点也使用同一模板，设置 `status` 为 `incomplete` 或 `blocked`、`all_tasks_complete` 为 false，并填写 `wait_seconds`、`wait_reason` 和 `next_task`。
 MAHAYANA_TASK_REPORT_V1_BEGIN
 {"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
 MAHAYANA_TASK_REPORT_V1_END
-需要人工介入时，先按共享技能通过 Gmail 回复任务立项邮件，再输出同一模板。除这一种模板外不要输出第二套完成、未完成或等待格式。
+需要人工介入时，先按共享技能通过 Gmail 创建或回复 `[需人工介入][任务 id]` 邮件，再输出同一模板。禁止发送立项、进展或完成邮件；除这一种模板外不要输出第二套完成、未完成或等待格式。
 """
 }
 
@@ -45,7 +45,7 @@ func continuationFromTaskReport(
   _ report: [String: Any], originalGoal: String, iteration: Int
 ) -> String {
   let body = """
-继续完成同一任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能、任务目录中的全部当前文件和 `.mahayana-project-email.json`，再使用 Gmail 读取其中记录的立项线程，检查 1315518325@qq.com 是否有新增要求并纳入工作。不要因为本轮结束而机械发邮件；只有产生可核验的实质进展、整个任务完成，或需要人工提供信息/权限/凭证/决策时才回复同一线程。检查同一 checkout 的落盘进度与仍在运行的操作，然后持续做剩余实际工作。不要从头开始，不要只检查或总结，不要中途回复；本轮必须结束时使用消息末尾唯一的统一模板，只有整个任务全部完成才设置 all_tasks_complete=true。
+继续完成同一任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能；如果配置了任务文件，再读取全部当前任务文件。随后使用 Gmail 按任务 id 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][任务 id]` 邮件。检查同一 checkout 的落盘进度与仍在运行的操作，然后持续做剩余实际工作。不要从头开始，不要只检查或总结，不要中途回复；本轮必须结束时使用消息末尾唯一的统一模板，只有整个任务全部完成才设置 all_tasks_complete=true。
 """
   return messageWithTaskReportContract(
     body,

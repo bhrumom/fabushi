@@ -500,7 +500,7 @@ func refreshAutomationTaskDefinitionFromDisk(_ task: inout AutomationTask) -> Bo
   task.codeDirectory = incomingCodeDirectory
   task.specUpdatedAt = isoFormatter.string(from: Date())
   task.updatedAt = task.specUpdatedAt ?? task.updatedAt
-  task.reviewFeedback = "小程序检测到任务目标或规范文件更新；旧 Chat 链不再续作，下一轮必须新建 Chat 并重新立项。"
+  task.reviewFeedback = "小程序检测到任务目标或规范文件更新；旧 Chat 链不再续作，下一轮必须新建 Chat 并应用完整新目标。"
   queueTrace(
     "task=\(task.id) stage=task-definition-refreshed revision=\(effectiveRevision) "
       + "digest=\(digest ?? "none") action=fresh-project-chat"
@@ -538,6 +538,7 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   let revision = max(1, task.currentRevision ?? 1)
   let digest = task.specDigest ?? ""
   let directory = taskDocumentDirectory(task)
+  let hasTaskDocuments = !(task.specSources ?? []).isEmpty
   let repository = task.repository?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let codeDirectory = task.codeDirectory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let updatedGoalFirstRound = task.appliedRevision != nil &&
@@ -548,19 +549,23 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   if isContinuation {
     sections = [
       "继续完成任务 \(task.id)，不要重新规划、不要只检查结果、不要中途总结。",
-      "先重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和任务目录 `\(directory)` 中的全部文件，确认文件是否更新；再检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。",
-      "本轮开始先读取 `\(directory)/.mahayana-project-email.json`，再使用 Gmail 读取其中记录的立项线程，检查 1315518325@qq.com 是否有新增要求并纳入本轮工作；若记录缺少 threadId，先补建立项邮件并写回记录。本轮结束时只输出末尾统一模板；只有整个任务全部完成才设置 all_tasks_complete=true。",
+      hasTaskDocuments
+        ? "先重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和已配置任务目录 `\(directory)` 中的全部文件，确认文件是否更新；再检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。"
+        : "本任务没有配置任务文档，这是合法状态。重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)`，然后依据当前目标检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。",
+      "本轮开始使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求并纳入工作。禁止发送立项、进展或完成邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。本轮结束时只输出末尾统一模板；只有整个任务全部完成才设置 all_tasks_complete=true。",
     ]
   } else {
     let emailInstruction = updatedGoalFirstRound
-      ? "这是更新后的新目标首轮。不要复用旧立项线程：立即使用 Gmail 向 1315518325@qq.com 创建 `[立项][\(task.id)][v\(revision)] \(task.title)` 邮件，并用新的 threadId/messageId 覆盖写入 `\(directory)/.mahayana-project-email.json`；完成新立项后再实现。"
-      : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)`、任务目录全部文件和 `\(directory)/.mahayana-project-email.json`。如果邮件记录没有 threadId，立即使用 Gmail 向 1315518325@qq.com 创建 `[立项][\(task.id)] \(task.title)` 邮件，并把返回的 threadId/messageId 写回记录；完成立项后再开始实现。"
+      ? "这是更新后的新目标首轮。使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 的新增要求；不要复用旧目标内容，也不要发送新立项邮件。"
+      : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和所有已配置任务文件（如有），并使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。不得发送立项邮件。"
     sections = [
       taskPromptPrefix(task.promptTemplate),
       "目标：\n\(task.prompt)",
-      "任务目录：`\(directory)`",
+      hasTaskDocuments
+        ? "任务目录：`\(directory)`"
+        : "任务文件：未配置（允许为零；不得要求补建任务文档）",
       emailInstruction,
-      "立项后使用 Gmail 读取该线程，检查 1315518325@qq.com 是否有新增要求并纳入本轮工作。随后直接实现、测试和验证，不要只阅读、评估或汇报计划。",
+      "检查邮件要求后直接实现、测试和验证，不要只阅读、评估或汇报计划。只有确实需要人工信息、权限、凭证或决策时才发送 `[需人工介入][\(task.id)]` 邮件，其他情况一律不发邮件。",
     ]
   }
   var executionCoordinates = [
@@ -568,8 +573,12 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   ]
   if !repository.isEmpty {
     let repositoryURL = "https://github.com/\(repository)"
-    let taskDirectoryURL = "\(repositoryURL)/tree/main/\(directory)"
-    executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。任务文件位于该仓库的 `\(directory)`（\(taskDirectoryURL)）；必须先通过 GitHub 连接器读取这些任务文件，再读取并修改同一仓库中的实际代码。不要在其他仓库、父目录或临时示例里工作。")
+    if hasTaskDocuments {
+      let taskDirectoryURL = "\(repositoryURL)/tree/main/\(directory)"
+      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。任务文件位于该仓库的 `\(directory)`（\(taskDirectoryURL)）；必须先通过 GitHub 连接器读取这些已配置任务文件，再读取并修改同一仓库中的实际代码。不要在其他仓库、父目录或临时示例里工作。")
+    } else {
+      executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。本任务未配置任务文件，直接以本轮目标为准读取并修改实际代码；不要在其他仓库、父目录或临时示例里工作。")
+    }
   }
   if !codeDirectory.isEmpty {
     executionCoordinates.append("代码修改位置：仓库 `\(repository)` 下的 `\(codeDirectory)`。从这里定位首个未通过验收项涉及的源文件，直接编辑代码并运行相应测试；任务文档目录只用于读取目标，不能把只改文档当作实现。")
@@ -578,8 +587,8 @@ func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) 
   sections.insert(contentsOf: executionCoordinates, at: 0)
   sections.append("实际工作只允许在 Chat 页面完成，不进入 Work 页面。")
   sections.append("当前修订：\(revision)；规范指纹：\(digest)；连接器：\(task.connector)。任务发送轮次：\(task.attempts + 1)。")
-  sections.append("每轮开始都必须重新读取任务目录以发现更新。未全部完成就继续工作；本轮必须结束时，阶段未完成、等待、阻塞和全部完成都只使用末尾同一个模板。只有整个任务全部完成才设置 all_tasks_complete=true。")
-  sections.append("邮件读取是每轮硬性步骤：第一轮、续作轮和验收轮开始时都必须用 Gmail 读取立项线程并检查 1315518325@qq.com 的新增要求。不要因为 Chat 结束而机械发邮件；只有产生可核验的实质进展（代码实现、重要测试/构建/部署里程碑、commit/PR/release 或全部完成），或者确实需要人工提供信息、权限、凭证或决策时，才回复同一线程。只读检查、计划、复述、无改动失败尝试或未变化的等待不得发邮件，也不得重复发送同一进展。")
+  sections.append("每轮开始都必须重新读取任务控制定义，并在存在已配置任务文件时读取这些文件以发现更新。任务文件数量不受限制，也允许为零。未全部完成就继续工作；本轮必须结束时，阶段未完成、等待、阻塞和全部完成都只使用末尾同一个模板。只有整个任务全部完成才设置 all_tasks_complete=true。")
+  sections.append("邮件读取是每轮硬性步骤：第一轮、续作轮和验收轮开始时都必须用 Gmail 按任务 id 只读检查 1315518325@qq.com 的新增要求。禁止发送立项、进展、里程碑、完成或普通等待邮件；只有确实需要人工提供信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。其他情况一律不发邮件。")
   if let directive = task.pendingDirective, !directive.isEmpty {
     sections.append("本修订新增要求：\n\(directive)")
   }
@@ -601,7 +610,7 @@ func automationReviewMessage(
 
   本轮发送前小程序必须重新确认 GPT-5.6 Sol 与 Extra High。使用 GitHub 连接器操作仓库 `\(repository)`；任务文件路径是 `\(taskDirectory)`，代码修改路径是 `\(codeDirectory)`。如果验收发现问题，必须直接修改代码并运行测试；只阅读或汇报不算通过。
 
-  验收开始前读取 `\(taskDirectory)/.mahayana-project-email.json`，使用 Gmail 读取其中记录的立项线程，并检查 1315518325@qq.com 是否有新增要求。不要因为验收 Chat 结束而机械发邮件；只有验收产生新的实质性修复/验证里程碑、确认整个任务完成，或需要人工信息/权限时才回复同一线程。
+  验收开始前使用 Gmail 按任务 id `\(task.id)` 只读检查 1315518325@qq.com 是否有新增要求。禁止发送立项、进展或完成邮件；只有验收确实需要人工信息、权限、凭证或决策时，才创建或回复 `[需人工介入][\(task.id)]` 邮件。
 
   原始任务目标（不可变）：
   \(task.originalPrompt ?? task.prompt)
