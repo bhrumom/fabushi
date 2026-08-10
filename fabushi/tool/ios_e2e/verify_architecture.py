@@ -19,6 +19,7 @@ MARKETPLACE_SERVICE = (
     ROOT / "fabushi/lib/services/miniapp/mahayana_marketplace_service.dart"
 )
 HOST = ROOT / "fabushi/lib/screens/mini_app_host_screen.dart"
+CLI = ROOT / "third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs"
 CONTROL = ROOT / "fabushi/lib/services/miniapp/mahayana_e2e_control_io.dart"
 
 
@@ -33,6 +34,7 @@ def main() -> int:
     installer = INSTALLER.read_text(encoding="utf-8")
     service = MARKETPLACE_SERVICE.read_text(encoding="utf-8")
     host = HOST.read_text(encoding="utf-8")
+    cli = CLI.read_text(encoding="utf-8")
     control = CONTROL.read_text(encoding="utf-8")
     flow = json.loads(FLOW.read_text(encoding="utf-8"))
     flow_text = json.dumps(flow, ensure_ascii=False)
@@ -48,6 +50,14 @@ def main() -> int:
     for pattern, message in forbidden_workflow.items():
         require(re.search(pattern, workflow) is None, message)
 
+    require(
+        "TestDriver" not in cli and "test_driver_command" not in cli,
+        "fake CLI test-driver endpoints are forbidden; E2E state must come from production services",
+    )
+    require(
+        "MAHAYANA_TEST_DRIVER_ALLOW_RELEASE" not in cli,
+        "release-enable escape hatches for test drivers are forbidden",
+    )
     require(
         "--dart-define=FABUSHI_E2E_CONTROL=true" in workflow,
         "the E2E control channel must be opt-in at build time",

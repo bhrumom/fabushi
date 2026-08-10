@@ -80,6 +80,8 @@ Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标�
 
 这些方法只能调用现有生产服务，不允许客户端传入安装目录或任意 Rust command。L2 黑盒流程明确禁止通过 Control 调用 `marketplace.install`；它必须点击 UI 的“安装”。Control 的安装方法保留给更低层、确定性的集成测试复用生产 Installer。
 
+禁止另建返回伪造结果的 CLI/TestDriver（例如固定返回空日志、空 actions、假 `resetProfile` 成功）。测试控制面必须查询或调用真实生产服务；也禁止提供环境变量让 test driver 在 release 构建中重新启用。架构 guard 会检查这些回归。
+
 宿主机客户端为 `fabushi/tool/ios_e2e/control_client.py`。协议响应可以作为 CI artifact 保存，但不得返回测试账号 token。
 
 ## Locator 合同
