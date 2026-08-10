@@ -35,30 +35,30 @@
       }
     },
     {
-      "name": "miniapp-found",
+      "name": "installed-miniapp-found",
       "action": "wait",
       "timeoutSeconds": 90,
       "locator": {
         "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.result.'"
+        "value": "name BEGINSWITH 'e2e.miniapp.result.' AND name ENDSWITH '.installed'"
       }
     },
     {
-      "name": "miniapp-open",
+      "name": "installed-miniapp-open",
       "action": "tap",
       "timeoutSeconds": 30,
       "locator": {
         "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.result.'"
+        "value": "name BEGINSWITH 'e2e.miniapp.result.' AND name ENDSWITH '.installed'"
       }
     },
     {
-      "name": "miniapp-chat-ready",
+      "name": "installed-miniapp-chat-ready",
       "action": "wait",
       "timeoutSeconds": 90,
       "locator": {
         "using": "-ios predicate string",
-        "value": "name BEGINSWITH 'e2e.miniapp.chat.'"
+        "value": "name BEGINSWITH 'e2e.miniapp.chat.' AND name ENDSWITH '.installed'"
       }
     }
   ]
