@@ -742,3 +742,130 @@ export function createManagedRepositoryProvisioner({ claims, github, officialSou
     return promise;
   };
 }
+
+async function digestHex(algorithm, bytes) {
+  const digest = await crypto.subtle.digest(algorithm, bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function gitBlobSha1(content) {
+  const contentBytes = new TextEncoder().encode(String(content));
+  const headerBytes = new TextEncoder().encode(`blob ${contentBytes.byteLength}\0`);
+  const payload = new Uint8Array(headerBytes.byteLength + contentBytes.byteLength);
+  payload.set(headerBytes, 0);
+  payload.set(contentBytes, headerBytes.byteLength);
+  return digestHex('SHA-1', payload);
+}
+
+export async function verifyManagedInitialSourcePush({
+  provisioning,
+  snapshotEntries,
+  pushReceipt,
+  remoteTree,
+  officialSourceOwner = 'bhrumom',
+} = {}) {
+  if (!provisioning || typeof provisioning !== 'object' || Array.isArray(provisioning)) {
+    fail('managed_repo_provisioning_receipt_required', 'managed initial source push requires the repository provisioning receipt');
+  }
+  if (!pushReceipt || typeof pushReceipt !== 'object' || Array.isArray(pushReceipt)) {
+    fail('managed_source_push_receipt_required', 'managed initial source push requires a GitHub push receipt');
+  }
+  if (!remoteTree || typeof remoteTree !== 'object' || Array.isArray(remoteTree) || !Array.isArray(remoteTree.files)) {
+    fail('managed_source_remote_tree_required', 'managed initial source push requires the GitHub repository tree');
+  }
+
+  const repositoryId = Number(pushReceipt.repositoryId);
+  const provisionedRepositoryId = Number(provisioning.repositoryId);
+  if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0 || repositoryId !== provisionedRepositoryId) {
+    fail('managed_source_repository_mismatch', 'initial source push must target the exact provisioned repository ID');
+  }
+
+  const repositoryOwner = normalizeOwner(pushReceipt.repositoryOwner, 'pushReceipt.repositoryOwner');
+  const provisionedOwner = normalizeOwner(provisioning.repositoryOwner, 'provisioning.repositoryOwner');
+  const officialOwner = normalizeOwner(officialSourceOwner, 'officialSourceOwner');
+  if (repositoryOwner.toLowerCase() !== provisionedOwner.toLowerCase()) {
+    fail('managed_source_repository_mismatch', 'initial source push owner does not match the provisioned repository owner');
+  }
+  if (repositoryOwner.toLowerCase() === officialOwner.toLowerCase()) {
+    fail('managed_owner_trust_boundary', 'managed user source cannot be pushed into the official source organization');
+  }
+
+  const repositoryName = normalizeRepositoryName(pushReceipt.repositoryName, 'pushReceipt.repositoryName');
+  const provisionedName = normalizeRepositoryName(provisioning.repositoryName, 'provisioning.repositoryName');
+  if (repositoryName !== provisionedName) {
+    fail('managed_source_repository_mismatch', 'initial source push repository name does not match the provisioned repository');
+  }
+
+  const managedOrgId = requiredString(pushReceipt.managedOrgId, 'managedOrgId', 192);
+  const defaultBranch = requiredString(pushReceipt.defaultBranch, 'defaultBranch', 255);
+  const commit = requiredString(pushReceipt.commit, 'commit', 40).toLowerCase();
+  const treeHash = requiredString(pushReceipt.treeHash, 'treeHash', 40).toLowerCase();
+  if (!SHA1.test(commit) || !SHA1.test(treeHash)) {
+    fail('source_sha_invalid', 'managed source push commit and treeHash must be exact Git SHA-1 values');
+  }
+
+  const remoteTreeHash = requiredString(remoteTree.treeHash, 'remoteTree.treeHash', 40).toLowerCase();
+  if (!SHA1.test(remoteTreeHash) || remoteTreeHash !== treeHash) {
+    fail('managed_source_tree_mismatch', 'GitHub tree does not match the commit tree recorded by the push receipt');
+  }
+
+  const snapshot = await createDeterministicSourceSnapshot(snapshotEntries);
+  const snapshotSha256 = requiredString(pushReceipt.snapshotSha256, 'snapshotSha256', 64).toLowerCase();
+  if (!SHA256.test(snapshotSha256) || snapshotSha256 !== snapshot.sourceArchiveSha256) {
+    fail('managed_source_snapshot_mismatch', 'GitHub push receipt is not bound to the exact deterministic source snapshot');
+  }
+  if (provisioning.snapshotSha256 && String(provisioning.snapshotSha256).toLowerCase() !== snapshotSha256) {
+    fail('managed_source_snapshot_mismatch', 'repository provisioning claim and initial source push use different source snapshots');
+  }
+
+  const expected = new Map();
+  for (const file of snapshot.files) {
+    expected.set(file.path, await gitBlobSha1(file.content));
+  }
+
+  const actual = new Map();
+  for (const entry of remoteTree.files) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      fail('managed_source_tree_entry_invalid', 'GitHub tree entry must be an object');
+    }
+    const path = normalizeSnapshotPath(entry.path);
+    if (String(entry.type ?? 'blob') !== 'blob') {
+      fail('managed_source_tree_entry_invalid', 'initial source tree must contain only snapshot file blobs', { path });
+    }
+    const sha = requiredString(entry.sha, `remoteTree.files[${path}].sha`, 40).toLowerCase();
+    if (!SHA1.test(sha)) fail('managed_source_tree_entry_invalid', 'GitHub blob SHA is invalid', { path });
+    if (actual.has(path)) fail('managed_source_tree_entry_invalid', 'GitHub tree contains a duplicate file path', { path });
+    actual.set(path, sha);
+  }
+
+  if (actual.size !== expected.size) {
+    fail('managed_source_tree_mismatch', 'GitHub repository file count differs from the source snapshot', {
+      expected: expected.size,
+      actual: actual.size,
+    });
+  }
+  for (const [path, sha] of expected) {
+    if (actual.get(path) !== sha) {
+      fail('managed_source_tree_mismatch', 'GitHub repository bytes differ from the source snapshot', { path });
+    }
+  }
+
+  return {
+    managedOrgId,
+    repositoryId,
+    repositoryOwner,
+    repositoryName,
+    defaultBranch,
+    commit,
+    treeHash,
+    snapshotSha256,
+    sourceState: 'hosted',
+    sourceProvider: 'github',
+    sourceActor: 'platform',
+    sourceTransport: 'github-app-api',
+    sourceCustody: 'platform-managed',
+    hostingProvider: 'none',
+    hostingState: 'none',
+    officialStatus: 'community',
+  };
+}
