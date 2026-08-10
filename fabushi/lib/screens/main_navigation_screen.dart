@@ -49,6 +49,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _selectedBot = _initialBotFromUrl();
   }
 
+  String _miniAppChatE2eId(SocialFeatureBot bot) =>
+      'e2e.miniapp.chat.${bot.stableMiniAppId}.${bot.e2eInstallProvenance}';
+
   void _handleBotSelected(SocialFeatureBot bot, bool isNarrow) {
     setState(() {
       _selectedBot = bot;
@@ -63,7 +66,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               0xFF0E1621,
             ), // Telegram dark theme chat bg
             body: Semantics(
-              identifier: 'e2e.miniapp.chat.${bot.stableMiniAppId}',
+              identifier: _miniAppChatE2eId(bot),
               container: true,
               child: SocialFeatureChatScreen(bot: bot),
             ),
@@ -132,7 +135,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
       rightContent: _selectedFriend == null
           ? Semantics(
-              identifier: 'e2e.miniapp.chat.${_selectedBot.stableMiniAppId}',
+              identifier: _miniAppChatE2eId(_selectedBot),
               container: true,
               child: SocialFeatureChatScreen(bot: _selectedBot),
             )
