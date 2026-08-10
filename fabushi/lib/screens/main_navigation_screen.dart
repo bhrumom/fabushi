@@ -62,7 +62,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             backgroundColor: const Color(
               0xFF0E1621,
             ), // Telegram dark theme chat bg
-            body: SocialFeatureChatScreen(bot: bot),
+            body: Semantics(
+              identifier: 'e2e.miniapp.chat.${bot.stableMiniAppId}',
+              container: true,
+              child: SocialFeatureChatScreen(bot: bot),
+            ),
           ),
         ),
       );
@@ -100,26 +104,38 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Widget _buildNarrowShell() {
-    return TelegramChatList(
-      selectedBot: _selectedBot.stableBotId,
-      onBotSelected: (bot) => _handleBotSelected(bot, true),
-      onFriendSelected: (friend) => _handleFriendSelected(friend, true),
-      selectedFriendId: _selectedFriend?.id,
-      isMobile: true,
+    return Semantics(
+      identifier: 'e2e.chat.list',
+      container: true,
+      child: TelegramChatList(
+        selectedBot: _selectedBot.stableBotId,
+        onBotSelected: (bot) => _handleBotSelected(bot, true),
+        onFriendSelected: (friend) => _handleFriendSelected(friend, true),
+        selectedFriendId: _selectedFriend?.id,
+        isMobile: true,
+      ),
     );
   }
 
   Widget _buildWideShell() {
     return TelegramSplitView(
-      leftMenu: TelegramChatList(
-        selectedBot: _selectedBot.stableBotId,
-        onBotSelected: (bot) => _handleBotSelected(bot, false),
-        onFriendSelected: (friend) => _handleFriendSelected(friend, false),
-        selectedFriendId: _selectedFriend?.id,
-        isMobile: false,
+      leftMenu: Semantics(
+        identifier: 'e2e.chat.list',
+        container: true,
+        child: TelegramChatList(
+          selectedBot: _selectedBot.stableBotId,
+          onBotSelected: (bot) => _handleBotSelected(bot, false),
+          onFriendSelected: (friend) => _handleFriendSelected(friend, false),
+          selectedFriendId: _selectedFriend?.id,
+          isMobile: false,
+        ),
       ),
       rightContent: _selectedFriend == null
-          ? SocialFeatureChatScreen(bot: _selectedBot)
+          ? Semantics(
+              identifier: 'e2e.miniapp.chat.${_selectedBot.stableMiniAppId}',
+              container: true,
+              child: SocialFeatureChatScreen(bot: _selectedBot),
+            )
           : TelegramFriendChatScreen(friend: _selectedFriend!),
     );
   }
