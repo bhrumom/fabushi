@@ -937,12 +937,15 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       elevation: 0,
     );
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      width: collapsed ? height : null,
-      height: height,
-      child: collapsed
+    return Semantics(
+      identifier: 'e2e.miniapp.open.${_normalizedPluginId(_bot)}',
+      button: true,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        width: collapsed ? height : null,
+        height: height,
+        child: collapsed
           ? ElevatedButton(
               onPressed: () => _openMiniAppPanel(),
               style: style.copyWith(
@@ -964,6 +967,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                 ),
               ),
             ),
+        ),
     );
   }
 

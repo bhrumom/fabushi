@@ -153,6 +153,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   String? _uiHtml;
   CodexPluginDescriptor? _pluginPackage;
   String? _error;
+  bool _webViewLoaded = false;
 
   bool get _usesEmbeddedPluginRuntime =>
       kIsWeb ||
@@ -206,6 +207,7 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
       _uiHtml = null;
       _pluginPackage = null;
       _error = null;
+      _webViewLoaded = false;
       unawaited(_initialize());
     }
   }
@@ -714,7 +716,10 @@ class _MiniAppHostScreenState extends State<MiniAppHostScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.headless) return const SizedBox.shrink();
-    final body = _error != null
+    final e2eState = _error != null
+        ? 'error'
+        : (_uiHtml != null && _webViewLoaded ? 'ready' : 'loading');
+    final content = _error != null
         ? Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -801,8 +806,16 @@ if (!window.__mahayanaMcpAppsBridgeInstalled) {
 }
 ''',
               );
+              if (mounted && !_webViewLoaded) {
+                setState(() => _webViewLoaded = true);
+              }
             },
           );
+    final body = Semantics(
+      identifier: 'e2e.miniapp.host.$_pluginId.$e2eState',
+      container: true,
+      child: content,
+    );
     if (!widget.inline) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.bot.title)),
