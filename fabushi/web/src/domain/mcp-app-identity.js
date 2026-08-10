@@ -36,3 +36,15 @@ export function isSourceHosted(identity) {
 export function isDeployed(deployment) {
   return Boolean(deployment && deployment.hostingProvider !== 'none' && deployment.state === 'deployed');
 }
+
+export function assertMcpAppIdentityRoundTrip(identity) {
+  const encoded = JSON.stringify(identity);
+  const decoded = JSON.parse(encoded);
+  if (decoded.appId !== identity.appId || decoded.pluginId !== identity.pluginId) {
+    throw new Error('identity-round-trip-lost-primary-key');
+  }
+  if (isSourceHosted(decoded) && decoded.hostingProvider === 'none') {
+    return decoded;
+  }
+  return decoded;
+}
