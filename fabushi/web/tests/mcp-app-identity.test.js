@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMcpAppIdentity, createSourceBinding, createWebDeployment, isDeployed } from '../src/domain/mcp-app-identity.js';
+import { createMcpAppIdentity, createSourceBinding, createWebDeployment, isDeployed, assertMcpAppIdentityRoundTrip } from '../src/domain/mcp-app-identity.js';
 
 test('source hosted does not imply web deployed', () => {
   const identity = createMcpAppIdentity({
@@ -32,4 +32,17 @@ test('rejects invalid hosting provider', () => {
 
 test('rejects github binding without repository identity', () => {
   assert.throws(() => createSourceBinding({ provider: 'github', actor: 'user', transport: 'github-mcp' }));
+});
+
+test('identity serialization preserves app identity and source/deployment separation', () => {
+  const identity = createMcpAppIdentity({
+    appId: 'app-roundtrip',
+    pluginId: 'plugin-roundtrip',
+    sourceHost: 'github',
+    sourceCustody: 'user-owned',
+    repositoryId: 100,
+  });
+  const result = assertMcpAppIdentityRoundTrip(identity);
+  assert.equal(result.appId, 'app-roundtrip');
+  assert.equal(result.pluginId, 'plugin-roundtrip');
 });
