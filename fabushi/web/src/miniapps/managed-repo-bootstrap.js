@@ -223,6 +223,13 @@ export function validateManagedRepositoryBootstrapEvidence(evidence = {}, plan) 
     fail('bootstrap_pages_state_unknown', 'managed repository Pages state must be explicitly observed');
   }
 
+  const receipts = stringSet(evidence.externalReceipts ?? [], 'externalReceipts');
+  for (const receipt of ['github:repository', 'github:ruleset', 'github:workflows', 'github:codeowners']) {
+    if (!receipts.has(receipt)) {
+      fail('bootstrap_external_receipt_missing', 'managed repository bootstrap requires GitHub provider receipts', { receipt });
+    }
+  }
+
   const auditEvents = stringSet(evidence.auditEvents ?? [], 'auditEvents');
   for (const event of plan.auditEvents) {
     if (!auditEvents.has(event)) fail('bootstrap_audit_event_missing', 'managed repository bootstrap is missing a required audit event', { event });
