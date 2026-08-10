@@ -153,7 +153,13 @@ enum CliCommand {
         #[arg(required = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
-    /// 浏览和安装大乘市场内容。
+    /// Debug/test builds only: drive the CLI with a local structured test contract.
+    #[command(hide = true)]
+    TestDriver {
+        #[arg(required = true)]
+        action: String,
+    },
+    /// 浏览和安装大乘市场内容.
     Marketplace {
         #[command(subcommand)]
         command: MarketplaceCommand,
@@ -458,6 +464,7 @@ fn run(codex_executable_path: Option<&Path>, cli: Cli) -> Result<(), String> {
         }
         Some(CliCommand::StdioToUds(args)) => run_embedded_agent_command(&["stdio-to-uds"], args),
         Some(CliCommand::Miniapp { args }) => miniapp_command(codex_executable_path, args),
+        Some(CliCommand::TestDriver { action }) => test_driver_command(action),
         Some(CliCommand::Marketplace { command }) => marketplace_command(command),
         Some(CliCommand::Plugin { command }) => plugin_command(codex_executable_path, command),
         Some(CliCommand::Wallet { command }) => wallet_command(command),
@@ -976,6 +983,20 @@ fn miniapp_command(codex_executable_path: Option<&Path>, args: Vec<String>) -> R
         }
         _ => Err("用法：mahayana miniapp registry|chat".into()),
     }
+}
+
+fn test_driver_command(action: String) -> Result<(), String> {
+    if !cfg!(debug_assertions) && std::env::var("MAHAYANA_TEST_DRIVER_ENABLE").as_deref() != Ok("1") {
+        return Err("test driver is unavailable in release builds".into());
+    }
+    let correlation_id = uuid::Uuid::new_v4().to_string();
+    let event = match action.as_str() {
+        "health" => json!({"ok": true, "action": action, "correlationId": correlation_id, "channel": "local-only"}),
+        "resetProfile" => json!({"ok": true, "action": action, "correlationId": correlation_id, "profile": "reset-requested"}),
+        _ => return Err(format!("unsupported test driver action: {action}")),
+    };
+    println!("{}", serde_json::to_string(&event).map_err(|error| error.to_string())?);
+    Ok(())
 }
 
 fn login(args: Vec<String>) -> Result<(), String> {
