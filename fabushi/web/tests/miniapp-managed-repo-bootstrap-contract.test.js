@@ -71,6 +71,12 @@ function evidence(overrides = {}) {
       protectedBranchesOnly: true,
     },
     pages: { enabled: false },
+    externalReceipts: [
+      'github:repository',
+      'github:ruleset',
+      'github:workflows',
+      'github:codeowners',
+    ],
     auditEvents: [
       'managed_repo.bootstrap.requested',
       'managed_repo.bootstrap.applied',
@@ -150,6 +156,12 @@ test('missing protected checks, environment policy or audit events fail the boot
   }), plan()), (error) => error.code === 'bootstrap_production_environment_invalid');
 
   assert.throws(() => validateManagedRepositoryBootstrapEvidence(evidence({
+    externalReceipts: [
+      'github:repository',
+      'github:ruleset',
+      'github:workflows',
+      'github:codeowners',
+    ],
     auditEvents: ['managed_repo.bootstrap.requested', 'managed_repo.bootstrap.applied'],
   }), plan()), (error) => error.code === 'bootstrap_audit_event_missing');
 });
