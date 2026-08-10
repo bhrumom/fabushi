@@ -3,7 +3,7 @@
   "revision": "2026-08-10.20",
   "keepAlive": true,
   "authoritative": true,
-  "maxConcurrent": 1,
+  "maxConcurrent": 2,
   "reviewGate": false,
   "tasks": [
     {
@@ -32,8 +32,12 @@
       ],
       "documentDirectory": ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810",
       "specSources": [
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/README.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/PRD.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/TASK.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/ARCHITECTURE.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/TECHNICAL_DESIGN.md",
+        ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/UI_UX.md",
         ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/ios-external-miniapp-e2e-20260810/ACCEPTANCE.md"
       ],
       "prompt": "实现 iOS 端从零插件的新用户状态开始的真实外部小程序全链路自动化：为 CLI 核心和 iOS/Flutter 薄 UI 建立业界标准、可快速驱动的测试接口；在构建安装包前后可自动启动、重置、查询、执行和读取结构化事件；搜索线上官方已发布的“全球法布施”小程序，验证它不是内置功能，下载并校验远端构件后安装；验证更新版本可热更新且无需重新打包 App；进入该插件机器人会话发送确定性测试消息；最终不能依据 UI 文案判断成功，必须根据 CLI/runtime 日志、安装回执、来源与版本、tool call、correlation id 和插件真实返回完成断言。覆盖所有可发现 action 的契约自动化、失败恢复、进程重启后的安装持久化、安全边界，以及 iOS Simulator 的 CI 自动执行；真机只保留少量签名/系统能力烟雾测试，不再作为核心功能验证的唯一手段。"
