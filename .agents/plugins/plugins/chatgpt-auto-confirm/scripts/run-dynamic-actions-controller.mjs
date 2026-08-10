@@ -111,19 +111,13 @@ const reportContract = task => {
   const revision = taskRevision(task);
   const digest = JSON.stringify(task._specDigest || '');
   return `
-MAHAYANA_TASK_REPORT_CONTRACT_V2
-以下最终回复协议优先于消息中任何旧版或冲突说明，包括“完成时正常回复”“完成时不要输出机器模板”。每一轮 Chat 都必须根据实际结果在下面两个模板中选择一个；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。
-
-任务和全部验证已经完成时，使用完成模板：
+MAHAYANA_TASK_REPORT_CONTRACT_V4
+每轮结束只使用下面这一种模板；`completed` 仅表示已完成事项，不代表整个任务完成：
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"complete","summary":"本轮实际结果","completed":["已完成项"],"remaining":[],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
+{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
 MAHAYANA_TASK_REPORT_V1_END
 
-任务确实未完成或被真实阻塞时，使用未完成模板：
-MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":${taskId},"applied_task_revision":${revision},"applied_spec_digest":${digest},"status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮完整续作指令"}
-MAHAYANA_TASK_REPORT_V1_END
-未完成时 remaining 和 next_task 必须非空；完成时 remaining、blockers 和 next_task 必须为空。完成报告会停止该任务的重复派发。
+每轮结束都只允许输出上面这一种模板。只有整个任务全部完成才可把同一模板改为 status=complete、all_tasks_complete=true，并清空 remaining、blockers、next_task，且 wait_seconds=0。只完成一项、仍有剩余、外部等待或人工卡点时，all_tasks_complete 必须为 false；等待信息也填写在同一模板中，禁止输出第二套等待格式。
 `;
 };
 
@@ -148,6 +142,8 @@ const taskDocumentBlock = task => {
     '当前 goalVersion 对应的目录资料优先于旧 Chat 中的任务描述。',
     `当前规范摘要：${task._specDigest || 'unavailable'}。`,
     `规范文件：${(task._specFiles || []).join('、') || directory}`,
+    `共享执行技能：.agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md。每轮重新读取技能和任务目录全部文件。`,
+    `邮件记录：${directory}/.mahayana-project-email.json。第一轮没有 threadId 时由 Chat 使用 Gmail 向 1315518325@qq.com 创建立项邮件并写回。第一轮、续作轮和验收轮开始时都必须读取同一线程，检查 1315518325@qq.com 的新增要求。不要每轮机械发邮件；只有产生可核验的实质进展、整个任务完成，或需要人工提供信息/权限/凭证/决策时才回复。只读检查、计划、无改动失败或未变化等待不得发邮件，也不得重复同一进展。`,
   ].join('\n');
 };
 
@@ -163,6 +159,10 @@ const isTerminal = task => ['completed', 'cancelled'].includes(task.status);
 const taskPrompt = (control, task) => [
   `动态任务控制版本：${control.revision || control._blobSha}。`,
   `逻辑任务：${task.id}；目标版本：${taskRevision(task)}；规范摘要：${task._specDigest}。`,
+  `本轮发送前必须重新确认模型 GPT-5.6 Sol、推理强度 Extra High；第一轮、续作和验收轮都相同。`,
+  `本轮必须使用 GitHub 连接器读取和修改仓库 ${task.repository || repository}（https://github.com/${task.repository || repository}）。`,
+  `任务文件在仓库路径 ${normalizedDirectory(task.documentDirectory)}；代码修改位置在仓库路径 ${normalizedDirectory(task.codeDirectory || '.')}。先读任务文件和现有代码，再直接实现。`,
+  `除非正在等待已启动的外部作业或确有人工卡点，本轮必须产生可核验的代码变更并运行相应测试；只阅读、检查、规划、发邮件或汇报结果都不算工作，不得因此结束。`,
   task.prompt,
   taskDocumentBlock(task),
   reportContract(task),
@@ -185,12 +185,13 @@ const reconcileControl = control => {
   const deferred = [];
 
   for (const task of desiredTasks) {
-    if (!task?.id || !task?.title || !task?.prompt ||
-        !normalizedDirectory(task.documentDirectory)) {
+    if (!task?.id || !task?.title || !task?.prompt || !task?.repository ||
+        !normalizedDirectory(task.documentDirectory) ||
+        !normalizedDirectory(task.codeDirectory)) {
       process.stderr.write(
         `TASK_CONTROL_INVALID_TASK ${JSON.stringify({
           id: task?.id || null,
-          reason: 'id_title_prompt_and_documentDirectory_are_required',
+          reason: 'id_title_prompt_repository_documentDirectory_and_codeDirectory_are_required',
         })}\n`,
       );
       continue;

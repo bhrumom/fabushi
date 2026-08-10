@@ -17,19 +17,12 @@ func taskReportContract(
   let reportDigest = jsonStringLiteral(appliedDigest ?? "CURRENT_SPEC_DIGEST")
   return """
 
-MAHAYANA_TASK_REPORT_CONTRACT_V2
-以下最终回复协议位于消息末尾，优先于正文中任何旧版或冲突说明，包括“完成时正常回复”“完成时不要输出机器模板”。每一轮 Chat 的最终回复都必须包含一个完整的机器报告；不要只写自然语言，也不要把 JSON 放进 Markdown 代码块。报告中的 task_id、applied_task_revision 和 applied_spec_digest 必须使用当前任务的真实值。Chat 必须根据实际结果在下面两个模板中选择一个。
-
-全部目标和验证已经完成时，必须使用完成模板：
+MAHAYANA_TASK_REPORT_CONTRACT_V4
+每轮结束都只允许输出下面这一种模板，不要放进 Markdown 代码块。`completed` 只记录本轮或此前已完成的项目，绝不代表整个任务完成。只有任务目录中的全部目标、验收和必要验证都完成时，才可同时填写 `"status":"complete"` 和 `"all_tasks_complete":true`；此时 `remaining`、`blockers` 必须为空，`wait_seconds` 必须为 0，`next_task` 必须为空。只完成一项或仍有任何剩余工作时，必须填写 `"status":"incomplete"`、`"all_tasks_complete":false` 并写明 `remaining` 与 `next_task`，程序会继续下一轮。外部等待或人工卡点也使用同一模板，设置 `status` 为 `incomplete` 或 `blocked`、`all_tasks_complete` 为 false，并填写 `wait_seconds`、`wait_reason` 和 `next_task`。
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"complete","summary":"本轮实际结果","completed":["已完成项"],"remaining":[],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
+{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete","all_tasks_complete":false,"summary":"本轮实际结果","completed":["本轮已完成项"],"remaining":["整个任务仍未完成项"],"blockers":[],"verification":["可复核验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"下一轮必须继续完成的具体工作"}
 MAHAYANA_TASK_REPORT_V1_END
-
-只有确实未完成或被真实阻塞时，才使用未完成模板，并且 remaining 和 next_task 必须如实填写：
-MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":\(reportTaskId),"applied_task_revision":\(reportRevision),"applied_spec_digest":\(reportDigest),"status":"incomplete|blocked","summary":"本轮实际结果","completed":["已完成项"],"remaining":["未完成项"],"blockers":["真实卡点；没有则用空数组"],"verification":["已取得的验证证据"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"给下一个 Chat 的完整可执行续作指令"}
-MAHAYANA_TASK_REPORT_V1_END
-未完成报告会触发新 Chat 续作；完成报告会被小程序标记为完成并停止该任务的重复派发。
+需要人工介入时，先按共享技能通过 Gmail 回复任务立项邮件，再输出同一模板。除这一种模板外不要输出第二套完成、未完成或等待格式。
 """
 }
 
@@ -39,7 +32,7 @@ func messageWithTaskReportContract(
   appliedRevision: Int? = nil,
   appliedDigest: String? = nil
 ) -> String {
-  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V2")
+  message.contains("MAHAYANA_TASK_REPORT_CONTRACT_V4")
     ? message
     : message + taskReportContract(
       taskId: taskId,
@@ -51,33 +44,8 @@ func messageWithTaskReportContract(
 func continuationFromTaskReport(
   _ report: [String: Any], originalGoal: String, iteration: Int
 ) -> String {
-  let summary = report["summary"] as? String ?? ""
-  let completed = (report["completed"] as? [String] ?? []).map { "- \($0)" }.joined(separator: "\n")
-  let remaining = (report["remaining"] as? [String] ?? []).map { "- \($0)" }.joined(separator: "\n")
-  let blockers = (report["blockers"] as? [String] ?? []).map { "- \($0)" }.joined(separator: "\n")
-  let nextTask = (report["next_task"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
   let body = """
-这是自动续作第 \(iteration) 轮。请使用 devspace1 在同一个 checkout 中继续，不要切换 Work，不要从头开始，不要覆盖无关改动。
-
-原始目标：
-\(originalGoal)
-
-上一轮总结：
-\(summary)
-
-上一轮已完成：
-\(completed)
-
-仍未完成：
-\(remaining)
-
-卡点：
-\(blockers)
-
-上一轮给出的下一步任务：
-\(nextTask)
-
-先核实这些修改是否已落盘，再继续剩余实现与验证。只有全部完成后才能报告 complete。
+继续完成同一任务（自动续作第 \(iteration) 轮）。重新读取共享队列技能、任务目录中的全部当前文件和 `.mahayana-project-email.json`，再使用 Gmail 读取其中记录的立项线程，检查 1315518325@qq.com 是否有新增要求并纳入工作。不要因为本轮结束而机械发邮件；只有产生可核验的实质进展、整个任务完成，或需要人工提供信息/权限/凭证/决策时才回复同一线程。检查同一 checkout 的落盘进度与仍在运行的操作，然后持续做剩余实际工作。不要从头开始，不要只检查或总结，不要中途回复；本轮必须结束时使用消息末尾唯一的统一模板，只有整个任务全部完成才设置 all_tasks_complete=true。
 """
   return messageWithTaskReportContract(
     body,
@@ -164,11 +132,42 @@ func verifySentMessageJS(message: String) -> String {
   """
 }
 
+func verifyDispatchMarkerJS(dispatchMarker: String) -> String {
+  let escapedMarker = jsEscape(dispatchMarker)
+  return """
+  (() => {
+    const marker = "\(escapedMarker)";
+    const web = [...document.querySelectorAll('[data-message-author-role="user"]')];
+    const appRows = [...document.querySelectorAll('[data-content-search-unit-key]')]
+      .filter(node => (node.getAttribute('data-content-search-unit-key') || '').endsWith(':user'));
+    const appBubbles = [...document.querySelectorAll('[data-user-message-bubble]')];
+    const users = web.length > 0 ? web : (appRows.length > 0 ? appRows : appBubbles);
+    const matching = users.filter(user =>
+      (user.innerText || user.textContent || '').includes(marker)
+    );
+    const composer = document.querySelector(
+      'form [contenteditable="true"][role="textbox"], #prompt-textarea'
+    );
+    const composerText = composer
+      ? (composer.tagName === 'TEXTAREA' ? composer.value : composer.innerText || composer.textContent || '')
+      : '';
+    return {
+      ok: matching.length > 0,
+      markerConfirmed: matching.length > 0,
+      matchingUserCount: matching.length,
+      userMessageCount: users.length,
+      composerStillContainsMarker: composerText.includes(marker)
+    };
+  })()
+  """
+}
+
 func sendMessageJS(
   message: String,
   connector: String?,
   newChat: Bool = false,
-  expectedConversationId: String? = nil
+  expectedConversationId: String? = nil,
+  optionalConnectors: [String] = []
 ) -> String {
   let escapedMessage = jsEscape(message)
   let connectorPart: String
@@ -179,9 +178,13 @@ func sendMessageJS(
   }
   let newChatBool = newChat ? "true" : "false"
   let expectedConversation = jsonStringLiteral(expectedConversationId ?? "")
+  let optionalConnectorList = "[" + optionalConnectors
+    .map(jsonStringLiteral)
+    .joined(separator: ",") + "]"
   return """
   (async () => {
     const connector = \(connectorPart);
+    const optionalConnectors = \(optionalConnectorList);
     const message = "\(escapedMessage)";
     const newChat = \(newChatBool);
     const expectedConversationId = \(expectedConversation);
@@ -330,7 +333,6 @@ func sendMessageJS(
 
     const desiredModel = 'GPT-5.6 Sol';
     const desiredReasoning = 'Extra High';
-    const desiredQuickChatModel = 'Thinking';
     const desiredQuickChatReasoning = 'Extra High';
 
     function modelPickerButton() {
@@ -813,6 +815,15 @@ func sendMessageJS(
           || selectedLabel === 'extra\\u00a0high'
           || selectedLabel === '额外高'
           || selectedLabel.startsWith('extra\\u00a0high ');
+        // The compact trigger displays only the reasoning label (for example,
+        // "极高"). Open it every round and require the model row to explicitly
+        // name GPT-5.6 Sol; reasoning strength alone is not model evidence.
+        let quickChatModelConfirmed = desiredModelMentioned(pickerEvidenceText);
+        if (!quickChatModelConfirmed) {
+          dispatchPointerClick(picker);
+          await sleep(500);
+          quickChatModelConfirmed = desiredModelMentioned(visibleModelEvidenceText());
+        }
         if (!quickChatConfirmed) {
           // The desktop ChatGPT model switcher is a Radix trigger that opens
           // on pointerdown; HTMLElement.click() alone leaves the menu closed.
@@ -880,7 +891,7 @@ func sendMessageJS(
           return {
             ok: false,
             error: 'quick_chat_thinking_not_selected',
-            model: desiredQuickChatModel,
+            model: desiredModel,
             reasoning: desiredQuickChatReasoning,
             modelConfirmed: false,
             reasoningConfirmed: false,
@@ -895,9 +906,33 @@ func sendMessageJS(
             surface: chatSurfaceEvidence()
           };
         }
+        if (!quickChatModelConfirmed) {
+          return {
+            ok: false,
+            error: 'quick_chat_target_model_not_selected',
+            model: desiredModel,
+            reasoning: desiredQuickChatReasoning,
+            modelConfirmed: false,
+            reasoningConfirmed: true,
+            pickerBefore,
+            selectedLabel,
+            visibleMenuText: visibleModelMenus()
+              .map(menu => normalize(menu.textContent).slice(0, 500)),
+            modelSelectionEvidence: quickChatSelectionEvidence(),
+            surface: chatSurfaceEvidence()
+          };
+        }
+        // Do not leave the model menu covering the connector menu.
+        if (visibleModelMenus().length > 0) {
+          picker = modelPickerButton();
+          if (picker?.getAttribute('data-state') === 'open') {
+            dispatchPointerClick(picker);
+            await sleep(200);
+          }
+        }
         return {
           ok: true,
-          model: desiredQuickChatModel,
+          model: desiredModel,
           reasoning: desiredQuickChatReasoning,
           modelConfirmed: true,
           reasoningConfirmed: true,
@@ -1071,12 +1106,14 @@ func sendMessageJS(
       const composer = input?.closest('form') || input?.parentElement?.parentElement;
       const composerMatches = [...(composer?.querySelectorAll(
         'button[aria-label], [aria-checked="true"], [data-state="checked"], [data-state="on"], '
-          + '[data-selected="true"], [data-active="true"], [data-connector-id], [data-app-name]'
+          + '[data-selected="true"], [data-active="true"], [data-connector-id], [data-app-name], '
+          + '[data-prompt-link-label], [data-prompt-link-href]'
       ) || [])].filter(element => {
         const evidence = [
           element.getAttribute('aria-label'), element.getAttribute('title'),
           element.getAttribute('data-testid'), element.getAttribute('data-connector-id'),
-          element.getAttribute('data-app-name'), element.textContent
+          element.getAttribute('data-app-name'), element.getAttribute('data-prompt-link-label'),
+          element.getAttribute('data-prompt-link-href'), element.textContent
         ].filter(Boolean).join(' ').toLowerCase();
         return visible(element) && connectorMatches(evidence, target);
       });
@@ -1085,7 +1122,8 @@ func sendMessageJS(
           + '[role="menuitem"][data-state="checked"], [role="menuitem"][data-selected="true"]'
       )].filter(element => connectorMatches(element.textContent, target));
       const inlineMentionMatches = [...(input?.querySelectorAll(
-        'span, a, [data-lexical-decorator], [data-mention-id], [data-connector-id], [data-app-name]'
+        'span, a, [data-lexical-decorator], [data-mention-id], [data-connector-id], [data-app-name], '
+          + '[data-prompt-link-label], [data-prompt-link-href]'
       ) || [])].filter(element => {
         return visible(element)
           && !element.closest('[data-composer-overlay-floating-ui]')
@@ -1226,7 +1264,8 @@ func sendMessageJS(
     if (newChat) {
       const newChatButton = [...document.querySelectorAll('button')].find(button => {
         const text = (button.textContent || '').trim().toLowerCase();
-        return text === '新聊天' || text === 'new chat';
+        return text === '新聊天' || text === '新对话'
+          || text === 'new chat' || text === 'new conversation';
       });
       if (!newChatButton) {
         if (userMessages().length === 0) {
@@ -1275,7 +1314,11 @@ func sendMessageJS(
     }
     record('input_discovery', true, { existingDraftLength: inputText(textarea).length });
 
-    // Step 1: Select the connector directly by @mention in the textarea.
+    // Step 1: Select the connector from the composer's app menu. Recent
+    // desktop builds no longer open an @mention picker for synthetic text and
+    // a synthetic Enter can submit a connector-only message. Prefer the real
+    // app-menu button and pointer events; retain a click-only mention popup as
+    // a compatibility fallback, but never press Enter to confirm it.
     if (connector) {
       const target = connector.toLowerCase();
       let evidence = connectorEvidence(target);
@@ -1286,37 +1329,57 @@ func sendMessageJS(
         if (!connectorTextarea) {
           return fail('apps_menu', 'input_not_found', { connector });
         }
-        connectorTextarea.focus();
-        replaceText(connectorTextarea, `@${connector}`);
-        record('apps_menu', true, { typedMention: true });
-        
-        let menuAppeared = false;
-        for (let i = 0; i < 80; i++) {
-          await sleep(150);
-          evidence = connectorEvidence(target);
-          if (evidence.length > 0) {
-            menuAppeared = true;
-            break;
-          }
-        }
-        
-        if (menuAppeared) {
-          connectorTextarea.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
-          }));
-          for (let i = 0; i < 40; i++) {
-            await sleep(150);
+        const addButton = document.querySelector('button[aria-label="添加文件等"]')
+          || document.querySelector('button[aria-label="添加文件等内容"]')
+          || document.querySelector('button[aria-label="附加文件或连接应用"]')
+          || document.querySelector('button[aria-label*="Add files"]')
+          || document.querySelector('button[aria-label*="attachments"]');
+        let connectorItem = null;
+        if (addButton && visible(addButton)) {
+          dispatchPointerClick(addButton);
+          await sleep(500);
+          connectorItem = [...document.querySelectorAll(
+            '[data-composer-overlay-floating-ui] button, [role="menu"] button, '
+              + '[role="listbox"] button, [role="menuitem"], [role="option"]'
+          )].find(element => {
+            const label = [
+              element.textContent, element.getAttribute('aria-label'),
+              element.getAttribute('title'), element.getAttribute('data-app-name'),
+              element.getAttribute('data-connector-id')
+            ].filter(Boolean).join(' ');
+            return visible(element) && connectorMatches(label, target);
+          }) || null;
+          if (connectorItem) {
+            dispatchPointerClick(connectorItem);
+            await sleep(500);
             evidence = connectorEvidence(target);
-            if (evidence.length > 0 && !evidence.some(el => el.getAttribute && el.getAttribute('role') === 'option')) {
-              // break when evidence is no longer just the popup menu, but the confirmed chip
-              break;
-            }
+            found = evidence.length > 0;
           }
         }
-        
-        // Re-evaluate final evidence
-        evidence = connectorEvidence(target);
-        found = evidence.length > 0;
+
+        if (!found) {
+          connectorTextarea.focus();
+          replaceText(connectorTextarea, `@${connector}`);
+          record('apps_menu', true, {
+            typedMention: true, directMenuItemFound: !!connectorItem
+          });
+          let mentionOption = null;
+          for (let i = 0; i < 80; i++) {
+            await sleep(150);
+            mentionOption = [...document.querySelectorAll(
+              '[data-composer-overlay-floating-ui] [role="option"], '
+                + '[data-composer-overlay-floating-ui] button, [role="listbox"] [role="option"]'
+            )].find(element => visible(element)
+              && connectorMatches(element.textContent, target)) || null;
+            if (mentionOption) break;
+          }
+          if (mentionOption) {
+            dispatchPointerClick(mentionOption);
+            await sleep(500);
+            evidence = connectorEvidence(target);
+            found = evidence.length > 0;
+          }
+        }
       }
 
       if (!found) {
@@ -1331,6 +1394,51 @@ func sendMessageJS(
     result.connectorConfirmed = true;
     record('connector_confirmation', true, { connectorRequired: false });
     }
+
+    // Gmail is an auxiliary project-log connector. Select it when the host
+    // exposes it, but do not prevent repository work when the account has not
+    // yet been connected. The shared task skill requires the model to create
+    // or reply to the durable project thread whenever this source is present.
+    const optionalConnectorResults = [];
+    for (const optionalConnector of optionalConnectors) {
+      const optionalTarget = optionalConnector.toLowerCase();
+      let optionalEvidence = connectorEvidence(optionalTarget);
+      let optionalFound = optionalEvidence.length > 0;
+      if (!optionalFound) {
+        const addButton = document.querySelector('button[aria-label="添加文件等"]')
+          || document.querySelector('button[aria-label="添加文件等内容"]')
+          || document.querySelector('button[aria-label="附加文件或连接应用"]')
+          || document.querySelector('button[aria-label*="Add files"]')
+          || document.querySelector('button[aria-label*="attachments"]');
+        if (addButton && visible(addButton)) {
+          dispatchPointerClick(addButton);
+          await sleep(400);
+          const item = [...document.querySelectorAll(
+            '[data-composer-overlay-floating-ui] button, [role="menu"] button, '
+              + '[role="listbox"] button, [role="menuitem"], [role="option"]'
+          )].find(element => visible(element) && connectorMatches([
+            element.textContent, element.getAttribute('aria-label'),
+            element.getAttribute('title'), element.getAttribute('data-app-name'),
+            element.getAttribute('data-connector-id')
+          ].filter(Boolean).join(' '), optionalTarget));
+          if (item) {
+            dispatchPointerClick(item);
+            await sleep(500);
+            optionalEvidence = connectorEvidence(optionalTarget);
+            optionalFound = optionalEvidence.length > 0;
+          } else if (addButton.getAttribute('aria-expanded') === 'true') {
+            dispatchPointerClick(addButton);
+            await sleep(200);
+          }
+        }
+      }
+      optionalConnectorResults.push({
+        connector: optionalConnector,
+        selected: optionalFound,
+        evidenceCount: optionalEvidence.length
+      });
+    }
+    record('optional_connectors', true, { connectors: optionalConnectorResults });
 
     // Step 2: Type the message
     let ta2 = null;
@@ -1637,26 +1745,11 @@ func continueInNewTaskJS(expectedConversationId: String? = nil) -> String {
       }
     }
     if (!button) {
-      const existingComposer = document.querySelector(
-        'textarea, [contenteditable="true"][role="textbox"], '
-          + '[contenteditable="true"][data-lexical-editor="true"]'
-      );
-      if (existingComposer && current) {
-        return {
-          ok: true,
-          continuationClicked: false,
-          existingBranch: true,
-          previousConversationId: current,
-          conversationId: current,
-          overflowOpened,
-          candidateControls: controls.map(label).filter(Boolean).slice(-20),
-          overflowCandidates
-        };
-      }
       return {
         ok: false,
         error: 'continue_in_new_task_button_not_found',
         conversationId: current,
+        assistantResponseCount: messages.length,
         overflowOpened,
         candidateControls: controls.map(label).filter(Boolean).slice(-20),
         overflowCandidates
@@ -1737,12 +1830,20 @@ func getReplyJS() -> String {
     }
 
     const webMessages = [...main.querySelectorAll('[data-message-author-role="assistant"]')];
-    const appMessages = [
-      ...main.querySelectorAll(
-        '[data-local-conversation-final-assistant], '
-          + '[data-content-search-unit-key$=":assistant"]'
-      )
+    const appContentMessages = [
+      ...main.querySelectorAll('[data-content-search-unit-key$=":assistant"]')
     ];
+    const appFinalMessages = [
+      ...main.querySelectorAll('[data-local-conversation-final-assistant]')
+    ];
+    // The desktop renderer can expose both selectors for the same logical
+    // assistant turn. Combining them lets a previous completed response keep
+    // the assistant count level with a newly submitted user turn, so a brief
+    // disappearance of the Stop button can falsely look terminal. Prefer the
+    // stable content-search rows and use local-final nodes only as a fallback.
+    const appMessages = appContentMessages.length > 0
+      ? appContentMessages
+      : appFinalMessages;
     const messages = webMessages.length > 0 ? webMessages : appMessages;
     const webUsers = [...main.querySelectorAll('[data-message-author-role="user"]')];
     const appUserBubbles = [...main.querySelectorAll('[data-user-message-bubble]')];
@@ -1762,6 +1863,7 @@ func getReplyJS() -> String {
     )?.innerText || '';
     const userMessageCount = users.length;
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
+    const awaitingAssistant = userMessageCount > messages.length;
     const assistantContent = last?.querySelector('[data-selected-text-overlay-target]')
       || last;
     const content = assistantContent?.innerText || '';
@@ -1769,10 +1871,13 @@ func getReplyJS() -> String {
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
-    const responseTurn = last?.closest(
-      'article, [data-testid^="conversation-turn-"], '
-        + '[data-content-search-turn-key], [data-turn-key]'
-    ) || last?.parentElement?.parentElement || last;
+    const responseTurnSelector = 'article, [data-testid^="conversation-turn-"], '
+      + '[data-content-search-turn-key], [data-turn-key], '
+      + '[data-local-conversation-final-assistant]';
+    const responseTurn = last?.closest(responseTurnSelector) || null;
+    const responseActionTurnBoundToLast = !!(
+      last && responseTurn && (responseTurn === last || responseTurn.contains(last))
+    );
     const responseControls = [...(responseTurn?.querySelectorAll(
       'button, a, [role="button"], [aria-label], [title]'
     ) || [])].filter(visible);
@@ -1820,7 +1925,9 @@ func getReplyJS() -> String {
         /^回复不佳(?:\s|$)/,
       ]),
     };
-    const responseActionsComplete = responseActions.copy
+    const responseActionsComplete = !awaitingAssistant
+      && responseActionTurnBoundToLast
+      && responseActions.copy
       && (responseActions.branch || responseActions.moreActions)
       && responseActions.like
       && responseActions.dislike;
@@ -1866,6 +1973,12 @@ func getReplyJS() -> String {
       .replace(/(DeviceID\s*\n)[^\n]+/gi, '$1[REDACTED_DEVICE_ID]');
     const mainText = redact((main.innerText || '').replace(/\s+$/g, ''));
     const userContent = redact(users.map(userText).join('\n'));
+    // Queue prompts can exceed 50k characters. The dispatch marker and task
+    // report live at the end, so prefix-only truncation makes a valid send look
+    // stale and can exhaust the continuation budget. Preserve both ends.
+    const boundedContent = value => value.length <= 50000
+      ? value
+      : `${value.slice(0, 25000)}\n...[middle truncated]...\n${value.slice(-25000)}`;
     const lastUserText = userText(users[users.length - 1]).trim();
     const userIndex = lastUserText ? mainText.lastIndexOf(lastUserText) : -1;
     const activity = (userIndex >= 0
@@ -1892,9 +2005,11 @@ func getReplyJS() -> String {
     const hasClosedTaskReport = taskReportText.includes('MAHAYANA_TASK_REPORT_V1_BEGIN')
       && taskReportText.includes('MAHAYANA_TASK_REPORT_V1_END');
     const structuredIncomplete = hasClosedTaskReport
-      && /"status"\s*:\s*"(?:incomplete|blocked)"/i.test(taskReportText);
+      && (/"status"\s*:\s*"(?:incomplete|blocked)"/i.test(taskReportText)
+        || /"all_tasks_complete"\s*:\s*false/i.test(taskReportText));
     const structuredComplete = hasClosedTaskReport
-      && /"status"\s*:\s*"complete"/i.test(taskReportText);
+      && /"status"\s*:\s*"complete"/i.test(taskReportText)
+      && /"all_tasks_complete"\s*:\s*true/i.test(taskReportText);
     const explicitlyIncomplete = /(?:当前(?:任务|状态).{0,30}(?:尚未.{0,12}完成|未完成|继续处理中)|尚未(?:达到|完成|执行)|仍未(?:完成|执行)|还需要继续|仍需继续|待继续完成|不能(?:提交|返回).{0,30}(?:完成|最终)|未进入最终验证|not\s+(?:yet\s+)?(?:complete|finished)|still\s+(?:in\s+progress|needs?|have)\s+to)/i
       .test(completionTail);
     const explicitFinalResult = /(?:已完成|完成内容|验证结果|测试结果|修改文件|最终结果|全部实现|全部通过|completed|implemented|tests?\s+passed|done)/i
@@ -1904,7 +2019,6 @@ func getReplyJS() -> String {
       || /^Link\s+[a-z0-9-]+\s+(open workspace|read|write|edit|bash|grep|glob|ls|show changes)/i.test(line)
     );
     const waitingForApproval = !!approvalButton;
-    const awaitingAssistant = userMessageCount > messages.length;
     const done = !!last
       && messages.length >= userMessageCount
       && !active
@@ -1957,6 +2071,8 @@ func getReplyJS() -> String {
         : '',
       responseActions,
       responseActionsComplete,
+      responseActionTurnBoundToLast,
+      awaitingAssistant,
       responseControlLabels: responseControlLabels.slice(0, 40),
       streaming: active,
       done,
@@ -1964,8 +2080,8 @@ func getReplyJS() -> String {
       charCount: visibleContent.length,
       messageCount: messages.length,
       userMessageCount,
-      userContent: userContent.substring(0, 50000),
-      pageContent: mainText.substring(0, 50000)
+      userContent: boundedContent(userContent),
+      pageContent: boundedContent(mainText)
     };
   })()
   """#
