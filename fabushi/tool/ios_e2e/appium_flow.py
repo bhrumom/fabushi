@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Drive Fabushi on iOS through the Appium WebDriver protocol.
+"""Run a versioned Fabushi iOS flow through the Appium WebDriver protocol.
 
 The app is launched by the CI harness before this script starts so credentials
-never need to appear in Appium capabilities or Appium logs.  This client uses
-only Python's standard library and Flutter accessibility identifiers; it does
-not depend on screen coordinates or localized UI copy.
+never need to appear in Appium capabilities or Appium logs. Flow files contain
+semantic locators and actions only; screen coordinates are deliberately not
+part of the v1 contract.
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
+FLOW_SCHEMA_VERSION = 1
 
 
 class WebDriverError(RuntimeError):
@@ -95,7 +95,6 @@ class AppiumClient:
         if isinstance(response, dict):
             self.session_id = response.get("sessionId")
         if not self.session_id:
-            # Some Appium versions keep sessionId outside value.
             raw_request = urllib.request.Request(
                 f"{self.server_url}/sessions", method="GET"
             )
@@ -175,10 +174,43 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--udid", required=True)
     parser.add_argument("--bundle-id", required=True)
+    parser.add_argument("--flow", required=True)
     parser.add_argument("--query", default="全球法布施")
     parser.add_argument("--server-url", default="http://127.0.0.1:4723")
     parser.add_argument("--artifacts", required=True)
     return parser.parse_args()
+
+
+def render(value: str, variables: dict[str, str]) -> str:
+    rendered = value
+    for key, replacement in variables.items():
+        rendered = rendered.replace("{{" + key + "}}", replacement)
+    return rendered
+
+
+def load_flow(path: Path) -> dict[str, Any]:
+    flow = json.loads(path.read_text(encoding="utf-8"))
+    if flow.get("schemaVersion") != FLOW_SCHEMA_VERSION:
+        raise WebDriverError(
+            f"Unsupported flow schemaVersion={flow.get('schemaVersion')!r}; "
+            f"expected {FLOW_SCHEMA_VERSION}"
+        )
+    steps = flow.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise WebDriverError("Flow must contain a non-empty steps array")
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise WebDriverError(f"Flow step {index} must be an object")
+        if "x" in step or "y" in step:
+            raise WebDriverError("Flow v1 forbids coordinate-based actions")
+        locator = step.get("locator")
+        if locator is not None and (
+            not isinstance(locator, dict)
+            or not isinstance(locator.get("using"), str)
+            or not isinstance(locator.get("value"), str)
+        ):
+            raise WebDriverError(f"Flow step {index} has an invalid locator")
+    return flow
 
 
 def main() -> int:
@@ -189,62 +221,79 @@ def main() -> int:
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     source_dir.mkdir(parents=True, exist_ok=True)
     timeline_path = artifact_root / "timeline.jsonl"
+    timeline_path.write_text("", encoding="utf-8")
 
+    flow = load_flow(Path(args.flow))
+    variables = {"query": args.query, "bundleId": args.bundle_id}
     client = AppiumClient(args.server_url, args.udid, args.bundle_id)
     step_index = 0
 
-    def record(step: str, action: Callable[[], Any] | None = None) -> Any:
+    def capture(step_name: str, started: float, detail: dict[str, Any]) -> None:
         nonlocal step_index
-        started = time.time()
-        result = action() if action else None
-        screenshot_path = screenshot_dir / f"{step_index:02d}-{step}.png"
-        source_path = source_dir / f"{step_index:02d}-{step}.xml"
+        safe_name = "".join(
+            character if character.isalnum() or character in "-_" else "-"
+            for character in step_name
+        ).strip("-") or f"step-{step_index}"
+        screenshot_path = screenshot_dir / f"{step_index:02d}-{safe_name}.png"
+        source_path = source_dir / f"{step_index:02d}-{safe_name}.xml"
         client.screenshot(screenshot_path)
         source_path.write_text(client.source(), encoding="utf-8")
         event = {
+            "schemaVersion": FLOW_SCHEMA_VERSION,
+            "flow": flow.get("name", Path(args.flow).stem),
             "step": step_index,
-            "name": step,
+            "name": step_name,
             "timestamp": started,
             "screenshot": str(screenshot_path),
             "source": str(source_path),
+            **detail,
         }
         with timeline_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         print(json.dumps(event, ensure_ascii=False), flush=True)
         step_index += 1
-        return result
+
+    def run_step(step: dict[str, Any]) -> None:
+        action = str(step.get("action", "capture"))
+        name = str(step.get("name", action))
+        timeout = float(step.get("timeoutSeconds", 60))
+        locator = step.get("locator")
+        element_id: str | None = None
+        if locator is not None:
+            using = render(str(locator["using"]), variables)
+            value = render(str(locator["value"]), variables)
+            element_id = client.wait_for(using, value, timeout=timeout)
+        if action in {"capture", "wait", "assertPresent"}:
+            return
+        if action == "tap":
+            if element_id is None:
+                raise WebDriverError(f"Step {name!r} requires a locator")
+            client.click(element_id)
+            return
+        if action == "type":
+            if element_id is None:
+                raise WebDriverError(f"Step {name!r} requires a locator")
+            client.click(element_id)
+            client.send_keys(element_id, render(str(step.get("text", "")), variables))
+            return
+        raise WebDriverError(f"Unsupported flow action {action!r} in step {name!r}")
 
     try:
         client.create_session()
-        record("attached")
-
-        chat_list = client.wait_for("accessibility id", "e2e.chat.list", timeout=60)
-        record("chat-list-ready", lambda: chat_list)
-
-        search = client.wait_for("accessibility id", "e2e.chat.search", timeout=60)
-        record("search-ready", lambda: client.click(search))
-        record("search-entered", lambda: client.send_keys(search, args.query))
-
-        result = client.wait_for(
-            "-ios predicate string",
-            "name BEGINSWITH 'e2e.miniapp.result.'",
-            timeout=90,
-        )
-        record("miniapp-found", lambda: result)
-        record("miniapp-open", lambda: client.click(result))
-
-        client.wait_for(
-            "-ios predicate string",
-            "name BEGINSWITH 'e2e.miniapp.chat.'",
-            timeout=90,
-        )
-        record("miniapp-chat-ready")
+        for step in flow["steps"]:
+            started = time.time()
+            run_step(step)
+            capture(
+                str(step.get("name", step.get("action", "capture"))),
+                started,
+                {"action": step.get("action", "capture")},
+            )
         return 0
     except Exception as error:
         print(f"iOS E2E failed: {error}", file=sys.stderr, flush=True)
         if client.session_id:
             try:
-                record("failure")
+                capture("failure", time.time(), {"error": str(error)})
             except Exception as screenshot_error:
                 print(
                     f"Could not capture failure diagnostics: {screenshot_error}",
