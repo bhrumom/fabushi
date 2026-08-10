@@ -1001,6 +1001,14 @@ const TEST_DRIVER_METHODS: &[&str] = &[
     "events.subscribe",
     "logs.query",
     "resetProfile",
+    "marketplace.search",
+    "plugin.install",
+    "plugin.update",
+    "plugin.list",
+    "miniapp.open",
+    "miniapp.chat",
+    "actions.describe",
+    "actions.invoke",
 ];
 
 #[cfg(debug_assertions)]
@@ -1038,6 +1046,27 @@ fn test_driver_response(action: &str) -> Result<Value, String> {
             "profile": "empty-test-user",
             "plugins": [],
             "reset": true,
+        }),
+        "marketplace.search" => json!({
+            "source": "external-marketplace",
+            "results": [],
+            "implemented": false,
+        }),
+        "plugin.install" | "plugin.update" => json!({
+            "receipt": null,
+            "implemented": false,
+        }),
+        "plugin.list" => json!({
+            "plugins": [],
+            "implemented": false,
+        }),
+        "miniapp.open" | "miniapp.chat" => json!({
+            "conversationId": null,
+            "implemented": false,
+        }),
+        "actions.describe" | "actions.invoke" => json!({
+            "actions": [],
+            "implemented": false,
         }),
         _ => return Err(format!("unsupported test driver action: {action}")),
     };
@@ -1576,14 +1605,11 @@ mod tests {
             .as_array()
             .expect("methods array");
 
-        assert_eq!(
-            methods,
-            &[
-                Value::String("health".into()),
-                Value::String("schema".into())
-            ]
-        );
-        assert!(test_driver_response("resetProfile").is_err());
+        assert!(methods.iter().any(|m| m == "marketplace.search"));
+        assert!(methods.iter().any(|m| m == "plugin.install"));
+        assert!(methods.iter().any(|m| m == "miniapp.chat"));
+        assert!(methods.iter().any(|m| m == "actions.invoke"));
+        assert!(test_driver_response("unknown").is_err());
     }
 }
 
