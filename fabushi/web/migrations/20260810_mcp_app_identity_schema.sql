@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS mcp_app_source_bindings (
   provider TEXT NOT NULL CHECK (provider IN ('local','github')),
   actor TEXT NOT NULL CHECK (actor IN ('user','platform')),
   transport TEXT NOT NULL CHECK (transport IN ('local-fs','github-mcp','github-app-api')),
+  custody TEXT NOT NULL CHECK (custody IN ('device','platform-managed','user-owned')),
   repository_id INTEGER,
   commit_sha TEXT,
   tree_hash TEXT
