@@ -168,13 +168,18 @@ class _TelegramChatListState extends State<TelegramChatList> {
                         trailing: _isLoadingBots ? '同步中' : 'PINNED',
                       ),
                       for (final bot in bots)
-                        _ChatTile(
-                          title: bot.title,
-                          subtitle: bot.subtitle,
-                          avatarColor: bot.avatarColor,
-                          icon: bot.icon,
-                          selected: widget.selectedBot == bot.stableBotId,
-                          onTap: () => widget.onBotSelected(bot),
+                        Semantics(
+                          identifier:
+                              'e2e.miniapp.result.${bot.stableMiniAppId}',
+                          button: true,
+                          child: _ChatTile(
+                            title: bot.title,
+                            subtitle: bot.subtitle,
+                            avatarColor: bot.avatarColor,
+                            icon: bot.icon,
+                            selected: widget.selectedBot == bot.stableBotId,
+                            onTap: () => widget.onBotSelected(bot),
+                          ),
                         ),
                       const SizedBox(height: 8),
                     ],
@@ -262,25 +267,30 @@ class _TelegramChatListState extends State<TelegramChatList> {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: TextField(
-              controller: _filterController,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: '搜索联系人',
-                hintStyle: const TextStyle(color: Color(0xFF728196)),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: Color(0xFF728196),
-                  size: 20,
+            child: Semantics(
+              identifier: 'e2e.chat.search',
+              textField: true,
+              child: TextField(
+                key: const ValueKey('e2e.chat.search'),
+                controller: _filterController,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '搜索联系人',
+                  hintStyle: const TextStyle(color: Color(0xFF728196)),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Color(0xFF728196),
+                    size: 20,
+                  ),
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xFF242F3D),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(22),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 ),
-                isDense: true,
-                filled: true,
-                fillColor: const Color(0xFF242F3D),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
             ),
           ),
