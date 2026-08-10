@@ -8701,6 +8701,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mahayana-test-driver-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "mahayana-tool-host"
 version = "0.1.0"
 dependencies = [

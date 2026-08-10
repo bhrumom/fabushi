@@ -154,6 +154,7 @@ enum CliCommand {
         args: Vec<String>,
     },
     /// Debug/test builds only: drive the CLI with a local structured test contract.
+    #[cfg(debug_assertions)]
     #[command(hide = true)]
     TestDriver {
         #[arg(required = true)]
@@ -357,6 +358,10 @@ fn should_run_embedded_agent_cli(args: &[OsString]) -> bool {
 }
 
 fn is_product_command(command: &str) -> bool {
+    #[cfg(debug_assertions)]
+    if command == "test-driver" {
+        return true;
+    }
     matches!(
         command,
         "login"
@@ -464,6 +469,7 @@ fn run(codex_executable_path: Option<&Path>, cli: Cli) -> Result<(), String> {
         }
         Some(CliCommand::StdioToUds(args)) => run_embedded_agent_command(&["stdio-to-uds"], args),
         Some(CliCommand::Miniapp { args }) => miniapp_command(codex_executable_path, args),
+        #[cfg(debug_assertions)]
         Some(CliCommand::TestDriver { action }) => test_driver_command(action),
         Some(CliCommand::Marketplace { command }) => marketplace_command(command),
         Some(CliCommand::Plugin { command }) => plugin_command(codex_executable_path, command),
@@ -985,18 +991,50 @@ fn miniapp_command(codex_executable_path: Option<&Path>, args: Vec<String>) -> R
     }
 }
 
+#[cfg(debug_assertions)]
+const TEST_DRIVER_SCHEMA_VERSION: &str = "mahayana.test-driver.v1";
+
+#[cfg(debug_assertions)]
+const TEST_DRIVER_METHODS: &[&str] = &["health", "schema"];
+
+#[cfg(debug_assertions)]
 fn test_driver_command(action: String) -> Result<(), String> {
-    if !cfg!(debug_assertions) && std::env::var("MAHAYANA_TEST_DRIVER_ENABLE").as_deref() != Ok("1") {
-        return Err("test driver is unavailable in release builds".into());
-    }
+    let response = test_driver_response(&action)?;
+    println!(
+        "{}",
+        serde_json::to_string(&response).map_err(|error| error.to_string())?
+    );
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+fn test_driver_response(action: &str) -> Result<Value, String> {
+    let request_id = uuid::Uuid::new_v4().to_string();
     let correlation_id = uuid::Uuid::new_v4().to_string();
-    let event = match action.as_str() {
-        "health" => json!({"ok": true, "action": action, "correlationId": correlation_id, "channel": "local-only"}),
-        "resetProfile" => json!({"ok": true, "action": action, "correlationId": correlation_id, "profile": "reset-requested"}),
+    let result = match action {
+        "health" => json!({
+            "status": "ready",
+            "transport": "stdio",
+            "localOnly": true,
+        }),
+        "schema" => json!({
+            "methods": TEST_DRIVER_METHODS,
+        }),
         _ => return Err(format!("unsupported test driver action: {action}")),
     };
-    println!("{}", serde_json::to_string(&event).map_err(|error| error.to_string())?);
-    Ok(())
+    Ok(json!({
+        "schemaVersion": TEST_DRIVER_SCHEMA_VERSION,
+        "type": "response",
+        "requestId": request_id,
+        "correlationId": correlation_id,
+        "method": action,
+        "ok": true,
+        "result": result,
+        "event": {
+            "type": format!("mahayana.test-driver.{action}.completed"),
+            "correlationId": correlation_id,
+        },
+    }))
 }
 
 fn login(args: Vec<String>) -> Result<(), String> {
@@ -1393,10 +1431,15 @@ fn should_print_completed_text(print_stream: bool, streamed_output: bool, comple
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::Cli;
+    #[cfg(debug_assertions)]
+    use super::TEST_DRIVER_SCHEMA_VERSION;
     use super::merge_completed_text;
     use super::should_print_completed_text;
     use super::should_run_embedded_agent_cli;
+    #[cfg(debug_assertions)]
+    use super::test_driver_response;
     use clap::CommandFactory;
+    use serde_json::Value;
     use std::collections::BTreeSet;
     use std::ffi::OsString;
 
@@ -1443,6 +1486,15 @@ mod tests {
         assert!(!should_run_embedded_agent_cli(&args(&["--help"])));
     }
 
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_test_driver_routes_to_product_cli() {
+        assert!(!should_run_embedded_agent_cli(&args(&[
+            "test-driver",
+            "health"
+        ])));
+    }
+
     #[test]
     fn empty_completion_does_not_erase_collected_tool_result() {
         let mut assistant = r#"{"ok":true}"#.to_string();
@@ -1467,6 +1519,52 @@ mod tests {
         assert!(!should_print_completed_text(true, true, "tool result"));
         assert!(!should_print_completed_text(false, false, "tool result"));
         assert!(!should_print_completed_text(true, false, ""));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_driver_health_uses_versioned_structured_contract() {
+        let response = test_driver_response("health").expect("health response");
+
+        assert_eq!(response["schemaVersion"], TEST_DRIVER_SCHEMA_VERSION);
+        assert_eq!(response["type"], "response");
+        assert_eq!(response["method"], "health");
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["result"]["status"], "ready");
+        assert_eq!(response["result"]["transport"], "stdio");
+        assert_eq!(response["result"]["localOnly"], true);
+        assert_eq!(
+            response["event"]["correlationId"],
+            response["correlationId"]
+        );
+        assert!(
+            response["requestId"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert!(
+            response["correlationId"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_driver_schema_lists_only_implemented_methods() {
+        let response = test_driver_response("schema").expect("schema response");
+        let methods = response["result"]["methods"]
+            .as_array()
+            .expect("methods array");
+
+        assert_eq!(
+            methods,
+            &[
+                Value::String("health".into()),
+                Value::String("schema".into())
+            ]
+        );
+        assert!(test_driver_response("resetProfile").is_err());
     }
 }
 

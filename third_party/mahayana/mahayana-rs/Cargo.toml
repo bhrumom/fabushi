@@ -11,6 +11,7 @@ members = [
     "mahayana-miniapp-bridge",
     "mahayana-miniapp-protocol",
     "mahayana-miniapp",
+    "mahayana-test-driver-protocol",
     "mahayana-platform-core",
     "mahayana-platform-worker",
     "mahayana-plugin-host",
