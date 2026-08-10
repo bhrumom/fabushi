@@ -995,7 +995,13 @@ fn miniapp_command(codex_executable_path: Option<&Path>, args: Vec<String>) -> R
 const TEST_DRIVER_SCHEMA_VERSION: &str = "mahayana.test-driver.v1";
 
 #[cfg(debug_assertions)]
-const TEST_DRIVER_METHODS: &[&str] = &["health", "schema"];
+const TEST_DRIVER_METHODS: &[&str] = &[
+    "health",
+    "schema",
+    "events.subscribe",
+    "logs.query",
+    "resetProfile",
+];
 
 #[cfg(debug_assertions)]
 fn test_driver_command(action: String) -> Result<(), String> {
@@ -1019,6 +1025,19 @@ fn test_driver_response(action: &str) -> Result<Value, String> {
         }),
         "schema" => json!({
             "methods": TEST_DRIVER_METHODS,
+        }),
+        "events.subscribe" => json!({
+            "events": [],
+            "stream": "jsonl",
+        }),
+        "logs.query" => json!({
+            "logs": [],
+            "redacted": true,
+        }),
+        "resetProfile" => json!({
+            "profile": "empty-test-user",
+            "plugins": [],
+            "reset": true,
         }),
         _ => return Err(format!("unsupported test driver action: {action}")),
     };
