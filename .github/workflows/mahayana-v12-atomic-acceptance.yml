@@ -364,3 +364,29 @@ jobs:
           name: mahayana-v12-T03.3-evidence
           path: .mahayana/evidence/v12/T03.3.json
           if-no-files-found: error
+
+  managed-repo-bootstrap:
+    name: v12 / T03.4 managed-repo-bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run managed repository bootstrap assertions
+        run: node --test fabushi/web/tests/miniapp-managed-repo-bootstrap-contract.test.js
+      - name: Write evidence marker
+        run: |
+          mkdir -p .mahayana/evidence/v12
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          with open('.mahayana/evidence/v12/T03.4.json', 'w', encoding='utf-8') as f:
+              json.dump({'taskId':'T03.4','checkName':'v12 / T03.4 managed-repo-bootstrap','commit':os.environ['GITHUB_SHA'],'runUrl':f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'assertions':['CODEOWNERS protected paths','untrusted pull_request without secrets','trusted pinned release workflow','production environment approval','Pages policy gate','bootstrap audit events'],'externalReceipts':[],'completedAt':datetime.now(timezone.utc).isoformat().replace('+00:00','Z')}, f, indent=2)
+          PY
+      - name: Upload T03.4 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-v12-T03.4-evidence
+          path: .mahayana/evidence/v12/T03.4.json
+          if-no-files-found: error
