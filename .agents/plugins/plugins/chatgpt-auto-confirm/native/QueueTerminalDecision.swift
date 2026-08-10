@@ -20,9 +20,22 @@ func queueReplyTerminalDecision(_ reply: [String: Any]) -> QueueReplyTerminalDec
   // evidence on its own. The JS-level `terminalIncomplete` value already
   // requires completed-response UI evidence.
   let terminalIncomplete = reply["terminalIncomplete"] as? Bool == true
-  let terminalEvidence = reply["done"] as? Bool == true
-    || reply["completionCandidate"] as? Bool == true
-    || terminalIncomplete
+  let responseActionsComplete = reply["responseActionsComplete"] as? Bool == true
+  let responseActionTurnBoundToLast = reply["responseActionTurnBoundToLast"] as? Bool == true
+  let awaitingAssistant = reply["awaitingAssistant"] as? Bool == true
+  // Disappearance of the Stop button is not completion evidence. The last
+  // assistant turn must own a fully rendered response action row (copy plus
+  // the stable rating/branch controls), and it must correspond to the latest
+  // user turn. This protects both the queue and legacy send-and-watch paths
+  // from transient renderer pauses and stale previous-turn controls.
+  let completedResponseUI = responseActionsComplete
+    && responseActionTurnBoundToLast
+    && !awaitingAssistant
+  let terminalEvidence = completedResponseUI && (
+    reply["done"] as? Bool == true
+      || reply["completionCandidate"] as? Bool == true
+      || terminalIncomplete
+  )
 
   return QueueReplyTerminalDecision(
     responseIsInFlight: responseIsInFlight,

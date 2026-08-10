@@ -1,5 +1,27 @@
 import Foundation
 
+func parseTaskWait(_ content: String) -> [String: Any]? {
+  guard let marker = content.range(of: "MAHAYANA_TASK_WAIT_V1", options: .backwards) else {
+    return nil
+  }
+  let suffix = content[marker.upperBound...]
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  guard let opening = suffix.firstIndex(of: "{"),
+        let closing = suffix[opening...].firstIndex(of: "}") else { return nil }
+  let raw = String(suffix[opening...closing])
+  guard let data = raw.data(using: .utf8),
+        let wait = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let taskId = wait["task_id"] as? String,
+        !taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        let waitSeconds = wait["wait_seconds"] as? Int,
+        (60...604_800).contains(waitSeconds),
+        let reason = wait["reason"] as? String,
+        !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return nil
+  }
+  return wait
+}
+
 func parseTaskReport(_ content: String) -> [String: Any]? {
   guard let start = content.range(of: "MAHAYANA_TASK_REPORT_V1_BEGIN", options: .backwards),
         let end = content.range(of: "MAHAYANA_TASK_REPORT_V1_END", range: start.upperBound..<content.endIndex),
@@ -20,6 +42,7 @@ func parseTaskReport(_ content: String) -> [String: Any]? {
         report["applied_spec_digest"] is String,
         let status = report["status"] as? String,
         ["complete", "incomplete", "blocked"].contains(status),
+        let allTasksComplete = report["all_tasks_complete"] as? Bool,
         report["summary"] is String,
         let completed = report["completed"] as? [String],
         let remaining = report["remaining"] as? [String],
@@ -34,10 +57,11 @@ func parseTaskReport(_ content: String) -> [String: Any]? {
   let waitSeconds = report["wait_seconds"] as? Int ?? 0
   guard (0...604_800).contains(waitSeconds) else { return nil }
   if status == "complete" {
-    guard remaining.isEmpty, blockers.isEmpty,
+    guard allTasksComplete, remaining.isEmpty, blockers.isEmpty, waitSeconds == 0,
           nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
   } else {
-    guard !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    guard !allTasksComplete,
+          !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
   }
   return report
 }

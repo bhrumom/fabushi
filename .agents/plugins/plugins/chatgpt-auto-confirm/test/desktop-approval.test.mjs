@@ -108,24 +108,29 @@ test('outbound sends discard old chat URLs while read-only reply requests keep t
   assert.equal(reply.result.structuredContent.hostRequest.params.chatUrl, chatUrl);
 });
 
-test('every task Chat receives complete and unfinished report templates', () => {
+test('every task Chat receives one report contract for every outcome', () => {
   assert.match(chatScriptsSource, /func taskReportContract\(/);
-  assert.match(chatScriptsSource, /MAHAYANA_TASK_REPORT_CONTRACT_V2/);
-  assert.match(chatScriptsSource, /"status":"complete"/);
-  assert.match(chatScriptsSource, /"remaining":\[\],"blockers":\[\]/);
-  assert.match(chatScriptsSource, /"next_task":""/);
-  assert.match(chatScriptsSource, /"status":"incomplete\|blocked"/);
+  assert.match(chatScriptsSource, /MAHAYANA_TASK_REPORT_CONTRACT_V4/);
+  assert.match(chatScriptsSource, /"status":"incomplete"/);
+  assert.match(chatScriptsSource, /"all_tasks_complete":false/);
+  assert.match(chatScriptsSource, /只有整个任务全部完成/);
+  assert.doesNotMatch(chatScriptsSource, /MAHAYANA_TASK_WAIT_V1/);
   assert.doesNotMatch(chatScriptsSource, /不要输出完成态 JSON/);
   assert.match(nativeSource, /taskId: task\.id/);
   assert.match(nativeSource, /appliedRevision: task\.currentRevision/);
   assert.match(nativeSource, /let reportSource = \[/);
   assert.match(nativeSource, /reportMissing/);
-  assert.match(nativeSource, /message\.contains\("MAHAYANA_TASK_REPORT_CONTRACT_V2"\)/);
+  assert.match(nativeSource, /message\.contains\("MAHAYANA_TASK_REPORT_CONTRACT_V4"\)/);
   assert.doesNotMatch(nativeSource, /message\.contains\("MAHAYANA_TASK_REPORT_V1_BEGIN"\)/);
   assert.doesNotMatch(nativeSource, /func legacyTaskReportContract/);
   assert.match(nativeSource, /terminal_reply_missing_task_report/);
   assert.doesNotMatch(nativeSource, /let acceptedResult = AutomationTaskReport\(/);
   assert.doesNotMatch(nativeSource, /let normalResult = reportText/);
+});
+
+test('miniapp treats an explicit revision bump as a task update even when text is unchanged', () => {
+  assert.match(nativeSource, /let declaredRevision = max\(1, entry\["revision"\] as\? Int \?\? previousRevision\)/);
+  assert.match(nativeSource, /let changed = declaredRevision > previousRevision/);
 });
 
 test('initial outbound messages create a new Chat and same-task continuations use the reply action', async () => {
@@ -148,21 +153,36 @@ test('initial outbound messages create a new Chat and same-task continuations us
   assert.match(nativeSource, /conversation_body_not_ready/);
   assert.match(nativeSource, /messagesReady: true/);
   assert.match(nativeSource, /新建任务/);
+  assert.match(nativeSource, /新对话/);
   assert.match(nativeSource, /New task/);
   assert.match(nativeSource, /activityCharCount >= 80/);
   assert.match(nativeSource, /do not treat that regression as/);
   assert.match(nativeSource, /__reactFiber\$/);
   assert.match(nativeSource, /new_chat_conversation_not_created/);
   assert.match(nativeSource, /new_chat_creation_not_confirmed/);
+  assert.match(nativeSource, /prepare_new_chat_baseline_failed/);
+  assert.match(nativeSource, /new_chat_click_no_result/);
+  assert.match(nativeSource, /allow forty seconds/);
+  assert.match(nativeSource, /Prefer the portal owned by the current composer/);
   assert.match(nativeSource, /continueInNewTaskJS/);
   assert.match(nativeSource, /continuationClicked/);
   assert.match(nativeSource, /continue_in_new_task_button_not_found/);
   assert.match(nativeSource, /stage=prepare-continuation/);
   assert.match(nativeSource, /continuation_conversation_click_failed/);
   assert.match(nativeSource, /restoreHiddenConversation/);
+  assert.match(nativeSource, /currentComposerConversationIdentityJS/);
+  assert.match(nativeSource, /source: conversationId \? 'composer-portal' : 'none'/);
+  assert.match(nativeSource, /route-failed-but-conversation-confirmed/);
+  assert.match(nativeSource, /restorationMatchesExpectedConversation/);
   assert.match(nativeSource, /strategy=.*restoration/);
   assert.match(nativeSource, /branch-required/);
   assert.match(nativeSource, /same_task_branch_not_confirmed/);
+  assert.match(nativeSource, /assistantResponseCount/);
+  assert.match(nativeSource, /no-assistant-response/);
+  assert.match(nativeSource, /forceFullGoalPrompt = true/);
+  assert.match(nativeSource, /automationTaskMessage\(task, forceFullGoal: forceFullGoalPrompt\)/);
+  assert.match(nativeSource, /let isContinuation = !forceFullGoal/);
+  assert.match(nativeSource, /fresh_chat_after_unanswered_dispatch_not_confirmed/);
   assert.match(nativeSource, /blankConversationReused/);
   assert.doesNotMatch(nativeSource, /continuationFallback/);
   assert.doesNotMatch(nativeSource, /queueUsesHostedRenderer|CHATGPT_AUTO_CONFIRM_HOSTED/);
@@ -179,7 +199,7 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.equal(params.stagnationTimeout, 10800);
   assert.equal(params.maxRecoveryAttempts, 5);
   assert.equal(params.autoContinueIncomplete, true);
-  assert.equal(params.maxTaskContinuations, 6);
+  assert.equal(params.maxTaskContinuations, 0);
   assert.match(nativeSource, /"thinking_progress"/);
   assert.match(nativeSource, /stopCurrentResponseJS/);
   assert.match(nativeSource, /continueInNewTaskJS/);
@@ -204,6 +224,8 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /DEVSPACE_TOOL_TIMEOUT|devspace_timeout/);
   assert.match(nativeSource, /继续在此聊天/);
   assert.match(nativeSource, /autoConfirmChatContinuationJS/);
+  assert.match(nativeSource, /stage=chat-continuation/);
+  assert.match(nativeSource, /chat_surface_drift/);
   assert.match(nativeSource, /surface: 'chat'/);
   assert.match(nativeSource, /continueInChatPrompt/);
   assert.match(
@@ -235,6 +257,10 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /approval_watcher_start_failed/);
   assert.match(nativeSource, /completionCandidate/);
   assert.match(nativeSource, /responseActionsComplete/);
+  assert.match(nativeSource, /appContentMessages\.length > 0/);
+  assert.match(nativeSource, /responseActionTurnBoundToLast/);
+  assert.match(nativeSource, /!awaitingAssistant/);
+  assert.match(nativeSource, /completedResponseUI/);
   assert.match(nativeSource, /responseActions\.copy/);
   assert.match(nativeSource, /responseActions\.branch/);
   assert.match(nativeSource, /responseActions\.moreActions/);
@@ -314,7 +340,7 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   assert.match(nativeSource, /terminalIncomplete/);
   assert.match(
     queueTerminalDecisionSource,
-    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true\s+let terminalEvidence =/,
+    /let terminalIncomplete = reply\["terminalIncomplete"\] as\? Bool == true[\s\S]*let completedResponseUI = responseActionsComplete[\s\S]*let terminalEvidence = completedResponseUI/,
   );
   assert.doesNotMatch(
     queueTerminalDecisionSource,
@@ -354,7 +380,7 @@ test('send_and_watch streams visible thinking and recovers in a fresh Chat after
   );
   assert.match(
     queueMonitoringSource,
-    /if terminal, hasClosedTaskReport, parsedReport == nil \{[\s\S]*stage=report-parse-failed action=blocked[\s\S]*task\.status = "blocked"[\s\S]*task\.lastError = "task_report_parse_failed"[\s\S]*return/,
+    /if terminal, hasClosedTaskReport, parsedReport == nil \{[\s\S]*stage=report-parse-failed action=continue[\s\S]*closed_task_report_not_fully_complete[\s\S]*queueContinuation[\s\S]*return/,
   );
   assert.match(nativeSource, /尚未\.\{0,12\}完成/);
   assert.match(nativeSource, /Date\(\)\.timeIntervalSince\(candidateSince\) >= 4\.0/);
@@ -411,6 +437,38 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /case "queue_update"/);
   assert.match(nativeSource, /case "start_actions_runner"/);
   assert.match(nativeSource, /case "queue_watchdog"/);
+  assert.match(nativeSource, /case "queue_heartbeat"/);
+  assert.match(nativeSource, /watcherWasAlive/);
+  assert.match(nativeSource, /revisionWasCurrent/);
+  assert.match(nativeSource, /queue_heartbeat_failed/);
+  assert.match(nativeSource, /A retry starts a fresh Chat ownership cycle/);
+  assert.match(nativeSource, /tasks\[index\]\.workerTargetId = nil/);
+  assert.match(nativeSource, /没有找到与 conversationId 匹配的队列专用 Chat renderer/);
+  assert.match(nativeSource, /tasks\[index\]\.workerTargetId = controller\.targetId/);
+  assert.match(nativeSource, /state\.queueWorkerMode = sharedConversationQueueWorkerMode/);
+  assert.match(nativeSource, /const matches = \[\.\.\.text\.matchAll/);
+  assert.match(nativeSource, /任务发送轮次/);
+  assert.match(nativeSource, /tasks\[index\]\.attempts = attachedAttempt/);
+  assert.match(nativeSource, /let requestedAttempt = params\["attempt"\] as\? Int/);
+  assert.match(nativeSource, /tasks\[index\]\.attempts = requestedAttempt/);
+  assert.match(nativeSource, /queueChatStartTimeoutSeconds = 300/);
+  assert.match(nativeSource, /verifyDispatchMarkerJS\(dispatchMarker: dispatchMarker\)/);
+  assert.match(nativeSource, /guard dispatchVerified else/);
+  assert.match(nativeSource, /let reattachingSameConversation = tasks\[index\]\.conversationId == conversationId/);
+  assert.match(nativeSource, /let freshChatRecoveryReasons = \["chat_start_no_reply", "page_stalled"\]/);
+  assert.match(nativeSource, /let requiresFreshRecoveryChat = freshChatRecoveryReasons\.contains/);
+  assert.doesNotMatch(chatScriptsSource, /existingBranch: true/);
+  assert.doesNotMatch(nativeSource, /stage=continuation-blocked/);
+  assert.match(nativeSource, /durableTaskBindingMatches/);
+  assert.match(nativeSource, /hasTaskMarker/);
+  assert.match(nativeSource, /textLength > 100, hasInput/);
+  assert.match(nativeSource, /\[role="textbox"\]/);
+  assert.match(nativeSource, /serial-shared-controller-reuse/);
+  assert.match(nativeSource, /profilePath == hiddenChatProfilePath\(\)/);
+  assert.match(nativeSource, /current-dispatch-marker/);
+  assert.match(nativeSource, /dispatchMarkerConfirmed/);
+  assert.match(nativeSource, /promoted-marker-conversation/);
+  assert.match(nativeSource, /dispatchMarker: "任务发送轮次：\\\(task\.attempts\)"/);
   assert.match(nativeSource, /github_actions_watchdog_recovery/);
   assert.match(nativeSource, /operator_recovery/);
   assert.match(nativeSource, /case "queue_watch"/);
@@ -421,13 +479,18 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /worker_exited_without_result/);
   assert.match(nativeSource, /monitorAutomationTask/);
   assert.match(nativeSource, /virtual-list parent/);
-  assert.match(nativeSource, /let continuationLimit = max\(1, task\.maxTaskContinuations\)/);
-  assert.match(nativeSource, /approval_duplicate_circuit_open/);
-  assert.match(nativeSource, /maxAutomaticApprovalAttemptsPerFingerprint = 3/);
-  assert.match(nativeSource, /reason=persistent fingerprint/);
+  assert.doesNotMatch(nativeSource, /let continuationLimit = max\(1, task\.maxTaskContinuations\)/);
+  assert.match(nativeSource, /do not use it as a lifetime limit/);
+  assert.doesNotMatch(nativeSource, /approval_duplicate_circuit_open/);
+  assert.match(nativeSource, /confirmed-renderer-ghost/);
+  assert.match(nativeSource, /confirmed_approval_renderer_ghost_ignored/);
+  assert.match(nativeSource, /boundedContent/);
+  assert.match(nativeSource, /value\.slice\(-25000\)/);
+  assert.match(nativeSource, /let controllerIsSafe = runtimeState == \.hidden/);
+  assert.match(nativeSource, /unassigned-controller-fallback-begin/);
   assert.match(nativeSource, /approval_rate_circuit_open/);
   assert.match(nativeSource, /background_chat_closed_requires_restart/);
-  assert.match(nativeSource, /queue_worker_closed_requires_retry/);
+  assert.doesNotMatch(nativeSource, /queue_worker_closed_requires_retry/);
   assert.match(nativeSource, /CHATGPT_AUTO_CONFIRM_ALLOW_VISIBLE_AX/);
   assert.match(nativeSource, /requestIdentityAvailable/);
   assert.match(nativeSource, /watchdogTaskHasNonRecoverableFailure/);
@@ -435,7 +498,7 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /activeConversationId is shared by every visible row/);
   assert.match(nativeSource, /getAttribute\('aria-current'\) === 'page'/);
   assert.match(nativeSource, /activeRowConversationIds/);
-  assert.match(nativeSource, /userContent: userContent\.substring/);
+  assert.match(nativeSource, /userContent: boundedContent\(userContent\)/);
   assert.match(nativeSource, /identitySource == "portal"/);
   assert.match(nativeSource, /conversationSource/);
   assert.match(nativeSource, /activeConversationId\s*\n\s*\|\| portalConversationId/);
@@ -459,8 +522,13 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /isProjectPicker\(button\)/);
   assert.match(nativeSource, /reasoning_high_not_selected/);
   assert.match(nativeSource, /quick_chat_thinking_not_selected/);
+  assert.match(nativeSource, /quick_chat_target_model_not_selected/);
+  assert.match(nativeSource, /quickChatModelConfirmed = desiredModelMentioned/);
   assert.match(nativeSource, /const desiredQuickChatReasoning = 'Extra High'/);
   assert.match(nativeSource, /const desiredReasoning = 'Extra High'/);
+  assert.match(nativeSource, /本轮发送前小程序必须重新选择并确认模型/);
+  assert.match(nativeSource, /GitHub 代码源（每轮都必须明确使用）/);
+  assert.match(nativeSource, /本轮工作门槛/);
   assert.match(nativeSource, /quick-chat-extra-high-selection/);
   assert.match(nativeSource, /submenuExtraHighSelected: true/);
   assert.match(nativeSource, /const scope = quickChatRoot\(\) \|\| document;/);
@@ -707,6 +775,9 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /visibility == "hidden"/);
   assert.match(nativeSource, /queueTargetIsHidden/);
   assert.match(nativeSource, /queue_worker_visibility_not_hidden/);
+  assert.match(nativeSource, /queueOwnedSharedControllerVisible/);
+  assert.match(nativeSource, /queue-owned-shared-controller-visible-accepted/);
+  assert.match(nativeSource, /state\.backgroundProfilePath == hiddenChatProfilePath\(\)/);
   assert.match(nativeSource, /Missing, suspended, and hidden-but-not-Chat renderers are disposable/);
   assert.match(nativeSource, /queue_monitor_hidden_target_rebuild_failed/);
   assert.match(nativeSource, /queue_monitor_hidden_target_recovery_failed/);
@@ -724,9 +795,14 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.doesNotMatch(nativeSource, /kAXMinimizedAttribute/);
   assert.match(nativeSource, /state\.queueWorkerTargetId/);
   assert.match(nativeSource, /queue_monitor_requires_background_window/);
-  assert.match(nativeSource, /let hasRunningTasks = tasks\.contains/);
+  assert.match(nativeSource, /deferAutomationTaskForWorkerRecovery/);
+  assert.match(nativeSource, /waiting_for_queue_worker_recovery/);
+  assert.match(nativeSource, /worker-recovery-deferred/);
+  assert.match(nativeSource, /let delay = min\(300, 15 \* \(1 << min\(4, recoveryCount - 1\)\)\)/);
+  assert.match(nativeSource, /let hasPendingQueueWork = tasks\.contains/);
+  assert.match(nativeSource, /\$0\.status == "queued" \|\| \$0\.status == "running" \|\| \$0\.status == "waiting"/);
   assert.match(nativeSource, /only while idle/);
-  assert.match(nativeSource, /&& !hasRunningTasks/);
+  assert.match(nativeSource, /!hasPendingQueueWork/);
   assert.doesNotMatch(nativeSource, /stopLegacyQueueResponseIfStillOwned/);
   assert.match(nativeSource, /closeDedicatedAutomationTarget/);
   assert.match(nativeSource, /page where the user is composing a new task/);
@@ -777,12 +853,22 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /restoreHiddenConversation/);
   assert.match(nativeSource, /backgroundConversationURL/);
   assert.match(nativeSource, /initialRoute/);
-  assert.match(nativeSource, /云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器/);
-  assert.match(nativeSource, /本地 checkout、Git\/gh 元数据与安全同步必须使用 bhrum2/);
-  assert.match(nativeSource, /重复卡点时不要只重复同一条失败命令/);
-  assert.match(nativeSource, /具体所需权限、账号、工具/);
-  assert.match(nativeSource, /项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions/);
-  assert.match(nativeSource, /禁止 git add -A/);
+  assert.match(nativeSource, /重新读取共享执行技能/);
+  assert.match(nativeSource, /不要重新规划、不要只检查结果、不要中途总结/);
+  assert.match(nativeSource, /refreshAutomationTaskDefinitionFromDisk/);
+  assert.match(nativeSource, /task-definition-refreshed/);
+  assert.match(nativeSource, /action=fresh-project-chat/);
+  assert.match(nativeSource, /这是更新后的新目标首轮/);
+  assert.match(nativeSource, /不要复用旧立项线程/);
+  assert.match(nativeSource, /目标：\\n/);
+  assert.match(nativeSource, /任务目录：/);
+  assert.match(nativeSource, /\.mahayana-project-email\.json/);
+  assert.match(nativeSource, /1315518325@qq\.com/);
+  assert.match(nativeSource, /optionalConnectors: \["Gmail"\]/);
+  assert.match(nativeSource, /第一轮、续作轮和验收轮开始时都必须用 Gmail 读取立项线程/);
+  assert.match(nativeSource, /不要因为 Chat 结束而机械发邮件/);
+  assert.match(nativeSource, /只读检查、计划、复述、无改动失败尝试或未变化的等待不得发邮件/);
+  assert.match(nativeSource, /continuation-backoff/);
   assert.match(nativeSource, /wait_seconds/);
   assert.match(nativeSource, /waiting_for_external_result/);
   assert.match(nativeSource, /waiting_for_network_recovery/);
@@ -790,12 +876,15 @@ test('task queue tools preserve dependencies, resource locks, review gate and co
   assert.match(nativeSource, /SCNetworkReachabilityCreateWithName/);
   assert.match(nativeSource, /request failed with status 429/);
   assert.match(nativeSource, /too many requests/);
+  assert.match(nativeSource, /network-rate-limit-wait/);
   assert.match(nativeSource, /recoverySignal == nil/);
   assert.match(nativeSource, /next_connector/);
-  assert.match(nativeSource, /云端 GitHub 状态必须通过 GitHub 连接器核验/);
-  assert.match(nativeSource, /本地 checkout、Git\/gh 元数据与安全同步必须使用 bhrum2/);
+  assert.match(nativeSource, /sharedTaskExecutionSkillPath/);
+  assert.match(nativeSource, /实际工作只允许在 Chat 页面完成/);
   assert.match(nativeSource, /the prompt can never trigger a false network outage/);
   assert.match(nativeSource, /chat_start_no_reply/);
+  assert.match(nativeSource, /allowBlankConversationReuse: false/);
+  assert.doesNotMatch(nativeSource, /allowBlankConversationReuse: !preserveStalledChat/);
   assert.match(nativeSource, /currentDate >= waitingUntil/);
   assert.match(nativeSource, /Confirm it before restoring a task through its exact hidden-page route/);
   assert.match(nativeSource, /Do not restore the background queue renderer before its current page is read/);

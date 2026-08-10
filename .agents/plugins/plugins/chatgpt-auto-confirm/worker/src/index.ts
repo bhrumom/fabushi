@@ -1,6 +1,6 @@
 import { HOME, RESOURCES } from './content.generated.ts';
 
-const EMAIL_WORKFLOW_SUFFIX = '【强制流程规范】本任务执行必须包含立项及汇报流程：1. 任务开始时必须使用居秒(Gmail)连接器发邮件到1315518325@qq.com进行任务立项。2. 每一轮会话结束前，必须把工作进度汇报到该邮件的回复中。3. 每一轮新任务/新会话开始时，必须首先读取该邮件，检查 1315518325（领导）是否有最新回复意见。4. 如果领导在回复中对任务目标或细节有新的补充或变更，你必须立刻使用 GitHub 连接器修改本仓库内的任务队列文件（通常为 .agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json），将这些新的细节和变更写入对应任务的 prompt 描述中，确保任务目标文件永远是最准确详尽的，然后再根据新目标开展后续工作。';
+const EMAIL_WORKFLOW_SUFFIX = '【强制邮件流程】1. 任务第一轮使用 Gmail 向 1315518325@qq.com 创建立项线程并记录 threadId。2. 第一轮、每一轮续作和验收 Chat 开始时，必须先读取记录的邮件线程，检查 1315518325@qq.com 是否有新增要求；如有实质性目标变更，使用 GitHub 连接器把要求持久化到本仓库对应任务定义后再执行。3. 不要因为每轮 Chat 结束而机械发邮件。只有产生可核验的实质进展（代码实现、重要测试/构建/部署里程碑、commit/PR/release 或全部完成），或者确实需要人工提供信息、权限、凭证或决策时，才回复同一线程。4. 只读检查、计划、复述、无改动失败尝试或未变化的等待不得发邮件；不得重复发送同一进展。';
 
 const DEFAULT_CHAT_TIMEOUT_SECONDS = 21_600;
 const MAX_CHAT_TIMEOUT_SECONDS = 86_400;
@@ -55,7 +55,7 @@ const queuedTaskSchema = {
     resourceLocks: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 256 }, default: [] },
     priority: { type: 'integer', minimum: -100, maximum: 100, default: 0 },
     timeout: { type: 'integer', minimum: 60, maximum: MAX_CHAT_TIMEOUT_SECONDS, default: DEFAULT_CHAT_TIMEOUT_SECONDS },
-    maxTaskContinuations: { type: 'integer', minimum: 1, maximum: 20, default: 6, description: '未完成时自动创建新 Chat 的轮数；达到上限后暂停并等待人工处理' },
+    maxTaskContinuations: { type: 'integer', minimum: 0, maximum: 20, default: 0, description: '0 表示按退避策略持续新建分支 Chat 直到任务完成；正数表示显式上限' },
     maxRuntimeRetries: { type: 'integer', minimum: 0, maximum: 5, default: 2 },
   },
 };
@@ -171,7 +171,7 @@ const tools = [
       stagnationTimeout: { type: 'integer', minimum: 60, maximum: CHAT_STAGNATION_TIMEOUT_SECONDS, default: CHAT_STAGNATION_TIMEOUT_SECONDS, description: '页面连续无新内容多少秒后直接开启新 Chat；旧 Chat 保持运行，默认 3 小时' },
       maxRecoveryAttempts: { type: 'integer', minimum: 0, maximum: 5, default: 5, description: '页面无进展后在新 Chat 自动发送续作指令的最大次数；超过后截图并报错' },
       autoContinueIncomplete: { type: 'boolean', default: true, description: '按机器可读最终总结识别未完成任务，并自动在全新 Chat 续作' },
-      maxTaskContinuations: { type: 'integer', minimum: 1, maximum: 20, default: 6, description: '最终总结为未完成时自动创建新 Chat 的轮数；达到上限后停止自动续作' },
+      maxTaskContinuations: { type: 'integer', minimum: 0, maximum: 20, default: 0, description: '0 表示持续续作直到完成；正数表示显式上限' },
       continuationMessage: { type: 'string', maxLength: 4000, description: '在新 Chat 中发送的续作指令；旧 Chat 不停止、不关闭' },
       resumeExisting: { type: 'boolean', default: false, description: '仅继续监视已发送的当前 Chat，不重复发送指令' },
       approveAll: { type: 'boolean', description: '自动确认所有授权卡片（默认 true）' },
@@ -339,7 +339,7 @@ export default {
           stagnationTimeout: Math.min(CHAT_STAGNATION_TIMEOUT_SECONDS, Math.max(60, args.stagnationTimeout ?? CHAT_STAGNATION_TIMEOUT_SECONDS)),
           maxRecoveryAttempts: Math.min(5, Math.max(0, args.maxRecoveryAttempts ?? 5)),
           autoContinueIncomplete: args.autoContinueIncomplete !== false,
-          maxTaskContinuations: Math.min(20, Math.max(1, args.maxTaskContinuations ?? 6)),
+          maxTaskContinuations: Math.min(20, Math.max(0, args.maxTaskContinuations ?? 0)),
           continuationMessage: args.continuationMessage || null,
           resumeExisting,
           approveAll: args.approveAll !== false,
@@ -371,8 +371,8 @@ export default {
             protocol: 'mahayana.task-report.v1',
             markers: ['MAHAYANA_TASK_REPORT_V1_BEGIN', 'MAHAYANA_TASK_REPORT_V1_END'],
             statuses: ['complete', 'incomplete', 'blocked'],
-            completion: 'status=complete requires remaining=[], blockers=[], next_task=""',
-            fields: ['task_id', 'applied_task_revision', 'applied_spec_digest', 'summary', 'completed', 'remaining', 'blockers', 'verification', 'wait_seconds', 'wait_reason', 'next_connector', 'next_task'],
+            completion: 'the queue stops only for status=complete, all_tasks_complete=true, remaining=[], blockers=[], wait_seconds=0, next_task=""',
+            fields: ['task_id', 'applied_task_revision', 'applied_spec_digest', 'status', 'all_tasks_complete', 'summary', 'completed', 'remaining', 'blockers', 'verification', 'wait_seconds', 'wait_reason', 'next_connector', 'next_task'],
           },
         },
       });

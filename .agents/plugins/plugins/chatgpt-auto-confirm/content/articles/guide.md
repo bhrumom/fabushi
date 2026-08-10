@@ -12,8 +12,9 @@ tags: [指南, 任务队列, 自动续作]
 
 1. 用「内置任务提示词」选择实现、诊断、审查或持续完成模板。
 2. 用 `enqueue_tasks` 一次加入多个任务。任务会进入持久队列，并与通用确认共用同一个已登录的 ChatGPT 实例。每个运行中任务使用独立的隐藏预热页面；无依赖且资源锁不冲突的任务按 `maxConcurrent` 并行执行。
-3. 每个 Chat 的最终回答必须包含 `mahayana.task-report.v1` 总结。全部完成时必须返回 `status=complete`，并把 `remaining`、`blockers`、`next_task` 设为空数组或空字符串；未完成时返回 `status=incomplete` 或 `blocked`，小程序会根据 `remaining`、`blockers` 和 `next_task` 自动新建 Chat 续作。
-4. 完成报告会由程序自动在同一实例的隐藏页面中新建 Chat 独立验收；验收 Chat 返回同一任务修订的 `status=complete` 报告后，任务进入终态，不会再次派发。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。
+3. 每轮结束都只输出同一个 `mahayana.task-report.v1` 模板。阶段完成使用 `status=incomplete`、`all_tasks_complete=false`；跨 Chat 等待也在同一模板填写 `wait_seconds` 与 `wait_reason`。`completed` 只表示已做事项，不会停止任务。
+4. 只有同一模板同时满足 `status=complete`、`all_tasks_complete=true`、`remaining=[]`、`blockers=[]`、`wait_seconds=0`、`next_task=""`，程序才会启动独立验收；验收也满足同样条件后任务才进入终态。`review_task` 仅保留为人工恢复/兼容入口，Worker 页面只展示状态。
+5. 每个 Chat 开始时读取立项邮件线程，接收 `1315518325@qq.com` 的新增要求。不会因每轮结束机械发邮件；只有产生可核验的实质进展、任务全部完成，或需要人工提供信息、权限与决策时才回复同一线程。
 
 ## 中断恢复
 

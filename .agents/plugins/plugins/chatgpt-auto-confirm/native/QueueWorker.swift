@@ -512,6 +512,10 @@ func sharedChatController(
         (() => ({
           bridge: !!window.electronBridge,
           ready: document.readyState,
+          textLength: (document.body?.innerText || '').trim().length,
+          hasInput: !!document.querySelector(
+            'textarea, [contenteditable="true"], [role="textbox"]'
+          ),
           entryScripts: [...document.scripts].filter(script =>
             /\\/assets\\/index-[^/]+\\.js$/.test(script.src || '')
           ).length
@@ -521,8 +525,11 @@ func sharedChatController(
       )
       let bridge = (probe?["bridge"] as? NSNumber)?.boolValue ?? false
       let ready = probe?["ready"] as? String
+      let textLength = (probe?["textLength"] as? NSNumber)?.intValue ?? 0
+      let hasInput = (probe?["hasInput"] as? NSNumber)?.boolValue ?? false
       let entryScripts = (probe?["entryScripts"] as? NSNumber)?.intValue ?? 0
-      guard bridge, ready == "complete", entryScripts > 0 else { continue }
+      guard bridge, ready == "complete", entryScripts > 0,
+            textLength > 100, hasInput else { continue }
       state.backgroundAppPort = port
       state.backgroundChatTargetId = targetId
       state.backgroundProfilePath = profilePath
@@ -2855,11 +2862,11 @@ func createSharedControllerQueueWorkerTarget(
   _ state: inout PluginState
 ) -> (port: Int, targetId: String, profilePath: String)? {
   // A single-task runner may use the already authenticated primary renderer
-  // after an explicit headless/local opt-in. Reuse it only while no task is
-  // running, and mark it shared so cleanup never closes ChatGPT's primary
-  // window. Normal interactive desktop runs remain excluded.
-  guard (runningOnGitHubActions() || queueAllowsVisibleDedicatedRenderer()),
-        !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
+  // while no task is running. Local desktop fallback is allowed only after
+  // the dedicated controller is verified hidden; Actions/headless runners may
+  // also accept a visible renderer because they have no user-facing window.
+  // Mark it shared so cleanup never closes ChatGPT's primary window.
+  guard !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
         var controller = sharedChatController(&state) else {
     state.lastError = "hosted_controller_unavailable_or_busy"
     return nil
@@ -2897,8 +2904,10 @@ func createSharedControllerQueueWorkerTarget(
       targetId: controller.targetId,
       refreshLifecycle: true
     )
-    if lastPrepared?["ok"] as? Bool == true,
-       runtimeState == .visible || runtimeState == .hidden {
+    let controllerIsSafe = runtimeState == .hidden
+      || ((runningOnGitHubActions() || queueAllowsVisibleDedicatedRenderer())
+        && runtimeState == .visible)
+    if lastPrepared?["ok"] as? Bool == true, controllerIsSafe {
       state.backgroundAppPort = controller.port
       state.backgroundChatTargetId = controller.targetId
       state.backgroundProfilePath = controller.profilePath
@@ -2950,6 +2959,26 @@ func createIndependentQueueWorkerTarget(
   _ state: inout PluginState,
   accountId: String? = nil
 ) -> (port: Int, targetId: String, profilePath: String)? {
+  // Serial continuations already own an authenticated controller in the
+  // queue-only background profile. Reusing that exact renderer avoids opening
+  // another prewarm window while the completed Chat is still mounted; the
+  // continuation flow below will branch it into a fresh Chat before sending.
+  if state.queueWorkerMode == sharedConversationQueueWorkerMode,
+     !(state.automationTasks ?? []).contains(where: { $0.status == "running" }),
+     let port = state.queueWorkerPort,
+     let targetId = state.queueWorkerTargetId,
+     let profilePath = state.queueWorkerProfilePath,
+     profilePath == hiddenChatProfilePath(),
+     state.backgroundAppPort == port,
+     state.backgroundChatTargetId == targetId,
+     state.backgroundProfilePath == profilePath,
+     queueTargetIsReady(port: port, targetId: targetId) {
+    queueTrace(
+      "worker-create stage=serial-shared-controller-reuse "
+        + "target=\(targetId)"
+    )
+    return (port, targetId, profilePath)
+  }
   let explicitAccountValue = accountId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   let explicitAccountId = explicitAccountValue.isEmpty ? nil : explicitAccountValue
   let hostedAccountValue = ProcessInfo.processInfo.environment["CHATGPT_ACCOUNT_ID"]?
@@ -3171,23 +3200,19 @@ func createIndependentQueueWorkerTarget(
   // transient error page, recover through that authenticated controller just
   // like an explicitly assigned local task instead of failing before the
   // fallback branch above can run.
-  if queueAllowsVisibleDedicatedRenderer() {
-    queueTrace("worker-create stage=unassigned-controller-fallback-begin")
-    if let controllerFallback = createSharedControllerQueueWorkerTarget(&state) {
-      queueTrace(
-        "worker-create stage=unassigned-controller-fallback-complete "
-          + "target=\(controllerFallback.targetId)"
-      )
-      return controllerFallback
-    }
-    let controllerError = state.lastError ?? "unknown"
-    state.lastError = "\(prewarmError); unassigned_controller_fallback=\(controllerError)"
+  queueTrace("worker-create stage=unassigned-controller-fallback-begin")
+  if let controllerFallback = createSharedControllerQueueWorkerTarget(&state) {
     queueTrace(
-      "worker-create stage=unassigned-controller-fallback-failed error=\(controllerError)"
+      "worker-create stage=unassigned-controller-fallback-complete "
+        + "target=\(controllerFallback.targetId)"
     )
-  } else {
-    state.lastError = prewarmError
+    return controllerFallback
   }
+  let controllerError = state.lastError ?? "unknown"
+  state.lastError = "\(prewarmError); unassigned_controller_fallback=\(controllerError)"
+  queueTrace(
+    "worker-create stage=unassigned-controller-fallback-failed error=\(controllerError)"
+  )
   return nil
 }
 
@@ -3261,12 +3286,16 @@ func startAutomationTask(
   var targetId: String?
   var workerProfilePath: String?
   var taskOwnsTarget = false
-  // A task gets exactly one top-level Chat. Once a durable conversation exists,
-  // every later round for that same task (continuation, retry, revision, or
-  // review handoff) must branch from the latest task conversation. The
-  // continuation counter is only a retry budget; it must never decide whether
-  // an existing task is allowed to create another top-level Chat.
-  let previousConversationId = normalizedConversationId(task.conversationId)
+  // Normal task rounds branch from the latest task conversation. A dispatch
+  // that created a user bubble but never produced any assistant/tool activity
+  // has no response turn to branch from, so recovery must create a genuinely
+  // fresh Chat while leaving the stalled Chat untouched.
+  let freshChatRecoveryReasons = ["chat_start_no_reply", "page_stalled"]
+  let requiresFreshRecoveryChat = freshChatRecoveryReasons.contains(task.lastError ?? "")
+  var forceFullGoalPrompt = requiresFreshRecoveryChat
+  let previousConversationId = requiresFreshRecoveryChat
+    ? nil
+    : normalizedConversationId(task.conversationId)
   defer {
     if !taskOwnsTarget,
        state.queueWorkerMode != sharedConversationQueueWorkerMode,
@@ -3322,14 +3351,41 @@ func startAutomationTask(
       allowVisible: queueTargetStateIsUsableForQueue(
         .visible,
         workerMode: state.queueWorkerMode
-      )
+      ),
+      dispatchMarker: "任务发送轮次：\(task.attempts)"
     )
     let restorationSucceeded = restoration["ok"] as? Bool == true
-    if restorationSucceeded {
+    let restoredConversationId = normalizedConversationId(
+      restoration["conversationId"] as? String
+    )
+    let restorationStrategy = restoration["strategy"] as? String ?? "none"
+    let markerConfirmedCurrentConversation = restorationStrategy == "current-dispatch-marker"
+      && restoration["dispatchMarkerConfirmed"] as? Bool == true
+    let continuationConversationId = markerConfirmedCurrentConversation
+      ? restoredConversationId
+      : previousConversationId
+    let restorationMatchesExpectedConversation = restoredConversationId == previousConversationId
+    if restorationSucceeded || restorationMatchesExpectedConversation {
+      if !restorationSucceeded {
+        queueTrace(
+          "task=\(task.id) stage=prepare-continuation "
+            + "route-failed-but-conversation-confirmed conversation=\(previousConversationId)"
+        )
+      }
+      if markerConfirmedCurrentConversation,
+         let continuationConversationId,
+         continuationConversationId != previousConversationId {
+        task.conversationId = continuationConversationId
+        queueTrace(
+          "task=\(task.id) stage=prepare-continuation "
+            + "promoted-marker-conversation from=\(previousConversationId) "
+            + "to=\(continuationConversationId)"
+        )
+      }
       prepared = cdpValue(
         port: worker.port,
         targetId: worker.targetId,
-        expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
+        expression: continueInNewTaskJS(expectedConversationId: continuationConversationId),
         timeout: 35.0
       )
     } else {
@@ -3341,9 +3397,11 @@ func startAutomationTask(
       ]
     }
     queueTrace(
-      "task=\(task.id) stage=prepare-continuation "
-        + "restored=\(restorationSucceeded) "
-        + "strategy=\(restoration["strategy"] as? String ?? "none") "
+        "task=\(task.id) stage=prepare-continuation "
+        + "restored=\(restorationSucceeded || restorationMatchesExpectedConversation) "
+        + "strategy=\(restorationStrategy) "
+        + "restoredConversation=\(restoredConversationId ?? "none") "
+        + "markerConfirmed=\(markerConfirmedCurrentConversation) "
         + "conversationClick=\(restoration["clickStrategy"] as? String ?? "none") "
         + "clicked=\(prepared?["continuationClicked"] as? Bool == true) "
         + "continuationLabel=\(prepared?["continuationLabel"] as? String ?? "none") "
@@ -3366,25 +3424,54 @@ func startAutomationTask(
       prepared = cdpValue(
         port: worker.port,
         targetId: worker.targetId,
-        expression: continueInNewTaskJS(expectedConversationId: previousConversationId),
+        expression: continueInNewTaskJS(expectedConversationId: continuationConversationId),
         timeout: 35.0
       )
     }
     if prepared?["ok"] as? Bool != true {
       let continuationError = prepared?["error"] as? String ?? "continuation_no_result"
-      preparationFailure = "same_task_branch_not_confirmed:\(continuationError)"
-      let screenshot = captureHiddenChatScreenshot(
-        port: worker.port,
-        targetId: worker.targetId,
-        label: "same-task-branch-failed"
-      )
-      queueTrace(
-        "task=\(task.id) stage=prepare-continuation branch-required "
-          + "reason=\(continuationError) "
-          + "screenshot=\(screenshot ?? "none") "
-          + "action=retry-without-fresh-chat"
-      )
-      prepared = nil
+      let assistantResponseCount = prepared?["assistantResponseCount"] as? Int ?? -1
+      if continuationError == "continue_in_new_task_button_not_found",
+         assistantResponseCount == 0 {
+        // A dispatch that created only a user bubble has no assistant turn to
+        // branch from. Operator recovery may replace task.lastError, so use the
+        // live CDP result as the source of truth and create a genuinely fresh
+        // Chat while leaving the unanswered conversation untouched.
+        queueTrace(
+          "task=\(task.id) stage=prepare-continuation no-assistant-response "
+            + "action=prepare-fresh-chat oldChat=preserved"
+        )
+        prepared = prepareNewChatTarget(
+          port: worker.port,
+          targetId: worker.targetId,
+          timeout: 4.0,
+          // The renderer can temporarily report zero mounted messages while
+          // it is still routed to the unanswered durable conversation. Force
+          // an actual New Chat click so the recovery prompt cannot be written
+          // back into (or mistaken for) that stale 429 conversation.
+          allowBlankConversationReuse: false
+        )
+        forceFullGoalPrompt = true
+        if prepared?["ok"] as? Bool != true {
+          preparationFailure = "fresh_chat_after_unanswered_dispatch_not_confirmed:"
+            + (prepared?["error"] as? String ?? "unknown")
+        }
+      } else {
+        preparationFailure = "same_task_branch_not_confirmed:\(continuationError)"
+        let screenshot = captureHiddenChatScreenshot(
+          port: worker.port,
+          targetId: worker.targetId,
+          label: "same-task-branch-failed"
+        )
+        queueTrace(
+          "task=\(task.id) stage=prepare-continuation branch-required "
+            + "reason=\(continuationError) "
+            + "assistantResponses=\(assistantResponseCount) "
+            + "screenshot=\(screenshot ?? "none") "
+            + "action=retry-without-fresh-chat"
+        )
+        prepared = nil
+      }
     }
   } else {
     if preserveStalledChat {
@@ -3398,7 +3485,10 @@ func startAutomationTask(
       port: worker.port,
       targetId: worker.targetId,
       timeout: 4.0,
-      allowBlankConversationReuse: true
+      // `conversationId == nil` means a true first round (including an
+      // updated goal). Force a real New Chat transition; an old renderer can
+      // transiently report zero mounted messages and must not be reused.
+      allowBlankConversationReuse: false
     )
   }
   guard let prepared,
@@ -3427,15 +3517,16 @@ func startAutomationTask(
       + "screenshot=\(modelSelectionBeforeScreenshot ?? "none")"
   )
   let attempt = task.attempts + 1
+  let outbound = messageWithTaskReportContract(
+    automationTaskMessage(task, forceFullGoal: forceFullGoalPrompt),
+    taskId: task.id,
+    appliedRevision: task.currentRevision,
+    appliedDigest: task.specDigest
+  )
   task.appliedRevision = max(1, task.currentRevision ?? 1)
   task.appliedSpecDigest = task.specDigest
   task.pendingRevision = nil
-  let outbound = messageWithTaskReportContract(
-    automationTaskMessage(task),
-    taskId: task.id,
-    appliedRevision: task.appliedRevision,
-    appliedDigest: task.appliedSpecDigest
-  )
+  let dispatchMarker = "任务发送轮次：\(attempt)"
   queueTrace("task=\(task.id) stage=send begin")
   guard let sendResult = cdpValue(
     port: port,
@@ -3444,7 +3535,8 @@ func startAutomationTask(
       message: outbound,
       connector: task.connector,
       newChat: false,
-      expectedConversationId: normalizedConversationId(prepared["conversationId"] as? String)
+      expectedConversationId: normalizedConversationId(prepared["conversationId"] as? String),
+      optionalConnectors: ["Gmail"]
     ),
     timeout: 65.0
   ) else {
@@ -3497,6 +3589,41 @@ func startAutomationTask(
       ]
     )
   }
+  queueTrace(
+    "task=\(task.id) stage=model-selection-confirmed "
+      + "model=\(sendResult["model"] as? String ?? "unknown") "
+      + "reasoning=\(sendResult["reasoning"] as? String ?? "unknown")"
+  )
+  var dispatchVerified = false
+  var dispatchVerification: [String: Any] = [:]
+  for _ in 0..<24 {
+    if let verification = cdpValue(
+      port: port,
+      targetId: targetId,
+      expression: verifyDispatchMarkerJS(dispatchMarker: dispatchMarker),
+      timeout: 5.0
+    ) {
+      dispatchVerification = verification
+      if verification["markerConfirmed"] as? Bool == true {
+        dispatchVerified = true
+        break
+      }
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+  }
+  guard dispatchVerified else {
+    task.lastResultJSON = jsonString([
+      "sendResult": sendResult,
+      "dispatchVerification": dispatchVerification,
+      "dispatchMarker": dispatchMarker,
+    ])
+    throw NSError(
+      domain: "chatgpt-auto-confirm",
+      code: 23,
+      userInfo: [NSLocalizedDescriptionKey:
+        "任务 \(task.id) 点击发送后未出现精确用户消息标记（\(dispatchMarker)）"]
+    )
+  }
   queueTrace("task=\(task.id) stage=send complete")
   _ = cdpValue(
     port: port,
@@ -3504,7 +3631,6 @@ func startAutomationTask(
     expression: autoConfirmChatContinuationJS(),
     timeout: 4.0
   )
-  let dispatchMarker = "任务发送轮次：\(attempt)"
   queueTrace("task=\(task.id) stage=resolve-conversation begin")
   let resolvedConversation = cdpValue(
     port: port,

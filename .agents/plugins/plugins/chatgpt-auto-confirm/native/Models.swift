@@ -75,6 +75,9 @@ struct AutomationTaskReport: Codable {
   var appliedTaskRevision: Int?
   var appliedSpecDigest: String?
   var status: String
+  // This is the only terminal-completion switch. `completed` may contain
+  // work finished during an incomplete round, so it must never stop a task.
+  var allTasksComplete: Bool?
   var summary: String
   var completed: [String]
   var remaining: [String]
@@ -97,6 +100,7 @@ struct AutomationTaskReport: Codable {
     case appliedTaskRevision = "applied_task_revision"
     case appliedSpecDigest = "applied_spec_digest"
     case status, summary, completed, remaining, blockers, verification
+    case allTasksComplete = "all_tasks_complete"
     case nextTask = "next_task"
     case waitSeconds = "wait_seconds"
     case waitReason = "wait_reason"
@@ -130,6 +134,14 @@ struct AutomationTask: Codable {
   var specSources: [String]?
   var specSnapshot: String?
   var specDigest: String?
+  // Checkout metadata lets the miniapp re-read the authoritative task entry
+  // and its files before each dispatch instead of delegating that check to Chat.
+  var workspaceRoot: String? = nil
+  var taskControlPath: String? = nil
+  // Repository coordinates are repeated in every outbound round so the model
+  // never has to infer which connected GitHub checkout it must edit.
+  var repository: String? = nil
+  var codeDirectory: String? = nil
   var appliedSpecDigest: String?
   var pendingDirective: String?
   var applyMode: String?

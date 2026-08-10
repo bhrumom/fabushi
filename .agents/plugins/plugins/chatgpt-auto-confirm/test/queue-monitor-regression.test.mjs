@@ -75,11 +75,30 @@ let finishedIncompleteReply: [String: Any] = [
   "terminalIncomplete": true,
   "done": false,
   "completionCandidate": false,
+  "responseActionsComplete": true,
+  "responseActionTurnBoundToLast": true,
+  "awaitingAssistant": false,
 ]
 let finishedIncomplete = queueReplyTerminalDecision(finishedIncompleteReply)
 guard !finishedIncomplete.responseIsInFlight else { exit(6) }
 guard finishedIncomplete.terminalIncomplete else { exit(7) }
 guard finishedIncomplete.terminal else { exit(8) }
+
+let stalePreviousTurnActions: [String: Any] = [
+  "streaming": false,
+  "pending": false,
+  "stopAvailable": false,
+  "terminalIncomplete": true,
+  "done": true,
+  "completionCandidate": true,
+  "responseActionsComplete": true,
+  "responseActionTurnBoundToLast": false,
+  "awaitingAssistant": true,
+]
+let staleActions = queueReplyTerminalDecision(stalePreviousTurnActions)
+guard !staleActions.responseIsInFlight else { exit(9) }
+guard !staleActions.terminalEvidence else { exit(10) }
+guard !staleActions.terminal else { exit(11) }
 print("terminal-decision-guarded")
 `);
     execFileSync('xcrun', ['swiftc', queueTerminalDecisionPath, driverPath, '-o', binaryPath], {
@@ -102,7 +121,7 @@ test('production task report parser accepts an empty digest for a no-spec task',
 let content = #\"\"\"
 visible final answer
 MAHAYANA_TASK_REPORT_V1_BEGIN
-{"protocol":"mahayana.task-report.v1","task_id":"no-spec-task","applied_task_revision":1,"applied_spec_digest":"","status":"complete","summary":"done","completed":["done"],"remaining":[],"blockers":[],"verification":["checked"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
+{"protocol":"mahayana.task-report.v1","task_id":"no-spec-task","applied_task_revision":1,"applied_spec_digest":"","status":"complete","all_tasks_complete":true,"summary":"done","completed":["done"],"remaining":[],"blockers":[],"verification":["checked"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":""}
 MAHAYANA_TASK_REPORT_V1_END
 \"\"\"#
 
@@ -112,13 +131,32 @@ guard let report = parseTaskReport(content) else {
 }
 guard report["status"] as? String == "complete" else { exit(2) }
 guard report["applied_spec_digest"] as? String == "" else { exit(3) }
-print("complete-empty-digest-accepted")
+
+let partial = #"""
+MAHAYANA_TASK_REPORT_V1_BEGIN
+{"protocol":"mahayana.task-report.v1","task_id":"no-spec-task","applied_task_revision":1,"applied_spec_digest":"","status":"incomplete","all_tasks_complete":false,"summary":"one item done","completed":["one item"],"remaining":["rest"],"blockers":[],"verification":["checked"],"wait_seconds":0,"wait_reason":"","next_connector":"","next_task":"continue rest"}
+MAHAYANA_TASK_REPORT_V1_END
+"""#
+guard parseTaskReport(partial)?["status"] as? String == "incomplete" else { exit(4) }
+
+let falseComplete = content.replacingOccurrences(
+  of: #""all_tasks_complete":true"#,
+  with: #""all_tasks_complete":false"#
+)
+guard parseTaskReport(falseComplete) == nil else { exit(5) }
+
+let missingFlag = content.replacingOccurrences(
+  of: #","all_tasks_complete":true"#,
+  with: ""
+)
+guard parseTaskReport(missingFlag) == nil else { exit(6) }
+print("unified-report-contract-accepted")
 `);
     execFileSync('xcrun', ['swiftc', taskReportParserPath, driverPath, '-o', binaryPath], {
       stdio: 'pipe',
     });
     const output = execFileSync(binaryPath, { encoding: 'utf8' }).trim();
-    assert.equal(output, 'complete-empty-digest-accepted');
+    assert.equal(output, 'unified-report-contract-accepted');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

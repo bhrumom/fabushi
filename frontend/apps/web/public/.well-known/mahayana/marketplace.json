@@ -58,7 +58,7 @@
     },
     {
       "id": "chatgpt-auto-confirm",
-      "version": "1.0.0+codex.20260809132958",
+      "version": "1.0.0+codex.20260810093000",
       "title": "ChatGPT 自动确认",
       "description": "自动确认、任务续作、队列并发和独立验收",
       "homepage": "https://fabushi.ombhrum.com/miniapps/chatgpt-auto-confirm/",

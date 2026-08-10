@@ -47,6 +47,7 @@ let nativeCommandSummaries: [String: String] = [
   "queue_retry": "恢复中断任务，可更新 connector 并附加恢复说明。",
   "queue_cancel": "取消指定任务并停止其隐藏 worker。",
   "queue_watchdog": "超过阈值仍未完成时安全重建隐藏 Chat，并重启队列守护。",
+  "queue_heartbeat": "检查本地队列 watcher；进程退出或运行时升级时自动重启，不发送任务消息。",
   "start_actions_runner": "刷新加密任务状态与登录 Secret，并启动最长六小时的 GitHub Actions 持续运行器。",
   "sync_actions_credentials": "从已打开的 ChatGPT 桌面 app renderer 实时导出会话并同步到 GitHub Secrets。",
   "login_and_sync_actions": "按需打开 ChatGPT 桌面应用，等待 app renderer 登录完成后实时同步 ChatGPT 与 Codex 凭证，并启动 GitHub Actions。",
@@ -60,7 +61,7 @@ let nativeCommandSummaries: [String: String] = [
 
 func nativeCommandUsage(_ command: String, executable: String) -> String {
   switch command {
-  case "status", "diagnose", "stop", "queue_status", "queue_pause":
+  case "status", "diagnose", "stop", "queue_status", "queue_pause", "queue_heartbeat":
     return "\(executable) \(command)"
   case "audit":
     return "\(executable) audit [limit]"
@@ -1087,6 +1088,8 @@ case "queue_enqueue":
           specSources: raw["specSources"] as? [String] ?? [],
           specSnapshot: raw["specSnapshot"] as? String,
           specDigest: raw["specDigest"] as? String,
+          repository: raw["repository"] as? String,
+          codeDirectory: raw["codeDirectory"] as? String,
           appliedSpecDigest: nil,
           pendingDirective: raw["directive"] as? String,
           applyMode: "next_chat",
@@ -1099,7 +1102,7 @@ case "queue_enqueue":
           timeout: min(maxChatWatchTimeoutSeconds, max(60, raw["timeout"] as? Int ?? defaultChatWatchTimeoutSeconds)),
           maxTaskContinuations: min(
             20,
-            max(1, raw["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
+            max(0, raw["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
           ),
           maxRuntimeRetries: min(5, max(0, raw["maxRuntimeRetries"] as? Int ?? 2)),
           attempts: 0,
@@ -1321,10 +1324,12 @@ case "queue_update":
         tasks[index].workerProfilePath = nil
         tasks[index].resultPath = nil
         tasks[index].report = nil
-        if let reviewConversationId = normalizedConversationId(tasks[index].reviewConversationId) {
-          tasks[index].conversationId = reviewConversationId
-          tasks[index].chatURL = "https://chatgpt.com/c/\(reviewConversationId)"
-        }
+        // A revised goal starts a true first round. Never inherit the old
+        // conversation merely because the logical task id stayed stable.
+        tasks[index].conversationId = nil
+        tasks[index].chatURL = nil
+        tasks[index].attempts = 0
+        tasks[index].continuationDepth = 0
         tasks[index].reviewConversationId = nil
         tasks[index].reviewStatus = nil
         tasks[index].reviewReport = nil
@@ -1375,6 +1380,35 @@ case "queue_watchdog":
     output([
       "ok": false,
       "errorCode": "queue_watchdog_failed",
+      "message": error.localizedDescription,
+    ], exitCode: 1)
+  }
+case "queue_heartbeat":
+  do {
+    let payload = try withQueueStateLock { state -> [String: Any] in
+      let watcherWasAlive = watcherIsAlive(state.queueWatcherPid)
+      let revisionWasCurrent = state.queueRuntimeRevision == currentQueueRuntimeRevision
+      var restarted = false
+      if state.queueEnabled == true && (!watcherWasAlive || !revisionWasCurrent) {
+        try startQueueWatcher(&state)
+        restarted = true
+      }
+      return [
+        "ok": true,
+        "queueEnabled": state.queueEnabled == true,
+        "queuePaused": state.queuePaused == true,
+        "watcherWasAlive": watcherWasAlive,
+        "revisionWasCurrent": revisionWasCurrent,
+        "restarted": restarted,
+        "watcherPid": state.queueWatcherPid as Any,
+        "runtimeRevision": state.queueRuntimeRevision as Any,
+      ]
+    }
+    output(payload)
+  } catch {
+    output([
+      "ok": false,
+      "errorCode": "queue_heartbeat_failed",
       "message": error.localizedDescription,
     ], exitCode: 1)
   }
@@ -1755,6 +1789,7 @@ case "queue_attach":
         )
       }
       let now = isoFormatter.string(from: Date())
+      let reattachingSameConversation = tasks[index].conversationId == conversationId
       tasks[index].status = "running"
       tasks[index].conversationId = conversationId
       tasks[index].chatURL = params["chatUrl"] as? String
@@ -1764,9 +1799,72 @@ case "queue_attach":
       tasks[index].startedAt = tasks[index].startedAt ?? now
       tasks[index].finishedAt = nil
       tasks[index].updatedAt = now
-      tasks[index].lastProgressAt = now
+      if !reattachingSameConversation || tasks[index].lastProgressAt == nil {
+        tasks[index].lastProgressAt = tasks[index].startedAt ?? now
+      }
       tasks[index].lastError = nil
       tasks[index].report = nil
+      guard let controller = sharedChatController(&state),
+            let attachedStatus = cdpValue(
+              port: controller.port,
+              targetId: controller.targetId,
+              expression: chatStatusJS(),
+              timeout: 5.0
+            ) else {
+        throw NSError(
+          domain: "chatgpt-auto-confirm",
+          code: 36,
+          userInfo: [NSLocalizedDescriptionKey:
+            "没有找到与 conversationId 匹配的队列专用 Chat renderer"]
+        )
+      }
+      let attachedDispatch = cdpValue(
+        port: controller.port,
+        targetId: controller.targetId,
+        expression: """
+        (() => {
+          const text = document.body?.innerText || '';
+          const matches = [...text.matchAll(/任务发送轮次：(\\d+)/g)];
+          const value = matches.length ? Number(matches[matches.length - 1][1]) : 0;
+          return {
+            attempt: Number.isInteger(value) && value > 0 ? value : 0,
+            hasTaskMarker: text.includes(\(jsonStringLiteral(taskId)))
+          };
+        })()
+        """,
+        timeout: 5.0
+      )
+      let attachedAttempt = attachedDispatch?["attempt"] as? Int ?? 0
+      let requestedAttempt = params["attempt"] as? Int
+      let identityMatches = normalizedConversationId(
+        attachedStatus["conversationId"] as? String
+      ) == conversationId
+      let durableTaskBindingMatches = tasks[index].conversationId == conversationId
+        && attachedDispatch?["hasTaskMarker"] as? Bool == true
+        && attachedAttempt > 0
+      guard identityMatches || durableTaskBindingMatches else {
+        throw NSError(
+          domain: "chatgpt-auto-confirm",
+          code: 36,
+          userInfo: [NSLocalizedDescriptionKey:
+            "没有找到与 conversationId 匹配的队列专用 Chat renderer"]
+        )
+      }
+      tasks[index].workerPort = controller.port
+      tasks[index].workerTargetId = controller.targetId
+      tasks[index].workerProfilePath = controller.profilePath
+      if let requestedAttempt, requestedAttempt > 0 {
+        tasks[index].attempts = requestedAttempt
+      } else if attachedAttempt > 0 {
+        tasks[index].attempts = attachedAttempt
+      }
+      state.backgroundAppPort = controller.port
+      state.backgroundChatTargetId = controller.targetId
+      state.backgroundProfilePath = controller.profilePath
+      state.queueWorkerPort = controller.port
+      state.queueWorkerTargetId = controller.targetId
+      state.queueWorkerProfilePath = controller.profilePath
+      state.queueWorkerMode = sharedConversationQueueWorkerMode
       state.automationTasks = tasks
       state.queueEnabled = true
       state.queuePaused = false
@@ -1976,6 +2074,16 @@ case "queue_retry":
       } else if tasks[index].status != "queued" {
         queueContinuation(&tasks[index], report: tasks[index].report, reason: "operator_recovery")
       }
+      // A retry starts a fresh Chat ownership cycle even when the task was
+      // already queued. Keeping a stale per-task target here excludes the
+      // otherwise healthy queue-owned controller from discovery and can trap
+      // the scheduler on the avatar overlay forever.
+      tasks[index].workerPid = nil
+      tasks[index].workerPort = nil
+      tasks[index].workerTargetId = nil
+      tasks[index].workerStatePath = nil
+      tasks[index].workerProfilePath = nil
+      tasks[index].hiddenWorkerLastError = nil
       if !feedback.isEmpty && tasks[index].status == "queued" {
         tasks[index].reviewFeedback = "任务出现中断迹象。请从同一 checkout 的最新落盘进度继续，不要从头开始或覆盖无关改动：\n\(feedback)"
       }
@@ -2248,7 +2356,7 @@ case "send_and_watch":
   let autoContinueIncomplete = params["autoContinueIncomplete"] as? Bool ?? true
   let maxTaskContinuations = min(
     20,
-    max(1, params["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
+    max(0, params["maxTaskContinuations"] as? Int ?? defaultMaxTaskContinuations)
   )
   let continuationDepth = max(0, params["continuationDepth"] as? Int ?? 0)
   let originalGoal = (params["originalGoal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? message
@@ -2782,7 +2890,8 @@ case "send_and_watch":
       .lowercased()
       .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     let hasNextTask = !nextTask.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let continuationAllowed = continuationDepth < maxTaskContinuations
+    let continuationAllowed = maxTaskContinuations == 0
+      || continuationDepth < maxTaskContinuations
     if !hasNextTask {
       resultPayload["errorCode"] = "task_continuation_unavailable"
       resultPayload["message"] = "未完成报告缺少 next_task，小程序无法构造下一轮 Chat 续作。"

@@ -1,5 +1,6 @@
 import ApplicationServices
 import Cocoa
+import CryptoKit
 import Darwin
 import Foundation
 import SystemConfiguration
@@ -8,14 +9,12 @@ func queueDirectoryURL() -> URL {
   queueStateURL().deletingLastPathComponent().appendingPathComponent("task-queue", isDirectory: true)
 }
 
-let currentQueueRuntimeRevision = "mahayana.task-queue.v95"
+let currentQueueRuntimeRevision = "mahayana.task-queue.v115"
 let defaultMaxTaskContinuations = 6
 let minimumAutomaticContinuationDelaySeconds = 30
 let repeatedIncompleteReportCircuitThreshold = 3
 let automaticApprovalWindowSeconds: TimeInterval = 120
 let maxAutomaticApprovalsPerWindow = 8
-let duplicateApprovalGraceSeconds: TimeInterval = 30
-let maxAutomaticApprovalAttemptsPerFingerprint = 3
 let retainedApprovalFingerprintCount = 100
 
 func prunedAutomaticApprovalTimestamps(
@@ -194,12 +193,12 @@ func loadQueueState() -> PluginState {
         var state = try? decoder.decode(PluginState.self, from: data) else {
     return PluginState()
   }
-  // Unlimited continuations previously allowed a stale task to send thousands
-  // of fresh Chats. Every queue now has a finite circuit breaker; migrate old
-  // zero/unlimited and legacy defaults when the runtime revision changes.
+  // Zero explicitly means continue until complete. Short-round backoff and
+  // rate-limit recovery prevent the old rapid-fire behavior without turning a
+  // long healthy task into a terminal failure at an arbitrary Chat count.
   if state.queueRuntimeRevision != currentQueueRuntimeRevision,
      var tasks = state.automationTasks {
-    for index in tasks.indices where tasks[index].maxTaskContinuations <= 0
+    for index in tasks.indices where tasks[index].maxTaskContinuations < 0
         || tasks[index].maxTaskContinuations == 8 {
       tasks[index].maxTaskContinuations = defaultMaxTaskContinuations
     }
@@ -336,16 +335,25 @@ func queueNetworkRecovery(
   reason: String
 ) {
   if isRequestRateLimitSignal(reason) {
-    let now = isoFormatter.string(from: Date())
-    state.queuePaused = true
+    let currentDate = Date()
+    let now = isoFormatter.string(from: currentDate)
+    let delay = 1_800
+    queueContinuation(&task, report: nil, reason: "rate_limit_recovery")
+    state.queuePaused = false
     state.queueNetworkStatus = "rate_limited"
     state.queueNetworkLastError = String(reason.prefix(240))
-    state.queueNetworkWaitUntil = nil
-    task.status = "blocked"
-    task.lastError = "request_rate_limit_circuit_open"
+    state.queueNetworkWaitUntil = isoFormatter.string(
+      from: currentDate.addingTimeInterval(Double(delay))
+    )
+    task.status = "waiting"
+    task.waitingUntil = state.queueNetworkWaitUntil
+    task.waitReason = "ChatGPT 请求限流；退避约 \(delay) 秒后自动恢复"
+    task.lastError = "waiting_for_rate_limit_recovery"
     task.updatedAt = now
-    task.finishedAt = now
-    queueTrace("task=\(task.id) stage=network-rate-limit-blocked reason=\(reason)")
+    task.finishedAt = nil
+    queueTrace(
+      "task=\(task.id) stage=network-rate-limit-wait delay=\(delay)s reason=\(reason)"
+    )
     return
   }
   // Use the regular continuation reset so the next operation is always a
@@ -405,44 +413,176 @@ func taskSpecSourceList(_ task: AutomationTask) -> String {
   return sources.map { "- \($0)" }.joined(separator: "\n")
 }
 
-func automationTaskMessage(_ task: AutomationTask) -> String {
-  let revision = max(1, task.appliedRevision ?? task.currentRevision ?? 1)
-  let digest = task.appliedSpecDigest ?? task.specDigest ?? ""
-  let originalGoal = task.originalPrompt ?? task.prompt
-  var sections = [
-    taskPromptPrefix(task.promptTemplate),
-    "模型要求：执行复杂开发、发布、修复和验收任务时，优先选择 GPT-5.6 Sol 模型，并将推理强度设置为 Extra High（极高）。不要自动降级到低推理模式；若模型选择失败，继续尝试选择目标模型后再开始工作。",
-    "执行边界：实际工作只允许在 Chat 页面完成；不要点击或进入 Work 页面。",
-    "连接器路由：当前新 Chat 选用「\(task.connector)」。已在云端 GitHub 的代码、仓库、PR、Actions、构件、发布和合并状态必须使用 GitHub 连接器；不要改用本地 gh 来替代云端证据。本地 checkout、Git/gh 元数据与安全同步必须使用 bhrum2；同步前先读取 status、远端和分支，只允许干净工作树上的 fast-forward，不得覆盖本地改动。若本轮从 bhrum2 推送到云端，最终报告 next_connector 填 GitHub，让小程序为下一新 Chat 切换到 GitHub 连接器。",
-    "资源策略：项目的测试、构建、打包、安装、发布验证和安装包生成一律在 GitHub Actions 中执行并以 Actions 日志或构件为准。本机只做 Git/gh 元数据与代码阅读；不要在本机运行任何项目测试、构建、打包、安装、依赖下载或会生成缓存/产物的命令。",
-    "提交策略：提交前逐项选择源代码、配置和必要文档，禁止 git add -A。不要提交或等待上传无关的大文件、缓存、node_modules、构建输出、本地安装包或无关 LFS 对象；除非某个大文件是任务明确必需的发布资产。",
-    "持续执行规则：不要在说明『下一步要做什么』后停止，也不要只汇报阶段性进度。没有完成目标不要停，一直工作下去直到实现目标！直接执行所有可行步骤，持续处理失败、评审意见、Actions、部署和构件检查，直到原始目标真正完成。",
-    "等待规则：对于 GitHub Actions、部署、发布审核、网络恢复或其他需要时间跑的异步操作，Chat 会话必须自己运行 bash `sleep` 睡眠命令（例如执行 `sleep 60`）。睡眠之后起来看是否完成，还没有完成就继续执行 sleep 睡眠等待直到有结果，然后立刻继续；绝对不要用回复等待秒数、预计时间或让用户稍后再来结束本轮。",
-    "遇到重复卡点时不要只重复同一条失败命令：先诊断根因并尝试可行的替代路径（本机工具、备用命令、认证方式或连接方式）。只有出现当前权限与工具确实无法绕过的真实阻塞，或平台硬性终止本次会话时，才允许结束未完成任务，并在未完成续作模板中准确列出具体所需权限、账号、工具、环境变量、具体命令或外部恢复条件。",
-    "原始任务目标（不可变）：\n\(originalGoal)"
+let sharedTaskExecutionSkillPath =
+  ".agents/plugins/plugins/chatgpt-auto-confirm/skills/actions-first-task-queue/SKILL.md"
+
+func taskDocumentDirectory(_ task: AutomationTask) -> String {
+  guard let first = task.specSources?.first,
+        !first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    return ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/\(task.id)"
+  }
+  return (first as NSString).deletingLastPathComponent
+}
+
+func taskDefinitionSHA256(_ value: String) -> String {
+  let digest = SHA256.hash(data: Data(value.utf8))
+  return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+}
+
+/// The miniapp owns task-update detection. Before every queue iteration it
+/// re-reads the control entry and all declared task files from the checkout.
+@discardableResult
+func refreshAutomationTaskDefinitionFromDisk(_ task: inout AutomationTask) -> Bool {
+  guard let workspace = task.workspaceRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !workspace.isEmpty else { return false }
+  let workspaceURL = URL(fileURLWithPath: workspace).standardizedFileURL
+  let relativeControl = task.taskControlPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let controlPath = (relativeControl?.isEmpty == false)
+    ? relativeControl!
+    : ".agents/plugins/plugins/chatgpt-auto-confirm/tasks/actions-inbox.json"
+  let controlURL = URL(fileURLWithPath: controlPath, relativeTo: workspaceURL).standardizedFileURL
+  guard controlURL.path.hasPrefix(workspaceURL.path + "/"),
+        let data = try? Data(contentsOf: controlURL),
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let entries = root["tasks"] as? [[String: Any]],
+        let entry = entries.first(where: { ($0["id"] as? String) == task.id }) else {
+    return false
+  }
+  // The email-thread record is runtime progress, not task specification. It
+  // must never trigger a new goal merely because a Chat replied to the thread.
+  let sources = (entry["specSources"] as? [String] ?? task.specSources ?? [])
+    .filter { URL(fileURLWithPath: $0).lastPathComponent != ".mahayana-project-email.json" }
+  var sections: [String] = []
+  for source in sources {
+    let url = URL(fileURLWithPath: source, relativeTo: workspaceURL).standardizedFileURL
+    guard url.path.hasPrefix(workspaceURL.path + "/"),
+          let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
+    sections.append("## \(source)\n\(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+  }
+  let snapshot = sections.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+  let digest = snapshot.isEmpty ? nil : taskDefinitionSHA256(snapshot)
+  let incomingPrompt = entry["prompt"] as? String ?? task.prompt
+  let incomingTitle = entry["title"] as? String ?? task.title
+  let incomingDirective = (entry["directive"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let incomingConnector = entry["connector"] as? String ?? task.connector
+  let incomingRepository = entry["repository"] as? String ?? task.repository
+  let incomingCodeDirectory = entry["codeDirectory"] as? String ?? task.codeDirectory
+  if incomingConnector != task.connector {
+    task.connector = incomingConnector
+    task.updatedAt = isoFormatter.string(from: Date())
+    queueTrace("task=\(task.id) stage=task-connector-refreshed connector=\(incomingConnector)")
+  }
+  let previousRevision = max(1, task.currentRevision ?? 1)
+  let declaredRevision = max(1, entry["revision"] as? Int ?? previousRevision)
+  let changed = declaredRevision > previousRevision
+    || incomingPrompt != task.prompt
+    || incomingTitle != task.title
+    || incomingDirective != task.pendingDirective
+    || incomingRepository != task.repository
+    || incomingCodeDirectory != task.codeDirectory
+    || sources != (task.specSources ?? [])
+    || digest != task.specDigest
+  guard changed else { return false }
+
+  let effectiveRevision = declaredRevision > previousRevision
+    ? declaredRevision
+    : previousRevision + 1
+  task.originalPrompt = task.originalPrompt ?? task.prompt
+  task.prompt = incomingPrompt
+  task.title = incomingTitle
+  task.currentRevision = effectiveRevision
+  task.pendingRevision = effectiveRevision
+  task.specSources = sources
+  task.specSnapshot = snapshot
+  task.specDigest = digest
+  task.pendingDirective = incomingDirective
+  task.repository = incomingRepository
+  task.codeDirectory = incomingCodeDirectory
+  task.specUpdatedAt = isoFormatter.string(from: Date())
+  task.updatedAt = task.specUpdatedAt ?? task.updatedAt
+  task.reviewFeedback = "小程序检测到任务目标或规范文件更新；旧 Chat 链不再续作，下一轮必须新建 Chat 并重新立项。"
+  queueTrace(
+    "task=\(task.id) stage=task-definition-refreshed revision=\(effectiveRevision) "
+      + "digest=\(digest ?? "none") action=fresh-project-chat"
+  )
+  return true
+}
+
+func restartAutomationTaskForUpdatedGoal(_ task: inout AutomationTask) {
+  task.status = "queued"
+  task.attempts = 0
+  task.continuationDepth = 0
+  task.startedAt = nil
+  task.finishedAt = nil
+  task.workerPid = nil
+  task.workerPort = nil
+  task.workerTargetId = nil
+  task.workerStatePath = nil
+  task.workerProfilePath = nil
+  task.conversationId = nil
+  task.chatURL = nil
+  task.reviewConversationId = nil
+  task.reviewStatus = nil
+  task.reviewReport = nil
+  task.report = nil
+  task.lastResultJSON = nil
+  task.lastActivitySignature = nil
+  task.lastProgressAt = nil
+  task.waitingUntil = nil
+  task.waitReason = nil
+  task.lastError = nil
+  task.updatedAt = isoFormatter.string(from: Date())
+}
+
+func automationTaskMessage(_ task: AutomationTask, forceFullGoal: Bool = false) -> String {
+  let revision = max(1, task.currentRevision ?? 1)
+  let digest = task.specDigest ?? ""
+  let directory = taskDocumentDirectory(task)
+  let repository = task.repository?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let codeDirectory = task.codeDirectory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  let updatedGoalFirstRound = task.appliedRevision != nil &&
+    (max(1, task.appliedRevision ?? 1) != revision || (task.appliedSpecDigest ?? "") != digest)
+  let isContinuation = !forceFullGoal && !updatedGoalFirstRound &&
+    ((task.continuationDepth ?? 0) > 0 || task.attempts > 0)
+  var sections: [String]
+  if isContinuation {
+    sections = [
+      "继续完成任务 \(task.id)，不要重新规划、不要只检查结果、不要中途总结。",
+      "先重新读取共享执行技能 `\(sharedTaskExecutionSkillPath)` 和任务目录 `\(directory)` 中的全部文件，确认文件是否更新；再检查同一 checkout 已落盘改动与仍在运行的操作，只做剩余实际工作，持续到全部目标与验证完成。",
+      "本轮开始先读取 `\(directory)/.mahayana-project-email.json`，再使用 Gmail 读取其中记录的立项线程，检查 1315518325@qq.com 是否有新增要求并纳入本轮工作；若记录缺少 threadId，先补建立项邮件并写回记录。本轮结束时只输出末尾统一模板；只有整个任务全部完成才设置 all_tasks_complete=true。",
+    ]
+  } else {
+    let emailInstruction = updatedGoalFirstRound
+      ? "这是更新后的新目标首轮。不要复用旧立项线程：立即使用 Gmail 向 1315518325@qq.com 创建 `[立项][\(task.id)][v\(revision)] \(task.title)` 邮件，并用新的 threadId/messageId 覆盖写入 `\(directory)/.mahayana-project-email.json`；完成新立项后再实现。"
+      : "第一件事：完整读取共享执行技能 `\(sharedTaskExecutionSkillPath)`、任务目录全部文件和 `\(directory)/.mahayana-project-email.json`。如果邮件记录没有 threadId，立即使用 Gmail 向 1315518325@qq.com 创建 `[立项][\(task.id)] \(task.title)` 邮件，并把返回的 threadId/messageId 写回记录；完成立项后再开始实现。"
+    sections = [
+      taskPromptPrefix(task.promptTemplate),
+      "目标：\n\(task.prompt)",
+      "任务目录：`\(directory)`",
+      emailInstruction,
+      "立项后使用 Gmail 读取该线程，检查 1315518325@qq.com 是否有新增要求并纳入本轮工作。随后直接实现、测试和验证，不要只阅读、评估或汇报计划。",
+    ]
+  }
+  var executionCoordinates = [
+    "本轮发送前小程序必须重新选择并确认模型 `GPT-5.6 Sol`、推理强度 `Extra High`；未确认成功不得发送。这个要求适用于第一轮、每一轮续作和验收 Chat。"
   ]
-  if task.prompt != originalGoal {
-    sections.append("当前任务目标摘要（revision \(revision)）：\n\(task.prompt)")
+  if !repository.isEmpty {
+    let repositoryURL = "https://github.com/\(repository)"
+    let taskDirectoryURL = "\(repositoryURL)/tree/main/\(directory)"
+    executionCoordinates.append("GitHub 代码源（每轮都必须明确使用）：使用本轮已选择的 GitHub 连接器打开并操作仓库 `\(repository)`（\(repositoryURL)）。任务文件位于该仓库的 `\(directory)`（\(taskDirectoryURL)）；必须先通过 GitHub 连接器读取这些任务文件，再读取并修改同一仓库中的实际代码。不要在其他仓库、父目录或临时示例里工作。")
   }
-  sections.append("当前动态任务修订：revision \(revision)。本轮只能按该修订及其规范完成任务；如果控制器发现更新修订，会在下一轮新 Chat 自动注入。")
-  if !digest.isEmpty {
-    sections.append("当前规范摘要指纹：\(digest)")
+  if !codeDirectory.isEmpty {
+    executionCoordinates.append("代码修改位置：仓库 `\(repository)` 下的 `\(codeDirectory)`。从这里定位首个未通过验收项涉及的源文件，直接编辑代码并运行相应测试；任务文档目录只用于读取目标，不能把只改文档当作实现。")
   }
-  if let sources = task.specSources, !sources.isEmpty {
-    sections.append("当前规范文件（不要把正文复制进提示词；开始工作前通过当前 checkout 逐一读取，并以这些文件的实际内容为准）：\n\(sources.map { "- \($0)" }.joined(separator: "\n"))")
-  }
+  executionCoordinates.append("本轮工作门槛：除非正在等待已启动的外部作业或确有需要人工介入的卡点，否则本轮必须产生可核验的实际代码变更并完成相应测试。只阅读代码、查看状态、复述结果、发邮件或说明计划，都不算完成本轮工作，也不允许因此结束回复。结束前检查 Git diff/提交状态和测试证据；任务未全部完成就继续实现。")
+  sections.insert(contentsOf: executionCoordinates, at: 0)
+  sections.append("实际工作只允许在 Chat 页面完成，不进入 Work 页面。")
+  sections.append("当前修订：\(revision)；规范指纹：\(digest)；连接器：\(task.connector)。任务发送轮次：\(task.attempts + 1)。")
+  sections.append("每轮开始都必须重新读取任务目录以发现更新。未全部完成就继续工作；本轮必须结束时，阶段未完成、等待、阻塞和全部完成都只使用末尾同一个模板。只有整个任务全部完成才设置 all_tasks_complete=true。")
+  sections.append("邮件读取是每轮硬性步骤：第一轮、续作轮和验收轮开始时都必须用 Gmail 读取立项线程并检查 1315518325@qq.com 的新增要求。不要因为 Chat 结束而机械发邮件；只有产生可核验的实质进展（代码实现、重要测试/构建/部署里程碑、commit/PR/release 或全部完成），或者确实需要人工提供信息、权限、凭证或决策时，才回复同一线程。只读检查、计划、复述、无改动失败尝试或未变化的等待不得发邮件，也不得重复发送同一进展。")
   if let directive = task.pendingDirective, !directive.isEmpty {
-    sections.append("本修订追加指令：\n\(directive)")
+    sections.append("本修订新增要求：\n\(directive)")
   }
-  sections.append("完成和未完成机器报告都必须包含 task_id=\(task.id)、applied_task_revision=\(revision) 和 applied_spec_digest=\(digest)。缺少这些字段或使用旧修订的报告都不会被接受。")
-  sections.append("任务发送轮次：\(task.attempts + 1)。")
-  if let rawFeedback = task.reviewFeedback {
-    let feedback = chatOnlyInstruction(rawFeedback)
-    if !feedback.isEmpty {
-      sections.append("上一轮验收未通过。必须修正以下问题后重新完成全部验证：\n\(feedback)")
-    }
-  }
-  sections.append("任务编号：\(task.id)。完成后请在最终总结中给出可复核的修改、未完成项、卡点和验证结果。")
   return sections.joined(separator: "\n\n")
 }
 
@@ -453,8 +593,15 @@ func automationReviewMessage(
   let completed = chatOnlyInstruction(report.completed.joined(separator: "；"))
   let verification = chatOnlyInstruction(report.verification.joined(separator: "；"))
   let summary = chatOnlyInstruction(report.summary)
+  let repository = task.repository ?? "未指定"
+  let codeDirectory = task.codeDirectory ?? "未指定"
+  let taskDirectory = taskDocumentDirectory(task)
   return """
   这是任务 \(task.id) 的独立验收 Chat。请在当前 checkout 中只做复核，不要凭上一轮 Chat 的自报结果认定完成，也不要覆盖或重置任何改动。验收必须在 Chat 页面完成，不要进入 Work 页面。
+
+  本轮发送前小程序必须重新确认 GPT-5.6 Sol 与 Extra High。使用 GitHub 连接器操作仓库 `\(repository)`；任务文件路径是 `\(taskDirectory)`，代码修改路径是 `\(codeDirectory)`。如果验收发现问题，必须直接修改代码并运行测试；只阅读或汇报不算通过。
+
+  验收开始前读取 `\(taskDirectory)/.mahayana-project-email.json`，使用 Gmail 读取其中记录的立项线程，并检查 1315518325@qq.com 是否有新增要求。不要因为验收 Chat 结束而机械发邮件；只有验收产生新的实质性修复/验证里程碑、确认整个任务完成，或需要人工信息/权限时才回复同一线程。
 
   原始任务目标（不可变）：
   \(task.originalPrompt ?? task.prompt)
@@ -476,7 +623,7 @@ func automationReviewMessage(
   已完成项：\(completed)
   被验收 Chat 的验证：\(verification)
 
-  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。重型测试、构建和安装包验证必须以 GitHub Actions 结果为准，不要在本机生成构建产物。若 Actions、部署、发布审核或网络恢复仍在进行，必须留在这个验收 Chat 内自行等待并轮询，拿到结果后继续验收，不得回复等待时间后退出。重复卡点不能只照抄旧错误，应诊断并换可行路径。验收全部通过时，必须按消息末尾的完成模板输出同一任务修订的 `status=complete` 报告；验收不通过时，必须按未完成模板输出 `status=incomplete` 或 `status=blocked` 报告。`MAHAYANA_REVIEW_ACCEPTED` 可以作为辅助证据，但不是完成识别的唯一条件。
+  请检查工作树、关键实现、Git/GitHub/Actions 或发布构件等与任务目标相关的证据。云端 GitHub 状态必须通过 GitHub 连接器核验；本地 checkout 仅通过 bhrum2 读取或安全同步。若 Actions、部署、发布审核或网络恢复仍在进行，留在本 Chat 内轮询。验收未通过就直接修复并继续验证；本轮必须结束时使用消息末尾唯一模板。只有全部通过才可同时输出 `status=complete` 和 `all_tasks_complete=true`。`MAHAYANA_REVIEW_ACCEPTED` 只能作为辅助证据。
   """
 }
 
@@ -637,6 +784,8 @@ func taskPublicPayload(_ task: AutomationTask, includeResult: Bool = false) -> [
     "taskUpdateCount": task.taskUpdates?.count ?? 0,
     "specUpdatedAt": task.specUpdatedAt as Any,
     "connector": task.connector,
+    "repository": task.repository as Any,
+    "codeDirectory": task.codeDirectory as Any,
     "dependsOn": task.dependsOn,
     "resourceLocks": task.resourceLocks,
     "priority": task.priority,

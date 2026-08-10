@@ -38,7 +38,7 @@ const incoming = incomingRaw.map((task) => ({
   revision: Math.max(1, Number(task?.revision || 1)),
   maxTaskContinuations: Math.min(
     20,
-    Math.max(1, Number(task?.maxTaskContinuations ?? 6)),
+    Math.max(0, Number(task?.maxTaskContinuations ?? 0)),
   ),
   ...readSpecSnapshot(task),
 }));
@@ -58,7 +58,7 @@ const appended = [];
 const requeued = [];
 const revised = [];
 
-const resetExecution = (task) => {
+const resetExecution = (task, freshGoal = false) => {
   const reviewConversationId = String(task.reviewConversationId || '').trim();
   if (reviewConversationId) {
     // A review Chat is a branch of this same task. Recovery/revision must
@@ -91,6 +91,13 @@ const resetExecution = (task) => {
   task.waitingUntil = null;
   task.waitReason = null;
   task.lastError = null;
+  if (freshGoal) {
+    task.conversationId = null;
+    task.chatURL = null;
+    task.continuationDepth = 0;
+    task.appliedRevision = task.appliedRevision || null;
+    task.appliedSpecDigest = task.appliedSpecDigest || null;
+  }
   task.updatedAt = now;
 };
 
@@ -103,6 +110,8 @@ for (const task of incoming) {
     const contentChanged = task.specDigest !== previousSpecDigest
       || (task.prompt !== undefined && task.prompt !== existing.prompt)
       || (task.title !== undefined && task.title !== existing.title)
+      || (task.repository || null) !== (existing.repository || null)
+      || (task.codeDirectory || null) !== (existing.codeDirectory || null)
       || (task.directive || null) !== (existing.pendingDirective || null);
     if (task.revision < previousRevision) continue;
     if (task.revision === previousRevision && contentChanged) {
@@ -111,6 +120,7 @@ for (const task of incoming) {
     const specChanged = task.revision > previousRevision;
     for (const field of [
       'title', 'prompt', 'promptTemplate', 'connector', 'dependsOn',
+      'repository', 'codeDirectory',
       'resourceLocks', 'priority', 'timeout', 'maxTaskContinuations',
       'maxRuntimeRetries',
     ]) {
@@ -121,6 +131,8 @@ for (const task of incoming) {
     existing.specSources = task.specSources || [];
     existing.specSnapshot = task.specSnapshot || '';
     existing.specDigest = task.specDigest;
+    existing.workspaceRoot = workspace;
+    existing.taskControlPath = path.relative(workspace, inboxPath);
     existing.pendingDirective = task.directive || null;
     existing.applyMode = task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat';
     existing.taskUpdates ||= [];
@@ -142,7 +154,11 @@ for (const task of incoming) {
     if (specChanged && existing.status !== 'cancelled') {
       existing.reviewFeedback =
         `任务规范已更新到 revision ${task.revision}；旧修订完成结果无效。`;
-      if (existing.status !== 'running') resetExecution(existing);
+      // A changed goal is a new project round, never a continuation of the
+      // old Chat. The old server-side response may finish independently, but
+      // the queue immediately drops its branch identity and sends a full
+      // first-round prompt in a fresh Chat.
+      resetExecution(existing, true);
       revised.push(existing.id);
     } else if (['failed', 'blocked'].includes(existing.status)) {
       resetExecution(existing);
@@ -162,6 +178,10 @@ for (const task of incoming) {
     specSources: task.specSources || [],
     specSnapshot: task.specSnapshot || '',
     specDigest: task.specDigest,
+    workspaceRoot: workspace,
+    taskControlPath: path.relative(workspace, inboxPath),
+    repository: task.repository || null,
+    codeDirectory: task.codeDirectory || null,
     appliedSpecDigest: null,
     pendingDirective: task.directive || null,
     applyMode: task.applyMode === 'interrupt' ? 'interrupt' : 'next_chat',

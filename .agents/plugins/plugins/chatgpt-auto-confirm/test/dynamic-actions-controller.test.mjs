@@ -49,6 +49,8 @@ test('goal versions are idempotent and dependencies use desired runtime ids', ()
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.goalVersion)));
   assert.ok(inbox.tasks.every(task => Number.isInteger(task.revision)));
   assert.ok(inbox.tasks.every(task => Array.isArray(task.specSources) && task.specSources.length > 0));
+  assert.ok(inbox.tasks.every(task => task.repository === 'bhrumom/fabushi'));
+  assert.ok(inbox.tasks.every(task => typeof task.codeDirectory === 'string'));
 });
 
 test('task updates never cancel the currently running Chat', () => {
@@ -89,12 +91,25 @@ test('unchanged terminal tasks preserve the child controller recovery budget', (
   );
 });
 
-test('every dispatched work Chat receives a complete machine report contract', () => {
-  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V2/);
-  assert.match(controller, /"status":"complete"/);
-  assert.match(controller, /"status":"incomplete\|blocked"/);
+test('every dispatched work Chat receives one machine report contract', () => {
+  assert.match(controller, /MAHAYANA_TASK_REPORT_CONTRACT_V4/);
+  assert.match(controller, /"status":"incomplete"/);
+  assert.match(controller, /"all_tasks_complete":false/);
+  assert.doesNotMatch(controller, /MAHAYANA_TASK_WAIT_V1/);
   assert.match(controller, /"task_id":\$\{taskId\}/);
-  assert.match(controller, /完成报告会停止该任务的重复派发/);
+  assert.match(controller, /\.mahayana-project-email\.json/);
+  assert.match(controller, /第一轮、续作轮和验收轮开始时都必须读取同一线程/);
+  assert.match(controller, /不要每轮机械发邮件/);
+  assert.match(controller, /可核验的实质进展/);
+});
+
+test('every round names the model, repository, task path, code path, and code-change gate', () => {
+  assert.match(controller, /GPT-5\.6 Sol/);
+  assert.match(controller, /Extra High/);
+  assert.match(controller, /task\.repository \|\| repository/);
+  assert.match(controller, /task\.documentDirectory/);
+  assert.match(controller, /task\.codeDirectory/);
+  assert.match(controller, /必须产生可核验的代码变更/);
 });
 
 test('each task sends one document folder path and link without document bodies', () => {

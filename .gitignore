@@ -9,6 +9,7 @@ native-web/
 node_modules/
 .mahayana-state/
 .mahayana-distribution/
+**/.mahayana-project-email.json
 /codex-computer-use-plugin.tar.gz
 /codex-computer-use-plugin.zip
 .env
