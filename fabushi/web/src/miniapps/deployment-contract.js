@@ -558,3 +558,187 @@ export function assertGithubAppControlPlane(value = {}) {
   }
   return { ...GITHUB_APP_TOKEN_POLICY };
 }
+
+const EMAIL_LIKE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+const PHONE_LIKE = /(?:\+?\d[\s().-]*){7,}/;
+
+function compactPiiToken(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export function createManagedRepositoryName({ slug, publicId, piiValues = [] } = {}) {
+  const rawSlug = requiredString(slug, 'slug', 160);
+  const rawPublicId = requiredString(publicId, 'publicId', 64);
+  if (EMAIL_LIKE.test(rawSlug) || PHONE_LIKE.test(rawSlug)) {
+    fail('repository_name_pii', 'managed repository names cannot contain email addresses or phone numbers');
+  }
+  const safeSlug = rawSlug
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'app';
+  const safePublicId = rawPublicId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 16);
+  if (!safePublicId) fail('repository_public_id_invalid', 'publicId must contain a non-PII stable identifier');
+  const repositoryName = `miniapp-${safeSlug}-${safePublicId}`.slice(0, 100);
+  const compactName = compactPiiToken(repositoryName);
+  for (const value of piiValues) {
+    const token = compactPiiToken(value);
+    if (token.length >= 4 && compactName.includes(token)) {
+      fail('repository_name_pii', 'managed repository name contains a protected user identifier');
+    }
+  }
+  return normalizeRepositoryName(repositoryName, 'repositoryName');
+}
+
+export function selectManagedRepositoryShard(shards, config = {}) {
+  if (!Array.isArray(shards) || shards.length === 0) {
+    fail('managed_shard_unavailable', 'managed user app repository shards are not configured');
+  }
+  const officialSourceOwner = normalizeOwner(config.officialSourceOwner ?? 'bhrumom', 'officialSourceOwner');
+  const eligible = shards.map((shard, index) => {
+    if (!shard || typeof shard !== 'object' || Array.isArray(shard)) {
+      fail('managed_shard_invalid', 'managed repository shard must be an object', { index });
+    }
+    const owner = normalizeOwner(shard.owner, `shards[${index}].owner`);
+    if (owner.toLowerCase() === officialSourceOwner.toLowerCase()) {
+      fail('managed_owner_trust_boundary', 'managed repository shards cannot use the official source organization', { owner });
+    }
+    const repositoryCount = Number(shard.repositoryCount);
+    const hardStopRepositoryCount = Number(shard.hardStopRepositoryCount);
+    if (!Number.isSafeInteger(repositoryCount) || repositoryCount < 0 || !Number.isSafeInteger(hardStopRepositoryCount) || hardStopRepositoryCount <= 0) {
+      fail('managed_shard_capacity_invalid', 'managed repository shard capacity must be explicitly configured', { owner });
+    }
+    return {
+      owner,
+      repositoryCount,
+      hardStopRepositoryCount,
+      acceptingNewRepositories: shard.acceptingNewRepositories !== false,
+    };
+  }).filter((shard) => shard.acceptingNewRepositories && shard.repositoryCount < shard.hardStopRepositoryCount);
+
+  if (eligible.length === 0) {
+    fail('managed_shard_capacity_exhausted', 'all managed repository shards are closed or at their safety watermark');
+  }
+  eligible.sort((left, right) => left.repositoryCount - right.repositoryCount || left.owner.localeCompare(right.owner));
+  return eligible[0];
+}
+
+function normalizeProvisioningRequest(value, config) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('managed_repo_request_invalid', 'managed repository request must be an object');
+  const subjectId = requiredString(value.subjectId, 'subjectId', 192);
+  const idempotencyKey = requiredString(value.idempotencyKey, 'idempotencyKey', 192);
+  const deploymentId = requiredString(value.deploymentId, 'deploymentId', 192);
+  const snapshotSha256 = requiredString(value.snapshotSha256, 'snapshotSha256', 64).toLowerCase();
+  if (!SHA256.test(snapshotSha256)) fail('snapshot_sha_invalid', 'snapshotSha256 must be a 64 character SHA-256 digest');
+  const shard = selectManagedRepositoryShard(value.shards, config);
+  const repositoryName = createManagedRepositoryName({ slug: value.slug, publicId: value.publicId, piiValues: value.piiValues });
+  const fingerprint = canonicalJson({ deploymentId, snapshotSha256, owner: shard.owner, repositoryName });
+  return {
+    subjectId,
+    idempotencyKey,
+    claimKey: `${subjectId}:${idempotencyKey}`,
+    deploymentId,
+    snapshotSha256,
+    shard,
+    repositoryName,
+    fingerprint,
+  };
+}
+
+export function createManagedRepositoryProvisioner({ claims, github, officialSourceOwner = 'bhrumom' } = {}) {
+  if (!claims || typeof claims.get !== 'function' || typeof claims.claim !== 'function' || typeof claims.update !== 'function') {
+    fail('managed_repo_claim_store_required', 'managed repository provisioning requires a persistent idempotency claim store');
+  }
+  if (!github || typeof github.createRepository !== 'function' || typeof github.reconcileRepository !== 'function') {
+    fail('managed_repo_github_adapter_required', 'managed repository provisioning requires GitHub create and reconcile adapters');
+  }
+  const inflight = new Map();
+
+  async function finishFromRepository(request, repository) {
+    const repositoryId = Number(repository?.repositoryId ?? repository?.id);
+    if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0) {
+      fail('managed_repo_receipt_invalid', 'GitHub repository receipt is missing a stable repository ID');
+    }
+    const receipt = {
+      state: 'created',
+      repositoryId,
+      repositoryOwner: request.shard.owner,
+      repositoryName: request.repositoryName,
+      deploymentId: request.deploymentId,
+      snapshotSha256: request.snapshotSha256,
+      fingerprint: request.fingerprint,
+    };
+    await claims.update(request.claimKey, receipt);
+    return receipt;
+  }
+
+  async function provisionOnce(value) {
+    const request = normalizeProvisioningRequest(value, { officialSourceOwner });
+    let existing = await claims.get(request.claimKey);
+    if (existing && existing.fingerprint !== request.fingerprint) {
+      fail('idempotency_conflict', 'idempotency key was already used for a different managed repository request');
+    }
+    if (existing?.repositoryId) return existing;
+
+    if (!existing) {
+      const claimed = await claims.claim(request.claimKey, {
+        state: 'claimed',
+        fingerprint: request.fingerprint,
+        deploymentId: request.deploymentId,
+        snapshotSha256: request.snapshotSha256,
+        repositoryOwner: request.shard.owner,
+        repositoryName: request.repositoryName,
+      });
+      existing = claimed?.claim ?? claimed;
+      if (existing?.fingerprint !== request.fingerprint) {
+        fail('idempotency_conflict', 'idempotency key was concurrently claimed for a different managed repository request');
+      }
+      if (existing?.repositoryId) return existing;
+      if (claimed?.created === false) {
+        const reconciled = await github.reconcileRepository({ owner: request.shard.owner, name: request.repositoryName, deploymentId: request.deploymentId });
+        if (reconciled) return finishFromRepository(request, reconciled);
+        fail('managed_repo_provision_in_progress', 'managed repository creation is already in progress for this idempotency key');
+      }
+    } else {
+      const reconciled = await github.reconcileRepository({ owner: request.shard.owner, name: request.repositoryName, deploymentId: request.deploymentId });
+      if (reconciled) return finishFromRepository(request, reconciled);
+      if (existing.state === 'outcome-unknown' || existing.state === 'creating' || existing.state === 'claimed') {
+        fail('managed_repo_outcome_unknown', 'repository create outcome is unknown; reconciliation must complete before retrying creation');
+      }
+    }
+
+    await claims.update(request.claimKey, { state: 'creating' });
+    try {
+      const repository = await github.createRepository({
+        owner: request.shard.owner,
+        name: request.repositoryName,
+        visibility: 'private',
+        deploymentId: request.deploymentId,
+        idempotencyKey: request.idempotencyKey,
+      });
+      return await finishFromRepository(request, repository);
+    } catch (error) {
+      if (error?.outcomeUnknown === true || error?.code === 'outcome-unknown') {
+        await claims.update(request.claimKey, { state: 'outcome-unknown' });
+        const reconciled = await github.reconcileRepository({ owner: request.shard.owner, name: request.repositoryName, deploymentId: request.deploymentId });
+        if (reconciled) return finishFromRepository(request, reconciled);
+        fail('managed_repo_outcome_unknown', 'GitHub create result is unknown and no repository could be reconciled');
+      }
+      await claims.update(request.claimKey, { state: 'failed' });
+      throw error;
+    }
+  }
+
+  return async function provisionManagedRepository(value) {
+    const subjectId = requiredString(value?.subjectId, 'subjectId', 192);
+    const idempotencyKey = requiredString(value?.idempotencyKey, 'idempotencyKey', 192);
+    const key = `${subjectId}:${idempotencyKey}`;
+    if (inflight.has(key)) return inflight.get(key);
+    const promise = provisionOnce(value).finally(() => inflight.delete(key));
+    inflight.set(key, promise);
+    return promise;
+  };
+}

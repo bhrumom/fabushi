@@ -312,3 +312,29 @@ jobs:
           name: mahayana-v12-T03.1-evidence
           path: .mahayana/evidence/v12/T03.1.json
           if-no-files-found: error
+
+  idempotent-repo-create:
+    name: v12 / T03.2 idempotent-repo-create
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run idempotent managed repository create assertions
+        run: node --test fabushi/web/tests/miniapp-idempotent-repo-create-contract.test.js
+      - name: Write evidence marker
+        run: |
+          mkdir -p .mahayana/evidence/v12
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          with open('.mahayana/evidence/v12/T03.2.json', 'w', encoding='utf-8') as f:
+              json.dump({'taskId':'T03.2','checkName':'v12 / T03.2 idempotent-repo-create','commit':os.environ['GITHUB_SHA'],'runUrl':f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'assertions':['atomic idempotency claim','concurrent retry single repository id','outcome unknown reconcile first','managed shard capacity fail closed','PII repository naming rejected'],'externalReceipts':[],'completedAt':datetime.now(timezone.utc).isoformat().replace('+00:00','Z')}, f, indent=2)
+          PY
+      - name: Upload T03.2 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-v12-T03.2-evidence
+          path: .mahayana/evidence/v12/T03.2.json
+          if-no-files-found: error
