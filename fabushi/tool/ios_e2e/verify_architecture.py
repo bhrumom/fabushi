@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -37,6 +38,77 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(f"iOS MiniApp E2E architecture violation: {message}")
 
 
+DART_DIRECTIVE_RE = re.compile(
+    r"(?ms)^\s*(?:import|export|part)\s+(.*?);"
+)
+DART_URI_RE = re.compile(r"['\"]([^'\"]+)['\"]")
+
+
+def _dart_local_targets(source: Path, lib_root: Path) -> list[Path]:
+    targets: list[Path] = []
+    text = source.read_text(encoding="utf-8", errors="ignore")
+    for directive in DART_DIRECTIVE_RE.findall(text):
+        for uri in DART_URI_RE.findall(directive):
+            if uri.startswith("dart:"):
+                continue
+            if uri.startswith("package:global_dharma_sharing/"):
+                target = lib_root / uri.split("/", 1)[1]
+            elif uri.startswith("package:"):
+                continue
+            else:
+                target = (source.parent / uri).resolve()
+            if target.exists() and target.suffix == ".dart":
+                targets.append(target.resolve())
+    return targets
+
+
+def require_no_dead_dart_sources() -> None:
+    """Keep the host source tree equal to real runtime/test/tool entry closures."""
+    lib_root = (ROOT / "fabushi/lib").resolve()
+    roots: set[Path] = {(lib_root / "main.dart").resolve()}
+
+    # A dormant platform module is allowed only when a test/integration/tool
+    # explicitly owns it. This keeps development utilities testable without
+    # letting unreferenced standalone-App code accumulate in lib/ again.
+    for base in (
+        ROOT / "fabushi/test",
+        ROOT / "fabushi/integration_test",
+        ROOT / "fabushi/tool",
+    ):
+        if not base.exists():
+            continue
+        for source in base.rglob("*.dart"):
+            for target in _dart_local_targets(source.resolve(), lib_root):
+                try:
+                    target.relative_to(lib_root)
+                except ValueError:
+                    continue
+                roots.add(target)
+
+    reachable: set[Path] = set()
+    queue: deque[Path] = deque(sorted(roots))
+    while queue:
+        source = queue.popleft().resolve()
+        if source in reachable or not source.exists():
+            continue
+        reachable.add(source)
+        for target in _dart_local_targets(source, lib_root):
+            try:
+                target.relative_to(lib_root)
+            except ValueError:
+                continue
+            if target not in reachable:
+                queue.append(target)
+
+    all_sources = {path.resolve() for path in lib_root.rglob("*.dart")}
+    dead = sorted(all_sources - reachable)
+    require(
+        not dead,
+        "unreachable Dart sources must be deleted or wired/tested: "
+        + ", ".join(str(path.relative_to(lib_root)) for path in dead[:20]),
+    )
+
+
 def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     pubspec = PUBSPEC.read_text(encoding="utf-8")
@@ -54,6 +126,8 @@ def main() -> int:
     canonical_plugin = json.loads(CANONICAL_PLUGIN.read_text(encoding="utf-8"))
     flow = json.loads(FLOW.read_text(encoding="utf-8"))
     flow_text = json.dumps(flow, ensure_ascii=False)
+
+    require_no_dead_dart_sources()
 
     forbidden_workflow = {
         r"\bmahayana\s+marketplace\s+install\b":
