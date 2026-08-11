@@ -74,6 +74,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore production-contract Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs
+          shared-key: ios-miniapp-production-contract
+
       - name: Verify E2E architecture cannot fake mobile installation
         shell: bash
         run: |

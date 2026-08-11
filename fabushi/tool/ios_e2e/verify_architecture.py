@@ -503,6 +503,8 @@ def main() -> int:
     require(
         "platform-slim-contract:" in workflow
         and "ios-dependency-contract:" in workflow
+        and "Restore production-contract Rust cache" in workflow
+        and "Swatinem/rust-cache@v2" in workflow
         and "Restore cached iOS E2E Runner.app" in workflow
         and "Save cached iOS E2E Runner.app" in workflow,
         "CI must keep lightweight platform/dependency gates and the content-addressed Runner.app cache",
