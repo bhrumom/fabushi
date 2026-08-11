@@ -55,3 +55,9 @@ python3 fabushi/tool/ios_e2e/marketplace_fixture.py \
   --commit-sha "$(git rev-parse HEAD)" \
   --build-only
 ```
+
+The workflow uses `marketplace_fixture_probe.py` in both L1 and L2. It waits for the OS-assigned loopback URL, bypasses ambient HTTP proxies, and can verify the complete browse/release/download/SHA/size contract. Keeping one probe prevents the cheap Linux contract and the expensive macOS black-box gate from drifting apart.
+
+`appium_flow.py` also writes `report.html` next to `timeline.jsonl`. The report uses artifact-relative screenshot/XML links and records a structured failure event even when WebDriver session creation fails, so an uploaded artifact can be inspected without manually correlating file names. Local Appium HTTP requests bypass ambient proxy settings.
+
+Automatic repair is intentionally separate from the test job. `.github/workflows/ios-e2e-codex-autofix.yml` is dormant unless both `OPENAI_API_KEY` and the repository variable `IOS_E2E_AUTOFIX_ENABLED=true` are configured. The public repository must not reuse seeded ChatGPT auth/session credentials for PR autofix. Codex has read-only repository permissions and produces only a patch artifact; a separate writeback job without OpenAI credentials verifies the stale-head guard and cheap architecture contracts before pushing, with a hard cap of two repair rounds.

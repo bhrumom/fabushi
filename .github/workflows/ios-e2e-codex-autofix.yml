@@ -1,0 +1,398 @@
+name: iOS E2E Codex Autofix
+
+on:
+  workflow_run:
+    workflows: ["iOS External MiniApp E2E"]
+    types: [completed]
+
+concurrency:
+  group: ios-e2e-codex-autofix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Qualify trusted PR failure
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      vars.IOS_E2E_AUTOFIX_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      eligible: ${{ steps.qualify.outputs.eligible }}
+      pr_number: ${{ steps.qualify.outputs.pr_number }}
+      head_sha: ${{ steps.qualify.outputs.head_sha }}
+      head_ref: ${{ steps.qualify.outputs.head_ref }}
+      round: ${{ steps.qualify.outputs.round }}
+    steps:
+      - name: Require one trusted internal PR and bound repair rounds
+        id: qualify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const repoFullName = `${context.repo.owner}/${context.repo.repo}`;
+            let candidates = Array.isArray(run.pull_requests) ? run.pull_requests : [];
+            if (candidates.length === 0) {
+              candidates = await github.paginate(
+                github.rest.repos.listPullRequestsAssociatedWithCommit,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  commit_sha: run.head_sha,
+                },
+              );
+            }
+            candidates = candidates.filter((row) => row && row.number);
+            if (candidates.length !== 1) {
+              core.info(`Autofix disabled: expected one PR, got ${candidates.length}.`);
+              core.setOutput('eligible', 'false');
+              return;
+            }
+
+            const prNumber = candidates[0].number;
+            const {data: pr} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+            const trusted =
+              pr.state === 'open' &&
+              pr.base.ref === 'main' &&
+              pr.head.repo &&
+              pr.head.repo.full_name === repoFullName &&
+              pr.head.sha === run.head_sha &&
+              trustedAssociations.has(pr.author_association);
+            if (!trusted) {
+              core.info('Autofix disabled: PR is not a trusted, open, same-repository main-targeting PR at the failing SHA.');
+              core.setOutput('eligible', 'false');
+              return;
+            }
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+            const prefix = 'fix(ios-e2e): automated Codex repair';
+            const priorRounds = commits.filter((row) =>
+              String(row.commit?.message || '').split('\n', 1)[0].startsWith(prefix)
+            ).length;
+            if (priorRounds >= 2) {
+              core.info(`Autofix disabled: ${priorRounds} automated repair rounds already ran.`);
+              core.setOutput('eligible', 'false');
+              return;
+            }
+
+            core.setOutput('eligible', 'true');
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('round', String(priorRounds + 1));
+
+  propose_patch:
+    name: Generate bounded Codex patch
+    needs: qualify
+    if: needs.qualify.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      patch_present: ${{ steps.patch.outputs.patch_present }}
+      auth_available: ${{ steps.auth.outputs.available }}
+    steps:
+      - name: Check dedicated API credential before checkout
+        id: auth
+        shell: bash
+        env:
+          CODEX_AUTOFIX_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CODEX_AUTOFIX_KEY:-}" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'OPENAI_API_KEY is not configured; automatic repair remains dormant.'
+          fi
+
+      - name: Checkout exact failing PR head without persisted credentials
+        if: steps.auth.outputs.available == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.qualify.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Collect failed run evidence without exposing write credentials
+        if: steps.auth.outputs.available == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          evidence="$GITHUB_WORKSPACE/.ios-e2e-failure-evidence"
+          mkdir -p "$evidence/artifacts"
+          gh run view "$FAILED_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+            > "$evidence/workflow-failed.log" 2>&1 || true
+          gh run download "$FAILED_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ios-external-miniapp-e2e-*' --dir "$evidence/artifacts" || true
+          find "$evidence/artifacts" -type f -name '*.mp4' -delete || true
+          printf 'run_id=%s\nhead_sha=%s\npr=%s\nround=%s\n' \
+            "$FAILED_RUN_ID" \
+            "${{ needs.qualify.outputs.head_sha }}" \
+            "${{ needs.qualify.outputs.pr_number }}" \
+            "${{ needs.qualify.outputs.round }}" \
+            > "$evidence/context.txt"
+
+      - name: Ask Codex for the smallest production-safe repair
+        if: steps.auth.outputs.available == 'true'
+        id: codex
+        uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          codex-version: "0.147.0"
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          allow-bots: true
+          effort: high
+          output-file: codex-final.md
+          codex-args: '["--ignore-user-config"]'
+          prompt: |
+            Fix the failing iOS External MiniApp E2E for this trusted internal PR.
+
+            Failure evidence is under .ios-e2e-failure-evidence/. Start with workflow-failed.log,
+            then inspect textual artifacts such as Flutter/Appium/iOS logs, timeline.jsonl,
+            Marketplace preflight, receipts, manifests, and control responses when present.
+
+            Hard constraints:
+            - docs/testing/ios-external-miniapp-e2e.md is normative; obey it.
+            - Preserve the production install path. Never preinstall/copy a plugin into the App sandbox.
+            - The black-box flow must install through the real App UI and production installer.
+            - Do not weaken exact global-dharma identity, SHA/size/source, WebView/bridge readiness,
+              screenshot/evidence, fixture/live separation, or anti-regression assertions.
+            - Do not edit .github/workflows/ios-e2e-codex-autofix.yml,
+              fabushi/tool/ios_e2e/verify_architecture.py, or
+              docs/testing/ios-external-miniapp-e2e.md.
+            - Do not commit, push, change secrets, or call GitHub APIs.
+            - Prefer the smallest fix that addresses the observed failure. Do not make speculative
+              unrelated refactors.
+            - Run the cheap local checks that are available without network access, especially
+              python syntax, JSON parsing, git diff --check, and the iOS E2E architecture guard.
+
+            Leave the repaired working tree uncommitted. Explain the root cause and changed files
+            in the final message.
+
+      - name: Enforce protected files and build binary patch artifact
+        if: steps.auth.outputs.available == 'true'
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' path; do
+            git add -N -- "$path"
+          done < <(git ls-files --others --exclude-standard -z \
+            ':(exclude).ios-e2e-failure-evidence/**' \
+            ':(exclude)codex-final.md')
+
+          changed="$(git diff --name-only HEAD -- \
+            . \
+            ':(exclude).ios-e2e-failure-evidence/**' \
+            ':(exclude)codex-final.md')"
+          printf '%s\n' "$changed" > "$RUNNER_TEMP/changed-files.txt"
+          for protected in \
+            '.github/workflows/ios-e2e-codex-autofix.yml' \
+            'fabushi/tool/ios_e2e/verify_architecture.py' \
+            'docs/testing/ios-external-miniapp-e2e.md'; do
+            if grep -Fxq "$protected" "$RUNNER_TEMP/changed-files.txt"; then
+              echo "Codex attempted to modify protected file: $protected" >&2
+              exit 1
+            fi
+          done
+
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              .github/workflows/ios-external-miniapp-e2e.yml|\
+              fabushi/tool/ios_e2e/*|\
+              fabushi/lib/services/miniapp/mahayana_marketplace_service.dart|\
+              fabushi/lib/services/miniapp/mahayana_e2e_control_io.dart|\
+              fabushi/lib/screens/mini_app_host_screen.dart|\
+              fabushi/lib/widgets/layout/telegram_chat_list.dart|\
+              third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs|\
+              third_party/mahayana/mahayana-rs/mahayana-plugin-host/src/marketplace_installer.rs)
+                ;;
+              *)
+                echo "Codex attempted to modify a file outside the iOS E2E repair allowlist: $path" >&2
+                exit 1
+                ;;
+            esac
+          done < "$RUNNER_TEMP/changed-files.txt"
+
+          git diff --check HEAD -- \
+            . \
+            ':(exclude).ios-e2e-failure-evidence/**' \
+            ':(exclude)codex-final.md'
+          git diff --binary --full-index HEAD -- \
+            . \
+            ':(exclude).ios-e2e-failure-evidence/**' \
+            ':(exclude)codex-final.md' \
+            > "$RUNNER_TEMP/ios-e2e-autofix.patch"
+          if [[ -s "$RUNNER_TEMP/ios-e2e-autofix.patch" ]]; then
+            echo 'patch_present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'patch_present=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload proposed repair patch and Codex explanation
+        if: steps.auth.outputs.available == 'true' && steps.patch.outputs.patch_present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-e2e-codex-patch-${{ github.event.workflow_run.id }}-round-${{ needs.qualify.outputs.round }}
+          path: |
+            ${{ runner.temp }}/ios-e2e-autofix.patch
+            ${{ runner.temp }}/changed-files.txt
+            codex-final.md
+          retention-days: 7
+          if-no-files-found: error
+
+  apply_patch:
+    name: Verify and write back Codex repair
+    needs: [qualify, propose_patch]
+    if: >-
+      needs.qualify.outputs.eligible == 'true' &&
+      needs.propose_patch.outputs.auth_available == 'true' &&
+      needs.propose_patch.outputs.patch_present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout exact failing PR head without persisted credentials
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.qualify.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download Codex patch artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-e2e-codex-patch-${{ github.event.workflow_run.id }}-round-${{ needs.qualify.outputs.round }}
+          path: ${{ runner.temp }}/ios-e2e-codex-patch
+
+      - name: Refuse stale head and apply patch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.qualify.outputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ needs.qualify.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          remote_head="$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+          if [[ "$remote_head" != "$EXPECTED_HEAD_SHA" ]]; then
+            echo "PR head moved from $EXPECTED_HEAD_SHA to $remote_head; refusing stale automated repair." >&2
+            exit 1
+          fi
+          git apply --check "$RUNNER_TEMP/ios-e2e-codex-patch/ios-e2e-autofix.patch"
+          git apply "$RUNNER_TEMP/ios-e2e-codex-patch/ios-e2e-autofix.patch"
+
+      - name: Re-validate protected files and repair allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only HEAD > "$RUNNER_TEMP/applied-changed-files.txt"
+          for protected in \
+            '.github/workflows/ios-e2e-codex-autofix.yml' \
+            'fabushi/tool/ios_e2e/verify_architecture.py' \
+            'docs/testing/ios-external-miniapp-e2e.md'; do
+            if grep -Fxq "$protected" "$RUNNER_TEMP/applied-changed-files.txt"; then
+              echo "Patch modifies protected policy file: $protected" >&2
+              exit 1
+            fi
+          done
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              .github/workflows/ios-external-miniapp-e2e.yml|\
+              fabushi/tool/ios_e2e/*|\
+              fabushi/lib/services/miniapp/mahayana_marketplace_service.dart|\
+              fabushi/lib/services/miniapp/mahayana_e2e_control_io.dart|\
+              fabushi/lib/screens/mini_app_host_screen.dart|\
+              fabushi/lib/widgets/layout/telegram_chat_list.dart|\
+              third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs|\
+              third_party/mahayana/mahayana-rs/mahayana-plugin-host/src/marketplace_installer.rs)
+                ;;
+              *)
+                echo "Patch modifies file outside the iOS E2E repair allowlist: $path" >&2
+                exit 1
+                ;;
+            esac
+          done < "$RUNNER_TEMP/applied-changed-files.txt"
+
+      - name: Re-run cheap architecture and syntax contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            fabushi/tool/ios_e2e/appium_flow.py \
+            fabushi/tool/ios_e2e/control_client.py \
+            fabushi/tool/ios_e2e/marketplace_fixture.py
+          if [[ -f fabushi/tool/ios_e2e/marketplace_fixture_probe.py ]]; then
+            python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture_probe.py
+          fi
+          python3 -m json.tool \
+            fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json \
+            >/dev/null
+          python3 fabushi/tool/ios_e2e/verify_architecture.py
+          git diff --check
+
+      - name: Commit only the verified patch and push current PR branch
+        id: push
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.qualify.outputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ needs.qualify.outputs.head_sha }}
+          HEAD_REF: ${{ needs.qualify.outputs.head_ref }}
+          REPAIR_ROUND: ${{ needs.qualify.outputs.round }}
+        run: |
+          set -euo pipefail
+          remote_head="$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')"
+          [[ "$remote_head" == "$EXPECTED_HEAD_SHA" ]] || {
+            echo "PR head moved before push; refusing stale automated repair." >&2
+            exit 1
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m "fix(ios-e2e): automated Codex repair [round $REPAIR_ROUND]"
+          new_sha="$(git rev-parse HEAD)"
+          basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $basic" \
+            push origin "HEAD:refs/heads/$HEAD_REF"
+          echo "sha=$new_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Record repair in PR conversation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.qualify.outputs.pr_number }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+          NEW_SHA: ${{ steps.push.outputs.sha }}
+          REPAIR_ROUND: ${{ needs.qualify.outputs.round }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "iOS E2E automatic repair round $REPAIR_ROUND pushed \`$NEW_SHA\` after failed run $FAILED_RUN_ID. The normal PR workflows now re-validate the change; automatic repair is capped at two rounds."

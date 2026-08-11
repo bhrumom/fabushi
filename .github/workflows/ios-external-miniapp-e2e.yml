@@ -22,6 +22,7 @@ on:
       - 'third_party/mahayana/**'
       - 'docs/testing/ios-external-miniapp-e2e.md'
       - '.github/workflows/ios-external-miniapp-e2e.yml'
+      - '.github/workflows/ios-e2e-codex-autofix.yml'
 
 permissions:
   contents: read
@@ -65,21 +66,12 @@ jobs:
           python3 -m py_compile fabushi/tool/ios_e2e/appium_flow.py
           python3 -m py_compile fabushi/tool/ios_e2e/control_client.py
           python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture.py
+          python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture_probe.py
           python3 -m json.tool \
             fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json \
             >/dev/null
 
-      - name: Test production marketplace install contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test \
-            --locked \
-            --manifest-path "$MAHAYANA_MANIFEST" \
-            --package mahayana-plugin-host \
-            --package mahayana-platform-client
-
-      - name: Build canonical global-dharma Marketplace fixture contract
+      - name: Serve and verify canonical global-dharma Marketplace fixture contract
         shell: bash
         run: |
           set -euo pipefail
@@ -90,7 +82,23 @@ jobs:
             --package-file "$fixture_dir/global-dharma.tar.gz" \
             --metadata-file "$fixture_dir/metadata.json" \
             --commit-sha "$GITHUB_SHA" \
-            --build-only
+            --host 127.0.0.1 \
+            --port 0 \
+            > "$fixture_dir/server.log" 2>&1 &
+          fixture_pid=$!
+          printf '%s\n' "$fixture_pid" > "$fixture_dir/server.pid"
+          cleanup_fixture() {
+            kill "$fixture_pid" 2>/dev/null || true
+            wait "$fixture_pid" 2>/dev/null || true
+          }
+          trap cleanup_fixture EXIT
+          python3 fabushi/tool/ios_e2e/marketplace_fixture_probe.py \
+            --pid-file "$fixture_dir/server.pid" \
+            --log-file "$fixture_dir/server.log" \
+            --metadata-file "$fixture_dir/metadata.json" \
+            --package-file "$fixture_dir/global-dharma.tar.gz" \
+            --query "$PLUGIN_QUERY" \
+            --full-contract
           python3 - "$fixture_dir" <<'PY'
           import hashlib
           import json
@@ -104,6 +112,8 @@ jobs:
           payload = package.read_bytes()
           assert metadata['protocol'] == 'fabushi.marketplace.fixture.v1'
           assert metadata['pluginId'] == 'global-dharma'
+          assert isinstance(metadata.get('baseUrl'), str)
+          assert metadata['baseUrl'].startswith('http://127.0.0.1:')
           canonical = json.loads(
               Path('.agents/plugins/plugins/global-dharma/.codex-plugin/plugin.json').read_text(encoding='utf-8')
           )
@@ -120,6 +130,17 @@ jobs:
           }
           assert required <= names, (required - names)
           PY
+
+      - name: Test production marketplace install contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test \
+            --locked \
+            --manifest-path "$MAHAYANA_MANIFEST" \
+            --package mahayana-plugin-host \
+            --package mahayana-platform-client
+
 
   ios-external-miniapp-e2e:
     name: iOS production-path black-box canary
@@ -203,61 +224,16 @@ jobs:
             --port 0 \
             > artifacts/logs/marketplace-fixture.log 2>&1 &
           echo $! > "$RUNNER_TEMP/marketplace-fixture.pid"
-          python3 - \
-            "$RUNNER_TEMP/marketplace-fixture.pid" \
-            artifacts/logs/marketplace-fixture.log \
-            artifacts/marketplace/fixture-metadata.json \
-            artifacts/marketplace/mode.txt <<'PY'
-          import json
-          import os
-          import sys
-          import time
-          import urllib.request
-          from pathlib import Path
-
-          pid_path = Path(sys.argv[1])
-          log_path = Path(sys.argv[2])
-          metadata_path = Path(sys.argv[3])
-          mode_path = Path(sys.argv[4])
-          pid = int(pid_path.read_text(encoding='utf-8').strip())
-          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-          deadline = time.monotonic() + 30
-          last_error = None
-          base_url = None
-          while time.monotonic() < deadline:
-              try:
-                  os.kill(pid, 0)
-              except OSError as error:
-                  diagnostic = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
-                  raise SystemExit(f'Marketplace fixture exited before readiness: {error}\n{diagnostic}')
-              try:
-                  if metadata_path.exists():
-                      metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
-                      candidate = metadata.get('baseUrl')
-                      if isinstance(candidate, str) and candidate.startswith('http://127.0.0.1:'):
-                          base_url = candidate
-                  if base_url:
-                      with opener.open(f'{base_url}/healthz', timeout=2) as response:
-                          payload = json.loads(response.read().decode('utf-8'))
-                      if payload.get('ok') is True and payload.get('protocol') == 'fabushi.marketplace.fixture.v1':
-                          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
-                              env_file.write(f'MARKETPLACE_API_BASE_URL={base_url}\n')
-                          with mode_path.open('a', encoding='utf-8') as mode_file:
-                              mode_file.write(f'apiBaseUrl={base_url}\n')
-                          raise SystemExit(0)
-              except SystemExit:
-                  raise
-              except Exception as error:
-                  last_error = error
-                  time.sleep(0.25)
-                  continue
-              time.sleep(0.1)
-          diagnostic = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
-          raise SystemExit(
-              f'Marketplace fixture did not become ready within 30 seconds; '
-              f'base_url={base_url!r}; last_error={last_error!r}\n{diagnostic}'
-          )
-          PY
+          python3 fabushi/tool/ios_e2e/marketplace_fixture_probe.py \
+            --pid-file "$RUNNER_TEMP/marketplace-fixture.pid" \
+            --log-file artifacts/logs/marketplace-fixture.log \
+            --metadata-file artifacts/marketplace/fixture-metadata.json \
+            --package-file artifacts/marketplace/global-dharma.tar.gz \
+            --query "$PLUGIN_QUERY" \
+            --full-contract \
+            --github-env "$GITHUB_ENV" \
+            --mode-file artifacts/marketplace/mode.txt \
+            | tee artifacts/marketplace/fixture-probe.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -266,6 +242,27 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Fingerprint Rust toolchain
+        id: rust-toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc -vV | tee artifacts/logs/rustc-version.txt
+          fingerprint="$(rustc -vV | shasum -a 256 | awk '{print $1}')"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore iOS Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            third_party/mahayana/mahayana-rs/target
+          key: ios-mahayana-rust-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}-${{ hashFiles('third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml') }}
+          restore-keys: |
+            ios-mahayana-rust-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}-
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -351,16 +348,37 @@ jobs:
           PY
           xcrun simctl io "$udid" screenshot artifacts/ios/screenshots/00-clean-simulator.png
 
-      - name: Build iOS Simulator app
+      - name: Resolve Flutter dependencies
         working-directory: fabushi
         shell: bash
+        timeout-minutes: 10
         run: |
           set -o pipefail
           flutter pub get 2>&1 | tee ../artifacts/logs/flutter-pub-get.log
+
+      - name: Build iOS Simulator app
+        working-directory: fabushi
+        shell: bash
+        timeout-minutes: 60
+        run: |
+          set -o pipefail
           flutter build ios --simulator --debug --no-codesign \
             --dart-define=FABUSHI_E2E_CONTROL=true 2>&1 \
             | tee ../artifacts/logs/flutter-ios-build.log
           test -d build/ios/iphonesimulator/Runner.app
+
+      - name: Snapshot resolved dependency locks
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dependencies
+          cp fabushi/pubspec.lock artifacts/dependencies/pubspec.lock.resolved
+          if [[ -f fabushi/ios/Podfile.lock ]]; then
+            cp fabushi/ios/Podfile.lock artifacts/dependencies/Podfile.lock.resolved
+          fi
+          git diff -- fabushi/pubspec.lock fabushi/ios/Podfile.lock \
+            > artifacts/dependencies/lock-diff.patch || true
 
       - name: Install Fabushi into Simulator
         id: app
@@ -513,10 +531,11 @@ jobs:
           import time
           import urllib.request
 
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
           deadline = time.monotonic() + 90
           while time.monotonic() < deadline:
               try:
-                  with urllib.request.urlopen('http://127.0.0.1:4723/status', timeout=3) as response:
+                  with opener.open('http://127.0.0.1:4723/status', timeout=3) as response:
                       payload = json.loads(response.read().decode('utf-8'))
                   if payload.get('value', {}).get('ready') is not False:
                       raise SystemExit(0)

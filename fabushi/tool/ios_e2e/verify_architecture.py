@@ -9,6 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/ios-external-miniapp-e2e.yml"
+PUBSPEC = ROOT / "fabushi/pubspec.yaml"
+PUBSPEC_LOCK = ROOT / "fabushi/pubspec.lock"
+AUTOFIX_WORKFLOW = ROOT / ".github/workflows/ios-e2e-codex-autofix.yml"
 FLOW = ROOT / "fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json"
 PRODUCT = ROOT / "third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs"
 INSTALLER = (
@@ -22,6 +25,7 @@ HOST = ROOT / "fabushi/lib/screens/mini_app_host_screen.dart"
 CLI = ROOT / "third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs"
 CONTROL = ROOT / "fabushi/lib/services/miniapp/mahayana_e2e_control_io.dart"
 FIXTURE = ROOT / "fabushi/tool/ios_e2e/marketplace_fixture.py"
+FIXTURE_PROBE = ROOT / "fabushi/tool/ios_e2e/marketplace_fixture_probe.py"
 CANONICAL_PLUGIN = (
     ROOT / ".agents/plugins/plugins/global-dharma/.codex-plugin/plugin.json"
 )
@@ -34,6 +38,9 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    pubspec = PUBSPEC.read_text(encoding="utf-8")
+    pubspec_lock = PUBSPEC_LOCK.read_text(encoding="utf-8")
+    autofix_workflow = AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
     product = PRODUCT.read_text(encoding="utf-8")
     installer = INSTALLER.read_text(encoding="utf-8")
     service = MARKETPLACE_SERVICE.read_text(encoding="utf-8")
@@ -41,6 +48,7 @@ def main() -> int:
     cli = CLI.read_text(encoding="utf-8")
     control = CONTROL.read_text(encoding="utf-8")
     fixture = FIXTURE.read_text(encoding="utf-8")
+    fixture_probe = FIXTURE_PROBE.read_text(encoding="utf-8")
     canonical_plugin = json.loads(CANONICAL_PLUGIN.read_text(encoding="utf-8"))
     flow = json.loads(FLOW.read_text(encoding="utf-8"))
     flow_text = json.dumps(flow, ensure_ascii=False)
@@ -101,7 +109,12 @@ def main() -> int:
         "the deterministic fixture must use an OS-assigned loopback port rather than a fixed port",
     )
     require(
-        "urllib.request.ProxyHandler({})" in workflow,
+        "marketplace_fixture_probe.py" in workflow
+        and "--full-contract" in workflow,
+        "L1 and L2 must reuse the fixture probe and verify the full HTTP distribution contract",
+    )
+    require(
+        "urllib.request.ProxyHandler({})" in fixture_probe,
         "fixture readiness checks must bypass ambient HTTP proxy configuration",
     )
     require(
@@ -111,6 +124,10 @@ def main() -> int:
     require(
         "- '.agents/plugins/plugins/global-dharma/**'" in workflow,
         "canonical global-dharma changes must trigger the iOS E2E workflow",
+    )
+    require(
+        "- '.github/workflows/ios-e2e-codex-autofix.yml'" in workflow,
+        "autofix policy changes must re-run the production-path iOS E2E architecture gate",
     )
     require(
         "--method marketplace.search" in workflow,
@@ -141,6 +158,10 @@ def main() -> int:
             forbidden not in fixture,
             f"Marketplace fixture must distribute bytes only and must not prepare app state ({forbidden})",
         )
+        require(
+            forbidden not in fixture_probe,
+            f"Marketplace fixture probe must observe distribution only and must not prepare app state ({forbidden})",
+        )
     require(
         canonical_plugin.get("name") == "global-dharma"
         and isinstance(canonical_plugin.get("version"), str)
@@ -163,6 +184,26 @@ def main() -> int:
         "each black-box run must use and clean up a bounded, isolated Simulator",
     )
     require(
+        "- name: Resolve Flutter dependencies" in workflow
+        and "timeout-minutes: 60" in workflow,
+        "dependency resolution and the expensive iOS build must be independently diagnosable and bounded",
+    )
+    require(
+        "Snapshot resolved dependency locks" in workflow
+        and "Podfile.lock.resolved" in workflow
+        and "lock-diff.patch" in workflow,
+        "macOS runs must preserve the actual Pub/CocoaPods lock resolution as evidence",
+    )
+    require(
+        "Restore iOS Rust build cache" in workflow
+        and "third_party/mahayana/mahayana-rs/target" in workflow
+        and "xcode16.4" in workflow
+        and "steps.rust-toolchain.outputs.fingerprint" in workflow
+        and "rustc -vV | tee artifacts/logs/rustc-version.txt" in workflow
+        and "hashFiles('third_party/mahayana/mahayana-rs/**/*.rs'" in workflow,
+        "iOS Rust cache identity must include the toolchain and Rust source state without bypassing Cargo",
+    )
+    require(
         "runs-on: macos-15" in workflow,
         "the iOS black-box job must use the macOS 15 runner image",
     )
@@ -180,6 +221,85 @@ def main() -> int:
         "the XCUITest driver must be pinned to 12.3.1",
     )
     require("PLUGIN_ID: global-dharma" in workflow, "the canary plugin id must be exact")
+
+    require(
+        "ffmpeg_kit_flutter_new_audio: ^2.4.4" in pubspec,
+        "FFmpegKit direct dependency must require simulator-capable 2.4.4+",
+    )
+    require(
+        'name: ffmpeg_kit_flutter_new_audio' in pubspec_lock
+        and 'sha256: "3aa91ebf1bef0191d49ab70a9e2303e715cf04260c8fbd956cf899e42e1f2a81"' in pubspec_lock
+        and 'version: "2.4.4"' in pubspec_lock,
+        "pubspec.lock must pin the verified FFmpegKit 2.4.4 archive with native iOS Simulator XCFramework support",
+    )
+
+    require(
+        'workflows: ["iOS External MiniApp E2E"]' in autofix_workflow
+        and "github.event.workflow_run.conclusion == 'failure'" in autofix_workflow
+        and "github.event.workflow_run.event == 'pull_request'" in autofix_workflow,
+        "Codex autofix must only follow failed PR executions of the iOS E2E workflow",
+    )
+    require(
+        "vars.IOS_E2E_AUTOFIX_ENABLED == 'true'" in autofix_workflow,
+        "Codex autofix must require an explicit repository-level enable switch",
+    )
+    require(
+        "openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56" in autofix_workflow
+        and 'codex-version: "0.147.0"' in autofix_workflow
+        and "secrets.OPENAI_API_KEY" in autofix_workflow,
+        "public-repository autofix must use the official Codex Action with a dedicated API key",
+    )
+    require(
+        "CHATGPT_CODEX_AUTH_B64" not in autofix_workflow
+        and "CHATGPT_SESSION_COOKIES_B64" not in autofix_workflow,
+        "public-repository autofix must never reuse seeded ChatGPT auth/session credentials",
+    )
+    require(
+        autofix_workflow.count("persist-credentials: false") >= 2,
+        "Codex-facing and writeback checkouts must not persist GitHub credentials",
+    )
+    require(
+        "name: Generate bounded Codex patch" in autofix_workflow
+        and "name: Verify and write back Codex repair" in autofix_workflow
+        and "contents: read" in autofix_workflow
+        and "contents: write" in autofix_workflow,
+        "Codex patch generation and privileged writeback must remain separate permission domains",
+    )
+    require(
+        "ios-e2e-autofix.patch" in autofix_workflow
+        and "git apply --check" in autofix_workflow,
+        "autofix must cross the permission boundary as a reviewable patch artifact",
+    )
+    require(
+        "priorRounds >= 2" in autofix_workflow
+        and "automated Codex repair [round $REPAIR_ROUND]" in autofix_workflow,
+        "automatic repair must be capped at two rounds",
+    )
+    require(
+        "pr.head.repo.full_name === repoFullName" in autofix_workflow
+        and "trustedAssociations" in autofix_workflow
+        and "pr.head.sha === run.head_sha" in autofix_workflow,
+        "autofix must reject forks, untrusted authors, and stale PR heads before Codex runs",
+    )
+    require(
+        "remote_head" in autofix_workflow
+        and autofix_workflow.count("EXPECTED_HEAD_SHA") >= 4,
+        "privileged writeback must re-check that the PR head has not moved",
+    )
+    require(
+        autofix_workflow.count("outside the iOS E2E repair allowlist") >= 2
+        and "Re-validate protected files and repair allowlist" in autofix_workflow,
+        "Codex proposal and privileged writeback must independently enforce a narrow repair-file allowlist",
+    )
+    for protected in (
+        ".github/workflows/ios-e2e-codex-autofix.yml",
+        "fabushi/tool/ios_e2e/verify_architecture.py",
+        "docs/testing/ios-external-miniapp-e2e.md",
+    ):
+        require(
+            protected in autofix_workflow,
+            f"Codex autofix must protect its policy root from self-modification ({protected})",
+        )
 
     require(
         '"mahayana.marketplace.install"' in product,
@@ -214,6 +334,21 @@ def main() -> int:
 
     require(flow.get("schemaVersion") == 1, "flow schemaVersion must remain explicit")
     require("assertAbsent" in flow_text, "flow must prove the target was not preinstalled")
+    appium_flow = (ROOT / "fabushi/tool/ios_e2e/appium_flow.py").read_text(encoding="utf-8")
+    require(
+        "report.html" in appium_flow
+        and "timeline.jsonl" in appium_flow
+        and '"session-failure"' in appium_flow,
+        "black-box evidence must include a browsable HTML report and structured session failures",
+    )
+    require(
+        "urllib.request.ProxyHandler({})" in appium_flow,
+        "local Appium WebDriver requests must bypass ambient HTTP proxy configuration",
+    )
+    require(
+        "opener.open('http://127.0.0.1:4723/status'" in workflow,
+        "Appium readiness checks must use the no-proxy loopback opener",
+    )
     required_ids = [
         "e2e.miniapp.result.{{pluginId}}.registry",
         "e2e.miniapp.install.{{pluginId}}",
