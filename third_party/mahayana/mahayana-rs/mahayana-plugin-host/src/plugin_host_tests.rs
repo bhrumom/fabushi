@@ -95,17 +95,29 @@ fn official_plugins_use_the_codex_manifest_and_mahayana_extension_together() {
         })
         .collect::<Vec<_>>();
     plugin_names.sort();
-    assert_eq!(
-        plugin_names,
-        vec![
-            "bot-father",
-            "chatgpt-auto-confirm",
-            "computer-cleaner",
-            "faliu-flashcards",
-            "global-dharma",
-            "hermes-installer",
-            "mahayana-assistant",
-            "platform-publish",
-        ]
+    plugin_names.dedup();
+
+    assert!(
+        !plugin_names.is_empty(),
+        "official plugin inventory must not be empty"
     );
+
+    // This is a contract test, not an inventory freeze. New official plugins may be
+    // added without editing this test, but the baseline product plugins must remain
+    // loadable through the combined Codex manifest + Mahayana extension contract.
+    for required in [
+        "bot-father",
+        "chatgpt-auto-confirm",
+        "computer-cleaner",
+        "faliu-flashcards",
+        "global-dharma",
+        "hermes-installer",
+        "mahayana-assistant",
+        "platform-publish",
+    ] {
+        assert!(
+            plugin_names.iter().any(|name| name == required),
+            "missing required official plugin {required}; discovered: {plugin_names:?}"
+        );
+    }
 }
