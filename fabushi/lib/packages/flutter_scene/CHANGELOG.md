@@ -1,3 +1,10 @@
+## 0.9.2-1
+
+* Replace the legacy CMake-based `flutter_scene_importer` 0.9 build hook with
+  the pure-Dart 0.11 importer and Hooks 1.0 build protocol. This keeps the
+  existing `.model` runtime schema while removing the non-reproducible
+  TinyGLTF git checkout from iOS/Android builds.
+
 ## 0.0.1-dev.1
 
 * Initial render box.

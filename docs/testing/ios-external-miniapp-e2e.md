@@ -46,6 +46,8 @@ L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
 黑盒 gate 编译的是完整 Fabushi App，因此所有 vendored iOS framework 都必须含 Simulator slice，不能通过 `EXCLUDED_ARCHS`、跳过插件注册或移除链接来“让测试通过”。`ffmpeg_kit_flutter_new_audio` 当前必须至少使用仓库已验证的 `2.4.4` 锁定版本；该版本的 iOS CocoaPods 集成使用 FFmpeg 8.1.2 `.xcframework`，同时提供 device `arm64` 与 Simulator `arm64/x86_64`。旧 `2.0.0` 只有 device framework，会导致 `building for iOS-simulator, but linking ... built for iOS`，architecture guard 必须阻止它回归。依赖 manifest/lockfile 不属于 Codex 自动修复白名单，升级第三方二进制依赖必须由正常 PR 审核。
 
+移动端 clean build 也不得依赖构建期 `CMake FetchContent` 去 checkout 不受本仓库控制的远程 Git SHA。`flutter_scene` 本地 fork 固定使用 `flutter_scene_importer 0.11.0`、`flutter_gpu_shaders 0.4.0` 与 `hooks 1.0.0`：0.11 保持现有 `.model` 运行时格式，同时把旧 0.9 的 C++/CMake TinyGLTF importer 改为纯 Dart 构建路径。根 `pubspec.lock` 和 architecture guard 必须共同锁定这组版本，并禁止 `native_assets_cli` / `generateImporterFlatbufferDart()` 旧 hook 回归。
+
 ### L2 — iOS Simulator 确定性黑盒验收（内部 PR / 默认手动）
 
 Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。Appium 固定为 `3.6.0`，XCUITest Driver 固定为 `12.3.1`。
