@@ -304,6 +304,10 @@ def main() -> int:
         ROOT / "fabushi/android/app/google-services.json",
         ROOT / "fabushi/ios/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/macos/Runner/GoogleService-Info.plist",
+        ROOT / "fabushi/ios/Runner/Configuration.storekit",
+        ROOT / "fabushi/scripts/archive/build_web_exclude_models.sh",
+        ROOT / "fabushi/scripts/archive/update_firebase_config.sh",
+        ROOT / "fabushi/scripts/setup/setup_firebase.sh",
         ROOT / "fabushi/lib/packages/flutter_earth_globe",
         ROOT / "fabushi/lib/packages/flutter_gl",
         ROOT / "fabushi/lib/packages/flutter_scene",
@@ -341,6 +345,29 @@ def main() -> int:
     require(
         "Copy Llama Libraries" not in macos_project,
         "macOS host must not restore the legacy Copy Llama Libraries build phase",
+    )
+
+    ios_info = (ROOT / "fabushi/ios/Runner/Info.plist").read_text(encoding="utf-8")
+    android_manifest = (ROOT / "fabushi/android/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    require(
+        "FLTEnableFlutterGPU" not in ios_info
+        and "EnableFlutterGPU" not in android_manifest,
+        "old 3D-only FlutterGPU opt-ins must not return to the platform host",
+    )
+    workflow_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+    )
+    require(
+        "submodules: recursive" not in workflow_text
+        and "git submodule update --init --recursive" not in workflow_text,
+        "the repository has no gitlinks; CI must not restore recursive submodule overhead",
+    )
+    require(
+        "flutter_scene_importer" not in workflow_text
+        and "Verify Android Buddha uses flutter_scene model" not in workflow_text
+        and "Verify Apple Buddha asset StoreKit product" not in workflow_text,
+        "legacy 3D/StoreKit build gates must not return to CI",
     )
 
     native_app = (ROOT / "fabushi/lib/bootstrap/native_app.dart").read_text(encoding="utf-8")

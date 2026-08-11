@@ -311,12 +311,6 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /third_party/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-
-      - name: Initialize submodules securely
-        shell: bash
-        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -562,12 +556,6 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /third_party/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-
-      - name: Initialize submodules securely
-        shell: bash
-        run: git submodule update --init --recursive
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -615,11 +603,6 @@ jobs:
             echo "CXX=$cxx"
           } >> "$GITHUB_ENV"
 
-          for package_dir in "$PUB_CACHE"/hosted/pub.dev/flutter_scene_importer-*; do
-            [ -d "$package_dir" ] || continue
-            find "$package_dir" -name CMakeCache.txt -delete
-            find "$package_dir" -type d \( -name CMakeFiles -o -name 'cmake-build-*' -o -name build \) -prune -exec rm -rf {} +
-          done
 
           xcodebuild -version
           "$cc" --version

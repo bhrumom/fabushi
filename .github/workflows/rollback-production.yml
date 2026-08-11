@@ -39,8 +39,6 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
             /.github/workflows/**
 
       - name: Resolve checked out commit

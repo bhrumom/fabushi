@@ -72,30 +72,6 @@ jobs:
             /fabushi/**
             /native/telegram-*/**
             /third_party/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            !/fabushi/native_libs/llama.cpp
-            !/fabushi/native_libs/llama.cpp/**
-
-      - name: Initialize submodules securely
-        shell: bash
-        run: git submodule update --init --recursive
-
-      - name: Verify Android Buddha uses flutter_scene model
-        shell: bash
-        working-directory: .
-        run: |
-          set -euo pipefail
-          if [ -d fabushi/web/assets/models ] && find fabushi/web/assets/models -name '*.glb' -print -quit | grep -q .; then
-            echo "Android builds must not package GLB model assets."
-            exit 1
-          fi
-          if grep -R -n -E 'AndroidThreeBuddhaView|androidThreePrimary|_shouldUseAndroidThreePrimary|_startAndroidThreePrimary|androidThreeBuddhaGlbAssetPath|legacyBuddhaGlb|minBuddhaGlbSizeBytes' fabushi/lib fabushi/test fabushi/pubspec.yaml; then
-            echo "Android Buddha renderer must stay on flutter_scene .model."
-            exit 1
-          fi
-          grep -q "models/buddha_model.model" fabushi/lib/core/config/app_config.dart
-          grep -q "AssetLoaderService.loadBuddhaModel" fabushi/lib/screens/buddha_model_screen_native.dart
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -155,15 +131,7 @@ jobs:
             /fabushi/**
             /native/telegram-*/**
             /third_party/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            !/fabushi/native_libs/llama.cpp
-            !/fabushi/native_libs/llama.cpp/**
             /.github/scripts/**
-
-      - name: Initialize submodules securely
-        shell: bash
-        run: git submodule update --init --recursive
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -241,14 +209,6 @@ jobs:
             /fabushi/**
             /native/telegram-*/**
             /third_party/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            !/fabushi/native_libs/llama.cpp
-            !/fabushi/native_libs/llama.cpp/**
-
-      - name: Initialize submodules securely
-        shell: bash
-        run: git submodule update --init --recursive
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
