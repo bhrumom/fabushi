@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import sys
 import time
@@ -33,6 +34,7 @@ class AppiumClient:
         self.udid = udid
         self.bundle_id = bundle_id
         self.session_id: str | None = None
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def request(
         self,
@@ -54,7 +56,7 @@ class AppiumClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with self.opener.open(request, timeout=timeout) as response:
                 decoded = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
@@ -98,7 +100,7 @@ class AppiumClient:
             raw_request = urllib.request.Request(
                 f"{self.server_url}/sessions", method="GET"
             )
-            with urllib.request.urlopen(raw_request, timeout=30) as result:
+            with self.opener.open(raw_request, timeout=30) as result:
                 sessions = json.loads(result.read().decode("utf-8")).get("value", [])
             if sessions:
                 self.session_id = sessions[-1].get("id")
@@ -239,6 +241,84 @@ def load_flow(path: Path) -> dict[str, Any]:
     return flow
 
 
+def write_evidence_report(timeline_path: Path, artifact_root: Path) -> None:
+    events: list[dict[str, Any]] = []
+    if timeline_path.exists():
+        for line in timeline_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                decoded = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(decoded, dict):
+                events.append(decoded)
+
+    rows: list[str] = []
+    for event in events:
+        locator = event.get("locator")
+        if isinstance(locator, dict):
+            locator_text = f"{locator.get('using', '')}: {locator.get('value', '')}"
+        else:
+            locator_text = ""
+        error = str(event.get("error", ""))
+        status = "failure" if error else "success"
+        screenshot = event.get("screenshot")
+        source = event.get("source")
+        screenshot_html = ""
+        if isinstance(screenshot, str) and screenshot:
+            escaped = html.escape(screenshot, quote=True)
+            screenshot_html = (
+                f'<a href="{escaped}"><img src="{escaped}" '
+                'alt="step screenshot" loading="lazy"></a>'
+            )
+        source_html = ""
+        if isinstance(source, str) and source:
+            escaped_source = html.escape(source, quote=True)
+            source_html = f'<a href="{escaped_source}">accessibility XML</a>'
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(event.get('step', '')))}</td>"
+            f"<td><strong>{html.escape(str(event.get('name', '')))}</strong><br>"
+            f"<code>{html.escape(str(event.get('action', '')))}</code></td>"
+            f"<td>{html.escape(status)}</td>"
+            f"<td>{html.escape(str(event.get('durationMs', '')))}</td>"
+            f"<td><code>{html.escape(locator_text)}</code></td>"
+            f"<td>{screenshot_html}</td>"
+            f"<td>{source_html}</td>"
+            f"<td><pre>{html.escape(error)}</pre></td>"
+            "</tr>"
+        )
+
+    flow_name = html.escape(str(events[0].get("flow", "iOS E2E")) if events else "iOS E2E")
+    report = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{flow_name} evidence</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; line-height: 1.4; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ border: 1px solid #bbb; padding: 8px; vertical-align: top; text-align: left; }}
+img {{ max-width: 320px; max-height: 640px; width: auto; height: auto; }}
+pre {{ white-space: pre-wrap; max-width: 38em; margin: 0; }}
+code {{ overflow-wrap: anywhere; }}
+</style>
+</head>
+<body>
+<h1>{flow_name} evidence</h1>
+<p>Generated from <a href="timeline.jsonl">timeline.jsonl</a>. Each successful action records a screenshot and accessibility tree; failures are recorded even when no Appium session is available.</p>
+<table>
+<thead><tr><th>#</th><th>Step</th><th>Status</th><th>Action ms</th><th>Locator</th><th>Screenshot</th><th>Source</th><th>Error</th></tr></thead>
+<tbody>{''.join(rows) if rows else '<tr><td colspan="8">No captured events.</td></tr>'}</tbody>
+</table>
+</body>
+</html>
+"""
+    (artifact_root / "report.html").write_text(report, encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
     artifact_root = Path(args.artifacts)
@@ -257,9 +337,26 @@ def main() -> int:
     }
     client = AppiumClient(args.server_url, args.udid, args.bundle_id)
     step_index = 0
+    write_evidence_report(timeline_path, artifact_root)
+
+    def record_event(step_name: str, started: float, detail: dict[str, Any]) -> None:
+        nonlocal step_index
+        event = {
+            "schemaVersion": FLOW_SCHEMA_VERSION,
+            "flow": flow.get("name", Path(args.flow).stem),
+            "step": step_index,
+            "name": step_name,
+            "timestamp": started,
+            "durationMs": max(0, round((time.time() - started) * 1000)),
+            **detail,
+        }
+        with timeline_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        write_evidence_report(timeline_path, artifact_root)
+        print(json.dumps(event, ensure_ascii=False), flush=True)
+        step_index += 1
 
     def capture(step_name: str, started: float, detail: dict[str, Any]) -> None:
-        nonlocal step_index
         safe_name = "".join(
             character if character.isalnum() or character in "-_" else "-"
             for character in step_name
@@ -268,20 +365,25 @@ def main() -> int:
         source_path = source_dir / f"{step_index:02d}-{safe_name}.xml"
         client.screenshot(screenshot_path)
         source_path.write_text(client.source(), encoding="utf-8")
-        event = {
-            "schemaVersion": FLOW_SCHEMA_VERSION,
-            "flow": flow.get("name", Path(args.flow).stem),
-            "step": step_index,
-            "name": step_name,
-            "timestamp": started,
-            "screenshot": str(screenshot_path),
-            "source": str(source_path),
-            **detail,
-        }
-        with timeline_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
-        print(json.dumps(event, ensure_ascii=False), flush=True)
-        step_index += 1
+        record_event(
+            step_name,
+            started,
+            {
+                "screenshot": screenshot_path.relative_to(artifact_root).as_posix(),
+                "source": source_path.relative_to(artifact_root).as_posix(),
+                **detail,
+            },
+        )
+
+    def describe_step(step: dict[str, Any]) -> dict[str, Any]:
+        detail: dict[str, Any] = {"action": step.get("action", "capture")}
+        locator = step.get("locator")
+        if isinstance(locator, dict):
+            detail["locator"] = {
+                "using": render(str(locator["using"]), variables),
+                "value": render(str(locator["value"]), variables),
+            }
+        return detail
 
     def run_step(step: dict[str, Any]) -> None:
         action = str(step.get("action", "capture"))
@@ -319,21 +421,38 @@ def main() -> int:
             capture(
                 str(step.get("name", step.get("action", "capture"))),
                 started,
-                {"action": step.get("action", "capture")},
+                describe_step(step),
             )
         return 0
     except Exception as error:
         print(f"iOS E2E failed: {error}", file=sys.stderr, flush=True)
+        failed_at = time.time()
         if client.session_id:
             try:
-                capture("failure", time.time(), {"error": str(error)})
+                capture("failure", failed_at, {"action": "failure", "error": str(error)})
             except Exception as screenshot_error:
                 print(
                     f"Could not capture failure diagnostics: {screenshot_error}",
                     file=sys.stderr,
                 )
+                record_event(
+                    "failure",
+                    failed_at,
+                    {
+                        "action": "failure",
+                        "error": str(error),
+                        "captureError": str(screenshot_error),
+                    },
+                )
+        else:
+            record_event(
+                "session-failure",
+                failed_at,
+                {"action": "createSession", "error": str(error)},
+            )
         return 1
     finally:
+        write_evidence_report(timeline_path, artifact_root)
         client.close()
 
 

@@ -113,7 +113,7 @@ dependencies:
   # - 基于 MediaPipe GenAI + LiteRT-LM 引擎
 
   # FFmpeg - 音频合并与字幕嵌入
-  ffmpeg_kit_flutter_new_audio: ^2.0.0  # FFmpeg 纯音频版本（体积小）
+  ffmpeg_kit_flutter_new_audio: ^2.4.4  # FFmpeg audio；2.4.x 提供原生 arm64 iOS Simulator XCFramework
 
   # 权限
   permission_handler: ^12.0.1

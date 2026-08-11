@@ -35,16 +35,22 @@
 Linux runner 执行：
 
 - Rust 安装器/产品命令单元测试；
-- Python flow、Control client 与 Marketplace fixture 语法检查；
-- 从仓库 canonical `.agents/plugins/plugins/global-dharma` 构建确定性 tar.gz，重算 SHA-256/size，并验证 `pluginId=global-dharma`、当前 canonical version 与 `mobile` runtime 合同；
+- Python flow、Control client、Marketplace fixture 与共用 fixture probe 语法检查；
+- 从仓库 canonical `.agents/plugins/plugins/global-dharma` 启动真实 fixture HTTP server，并由与 L2 共用的 probe 验证中文 browse → release metadata → download bytes → SHA-256/size，再验证 `pluginId=global-dharma`、当前 canonical version 与 `mobile` runtime 合同；
 - 架构 guard，禁止假安装、模糊 locator、未固定的 Appium/XCUITest/Xcode 版本，并强制 L2/L3 分层；
 - 这些测试不依赖 iOS Simulator、Marketplace 在线状态或测试账号。
 
 L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
+### iOS Simulator 二进制依赖合同
+
+黑盒 gate 编译的是完整 Fabushi App，因此所有 vendored iOS framework 都必须含 Simulator slice，不能通过 `EXCLUDED_ARCHS`、跳过插件注册或移除链接来“让测试通过”。`ffmpeg_kit_flutter_new_audio` 当前必须至少使用仓库已验证的 `2.4.4` 锁定版本；该版本的 iOS CocoaPods 集成使用 FFmpeg 8.1.2 `.xcframework`，同时提供 device `arm64` 与 Simulator `arm64/x86_64`。旧 `2.0.0` 只有 device framework，会导致 `building for iOS-simulator, but linking ... built for iOS`，architecture guard 必须阻止它回归。依赖 manifest/lockfile 不属于 Codex 自动修复白名单，升级第三方二进制依赖必须由正常 PR 审核。
+
 ### L2 — iOS Simulator 确定性黑盒验收（内部 PR / 默认手动）
 
 Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。Appium 固定为 `3.6.0`，XCUITest Driver 固定为 `12.3.1`。
+Flutter dependency resolution 与 iOS build 必须拆成独立步骤；依赖解析限制 10 分钟，完整 Simulator build 限制 60 分钟，使网络依赖问题和编译问题能被明确分类。
+iOS Rust target 可以通过 GitHub Actions cache 复用，但 cache key 必须同时绑定 Xcode 版本、实际 `rustc -vV` 指纹、`Cargo.lock` 与 Rust/Cargo 源码 hash；命中 cache 后仍由 Xcode build phase 正常执行 `cargo rustc`，不得把缓存本身当作已构建成功的证据。
 
 L2 使用 `marketplace_mode=fixture`。fixture 绑定 `127.0.0.1` 的 OS 分配临时端口（`port=0`），健康检查显式绕过环境 HTTP 代理；实际 `baseUrl` 只有在 fixture ready 后才注入 App。fixture **只替换 Marketplace 目录/Release/Download 的网络分发层**：
 
@@ -71,7 +77,7 @@ L2 使用 `marketplace_mode=fixture`。fixture 绑定 `127.0.0.1` 的 OS 分配�
 11. 等到 MiniApp Host 的 WebView 完成加载并注入 MCP bridge；
 12. 从 App sandbox 读取 production install receipt，只用于**验证证据**，不得用于准备状态；
 13. 校验 receipt、manifest、版本、SHA-256、source 身份一致；fixture 模式还必须与本次生成的 fixture metadata 完全一致；
-14. 每一步保存 PNG、accessibility XML、JSONL timeline；全程保存 Simulator 视频、Appium、Marketplace fixture（若使用）、Flutter build 和 iOS 日志。
+14. 每一步保存 PNG、accessibility XML、JSONL timeline，并增量生成 `artifacts/ios/report.html`，可以按步骤直接浏览 action、耗时、locator、截图、XML 与错误；即使 Appium session 创建失败也必须写入结构化 failure event；全程保存 Simulator 视频、Appium、Marketplace fixture（若使用）、Flutter build 和 iOS 日志。
 
 ### L3 — 真实 Marketplace Canary（nightly / 手动 live / 发布前）
 
@@ -118,9 +124,18 @@ L3 在 UI 流程前同样通过 production `marketplace.search` 精确预检 `gl
 
 - 测试账号 token 只来自 GitHub Secret；不得写入仓库、Appium capabilities、截图 metadata 或 timeline。
 - CI 可以使用现有测试账号 marker 机制建立固定测试会话；这是认证 fixture，不是插件安装 shortcut。
-- 失败时始终上传截图、页面树、timeline、视频、Appium/iOS/Flutter build 日志。
+- 失败时始终上传截图、页面树、timeline、`report.html`、视频、Appium/iOS/Flutter build 日志；报告中的截图/XML 链接必须使用 artifact 内相对路径。
 - 生产安装成功后上传的 receipt 是可审计证据；日志中不得出现 token。
 
 ## 自动修复边界
 
-测试 workflow 只负责产生确定性的失败与诊断证据，不持有修改仓库所需的写权限。若接入 coding agent，必须是独立受限流程：读取失败 artifact -> 修改当前 PR branch -> 重新触发完整 CI。禁止测试 job 自己无限循环修改代码。
+测试 workflow 本身始终保持 `contents: read`，只负责产生确定性的失败与诊断证据，不得直接修改仓库。自动修复由独立 `.github/workflows/ios-e2e-codex-autofix.yml` 承担，并且默认关闭。只有仓库管理员同时配置 `OPENAI_API_KEY` Secret 与 `IOS_E2E_AUTOFIX_ENABLED=true` Repository Variable 时才允许激活。仓库是 public，因此禁止复用 `CHATGPT_CODEX_AUTH_B64`、ChatGPT cookies 或 seeded `auth.json` 作为 PR 自动修复认证。
+
+自动修复只接受 **内部同仓库、目标为 `main`、作者关系为 OWNER/MEMBER/COLLABORATOR、失败 SHA 仍是当前 PR head** 的 PR 失败；fork PR、live/nightly 失败、head 已变化或超过两轮自动修复必须退出，不写代码。
+
+权限边界必须是两阶段：
+
+1. **Codex patch job**：`contents: read`，checkout 使用 `persist-credentials: false`；读取失败日志/文本 artifact 后运行固定 commit 的官方 Codex Action（Codex CLI 也固定版本），只允许生成工作区修改，最终导出 binary patch artifact。Codex 不持有仓库写权限，并且 patch 只能修改 iOS E2E/生产安装链路的显式白名单文件。
+2. **writeback job**：不接触 `OPENAI_API_KEY`，单独获得 `contents: write`；先再次确认远端 PR head 等于失败 SHA，再 `git apply --check`；应用 patch 后独立重新检查 policy root 与文件白名单，再运行 architecture guard/Python/JSON/`git diff --check`，全部通过后才提交并 push 当前 PR branch。
+
+`ios-e2e-codex-autofix.yml`、`verify_architecture.py` 和本规范文档属于 policy root，Codex 不允许修改。自动修复 commit 前缀固定为 `fix(ios-e2e): automated Codex repair`，最多两轮；每轮 push 后必须由普通 PR CI 重新验证，不能由 autofix job 自己宣告成功。

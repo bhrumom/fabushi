@@ -397,10 +397,10 @@ packages:
     dependency: "direct main"
     description:
       name: ffmpeg_kit_flutter_new_audio
-      sha256: "0a698b46cd163c8e9917af75325c84d27871a2a8b2c37de3b40486cd0ab662ae"
+      sha256: "3aa91ebf1bef0191d49ab70a9e2303e715cf04260c8fbd956cf899e42e1f2a81"
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.0"
+    version: "2.4.4"
   ffmpeg_kit_flutter_platform_interface:
     dependency: transitive
     description:
