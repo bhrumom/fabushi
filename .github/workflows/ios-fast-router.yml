@@ -1,0 +1,64 @@
+name: iOS Fast Lane Router
+
+on:
+  pull_request:
+    paths:
+      - 'fabushi/lib/**'
+      - 'fabushi/assets/**'
+      - 'fabushi/fonts/subset/**'
+      - 'fabushi/tool/ios_e2e/**'
+      - 'fabushi/tool/ios_fast_e2e/**'
+      - '.agents/plugins/plugins/global-dharma/**'
+      - '.github/workflows/ios-fast-miniapp-e2e.yml'
+      - '.github/workflows/ios-fast-router.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ios-fast-router-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IOS_E2E_BUILD_CONTRACT: v2
+
+jobs:
+  route:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Find compatible prebuilt native Runner shell
+        id: shell
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_PREFIX: ios-e2e-runner-${{ env.IOS_E2E_BUILD_CONTRACT }}-macOS-ARM64-xcode16.4-flutter3.41.9-
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_fast_e2e/find_native_shell_artifact.py --prefix "$ARTIFACT_PREFIX"
+
+      - name: Free the macOS lane when native shell is reusable
+        if: steps.shell.outputs.hit == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/ios-external-miniapp-e2e.yml/runs?branch=$HEAD_REF&event=pull_request&per_page=20" \
+              --jq '.workflow_runs[] | select(.status != "completed") | .id' \
+              > "$RUNNER_TEMP/full-ios-runs.txt"
+            while IFS= read -r run_id; do
+              [ -n "$run_id" ] || continue
+              echo "Cancelling full packaged iOS run $run_id; fast shell is compatible"
+              gh api --method POST "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" || true
+            done < "$RUNNER_TEMP/full-ios-runs.txt"
+            sleep 2
+          done
