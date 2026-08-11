@@ -379,6 +379,11 @@ def main() -> int:
         ROOT / "fabushi/ios/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/macos/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/ios/Runner/Configuration.storekit",
+        ROOT / "fabushi/assets/images",
+        ROOT / "fabushi/fonts/NotoSansSC-Bold.otf",
+        ROOT / "fabushi/fonts/NotoSansSC-Regular.otf",
+        ROOT / "fabushi/fonts/NotoSerifSC-Bold.otf",
+        ROOT / "fabushi/fonts/NotoSerifSC-Regular.otf",
         ROOT / "fabushi/scripts/archive/build_web_exclude_models.sh",
         ROOT / "fabushi/scripts/archive/update_firebase_config.sh",
         ROOT / "fabushi/scripts/setup/setup_firebase.sh",
@@ -443,6 +448,33 @@ def main() -> int:
         and "Verify Apple Buddha asset StoreKit product" not in workflow_text,
         "legacy 3D/StoreKit build gates must not return to CI",
     )
+
+    generated_plugin_files = (
+        ROOT / "fabushi/linux/flutter/generated_plugin_registrant.cc",
+        ROOT / "fabushi/linux/flutter/generated_plugins.cmake",
+        ROOT / "fabushi/windows/flutter/generated_plugin_registrant.cc",
+        ROOT / "fabushi/windows/flutter/generated_plugins.cmake",
+        ROOT / "fabushi/macos/Flutter/GeneratedPluginRegistrant.swift",
+    )
+    legacy_generated_tokens = (
+        "firebase",
+        "ffmpeg",
+        "flutter_tts",
+        "record_",
+        "rive",
+        "sherpa",
+        "video_player",
+        "just_audio",
+        "workmanager",
+        "in_app_purchase",
+    )
+    for generated in generated_plugin_files:
+        generated_text = generated.read_text(encoding="utf-8")
+        for token in legacy_generated_tokens:
+            require(
+                token not in generated_text.lower(),
+                f"generated desktop plugin graph must not restore legacy plugin {token}: {generated.relative_to(ROOT)}",
+            )
 
     native_app = (ROOT / "fabushi/lib/bootstrap/native_app.dart").read_text(encoding="utf-8")
     require(

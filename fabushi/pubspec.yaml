@@ -77,7 +77,6 @@ flutter:
   uses-material-design: true
   
   assets:
-    - assets/images/
     - assets/data/
     # assets/built_in/ 已移除 - 素材通过 CDN 下载，不打包进 APK/IPA
     # Web 端素材在 web/assets/built_in/，独立提供服务
@@ -89,7 +88,6 @@ flutter:
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）
-    # 原始字体保留在 fonts/ 目录以备后用
     - family: NotoSansSC
       fonts:
         - asset: fonts/subset/NotoSansSC-Regular-subset.woff2
