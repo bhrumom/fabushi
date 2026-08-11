@@ -51,8 +51,11 @@ L1 的目标是快速证明安装算法和测试架构没有被破坏。
 ### L2 — iOS Simulator 确定性黑盒验收（内部 PR / 默认手动）
 
 Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。Appium 固定为 `3.6.0`，XCUITest Driver 固定为 `12.3.1`。
-Flutter dependency resolution 与 iOS build 必须拆成独立步骤；依赖解析限制 10 分钟，完整 Simulator build 限制 60 分钟，使网络依赖问题和编译问题能被明确分类。
-iOS Rust target 可以通过 GitHub Actions cache 复用，但 cache key 必须同时绑定 Xcode 版本、实际 `rustc -vV` 指纹、`Cargo.lock` 与 Rust/Cargo 源码 hash；命中 cache 后仍由 Xcode build phase 正常执行 `cargo rustc`，不得把缓存本身当作已构建成功的证据。
+Flutter dependency resolution、CocoaPods resolution、Mahayana Simulator Rust runtime 与最终 Xcode build 必须拆成独立步骤。`flutter pub get` 后 `pubspec.lock` 必须零漂移；CocoaPods 固定为 `1.17.0`，使用提交的 `Podfile.lock` 执行 `pod install --deployment` 并要求 lock 零漂移。这样依赖变更不会被悄悄混进一次设备测试。
+
+Mahayana iOS runtime 不缓存几 GB 的不透明 Cargo `target` 目录。生产 `fabushi/ios/build_telegram_runtime.sh` 对 Mahayana/Codex 源文件、Cargo 配置与 lock、实际 `rustc`/`cargo`、平台、架构、profile 与 dev debug 级别计算 `fabushi.mahayana.ios-runtime-fingerprint.v1`；只有 fingerprint 完全一致时才能复用 `libmahayana_runtime.a`。L2 在 Flutter build 前先通过这个生产脚本冷/热构建 Simulator archive，并在成功后立即保存 archive + fingerprint cache；随后再次执行同一生产脚本证明可以安全复用，Xcode build phase 仍会调用同一脚本并再次做 fingerprint 校验。这样 cache 是可验证的编译结果，不是绕过生产构建逻辑的测试捷径。
+
+首次 Rust seed 限制 35 分钟，CocoaPods install 限制 15 分钟，Rust seed 后的 Flutter Simulator build 限制 45 分钟；整条 macOS 黑盒 job 有独立的 150 分钟硬上限。E2E Debug Rust 设置 `CARGO_PROFILE_DEV_DEBUG=0` 只去除静态库调试符号以降低 archive/link 成本，不改变 production feature set（仍为 `mobile-embedded,local-only`）或业务代码路径。
 
 L2 使用 `marketplace_mode=fixture`。fixture 绑定 `127.0.0.1` 的 OS 分配临时端口（`port=0`），健康检查显式绕过环境 HTTP 代理；实际 `baseUrl` 只有在 fixture ready 后才注入 App。fixture **只替换 Marketplace 目录/Release/Download 的网络分发层**：
 

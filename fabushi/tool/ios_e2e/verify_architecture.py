@@ -13,6 +13,7 @@ PUBSPEC = ROOT / "fabushi/pubspec.yaml"
 PUBSPEC_LOCK = ROOT / "fabushi/pubspec.lock"
 SCENE_PUBSPEC = ROOT / "fabushi/lib/packages/flutter_scene/pubspec.yaml"
 SCENE_BUILD_HOOK = ROOT / "fabushi/lib/packages/flutter_scene/hook/build.dart"
+IOS_RUNTIME_BUILD = ROOT / "fabushi/ios/build_telegram_runtime.sh"
 AUTOFIX_WORKFLOW = ROOT / ".github/workflows/ios-e2e-codex-autofix.yml"
 FLOW = ROOT / "fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json"
 PRODUCT = ROOT / "third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs"
@@ -44,6 +45,7 @@ def main() -> int:
     pubspec_lock = PUBSPEC_LOCK.read_text(encoding="utf-8")
     scene_pubspec = SCENE_PUBSPEC.read_text(encoding="utf-8")
     scene_build_hook = SCENE_BUILD_HOOK.read_text(encoding="utf-8")
+    ios_runtime_build = IOS_RUNTIME_BUILD.read_text(encoding="utf-8")
     autofix_workflow = AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
     product = PRODUCT.read_text(encoding="utf-8")
     installer = INSTALLER.read_text(encoding="utf-8")
@@ -188,9 +190,18 @@ def main() -> int:
         "each black-box run must use and clean up a bounded, isolated Simulator",
     )
     require(
-        "- name: Resolve Flutter dependencies" in workflow
-        and "timeout-minutes: 60" in workflow,
-        "dependency resolution and the expensive iOS build must be independently diagnosable and bounded",
+        "Resolve Flutter dependencies without lock drift" in workflow
+        and 'git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/pubspec.lock' in workflow
+        and "timeout-minutes: 45" in workflow,
+        "dependency resolution must reject lock drift and the post-seed iOS build must remain independently bounded",
+    )
+    require(
+        "COCOAPODS_VERSION: 1.17.0" in workflow
+        and "pod install --deployment" in workflow
+        and 'diff --exit-code -- fabushi/ios/Podfile.lock' in workflow
+        and "Restore CocoaPods download cache" in workflow
+        and "Save CocoaPods download cache" in workflow,
+        "CocoaPods must be pinned, lock-clean, and independently cached before Flutter invokes Xcode",
     )
     require(
         "Snapshot resolved dependency locks" in workflow
@@ -199,13 +210,35 @@ def main() -> int:
         "macOS runs must preserve the actual Pub/CocoaPods lock resolution as evidence",
     )
     require(
-        "Restore iOS Rust build cache" in workflow
-        and "third_party/mahayana/mahayana-rs/target" in workflow
-        and "xcode16.4" in workflow
+        "Fingerprint iOS Mahayana runtime inputs" in workflow
+        and "Restore fingerprinted iOS Mahayana runtime" in workflow
+        and "Seed iOS Simulator Mahayana runtime" in workflow
+        and "Save fingerprinted iOS Mahayana runtime" in workflow
+        and "actions/cache/restore@v4" in workflow
+        and "actions/cache/save@v4" in workflow
+        and "ios-mahayana-runtime-v1-" in workflow
+        and "mahayana-ios-runtime-fingerprint.txt" in workflow
+        and "mahayana-ios-simulator-runtime.log" in workflow
+        and ("CARGO_PROFILE_DEV_DEBUG: 0" in workflow or 'CARGO_PROFILE_DEV_DEBUG: "0"' in workflow)
         and "steps.rust-toolchain.outputs.fingerprint" in workflow
-        and "rustc -vV | tee artifacts/logs/rustc-version.txt" in workflow
-        and "hashFiles('third_party/mahayana/mahayana-rs/**/*.rs'" in workflow,
-        "iOS Rust cache identity must include the toolchain and Rust source state without bypassing Cargo",
+        and "rustc -vV | tee artifacts/logs/rustc-version.txt" in workflow,
+        "the Simulator Rust runtime must be fingerprinted, seeded through the production build script, and saved immediately",
+    )
+    require(
+        "Verify Xcode reuses fingerprinted Mahayana runtime" in workflow
+        and "Reusing fingerprinted Mahayana Rust runtime" in workflow,
+        "Xcode must prove it reuses the exact prebuilt production Rust archive rather than cold-compiling inside Flutter",
+    )
+    require(
+        "fabushi.mahayana.ios-runtime-fingerprint.v1" in ios_runtime_build
+        and "--fingerprint" in ios_runtime_build
+        and "third_party/mahayana/mahayana-rs" in ios_runtime_build
+        and "third_party/mahayana/codex-rs" in ios_runtime_build
+        and "rustc -vV" in ios_runtime_build
+        and "cargo -V" in ios_runtime_build
+        and "Reusing fingerprinted Mahayana Rust runtime" in ios_runtime_build
+        and 'cargo "${cargo_args[@]}"' in ios_runtime_build,
+        "the production iOS Rust script must content-address its real inputs and only reuse an exact fingerprint match",
     )
     require(
         "runs-on: macos-15" in workflow,
@@ -258,12 +291,32 @@ def main() -> int:
         and "package:hooks/hooks.dart" in scene_build_hook,
         "flutter_scene must use the pure-Dart Hooks build path, not the legacy CMake/native_assets importer",
     )
-    for expected in (
-        'name: flutter_scene_importer\n      sha256: 11c3e699cf9794aaa225642776cfae33d1f3a1c1fabcd7573a1cd27d03d792fe\n      url: "https://pub.dev"\n    source: hosted\n    version: "0.11.0"',
-        'name: flutter_gpu_shaders\n      sha256: be460c3af0f55861d5d4f9f92f61c39ff89c13f0dd86a82584d070989b584cf6\n      url: "https://pub.dev"\n    source: hosted\n    version: "0.4.0"',
-        'name: hooks\n      sha256: 5d309c86e7ce34cd8e37aa71cb30cb652d3829b900ab145e4d9da564b31d59f7\n      url: "https://pub.dev"\n    source: hosted\n    version: "1.0.0"',
+    for name, digest, version in (
+        (
+            "flutter_scene_importer",
+            "11c3e699cf9794aaa225642776cfae33d1f3a1c1fabcd7573a1cd27d03d792fe",
+            "0.11.0",
+        ),
+        (
+            "flutter_gpu_shaders",
+            "be460c3af0f55861d5d4f9f92f61c39ff89c13f0dd86a82584d070989b584cf6",
+            "0.4.0",
+        ),
+        (
+            "hooks",
+            "5d309c86e7ce34cd8e37aa71cb30cb652d3829b900ab145e4d9da564b31d59f7",
+            "1.0.0",
+        ),
     ):
-        require(expected in pubspec_lock, "pubspec.lock must pin the reproducible scene build toolchain")
+        require(
+            re.search(
+                rf"name: {re.escape(name)}\n\s+sha256: \"?{digest}\"?.*?version: \"{re.escape(version)}\"",
+                pubspec_lock,
+                flags=re.DOTALL,
+            )
+            is not None,
+            f"pubspec.lock must pin the reproducible {name} {version} archive",
+        )
     require(
         "native_assets_cli:" not in pubspec_lock,
         "pubspec.lock must not retain the legacy native_assets_cli scene importer dependency",

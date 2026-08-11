@@ -38,6 +38,7 @@ env:
   PLUGIN_ID: global-dharma
   APPIUM_VERSION: 3.6.0
   XCUITEST_DRIVER_VERSION: 12.3.1
+  COCOAPODS_VERSION: 1.17.0
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
   LIVE_MARKETPLACE_API_BASE_URL: https://api.ombhrum.com
@@ -149,9 +150,11 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 150
     env:
       TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: "0"
 
     steps:
       - name: Checkout
@@ -252,17 +255,75 @@ jobs:
           fingerprint="$(rustc -vV | shasum -a 256 | awk '{print $1}')"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
-      - name: Restore iOS Rust build cache
-        uses: actions/cache@v4
+      - name: Fingerprint iOS Mahayana runtime inputs
+        id: ios-mahayana-runtime
+        shell: bash
+        env:
+          CONFIGURATION: Debug
+          PLATFORM_NAME: iphonesimulator
+          ARCHS: arm64
+        run: |
+          set -euo pipefail
+          fingerprint="$(./fabushi/ios/build_telegram_runtime.sh --fingerprint)"
+          test "${#fingerprint}" -eq 64
+          printf '%s\n' "$fingerprint" | tee artifacts/logs/mahayana-ios-runtime-fingerprint.txt
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Cargo download cache
+        id: cargo-download-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            third_party/mahayana/mahayana-rs/target
-          key: ios-mahayana-rust-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}-${{ hashFiles('third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml') }}
-          restore-keys: |
-            ios-mahayana-rust-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}-
+          key: ios-mahayana-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}
+
+      - name: Restore fingerprinted iOS Mahayana runtime
+        id: ios-mahayana-runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            fabushi/ios/Runner/Libs/libmahayana_runtime.a
+            fabushi/ios/Runner/Libs/libmahayana_runtime.a.fingerprint
+          key: ios-mahayana-runtime-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
+
+      - name: Seed iOS Simulator Mahayana runtime
+        shell: bash
+        timeout-minutes: 35
+        env:
+          CONFIGURATION: Debug
+          PLATFORM_NAME: iphonesimulator
+          ARCHS: arm64
+        run: |
+          set -o pipefail
+          ./fabushi/ios/build_telegram_runtime.sh 2>&1 \
+            | tee artifacts/logs/mahayana-ios-simulator-runtime.log
+          expected="${{ steps.ios-mahayana-runtime.outputs.fingerprint }}"
+          actual="$(tr -d '\r\n' < fabushi/ios/Runner/Libs/libmahayana_runtime.a.fingerprint)"
+          test "$actual" = "$expected"
+          test -s fabushi/ios/Runner/Libs/libmahayana_runtime.a
+          shasum -a 256 fabushi/ios/Runner/Libs/libmahayana_runtime.a \
+            | tee artifacts/logs/mahayana-ios-runtime-sha256.txt
+
+      - name: Save fingerprinted iOS Mahayana runtime
+        if: steps.ios-mahayana-runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            fabushi/ios/Runner/Libs/libmahayana_runtime.a
+            fabushi/ios/Runner/Libs/libmahayana_runtime.a.fingerprint
+          key: ios-mahayana-runtime-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
+
+      - name: Save Cargo download cache
+        if: steps.cargo-download-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ios-mahayana-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -348,18 +409,66 @@ jobs:
           PY
           xcrun simctl io "$udid" screenshot artifacts/ios/screenshots/00-clean-simulator.png
 
-      - name: Resolve Flutter dependencies
+      - name: Resolve Flutter dependencies without lock drift
         working-directory: fabushi
         shell: bash
         timeout-minutes: 10
         run: |
           set -o pipefail
           flutter pub get 2>&1 | tee ../artifacts/logs/flutter-pub-get.log
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/pubspec.lock
+
+      - name: Verify pinned CocoaPods toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(pod --version)"
+          printf '%s\n' "$actual" | tee artifacts/logs/cocoapods-version.txt
+          [ "$actual" = "$COCOAPODS_VERSION" ] || {
+            echo "Expected CocoaPods $COCOAPODS_VERSION, got $actual" >&2
+            exit 1
+          }
+
+      - name: Restore CocoaPods download cache
+        id: cocoapods-download-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: ios-cocoapods-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-cocoapods1.17.0-${{ hashFiles('fabushi/ios/Podfile.lock') }}
+
+      - name: Install pinned CocoaPods graph
+        working-directory: fabushi/ios
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          pod install --deployment 2>&1 | tee ../../artifacts/logs/pod-install.log
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/ios/Podfile.lock
+
+      - name: Save CocoaPods download cache
+        if: steps.cocoapods-download-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: ios-cocoapods-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-cocoapods1.17.0-${{ hashFiles('fabushi/ios/Podfile.lock') }}
+
+      - name: Verify Xcode reuses fingerprinted Mahayana runtime
+        shell: bash
+        env:
+          CONFIGURATION: Debug
+          PLATFORM_NAME: iphonesimulator
+          ARCHS: arm64
+        run: |
+          set -o pipefail
+          ./fabushi/ios/build_telegram_runtime.sh 2>&1 \
+            | tee artifacts/logs/mahayana-ios-runtime-reuse.log
+          grep -Fq 'Reusing fingerprinted Mahayana Rust runtime' \
+            artifacts/logs/mahayana-ios-runtime-reuse.log
 
       - name: Build iOS Simulator app
         working-directory: fabushi
         shell: bash
-        timeout-minutes: 60
+        timeout-minutes: 45
         run: |
           set -o pipefail
           flutter build ios --simulator --debug --no-codesign \
