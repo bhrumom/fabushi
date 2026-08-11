@@ -46,7 +46,7 @@ L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
 Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。Appium 固定为 `3.6.0`，XCUITest Driver 固定为 `12.3.1`。
 
-L2 使用 `marketplace_mode=fixture`。fixture **只替换 Marketplace 目录/Release/Download 的网络分发层**：
+L2 使用 `marketplace_mode=fixture`。fixture 绑定 `127.0.0.1` 的 OS 分配临时端口（`port=0`），健康检查显式绕过环境 HTTP 代理；实际 `baseUrl` 只有在 fixture ready 后才注入 App。fixture **只替换 Marketplace 目录/Release/Download 的网络分发层**：
 
 - 包内容必须从当前 commit 的 canonical `.agents/plugins/plugins/global-dharma` 生成，不允许维护第二份“测试插件”；
 - tar.gz 必须确定性生成，并把 `pluginId/version/packageSha256/packageSize/source` 作为 fixture release identity；

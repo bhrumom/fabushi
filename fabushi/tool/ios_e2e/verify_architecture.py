@@ -97,6 +97,14 @@ def main() -> int:
         "the deterministic Marketplace fixture must run only in fixture mode",
     )
     require(
+        "--port 0" in workflow and "FIXTURE_MARKETPLACE_API_BASE_URL" not in workflow,
+        "the deterministic fixture must use an OS-assigned loopback port rather than a fixed port",
+    )
+    require(
+        "urllib.request.ProxyHandler({})" in workflow,
+        "fixture readiness checks must bypass ambient HTTP proxy configuration",
+    )
+    require(
         ".agents/plugins/plugins/global-dharma" in workflow,
         "L2 fixture bytes must be built from the canonical repository global-dharma plugin",
     )

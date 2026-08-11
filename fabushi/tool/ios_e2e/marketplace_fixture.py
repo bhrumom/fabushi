@@ -17,6 +17,7 @@ import io
 import json
 import os
 from pathlib import Path
+import socketserver
 import tarfile
 from typing import Any
 import urllib.parse
@@ -141,6 +142,21 @@ def build_fixture(
     return archive, metadata
 
 
+class FixtureHTTPServer(http.server.ThreadingHTTPServer):
+    # http.server.HTTPServer.server_bind() calls socket.getfqdn(host). On some
+    # hosted macOS runners reverse-DNS lookup for 127.0.0.1 can stall long
+    # enough to trip the fixture health timeout. The fixture never needs a
+    # canonical DNS name, so bind directly and publish the numeric loopback
+    # address instead.
+    daemon_threads = True
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
 class FixtureHandler(http.server.BaseHTTPRequestHandler):
     archive: bytes
     metadata: dict[str, Any]
@@ -251,7 +267,7 @@ def main() -> int:
     handler = type("BoundFixtureHandler", (FixtureHandler,), {})
     handler.archive = archive
     handler.metadata = metadata
-    server = http.server.ThreadingHTTPServer((args.host, args.port), handler)
+    server = FixtureHTTPServer((args.host, args.port), handler)
     host, port = server.server_address[:2]
     handler.base_url = f"http://{host}:{port}"
     metadata["baseUrl"] = handler.base_url

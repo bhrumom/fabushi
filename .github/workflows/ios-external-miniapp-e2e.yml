@@ -40,7 +40,6 @@ env:
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
   LIVE_MARKETPLACE_API_BASE_URL: https://api.ombhrum.com
-  FIXTURE_MARKETPLACE_API_BASE_URL: http://127.0.0.1:18787
   MARKETPLACE_MODE: ${{ github.event_name == 'schedule' && 'live' || github.event_name == 'workflow_dispatch' && inputs.marketplace_mode || 'fixture' }}
 
 jobs:
@@ -179,14 +178,16 @@ jobs:
         run: |
           set -euo pipefail
           case "$MARKETPLACE_MODE" in
-            fixture) marketplace_api_base_url="$FIXTURE_MARKETPLACE_API_BASE_URL" ;;
-            live) marketplace_api_base_url="$LIVE_MARKETPLACE_API_BASE_URL" ;;
+            fixture)
+              printf 'mode=fixture\n' | tee artifacts/marketplace/mode.txt
+              ;;
+            live)
+              printf 'mode=live\napiBaseUrl=%s\n' "$LIVE_MARKETPLACE_API_BASE_URL" \
+                | tee artifacts/marketplace/mode.txt
+              echo "MARKETPLACE_API_BASE_URL=$LIVE_MARKETPLACE_API_BASE_URL" >> "$GITHUB_ENV"
+              ;;
             *) echo "Unsupported MARKETPLACE_MODE=$MARKETPLACE_MODE" >&2; exit 1 ;;
           esac
-          printf 'mode=%s\napiBaseUrl=%s\n' \
-            "$MARKETPLACE_MODE" "$marketplace_api_base_url" \
-            | tee artifacts/marketplace/mode.txt
-          echo "MARKETPLACE_API_BASE_URL=$marketplace_api_base_url" >> "$GITHUB_ENV"
 
       - name: Start deterministic Marketplace distribution fixture
         if: env.MARKETPLACE_MODE == 'fixture'
@@ -199,24 +200,63 @@ jobs:
             --metadata-file artifacts/marketplace/fixture-metadata.json \
             --commit-sha "$GITHUB_SHA" \
             --host 127.0.0.1 \
-            --port 18787 \
+            --port 0 \
             > artifacts/logs/marketplace-fixture.log 2>&1 &
           echo $! > "$RUNNER_TEMP/marketplace-fixture.pid"
-          python3 - <<'PY'
+          python3 - \
+            "$RUNNER_TEMP/marketplace-fixture.pid" \
+            artifacts/logs/marketplace-fixture.log \
+            artifacts/marketplace/fixture-metadata.json \
+            artifacts/marketplace/mode.txt <<'PY'
           import json
+          import os
+          import sys
           import time
           import urllib.request
+          from pathlib import Path
 
+          pid_path = Path(sys.argv[1])
+          log_path = Path(sys.argv[2])
+          metadata_path = Path(sys.argv[3])
+          mode_path = Path(sys.argv[4])
+          pid = int(pid_path.read_text(encoding='utf-8').strip())
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
           deadline = time.monotonic() + 30
+          last_error = None
+          base_url = None
           while time.monotonic() < deadline:
               try:
-                  with urllib.request.urlopen('http://127.0.0.1:18787/healthz', timeout=2) as response:
-                      payload = json.loads(response.read().decode('utf-8'))
-                  if payload.get('ok') is True:
-                      raise SystemExit(0)
-              except Exception:
+                  os.kill(pid, 0)
+              except OSError as error:
+                  diagnostic = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
+                  raise SystemExit(f'Marketplace fixture exited before readiness: {error}\n{diagnostic}')
+              try:
+                  if metadata_path.exists():
+                      metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+                      candidate = metadata.get('baseUrl')
+                      if isinstance(candidate, str) and candidate.startswith('http://127.0.0.1:'):
+                          base_url = candidate
+                  if base_url:
+                      with opener.open(f'{base_url}/healthz', timeout=2) as response:
+                          payload = json.loads(response.read().decode('utf-8'))
+                      if payload.get('ok') is True and payload.get('protocol') == 'fabushi.marketplace.fixture.v1':
+                          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
+                              env_file.write(f'MARKETPLACE_API_BASE_URL={base_url}\n')
+                          with mode_path.open('a', encoding='utf-8') as mode_file:
+                              mode_file.write(f'apiBaseUrl={base_url}\n')
+                          raise SystemExit(0)
+              except SystemExit:
+                  raise
+              except Exception as error:
+                  last_error = error
                   time.sleep(0.25)
-          raise SystemExit('Marketplace fixture did not become ready within 30 seconds')
+                  continue
+              time.sleep(0.1)
+          diagnostic = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
+          raise SystemExit(
+              f'Marketplace fixture did not become ready within 30 seconds; '
+              f'base_url={base_url!r}; last_error={last_error!r}\n{diagnostic}'
+          )
           PY
 
       - name: Setup Node.js
