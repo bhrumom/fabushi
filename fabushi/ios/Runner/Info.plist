@@ -102,7 +102,5 @@
 	<string>应用可能需要访问您的位置以提供本地化服务</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>应用需要访问您的相册以保存或选择图片</string>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
 </dict>
 </plist>

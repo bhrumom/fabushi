@@ -57,7 +57,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
       - name: Setup Rust
@@ -155,7 +154,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
       - name: Setup Flutter
@@ -201,6 +199,10 @@ jobs:
             fabushi/pubspec.lock
             platform-slim-pub-get.log
             platform-slim-deps.txt
+            fabushi/linux/flutter/generated_plugin_registrant.cc
+            fabushi/linux/flutter/generated_plugins.cmake
+            fabushi/windows/flutter/generated_plugin_registrant.cc
+            fabushi/windows/flutter/generated_plugins.cmake
           if-no-files-found: warn
           retention-days: 14
 
@@ -213,7 +215,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
       - name: Verify pinned Xcode and CocoaPods
@@ -252,6 +253,7 @@ jobs:
             fabushi/pubspec.lock
             fabushi/ios/Podfile.lock
             fabushi/.flutter-plugins-dependencies
+            fabushi/macos/Flutter/GeneratedPluginRegistrant.swift
             ios-dependency-pub-get.log
             ios-dependency-pod-install.log
           if-no-files-found: warn
@@ -275,7 +277,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
       - name: Prepare diagnostics
