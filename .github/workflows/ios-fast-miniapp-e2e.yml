@@ -1,0 +1,502 @@
+name: iOS Fast MiniApp User Journey
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'fabushi/lib/**'
+      - 'fabushi/assets/**'
+      - 'fabushi/fonts/subset/**'
+      - 'fabushi/tool/ios_e2e/**'
+      - 'fabushi/tool/ios_fast_e2e/**'
+      - '.agents/plugins/plugins/global-dharma/**'
+      - '.github/workflows/ios-fast-miniapp-e2e.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ios-fast-miniapp-user-journey-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.41.9
+  BUNDLE_ID: com.ombhrum.fabushi
+  PLUGIN_QUERY: 全球法布施
+  PLUGIN_ID: global-dharma
+  APPIUM_VERSION: 3.6.0
+  XCUITEST_DRIVER_VERSION: 12.3.1
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+  IOS_E2E_BUILD_CONTRACT: v2
+
+jobs:
+  qualify:
+    name: Route fast iOS journey
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    outputs:
+      hit: ${{ steps.shell.outputs.hit }}
+      name: ${{ steps.shell.outputs.name }}
+      run_id: ${{ steps.shell.outputs.run_id }}
+      producer_sha: ${{ steps.shell.outputs.producer_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Validate fast-lane harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            fabushi/tool/ios_e2e/appium_flow.py \
+            fabushi/tool/ios_e2e/control_client.py \
+            fabushi/tool/ios_e2e/e2e_api_fixture.py \
+            fabushi/tool/ios_e2e/marketplace_fixture.py \
+            fabushi/tool/ios_e2e/marketplace_fixture_probe.py \
+            fabushi/tool/ios_e2e/user_journey.py \
+            fabushi/tool/ios_fast_e2e/find_native_shell_artifact.py \
+            fabushi/tool/ios_fast_e2e/flutter_attach_sync.py
+          python3 fabushi/tool/ios_e2e/verify_architecture.py
+
+      - name: Find compatible prebuilt native Runner shell
+        id: shell
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_PREFIX: ios-e2e-runner-${{ env.IOS_E2E_BUILD_CONTRACT }}-macOS-ARM64-xcode16.4-flutter3.41.9-
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_fast_e2e/find_native_shell_artifact.py \
+            --prefix "$ARTIFACT_PREFIX"
+
+      - name: Cancel redundant full packaged canary for this head
+        if: github.event_name == 'pull_request' && steps.shell.outputs.hit == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&per_page=100" \
+              --jq ".workflow_runs[] | select(.name == \"iOS External MiniApp E2E\" and .head_sha == \"$HEAD_SHA\" and (.status == \"queued\" or .status == \"in_progress\")) | .id" \
+              > "$RUNNER_TEMP/full-ios-runs.txt"
+            while IFS= read -r run_id; do
+              [ -n "$run_id" ] || continue
+              echo "Cancelling redundant full iOS run $run_id because compatible native shell exists"
+              gh api --method POST "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" || true
+            done < "$RUNNER_TEMP/full-ios-runs.txt"
+            sleep 2
+          done
+
+  fast-e2e:
+    name: iOS full user journey (hot-sync)
+    needs: qualify
+    if: needs.qualify.outputs.hit == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Prepare diagnostics and validate toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${TEST_ACCOUNT_TOKEN:-}"
+          mkdir -p \
+            artifacts/install \
+            artifacts/marketplace \
+            artifacts/ios/screenshots \
+            artifacts/ios/page-source \
+            artifacts/logs \
+            artifacts/performance \
+            "$RUNNER_TEMP/runner-shell"
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee artifacts/logs/xcode-version.txt
+          test "$(xcodebuild -version | awk '/^Xcode / {print $2}')" = '16.4'
+          simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          echo "IOS_SIMULATOR_SDK=$simulator_sdk" >> "$GITHUB_ENV"
+          printf 'node=%s\nnpm=%s\n' "$(node -p 'process.versions.node')" "$(npm --version)" \
+            | tee artifacts/logs/node-version.txt
+
+      - name: Start Appium stack installation asynchronously
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/appium-install.ok" "$RUNNER_TEMP/appium-install.failed"
+          (
+            set +e
+            npm install --global "appium@$APPIUM_VERSION"
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              appium driver install "xcuitest@$XCUITEST_DRIVER_VERSION"
+              status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              touch "$RUNNER_TEMP/appium-install.ok"
+            else
+              printf '%s\n' "$status" > "$RUNNER_TEMP/appium-install.failed"
+            fi
+            exit "$status"
+          ) > artifacts/logs/appium-install.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/appium-install.pid"
+
+      - name: Create and boot matching isolated Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes available -j > artifacts/ios/available-runtimes.json
+          xcrun simctl list devicetypes -j > artifacts/ios/available-device-types.json
+          selection="$(python3 - artifacts/ios/available-runtimes.json artifacts/ios/available-device-types.json "$IOS_SIMULATOR_SDK" <<'PY'
+          import json, sys
+          from pathlib import Path
+          runtimes=json.loads(Path(sys.argv[1]).read_text())['runtimes']
+          devices=json.loads(Path(sys.argv[2]).read_text())['devicetypes']
+          sdk=sys.argv[3]
+          runtime=next((r for r in runtimes if r.get('isAvailable',True) and r.get('version')==sdk and '.iOS-' in r.get('identifier','')),None)
+          if runtime is None: raise SystemExit(f'No iOS runtime matches SDK {sdk}')
+          by_name={d.get('name'):d.get('identifier') for d in devices}
+          name=next((n for n in ('iPhone 16 Pro','iPhone 16','iPhone 15 Pro','iPhone 15') if by_name.get(n)),None)
+          if not name: raise SystemExit('No supported iPhone simulator type')
+          print(f"{runtime['identifier']}|{by_name[name]}|{runtime.get('name')}|{name}")
+          PY
+          )"
+          IFS='|' read -r runtime_id device_type runtime_name device_name <<< "$selection"
+          udid="$(xcrun simctl create "Fabushi-Fast-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime_id")"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          printf 'sdk=%s\nruntime=%s\ndevice=%s\nudid=%s\n' \
+            "$IOS_SIMULATOR_SDK" "$runtime_name" "$device_name" "$udid" \
+            | tee artifacts/ios/selected-simulator.txt
+          xcrun simctl boot "$udid"
+          date +%s > artifacts/performance/simulator-boot-start.epoch
+
+      - name: Download compatible native Runner shell
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.qualify.outputs.name }}
+          path: ${{ runner.temp }}/runner-shell
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.qualify.outputs.run_id }}
+
+      - name: Restore Runner shell and repair ShareExtension metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/runner-shell/Runner.app.zip"
+          test -s "$archive"
+          mkdir -p fabushi/build/ios/iphonesimulator
+          ditto -x -k "$archive" fabushi/build/ios/iphonesimulator
+          app='fabushi/build/ios/iphonesimulator/Runner.app'
+          test -d "$app"
+          python3 - "$app" <<'PY'
+          import plistlib, sys
+          from pathlib import Path
+          app=Path(sys.argv[1])
+          host=plistlib.loads((app/'Info.plist').read_bytes())
+          ext_path=app/'PlugIns/ShareExtension.appex/Info.plist'
+          ext=plistlib.loads(ext_path.read_bytes())
+          for key in ('CFBundleShortVersionString','CFBundleVersion'):
+              value=host.get(key)
+              if not value: raise SystemExit(f'Host app missing {key}')
+              ext[key]=value
+          ext_path.write_bytes(plistlib.dumps(ext,fmt=plistlib.FMT_BINARY,sort_keys=False))
+          print({'hostVersion':host.get('CFBundleShortVersionString'),'hostBuild':host.get('CFBundleVersion'),'extensionVersion':ext.get('CFBundleShortVersionString'),'extensionBuild':ext.get('CFBundleVersion')})
+          PY
+          codesign --force --deep --sign - --timestamp=none "$app"
+          codesign --verify --deep --strict "$app"
+          printf 'producerSha=%s\nartifact=%s\n' \
+            '${{ needs.qualify.outputs.producer_sha }}' '${{ needs.qualify.outputs.name }}' \
+            | tee artifacts/performance/native-shell.txt
+
+      - name: Setup Flutter for Dart hot-sync
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve current Dart package graph
+        working-directory: fabushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get 2>&1 | tee ../artifacts/logs/flutter-pub-get.log
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/pubspec.lock
+
+      - name: Start deterministic Marketplace distribution fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/marketplace_fixture.py \
+            --plugin-root .agents/plugins/plugins/global-dharma \
+            --package-file artifacts/marketplace/global-dharma.tar.gz \
+            --metadata-file artifacts/marketplace/fixture-metadata.json \
+            --commit-sha "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --host 127.0.0.1 \
+            --port 0 \
+            > artifacts/logs/marketplace-fixture.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/marketplace-fixture.pid"
+          python3 fabushi/tool/ios_e2e/marketplace_fixture_probe.py \
+            --pid-file "$RUNNER_TEMP/marketplace-fixture.pid" \
+            --log-file artifacts/logs/marketplace-fixture.log \
+            --metadata-file artifacts/marketplace/fixture-metadata.json \
+            --package-file artifacts/marketplace/global-dharma.tar.gz \
+            --query "$PLUGIN_QUERY" \
+            --full-contract \
+            --github-env "$GITHUB_ENV" \
+            | tee artifacts/marketplace/fixture-probe.json
+
+      - name: Start deterministic TestAccount API gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${MARKETPLACE_API_BASE_URL:-}"
+          echo "MARKETPLACE_FIXTURE_BASE_URL=$MARKETPLACE_API_BASE_URL" >> "$GITHUB_ENV"
+          python3 fabushi/tool/ios_e2e/e2e_api_fixture.py \
+            --upstream-base-url "$MARKETPLACE_API_BASE_URL" \
+            --host 127.0.0.1 --port 0 \
+            > artifacts/logs/e2e-api-fixture.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/e2e-api-fixture.pid"
+          python3 - artifacts/logs/e2e-api-fixture.log "$RUNNER_TEMP/e2e-api-fixture.pid" "$GITHUB_ENV" <<'PY'
+          import json, os, sys, time, urllib.request
+          from pathlib import Path
+          log,pid_file,env_file=map(Path,sys.argv[1:])
+          pid=int(pid_file.read_text()); deadline=time.monotonic()+30; base=None
+          while time.monotonic()<deadline:
+              if log.exists():
+                  for line in log.read_text(encoding='utf-8',errors='replace').splitlines():
+                      try: row=json.loads(line)
+                      except json.JSONDecodeError: continue
+                      if row.get('protocol')=='fabushi.ios-e2e-api.v1' and row.get('ready') is True:
+                          base=row.get('baseUrl'); break
+              if base: break
+              try: os.kill(pid,0)
+              except OSError: raise SystemExit('E2E API fixture exited before ready')
+              time.sleep(.2)
+          if not base: raise SystemExit('E2E API fixture did not become ready')
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          with opener.open(base+'/healthz',timeout=5) as response:
+              assert json.loads(response.read().decode())['ok'] is True
+          with env_file.open('a',encoding='utf-8') as f: f.write('E2E_API_BASE_URL='+base+'\n')
+          print(json.dumps({'protocol':'fabushi.ios-e2e-api.v1','baseUrl':base}))
+          PY
+
+      - name: Wait for Simulator and install clean native shell
+        id: app
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$IOS_UDID" -b
+          printf '{"wallSeconds":%s}\n' "$(( $(date +%s) - $(cat artifacts/performance/simulator-boot-start.epoch) ))" \
+            > artifacts/performance/simulator-boot.json
+          xcrun simctl install "$IOS_UDID" fabushi/build/ios/iphonesimulator/Runner.app
+          app_home="$(xcrun simctl get_app_container "$IOS_UDID" "$BUNDLE_ID" data)"
+          test -d "$app_home"
+          echo "app_home=$app_home" >> "$GITHUB_OUTPUT"
+          plugin_root="$app_home/Library/Application Support/mahayana-runtime/codex/plugins/$PLUGIN_ID"
+          test ! -e "$plugin_root"
+
+      - name: Hot-sync current Dart code and launch logged-out app
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+          SIMCTL_CHILD_MAHAYANA_API_BASE_URL: ${{ env.E2E_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "${SIMCTL_CHILD_MAHAYANA_API_BASE_URL:-}"
+          python3 fabushi/tool/ios_fast_e2e/flutter_attach_sync.py \
+            --project fabushi \
+            --udid "$IOS_UDID" \
+            --bundle-id "$BUNDLE_ID" \
+            --ready-file "$RUNNER_TEMP/flutter-attach-ready.json" \
+            --timing-file artifacts/performance/flutter-attach.json \
+            --dart-define FABUSHI_E2E_CONTROL=true \
+            > artifacts/logs/flutter-attach.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/flutter-attach.pid"
+          python3 - "$RUNNER_TEMP/flutter-attach-ready.json" "$RUNNER_TEMP/flutter-attach.pid" <<'PY'
+          import os, sys, time
+          from pathlib import Path
+          ready,pid_file=map(Path,sys.argv[1:]); pid=int(pid_file.read_text()); deadline=time.monotonic()+180
+          while time.monotonic()<deadline:
+              if ready.is_file(): print(ready.read_text(),end=''); raise SystemExit(0)
+              try: os.kill(pid,0)
+              except OSError: raise SystemExit('flutter attach exited before app.started')
+              time.sleep(.25)
+          raise SystemExit('flutter attach did not hot-sync current Dart within 180 seconds')
+          PY
+
+      - name: Prove app starts logged out with no preinstalled target
+        shell: bash
+        env:
+          APP_HOME: ${{ steps.app.outputs.app_home }}
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/control_client.py \
+            --app-home "$APP_HOME" --method auth.status \
+            --output artifacts/install/auth-before-login.json
+          python3 fabushi/tool/ios_e2e/control_client.py \
+            --app-home "$APP_HOME" --method marketplace.inspect \
+            --params '{"pluginId":"global-dharma"}' \
+            --output artifacts/install/plugin-before-install.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          auth=json.loads(Path('artifacts/install/auth-before-login.json').read_text())
+          plugin=json.loads(Path('artifacts/install/plugin-before-install.json').read_text())
+          assert auth.get('ok') is True and auth.get('result',{}).get('loggedIn') is False
+          assert plugin.get('ok') is True and plugin.get('result',{}).get('installed') is not True
+          PY
+
+      - name: Require Appium stack ready and start quiet server
+        shell: bash
+        run: |
+          set -euo pipefail
+          pid="$(cat "$RUNNER_TEMP/appium-install.pid")"
+          deadline="$(( $(date +%s) + 150 ))"
+          while [ ! -f "$RUNNER_TEMP/appium-install.ok" ]; do
+            kill -0 "$pid" 2>/dev/null || break
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 1
+          done
+          cat artifacts/logs/appium-install.log
+          test -f "$RUNNER_TEMP/appium-install.ok"
+          appium --address 127.0.0.1 --port 4723 \
+            --log-level warn \
+            --log artifacts/logs/appium.log \
+            --log-timestamp \
+            > artifacts/logs/appium-console.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/appium.pid"
+          python3 - <<'PY'
+          import json,time,urllib.request
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({})); deadline=time.monotonic()+90
+          while time.monotonic()<deadline:
+              try:
+                  with opener.open('http://127.0.0.1:4723/status',timeout=3) as r:
+                      if json.loads(r.read().decode()).get('value',{}).get('ready') is not False: raise SystemExit(0)
+              except Exception: time.sleep(1)
+          raise SystemExit('Appium did not become ready')
+          PY
+
+      - name: Run complete real-user MiniApp journey
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/user_journey.py \
+            --udid "$IOS_UDID" \
+            --bundle-id "$BUNDLE_ID" \
+            --query "$PLUGIN_QUERY" \
+            --plugin-id "$PLUGIN_ID" \
+            --artifacts artifacts/ios
+
+      - name: Verify login and production install state after UI journey
+        shell: bash
+        env:
+          APP_HOME: ${{ steps.app.outputs.app_home }}
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/control_client.py \
+            --app-home "$APP_HOME" --method auth.status \
+            --output artifacts/install/auth-after-login.json
+          python3 fabushi/tool/ios_e2e/control_client.py \
+            --app-home "$APP_HOME" --method marketplace.inspect \
+            --params '{"pluginId":"global-dharma"}' \
+            --output artifacts/install/plugin-after-install.json
+          root="$APP_HOME/Library/Application Support/mahayana-runtime/codex/plugins/$PLUGIN_ID"
+          receipt="$root/.mahayana/marketplace-install.json"
+          manifest="$root/.codex-plugin/plugin.json"
+          test -f "$receipt" && test -f "$manifest"
+          cp "$receipt" artifacts/install/marketplace-install-receipt.json
+          cp "$manifest" artifacts/install/installed-plugin-manifest.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          auth=json.loads(Path('artifacts/install/auth-after-login.json').read_text())
+          inspect=json.loads(Path('artifacts/install/plugin-after-install.json').read_text())
+          fixture=json.loads(Path('artifacts/marketplace/fixture-metadata.json').read_text())
+          receipt=json.loads(Path('artifacts/install/marketplace-install-receipt.json').read_text())
+          manifest=json.loads(Path('artifacts/install/installed-plugin-manifest.json').read_text())
+          assert auth.get('ok') is True and auth.get('result',{}).get('loggedIn') is True
+          assert inspect.get('ok') is True and inspect.get('result',{}).get('installed') is True
+          assert receipt.get('protocol') == 'mahayana.marketplace.install-receipt.v1'
+          assert receipt.get('pluginId') == manifest.get('name') == 'global-dharma'
+          assert receipt.get('version') == manifest.get('version') == fixture['version']
+          assert receipt.get('packageSha256','').lower() == fixture['packageSha256'].lower()
+          assert receipt.get('packageSize') == fixture['packageSize']
+          source=receipt.get('source',{})
+          assert source.get('provider') == 'repository-fixture'
+          assert source.get('repository') == 'bhrumom/fabushi'
+          assert source.get('commitSha') == fixture['source']['commitSha']
+          PY
+
+      - name: Reject secret leakage in uploaded evidence
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          secret=(os.environ.get('TEST_ACCOUNT_TOKEN') or '').encode()
+          if not secret: raise SystemExit('TEST_ACCOUNT_TOKEN missing')
+          leaked=[]
+          for path in Path('artifacts').rglob('*'):
+              if not path.is_file(): continue
+              try: data=path.read_bytes()
+              except OSError: continue
+              if secret in data: leaked.append(str(path))
+          if leaked: raise SystemExit('Secret leaked into evidence: '+', '.join(leaked))
+          print('Evidence secret scan: clean')
+          PY
+
+      - name: Summarize feedback timing
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### iOS fast MiniApp user journey'
+            echo '- Native Xcode build: skipped (compatible Runner shell)'
+            echo '- Native shell producer: ${{ needs.qualify.outputs.producer_sha }}'
+            [ -f artifacts/performance/flutter-attach.json ] && echo "- Dart hot-sync: $(cat artifacts/performance/flutter-attach.json)"
+            [ -f artifacts/performance/simulator-boot.json ] && echo "- Simulator boot: $(cat artifacts/performance/simulator-boot.json)"
+            [ -f artifacts/ios/journey-result.json ] && echo "- Journey: $(cat artifacts/ios/journey-result.json)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set +e
+          for file in flutter-attach.pid appium.pid appium-install.pid e2e-api-fixture.pid marketplace-fixture.pid; do
+            if [ -f "$RUNNER_TEMP/$file" ]; then
+              kill "$(cat "$RUNNER_TEMP/$file")" 2>/dev/null || true
+            fi
+          done
+          if [ -n "${IOS_UDID:-}" ]; then
+            xcrun simctl shutdown "$IOS_UDID" 2>/dev/null || true
+            xcrun simctl delete "$IOS_UDID" 2>/dev/null || true
+          fi
+
+      - name: Upload fast user-journey evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-fast-miniapp-user-journey-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
