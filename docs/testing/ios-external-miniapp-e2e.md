@@ -35,37 +35,51 @@
 Linux runner 执行：
 
 - Rust 安装器/产品命令单元测试；
-- Python flow 语法与 JSON schema 检查；
-- 架构 guard，禁止假安装、模糊 locator、未固定的 Appium 版本；
+- Python flow、Control client 与 Marketplace fixture 语法检查；
+- 从仓库 canonical `.agents/plugins/plugins/global-dharma` 构建确定性 tar.gz，重算 SHA-256/size，并验证 `pluginId=global-dharma`、当前 canonical version 与 `mobile` runtime 合同；
+- 架构 guard，禁止假安装、模糊 locator、未固定的 Appium/XCUITest/Xcode 版本，并强制 L2/L3 分层；
 - 这些测试不依赖 iOS Simulator、Marketplace 在线状态或测试账号。
 
 L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
-### L2 — iOS Simulator 黑盒验收（内部 PR / 手动）
+### L2 — iOS Simulator 确定性黑盒验收（内部 PR / 默认手动）
 
-Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。这样既满足当前 StoreKit 依赖的编译要求，也避免 runner 镜像默认工具链变化造成无关回归。
+Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。Appium 固定为 `3.6.0`，XCUITest Driver 固定为 `12.3.1`。
+
+L2 使用 `marketplace_mode=fixture`。fixture **只替换 Marketplace 目录/Release/Download 的网络分发层**：
+
+- 包内容必须从当前 commit 的 canonical `.agents/plugins/plugins/global-dharma` 生成，不允许维护第二份“测试插件”；
+- tar.gz 必须确定性生成，并把 `pluginId/version/packageSha256/packageSize/source` 作为 fixture release identity；
+- fixture 只能提供 `/v1/marketplace/plugins`、release metadata 与 download bytes；禁止知道 `codexHome`、App sandbox、Simulator 路径，禁止安装或复制插件；
+- App 通过 `MAHAYANA_API_BASE_URL` 指向 fixture，但搜索、下载、SHA/size/manifest 校验、receipt、原子安装仍全部由 production `MahayanaProductClient` 和共享 Rust Installer 完成；
+- canonical 插件里的远程 `global-dharma` MCP endpoint 仍是真实 HTTPS 服务，因此“打开应用 -> WebView/MCP bridge ready”不会被 fixture 伪造。
+
+内部 PR 必须强制使用 fixture；手动运行默认 fixture。这样代码 PR 的合并门不会因为线上 Marketplace 临时无 release、审核窗口或目录数据变化而抖动，同时又没有绕过任何 App 安装逻辑。
 
 流程必须是：
 
-1. 擦除并启动干净 Simulator；
+1. 从当前 Xcode runtime 创建本次 run 专属的临时 iPhone Simulator，boot 必须有硬超时，并在证据采集后删除；
 2. 安装 Fabushi App；
 3. 仅注入固定测试账号的既有 CI 登录凭据，不预装任何插件；
-4. 搜索“全球法布施”；
-5. 断言 `global-dharma` 尚未安装；
-6. 点击 App 内的“安装”；
-7. 等待精确 `global-dharma.installed` 状态；
-8. 进入该小程序聊天；
-9. 点击“打开应用”；
-10. 等到 MiniApp Host 的 WebView 完成加载并注入 MCP bridge；
-11. 从 App sandbox 读取 production install receipt，只用于**验证证据**，不得用于准备状态；
-12. 校验 receipt、manifest、版本、SHA-256、source 身份一致；
-13. 每一步保存 PNG、accessibility XML、JSONL timeline；全程保存 Simulator 视频、Appium 日志和 iOS 日志。
+4. 启动对应 Marketplace 模式，并通过 production `marketplace.search` 精确预检 `global-dharma` release；
+5. 搜索“全球法布施”；
+6. 断言 `global-dharma` 尚未安装；
+7. 点击 App 内的“安装”；
+8. 等待精确 `global-dharma.installed` 状态；
+9. 进入该小程序聊天；
+10. 点击“打开应用”；
+11. 等到 MiniApp Host 的 WebView 完成加载并注入 MCP bridge；
+12. 从 App sandbox 读取 production install receipt，只用于**验证证据**，不得用于准备状态；
+13. 校验 receipt、manifest、版本、SHA-256、source 身份一致；fixture 模式还必须与本次生成的 fixture metadata 完全一致；
+14. 每一步保存 PNG、accessibility XML、JSONL timeline；全程保存 Simulator 视频、Appium、Marketplace fixture（若使用）、Flutter build 和 iOS 日志。
 
-### L3 — 真实 Marketplace Canary（定时 / 发布前）
+### L3 — 真实 Marketplace Canary（nightly / 手动 live / 发布前）
 
-同一个 L2 黑盒 workflow 定时运行，始终安装 Marketplace 当前审核通过的 `global-dharma` release。它用于发现 Marketplace、下载、账号、iOS Runtime 或远端发布变化造成的回归。
+`schedule` 事件必须强制 `marketplace_mode=live`，API base 固定为 `https://api.ombhrum.com`；手动运行可以显式选择 `live`。L3 使用同一个测试账号、同一个 production ProductClient/Installer、同一个 Appium flow 和同一组精确 locator，不允许为线上 canary 维护另一套安装脚本。
 
-具备受控真实 iPhone runner 后，应再增加真机 canary；Simulator 不是权限、后台生命周期、系统资源约束的最终证明。真机层不得替代 L1/L2，而是低频补充。
+L3 在 UI 流程前同样通过 production `marketplace.search` 精确预检 `global-dharma` 的 `mobile` release。若线上没有审核通过的精确 release，必须以 `LIVE_MARKETPLACE_RELEASE_MISSING` 明确失败并上传 preflight evidence；不得回退到 fixture、内置 registry、静态 marketplace 文件或手工复制包来“把测试变绿”。它用于发现真实 Marketplace 目录、Release 发布、下载、账号、iOS Runtime 或远端 MCP 发布变化造成的事故。
+
+具备受控真实 iPhone runner 后，应再增加低频真机 canary；Simulator 不是权限、后台生命周期、系统资源约束的最终证明。真机层不得替代 L1/L2/L3，而是额外补充。
 
 ## E2E Control v1
 

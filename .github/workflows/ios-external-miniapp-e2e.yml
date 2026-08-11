@@ -2,6 +2,15 @@ name: iOS External MiniApp E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      marketplace_mode:
+        description: Marketplace distribution source for the iOS black-box run
+        required: true
+        default: fixture
+        type: choice
+        options:
+          - fixture
+          - live
   schedule:
     - cron: '17 18 * * *'
   pull_request:
@@ -9,6 +18,7 @@ on:
       - 'fabushi/lib/**'
       - 'fabushi/ios/**'
       - 'fabushi/tool/ios_e2e/**'
+      - '.agents/plugins/plugins/global-dharma/**'
       - 'third_party/mahayana/**'
       - 'docs/testing/ios-external-miniapp-e2e.md'
       - '.github/workflows/ios-external-miniapp-e2e.yml'
@@ -29,6 +39,9 @@ env:
   XCUITEST_DRIVER_VERSION: 12.3.1
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+  LIVE_MARKETPLACE_API_BASE_URL: https://api.ombhrum.com
+  FIXTURE_MARKETPLACE_API_BASE_URL: http://127.0.0.1:18787
+  MARKETPLACE_MODE: ${{ github.event_name == 'schedule' && 'live' || github.event_name == 'workflow_dispatch' && inputs.marketplace_mode || 'fixture' }}
 
 jobs:
   architecture-contract:
@@ -51,6 +64,8 @@ jobs:
           set -euo pipefail
           python3 fabushi/tool/ios_e2e/verify_architecture.py
           python3 -m py_compile fabushi/tool/ios_e2e/appium_flow.py
+          python3 -m py_compile fabushi/tool/ios_e2e/control_client.py
+          python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture.py
           python3 -m json.tool \
             fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json \
             >/dev/null
@@ -64,6 +79,48 @@ jobs:
             --manifest-path "$MAHAYANA_MANIFEST" \
             --package mahayana-plugin-host \
             --package mahayana-platform-client
+
+      - name: Build canonical global-dharma Marketplace fixture contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$RUNNER_TEMP/marketplace-fixture-contract"
+          mkdir -p "$fixture_dir"
+          python3 fabushi/tool/ios_e2e/marketplace_fixture.py \
+            --plugin-root .agents/plugins/plugins/global-dharma \
+            --package-file "$fixture_dir/global-dharma.tar.gz" \
+            --metadata-file "$fixture_dir/metadata.json" \
+            --commit-sha "$GITHUB_SHA" \
+            --build-only
+          python3 - "$fixture_dir" <<'PY'
+          import hashlib
+          import json
+          import sys
+          import tarfile
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          package = root / 'global-dharma.tar.gz'
+          metadata = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+          payload = package.read_bytes()
+          assert metadata['protocol'] == 'fabushi.marketplace.fixture.v1'
+          assert metadata['pluginId'] == 'global-dharma'
+          canonical = json.loads(
+              Path('.agents/plugins/plugins/global-dharma/.codex-plugin/plugin.json').read_text(encoding='utf-8')
+          )
+          assert metadata['version'] == canonical['version']
+          assert metadata['platforms'] == ['mobile']
+          assert metadata['packageSize'] == len(payload)
+          assert metadata['packageSha256'] == hashlib.sha256(payload).hexdigest()
+          with tarfile.open(package, 'r:gz') as archive:
+              names = set(archive.getnames())
+          required = {
+              '.codex-plugin/plugin.json',
+              '.mahayana/plugin.json',
+              '.mcp.json',
+          }
+          assert required <= names, (required - names)
+          PY
 
   ios-external-miniapp-e2e:
     name: iOS production-path black-box canary
@@ -89,6 +146,7 @@ jobs:
           set -euo pipefail
           mkdir -p \
             artifacts/install \
+            artifacts/marketplace \
             artifacts/ios/screenshots \
             artifacts/ios/page-source \
             artifacts/logs
@@ -116,6 +174,51 @@ jobs:
             exit 1
           }
 
+      - name: Select Marketplace distribution mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$MARKETPLACE_MODE" in
+            fixture) marketplace_api_base_url="$FIXTURE_MARKETPLACE_API_BASE_URL" ;;
+            live) marketplace_api_base_url="$LIVE_MARKETPLACE_API_BASE_URL" ;;
+            *) echo "Unsupported MARKETPLACE_MODE=$MARKETPLACE_MODE" >&2; exit 1 ;;
+          esac
+          printf 'mode=%s\napiBaseUrl=%s\n' \
+            "$MARKETPLACE_MODE" "$marketplace_api_base_url" \
+            | tee artifacts/marketplace/mode.txt
+          echo "MARKETPLACE_API_BASE_URL=$marketplace_api_base_url" >> "$GITHUB_ENV"
+
+      - name: Start deterministic Marketplace distribution fixture
+        if: env.MARKETPLACE_MODE == 'fixture'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/marketplace_fixture.py \
+            --plugin-root .agents/plugins/plugins/global-dharma \
+            --package-file artifacts/marketplace/global-dharma.tar.gz \
+            --metadata-file artifacts/marketplace/fixture-metadata.json \
+            --commit-sha "$GITHUB_SHA" \
+            --host 127.0.0.1 \
+            --port 18787 \
+            > artifacts/logs/marketplace-fixture.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/marketplace-fixture.pid"
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:18787/healthz', timeout=2) as response:
+                      payload = json.loads(response.read().decode('utf-8'))
+                  if payload.get('ok') is True:
+                      raise SystemExit(0)
+              except Exception:
+                  time.sleep(0.25)
+          raise SystemExit('Marketplace fixture did not become ready within 30 seconds')
+          PY
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -140,41 +243,72 @@ jobs:
           appium --version | tee artifacts/logs/appium-version.txt
           appium driver list --installed | tee artifacts/logs/appium-drivers.txt
 
-      - name: Resolve clean iOS Simulator
+      - name: Create isolated iOS Simulator
         id: simulator
         shell: bash
         run: |
           set -euo pipefail
-          xcrun simctl list devices available -j > artifacts/ios/available-devices.json
-          udid="$(python3 - artifacts/ios/available-devices.json <<'PY'
+          xcrun simctl list runtimes available -j > artifacts/ios/available-runtimes.json
+          xcrun simctl list devicetypes -j > artifacts/ios/available-device-types.json
+          selection="$(python3 - artifacts/ios/available-runtimes.json artifacts/ios/available-device-types.json <<'PY'
           import json
+          import re
           import sys
           from pathlib import Path
 
-          data = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
-          devices = []
-          for runtime, rows in data.get('devices', {}).items():
-              for row in rows:
-                  if row.get('isAvailable') and 'iPhone' in row.get('name', ''):
-                      name = row.get('name', '')
-                      rank = next(
-                          (100 - index for index, preferred in enumerate(
-                              ('iPhone 16', 'iPhone 15', 'iPhone 14')
-                          ) if preferred in name),
-                          0,
-                      )
-                      devices.append((rank, runtime, name, row['udid']))
-          if not devices:
-              raise SystemExit('No available iPhone Simulator was found')
-          devices.sort(reverse=True)
-          print(devices[0][3])
+          runtimes = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')).get('runtimes', [])
+          device_types = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')).get('devicetypes', [])
+
+          ios = []
+          for runtime in runtimes:
+              identifier = runtime.get('identifier', '')
+              if not runtime.get('isAvailable', True) or '.iOS-' not in identifier:
+                  continue
+              version = runtime.get('version', '')
+              numbers = tuple(int(part) for part in re.findall(r'\d+', version))
+              ios.append((numbers, identifier, runtime.get('name', identifier)))
+          if not ios:
+              raise SystemExit('No available iOS Simulator runtime was found')
+          ios.sort(reverse=True)
+          _, runtime_id, runtime_name = ios[0]
+
+          preferred = ('iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro', 'iPhone 15')
+          by_name = {row.get('name'): row.get('identifier') for row in device_types}
+          device_name = next((name for name in preferred if by_name.get(name)), None)
+          if device_name is None:
+              device_name = next(
+                  (row.get('name') for row in device_types if str(row.get('name', '')).startswith('iPhone')),
+                  None,
+              )
+          if not device_name or not by_name.get(device_name):
+              raise SystemExit('No iPhone Simulator device type was found')
+          print(f'{runtime_id}|{by_name[device_name]}|{runtime_name}|{device_name}')
           PY
           )"
-          xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
-          xcrun simctl erase "$udid"
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
+          IFS='|' read -r runtime_id device_type runtime_name device_name <<< "$selection"
+          simulator_name="Fabushi-E2E-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          udid="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")"
+          test -n "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          printf 'runtime=%s\ndevice=%s\nudid=%s\n' \
+            "$runtime_name" "$device_name" "$udid" \
+            | tee artifacts/ios/selected-simulator.txt
+          xcrun simctl boot "$udid"
+          python3 - "$udid" <<'PY'
+          import subprocess
+          import sys
+
+          udid = sys.argv[1]
+          try:
+              subprocess.run(
+                  ['xcrun', 'simctl', 'bootstatus', udid, '-b'],
+                  check=True,
+                  timeout=240,
+              )
+          except subprocess.TimeoutExpired as error:
+              raise SystemExit(f'Simulator boot did not complete within 240 seconds: {error}')
+          PY
           xcrun simctl io "$udid" screenshot artifacts/ios/screenshots/00-clean-simulator.png
 
       - name: Build iOS Simulator app
@@ -245,6 +379,7 @@ jobs:
           echo $! > "$RUNNER_TEMP/ios-video.pid"
 
           SIMCTL_CHILD_MAHAYANA_TEST_ACCOUNT_TOKEN="$TEST_ACCOUNT_TOKEN" \
+            SIMCTL_CHILD_MAHAYANA_API_BASE_URL="$MARKETPLACE_API_BASE_URL" \
             xcrun simctl launch --terminate-running-process \
               "$IOS_UDID" "$BUNDLE_ID" \
             > artifacts/logs/simctl-launch.txt
@@ -270,6 +405,56 @@ jobs:
           payload = json.loads(Path('artifacts/install/control-auth-status.json').read_text())
           assert payload.get('ok') is True
           assert payload.get('result', {}).get('loggedIn') is True
+          PY
+
+      - name: Preflight exact Marketplace release through production client
+        shell: bash
+        env:
+          APP_HOME: ${{ steps.app.outputs.app_home }}
+        run: |
+          set -euo pipefail
+          params="$(python3 -c 'import json,os; print(json.dumps({"query": os.environ["PLUGIN_QUERY"]}))')"
+          python3 fabushi/tool/ios_e2e/control_client.py \
+            --app-home "$APP_HOME" \
+            --method marketplace.search \
+            --params "$params" \
+            --output artifacts/install/control-marketplace-search.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path('artifacts/install/control-marketplace-search.json').read_text(encoding='utf-8'))
+          mode = os.environ['MARKETPLACE_MODE']
+          plugin_id = os.environ['PLUGIN_ID']
+          result = payload.get('result', {}) if payload.get('ok') is True else {}
+          plugins = result.get('plugins', []) if isinstance(result, dict) else []
+          target = next(
+              (item for item in plugins if isinstance(item, dict) and item.get('pluginId') == plugin_id),
+              None,
+          )
+          evidence = {
+              'mode': mode,
+              'pluginId': plugin_id,
+              'apiBaseUrl': os.environ['MARKETPLACE_API_BASE_URL'],
+              'found': target is not None,
+              'release': target,
+          }
+          Path('artifacts/marketplace/preflight.json').write_text(
+              json.dumps(evidence, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          if target is None:
+              code = 'LIVE_MARKETPLACE_RELEASE_MISSING' if mode == 'live' else 'FIXTURE_MARKETPLACE_RELEASE_MISSING'
+              raise SystemExit(f'{code}: exact {plugin_id} mobile release is unavailable')
+          if not target.get('latestVersion'):
+              raise SystemExit(f'{mode.upper()}_MARKETPLACE_VERSION_MISSING: release has no latestVersion')
+          if mode == 'fixture':
+              fixture = json.loads(Path('artifacts/marketplace/fixture-metadata.json').read_text(encoding='utf-8'))
+              assert target.get('pluginId') == fixture['pluginId']
+              assert target.get('latestVersion') == fixture['version']
+              assert target.get('packageSha256') == fixture['packageSha256']
+              assert target.get('packageSize') == fixture['packageSize']
           PY
 
       - name: Start Appium local WebDriver endpoint
@@ -377,8 +562,18 @@ jobs:
           assert isinstance(source.get('provider'), str) and source['provider']
           if source.get('provider') == 'github':
               assert isinstance(source.get('repository'), str) and source['repository']
+          mode = __import__('os').environ['MARKETPLACE_MODE']
+          if mode == 'fixture':
+              fixture = json.loads(Path('artifacts/marketplace/fixture-metadata.json').read_text(encoding='utf-8'))
+              assert source.get('provider') == 'repository-fixture'
+              assert source.get('repository') == 'bhrumom/fabushi'
+              assert source.get('commitSha') == fixture['source']['commitSha']
+              assert receipt.get('version') == fixture['version']
+              assert digest.lower() == fixture['packageSha256'].lower()
+              assert receipt.get('packageSize') == fixture['packageSize']
 
           evidence = {
+              'marketplaceMode': mode,
               'pluginId': plugin_id,
               'version': receipt['version'],
               'packageSha256': digest.lower(),
@@ -410,6 +605,9 @@ jobs:
           if [ -f "$RUNNER_TEMP/appium.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/appium.pid")" 2>/dev/null
           fi
+          if [ -f "$RUNNER_TEMP/marketplace-fixture.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/marketplace-fixture.pid")" 2>/dev/null
+          fi
           sleep 3
           if [ -n "${IOS_UDID:-}" ]; then
             xcrun simctl io "$IOS_UDID" screenshot \
@@ -419,6 +617,8 @@ jobs:
               --last 30m \
               --predicate 'process == "Runner"' \
               > artifacts/logs/ios-runner-final.jsonl 2>&1
+            xcrun simctl shutdown "$IOS_UDID" 2>/dev/null || true
+            xcrun simctl delete "$IOS_UDID" 2>/dev/null || true
           fi
           if [ -n "${APP_HOME:-}" ] && [ -d "$APP_HOME/Library/Application Support/mahayana-runtime" ]; then
             find "$APP_HOME/Library/Application Support/mahayana-runtime" \
@@ -430,7 +630,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-external-miniapp-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ios-external-miniapp-e2e-${{ env.MARKETPLACE_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts
           if-no-files-found: warn
           retention-days: 14
