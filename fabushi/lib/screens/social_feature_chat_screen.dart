@@ -1189,7 +1189,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       body: body,
     );
     final preview = _platformBody(response);
-    if (preview is Map && preview['requiresConfirmation'] == true) {
+    if (preview['requiresConfirmation'] == true) {
       if (!mounted) return;
       final confirmed =
           await showDialog<bool>(
@@ -1221,9 +1221,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       );
     }
     final data = _platformBody(response);
-    final message = data is Map
-        ? data['message']?.toString()
-        : null;
+    final message = data['message']?.toString();
     _botMessages.add(
       _ChatMessage.bot(message?.isNotEmpty == true ? message! : '修复任务已提交。'),
     );
