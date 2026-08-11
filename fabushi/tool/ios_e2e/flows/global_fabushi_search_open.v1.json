@@ -57,7 +57,8 @@
         "using": "accessibility id",
         "value": "e2e.miniapp.result.{{pluginId}}.installed"
       },
-      "timeoutSeconds": 120
+      "timeoutSeconds": 120,
+      "evidence": true
     },
     {
       "name": "open-installed-chat",
