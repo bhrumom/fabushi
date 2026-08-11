@@ -88,24 +88,27 @@ void main() {
       expect(response['membership']['type'], 'premium');
     });
 
-    test('preserves backend failure message when creating payment session', () async {
-      final service = MembershipService(
-        apiClient: FakeApiRequester(
-          postResponse: {
-            'success': false,
-            'error': '当前套餐不可购买',
-            'statusCode': 422,
-            'errorKey': 'VALIDATION_ERROR',
-          },
-        ),
-      );
+    test(
+      'preserves backend failure message when creating payment session',
+      () async {
+        final service = MembershipService(
+          apiClient: FakeApiRequester(
+            postResponse: {
+              'success': false,
+              'error': '当前套餐不可购买',
+              'statusCode': 422,
+              'errorKey': 'VALIDATION_ERROR',
+            },
+          ),
+        );
 
-      final response = await service.createPaymentSession('token', 'yearly');
+        final response = await service.createPaymentSession('token', 'yearly');
 
-      expect(response['success'], false);
-      expect(response['message'], '当前套餐不可购买');
-      expect(response['statusCode'], 422);
-      expect(response['errorKey'], 'VALIDATION_ERROR');
-    });
+        expect(response['success'], false);
+        expect(response['message'], '当前套餐不可购买');
+        expect(response['statusCode'], 422);
+        expect(response['errorKey'], 'VALIDATION_ERROR');
+      },
+    );
   });
 }

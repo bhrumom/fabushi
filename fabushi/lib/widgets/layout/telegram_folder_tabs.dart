@@ -18,12 +18,7 @@ class TelegramFolderTabs extends StatelessWidget {
       height: 48,
       decoration: const BoxDecoration(
         color: Color(0xFF17212B),
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFF223040),
-            width: 1,
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFF223040), width: 1)),
       ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -42,9 +37,13 @@ class TelegramFolderTabs extends StatelessWidget {
                   Text(
                     tabs[index],
                     style: TextStyle(
-                      color: isSelected ? const Color(0xFF40A7E3) : const Color(0xFF728196),
+                      color: isSelected
+                          ? const Color(0xFF40A7E3)
+                          : const Color(0xFF728196),
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -52,7 +51,9 @@ class TelegramFolderTabs extends StatelessWidget {
                     height: 3,
                     width: 32,
                     decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF40A7E3) : Colors.transparent,
+                      color: isSelected
+                          ? const Color(0xFF40A7E3)
+                          : Colors.transparent,
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(3),
                         topRight: Radius.circular(3),

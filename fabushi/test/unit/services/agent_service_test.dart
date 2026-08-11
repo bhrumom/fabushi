@@ -21,7 +21,10 @@ void main() {
         baseUrl: () async => 'https://api.ombhrum.com',
         httpClient: MockClient((request) async {
           expect(request.method, 'POST');
-          expect(request.url.toString(), 'https://api.ombhrum.com/api/agent/chat');
+          expect(
+            request.url.toString(),
+            'https://api.ombhrum.com/api/agent/chat',
+          );
           expect(request.headers['Authorization'], 'Bearer token');
           final body = jsonDecode(request.body) as Map<String, dynamic>;
           expect(body['message'], '今日适合念什么经？');

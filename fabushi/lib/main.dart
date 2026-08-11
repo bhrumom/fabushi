@@ -25,9 +25,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Center(child: Text('大乘')),
-      ),
+      home: Scaffold(body: Center(child: Text('大乘'))),
     );
   }
 }

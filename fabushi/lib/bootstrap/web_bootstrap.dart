@@ -11,21 +11,24 @@ import 'web_instant_app.dart';
 Future<void> bootstrapApplication() async {
   debugPrint('⚡ [web] App starting with minimal first chunk...');
 
-  runZonedGuarded(() {
-    setupDependencies();
+  runZonedGuarded(
+    () {
+      setupDependencies();
 
-    if (kDebugMode) {
-      AppConfig.printConfigInfo();
-    }
+      if (kDebugMode) {
+        AppConfig.printConfigInfo();
+      }
 
-    runApp(const WebInstantApp());
+      runApp(const WebInstantApp());
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_startDeferredWebServices());
-    });
-  }, (error, stackTrace) {
-    debugPrint('⚠️ [web] bootstrap error: $error');
-  });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_startDeferredWebServices());
+      });
+    },
+    (error, stackTrace) {
+      debugPrint('⚠️ [web] bootstrap error: $error');
+    },
+  );
 }
 
 Future<void> _startDeferredWebServices() async {

@@ -5,10 +5,7 @@ import 'package:flutter/material.dart';
 class StartupSplashScreen extends StatefulWidget {
   final String phaseLabel;
 
-  const StartupSplashScreen({
-    super.key,
-    required this.phaseLabel,
-  });
+  const StartupSplashScreen({super.key, required this.phaseLabel});
 
   @override
   State<StartupSplashScreen> createState() => _StartupSplashScreenState();
@@ -99,7 +96,9 @@ class _StartupSplashScreenState extends State<StartupSplashScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0x33D4AF37).withOpacity(0.45),
+                                color: const Color(
+                                  0x33D4AF37,
+                                ).withOpacity(0.45),
                                 blurRadius: 28,
                                 spreadRadius: 8,
                               ),

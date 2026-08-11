@@ -46,11 +46,7 @@ class _MahayanaE2eControl {
     _directory = directory;
     await _writeAtomic(
       File(p.join(directory.path, 'ready.json')),
-      <String, dynamic>{
-        'protocol': _protocol,
-        'ready': true,
-        'pid': pid,
-      },
+      <String, dynamic>{'protocol': _protocol, 'ready': true, 'pid': pid},
     );
     _timer = Timer.periodic(
       const Duration(milliseconds: 200),
@@ -122,10 +118,7 @@ class _MahayanaE2eControl {
   ) async {
     switch (method) {
       case 'ping':
-        return const <String, dynamic>{
-          'protocol': _protocol,
-          'enabled': true,
-        };
+        return const <String, dynamic>{'protocol': _protocol, 'enabled': true};
       case 'auth.status':
         return MahayanaSdk.instance.execute(const {
           '@type': 'mahayana.auth.status',
@@ -148,7 +141,11 @@ class _MahayanaE2eControl {
           '@type': 'mahayana.runtime.status',
         });
       default:
-        throw ArgumentError.value(method, 'method', 'unsupported E2E control method');
+        throw ArgumentError.value(
+          method,
+          'method',
+          'unsupported E2E control method',
+        );
     }
   }
 
@@ -170,7 +167,10 @@ class _MahayanaE2eControl {
     return value;
   }
 
-  Future<void> _writeAtomic(File destination, Map<String, dynamic> value) async {
+  Future<void> _writeAtomic(
+    File destination,
+    Map<String, dynamic> value,
+  ) async {
     final temporary = File('${destination.path}.tmp');
     await temporary.writeAsString(
       '${const JsonEncoder.withIndent('  ').convert(value)}\n',

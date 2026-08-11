@@ -140,10 +140,7 @@ class AlipayService {
 
       final isInstalled = await isAlipayInstalled();
       if (!isInstalled) {
-        return {
-          'success': false,
-          'message': '未安装支付宝APP，请先安装支付宝或改用网页支付',
-        };
+        return {'success': false, 'message': '未安装支付宝APP，请先安装支付宝或改用网页支付'};
       }
 
       // 验证支付参数

@@ -39,7 +39,9 @@ class AppErrorReport {
     if (firstLine.isEmpty) {
       return '应用运行异常';
     }
-    return firstLine.length > 72 ? '${firstLine.substring(0, 72)}...' : firstLine;
+    return firstLine.length > 72
+        ? '${firstLine.substring(0, 72)}...'
+        : firstLine;
   }
 
   String get suggestedTitle {
@@ -93,14 +95,7 @@ class AppErrorReport {
     ];
 
     if (stackTraceText.trim().isNotEmpty) {
-      lines.addAll([
-        '### 堆栈信息',
-        '',
-        '```',
-        stackTraceText,
-        '```',
-        '',
-      ]);
+      lines.addAll(['### 堆栈信息', '', '```', stackTraceText, '```', '']);
     }
 
     if (extra.isNotEmpty) {
@@ -207,10 +202,7 @@ class ErrorReportService {
   }) async {
     final report = _lastReport;
     if (report == null) {
-      return {
-        'success': false,
-        'error': '当前没有可提交的错误报告。',
-      };
+      return {'success': false, 'error': '当前没有可提交的错误报告。'};
     }
 
     return ApiClient.instance.post(

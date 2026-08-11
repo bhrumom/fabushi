@@ -26,11 +26,7 @@ class DefaultSocialHttpClient implements SocialHttpClient {
     Map<String, String>? queryParams,
     bool useAuth = false,
   }) {
-    return HttpService.get(
-      url,
-      queryParams: queryParams,
-      useAuth: useAuth,
-    );
+    return HttpService.get(url, queryParams: queryParams, useAuth: useAuth);
   }
 
   @override

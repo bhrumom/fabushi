@@ -381,6 +381,7 @@ def main() -> int:
         ROOT / "fabushi/ios/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/macos/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/ios/Runner/Configuration.storekit",
+        ROOT / "fabushi/test/unit/core/app_config_buddha_model_test.dart",
         ROOT / "fabushi/assets/images",
         ROOT / "fabushi/fonts/NotoSansSC-Bold.otf",
         ROOT / "fabushi/fonts/NotoSansSC-Regular.otf",

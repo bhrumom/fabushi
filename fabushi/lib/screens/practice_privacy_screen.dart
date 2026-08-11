@@ -47,9 +47,9 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
     );
     if (!mounted) return;
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? '修行隐私设置已保存' : '保存失败，请稍后重试')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(ok ? '修行隐私设置已保存' : '保存失败，请稍后重试')));
   }
 
   @override
@@ -62,7 +62,9 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
         foregroundColor: Colors.white,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFFD4AF37)),
+            )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -85,21 +87,24 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
                           title: '公开功课名称',
                           subtitle: '例如：公开“地藏经”“佛号”等功课名称。关闭后只显示“修行功课”。',
                           value: _showPracticeName,
-                          onChanged: (value) => setState(() => _showPracticeName = value),
+                          onChanged: (value) =>
+                              setState(() => _showPracticeName = value),
                         ),
                         const SizedBox(height: 12),
                         _buildSwitch(
                           title: '公开修行时长',
                           subtitle: '开启后，排行榜和记录明细可展示分钟数。关闭后隐藏时长。',
                           value: _showDuration,
-                          onChanged: (value) => setState(() => _showDuration = value),
+                          onChanged: (value) =>
+                              setState(() => _showDuration = value),
                         ),
                         const SizedBox(height: 12),
                         _buildSwitch(
                           title: '公开念诵遍数',
                           subtitle: '开启后公开遍数统计；关闭后隐藏具体遍数。',
                           value: _showChantCount,
-                          onChanged: (value) => setState(() => _showChantCount = value),
+                          onChanged: (value) =>
+                              setState(() => _showChantCount = value),
                         ),
                       ],
                     ),
@@ -113,7 +118,9 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFD4AF37),
                       foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: _saving
                         ? const SizedBox(
@@ -121,7 +128,10 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('保存设置', style: TextStyle(fontWeight: FontWeight.bold)),
+                        : const Text(
+                            '保存设置',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
               ],
@@ -147,10 +157,23 @@ class _PracticePrivacyScreenState extends State<PracticePrivacyScreen> {
         activeColor: const Color(0xFFD4AF37),
         value: value,
         onChanged: onChanged,
-        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
-          child: Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12, height: 1.35)),
+          child: Text(
+            subtitle,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
         ),
       ),
     );
@@ -178,12 +201,19 @@ class _IntroCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(isPrivate ? Icons.lock_outline : Icons.visibility_outlined, color: const Color(0xFFD4AF37)),
+          Icon(
+            isPrivate ? Icons.lock_outline : Icons.visibility_outlined,
+            color: const Color(0xFFD4AF37),
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
               '你可以按字段控制公开范围：只公开修行时间、不公开具体功课；或公开功课、不公开修行时间。心得和备注默认不公开。',
-              style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.45,
+              ),
             ),
           ),
         ],

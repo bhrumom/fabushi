@@ -534,7 +534,6 @@ List<String> _libraryCandidates() => <String>[
   if (Platform.isWindows) 'mahayana_runtime.dll',
 ];
 
-
 String _productExecuteSymbol() => Platform.isIOS
     ? 'fabushi_mahayana_product_execute'
     : 'mahayana_product_execute';

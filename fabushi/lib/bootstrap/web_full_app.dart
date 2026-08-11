@@ -49,9 +49,7 @@ class _UnifiedLoginRouteScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: Color(0xFF09070B),
-      body: Center(
-        child: UnifiedLoginDialog(),
-      ),
+      body: Center(child: UnifiedLoginDialog()),
     );
   }
 }

@@ -17,12 +17,14 @@ http.Response jsonResponse(String body, int statusCode) {
 class FakeLikeHttpClient implements LikeHttpClient {
   FakeLikeHttpClient({this.onGet, this.onPost});
 
-  final Future<http.Response> Function(Uri url, Map<String, String>? headers)? onGet;
+  final Future<http.Response> Function(Uri url, Map<String, String>? headers)?
+  onGet;
   final Future<http.Response> Function(
     Uri url,
     Map<String, String>? headers,
     Object? body,
-  )? onPost;
+  )?
+  onPost;
 
   @override
   Future<http.Response> get(Uri url, {Map<String, String>? headers}) async {
@@ -111,40 +113,43 @@ void main() {
       expect(service.likedCount, 0);
     });
 
-    test('toggleLike sends title and file path and applies returned count', () async {
-      Map<String, dynamic>? capturedBody;
-      Map<String, String>? capturedHeaders;
+    test(
+      'toggleLike sends title and file path and applies returned count',
+      () async {
+        Map<String, dynamic>? capturedBody;
+        Map<String, String>? capturedHeaders;
 
-      final service = LikeService.withDependencies(
-        storage: MemoryLikeStorage(),
-        httpClient: FakeLikeHttpClient(
-          onPost: (url, headers, body) async {
-            capturedHeaders = headers;
-            capturedBody = Map<String, dynamic>.from(
-              jsonDecode(body! as String) as Map,
-            );
-            return jsonResponse('{"likeCount":9}', 200);
-          },
-        ),
-      );
+        final service = LikeService.withDependencies(
+          storage: MemoryLikeStorage(),
+          httpClient: FakeLikeHttpClient(
+            onPost: (url, headers, body) async {
+              capturedHeaders = headers;
+              capturedBody = Map<String, dynamic>.from(
+                jsonDecode(body! as String) as Map,
+              );
+              return jsonResponse('{"likeCount":9}', 200);
+            },
+          ),
+        );
 
-      service.setAuthToken('token');
-      final item = buildLikedItem(
-        id: 'content-a',
-        likedAt: DateTime.parse('2026-05-04T02:00:00Z'),
-        filePath: '/notes/a.md',
-      );
+        service.setAuthToken('token');
+        final item = buildLikedItem(
+          id: 'content-a',
+          likedAt: DateTime.parse('2026-05-04T02:00:00Z'),
+          filePath: '/notes/a.md',
+        );
 
-      await service.toggleLike(item);
-      await Future<void>.delayed(Duration.zero);
+        await service.toggleLike(item);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(service.isLiked('content-a'), true);
-      expect(service.getLikeCount('content-a'), 9);
-      expect(capturedHeaders?['Authorization'], 'Bearer token');
-      expect(capturedBody?['title'], '文章标题');
-      expect(capturedBody?['filePath'], '/notes/a.md');
-      expect(capturedBody?['action'], 'like');
-    });
+        expect(service.isLiked('content-a'), true);
+        expect(service.getLikeCount('content-a'), 9);
+        expect(capturedHeaders?['Authorization'], 'Bearer token');
+        expect(capturedBody?['title'], '文章标题');
+        expect(capturedBody?['filePath'], '/notes/a.md');
+        expect(capturedBody?['action'], 'like');
+      },
+    );
 
     test('fetchLikeCounts updates numeric counts only', () async {
       final service = LikeService.withDependencies(

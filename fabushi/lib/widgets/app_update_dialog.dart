@@ -129,20 +129,15 @@ class AppUpdateDialog extends StatelessWidget {
         ),
         actions: [
           if (!decision.isForce && onLaterPressed != null)
-            TextButton(
-              onPressed: onLaterPressed,
-              child: const Text('稍后再说'),
-            ),
+            TextButton(onPressed: onLaterPressed, child: const Text('稍后再说')),
           if (decision.canSkip && onSkipPressed != null)
-            TextButton(
-              onPressed: onSkipPressed,
-              child: const Text('跳过此版本'),
-            ),
+            TextButton(onPressed: onSkipPressed, child: const Text('跳过此版本')),
           FilledButton(
             onPressed: () => onUpdatePressed(),
             style: FilledButton.styleFrom(
-              backgroundColor:
-                  decision.isForce ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
+              backgroundColor: decision.isForce
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFF22C55E),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               shape: RoundedRectangleBorder(

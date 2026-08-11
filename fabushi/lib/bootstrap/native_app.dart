@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/design_system/app_theme.dart';
 import '../features/auth/application/auth_model.dart';
-import '../features/auth/presentation/screens/douyin_login_screen.dart' deferred as login;
+import '../features/auth/presentation/screens/douyin_login_screen.dart'
+    deferred as login;
 import '../l10n/app_localizations.dart';
 import '../models/settings_model.dart';
 import '../widgets/app_wrapper.dart';

@@ -87,9 +87,9 @@ class TelegramDrawer extends StatelessWidget {
                   label: '关于我们',
                   onTap: () {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('大乘平台')),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('大乘平台')));
                   },
                 ),
                 if (isLoggedIn) ...[
