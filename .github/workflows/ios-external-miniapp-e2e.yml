@@ -42,6 +42,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ios-external-miniapp-e2e-${{ github.ref }}
@@ -59,6 +60,7 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
   LIVE_MARKETPLACE_API_BASE_URL: https://api.ombhrum.com
   MARKETPLACE_MODE: ${{ inputs.marketplace_mode || (github.event_name == 'schedule' && 'live') || 'fixture' }}
+  IOS_E2E_BUILD_CONTRACT: v2
 
 jobs:
   architecture-contract:
@@ -87,6 +89,7 @@ jobs:
           python3 fabushi/tool/ios_e2e/verify_architecture.py
           python3 -m py_compile fabushi/tool/ios_e2e/appium_flow.py
           python3 -m py_compile fabushi/tool/ios_e2e/control_client.py
+          python3 -m py_compile fabushi/tool/ios_e2e/find_github_artifact.py
           python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture.py
           python3 -m py_compile fabushi/tool/ios_e2e/marketplace_fixture_probe.py
           python3 -m json.tool \
@@ -224,56 +227,30 @@ jobs:
           retention-days: 14
 
   ios-dependency-contract:
-    name: iOS dependency lock contract
-    runs-on: macos-15
-    timeout-minutes: 15
+    name: iOS committed lock preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Verify pinned Xcode and CocoaPods
+      - name: Verify committed iOS lock metadata
         shell: bash
         run: |
           set -euo pipefail
-          export DEVELOPER_DIR="$DEVELOPER_DIR"
-          xcodebuild -version
-          test "$(xcodebuild -version | awk '/^Xcode / {print $2}')" = "16.4"
-          test "$(pod --version)" = "$COCOAPODS_VERSION"
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Resolve Pub and CocoaPods graphs
-        shell: bash
-        run: |
-          set -o pipefail
-          (cd fabushi && flutter pub get) 2>&1 | tee ios-dependency-pub-get.log
-          (cd fabushi/ios && pod install) 2>&1 | tee ios-dependency-pod-install.log
-
-      - name: Require committed dependency locks
-        shell: bash
-        run: git diff --exit-code -- fabushi/pubspec.lock fabushi/ios/Podfile.lock
-
-      - name: Upload resolved iOS dependency locks
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-dependency-resolver-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            fabushi/pubspec.lock
-            fabushi/ios/Podfile.lock
-            fabushi/.flutter-plugins-dependencies
-            fabushi/macos/Flutter/GeneratedPluginRegistrant.swift
-            ios-dependency-pub-get.log
-            ios-dependency-pod-install.log
-          if-no-files-found: warn
-          retention-days: 14
+          pub_lock = Path('fabushi/pubspec.lock').read_text(encoding='utf-8')
+          pod_lock = Path('fabushi/ios/Podfile.lock').read_text(encoding='utf-8')
+          podfile = Path('fabushi/ios/Podfile').read_text(encoding='utf-8')
+          assert pub_lock.strip(), 'pubspec.lock is empty'
+          assert 'PODFILE CHECKSUM:' in pod_lock, 'Podfile.lock is missing its Podfile checksum'
+          assert 'COCOAPODS: 1.17.0' in pod_lock, 'Podfile.lock was not resolved by CocoaPods 1.17.0'
+          assert "platform :ios, '16.0'" in podfile, 'iOS deployment target drifted'
+          PY
 
   ios-external-miniapp-e2e:
     name: iOS production-path black-box canary
@@ -303,7 +280,8 @@ jobs:
             artifacts/ios/screenshots \
             artifacts/ios/page-source \
             artifacts/logs \
-            artifacts/performance
+            artifacts/performance \
+            artifacts/cache
 
       - name: Require fixed test account credential
         shell: bash
@@ -313,6 +291,40 @@ jobs:
             echo "TEST_ACCOUNT_TOKEN or MAHAYANA_TEST_ACCOUNT_TOKEN is required for the real iOS canary." >&2
             exit 1
           fi
+
+      - name: Verify runner Node.js for Appium
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_version="$(node -p 'process.versions.node')"
+          npm_version="$(npm --version)"
+          printf 'node=%s\nnpm=%s\n' "$node_version" "$npm_version" | tee artifacts/logs/node-version.txt
+          node_major="${node_version%%.*}"
+          test "$node_major" -ge 22
+
+      - name: Start pinned Appium XCUITest stack install asynchronously
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/appium-install.ok" "$RUNNER_TEMP/appium-install.failed"
+          (
+            set +e
+            npm install --global "appium@3.6.0"
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              appium driver install "xcuitest@12.3.1"
+              status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              appium --version
+              appium driver list --installed
+              touch "$RUNNER_TEMP/appium-install.ok"
+            else
+              printf '%s\n' "$status" > "$RUNNER_TEMP/appium-install.failed"
+            fi
+            exit "$status"
+          ) > artifacts/logs/appium-install.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/appium-install.pid"
 
       - name: Verify pinned Xcode toolchain
         shell: bash
@@ -363,7 +375,6 @@ jobs:
           runtime = matches[0]
           runtime_id = str(runtime['identifier'])
           runtime_name = str(runtime.get('name', runtime_id))
-
           preferred = ('iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro', 'iPhone 15')
           by_name = {row.get('name'): row.get('identifier') for row in device_types}
           device_name = next((name for name in preferred if by_name.get(name)), None)
@@ -430,35 +441,6 @@ jobs:
             --mode-file artifacts/marketplace/mode.txt \
             | tee artifacts/marketplace/fixture-probe.json
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12.0
-
-      - name: Start pinned Appium XCUITest stack install asynchronously
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f "$RUNNER_TEMP/appium-install.ok" "$RUNNER_TEMP/appium-install.failed"
-          (
-            set +e
-            npm install --global "appium@3.6.0"
-            status=$?
-            if [ "$status" -eq 0 ]; then
-              appium driver install "xcuitest@12.3.1"
-              status=$?
-            fi
-            if [ "$status" -eq 0 ]; then
-              appium --version
-              appium driver list --installed
-              touch "$RUNNER_TEMP/appium-install.ok"
-            else
-              printf '%s\n' "$status" > "$RUNNER_TEMP/appium-install.failed"
-            fi
-            exit "$status"
-          ) > artifacts/logs/appium-install.log 2>&1 &
-          echo $! > "$RUNNER_TEMP/appium-install.pid"
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -485,28 +467,64 @@ jobs:
           printf '%s\n' "$fingerprint" | tee artifacts/logs/mahayana-ios-runtime-fingerprint.txt
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
+      - name: Locate cached iOS E2E Runner.app artifact
+        id: ios-e2e-app-artifact
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_NAME: ios-e2e-runner-${{ env.IOS_E2E_BUILD_CONTRACT }}-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/find_github_artifact.py --name "$ARTIFACT_NAME"
+
+      - name: Download cached iOS E2E Runner.app artifact
+        if: steps.ios-e2e-app-artifact.outputs.hit == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.ios-e2e-app-artifact.outputs.name }}
+          path: ${{ runner.temp }}/ios-e2e-runner-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.ios-e2e-app-artifact.outputs.run_id }}
+
       - name: Restore cached iOS E2E Runner.app
+        if: steps.ios-e2e-app-artifact.outputs.hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/ios-e2e-runner-artifact/Runner.app.zip"
+          test -s "$archive"
+          rm -rf fabushi/build/ios/iphonesimulator/Runner.app
+          mkdir -p fabushi/build/ios/iphonesimulator
+          ditto -x -k "$archive" fabushi/build/ios/iphonesimulator
+          test -d fabushi/build/ios/iphonesimulator/Runner.app
+
+      - name: Restore legacy Runner.app dependency cache
+        if: steps.ios-e2e-app-artifact.outputs.hit != 'true'
         id: ios-e2e-app-cache
         uses: actions/cache/restore@v4
         with:
           path: fabushi/build/ios/iphonesimulator/Runner.app
           key: ios-e2e-runner-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
 
-      - name: Restore Xcode incremental build cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
-        id: ios-xcode-incremental-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            fabushi/build/ios
-            ~/Library/Developer/Xcode/DerivedData
-          key: ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
-          restore-keys: |
-            ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-
-            ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-
+      - name: Resolve Runner.app reuse state
+        id: runner-reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.ios-e2e-app-artifact.outputs.hit }}" = "true" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "source=artifact" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.ios-e2e-app-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "source=legacy-cache" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "source=build" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restore Cargo download cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         id: cargo-download-cache
         uses: actions/cache/restore@v4
         with:
@@ -516,8 +534,39 @@ jobs:
             ~/.cargo/git/db
           key: ios-mahayana-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}
 
+      - name: Locate fingerprinted iOS Mahayana runtime artifact
+        if: steps.runner-reuse.outputs.hit != 'true'
+        id: ios-mahayana-runtime-artifact
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_NAME: ios-mahayana-runtime-v2-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          python3 fabushi/tool/ios_e2e/find_github_artifact.py --name "$ARTIFACT_NAME"
+
+      - name: Download fingerprinted iOS Mahayana runtime artifact
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.ios-mahayana-runtime-artifact.outputs.hit == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.ios-mahayana-runtime-artifact.outputs.name }}
+          path: ${{ runner.temp }}/ios-mahayana-runtime-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.ios-mahayana-runtime-artifact.outputs.run_id }}
+
+      - name: Restore runtime from artifact
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.ios-mahayana-runtime-artifact.outputs.hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fabushi/ios/Runner/Libs
+          tar -C fabushi/ios/Runner/Libs -xzf "$RUNNER_TEMP/ios-mahayana-runtime-artifact/mahayana-runtime.tar.gz"
+          test -s fabushi/ios/Runner/Libs/libmahayana_runtime.a
+          test -s fabushi/ios/Runner/Libs/libmahayana_runtime.a.fingerprint
+
       - name: Restore fingerprinted iOS Mahayana runtime
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.ios-mahayana-runtime-artifact.outputs.hit != 'true'
         id: ios-mahayana-runtime-cache
         uses: actions/cache/restore@v4
         with:
@@ -527,7 +576,7 @@ jobs:
           key: ios-mahayana-runtime-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
 
       - name: Seed iOS Simulator Mahayana runtime
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         shell: bash
         timeout-minutes: 35
         env:
@@ -545,17 +594,27 @@ jobs:
           shasum -a 256 fabushi/ios/Runner/Libs/libmahayana_runtime.a \
             | tee artifacts/logs/mahayana-ios-runtime-sha256.txt
 
+      - name: Package fingerprinted iOS Mahayana runtime artifact
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.ios-mahayana-runtime-artifact.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C fabushi/ios/Runner/Libs -czf artifacts/cache/mahayana-runtime.tar.gz \
+            libmahayana_runtime.a \
+            libmahayana_runtime.a.fingerprint
+
       - name: Save fingerprinted iOS Mahayana runtime
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true' && steps.ios-mahayana-runtime-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.ios-mahayana-runtime-artifact.outputs.hit != 'true'
+        uses: actions/upload-artifact@v4
         with:
-          path: |
-            fabushi/ios/Runner/Libs/libmahayana_runtime.a
-            fabushi/ios/Runner/Libs/libmahayana_runtime.a.fingerprint
-          key: ios-mahayana-runtime-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
+          name: ios-mahayana-runtime-v2-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}
+          path: artifacts/cache/mahayana-runtime.tar.gz
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
 
       - name: Save Cargo download cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true' && steps.cargo-download-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.cargo-download-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -565,7 +624,7 @@ jobs:
           key: ios-mahayana-cargo-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.fingerprint }}-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock') }}
 
       - name: Setup Flutter
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -573,7 +632,7 @@ jobs:
           cache: true
 
       - name: Resolve Flutter dependencies without lock drift
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         working-directory: fabushi
         shell: bash
         timeout-minutes: 10
@@ -583,7 +642,7 @@ jobs:
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/pubspec.lock
 
       - name: Verify pinned CocoaPods toolchain
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -595,7 +654,7 @@ jobs:
           }
 
       - name: Restore CocoaPods download cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         id: cocoapods-download-cache
         uses: actions/cache/restore@v4
         with:
@@ -605,7 +664,7 @@ jobs:
           key: ios-cocoapods-v2-${{ runner.os }}-${{ runner.arch }}-xcode16.4-cocoapods1.17.0-${{ hashFiles('fabushi/ios/Podfile.lock') }}
 
       - name: Install pinned CocoaPods graph
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         working-directory: fabushi/ios
         shell: bash
         timeout-minutes: 15
@@ -615,7 +674,7 @@ jobs:
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- fabushi/ios/Podfile.lock
 
       - name: Save CocoaPods download cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true' && steps.cocoapods-download-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true' && steps.cocoapods-download-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -624,7 +683,7 @@ jobs:
           key: ios-cocoapods-v2-${{ runner.os }}-${{ runner.arch }}-xcode16.4-cocoapods1.17.0-${{ hashFiles('fabushi/ios/Podfile.lock') }}
 
       - name: Verify Xcode reuses fingerprinted Mahayana runtime
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         shell: bash
         env:
           CONFIGURATION: Debug
@@ -638,7 +697,7 @@ jobs:
             artifacts/logs/mahayana-ios-runtime-reuse.log
 
       - name: Build iOS Simulator app
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        if: steps.runner-reuse.outputs.hit != 'true'
         working-directory: fabushi
         shell: bash
         timeout-minutes: 45
@@ -652,25 +711,30 @@ jobs:
           finished="$(date +%s)"
           total_seconds="$((finished - started))"
           xcode_seconds="$(awk '/Xcode build done\./ {value=$NF; sub(/s$/, "", value); print value}' ../artifacts/logs/flutter-ios-build.log | tail -1)"
-          printf '{"protocol":"fabushi.ios.build-timing.v1","totalSeconds":%s,"xcodeSeconds":"%s","runnerAppCacheHit":false,"incrementalCacheExactHit":"%s"}\n' \
-            "$total_seconds" "$xcode_seconds" "${{ steps.ios-xcode-incremental-cache.outputs.cache-hit }}" \
+          printf '{"protocol":"fabushi.ios.build-timing.v2","totalSeconds":%s,"xcodeSeconds":"%s","runnerAppReuse":false}\n' \
+            "$total_seconds" "$xcode_seconds" \
             > ../artifacts/performance/ios-build-timing.json
 
-      - name: Save Xcode incremental build cache
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true' && steps.ios-xcode-incremental-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            fabushi/build/ios
-            ~/Library/Developer/Xcode/DerivedData
-          key: ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+      - name: Package cached iOS E2E Runner.app artifact
+        if: steps.ios-e2e-app-artifact.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/fabushi/build/ios/iphonesimulator/Runner.app"
+          test -d "$app"
+          rm -f artifacts/cache/Runner.app.zip
+          ditto -c -k --sequesterRsrc --keepParent "$app" artifacts/cache/Runner.app.zip
+          test -s artifacts/cache/Runner.app.zip
 
       - name: Save cached iOS E2E Runner.app
-        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        if: steps.ios-e2e-app-artifact.outputs.hit != 'true'
+        uses: actions/upload-artifact@v4
         with:
-          path: fabushi/build/ios/iphonesimulator/Runner.app
-          key: ios-e2e-runner-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+          name: ios-e2e-runner-${{ env.IOS_E2E_BUILD_CONTRACT }}-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+          path: artifacts/cache/Runner.app.zip
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
 
       - name: Wait for isolated matching iOS Simulator
         shell: bash
@@ -721,15 +785,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ steps.ios-e2e-app-cache.outputs.cache-hit }}" = "true" ]; then
-            printf '{"protocol":"fabushi.ios.build-timing.v1","totalSeconds":0,"xcodeSeconds":"0","runnerAppCacheHit":true,"incrementalCacheExactHit":"not-needed"}\n' \
+          if [ "${{ steps.runner-reuse.outputs.hit }}" = "true" ]; then
+            printf '{"protocol":"fabushi.ios.build-timing.v2","totalSeconds":0,"xcodeSeconds":"0","runnerAppReuse":true,"source":"%s"}\n' \
+              "${{ steps.runner-reuse.outputs.source }}" \
               > artifacts/performance/ios-build-timing.json
           fi
           {
             echo '### iOS E2E performance'
             echo
-            echo "- Runner.app exact cache: ${{ steps.ios-e2e-app-cache.outputs.cache-hit }}"
-            echo "- Xcode incremental exact cache: ${{ steps.ios-xcode-incremental-cache.outputs.cache-hit }}"
+            echo "- Runner.app artifact: ${{ steps.ios-e2e-app-artifact.outputs.hit }}"
+            echo "- Runner.app reuse: ${{ steps.runner-reuse.outputs.hit }} (${{ steps.runner-reuse.outputs.source }})"
+            echo "- Mahayana runtime artifact: ${{ steps.ios-mahayana-runtime-artifact.outputs.hit }}"
             if [ -f artifacts/performance/ios-build-timing.json ]; then
               echo "- Build timing: $(cat artifacts/performance/ios-build-timing.json)"
             fi
