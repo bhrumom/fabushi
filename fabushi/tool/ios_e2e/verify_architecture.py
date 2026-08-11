@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/ios-external-miniapp-e2e.yml"
 PUBSPEC = ROOT / "fabushi/pubspec.yaml"
 PUBSPEC_LOCK = ROOT / "fabushi/pubspec.lock"
+SCENE_PUBSPEC = ROOT / "fabushi/lib/packages/flutter_scene/pubspec.yaml"
+SCENE_BUILD_HOOK = ROOT / "fabushi/lib/packages/flutter_scene/hook/build.dart"
 AUTOFIX_WORKFLOW = ROOT / ".github/workflows/ios-e2e-codex-autofix.yml"
 FLOW = ROOT / "fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json"
 PRODUCT = ROOT / "third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs"
@@ -40,6 +42,8 @@ def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     pubspec = PUBSPEC.read_text(encoding="utf-8")
     pubspec_lock = PUBSPEC_LOCK.read_text(encoding="utf-8")
+    scene_pubspec = SCENE_PUBSPEC.read_text(encoding="utf-8")
+    scene_build_hook = SCENE_BUILD_HOOK.read_text(encoding="utf-8")
     autofix_workflow = AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
     product = PRODUCT.read_text(encoding="utf-8")
     installer = INSTALLER.read_text(encoding="utf-8")
@@ -231,6 +235,38 @@ def main() -> int:
         and 'sha256: "3aa91ebf1bef0191d49ab70a9e2303e715cf04260c8fbd956cf899e42e1f2a81"' in pubspec_lock
         and 'version: "2.4.4"' in pubspec_lock,
         "pubspec.lock must pin the verified FFmpegKit 2.4.4 archive with native iOS Simulator XCFramework support",
+    )
+
+    # Keep the local flutter_scene fork on the pure-Dart importer/tooling
+    # migration. The legacy 0.9 importer used CMake FetchContent and a
+    # TinyGLTF git SHA that disappeared upstream, so a clean hosted runner
+    # could no longer reproduce iOS/Android builds.
+    require(
+        "flutter_scene_importer: 0.11.0" in pubspec,
+        "the app must pin pure-Dart flutter_scene_importer 0.11.0",
+    )
+    for expected in (
+        "flutter_gpu_shaders: 0.4.0",
+        "flutter_scene_importer: 0.11.0",
+        "hooks: 1.0.0",
+    ):
+        require(expected in scene_pubspec, f"local flutter_scene fork must pin {expected}")
+    require(
+        "native_assets_cli" not in scene_pubspec
+        and "native_assets_cli" not in scene_build_hook
+        and "generateImporterFlatbufferDart" not in scene_build_hook
+        and "package:hooks/hooks.dart" in scene_build_hook,
+        "flutter_scene must use the pure-Dart Hooks build path, not the legacy CMake/native_assets importer",
+    )
+    for expected in (
+        'name: flutter_scene_importer\n      sha256: 11c3e699cf9794aaa225642776cfae33d1f3a1c1fabcd7573a1cd27d03d792fe\n      url: "https://pub.dev"\n    source: hosted\n    version: "0.11.0"',
+        'name: flutter_gpu_shaders\n      sha256: be460c3af0f55861d5d4f9f92f61c39ff89c13f0dd86a82584d070989b584cf6\n      url: "https://pub.dev"\n    source: hosted\n    version: "0.4.0"',
+        'name: hooks\n      sha256: 5d309c86e7ce34cd8e37aa71cb30cb652d3829b900ab145e4d9da564b31d59f7\n      url: "https://pub.dev"\n    source: hosted\n    version: "1.0.0"',
+    ):
+        require(expected in pubspec_lock, "pubspec.lock must pin the reproducible scene build toolchain")
+    require(
+        "native_assets_cli:" not in pubspec_lock,
+        "pubspec.lock must not retain the legacy native_assets_cli scene importer dependency",
     )
 
     require(

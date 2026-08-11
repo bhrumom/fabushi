@@ -554,10 +554,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_gpu_shaders
-      sha256: "98ff2396cd4543883bd4b693a782f9fcbda27e9bf5b3b92475332d36be3bfec6"
+      sha256: be460c3af0f55861d5d4f9f92f61c39ff89c13f0dd86a82584d070989b584cf6
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0"
+    version: "0.4.0"
   flutter_inappwebview:
     dependency: "direct main"
     description:
@@ -705,15 +705,15 @@ packages:
       path: "lib/packages/flutter_scene"
       relative: true
     source: path
-    version: "0.9.2-0"
+    version: "0.9.2-1"
   flutter_scene_importer:
     dependency: "direct dev"
     description:
       name: flutter_scene_importer
-      sha256: "81c544627dcbfc7227625b41abeaf23054fec5c36c57d2d6cb61518b3bd8a6cd"
+      sha256: 11c3e699cf9794aaa225642776cfae33d1f3a1c1fabcd7573a1cd27d03d792fe
       url: "https://pub.dev"
     source: hosted
-    version: "0.9.0-0"
+    version: "0.11.0"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -969,6 +969,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.15.6"
+  hooks:
+    dependency: transitive
+    description:
+      name: hooks
+      sha256: 5d309c86e7ce34cd8e37aa71cb30cb652d3829b900ab145e4d9da564b31d59f7
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   http:
     dependency: "direct main"
     description:
@@ -1239,14 +1247,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
-  native_assets_cli:
-    dependency: transitive
-    description:
-      name: native_assets_cli
-      sha256: "0907c5b85a21ae08dcdd0d2b75061cc614939911c2cab5ac903f35a9fbb2a50b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.13.0"
   nested:
     dependency: transitive
     description:
