@@ -43,7 +43,9 @@ L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
 ### L2 — iOS Simulator 黑盒验收（内部 PR / 手动）
 
-Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。流程必须是：
+Appium + XCUITest 只从 accessibility identifier 操作 App，不使用坐标。L2 固定使用 `macos-15` runner，并通过 `DEVELOPER_DIR=/Applications/Xcode_16.4.app/Contents/Developer` 明确锁定 Xcode 16.4；不得依赖 GitHub runner 的默认 Xcode。这样既满足当前 StoreKit 依赖的编译要求，也避免 runner 镜像默认工具链变化造成无关回归。
+
+流程必须是：
 
 1. 擦除并启动干净 Simulator；
 2. 安装 Fabushi App；
