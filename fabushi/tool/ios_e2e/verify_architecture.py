@@ -74,6 +74,18 @@ def main() -> int:
         "--method marketplace.install" not in workflow,
         "the black-box workflow must install through UI, not the control channel",
     )
+    require(
+        "runs-on: macos-15" in workflow,
+        "the iOS black-box job must use the macOS 15 runner image",
+    )
+    require(
+        "DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer" in workflow,
+        "the iOS black-box job must pin Xcode 16.4 explicitly",
+    )
+    require(
+        'Expected Xcode 16.4, got $xcode_version' in workflow,
+        "the workflow must fail fast when the selected Xcode drifts",
+    )
     require("appium@3.6.0" in workflow, "Appium must be pinned to 3.6.0")
     require(
         "xcuitest@12.3.1" in workflow,

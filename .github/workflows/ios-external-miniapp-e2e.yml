@@ -28,6 +28,7 @@ env:
   APPIUM_VERSION: 3.6.0
   XCUITEST_DRIVER_VERSION: 12.3.1
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
 jobs:
   architecture-contract:
@@ -70,7 +71,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
@@ -100,6 +101,20 @@ jobs:
             echo "TEST_ACCOUNT_TOKEN or MAHAYANA_TEST_ACCOUNT_TOKEN is required for the real iOS canary." >&2
             exit 1
           fi
+
+      - name: Verify pinned Xcode toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee artifacts/logs/xcode-version.txt
+          simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          printf '%s\n' "$simulator_sdk" | tee artifacts/logs/ios-simulator-sdk-version.txt
+          xcode_version="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
+          [ "$xcode_version" = "16.4" ] || {
+            echo "Expected Xcode 16.4, got $xcode_version" >&2
+            exit 1
+          }
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
