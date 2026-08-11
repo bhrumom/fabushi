@@ -56,7 +56,9 @@ class MahayanaMarketplaceService {
     final paths = await prepareMahayanaRuntimePaths();
     final value = paths['codexHome']?.toString().trim() ?? '';
     if (value.isEmpty) {
-      throw StateError('Marketplace installation is unavailable on this platform.');
+      throw StateError(
+        'Marketplace installation is unavailable on this platform.',
+      );
     }
     return value;
   }

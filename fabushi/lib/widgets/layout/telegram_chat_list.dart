@@ -110,14 +110,20 @@ class _TelegramChatListState extends State<TelegramChatList> {
     });
   }
 
-
   Future<void> _installBot(SocialFeatureBot bot) async {
-    final pluginId = bot.stableMiniAppId.replaceFirst(RegExp(r'^official\.'), '');
+    final pluginId = bot.stableMiniAppId.replaceFirst(
+      RegExp(r'^official\.'),
+      '',
+    );
     if (_installingMiniApps.contains(pluginId)) return;
     setState(() => _installingMiniApps.add(pluginId));
     try {
-      final installed = await MahayanaMarketplaceService.instance.install(pluginId);
-      final verified = await MahayanaMarketplaceService.instance.inspect(pluginId);
+      final installed = await MahayanaMarketplaceService.instance.install(
+        pluginId,
+      );
+      final verified = await MahayanaMarketplaceService.instance.inspect(
+        pluginId,
+      );
       if (installed['installed'] != true ||
           verified['installed'] != true ||
           verified['pluginId']?.toString() != pluginId) {
@@ -126,9 +132,9 @@ class _TelegramChatListState extends State<TelegramChatList> {
       await _loadBots();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('安装 ${bot.title} 失败：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('安装 ${bot.title} 失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _installingMiniApps.remove(pluginId));
@@ -137,7 +143,10 @@ class _TelegramChatListState extends State<TelegramChatList> {
 
   Widget? _buildInstallAction(SocialFeatureBot bot) {
     if (bot.isLocallyInstalled) return null;
-    final pluginId = bot.stableMiniAppId.replaceFirst(RegExp(r'^official\.'), '');
+    final pluginId = bot.stableMiniAppId.replaceFirst(
+      RegExp(r'^official\.'),
+      '',
+    );
     final installing = _installingMiniApps.contains(pluginId);
     return Semantics(
       identifier: 'e2e.miniapp.install.$pluginId',

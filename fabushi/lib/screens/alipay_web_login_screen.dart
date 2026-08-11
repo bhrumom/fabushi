@@ -97,12 +97,12 @@ class _AlipayWebLoginScreenState extends State<AlipayWebLoginScreen> {
         url.startsWith('fabushi://')) {
       return true;
     }
-    
+
     // Intercept web callbacks that contain the auth code
     if (url.contains('auth_code=') || url.contains('alipay_auth_code=')) {
       return true;
     }
-    
+
     return false;
   }
 

@@ -56,7 +56,9 @@ class _CodexProfileDashboardState extends State<CodexProfileDashboard> {
             : '未登录';
         final avatar = user?.avatar?.trim();
         final initial = displayName.isEmpty ? '大' : displayName.substring(0, 1);
-        final handle = user?.userNo != null ? '@user_${user!.userNo}' : '@guest';
+        final handle = user?.userNo != null
+            ? '@user_${user!.userNo}'
+            : '@guest';
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -93,7 +95,10 @@ class _CodexProfileDashboardState extends State<CodexProfileDashboard> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(handle, style: const TextStyle(color: Colors.white54)),
+                      Text(
+                        handle,
+                        style: const TextStyle(color: Colors.white54),
+                      ),
                       if (user?.email.isNotEmpty == true)
                         Text(
                           user!.email,

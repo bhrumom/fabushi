@@ -172,10 +172,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
         AppSettings.getOpenClawRemoteGatewayUrl(),
         _openClawRemoteGatewayUrl,
       ),
-      _loadSetting<String>('Codex Key', AppSettings.getCodexApiKey(), _codexApiKey),
-      _loadSetting<String>('Codex URL', AppSettings.getCodexBaseUrl(), _codexBaseUrl),
-      _loadSetting<String>('Codex Model', AppSettings.getCodexModelName(), _codexModelName),
-      _loadSetting<String>('Codex Provider', AppSettings.getCodexProvider(), _codexProvider),
+      _loadSetting<String>(
+        'Codex Key',
+        AppSettings.getCodexApiKey(),
+        _codexApiKey,
+      ),
+      _loadSetting<String>(
+        'Codex URL',
+        AppSettings.getCodexBaseUrl(),
+        _codexBaseUrl,
+      ),
+      _loadSetting<String>(
+        'Codex Model',
+        AppSettings.getCodexModelName(),
+        _codexModelName,
+      ),
+      _loadSetting<String>(
+        'Codex Provider',
+        AppSettings.getCodexProvider(),
+        _codexProvider,
+      ),
     ]);
 
     if (mounted) {
@@ -397,7 +413,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   value: selectedProvider,
-                  decoration: const InputDecoration(labelText: '供应商 (Provider)'),
+                  decoration: const InputDecoration(
+                    labelText: '供应商 (Provider)',
+                  ),
                   items: const [
                     DropdownMenuItem(
                       value: 'deepSeek',
@@ -1271,13 +1289,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.language,
             title: '显示语言',
             subtitle: '设置应用程序界面的显示语言。',
-            trailing: const Text('中文(简体)', style: TextStyle(color: Color(0xFF91A3B7))),
+            trailing: const Text(
+              '中文(简体)',
+              style: TextStyle(color: Color(0xFF91A3B7)),
+            ),
           ),
           _SettingsLightRow(
             icon: Icons.keyboard_return,
             title: '发送消息',
             subtitle: '设置聊天输入框中发送消息的快捷键。',
-            trailing: const Text('Enter', style: TextStyle(color: Color(0xFF91A3B7))),
+            trailing: const Text(
+              'Enter',
+              style: TextStyle(color: Color(0xFF91A3B7)),
+            ),
           ),
           _SettingsLightRow(
             icon: Icons.open_in_full,
@@ -1390,7 +1414,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.auto_awesome,
             title: '技能自动更新',
             subtitle: '保持已安装技能为最新版。',
-            trailing: Switch(value: true, onChanged: (_) {}, activeColor: const Color(0xFF40A7E3)),
+            trailing: Switch(
+              value: true,
+              onChanged: (_) {},
+              activeColor: const Color(0xFF40A7E3),
+            ),
           ),
           if (Platform.isAndroid)
             _SettingsLightRow(

@@ -9,25 +9,19 @@ Future<Map<String, dynamic>?> showMcpSchemaFormDialog(
 }) {
   return showDialog<Map<String, dynamic>>(
     context: context,
-    builder: (context) => _McpSchemaFormDialog(
-      toolName: toolName,
-      schema: schema,
-    ),
+    builder: (context) =>
+        _McpSchemaFormDialog(toolName: toolName, schema: schema),
   );
 }
 
 class _McpSchemaFormDialog extends StatefulWidget {
-  const _McpSchemaFormDialog({
-    required this.toolName,
-    required this.schema,
-  });
+  const _McpSchemaFormDialog({required this.toolName, required this.schema});
 
   final String toolName;
   final Map<String, dynamic> schema;
 
   @override
-  State<_McpSchemaFormDialog> createState() =>
-      _McpSchemaFormDialogState();
+  State<_McpSchemaFormDialog> createState() => _McpSchemaFormDialogState();
 }
 
 class _McpSchemaFormDialogState extends State<_McpSchemaFormDialog> {
@@ -279,7 +273,8 @@ dynamic _schemaDefault(Map<String, dynamic> schema) {
     return {
       for (final entry in properties.entries)
         if (entry.value is Map &&
-            _schemaDefault(Map<String, dynamic>.from(entry.value as Map)) != null)
+            _schemaDefault(Map<String, dynamic>.from(entry.value as Map)) !=
+                null)
           entry.key: _schemaDefault(
             Map<String, dynamic>.from(entry.value as Map),
           ),

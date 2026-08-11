@@ -77,42 +77,57 @@ void main() {
       expect(response['errorKey'], 'VALIDATION_ERROR');
     });
 
-    test('fetchFollowList returns empty list for malformed response bodies', () async {
-      final service = SocialService.withClient(
-        FakeSocialHttpClient(getResponse: http.Response('upstream unavailable', 503)),
-      );
+    test(
+      'fetchFollowList returns empty list for malformed response bodies',
+      () async {
+        final service = SocialService.withClient(
+          FakeSocialHttpClient(
+            getResponse: http.Response('upstream unavailable', 503),
+          ),
+        );
 
-      final response = await service.fetchFollowList(type: 'followers');
+        final response = await service.fetchFollowList(type: 'followers');
 
-      expect(response, isEmpty);
-    });
+        expect(response, isEmpty);
+      },
+    );
 
-    test('fetchPracticePrivacy falls back to defaults for invalid responses', () async {
-      final service = SocialService.withClient(
-        FakeSocialHttpClient(getResponse: jsonResponse('{"success":true}', 200)),
-      );
+    test(
+      'fetchPracticePrivacy falls back to defaults for invalid responses',
+      () async {
+        final service = SocialService.withClient(
+          FakeSocialHttpClient(
+            getResponse: jsonResponse('{"success":true}', 200),
+          ),
+        );
 
-      final response = await service.fetchPracticePrivacy();
+        final response = await service.fetchPracticePrivacy();
 
-      expect(response['isPrivate'], false);
-      expect(response['showPracticeName'], true);
-      expect(response['showDuration'], true);
-      expect(response['showChantCount'], true);
-    });
+        expect(response['isPrivate'], false);
+        expect(response['showPracticeName'], true);
+        expect(response['showDuration'], true);
+        expect(response['showChantCount'], true);
+      },
+    );
 
-    test('updatePracticePrivacy returns true when backend reports success', () async {
-      final service = SocialService.withClient(
-        FakeSocialHttpClient(postResponse: jsonResponse('{"success":true}', 200)),
-      );
+    test(
+      'updatePracticePrivacy returns true when backend reports success',
+      () async {
+        final service = SocialService.withClient(
+          FakeSocialHttpClient(
+            postResponse: jsonResponse('{"success":true}', 200),
+          ),
+        );
 
-      final response = await service.updatePracticePrivacy(
-        isPrivate: true,
-        showPracticeName: false,
-        showDuration: false,
-        showChantCount: true,
-      );
+        final response = await service.updatePracticePrivacy(
+          isPrivate: true,
+          showPracticeName: false,
+          showDuration: false,
+          showChantCount: true,
+        );
 
-      expect(response, true);
-    });
+        expect(response, true);
+      },
+    );
   });
 }

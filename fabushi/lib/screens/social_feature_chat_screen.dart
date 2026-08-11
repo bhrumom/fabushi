@@ -101,9 +101,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
           final restored = decoded
               .whereType<Map>()
               .map(
-                (value) => _ChatMessage.fromJson(
-                  Map<String, dynamic>.from(value),
-                ),
+                (value) =>
+                    _ChatMessage.fromJson(Map<String, dynamic>.from(value)),
               )
               .toList(growable: false);
           if (mounted && _messages.putIfAbsent(botId, () => []).isEmpty) {
@@ -268,18 +267,21 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         method: 'POST',
         path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/messages',
         body: {
-          'messages': items.reversed.take(100).map((item) {
-            final isUser = item['isUser'] == true;
-            final isError = item['isError'] == true;
-            return {
-              'messageId': item['id'],
-              'role': isUser ? 'user' : (isError ? 'error' : 'miniapp'),
-              'text': item['text'],
-              'payload': item,
-              'createdAt': item['createdAt'],
-              'updatedAt': DateTime.now().toUtc().toIso8601String(),
-            };
-          }).toList(growable: false),
+          'messages': items.reversed
+              .take(100)
+              .map((item) {
+                final isUser = item['isUser'] == true;
+                final isError = item['isError'] == true;
+                return {
+                  'messageId': item['id'],
+                  'role': isUser ? 'user' : (isError ? 'error' : 'miniapp'),
+                  'text': item['text'],
+                  'payload': item,
+                  'createdAt': item['createdAt'],
+                  'updatedAt': DateTime.now().toUtc().toIso8601String(),
+                };
+              })
+              .toList(growable: false),
         },
       );
     } catch (_) {
@@ -296,10 +298,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     };
   }
 
-  String _pluginInstanceId(
-    SocialFeatureBot bot,
-    Map<String, dynamic>? home,
-  ) {
+  String _pluginInstanceId(SocialFeatureBot bot, Map<String, dynamic>? home) {
     final app = home?['app'];
     final source = app is Map ? app['source']?.toString() : null;
     final manifestName = app is Map && app['id']?.toString().isNotEmpty == true
@@ -321,7 +320,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     if (source.startsWith('git@')) {
       final separator = source.indexOf(':');
       if (separator <= 4) return null;
-      source = 'ssh://${source.substring(0, separator)}/${source.substring(separator + 1)}';
+      source =
+          'ssh://${source.substring(0, separator)}/${source.substring(separator + 1)}';
     }
     final uri = Uri.tryParse(source);
     if (uri == null || !{'https', 'ssh', 'git'}.contains(uri.scheme)) {
@@ -404,7 +404,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   Future<void> _resetOnboarding() async {
     final botId = _bot.stableBotId;
-    final instanceId = _miniAppInstanceIds[botId] ??
+    final instanceId =
+        _miniAppInstanceIds[botId] ??
         _pluginInstanceId(_bot, _miniAppHomes[botId]);
     _resettingOnboarding.add(botId);
     try {
@@ -413,7 +414,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       try {
         await MahayanaSdk.instance.platformRequest(
           method: 'PUT',
-          path: '/api/miniapps/${Uri.encodeComponent(instanceId)}/content-state',
+          path:
+              '/api/miniapps/${Uri.encodeComponent(instanceId)}/content-state',
           body: {'resetOnboarding': true},
         );
       } catch (_) {
@@ -863,10 +865,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        _buildSubmitOrVoiceButton(
-                          canSend,
-                          compact: true,
-                        ),
+                        _buildSubmitOrVoiceButton(canSend, compact: true),
                       ],
                     ),
                   ],
@@ -933,28 +932,28 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         width: collapsed ? height : null,
         height: height,
         child: collapsed
-          ? ElevatedButton(
-              onPressed: () => _openMiniAppPanel(),
-              style: style.copyWith(
-                padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-              ),
-              child: Icon(Icons.web_asset, size: compact ? 22 : 24),
-            )
-          : ElevatedButton.icon(
-              onPressed: () => _openMiniAppPanel(),
-              style: style,
-              icon: Icon(Icons.web_asset, size: compact ? 18 : 20),
-              label: Text(
-                '打开应用',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: compact ? 14 : 15,
+            ? ElevatedButton(
+                onPressed: () => _openMiniAppPanel(),
+                style: style.copyWith(
+                  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+                ),
+                child: Icon(Icons.web_asset, size: compact ? 22 : 24),
+              )
+            : ElevatedButton.icon(
+                onPressed: () => _openMiniAppPanel(),
+                style: style,
+                icon: Icon(Icons.web_asset, size: compact ? 18 : 20),
+                label: Text(
+                  '打开应用',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 14 : 15,
+                  ),
                 ),
               ),
-            ),
-        ),
+      ),
     );
   }
 
@@ -976,10 +975,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     );
   }
 
-  Widget _buildSubmitOrVoiceButton(
-    bool canSend, {
-    required bool compact,
-  }) {
+  Widget _buildSubmitOrVoiceButton(bool canSend, {required bool compact}) {
     if (canSend) {
       return _buildComposerIconButton(
         tooltip: '发送',
@@ -1172,11 +1168,11 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   Future<void> _requestCodexRepair(String text) async {
     final pluginId = _normalizedPluginId(_bot);
-    final instanceId = _miniAppInstanceIds[_bot.stableBotId] ??
+    final instanceId =
+        _miniAppInstanceIds[_bot.stableBotId] ??
         _pluginInstanceId(_bot, _miniAppHomes[_bot.stableBotId]);
     final source = _miniAppHomes[_bot.stableBotId]?['app'] is Map
-        ? (_miniAppHomes[_bot.stableBotId]!['app'] as Map)['source']
-              ?.toString()
+        ? (_miniAppHomes[_bot.stableBotId]!['app'] as Map)['source']?.toString()
         : null;
     final body = <String, dynamic>{
       'pluginId': pluginId,
@@ -1673,8 +1669,7 @@ class _ChatMessage {
   factory _ChatMessage.fromJson(Map<String, dynamic> value) => _ChatMessage(
     value['text']?.toString() ?? '',
     id: value['id']?.toString(),
-    createdAt:
-        value['createdAt']?.toString() ?? value['timestamp']?.toString(),
+    createdAt: value['createdAt']?.toString() ?? value['timestamp']?.toString(),
     isUser: value['isUser'] == true || value['role'] == 'user',
     isError: value['isError'] == true || value['role'] == 'error',
     updateKey: value['updateKey']?.toString(),

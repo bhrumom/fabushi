@@ -33,10 +33,7 @@ class _TelegramSplitViewState extends State<TelegramSplitView> {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-          width: _leftWidth,
-          child: widget.leftMenu,
-        ),
+        SizedBox(width: _leftWidth, child: widget.leftMenu),
         MouseRegion(
           cursor: SystemMouseCursors.resizeLeftRight,
           child: GestureDetector(
@@ -56,7 +53,9 @@ class _TelegramSplitViewState extends State<TelegramSplitView> {
               decoration: const BoxDecoration(
                 border: Border(
                   right: BorderSide(
-                    color: Color(0xFF223040), // Matches telegram chat list border
+                    color: Color(
+                      0xFF223040,
+                    ), // Matches telegram chat list border
                     width: 1,
                   ),
                 ),

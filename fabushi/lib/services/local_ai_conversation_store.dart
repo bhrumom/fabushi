@@ -101,7 +101,7 @@ class LocalAiConversationStore {
   /// Loads all chat records from disk
   Future<List<LocalAiConversationRecord>> list() async {
     if (kIsWeb) return const []; // Fallback for web
-    
+
     final chatsPath = await WorkspaceService.instance.getChatsPath();
     final dir = Directory(chatsPath);
     if (!await dir.exists()) return const [];
@@ -111,7 +111,9 @@ class LocalAiConversationStore {
     // Crawl through date folders (e.g., 2026-06-23)
     final dateDirs = dir.listSync().whereType<Directory>();
     for (final dateDir in dateDirs) {
-      final files = dateDir.listSync().whereType<File>().where((f) => f.path.endsWith('.json'));
+      final files = dateDir.listSync().whereType<File>().where(
+        (f) => f.path.endsWith('.json'),
+      );
       for (final file in files) {
         try {
           final content = await file.readAsString();
@@ -147,7 +149,7 @@ class LocalAiConversationStore {
     final items = (await list()).toList(growable: true);
     final index = items.indexWhere((item) => item.id == conversationId);
     final existing = index >= 0 ? items[index] : null;
-    
+
     final messages = <LocalAiConversationMessage>[
       ...?existing?.messages,
       LocalAiConversationMessage(
@@ -177,19 +179,21 @@ class LocalAiConversationStore {
 
   Future<void> _saveRecord(LocalAiConversationRecord record) async {
     if (kIsWeb) return;
-    
+
     // Save under the date folder of the record's initial creation time
     // For simplicity, we use the first message's creation date, or today
-    final date = record.messages.isNotEmpty ? record.messages.first.createdAt : DateTime.now();
+    final date = record.messages.isNotEmpty
+        ? record.messages.first.createdAt
+        : DateTime.now();
     final dateDir = await WorkspaceService.instance.getDailyChatsPath(date);
-    
+
     final file = File(p.join(dateDir, 'chat_${record.id}.json'));
     await file.writeAsString(jsonEncode(record.toJson()), flush: true);
   }
 
   Future<void> delete(String id) async {
     if (kIsWeb) return;
-    
+
     final chatsPath = await WorkspaceService.instance.getChatsPath();
     final dir = Directory(chatsPath);
     if (!await dir.exists()) return;
@@ -207,7 +211,10 @@ class LocalAiConversationStore {
   Future<void> updateTitle(String id, String newTitle) async {
     final record = await get(id);
     if (record != null) {
-      final updated = record.copyWith(title: newTitle, updatedAt: DateTime.now());
+      final updated = record.copyWith(
+        title: newTitle,
+        updatedAt: DateTime.now(),
+      );
       await _saveRecord(updated);
     }
   }

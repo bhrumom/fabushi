@@ -53,7 +53,8 @@ class SocialFeatureBot {
   String get stableMiniAppId => miniAppId ?? type.name;
   String get stableMiniAppEntryUrl => miniAppEntryUrl.trim();
   bool get isLocallyInstalled => localPluginPath.trim().isNotEmpty;
-  String get e2eInstallProvenance => isLocallyInstalled ? 'installed' : 'registry';
+  String get e2eInstallProvenance =>
+      isLocallyInstalled ? 'installed' : 'registry';
   MiniAppBotKind get effectiveKind {
     final explicit = kind;
     if (explicit != null) return explicit;

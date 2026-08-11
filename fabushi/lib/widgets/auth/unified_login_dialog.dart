@@ -88,7 +88,9 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
     if (!mounted) return;
 
     final loginUrl = result['loginUrl'];
-    if (result['success'] == true && loginUrl is String && loginUrl.isNotEmpty) {
+    if (result['success'] == true &&
+        loginUrl is String &&
+        loginUrl.isNotEmpty) {
       if (kIsWeb) {
         html.window.location.assign(loginUrl);
       } else {
@@ -98,18 +100,20 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
             fullscreenDialog: true,
           ),
         );
-        
+
         if (!mounted) return;
-        
+
         if (callbackUrl != null && callbackUrl.isNotEmpty) {
           final uri = Uri.tryParse(callbackUrl);
           if (uri != null) {
-            final authCode = uri.queryParameters['auth_code'] ?? uri.queryParameters['alipay_auth_code'];
-            
+            final authCode =
+                uri.queryParameters['auth_code'] ??
+                uri.queryParameters['alipay_auth_code'];
+
             if (authCode != null && authCode.isNotEmpty) {
               final authModel = context.read<AuthModel>();
               final loginSuccess = await authModel.alipayLogin(authCode);
-              
+
               if (!mounted) return;
               setState(() {
                 _loading = false;
@@ -123,7 +127,7 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
             }
           }
         }
-        
+
         // If we reach here, either user cancelled or parsing failed
         setState(() {
           _loading = false;
@@ -136,7 +140,8 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
 
     setState(() {
       _loading = false;
-      _error = result['message'] as String? ??
+      _error =
+          result['message'] as String? ??
           result['error'] as String? ??
           '获取支付宝登录链接失败';
     });
@@ -144,9 +149,9 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
 
   void _navigateToRegister() {
     Navigator.of(context).pop(); // Close dialog first
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RegisterScreen()));
   }
 
   @override
@@ -235,7 +240,10 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
                   Text(
                     _error!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 28),
@@ -270,7 +278,9 @@ class _UnifiedLoginDialogState extends State<UnifiedLoginDialog> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
                     minimumSize: const Size.fromHeight(44),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -335,7 +345,9 @@ class _DarkInput extends StatelessWidget {
         style: const TextStyle(color: Colors.white, fontSize: 15),
         decoration: InputDecoration(
           filled: true,
-          fillColor: Colors.black.withValues(alpha: 0.2), // Telegram input style
+          fillColor: Colors.black.withValues(
+            alpha: 0.2,
+          ), // Telegram input style
           prefixIcon: Icon(prefix, color: Colors.white38, size: 20),
           suffixIcon: suffix,
           hintText: hint,

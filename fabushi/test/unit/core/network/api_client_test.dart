@@ -73,9 +73,7 @@ void main() {
 
     test('maps validation responses to ValidationException', () async {
       final apiClient = ApiClient(
-        client: MockClient(
-          (_) async => jsonResponse('{"error":"验证码无效"}', 422),
-        ),
+        client: MockClient((_) async => jsonResponse('{"error":"验证码无效"}', 422)),
       );
 
       expect(

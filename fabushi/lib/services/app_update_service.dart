@@ -74,9 +74,10 @@ class AppVersionPolicy {
       ),
       forceUpdate: json['forceUpdate'] == true,
       allowSkip: json['allowSkip'] != false,
-      rolloutPercentage: _parseInt(json['rolloutPercentage'], 100)
-          .clamp(0, 100)
-          .toInt(),
+      rolloutPercentage: _parseInt(
+        json['rolloutPercentage'],
+        100,
+      ).clamp(0, 100).toInt(),
       promptIntervalHours: _parseInt(json['promptIntervalHours'], 24),
       title: (json['title'] ?? '发现新版本').toString(),
       message: (json['message'] ?? '新版本已发布，建议尽快更新。').toString(),
@@ -133,7 +134,8 @@ class AppUpdateService {
 
   static final AppUpdateService instance = AppUpdateService._();
   static const String _installIdKey = 'app_update_install_id';
-  static const String _skippedBuildNumberKey = 'app_update_skipped_build_number';
+  static const String _skippedBuildNumberKey =
+      'app_update_skipped_build_number';
   static const String _lastPromptAtKey = 'app_update_last_prompt_at';
   static final Uuid _uuid = Uuid();
 
@@ -181,7 +183,8 @@ class AppUpdateService {
         return null;
       }
 
-      final isForce = policy.forceUpdate ||
+      final isForce =
+          policy.forceUpdate ||
           info.buildNumber < policy.minSupportedBuildNumber;
       final decision = AppUpdateDecision(
         mode: isForce ? AppUpdateMode.force : AppUpdateMode.optional,
@@ -255,8 +258,8 @@ class AppUpdateService {
   Future<_AppInstallationInfo> _getInstallationInfo() async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      final buildNumber = int.tryParse(packageInfo.buildNumber) ??
-          AppConfig.appBuildNumber;
+      final buildNumber =
+          int.tryParse(packageInfo.buildNumber) ?? AppConfig.appBuildNumber;
       final version = packageInfo.version.isNotEmpty
           ? packageInfo.version
           : AppConfig.appVersion;

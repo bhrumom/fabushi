@@ -24,7 +24,10 @@ void main() {
         baseUrlResolver: () async => 'https://example.com',
       );
 
-      final response = await apiClient.get('/api/auth/user-info', token: 'token');
+      final response = await apiClient.get(
+        '/api/auth/user-info',
+        token: 'token',
+      );
 
       expect(response['success'], false);
       expect(response['error'], '登录已过期');
@@ -44,19 +47,22 @@ void main() {
       expect(response['statusCode'], 204);
     });
 
-    test('does not crash when token preview is shorter than 20 chars', () async {
-      final apiClient = ApiClient(
-        httpClient: MockClient((request) async {
-          expect(request.headers['Authorization'], 'Bearer short');
-          return http.Response('{"success":true}', 200);
-        }),
-        baseUrlResolver: () async => 'https://example.com',
-      );
+    test(
+      'does not crash when token preview is shorter than 20 chars',
+      () async {
+        final apiClient = ApiClient(
+          httpClient: MockClient((request) async {
+            expect(request.headers['Authorization'], 'Bearer short');
+            return http.Response('{"success":true}', 200);
+          }),
+          baseUrlResolver: () async => 'https://example.com',
+        );
 
-      final response = await apiClient.get('/health', token: 'short');
+        final response = await apiClient.get('/health', token: 'short');
 
-      expect(response['success'], true);
-    });
+        expect(response['success'], true);
+      },
+    );
 
     test('maps transport failures to network error payloads', () async {
       final apiClient = ApiClient(

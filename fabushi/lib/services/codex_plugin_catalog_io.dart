@@ -65,9 +65,9 @@ Future<List<Directory>> _pluginRoots() async {
   }
 
   final configuredCodexHome = Platform.environment['CODEX_HOME']?.trim();
-  final userHome = (Platform.environment['HOME'] ??
-          Platform.environment['USERPROFILE'])
-      ?.trim();
+  final userHome =
+      (Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'])
+          ?.trim();
   final desktopCodexHome = configuredCodexHome?.isNotEmpty == true
       ? configuredCodexHome
       : userHome?.isNotEmpty == true
