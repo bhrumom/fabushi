@@ -4,26 +4,15 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
-  cloud_firestore
-  connectivity_plus
-  firebase_auth
-  firebase_core
   flutter_inappwebview_windows
   flutter_secure_storage_windows
-  flutter_tts
-  flutter_volume_controller
-  geolocator_windows
   permission_handler_windows
-  record_windows
-  rive_common
   screen_retriever_windows
   url_launcher_windows
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
-  flutter_local_notifications_windows
-  sherpa_onnx_windows
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
