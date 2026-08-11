@@ -231,6 +231,8 @@ def load_flow(path: Path) -> dict[str, Any]:
             raise WebDriverError(f"Flow step {index} must be an object")
         if "x" in step or "y" in step:
             raise WebDriverError("Flow v1 forbids coordinate-based actions")
+        if "evidence" in step and not isinstance(step["evidence"], bool):
+            raise WebDriverError(f"Flow step {index} evidence must be boolean")
         locator = step.get("locator")
         if locator is not None and (
             not isinstance(locator, dict)
@@ -308,7 +310,7 @@ code {{ overflow-wrap: anywhere; }}
 </head>
 <body>
 <h1>{flow_name} evidence</h1>
-<p>Generated from <a href="timeline.jsonl">timeline.jsonl</a>. Each successful action records a screenshot and accessibility tree; failures are recorded even when no Appium session is available.</p>
+<p>Generated from <a href="timeline.jsonl">timeline.jsonl</a>. Every semantic action is timed in the timeline; screenshots and accessibility trees are captured only at explicit evidence checkpoints and on failure.</p>
 <table>
 <thead><tr><th>#</th><th>Step</th><th>Status</th><th>Action ms</th><th>Locator</th><th>Screenshot</th><th>Source</th><th>Error</th></tr></thead>
 <tbody>{''.join(rows) if rows else '<tr><td colspan="8">No captured events.</td></tr>'}</tbody>
@@ -418,11 +420,13 @@ def main() -> int:
         for step in flow["steps"]:
             started = time.time()
             run_step(step)
-            capture(
-                str(step.get("name", step.get("action", "capture"))),
-                started,
-                describe_step(step),
-            )
+            name = str(step.get("name", step.get("action", "capture")))
+            detail = describe_step(step)
+            action = str(step.get("action", "capture"))
+            if action == "capture" or step.get("evidence") is True:
+                capture(name, started, detail)
+            else:
+                record_event(name, started, detail)
         return 0
     except Exception as error:
         print(f"iOS E2E failed: {error}", file=sys.stderr, flush=True)
