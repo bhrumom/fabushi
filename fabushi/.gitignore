@@ -83,3 +83,4 @@ web/.wrangler/
 .playwright-cli/
 .playwright/
 appstore-connect-manager-skill/
+/ios/Runner/Libs/libmahayana_runtime.a.fingerprint
