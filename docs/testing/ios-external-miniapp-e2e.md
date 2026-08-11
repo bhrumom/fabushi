@@ -68,6 +68,7 @@ PR 的 Flutter 依赖验证前移到廉价的 `platform-slim-contract` Ubuntu jo
 1. **精确 `Runner.app` 缓存**：key 绑定 Xcode、Flutter、平台代码、iOS 配置、提交的 Pub lock、资产/字体以及 Mahayana Rust runtime fingerprint。只修改 Appium flow、Python 驱动或测试断言时，key 不变，CI 直接安装上一次已验证的 App；App 源码或生产依赖变化时自动 miss。
 2. **生产 Rust archive 缓存**：`build_telegram_runtime.sh` 继续使用 `fabushi.mahayana.ios-runtime-fingerprint.v1` 校验 Mahayana/Codex 源码、Cargo lock、Rust toolchain、target/profile，命中后才能复用 `libmahayana_runtime.a`。
 3. **Pub/CocoaPods 下载与 Pods 图缓存**：Flutter SDK/pub cache 与 `~/Library/Caches/CocoaPods + fabushi/ios/Pods` 按 lock/toolchain 缓存；App 有小改动时无需重新下载/解析全部第三方包。
+4. **Production contract Rust cache**：L1 的 `mahayana-plugin-host/mahayana-product` contract 使用仓库既有 `Swatinem/rust-cache@v2`；测试脚本或 UI 变化不再重复从零编译整个 Mahayana workspace。
 
 不缓存几 GB 的整个 Cargo `target` 或无内容边界的 DerivedData。Simulator 必须在 `Runner.app` 已恢复或构建完成后才创建/启动，避免一个空闲 Simulator 在长时间编译期间持续占 CPU/内存。
 
