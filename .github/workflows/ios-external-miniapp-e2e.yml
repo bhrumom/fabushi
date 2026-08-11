@@ -11,6 +11,18 @@ on:
         options:
           - fixture
           - live
+  workflow_call:
+    inputs:
+      marketplace_mode:
+        description: Marketplace distribution source for the iOS black-box run
+        required: false
+        default: fixture
+        type: string
+    secrets:
+      TEST_ACCOUNT_TOKEN:
+        required: false
+      MAHAYANA_TEST_ACCOUNT_TOKEN:
+        required: false
   schedule:
     - cron: '17 18 * * *'
   pull_request:
@@ -46,7 +58,7 @@ env:
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
   LIVE_MARKETPLACE_API_BASE_URL: https://api.ombhrum.com
-  MARKETPLACE_MODE: ${{ github.event_name == 'schedule' && 'live' || github.event_name == 'workflow_dispatch' && inputs.marketplace_mode || 'fixture' }}
+  MARKETPLACE_MODE: ${{ inputs.marketplace_mode || (github.event_name == 'schedule' && 'live') || 'fixture' }}
 
 jobs:
   architecture-contract:

@@ -14,6 +14,7 @@ PUBSPEC = ROOT / "fabushi/pubspec.yaml"
 PUBSPEC_LOCK = ROOT / "fabushi/pubspec.lock"
 IOS_RUNTIME_BUILD = ROOT / "fabushi/ios/build_telegram_runtime.sh"
 AUTOFIX_WORKFLOW = ROOT / ".github/workflows/ios-e2e-codex-autofix.yml"
+RELEASE_GATE = ROOT / ".github/workflows/important-release-gate.yml"
 FLOW = ROOT / "fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json"
 PRODUCT = ROOT / "third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs"
 INSTALLER = (
@@ -115,6 +116,7 @@ def main() -> int:
     pubspec_lock = PUBSPEC_LOCK.read_text(encoding="utf-8")
     ios_runtime_build = IOS_RUNTIME_BUILD.read_text(encoding="utf-8")
     autofix_workflow = AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
+    release_gate = RELEASE_GATE.read_text(encoding="utf-8")
     product = PRODUCT.read_text(encoding="utf-8")
     installer = INSTALLER.read_text(encoding="utf-8")
     service = MARKETPLACE_SERVICE.read_text(encoding="utf-8")
@@ -387,6 +389,8 @@ def main() -> int:
         ROOT / "fabushi/scripts/archive/build_web_exclude_models.sh",
         ROOT / "fabushi/scripts/archive/update_firebase_config.sh",
         ROOT / "fabushi/scripts/setup/setup_firebase.sh",
+        ROOT / ".github/workflows/android-real-device-e2e.yml",
+        ROOT / "scripts/check_home_send_flow.py",
         ROOT / "fabushi/lib/packages/flutter_earth_globe",
         ROOT / "fabushi/lib/packages/flutter_gl",
         ROOT / "fabushi/lib/packages/flutter_scene",
@@ -447,6 +451,19 @@ def main() -> int:
         and "Verify Android Buddha uses flutter_scene model" not in workflow_text
         and "Verify Apple Buddha asset StoreKit product" not in workflow_text,
         "legacy 3D/StoreKit build gates must not return to CI",
+    )
+
+    require(
+        "Homepage send flow regression" not in workflow_text
+        and "check_home_send_flow" not in workflow_text
+        and "home_send_real_device_test.dart" not in workflow_text,
+        "standalone Global Dharma homepage-send CI gates must not return",
+    )
+    require(
+        "uses: ./.github/workflows/ios-external-miniapp-e2e.yml" in release_gate
+        and "marketplace_mode: live" in release_gate
+        and "needs: ios-miniapp-e2e" in release_gate,
+        "important releases must be gated by the live platform MiniApp E2E workflow",
     )
 
     generated_plugin_files = (
