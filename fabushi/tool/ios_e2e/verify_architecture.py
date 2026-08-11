@@ -296,6 +296,14 @@ def main() -> int:
         )
 
     for legacy_path in (
+        ROOT / "fabushi/native_libs/llama.cpp",
+        ROOT / "fabushi/android/app/src/main/jniLibs",
+        ROOT / "fabushi/macos/Runner/Libs",
+        ROOT / "fabushi/macos/copy_llama_libs.sh",
+        ROOT / "fabushi/scripts/build_android_arm64.sh",
+        ROOT / "fabushi/android/app/google-services.json",
+        ROOT / "fabushi/ios/Runner/GoogleService-Info.plist",
+        ROOT / "fabushi/macos/Runner/GoogleService-Info.plist",
         ROOT / "fabushi/lib/packages/flutter_earth_globe",
         ROOT / "fabushi/lib/packages/flutter_gl",
         ROOT / "fabushi/lib/packages/flutter_scene",
@@ -309,6 +317,31 @@ def main() -> int:
             not legacy_path.exists(),
             f"legacy standalone-app tree must stay deleted: {legacy_path.relative_to(ROOT)}",
         )
+
+    ios_project = (ROOT / "fabushi/ios/Runner.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    android_main = (ROOT / "fabushi/android/app/src/main/kotlin/com/ombhrum/fabushi/MainActivity.kt").read_text(encoding="utf-8")
+    android_app_gradle = (ROOT / "fabushi/android/app/build.gradle.kts").read_text(encoding="utf-8")
+    android_settings_gradle = (ROOT / "fabushi/android/settings.gradle.kts").read_text(encoding="utf-8")
+    macos_project = (ROOT / "fabushi/macos/Runner.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    for token in ("libllama", "libggml", "ggml-metal.metal", "StoreKit.framework"):
+        require(
+            token not in ios_project,
+            f"legacy standalone native linkage {token} must not return to the iOS host",
+        )
+    require(
+        "System.loadLibrary(\"llama\")" not in android_main
+        and "System.loadLibrary(\"ggml" not in android_main,
+        "Android host must not preload the removed llama/ggml runtime",
+    )
+    require(
+        "com.google.gms.google-services" not in android_app_gradle
+        and "com.google.gms.google-services" not in android_settings_gradle,
+        "standalone Firebase Gradle configuration must not return to the platform host",
+    )
+    require(
+        "Copy Llama Libraries" not in macos_project,
+        "macOS host must not restore the legacy Copy Llama Libraries build phase",
+    )
 
     native_app = (ROOT / "fabushi/lib/bootstrap/native_app.dart").read_text(encoding="utf-8")
     require(

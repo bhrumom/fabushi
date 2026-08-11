@@ -295,7 +295,6 @@
 				DACE0C1A0B0C0D0E0F001122 /* Sync OpenClaw Runtime */,
 				638C68006236E20A61BE8054 /* [CP] Embed Pods Frameworks */,
 				D4CD447FDFFC03694F05118F /* [CP] Copy Pods Resources */,
-				A1B2C3D4E5F60001LLAMA001 /* Copy Llama Libraries */,
 			);
 			buildRules = (
 			);
@@ -561,24 +560,6 @@
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
-		};
-		A1B2C3D4E5F60001LLAMA001 /* Copy Llama Libraries */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Copy Llama Libraries";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PROJECT_DIR}/copy_llama_libs.sh\"\n";
 		};
 		A7E1E6A1C0DE202607100001 /* Build Mahayana Rust Runtime */ = {
 			isa = PBXShellScriptBuildPhase;

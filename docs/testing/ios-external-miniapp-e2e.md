@@ -52,6 +52,8 @@ Fabushi 已从“全球法布施 standalone App”升级为 MiniApp/智能代理
 - `fabushi/lib/packages/flutter_earth_globe`、`flutter_gl`、`flutter_scene`、`three_dart`、`features/video_feed`、`temp_video_feed` 永久删除；
 - `fabushi/assets/built_in` 与 `fabushi/web/assets/built_in` 不再进入 Git tree；大藏经等内容由 CDN/服务端/对应 MiniApp 提供；
 - Pub 依赖禁止重新引入 Firebase、FFmpeg、video_player、flutter_tts、sherpa_onnx、llama_cpp_dart、workmanager、旧 3D 包等 standalone 依赖；
+- 原生工程同样不得保留 standalone App 的旁路依赖：`native_libs/llama.cpp` gitlink、Android `jniLibs` llama/ggml、iOS `libllama/libggml/ggml-metal`、macOS `Copy Llama Libraries`、Google/Firebase 原生配置都必须删除；宿主只手工链接生产 `libmahayana_runtime.a`；
+- Android 插件必须由 Flutter 根据 `pubspec.lock` 自动注册，禁止在 `MainActivity` 维护第二套手写插件清单；仓库没有 gitlink 后，CI checkout 不再启用 recursive submodules；
 - MiniApp Host 真正使用的能力（例如 `udp_global_send_service + GeoIP`）仍保留在平台 capability bridge，不因为名字相似而误删。
 
 PR 的 Flutter 依赖验证前移到廉价的 `platform-slim-contract` Ubuntu job：固定 Flutter 版本执行 `flutter pub get`、平台入口 analyze、lock 零漂移并上传 resolver evidence。iOS 的 Pub/CocoaPods 图由独立 `ios-dependency-contract` macOS job 在真正 App build 前解析并验证；依赖漂移不得占用完整 E2E build 时长。

@@ -9,14 +9,6 @@ pluginManagement {
 
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id == "com.google.gms.google-services") {
-                useModule("com.google.gms:google-services:${requested.version}")
-            }
-        }
-    }
-
     repositories {
         val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
         if (preferOfficialReposInCi) {
@@ -41,10 +33,6 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         val preferOfficialReposInCi = System.getenv("GITHUB_ACTIONS") == "true" || System.getenv("CI") == "true"
-        val flutterGlLocalMavenRepo = File(rootDir, "../lib/packages/flutter_gl/android/libs/maven")
-
-        // Keep the vendored threeegl coordinate visible from settings because app builds prefer settings repositories.
-        maven { url = flutterGlLocalMavenRepo.toURI() }
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
 
@@ -66,9 +54,6 @@ dependencyResolutionManagement {
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.9.1" apply false
-    // START: FlutterFire Configuration
-    id("com.google.gms.google-services") version("4.3.15") apply false
-    // END: FlutterFire Configuration
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
 }
 
