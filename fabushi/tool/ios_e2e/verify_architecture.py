@@ -21,6 +21,10 @@ MARKETPLACE_SERVICE = (
 HOST = ROOT / "fabushi/lib/screens/mini_app_host_screen.dart"
 CLI = ROOT / "third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs"
 CONTROL = ROOT / "fabushi/lib/services/miniapp/mahayana_e2e_control_io.dart"
+FIXTURE = ROOT / "fabushi/tool/ios_e2e/marketplace_fixture.py"
+CANONICAL_PLUGIN = (
+    ROOT / ".agents/plugins/plugins/global-dharma/.codex-plugin/plugin.json"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -36,6 +40,8 @@ def main() -> int:
     host = HOST.read_text(encoding="utf-8")
     cli = CLI.read_text(encoding="utf-8")
     control = CONTROL.read_text(encoding="utf-8")
+    fixture = FIXTURE.read_text(encoding="utf-8")
+    canonical_plugin = json.loads(CANONICAL_PLUGIN.read_text(encoding="utf-8"))
     flow = json.loads(FLOW.read_text(encoding="utf-8"))
     flow_text = json.dumps(flow, ensure_ascii=False)
 
@@ -73,6 +79,80 @@ def main() -> int:
     require(
         "--method marketplace.install" not in workflow,
         "the black-box workflow must install through UI, not the control channel",
+    )
+    require(
+        "marketplace_mode:" in workflow and "- fixture" in workflow and "- live" in workflow,
+        "workflow_dispatch must expose explicit fixture/live Marketplace modes",
+    )
+    require(
+        "github.event_name == 'schedule' && 'live'" in workflow,
+        "scheduled L3 canaries must always use the live Marketplace",
+    )
+    require(
+        "SIMCTL_CHILD_MAHAYANA_API_BASE_URL" in workflow,
+        "the app process must receive the selected Marketplace API base URL",
+    )
+    require(
+        "if: env.MARKETPLACE_MODE == 'fixture'" in workflow,
+        "the deterministic Marketplace fixture must run only in fixture mode",
+    )
+    require(
+        ".agents/plugins/plugins/global-dharma" in workflow,
+        "L2 fixture bytes must be built from the canonical repository global-dharma plugin",
+    )
+    require(
+        "- '.agents/plugins/plugins/global-dharma/**'" in workflow,
+        "canonical global-dharma changes must trigger the iOS E2E workflow",
+    )
+    require(
+        "--method marketplace.search" in workflow,
+        "black-box runs must preflight the exact release through the production product client",
+    )
+    require(
+        "LIVE_MARKETPLACE_RELEASE_MISSING" in workflow,
+        "live canaries must classify a missing production release explicitly",
+    )
+    require(
+        "fabushi.marketplace.fixture.v1" in fixture,
+        "the deterministic Marketplace fixture must use a versioned protocol",
+    )
+    for endpoint in (
+        "/v1/marketplace/plugins",
+        "/releases/{version}",
+        "/releases/{version}/download",
+    ):
+        require(endpoint in fixture, f"Marketplace fixture is missing endpoint contract {endpoint}")
+    for forbidden in (
+        "codexHome",
+        "codex/plugins",
+        "mahayana-runtime",
+        "simctl",
+        "install_marketplace_bundle_to_codex_home",
+    ):
+        require(
+            forbidden not in fixture,
+            f"Marketplace fixture must distribute bytes only and must not prepare app state ({forbidden})",
+        )
+    require(
+        canonical_plugin.get("name") == "global-dharma"
+        and isinstance(canonical_plugin.get("version"), str)
+        and bool(canonical_plugin["version"].strip()),
+        "the canonical L2 fixture source must remain global-dharma with an explicit version",
+    )
+    require(
+        any(
+            isinstance(variant, dict)
+            and isinstance(variant.get("platforms"), list)
+            and "mobile" in variant["platforms"]
+            for variant in canonical_plugin.get("runtimeVariants", [])
+        ),
+        "the canonical L2 fixture source must expose a mobile runtime variant",
+    )
+    require(
+        "xcrun simctl create" in workflow
+        and "xcrun simctl delete" in workflow
+        and "timeout=240" in workflow,
+        "each black-box run must use and clean up a bounded, isolated Simulator",
     )
     require(
         "runs-on: macos-15" in workflow,
