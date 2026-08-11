@@ -258,13 +258,6 @@ class AppConfig {
   static String get walletBalanceUrl => buildBackendUrl('/api/wallet/balance');
   static String get walletSpendUrl => buildBackendUrl('/api/wallet/spend');
 
-  static const String zenBuddhaAssetProductId = 'zen_buddha_asset';
-  static const String zenBuddhaAssetDisplayName = '3D佛像素材';
-  static const String zenBuddhaAssetPriceLabel = '¥33.00';
-  static const int zenBuddhaAssetFudeGoldPrice = 33;
-  static const String zenBuddhaAssetCardImagePath =
-      'assets/images/zen_buddha_material_card.png';
-
   static String get adminCheckStatusUrl =>
       buildBackendUrl('/api/admin/check-status');
   static String get adminCreateRedeemCodeUrl =>

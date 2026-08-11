@@ -33,7 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
       - run: >-
@@ -57,7 +56,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: taiki-e/install-action@cross
       - run: cross build --release --target ${{ matrix.target }} --manifest-path native/global-dharma/Cargo.toml -p global-dharma-daemon -p global-dharmactl -p global-dharma-mcp
       - run: >-

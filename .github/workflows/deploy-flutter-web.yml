@@ -55,9 +55,7 @@ jobs:
             /fabushi/pubspec.lock
             /fabushi/lib/**
             /fabushi/web/**
-            !/fabushi/web/assets/built_in/**
             /fabushi/assets/**
-            !/fabushi/assets/built_in/**
             /fabushi/fonts/**
 
       - name: Set up Flutter

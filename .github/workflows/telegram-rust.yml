@@ -79,7 +79,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -94,7 +93,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -129,7 +127,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -150,7 +147,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -178,7 +174,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: android-actions/setup-android@v3
       - name: Install Android NDK and cargo-ndk
@@ -212,7 +207,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Build macOS dynamic library
         env:
@@ -251,7 +245,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Build Linux shared library
         if: runner.os == 'Linux'

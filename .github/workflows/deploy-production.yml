@@ -70,10 +70,6 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /fabushi/**
-            !/fabushi/assets/built_in/**
-            !/fabushi/web/assets/built_in/**
-            !/fabushi/native_libs/llama.cpp
-            !/fabushi/native_libs/llama.cpp/**
             /.github/workflows/**
             /.github/scripts/**
 
