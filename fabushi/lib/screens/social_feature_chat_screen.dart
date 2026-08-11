@@ -6,8 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/flashcards/domain/flashcard_models.dart';
-import '../models/file_transfer_model.dart'
-    if (dart.library.html) '../models/file_transfer_model_web.dart';
 import '../models/auth_model.dart';
 import '../models/mini_app_model.dart';
 import '../services/dharma_publish_service.dart';
@@ -431,17 +429,16 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final model = Provider.of<FileTransferModel>(context);
-    final canSend = !_busy && _canSubmit(model);
+    final canSend = !_busy && _canSubmit();
     final chat = ColoredBox(
       color: const Color(0xFF0F1722),
       child: SafeArea(
         child: Column(
           children: [
-            _buildHeader(model),
-            _buildModeBar(model),
-            Expanded(child: _buildMessages(model)),
-            _buildComposer(model, canSend),
+            _buildHeader(),
+            _buildModeBar(),
+            Expanded(child: _buildMessages()),
+            _buildComposer(canSend),
           ],
         ),
       ),
@@ -544,7 +541,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     );
   }
 
-  Widget _buildHeader(FileTransferModel model) {
+  Widget _buildHeader() {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 460;
@@ -614,7 +611,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _statusText(model),
+                      _statusText(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
@@ -649,7 +646,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                     padding: EdgeInsets.zero,
                     icon: const Icon(Icons.more_vert, color: Color(0xFF91A3B7)),
                     onSelected: (value) {
-                      if (value == 'settings') _openCurrentSettings(model);
+                      if (value == 'settings') _openCurrentSettings();
                     },
                     itemBuilder: (context) => const [
                       PopupMenuItem(
@@ -680,7 +677,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                 headerIcon(
                   tooltip: '更多选项',
                   icon: Icons.more_vert,
-                  onPressed: () => _openCurrentSettings(model),
+                  onPressed: _openCurrentSettings,
                 ),
             ],
           ),
@@ -689,15 +686,12 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     );
   }
 
-  String _statusText(FileTransferModel model) {
+  String _statusText() {
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
         final summary = _deliverySummaries[_bot.stableBotId];
         if (summary != null && summary.hasActivity) return summary.statusLine;
-        if (model.isPreparingSend) return model.preparingSendMessage;
-        return model.isTransferring
-            ? '正在发送'
-            : 'bot · ${model.isLooping ? "循环" : "单轮"} · ${model.isGlobalSendEnabled ? "全球" : "本地"}';
+        return 'bot · 全球法布施小程序';
       case MiniAppBotKind.flashcards:
         return 'bot · 当前模式：${_flashcardMode.label}';
       case MiniAppBotKind.platformPublish:
@@ -710,7 +704,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     }
   }
 
-  Widget _buildModeBar(FileTransferModel model) {
+  Widget _buildModeBar() {
     final home = _miniAppHomes[_bot.stableBotId];
     final quickReplies = home?['quickReplies'] is List
         ? (home!['quickReplies'] as List).whereType<Map>().toList()
@@ -785,12 +779,8 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     unawaited(_startMiniAppCommand());
   }
 
-  Widget _buildMessages(FileTransferModel model) {
-    final showProgress =
-        _kind == MiniAppBotKind.globalDharma &&
-        (model.isPreparingSend || model.isTransferring);
-    final count =
-        _botMessages.length + (_busy ? 1 : 0) + (showProgress ? 1 : 0);
+  Widget _buildMessages() {
+    final count = _botMessages.length + (_busy ? 1 : 0);
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 24),
@@ -810,12 +800,12 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
         if (_busy && index == _botMessages.length) {
           return _ThinkingBubble(label: _activity.isEmpty ? '正在处理' : _activity);
         }
-        return _GlobalProgress(model: model);
+        return const SizedBox.shrink();
       },
     );
   }
 
-  Widget _buildComposer(FileTransferModel model, bool canSend) {
+  Widget _buildComposer(bool canSend) {
     final hasMiniApp = _bot.miniAppId != null && _bot.miniAppId!.isNotEmpty;
 
     return LayoutBuilder(
@@ -856,7 +846,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                         _buildComposerIconButton(
                           tooltip: '命令与附件',
                           icon: Icons.add,
-                          onPressed: () => _openPlusMenu(model),
+                          onPressed: _openPlusMenu,
                           compact: true,
                         ),
                       ],
@@ -867,7 +857,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                       children: [
                         Expanded(
                           child: _buildComposerTextField(
-                            model,
                             canSend,
                             compact: true,
                             inputActive: inputActive,
@@ -875,7 +864,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                         ),
                         const SizedBox(width: 6),
                         _buildSubmitOrVoiceButton(
-                          model,
                           canSend,
                           compact: true,
                         ),
@@ -897,20 +885,19 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                     _buildComposerIconButton(
                       tooltip: '命令与附件',
                       icon: Icons.add,
-                      onPressed: () => _openPlusMenu(model),
+                      onPressed: _openPlusMenu,
                       compact: compact,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: _buildComposerTextField(
-                        model,
                         canSend,
                         compact: compact,
                         inputActive: inputActive,
                       ),
                     ),
                     const SizedBox(width: 6),
-                    _buildSubmitOrVoiceButton(model, canSend, compact: compact),
+                    _buildSubmitOrVoiceButton(canSend, compact: compact),
                   ],
                 ),
         );
@@ -990,7 +977,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   Widget _buildSubmitOrVoiceButton(
-    FileTransferModel model,
     bool canSend, {
     required bool compact,
   }) {
@@ -998,7 +984,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       return _buildComposerIconButton(
         tooltip: '发送',
         icon: _busy ? Icons.more_horiz : Icons.send,
-        onPressed: () => _submit(model),
+        onPressed: _submit,
         compact: compact,
         color: const Color(0xFF40A7E3),
       );
@@ -1012,7 +998,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
   }
 
   Widget _buildComposerTextField(
-    FileTransferModel model,
     bool canSend, {
     required bool compact,
     required bool inputActive,
@@ -1064,7 +1049,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
       ),
       onChanged: (_) => setState(() {}),
       onSubmitted: (_) {
-        if (canSend) _submit(model);
+        if (canSend) _submit();
       },
     );
   }
@@ -1082,7 +1067,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     };
   }
 
-  Future<void> _openPlusMenu(FileTransferModel model) async {
+  Future<void> _openPlusMenu() async {
     final commands = await _loadMiniAppCommands();
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -1133,7 +1118,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     setState(() {});
   }
 
-  bool _canSubmit(FileTransferModel model) {
+  bool _canSubmit() {
     final text = _composer.text.trim();
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
@@ -1147,7 +1132,7 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     }
   }
 
-  void _submit(FileTransferModel model) {
+  void _submit() {
     unawaited(_startMiniAppCommand());
   }
 
@@ -1496,10 +1481,10 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
     });
   }
 
-  void _openCurrentSettings(FileTransferModel model) {
+  void _openCurrentSettings() {
     switch (_kind) {
       case MiniAppBotKind.globalDharma:
-        _showRegionSettings(model);
+        _openMiniAppPanel();
         return;
       case MiniAppBotKind.flashcards:
         _showFlashcardModeSelector();
@@ -1607,67 +1592,6 @@ class _SocialFeatureChatScreenState extends State<SocialFeatureChatScreen> {
                         });
                         Navigator.pop(ctx);
                       },
-                child: const Text('完成'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _showRegionSettings(FileTransferModel model) async {
-    var global = model.isGlobalSendEnabled;
-    var local = model.isLocalLoopbackEnabled;
-    var field = model.isFieldEnergyMode;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) => _BottomPanel(
-            children: [
-              const Text(
-                '全球法布施设置',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SwitchListTile(
-                value: global,
-                onChanged: (v) => setSheetState(() => global = v),
-                title: const Text(
-                  '全球节点',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-              SwitchListTile(
-                value: field,
-                onChanged: (v) => setSheetState(() => field = v),
-                title: const Text(
-                  '本地场能',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-              SwitchListTile(
-                value: local,
-                onChanged: (v) => setSheetState(() => local = v),
-                title: const Text(
-                  '本地转经轮',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  model.setGlobalSendEnabled(global);
-                  model.setCountryList(global ? ['ALL'] : const []);
-                  await model.setFieldEnergyMode(field);
-                  model.setLocalLoopbackEnabled(local);
-                  if (mounted) setState(() {});
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
                 child: const Text('完成'),
               ),
             ],
@@ -2278,33 +2202,6 @@ class _RuntimeDeliverySummary {
     }
     return null;
   }
-}
-
-class _GlobalProgress extends StatelessWidget {
-  const _GlobalProgress({required this.model});
-  final FileTransferModel model;
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF182433),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF263445)),
-      ),
-      child: Text(
-        model.isPreparingSend
-            ? model.preparingSendMessage
-            : '已传播 ${model.globalSentCount} 个节点 · ${model.globalDataSentMB.toStringAsFixed(2)} MB',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    ),
-  );
 }
 
 class _ControlPill extends StatelessWidget {

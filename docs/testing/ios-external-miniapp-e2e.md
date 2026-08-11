@@ -42,11 +42,29 @@ Linux runner 执行：
 
 L1 的目标是快速证明安装算法和测试架构没有被破坏。
 
-### iOS Simulator 二进制依赖合同
+### 平台宿主瘦身与依赖合同
 
-黑盒 gate 编译的是完整 Fabushi App，因此所有 vendored iOS framework 都必须含 Simulator slice，不能通过 `EXCLUDED_ARCHS`、跳过插件注册或移除链接来“让测试通过”。`ffmpeg_kit_flutter_new_audio` 当前必须至少使用仓库已验证的 `2.4.4` 锁定版本；该版本的 iOS CocoaPods 集成使用 FFmpeg 8.1.2 `.xcframework`，同时提供 device `arm64` 与 Simulator `arm64/x86_64`。旧 `2.0.0` 只有 device framework，会导致 `building for iOS-simulator, but linking ... built for iOS`，architecture guard 必须阻止它回归。依赖 manifest/lockfile 不属于 Codex 自动修复白名单，升级第三方二进制依赖必须由正常 PR 审核。
+Fabushi 已从“全球法布施 standalone App”升级为 MiniApp/智能代理平台宿主。`global-dharma` 只能以 Marketplace MiniApp 身份存在；宿主不得继续携带旧 App 的 3D 地球、视频 Feed、Firebase 社交、会员/IAP、FFmpeg、本地 TTS/ASR/LLM、WorkManager 后台发送、旧 FileTransfer/CountrySending/Leaderboard 等运行时依赖。
 
-移动端 clean build 也不得依赖构建期 `CMake FetchContent` 去 checkout 不受本仓库控制的远程 Git SHA。`flutter_scene` 本地 fork 固定使用 `flutter_scene_importer 0.11.0`、`flutter_gpu_shaders 0.4.0` 与 `hooks 1.0.0`：0.11 保持现有 `.model` 运行时格式，同时把旧 0.9 的 C++/CMake TinyGLTF importer 改为纯 Dart 构建路径。根 `pubspec.lock` 和 architecture guard 必须共同锁定这组版本，并禁止 `native_assets_cli` / `generateImporterFlatbufferDart()` 旧 hook 回归。
+架构 guard 必须同时约束以下不变量：
+
+- `native_app.dart` 只注册平台核心 provider，不再注册 `FileTransferModel`、`CountrySendingModel`、`VideoFeedVisibilityNotifier` 等旧 standalone 状态；
+- `fabushi/lib/packages/flutter_earth_globe`、`flutter_gl`、`flutter_scene`、`three_dart`、`features/video_feed`、`temp_video_feed` 永久删除；
+- `fabushi/assets/built_in` 与 `fabushi/web/assets/built_in` 不再进入 Git tree；大藏经等内容由 CDN/服务端/对应 MiniApp 提供；
+- Pub 依赖禁止重新引入 Firebase、FFmpeg、video_player、flutter_tts、sherpa_onnx、llama_cpp_dart、workmanager、旧 3D 包等 standalone 依赖；
+- MiniApp Host 真正使用的能力（例如 `udp_global_send_service + GeoIP`）仍保留在平台 capability bridge，不因为名字相似而误删。
+
+PR 的 Flutter 依赖验证前移到廉价的 `platform-slim-contract` Ubuntu job：固定 Flutter 版本执行 `flutter pub get`、平台入口 analyze、lock 零漂移并上传 resolver evidence。iOS 的 Pub/CocoaPods 图由独立 `ios-dependency-contract` macOS job 在真正 App build 前解析并验证；依赖漂移不得占用完整 E2E build 时长。
+
+### 可复用构建缓存合同
+
+自动化测试使用三层可验证缓存，不允许每次从零构建，也不允许用无法证明来源的缓存跳过生产构建：
+
+1. **精确 `Runner.app` 缓存**：key 绑定 Xcode、Flutter、平台代码、iOS 配置、提交的 Pub lock、资产/字体以及 Mahayana Rust runtime fingerprint。只修改 Appium flow、Python 驱动或测试断言时，key 不变，CI 直接安装上一次已验证的 App；App 源码或生产依赖变化时自动 miss。
+2. **生产 Rust archive 缓存**：`build_telegram_runtime.sh` 继续使用 `fabushi.mahayana.ios-runtime-fingerprint.v1` 校验 Mahayana/Codex 源码、Cargo lock、Rust toolchain、target/profile，命中后才能复用 `libmahayana_runtime.a`。
+3. **Pub/CocoaPods 下载与 Pods 图缓存**：Flutter SDK/pub cache 与 `~/Library/Caches/CocoaPods + fabushi/ios/Pods` 按 lock/toolchain 缓存；App 有小改动时无需重新下载/解析全部第三方包。
+
+不缓存几 GB 的整个 Cargo `target` 或无内容边界的 DerivedData。Simulator 必须在 `Runner.app` 已恢复或构建完成后才创建/启动，避免一个空闲 Simulator 在长时间编译期间持续占 CPU/内存。
 
 ### L2 — iOS Simulator 确定性黑盒验收（内部 PR / 默认手动）
 

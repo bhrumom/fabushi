@@ -11,8 +11,6 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/ios-external-miniapp-e2e.yml"
 PUBSPEC = ROOT / "fabushi/pubspec.yaml"
 PUBSPEC_LOCK = ROOT / "fabushi/pubspec.lock"
-SCENE_PUBSPEC = ROOT / "fabushi/lib/packages/flutter_scene/pubspec.yaml"
-SCENE_BUILD_HOOK = ROOT / "fabushi/lib/packages/flutter_scene/hook/build.dart"
 IOS_RUNTIME_BUILD = ROOT / "fabushi/ios/build_telegram_runtime.sh"
 AUTOFIX_WORKFLOW = ROOT / ".github/workflows/ios-e2e-codex-autofix.yml"
 FLOW = ROOT / "fabushi/tool/ios_e2e/flows/global_fabushi_search_open.v1.json"
@@ -43,8 +41,6 @@ def main() -> int:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     pubspec = PUBSPEC.read_text(encoding="utf-8")
     pubspec_lock = PUBSPEC_LOCK.read_text(encoding="utf-8")
-    scene_pubspec = SCENE_PUBSPEC.read_text(encoding="utf-8")
-    scene_build_hook = SCENE_BUILD_HOOK.read_text(encoding="utf-8")
     ios_runtime_build = IOS_RUNTIME_BUILD.read_text(encoding="utf-8")
     autofix_workflow = AUTOFIX_WORKFLOW.read_text(encoding="utf-8")
     product = PRODUCT.read_text(encoding="utf-8")
@@ -259,67 +255,74 @@ def main() -> int:
     )
     require("PLUGIN_ID: global-dharma" in workflow, "the canary plugin id must be exact")
 
-    require(
-        "ffmpeg_kit_flutter_new_audio: ^2.4.4" in pubspec,
-        "FFmpegKit direct dependency must require simulator-capable 2.4.4+",
+    # The host is now a platform. Historical standalone Global Dharma media,
+    # 3D, Firebase, local-ASR/LLM and background-transfer plugins must not
+    # return to the host dependency graph; those capabilities belong to
+    # MiniApps or optional external tools.
+    legacy_host_dependencies = (
+        "flutter_earth_globe",
+        "flutter_gl",
+        "three_dart",
+        "three_dart_jsm",
+        "flutter_scene",
+        "flutter_scene_importer",
+        "ffmpeg_kit_flutter_new_audio",
+        "firebase_core",
+        "firebase_auth",
+        "cloud_firestore",
+        "google_sign_in",
+        "in_app_purchase",
+        "video_player",
+        "flutter_cache_manager",
+        "preload_page_view",
+        "flutter_local_notifications",
+        "just_audio",
+        "flutter_tts",
+        "workmanager",
+        "sherpa_onnx",
+        "record",
+        "audio_session",
+        "llama_cpp_dart",
     )
-    require(
-        'name: ffmpeg_kit_flutter_new_audio' in pubspec_lock
-        and 'sha256: "3aa91ebf1bef0191d49ab70a9e2303e715cf04260c8fbd956cf899e42e1f2a81"' in pubspec_lock
-        and 'version: "2.4.4"' in pubspec_lock,
-        "pubspec.lock must pin the verified FFmpegKit 2.4.4 archive with native iOS Simulator XCFramework support",
-    )
+    for dependency in legacy_host_dependencies:
+        require(
+            re.search(rf"(?m)^  {re.escape(dependency)}:", pubspec) is None,
+            f"legacy standalone-app dependency {dependency} must not return to the host pubspec",
+        )
+        require(
+            re.search(rf"(?m)^  {re.escape(dependency)}:.*?\n(?:    .*\n)*?    name: {re.escape(dependency)}$", pubspec_lock) is None
+            and f"name: {dependency}\n" not in pubspec_lock,
+            f"legacy standalone-app dependency {dependency} must not remain in pubspec.lock",
+        )
 
-    # Keep the local flutter_scene fork on the pure-Dart importer/tooling
-    # migration. The legacy 0.9 importer used CMake FetchContent and a
-    # TinyGLTF git SHA that disappeared upstream, so a clean hosted runner
-    # could no longer reproduce iOS/Android builds.
-    require(
-        "flutter_scene_importer: 0.11.0" in pubspec,
-        "the app must pin pure-Dart flutter_scene_importer 0.11.0",
-    )
-    for expected in (
-        "flutter_gpu_shaders: 0.4.0",
-        "flutter_scene_importer: 0.11.0",
-        "hooks: 1.0.0",
-    ):
-        require(expected in scene_pubspec, f"local flutter_scene fork must pin {expected}")
-    require(
-        "native_assets_cli" not in scene_pubspec
-        and "native_assets_cli" not in scene_build_hook
-        and "generateImporterFlatbufferDart" not in scene_build_hook
-        and "package:hooks/hooks.dart" in scene_build_hook,
-        "flutter_scene must use the pure-Dart Hooks build path, not the legacy CMake/native_assets importer",
-    )
-    for name, digest, version in (
-        (
-            "flutter_scene_importer",
-            "11c3e699cf9794aaa225642776cfae33d1f3a1c1fabcd7573a1cd27d03d792fe",
-            "0.11.0",
-        ),
-        (
-            "flutter_gpu_shaders",
-            "be460c3af0f55861d5d4f9f92f61c39ff89c13f0dd86a82584d070989b584cf6",
-            "0.4.0",
-        ),
-        (
-            "hooks",
-            "5d309c86e7ce34cd8e37aa71cb30cb652d3829b900ab145e4d9da564b31d59f7",
-            "1.0.0",
-        ),
+    for legacy_path in (
+        ROOT / "fabushi/lib/packages/flutter_earth_globe",
+        ROOT / "fabushi/lib/packages/flutter_gl",
+        ROOT / "fabushi/lib/packages/flutter_scene",
+        ROOT / "fabushi/lib/packages/three_dart",
+        ROOT / "fabushi/lib/features/video_feed",
+        ROOT / "fabushi/temp_video_feed",
+        ROOT / "fabushi/assets/built_in",
+        ROOT / "fabushi/web/assets/built_in",
     ):
         require(
-            re.search(
-                rf"name: {re.escape(name)}\n\s+sha256: \"?{digest}\"?.*?version: \"{re.escape(version)}\"",
-                pubspec_lock,
-                flags=re.DOTALL,
-            )
-            is not None,
-            f"pubspec.lock must pin the reproducible {name} {version} archive",
+            not legacy_path.exists(),
+            f"legacy standalone-app tree must stay deleted: {legacy_path.relative_to(ROOT)}",
         )
+
+    native_app = (ROOT / "fabushi/lib/bootstrap/native_app.dart").read_text(encoding="utf-8")
     require(
-        "native_assets_cli:" not in pubspec_lock,
-        "pubspec.lock must not retain the legacy native_assets_cli scene importer dependency",
+        "FileTransferModel" not in native_app
+        and "VideoFeedVisibilityNotifier" not in native_app
+        and "CountrySendingModel" not in native_app,
+        "the platform bootstrap must not re-register standalone Global Dharma providers",
+    )
+    require(
+        "platform-slim-contract:" in workflow
+        and "ios-dependency-contract:" in workflow
+        and "Restore cached iOS E2E Runner.app" in workflow
+        and "Save cached iOS E2E Runner.app" in workflow,
+        "CI must keep lightweight platform/dependency gates and the content-addressed Runner.app cache",
     )
 
     require(
