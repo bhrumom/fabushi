@@ -163,7 +163,6 @@ jobs:
             --package mahayana-plugin-host \
             --package mahayana-platform-client
 
-
   platform-slim-contract:
     name: Platform slim Flutter contract
     runs-on: ubuntu-latest
@@ -224,7 +223,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-
   ios-dependency-contract:
     name: iOS dependency lock contract
     runs-on: macos-15
@@ -277,10 +275,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-
   ios-external-miniapp-e2e:
     name: iOS production-path black-box canary
-    needs: [architecture-contract, platform-slim-contract, ios-dependency-contract]
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -306,7 +302,8 @@ jobs:
             artifacts/marketplace \
             artifacts/ios/screenshots \
             artifacts/ios/page-source \
-            artifacts/logs
+            artifacts/logs \
+            artifacts/performance
 
       - name: Require fixed test account credential
         shell: bash
@@ -325,11 +322,72 @@ jobs:
           xcodebuild -version | tee artifacts/logs/xcode-version.txt
           simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
           printf '%s\n' "$simulator_sdk" | tee artifacts/logs/ios-simulator-sdk-version.txt
+          echo "IOS_SIMULATOR_SDK=$simulator_sdk" >> "$GITHUB_ENV"
           xcode_version="$(xcodebuild -version | awk '/^Xcode / {print $2}')"
           [ "$xcode_version" = "16.4" ] || {
             echo "Expected Xcode 16.4, got $xcode_version" >&2
             exit 1
           }
+
+      - name: Create and start isolated matching iOS Simulator early
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes available -j > artifacts/ios/available-runtimes.json
+          xcrun simctl list devicetypes -j > artifacts/ios/available-device-types.json
+          selection="$(python3 - artifacts/ios/available-runtimes.json artifacts/ios/available-device-types.json "$IOS_SIMULATOR_SDK" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          runtimes = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')).get('runtimes', [])
+          device_types = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')).get('devicetypes', [])
+          sdk_version = sys.argv[3]
+          matches = [
+              runtime
+              for runtime in runtimes
+              if runtime.get('isAvailable', True)
+              and '.iOS-' in str(runtime.get('identifier', ''))
+              and str(runtime.get('version', '')) == sdk_version
+          ]
+          if not matches:
+              available = sorted(
+                  str(runtime.get('version', ''))
+                  for runtime in runtimes
+                  if runtime.get('isAvailable', True) and '.iOS-' in str(runtime.get('identifier', ''))
+              )
+              raise SystemExit(
+                  f'No iOS Simulator runtime matches SDK {sdk_version}; available={available}'
+              )
+          runtime = matches[0]
+          runtime_id = str(runtime['identifier'])
+          runtime_name = str(runtime.get('name', runtime_id))
+
+          preferred = ('iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro', 'iPhone 15')
+          by_name = {row.get('name'): row.get('identifier') for row in device_types}
+          device_name = next((name for name in preferred if by_name.get(name)), None)
+          if device_name is None:
+              device_name = next(
+                  (row.get('name') for row in device_types if str(row.get('name', '')).startswith('iPhone')),
+                  None,
+              )
+          if not device_name or not by_name.get(device_name):
+              raise SystemExit('No iPhone Simulator device type was found')
+          print(f'{runtime_id}|{by_name[device_name]}|{runtime_name}|{device_name}')
+          PY
+          )"
+          IFS='|' read -r runtime_id device_type runtime_name device_name <<< "$selection"
+          simulator_name="Fabushi-E2E-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          udid="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")"
+          test -n "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          printf 'sdk=%s\nruntime=%s\ndevice=%s\nudid=%s\n' \
+            "$IOS_SIMULATOR_SDK" "$runtime_name" "$device_name" "$udid" \
+            | tee artifacts/ios/selected-simulator.txt
+          xcrun simctl boot "$udid"
+          printf '%s\n' "$(date +%s)" > artifacts/performance/simulator-boot-start.epoch
 
       - name: Select Marketplace distribution mode
         shell: bash
@@ -377,6 +435,30 @@ jobs:
         with:
           node-version: 22.12.0
 
+      - name: Start pinned Appium XCUITest stack install asynchronously
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/appium-install.ok" "$RUNNER_TEMP/appium-install.failed"
+          (
+            set +e
+            npm install --global "appium@3.6.0"
+            status=$?
+            if [ "$status" -eq 0 ]; then
+              appium driver install "xcuitest@12.3.1"
+              status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              appium --version
+              appium driver list --installed
+              touch "$RUNNER_TEMP/appium-install.ok"
+            else
+              printf '%s\n' "$status" > "$RUNNER_TEMP/appium-install.failed"
+            fi
+            exit "$status"
+          ) > artifacts/logs/appium-install.log 2>&1 &
+          echo $! > "$RUNNER_TEMP/appium-install.pid"
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -409,6 +491,19 @@ jobs:
         with:
           path: fabushi/build/ios/iphonesimulator/Runner.app
           key: ios-e2e-runner-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+
+      - name: Restore Xcode incremental build cache
+        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
+        id: ios-xcode-incremental-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            fabushi/build/ios
+            ~/Library/Developer/Xcode/DerivedData
+          key: ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
+          restore-keys: |
+            ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-
+            ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-
 
       - name: Restore Cargo download cache
         if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
@@ -476,15 +571,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-
-      - name: Install pinned Appium XCUITest stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --global "appium@3.6.0"
-          appium driver install "xcuitest@12.3.1"
-          appium --version | tee artifacts/logs/appium-version.txt
-          appium driver list --installed | tee artifacts/logs/appium-drivers.txt
 
       - name: Resolve Flutter dependencies without lock drift
         if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
@@ -558,10 +644,26 @@ jobs:
         timeout-minutes: 45
         run: |
           set -o pipefail
-          flutter build ios --simulator --debug --no-codesign \
+          started="$(date +%s)"
+          flutter build ios --simulator --debug --no-codesign --no-pub \
             --dart-define=FABUSHI_E2E_CONTROL=true 2>&1 \
             | tee ../artifacts/logs/flutter-ios-build.log
           test -d build/ios/iphonesimulator/Runner.app
+          finished="$(date +%s)"
+          total_seconds="$((finished - started))"
+          xcode_seconds="$(awk '/Xcode build done\./ {value=$NF; sub(/s$/, "", value); print value}' ../artifacts/logs/flutter-ios-build.log | tail -1)"
+          printf '{"protocol":"fabushi.ios.build-timing.v1","totalSeconds":%s,"xcodeSeconds":"%s","runnerAppCacheHit":false,"incrementalCacheExactHit":"%s"}\n' \
+            "$total_seconds" "$xcode_seconds" "${{ steps.ios-xcode-incremental-cache.outputs.cache-hit }}" \
+            > ../artifacts/performance/ios-build-timing.json
+
+      - name: Save Xcode incremental build cache
+        if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true' && steps.ios-xcode-incremental-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            fabushi/build/ios
+            ~/Library/Developer/Xcode/DerivedData
+          key: ios-xcode-incremental-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/ios/Podfile.lock') }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
 
       - name: Save cached iOS E2E Runner.app
         if: steps.ios-e2e-app-cache.outputs.cache-hit != 'true'
@@ -570,59 +672,13 @@ jobs:
           path: fabushi/build/ios/iphonesimulator/Runner.app
           key: ios-e2e-runner-v1-${{ runner.os }}-${{ runner.arch }}-xcode16.4-flutter3.41.9-${{ steps.ios-mahayana-runtime.outputs.fingerprint }}-${{ hashFiles('fabushi/lib/**', 'fabushi/ios/**', 'fabushi/pubspec.yaml', 'fabushi/pubspec.lock', 'fabushi/assets/**', 'fabushi/fonts/subset/**') }}
 
-      - name: Create isolated iOS Simulator
-        id: simulator
+      - name: Wait for isolated matching iOS Simulator
         shell: bash
+        env:
+          IOS_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           set -euo pipefail
-          xcrun simctl list runtimes available -j > artifacts/ios/available-runtimes.json
-          xcrun simctl list devicetypes -j > artifacts/ios/available-device-types.json
-          selection="$(python3 - artifacts/ios/available-runtimes.json artifacts/ios/available-device-types.json <<'PY'
-          import json
-          import re
-          import sys
-          from pathlib import Path
-
-          runtimes = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')).get('runtimes', [])
-          device_types = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8')).get('devicetypes', [])
-
-          ios = []
-          for runtime in runtimes:
-              identifier = runtime.get('identifier', '')
-              if not runtime.get('isAvailable', True) or '.iOS-' not in identifier:
-                  continue
-              version = runtime.get('version', '')
-              numbers = tuple(int(part) for part in re.findall(r'\d+', version))
-              ios.append((numbers, identifier, runtime.get('name', identifier)))
-          if not ios:
-              raise SystemExit('No available iOS Simulator runtime was found')
-          ios.sort(reverse=True)
-          _, runtime_id, runtime_name = ios[0]
-
-          preferred = ('iPhone 16 Pro', 'iPhone 16', 'iPhone 15 Pro', 'iPhone 15')
-          by_name = {row.get('name'): row.get('identifier') for row in device_types}
-          device_name = next((name for name in preferred if by_name.get(name)), None)
-          if device_name is None:
-              device_name = next(
-                  (row.get('name') for row in device_types if str(row.get('name', '')).startswith('iPhone')),
-                  None,
-              )
-          if not device_name or not by_name.get(device_name):
-              raise SystemExit('No iPhone Simulator device type was found')
-          print(f'{runtime_id}|{by_name[device_name]}|{runtime_name}|{device_name}')
-          PY
-          )"
-          IFS='|' read -r runtime_id device_type runtime_name device_name <<< "$selection"
-          simulator_name="Fabushi-E2E-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          udid="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")"
-          test -n "$udid"
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          echo "created=true" >> "$GITHUB_OUTPUT"
-          printf 'runtime=%s\ndevice=%s\nudid=%s\n' \
-            "$runtime_name" "$device_name" "$udid" \
-            | tee artifacts/ios/selected-simulator.txt
-          xcrun simctl boot "$udid"
-          python3 - "$udid" <<'PY'
+          python3 - "$IOS_UDID" <<'PY'
           import subprocess
           import sys
 
@@ -636,7 +692,51 @@ jobs:
           except subprocess.TimeoutExpired as error:
               raise SystemExit(f'Simulator boot did not complete within 240 seconds: {error}')
           PY
-          xcrun simctl io "$udid" screenshot artifacts/ios/screenshots/00-clean-simulator.png
+          started="$(cat artifacts/performance/simulator-boot-start.epoch)"
+          finished="$(date +%s)"
+          printf '{"protocol":"fabushi.ios.simulator-boot-timing.v1","wallSeconds":%s,"sdk":"%s"}\n' \
+            "$((finished - started))" "$IOS_SIMULATOR_SDK" \
+            > artifacts/performance/simulator-boot-timing.json
+
+      - name: Require pinned Appium XCUITest stack ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          pid="$(cat "$RUNNER_TEMP/appium-install.pid")"
+          deadline="$(( $(date +%s) + 120 ))"
+          while [ ! -f "$RUNNER_TEMP/appium-install.ok" ] && [ ! -f "$RUNNER_TEMP/appium-install.failed" ]; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 1
+          done
+          cat artifacts/logs/appium-install.log
+          test -f "$RUNNER_TEMP/appium-install.ok"
+          appium --version | tee artifacts/logs/appium-version.txt
+          appium driver list --installed | tee artifacts/logs/appium-drivers.txt
+
+      - name: Record cache and build performance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.ios-e2e-app-cache.outputs.cache-hit }}" = "true" ]; then
+            printf '{"protocol":"fabushi.ios.build-timing.v1","totalSeconds":0,"xcodeSeconds":"0","runnerAppCacheHit":true,"incrementalCacheExactHit":"not-needed"}\n' \
+              > artifacts/performance/ios-build-timing.json
+          fi
+          {
+            echo '### iOS E2E performance'
+            echo
+            echo "- Runner.app exact cache: ${{ steps.ios-e2e-app-cache.outputs.cache-hit }}"
+            echo "- Xcode incremental exact cache: ${{ steps.ios-xcode-incremental-cache.outputs.cache-hit }}"
+            if [ -f artifacts/performance/ios-build-timing.json ]; then
+              echo "- Build timing: $(cat artifacts/performance/ios-build-timing.json)"
+            fi
+            if [ -f artifacts/performance/simulator-boot-timing.json ]; then
+              echo "- Simulator timing: $(cat artifacts/performance/simulator-boot-timing.json)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Snapshot resolved dependency locks
         if: always()
@@ -663,7 +763,6 @@ jobs:
           app_home="$(xcrun simctl get_app_container "$IOS_UDID" "$BUNDLE_ID" data)"
           test -d "$app_home"
           printf 'app_home=%s\n' "$app_home" >> "$GITHUB_OUTPUT"
-          xcrun simctl io "$IOS_UDID" screenshot artifacts/ios/screenshots/01-app-installed.png
 
       - name: Provision only the fixed test-account session fixture
         shell: bash
@@ -712,7 +811,6 @@ jobs:
             xcrun simctl launch --terminate-running-process \
               "$IOS_UDID" "$BUNDLE_ID" \
             > artifacts/logs/simctl-launch.txt
-          xcrun simctl io "$IOS_UDID" screenshot artifacts/ios/screenshots/02-app-launched.png
 
       - name: Verify debug E2E control and fixed test-account session
         shell: bash
@@ -872,6 +970,7 @@ jobs:
 
           python3 - "$PLUGIN_ID" "$receipt" "$manifest" <<'PY'
           import json
+          import os
           import re
           import sys
           from pathlib import Path
@@ -892,7 +991,7 @@ jobs:
           assert isinstance(source.get('provider'), str) and source['provider']
           if source.get('provider') == 'github':
               assert isinstance(source.get('repository'), str) and source['repository']
-          mode = __import__('os').environ['MARKETPLACE_MODE']
+          mode = os.environ['MARKETPLACE_MODE']
           if mode == 'fixture':
               fixture = json.loads(Path('artifacts/marketplace/fixture-metadata.json').read_text(encoding='utf-8'))
               assert source.get('provider') == 'repository-fixture'
@@ -935,13 +1034,14 @@ jobs:
           if [ -f "$RUNNER_TEMP/appium.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/appium.pid")" 2>/dev/null
           fi
+          if [ -f "$RUNNER_TEMP/appium-install.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/appium-install.pid")" 2>/dev/null
+          fi
           if [ -f "$RUNNER_TEMP/marketplace-fixture.pid" ]; then
             kill "$(cat "$RUNNER_TEMP/marketplace-fixture.pid")" 2>/dev/null
           fi
-          sleep 3
+          sleep 1
           if [ -n "${IOS_UDID:-}" ]; then
-            xcrun simctl io "$IOS_UDID" screenshot \
-              artifacts/ios/screenshots/99-final.png 2>/dev/null
             xcrun simctl spawn "$IOS_UDID" log show \
               --style json \
               --last 30m \
