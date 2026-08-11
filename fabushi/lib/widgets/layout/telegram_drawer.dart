@@ -48,17 +48,6 @@ class TelegramDrawer extends StatelessWidget {
                     },
                   ),
                 _DrawerItem(
-                  icon: Icons.public,
-                  label: '全球法布施主页 (3D Earth)',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(
-                      context,
-                      '/',
-                    ); // Or whatever the route is
-                  },
-                ),
-                _DrawerItem(
                   icon: Icons.person_outline,
                   label: '联系人',
                   onTap: () {
@@ -82,22 +71,6 @@ class TelegramDrawer extends StatelessWidget {
                   },
                 ),
                 _DrawerItem(
-                  icon: Icons.self_improvement,
-                  label: '静修室 (Meditation)',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/meditation');
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.menu_book,
-                  label: '读经/听经',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/sutra');
-                  },
-                ),
-                _DrawerItem(
                   icon: Icons.settings_outlined,
                   label: '设置',
                   onTap: () {
@@ -115,7 +88,7 @@ class TelegramDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('大乘 - 全球法布施网络 v1.0')),
+                      const SnackBar(content: Text('大乘平台')),
                     );
                   },
                 ),

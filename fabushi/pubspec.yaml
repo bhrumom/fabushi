@@ -1,5 +1,5 @@
 name: global_dharma_sharing
-description: 全球法布施 - 佛教经文全球传播应用
+description: 大乘平台 - MiniApp 与智能代理宿主
 publish_to: 'none'
 version: 1.0.1+407
 
@@ -12,147 +12,40 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # 核心依赖
-  cupertino_icons: ^1.0.6
-  intl: any
+  # Platform core
+  provider: ^6.0.5
+  get_it: ^8.0.3
+  equatable: ^2.0.7
+  fpdart: ^1.1.0
   ffi: ^2.1.2
 
-  # 状态管理
-  provider: ^6.0.5
-  flutter_bloc: ^9.1.0
-  equatable: ^2.0.7
-  get_it: ^8.0.3
-
-  # 网络请求
+  # Network and persistence
   http: ^1.2.0
   dio: ^5.4.1
-  connectivity_plus: ^7.0.0
-
-  # 本地存储
   shared_preferences: ^2.2.2
   flutter_secure_storage: ^10.3.1
   path_provider: ^2.0.15
   package_info_plus: ^8.3.1
-  sqflite: ^2.4.2
 
-  # 文件处理
+  # MiniApp / Marketplace runtime
   file_picker: ^10.3.3
   path: ^1.8.3
   archive: ^4.0.7
   convert: ^3.1.2
-  csv: ^6.0.0
-  image: ^4.5.4
-
-  # UI组件
-  flex_color_scheme: ^8.0.2
-  lucide_icons_flutter: ^3.1.5
-  rive: ^0.13.20
-  searchfield: ^1.3.5
-  flutter_markdown: ^0.7.7+1
-
-  # 地图和地理位置
-  flutter_map: ^8.2.1
-  latlong2: ^0.9.1
-  geolocator: ^14.0.2
-  vector_math: ^2.1.4
-
-  # 3D渲染
-  flutter_earth_globe:
-    path: lib/packages/flutter_earth_globe
-  flutter_gl:
-    path: lib/packages/flutter_gl
-  three_dart: ^0.0.16
-  three_dart_jsm: ^0.0.10
-
-  # Firebase
-  firebase_core: ^4.2.0
-  firebase_auth: ^6.1.1
-  cloud_firestore: ^6.0.3
-  google_sign_in: ^7.2.0
-
-  # 支付
-  tobias: ^5.3.0  # 支付宝
-  in_app_purchase: ^3.2.0  # Apple IAP（iOS端会员充值）
-
-  # WebView
-  webview_flutter: ^4.4.2
-  webview_flutter_android: ^4.10.13
+  crypto: ^3.0.3
+  uuid: ^4.5.1
   flutter_inappwebview: ^6.0.0
+  webview_flutter: ^4.4.2
   url_launcher: ^6.1.11
 
-  # 视频播放
-  video_player: ^2.9.5
-  flutter_cache_manager: ^3.4.1
-  preload_page_view: ^0.2.0
-
-  # 通知
-  flutter_local_notifications: ^19.5.0
-
-  # 后台服务
-  just_audio: ^0.9.40  # 音频播放器（录音回放/macOS）
-  flutter_tts: ^4.2.0  # 文字转语音
-  workmanager: ^0.6.0  # 后台任务恢复（应用被杀后自动重启）
-
-  # 语音识别与录音
-  # - 移动端使用 Sherpa-ONNX + record 音频流
-  # - macOS 使用 record 包 + 原生 Speech 框架
-  sherpa_onnx: ^1.12.20       # Sherpa-ONNX 离线语音识别（iOS/Android）
-  record: ^6.1.0              # 音频录制（macOS/iOS/Android）
-  audio_session: ^0.1.21      # 音频会话管理（iOS 需要）
-
-  # NLP 语义分析 - 本地 LLM 推理（llama.cpp Dart 绑定）
-  # - macOS 平台专用，使用 GGUF 格式模型
-  # - 支持 Qwen 系列模型
-  llama_cpp_dart:
-    git:
-      url: https://github.com/bhrum/llama_cpp_dart.git
-      ref: main
-
-  # flutter_gemma - Android/iOS/macOS 平台
-  # - 支持 Gemma 3n (.litertlm) 和 Gemma 3 (.task) 格式
-  # - 基于 MediaPipe GenAI + LiteRT-LM 引擎
-
-  # FFmpeg - 音频合并与字幕嵌入
-  ffmpeg_kit_flutter_new_audio: ^2.4.4  # FFmpeg audio；2.4.x 提供原生 arm64 iOS Simulator XCFramework
-
-  # 权限
+  # Platform integration
   permission_handler: ^12.0.1
-
-  # 网络信息
-  network_info_plus: ^7.0.0
-
-  # 设备信息
   device_info_plus: ^11.1.0
-
-  # 平台相关
-  universal_html: ^2.2.4
-  js: ^0.7.2
-  window_manager: ^0.5.1
-
-  # 工具类
-  async: ^2.13.0
-  fpdart: ^1.1.0
-  json_annotation: ^4.9.0
-  gbk_codec: ^0.4.0
-  flutter_volume_controller: ^1.3.4
-  uuid: ^4.5.1
-  web_socket_channel: ^3.0.1
   app_links: ^6.3.3
-  lpinyin: ^2.0.3
-  crypto: ^3.0.3  # 用于流式计算文件哈希
-  scrollable_positioned_list: ^0.3.8  # 精确索引跳转
   sign_in_with_apple: ^7.0.1
-  flutter_scene:
-    path: lib/packages/flutter_scene
-
-dependency_overrides:
-  flutter_gl:
-    path: lib/packages/flutter_gl
-  three_dart:
-    path: lib/packages/three_dart
-  archive: ^4.0.7
-  http: ^1.2.0
-  image: ^4.5.4
+  tobias: ^5.3.0
+  universal_html: ^2.2.4
+  window_manager: ^0.5.1
 
 # Tobias 配置
 tobias:
@@ -174,7 +67,6 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_scene_importer: 0.11.0
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
@@ -186,18 +78,14 @@ flutter:
   
   assets:
     - assets/images/
-    - assets/rive/
     - assets/data/
     # assets/built_in/ 已移除 - 素材通过 CDN 下载，不打包进 APK/IPA
     # Web 端素材在 web/assets/built_in/，独立提供服务
-    - assets/earth_texture.jpg
     - assets/ip_data/
-    - assets/sherpa_models/streaming-paraformer-zh-en/
     # OpenClaw manifest is always available; large desktop runtimes are
     # injected by release/test scripts or supplied via DACHENG_OPENCLAW_RUNTIME_DIR.
     - assets/openclaw/bundle_manifest.json
     - assets/desktop_control/chrome_extension/
-    # Android/iOS 使用 R2 上的 flutter_scene .model，不再打包 GLB 到 APK/IPA
   
   fonts:
     # 使用子集化后的字体（从80MB压缩至~4.5MB）
