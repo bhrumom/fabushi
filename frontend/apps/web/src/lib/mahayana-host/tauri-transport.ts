@@ -26,7 +26,8 @@ declare global {
   }
 }
 
-const idle = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+const idle = (milliseconds = 10) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 export function isTauriMahayanaHostAvailable(): boolean {
   return (
@@ -93,14 +94,22 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
   private async pumpEvents(): Promise<void> {
     try {
       while (!this.closed) {
-        const event = await nativeInvoke<RuntimeEvent | null>(
-          "feature_host_receive",
-          { timeoutMs: 25 },
-        );
-        if (event) {
-          for (const listener of this.listeners) listener(event);
-        } else {
-          await idle();
+        try {
+          const event = await nativeInvoke<RuntimeEvent | null>(
+            "feature_host_receive",
+            { timeoutMs: 25 },
+          );
+          if (event) {
+            for (const listener of this.listeners) listener(event);
+          } else {
+            await idle();
+          }
+        } catch (error) {
+          if (this.closed) break;
+          console.error("Mahayana Host event pump failed", error);
+          // A transient invoke failure must not terminate the only Runtime
+          // event stream. Back off briefly and retry while the Host is open.
+          await idle(100);
         }
       }
     } finally {
