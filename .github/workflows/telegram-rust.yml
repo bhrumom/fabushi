@@ -1,11 +1,12 @@
 name: Telegram Rust Core
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'native/telegram-*/**'
-      - 'third_party/mahayana'
-      - 'third_party/mahayana/**'
+      - 'third_party/mahayana/mahayana-rs/providers/telegram-*/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-telegram/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
       - 'fabushi/lib/screens/telegram_authorization_screen.dart'
@@ -25,9 +26,13 @@ on:
       - 'fabushi/linux/**'
       - 'fabushi/windows/**'
       - 'docs/telegram-*.md'
+      - 'scripts/build-telegram-wasm.sh'
+      - 'scripts/test-telegram-wasm.mjs'
       - 'scripts/test-telegram-rust.sh'
       - '.github/workflows/telegram-rust.yml'
   push:
+    branches:
+      - main
     paths:
       - 'native/telegram-*/**'
       - 'third_party/mahayana'
@@ -53,13 +58,66 @@ on:
       - 'docs/telegram-*.md'
       - 'scripts/test-telegram-rust.sh'
       - '.github/workflows/telegram-rust.yml'
+
+concurrency:
+  group: telegram-rust-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  rust-pr:
+    name: PR fast Rust gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Restore Telegram Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: telegram-pr-fast-v1
+          cache-all-crates: true
+      - name: Test Telegram and embedded Runtime packages together
+        run: >-
+          cargo test --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p fabushi-telegram-core
+          -p fabushi-telegram-protocol
+          -p fabushi-telegram-network
+          -p fabushi-telegram-storage
+          -p fabushi-telegram-runtime
+          -p fabushi-telegram-media
+          -p fabushi-telegram-wasm
+          -p mahayana-core
+          -p mahayana-runtime
+          -p mahayana-ffi
+      - name: Clippy Telegram and embedded Runtime packages together
+        run: >-
+          cargo clippy --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p fabushi-telegram-core
+          -p fabushi-telegram-protocol
+          -p fabushi-telegram-network
+          -p fabushi-telegram-storage
+          -p fabushi-telegram-runtime
+          -p fabushi-telegram-media
+          -p fabushi-telegram-wasm
+          -p mahayana-core
+          -p mahayana-runtime
+          -p mahayana-ffi
+          --all-targets -- -D warnings
+
   rust:
     name: ${{ matrix.os }} / ${{ matrix.crate }}
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -174,6 +232,7 @@ jobs:
 
   android-runtime:
     name: Android Rust runtime ABIs
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -208,6 +267,7 @@ jobs:
 
   apple-runtime:
     name: Apple Rust runtime archives
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -244,6 +304,7 @@ jobs:
 
   desktop-runtime:
     name: ${{ matrix.os }} desktop runtime
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
