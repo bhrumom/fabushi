@@ -34,9 +34,7 @@ use mahayana_runtime_core::RuntimeError;
 use mahayana_social::MahayanaSocialConversationProvider;
 use mahayana_telegram::TelegramConversationProvider;
 use std::collections::BTreeMap;
-#[cfg(test)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -313,7 +311,6 @@ fn merge_official_mini_apps(
     definitions.into_values().collect()
 }
 
-#[cfg(test)]
 fn bundled_marketplace_plugin_ids(
     marketplace_root: Option<&Path>,
     mini_apps: &[MiniAppDefinition],
