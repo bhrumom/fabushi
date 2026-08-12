@@ -22,7 +22,9 @@ headless = []
 
 [dependencies]
 mahayana-core = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-core" }
+mahayana-feature-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-feature-host", default-features = false, features = ["local-only"] }
 mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, features = ["local-only"] }
+mahayana-host-protocol = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", default-features = false, optional = true }
