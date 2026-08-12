@@ -13,6 +13,13 @@ async function runJourneyStep(
   step: MahayanaHostJourneyStep,
 ): Promise<void> {
   switch (step.action) {
+    case "login":
+      await expect(page.getByTestId("login-gate")).toBeVisible();
+      await page.getByTestId("login-username").fill(step.username);
+      await page.getByTestId("login-password").fill(step.password);
+      await page.getByTestId("login-submit").click();
+      await expect(page.getByTestId("login-gate")).toBeHidden();
+      break;
     case "expectReady":
       await expect(page.getByTestId("host-status")).toHaveText("ready");
       return;
@@ -32,10 +39,12 @@ async function runJourneyStep(
       );
       return;
     case "openMiniApp":
-      await page.getByTestId("open-miniapp").click();
+      await page.getByRole("button", { name: "关闭插件市场" }).click();
+      await page.getByTestId(`agent-${step.miniAppId}`).click();
       await expect(page.getByTestId("miniapp-panel")).toContainText(
         step.miniAppId,
       );
+      await expect(page.getByTestId("miniapp-frame")).toBeVisible();
       return;
     case "approveCapability":
       await page.getByTestId("request-capability").click();
@@ -86,6 +95,37 @@ test("Mahayana Host 的所有声明功能可由目录驱动的用户操作完成
         "data-state",
         "passed",
       );
+    });
+  }
+});
+
+test("所有官方应用复用同一条安装、机器人和 MiniApp 打开旅程", async ({ page }) => {
+  const appIds = [
+    "global-dharma",
+    "faliu-flashcards",
+    "platform-publish",
+    "hermes-installer",
+    "bot-father",
+    "chatgpt-auto-confirm",
+  ];
+
+  await page.goto("/");
+  await page.getByTestId("login-username").fill("marketplace-fast-e2e");
+  await page.getByTestId("login-password").fill("deterministic-test-password");
+  await page.getByTestId("login-submit").click();
+  await expect(page.getByTestId("host-status")).toHaveText("ready");
+
+  for (const appId of appIds) {
+    await test.step(appId, async () => {
+      await page.getByTestId("open-marketplace").click();
+      const installId = appId === "global-dharma" ? "install-miniapp" : `install-${appId}`;
+      await page.getByTestId(installId).click();
+      await expect(page.getByTestId(installId)).toBeDisabled();
+      await page.getByRole("button", { name: "关闭插件市场" }).click();
+      await expect(page.getByTestId(`agent-${appId}`)).toBeVisible();
+      await page.getByTestId(`agent-${appId}`).click();
+      await expect(page.getByTestId("miniapp-panel")).toContainText(appId);
+      await expect(page.getByTestId("miniapp-frame")).toBeVisible();
     });
   }
 });

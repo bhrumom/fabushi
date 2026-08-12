@@ -131,7 +131,7 @@ impl MahayanaProductClient {
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
-        Self {
+        let client = Self {
             api_base_url: api_base_url.into().trim_end_matches('/').to_string(),
             session_path,
             secrets_manager: SecretsManager::new_with_namespace(
@@ -139,7 +139,9 @@ impl MahayanaProductClient {
                 SecretsBackendKind::Local,
                 LocalSecretsNamespace::MahayanaAuth,
             ),
-        }
+        };
+        client.import_legacy_session_if_needed();
+        client
     }
 
     pub fn api_base_url(&self) -> &str {
@@ -704,8 +706,6 @@ impl MahayanaProductClient {
     /// cross the Rust ABI into Flutter or another host shell.
     fn restore_session(&self) -> Result<Value, ProductError> {
         let session = self.required_session()?;
-        self.active_session_token(session)?;
-        let session = self.required_session()?;
         let mut output = session.as_object().cloned().unwrap_or_default();
         strip_credentials(&mut output);
         output.insert(
@@ -715,6 +715,31 @@ impl MahayanaProductClient {
         output.insert("loggedIn".to_string(), Value::Bool(true));
         output.insert("sessionStored".to_string(), Value::Bool(true));
         Ok(Value::Object(output))
+    }
+
+    /// Import the pre-Secret-Store JSON once. Legacy credentials remain
+    /// readable only here and are normalized before entering the encrypted
+    /// Mahayana auth namespace; no token alias is accepted by normal APIs.
+    fn import_legacy_session_if_needed(&self) {
+        if !matches!(self.load_session(), Ok(None)) {
+            return;
+        }
+        let Ok(contents) = std::fs::read_to_string(&self.session_path) else {
+            return;
+        };
+        let Ok(mut session) = serde_json::from_str::<Value>(&contents) else {
+            return;
+        };
+        let Some(object) = session.as_object_mut() else {
+            return;
+        };
+        if object.get("accessToken").is_none() {
+            let Some(token) = object.remove("token").filter(Value::is_string) else {
+                return;
+            };
+            object.insert("accessToken".to_string(), token);
+        }
+        let _ = self.save_session(&session);
     }
 
     fn alipay_complete(&self, request: &Value) -> Result<Value, ProductError> {

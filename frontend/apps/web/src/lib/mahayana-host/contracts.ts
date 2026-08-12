@@ -11,12 +11,26 @@ export interface HostInfo {
   platform: "mock" | "tauri" | "wasm" | "flutter";
 }
 
+export interface AuthUser {
+  id?: string | number;
+  username?: string;
+  nickname?: string;
+  email?: string;
+  avatar?: string;
+}
+
+export interface AuthState {
+  loggedIn: boolean;
+  provider?: string;
+  user?: AuthUser;
+}
+
 interface CommandBase {
   requestId: string;
 }
 
 export type RuntimeCommand =
-  | (CommandBase & { type: "chat.send"; text: string })
+  | (CommandBase & { type: "chat.send"; text: string; agentId?: string })
   | (CommandBase & { type: "marketplace.install"; miniAppId: string })
   | (CommandBase & { type: "miniapp.open"; miniAppId: string })
   | (CommandBase & {
@@ -55,7 +69,7 @@ export type RuntimeEvent =
       miniAppId: string;
       version: string;
     })
-  | (EventBase & { type: "miniapp.opened"; miniAppId: string })
+  | (EventBase & { type: "miniapp.opened"; miniAppId: string; html?: string })
   | (EventBase & {
       type: "approval.requested";
       approvalId: string;

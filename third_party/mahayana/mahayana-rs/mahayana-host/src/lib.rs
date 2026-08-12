@@ -26,7 +26,6 @@ use mahayana_miniapp::MiniAppConversationProvider;
 use mahayana_miniapp::MiniAppDefinition;
 use mahayana_platform_core::HostPlatform;
 use mahayana_product::MahayanaProductClient;
-#[cfg(feature = "desktop-full")]
 use mahayana_product::default_mahayana_home;
 use mahayana_runtime_core::MahayanaRuntime;
 use mahayana_runtime_core::RuntimeBuilder;
@@ -34,11 +33,13 @@ use mahayana_runtime_core::RuntimeError;
 use mahayana_social::MahayanaSocialConversationProvider;
 use mahayana_telegram::TelegramConversationProvider;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+#[cfg(any(test, feature = "desktop-full", feature = "mobile-embedded"))]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HostCreateConfig {
     #[serde(flatten)]
@@ -146,6 +147,27 @@ impl MahayanaHost {
     pub fn clear_session(&self) -> Result<serde_json::Value, HostError> {
         self.product_execute("mahayana.auth.logout", &serde_json::json!({}))
     }
+}
+
+/// Canonical Rust-owned account session shared by the Mahayana CLI and native
+/// desktop shell. Presentation code receives only UI-safe account fields.
+pub fn default_product_session_path() -> PathBuf {
+    let shared = default_mahayana_home().join("session.json");
+    if shared.is_file() {
+        return shared;
+    }
+
+    // Releases before the native app-group migration stored the account in
+    // ~/.mahayana. Keep that signed-in account usable on first launch; the
+    // desktop shell copies it into its Rust-owned app-data session and never
+    // exposes credentials to React.
+    if let Some(home) = std::env::var_os("HOME") {
+        let legacy = PathBuf::from(home).join(".mahayana").join("session.json");
+        if legacy.is_file() {
+            return legacy;
+        }
+    }
+    shared
 }
 
 fn build_runtime(
@@ -311,6 +333,7 @@ fn merge_official_mini_apps(
     definitions.into_values().collect()
 }
 
+#[cfg(any(test, feature = "desktop-full", feature = "mobile-embedded"))]
 fn bundled_marketplace_plugin_ids(
     marketplace_root: Option<&Path>,
     mini_apps: &[MiniAppDefinition],

@@ -13,6 +13,7 @@ import React, {
 import styles from "./host.module.css";
 import type {
   ApprovalRequestedEvent,
+  AuthState,
   RuntimeCommand,
 } from "../../lib/mahayana-host/contracts";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
@@ -137,6 +138,7 @@ export default function HostClient() {
     () => new Set(),
   );
   const [openedMiniApp, setOpenedMiniApp] = useState<string | null>(null);
+  const [openedMiniAppHtml, setOpenedMiniAppHtml] = useState<string | null>(null);
   const [approval, setApproval] = useState<ApprovalRequestedEvent | null>(null);
   const [approvalState, setApprovalState] = useState("not-requested");
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
@@ -149,6 +151,13 @@ export default function HostClient() {
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [activeAgentId, setActiveAgentId] = useState("mahayana-assistant");
 
   useEffect(() => {
     const pass = (featureId: MahayanaHostFeatureId) => {
@@ -215,6 +224,10 @@ export default function HostClient() {
           setInstalledMiniApps((current) => {
             const next = new Set(current);
             next.add(event.miniAppId);
+            window.localStorage.setItem(
+              "fabushi.installed-miniapps",
+              JSON.stringify([...next]),
+            );
             return next;
           });
           setBusyMiniApp(null);
@@ -222,6 +235,8 @@ export default function HostClient() {
           break;
         case "miniapp.opened":
           setOpenedMiniApp(event.miniAppId);
+          setOpenedMiniAppHtml(event.html ?? null);
+          setActiveAgentId(event.miniAppId);
           setMarketplaceOpen(false);
           setBusyMiniApp(null);
           pass("miniapp.open");
@@ -263,6 +278,7 @@ export default function HostClient() {
           break;
         case "session.cleared":
           setSessionState("cleared");
+          setAuth({ loggedIn: false });
           pass("session.clear");
           break;
         case "host.closed":
@@ -284,6 +300,47 @@ export default function HostClient() {
 
     void transport
       .initialize({ profileId: "default", mode })
+      .then(async () => {
+        try {
+          const authState = await Promise.race([
+            transport.authStatus(),
+            new Promise<never>((_, reject) =>
+              window.setTimeout(
+                () => reject(new Error("账号服务响应超时，请重新登录")),
+                8_000,
+              ),
+            ),
+          ]);
+          setAuth(authState);
+          if (authState.loggedIn) {
+            setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+          }
+        } catch (cause: unknown) {
+          setAuth({ loggedIn: false });
+          setLoginError(
+            `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
+        const stored = JSON.parse(
+          window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
+        ) as unknown;
+        if (Array.isArray(stored)) {
+          for (const miniAppId of stored.filter(
+            (value): value is string => typeof value === "string",
+          )) {
+            try {
+              await transport.execute({
+                type: "marketplace.install",
+                requestId: `restore-${miniAppId}`,
+                miniAppId,
+              });
+            } catch {
+              // A removed or unavailable plugin should not prevent the Host
+              // from starting; its stale local entry is replaced by events.
+            }
+          }
+        }
+      })
       .catch((cause: unknown) => {
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -318,8 +375,44 @@ export default function HostClient() {
     if (!text) return;
     setInput("");
     await run(() =>
-      execute({ type: "chat.send", requestId: nextRequestId("chat"), text }),
+      execute({
+        type: "chat.send",
+        requestId: nextRequestId("chat"),
+        text,
+        agentId: activeAgentId,
+      }),
     );
+  };
+
+  const login = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!loginUsername.trim() || !loginPassword) {
+      setLoginError("请输入账号和密码");
+      return;
+    }
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const state = await transport.passwordLogin(
+        loginUsername.trim(),
+        loginPassword,
+      );
+      setAuth({ ...state, loggedIn: true });
+      setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+      setLoginPassword("");
+    } catch (cause: unknown) {
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    await run(async () => {
+      const state = await transport.logout();
+      setAuth({ ...state, loggedIn: false });
+      setAccountOpen(false);
+    });
   };
 
   const installMiniApp = (miniAppId: string) => {
@@ -350,6 +443,12 @@ export default function HostClient() {
       .includes(marketplaceSearch.toLowerCase()),
   );
   const activeMiniApp = marketplaceApps.find((app) => app.id === openedMiniApp);
+  const activeAgent =
+    activeAgentId === "mahayana-assistant"
+      ? undefined
+      : marketplaceApps.find((app) => app.id === activeAgentId);
+  const displayName =
+    auth?.user?.nickname || auth?.user?.username || "大乘用户";
 
   return (
     <main className={styles.shell} data-testid="mahayana-host">
@@ -372,20 +471,39 @@ export default function HostClient() {
         </label>
 
         <nav className={styles.agentList} aria-label="智能体会话">
-          <button className={styles.agentActive} type="button">
+          <button
+            className={activeAgentId === "mahayana-assistant" ? styles.agentActive : styles.agentItem}
+            type="button"
+            onClick={() => setActiveAgentId("mahayana-assistant")}
+          >
             <span className={styles.avatar}>乘</span>
             <span className={styles.agentCopy}>
               <span><strong>大乘助手</strong><time>现在</time></span>
               <small>{operationState === "running" ? "正在工作…" : "Mahayana Runtime 已连接"}</small>
             </span>
           </button>
-          <button className={styles.agentItem} type="button">
-            <span className={styles.avatarAlt}>法</span>
-            <span className={styles.agentCopy}>
-              <span><strong>全球法布施</strong></span>
-              <small>{openedMiniApp ? "小程序会话已打开" : "法布施任务与发布"}</small>
-            </span>
-          </button>
+          {[...installedMiniApps].map((miniAppId) => {
+            const app = marketplaceApps.find((item) => item.id === miniAppId);
+            if (!app || app.id === "mahayana-assistant") return null;
+            return (
+              <button
+                key={app.id}
+                data-testid={`agent-${app.id}`}
+                className={activeAgentId === app.id ? styles.agentActive : styles.agentItem}
+                type="button"
+                onClick={() => {
+                  setActiveAgentId(app.id);
+                  if (openedMiniApp !== app.id) openMiniApp(app.id);
+                }}
+              >
+                <span className={styles.avatarAlt}>{app.glyph}</span>
+                <span className={styles.agentCopy}>
+                  <span><strong>{app.title}机器人</strong></span>
+                  <small>{openedMiniApp === app.id ? "应用已打开" : app.description}</small>
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className={styles.sidebarFooter}>
@@ -399,9 +517,14 @@ export default function HostClient() {
             <span>插件市场</span>
             <em>{installedMiniApps.size}</em>
           </button>
-          <button className={styles.profileButton} type="button">
-            <span className={styles.profileAvatar}>你</span>
-            <span>本地用户</span>
+          <button
+            className={styles.profileButton}
+            data-testid="account-menu"
+            type="button"
+            onClick={() => setAccountOpen(true)}
+          >
+            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
+            <span>{displayName}</span>
             <Icon name="settings" size={17} />
           </button>
         </div>
@@ -410,10 +533,10 @@ export default function HostClient() {
       <section className={styles.workspace}>
         <header className={styles.chatHeader}>
           <div className={styles.headerIdentity}>
-            <span className={styles.headerAvatar}>乘</span>
+            <span className={styles.headerAvatar}>{activeAgent?.glyph ?? "乘"}</span>
             <div>
-              <h1>大乘助手</h1>
-              <p>Mahayana Rust Core · 本地优先</p>
+              <h1>{activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}</h1>
+              <p>{activeAgent ? `${activeAgent.description} · Mahayana MiniApp` : "Mahayana Rust Core · 本地优先"}</p>
             </div>
           </div>
           <output
@@ -431,9 +554,9 @@ export default function HostClient() {
 
         <div className={styles.conversation}>
           <div className={styles.welcome}>
-            <span className={styles.welcomeAvatar}>乘</span>
-            <h2>有什么可以帮你？</h2>
-            <p>发送消息、运行任务，或从插件市场为助手添加能力。</p>
+            <span className={styles.welcomeAvatar}>{activeAgent?.glyph ?? "乘"}</span>
+            <h2>{activeAgent ? `${activeAgent.title}已连接` : "有什么可以帮你？"}</h2>
+            <p>{activeAgent ? "可以在右侧打开应用，也可以通过大乘助手调用它的能力。" : "发送消息、运行任务，或从插件市场为助手添加能力。"}</p>
           </div>
           <div className={styles.messages} data-testid="messages" aria-live="polite">
             {messages.map((message, index) => (
@@ -444,7 +567,7 @@ export default function HostClient() {
               >
                 {message.role === "assistant" ? <span className={styles.messageAvatar}>乘</span> : null}
                 <div>
-                  <strong>{message.role === "user" ? "你" : "大乘助手"}</strong>
+                  <strong>{message.role === "user" ? "你" : activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}</strong>
                   <p>{message.text}</p>
                 </div>
               </article>
@@ -457,7 +580,7 @@ export default function HostClient() {
               aria-label="消息内容"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="给大乘助手发消息…"
+              placeholder={activeAgent ? `给${activeAgent.title}机器人发消息…` : "给大乘助手发消息…"}
               disabled={hostStatus !== "ready"}
             />
             <button
@@ -554,6 +677,15 @@ export default function HostClient() {
               <small>{activeMiniApp.id}</small>
             </div>
             <p>隔离 MiniApp 容器已打开。</p>
+            {openedMiniAppHtml ? (
+              <iframe
+                className={styles.miniAppFrame}
+                data-testid="miniapp-frame"
+                title={`${activeMiniApp.title}应用`}
+                sandbox="allow-scripts"
+                srcDoc={openedMiniAppHtml}
+              />
+            ) : null}
             <button
               data-testid="request-capability"
               type="button"
@@ -642,7 +774,6 @@ export default function HostClient() {
               {visibleMarketplaceApps.map((app) => {
                 const installed = installedMiniApps.has(app.id);
                 const busy = busyMiniApp === app.id;
-                const isDefault = app.id === defaultMiniAppId;
                 return (
                   <article key={app.id} className={styles.marketRow}>
                     <div className={`${styles.marketIcon} ${styles[app.tone]}`}>
@@ -656,7 +787,7 @@ export default function HostClient() {
                       <p>{app.description}</p>
                     </div>
                     <button
-                      data-testid={isDefault ? "install-miniapp" : undefined}
+                      data-testid={app.id === defaultMiniAppId ? "install-miniapp" : `install-${app.id}`}
                       type="button"
                       disabled={installed || busy}
                       onClick={() => installMiniApp(app.id)}
@@ -664,14 +795,14 @@ export default function HostClient() {
                       {busy ? "安装中…" : installed ? "已安装" : "安装"}
                     </button>
                     <button
-                      data-testid={isDefault ? "open-miniapp" : undefined}
+                      data-testid={app.id === defaultMiniAppId ? "open-miniapp" : `open-${app.id}`}
                       type="button"
                       disabled={!installed || busy}
                       onClick={() => openMiniApp(app.id)}
                     >
                       打开
                     </button>
-                    {isDefault ? (
+                    {app.id === defaultMiniAppId ? (
                       <output className={styles.srOnly} data-testid="marketplace-state">
                         {installed ? "installed" : "not-installed"}
                       </output>
@@ -724,6 +855,55 @@ export default function HostClient() {
                 本次允许
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {auth?.loggedIn === false ? (
+        <div className={styles.backdrop} data-testid="login-gate">
+          <form className={styles.loginDialog} onSubmit={(event) => void login(event)}>
+            <span className={styles.loginMark}>乘</span>
+            <p>FABUSHI ACCOUNT</p>
+            <h2>登录大乘</h2>
+            <small>登录后继续使用智能体、插件市场与安全会话。</small>
+            <label>
+              <span>账号或邮箱</span>
+              <input
+                data-testid="login-username"
+                autoComplete="username"
+                value={loginUsername}
+                onChange={(event) => setLoginUsername(event.target.value)}
+                placeholder="请输入账号或邮箱"
+              />
+            </label>
+            <label>
+              <span>密码</span>
+              <input
+                data-testid="login-password"
+                autoComplete="current-password"
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="请输入密码"
+              />
+            </label>
+            {loginError ? <output role="alert">{loginError}</output> : null}
+            <button data-testid="login-submit" type="submit" disabled={loginBusy}>
+              {loginBusy ? "登录中…" : "登录"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {accountOpen && auth?.loggedIn ? (
+        <div className={styles.backdrop} onMouseDown={() => setAccountOpen(false)}>
+          <section className={styles.accountDialog} onMouseDown={(event) => event.stopPropagation()}>
+            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
+            <h2>{displayName}</h2>
+            <p>{auth.user?.email || auth.user?.username || auth.provider}</p>
+            <button data-testid="logout" type="button" onClick={() => void logout()}>
+              退出登录
+            </button>
           </section>
         </div>
       ) : null}

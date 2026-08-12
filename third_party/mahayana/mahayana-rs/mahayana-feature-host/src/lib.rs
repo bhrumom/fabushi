@@ -24,8 +24,6 @@ use mahayana_core::RuntimeEvent;
 #[cfg(feature = "production")]
 use mahayana_core::RuntimeResponse;
 #[cfg(feature = "production")]
-use mahayana_core::capability::MAHAYANA_AGENT_CAPABILITY_ID;
-#[cfg(feature = "production")]
 use mahayana_host::HostCreateConfig;
 #[cfg(feature = "production")]
 use mahayana_host::MahayanaHost;
@@ -41,7 +39,7 @@ use mahayana_host_protocol::HostInfo;
 use mahayana_host_protocol::HostMode;
 use mahayana_host_protocol::MessageRole;
 use mahayana_host_protocol::SurfacePlatform;
-#[cfg(feature = "production")]
+use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -85,6 +83,7 @@ struct FeatureState {
     sequence: u64,
     closed: bool,
     session_active: bool,
+    auth_user: Option<Value>,
 }
 
 impl Default for FeatureState {
@@ -97,6 +96,7 @@ impl Default for FeatureState {
             sequence: 0,
             closed: false,
             session_active: true,
+            auth_user: None,
         }
     }
 }
@@ -117,11 +117,7 @@ impl FeatureHostController {
             HostMode::Production => {
                 #[cfg(feature = "production")]
                 {
-                    return Self::create_with_host_config(
-                        config,
-                        platform,
-                        HostCreateConfig::default(),
-                    );
+                    Self::create_with_host_config(config, platform, HostCreateConfig::default())
                 }
                 #[cfg(not(feature = "production"))]
                 {
@@ -182,6 +178,111 @@ impl FeatureHostController {
 
     pub fn info(&self) -> HostInfo {
         self.info.clone()
+    }
+
+    /// Return UI-safe account state. Credentials stay inside the Rust product
+    /// client and are never serialized across the presentation boundary.
+    pub fn auth_status(&self) -> Result<Value, FeatureHostError> {
+        match self.config.mode {
+            HostMode::Test => {
+                let state = self.state()?;
+                Ok(match state.auth_user.as_ref() {
+                    Some(user) => json!({
+                        "@type": "mahayana.auth.status",
+                        "loggedIn": true,
+                        "provider": "test",
+                        "user": user,
+                    }),
+                    None => json!({
+                        "@type": "mahayana.auth.status",
+                        "loggedIn": false,
+                        "provider": "test",
+                    }),
+                })
+            }
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                {
+                    // First paint must be local-first. Restoring the UI-safe
+                    // account from the Rust-owned session is immediate and
+                    // lets an offline macOS launch remain signed in. Network
+                    // operations still validate the token at their boundary.
+                    if let Ok(session) = self
+                        .runtime()?
+                        .product_execute("mahayana.auth.session.restore", &json!({}))
+                    {
+                        return Ok(session);
+                    }
+                    self.runtime()?
+                        .product_execute("mahayana.auth.status", &json!({}))
+                        .map_err(FeatureHostError::from)
+                }
+                #[cfg(not(feature = "production"))]
+                Err(FeatureHostError::ProductionUnavailable)
+            }
+        }
+    }
+
+    pub fn password_login(
+        &self,
+        username: String,
+        password: String,
+    ) -> Result<Value, FeatureHostError> {
+        let username = required(username, "username")?;
+        let password = required(password, "password")?;
+        #[cfg(not(feature = "production"))]
+        let _ = &password;
+        match self.config.mode {
+            HostMode::Test => {
+                let user = json!({
+                    "id": "fast-e2e-user",
+                    "username": username,
+                    "nickname": "本地测试用户",
+                });
+                self.state()?.auth_user = Some(user.clone());
+                Ok(json!({
+                    "@type": "mahayana.auth.session",
+                    "loggedIn": true,
+                    "provider": "test",
+                    "sessionStored": true,
+                    "user": user,
+                }))
+            }
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.password.login",
+                        &json!({"username": username, "password": password}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn logout(&self) -> Result<Value, FeatureHostError> {
+        match self.config.mode {
+            HostMode::Test => {
+                self.state()?.auth_user = None;
+                Ok(json!({
+                    "@type": "mahayana.auth.session",
+                    "loggedIn": false,
+                    "revoked": true,
+                }))
+            }
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .clear_session()
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
     }
 
     pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, FeatureHostError> {
@@ -264,8 +365,10 @@ impl FeatureHostController {
 
         if self.config.mode == HostMode::Production {
             #[cfg(feature = "production")]
-            self.runtime()?
-                .interrupt(OperationId(operation_id.to_string()))?;
+            if !operation_id.starts_with("host-task-") {
+                self.runtime()?
+                    .interrupt(OperationId(operation_id.to_string()))?;
+            }
             #[cfg(not(feature = "production"))]
             return Err(FeatureHostError::ProductionUnavailable);
         }
@@ -442,16 +545,8 @@ impl FeatureHostController {
         label: String,
     ) -> Result<CommandAccepted, FeatureHostError> {
         let label = required(label, "operation label")?;
-        let response = self.runtime()?.execute(RuntimeCommand::InvokeCapability {
-            capability_id: MAHAYANA_AGENT_CAPABILITY_ID.to_string(),
-            text: label.clone(),
-            client_message_id: Some(request_id.clone()),
-        })?;
-        let operation_id = match response {
-            RuntimeResponse::CapabilityAccepted { operation_id, .. } => operation_id.to_string(),
-            other => return Err(unexpected_response("runtime.longTask", other)),
-        };
         let mut state = self.state()?;
+        let operation_id = next_id(&mut state, "host-task");
         state.operations.insert(operation_id.clone());
         state.events.push_back(HostEvent::OperationStarted {
             timestamp: timestamp(),
@@ -533,15 +628,16 @@ impl FeatureHostController {
                 "MiniApp is not installed: {mini_app_id}"
             )));
         }
-        match self.runtime()?.execute(RuntimeCommand::PluginUi {
+        let html = match self.runtime()?.execute(RuntimeCommand::PluginUi {
             plugin_id: mini_app_id.clone(),
         })? {
-            RuntimeResponse::PluginUi { .. } => {}
+            RuntimeResponse::PluginUi { html, .. } => html,
             other => return Err(unexpected_response("miniapp.open", other)),
-        }
+        };
         self.state()?.events.push_back(HostEvent::MiniAppOpened {
             timestamp: timestamp(),
             mini_app_id,
+            html: Some(html),
         });
         Ok(CommandAccepted {
             request_id,
@@ -590,10 +686,59 @@ impl FeatureHostController {
         &self,
         request_id: String,
         text: String,
+        agent_id: Option<String>,
     ) -> Result<CommandAccepted, FeatureHostError> {
         let text = required(text, "chat text")?;
+        if let Some(mini_app_id) = agent_id.as_deref().filter(|id| *id != "mahayana-assistant") {
+            match self
+                .runtime()?
+                .execute(RuntimeCommand::ApproveLocalPluginTool {
+                    plugin_id: mini_app_id.to_string(),
+                    tool: "chat".to_string(),
+                })? {
+                RuntimeResponse::LocalPluginToolApproved { .. } => {}
+                other => return Err(unexpected_response("miniapp.chat.approve", other)),
+            }
+            let response = self
+                .runtime()?
+                .execute(RuntimeCommand::CallLocalPluginTool {
+                    plugin_id: mini_app_id.to_string(),
+                    tool: "chat".to_string(),
+                    arguments: json!({"message": text}),
+                })?;
+            let reply = match response {
+                RuntimeResponse::LocalPluginToolResult { result, .. } => result
+                    .pointer("/content/0/text")
+                    .and_then(Value::as_str)
+                    .filter(|reply| !reply.is_empty())
+                    .unwrap_or("已收到。请选择应用内的快捷操作继续。")
+                    .to_string(),
+                other => return Err(unexpected_response("miniapp.chat", other)),
+            };
+            let mut state = self.state()?;
+            state.events.push_back(HostEvent::ChatMessage {
+                timestamp: timestamp(),
+                role: MessageRole::User,
+                text,
+                operation_id: None,
+            });
+            state.events.push_back(HostEvent::ChatMessage {
+                timestamp: timestamp(),
+                role: MessageRole::Assistant,
+                text: reply,
+                operation_id: None,
+            });
+            return Ok(CommandAccepted {
+                request_id,
+                operation_id: None,
+            });
+        }
+        let conversation_id = agent_id
+            .filter(|id| id != "mahayana-assistant")
+            .map(|id| ConversationId(format!("miniapp:{id}")))
+            .unwrap_or_else(|| ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()));
         let response = self.runtime()?.execute(RuntimeCommand::SendMessage {
-            conversation_id: ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()),
+            conversation_id,
             text: text.clone(),
             client_message_id: Some(request_id.clone()),
         })?;
@@ -632,7 +777,9 @@ impl FeatureHostController {
             ensure_open(&state)?;
         }
         match command {
-            FeatureCommand::ChatSend { text, .. } => self.production_chat(request_id, text),
+            FeatureCommand::ChatSend { text, agent_id, .. } => {
+                self.production_chat(request_id, text, agent_id)
+            }
             FeatureCommand::MarketplaceInstall { mini_app_id, .. } => {
                 self.production_install(request_id, mini_app_id)
             }
@@ -657,7 +804,7 @@ impl FeatureHostController {
         let mut state = self.state()?;
         ensure_open(&state)?;
         match command {
-            FeatureCommand::ChatSend { text, .. } => {
+            FeatureCommand::ChatSend { text, agent_id, .. } => {
                 let text = required(text, "chat text")?;
                 let operation_id = next_id(&mut state, "chat");
                 state.events.push_back(HostEvent::ChatMessage {
@@ -675,7 +822,10 @@ impl FeatureHostController {
                 state.events.push_back(HostEvent::ChatMessage {
                     timestamp: timestamp(),
                     role: MessageRole::Assistant,
-                    text: format!("收到：{text}"),
+                    text: agent_id
+                        .filter(|id| id != "mahayana-assistant")
+                        .map(|id| format!("{id}机器人收到：{text}"))
+                        .unwrap_or_else(|| format!("收到：{text}")),
                     operation_id: Some(operation_id.clone()),
                 });
                 Ok(CommandAccepted {
@@ -707,6 +857,9 @@ impl FeatureHostController {
                 state.events.push_back(HostEvent::MiniAppOpened {
                     timestamp: timestamp(),
                     mini_app_id,
+                    html: Some(
+                        "<!doctype html><html><body><h1>测试 MiniApp</h1></body></html>".into(),
+                    ),
                 });
                 Ok(CommandAccepted {
                     request_id,
@@ -878,6 +1031,7 @@ mod tests {
             .execute(FeatureCommand::ChatSend {
                 request_id: "chat-1".into(),
                 text: "验证极速自动化测试".into(),
+                agent_id: None,
             })
             .expect("chat");
         controller

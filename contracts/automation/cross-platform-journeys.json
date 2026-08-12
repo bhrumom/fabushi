@@ -2,6 +2,17 @@
   "schemaVersion": 1,
   "features": [
     {
+      "id": "auth.login",
+      "label": "账号登录",
+      "steps": [
+        {
+          "action": "login",
+          "username": "macos-fast-e2e",
+          "password": "deterministic-test-password"
+        }
+      ]
+    },
+    {
       "id": "runtime.boot",
       "label": "Runtime 启动",
       "steps": [

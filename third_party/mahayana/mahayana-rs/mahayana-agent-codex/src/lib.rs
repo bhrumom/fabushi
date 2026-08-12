@@ -1640,7 +1640,7 @@ impl AgentBackend for CodexAgentBackend {
             mcp_configs.keys().cloned(),
         );
         debug_mcp_runtime_configs(&mcp_configs);
-        let (command_tools, tool_gates) = match &detail.plugin.summary.source {
+        let (mut command_tools, tool_gates) = match &detail.plugin.summary.source {
             PluginSource::Local { path } => LocalPlugin::load(path.as_path())
                 .map_err(|error| AgentError::Backend(error.to_string()))?
                 .mahayana
@@ -1757,15 +1757,15 @@ impl AgentBackend for CodexAgentBackend {
         let tools = self
             .list_mcp_app_tools(&thread_id, &selected.server)
             .await?;
-        if let Some((command, tool)) = command_tools.iter().find(|(_, tool)| {
-            !tools
+        // A plugin may expose a richer local desktop command set than its
+        // account HTTP runtime. Negotiate the commands available on this
+        // concrete server instead of rejecting the entire MiniApp session
+        // when one platform-specific tool is absent.
+        command_tools.retain(|_, tool| {
+            tools
                 .iter()
                 .any(|descriptor| descriptor.get("name").and_then(Value::as_str) == Some(tool))
-        }) {
-            return Err(AgentError::Backend(format!(
-                "plugin command `{command}` maps to missing MCP Tool `{tool}`"
-            )));
-        }
+        });
         let has_home = tools
             .iter()
             .any(|tool| tool.get("name").and_then(Value::as_str) == Some("home"));
