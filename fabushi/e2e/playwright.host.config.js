@@ -1,4 +1,15 @@
+import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
+
+const chromiumExecutable = [
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+].find((candidate) => candidate && existsSync(candidate));
 
 export default defineConfig({
   testDir: "./tests",
@@ -15,6 +26,9 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://127.0.0.1:4173",
+    launchOptions: chromiumExecutable
+      ? { executablePath: chromiumExecutable }
+      : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",

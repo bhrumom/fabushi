@@ -1,5 +1,6 @@
 [package]
 name = "fabushi-tauri"
+workspace = "../../../third_party/mahayana/mahayana-rs"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -17,17 +18,33 @@ required-features = ["desktop"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:tauri", "tauri/wry"]
+production-runtime = [
+    "dep:mahayana-core",
+    "dep:mahayana-host",
+    "mahayana-feature-host/production",
+    "mahayana-feature-host/local-only",
+]
+desktop = [
+    "production-runtime",
+    "dep:tauri",
+    "dep:tauri-runtime",
+    "dep:tauri-runtime-wry",
+    "dep:wry",
+    "tauri/wry",
+]
 headless = []
 
 [dependencies]
-mahayana-core = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-core" }
-mahayana-feature-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-feature-host", default-features = false, features = ["local-only"] }
-mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, features = ["local-only"] }
+mahayana-core = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-core", optional = true }
+mahayana-feature-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-feature-host", default-features = false }
+mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, features = ["local-only"], optional = true }
 mahayana-host-protocol = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2", default-features = false, optional = true }
+tauri = { version = "=2.10.3", default-features = false, optional = true }
+tauri-runtime = { version = "=2.10.1", optional = true }
+tauri-runtime-wry = { version = "=2.10.1", default-features = false, optional = true }
+wry = { version = "=0.54.0", default-features = false, optional = true }
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "=2.6.3", features = [] }

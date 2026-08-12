@@ -4,9 +4,14 @@
 //! exercise raw Runtime commands and complete product-level user journeys
 //! without a window server or simulator.
 
+#[cfg(feature = "production-runtime")]
 use mahayana_core::RuntimeCommand;
+#[cfg(feature = "production-runtime")]
+use mahayana_core::RuntimeConfig;
 use mahayana_feature_host::FeatureHostController;
+#[cfg(feature = "production-runtime")]
 use mahayana_host::HostCreateConfig;
+#[cfg(feature = "production-runtime")]
 use mahayana_host::MahayanaHost;
 use mahayana_host_protocol::ApprovalResolution;
 use mahayana_host_protocol::CommandAccepted;
@@ -15,16 +20,36 @@ use mahayana_host_protocol::HostConfig as FeatureHostConfig;
 use mahayana_host_protocol::HostEvent;
 use mahayana_host_protocol::HostInfo;
 use mahayana_host_protocol::SurfacePlatform;
+#[cfg(feature = "production-runtime")]
 use serde_json::Value;
+#[cfg(feature = "production-runtime")]
 use serde_json::json;
+#[cfg(feature = "production-runtime")]
+use std::path::PathBuf;
 use std::sync::Mutex;
+#[cfg(feature = "production-runtime")]
 use std::time::Duration;
 
+#[cfg(feature = "production-runtime")]
+fn host_config_for_root(root: PathBuf, inherit_installed_plugins: bool) -> HostCreateConfig {
+    HostCreateConfig {
+        runtime: RuntimeConfig {
+            data_dir: Some(root.join("runtime")),
+            ..RuntimeConfig::default()
+        },
+        product_session_path: Some(root.join("product-session.json")),
+        inherit_installed_plugins: Some(inherit_installed_plugins),
+        ..HostCreateConfig::default()
+    }
+}
+
+#[cfg(feature = "production-runtime")]
 #[derive(Default)]
 pub struct HostState {
     host: Mutex<Option<MahayanaHost>>,
 }
 
+#[cfg(feature = "production-runtime")]
 impl HostState {
     pub fn initialize(&self, config: Option<Value>) -> Result<Value, String> {
         let config = config
@@ -98,6 +123,23 @@ impl FeatureHostState {
         Ok(info)
     }
 
+    #[cfg(feature = "production-runtime")]
+    pub fn initialize_with_host_config(
+        &self,
+        config: FeatureHostConfig,
+        host_config: HostCreateConfig,
+    ) -> Result<HostInfo, String> {
+        let controller = FeatureHostController::create_with_host_config(
+            config,
+            SurfacePlatform::Tauri,
+            host_config,
+        )
+        .map_err(|error| error.to_string())?;
+        let info = controller.info();
+        *self.lock()? = Some(controller);
+        Ok(info)
+    }
+
     pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, String> {
         self.with_controller(|controller| controller.execute(command))
     }
@@ -136,9 +178,7 @@ impl FeatureHostState {
         operation(controller).map_err(|error| error.to_string())
     }
 
-    fn lock(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, Option<FeatureHostController>>, String> {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<FeatureHostController>>, String> {
         self.controller
             .lock()
             .map_err(|_| "Mahayana feature Host state mutex is poisoned".to_string())
@@ -149,6 +189,7 @@ impl FeatureHostState {
 mod desktop {
     use super::FeatureHostState;
     use super::HostState;
+    use super::host_config_for_root;
     use mahayana_host_protocol::ApprovalResolution;
     use mahayana_host_protocol::CommandAccepted;
     use mahayana_host_protocol::FeatureCommand;
@@ -156,6 +197,8 @@ mod desktop {
     use mahayana_host_protocol::HostEvent;
     use mahayana_host_protocol::HostInfo;
     use serde_json::Value;
+    use tauri::AppHandle;
+    use tauri::Manager;
     use tauri::State;
 
     #[tauri::command]
@@ -172,10 +215,7 @@ mod desktop {
     }
 
     #[tauri::command]
-    fn host_receive(
-        state: State<'_, HostState>,
-        timeout_ms: Option<u64>,
-    ) -> Result<Value, String> {
+    fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
         state.receive(timeout_ms.unwrap_or(25))
     }
 
@@ -191,10 +231,17 @@ mod desktop {
 
     #[tauri::command]
     fn feature_host_initialize(
+        app: AppHandle,
         state: State<'_, FeatureHostState>,
         config: HostConfig,
     ) -> Result<HostInfo, String> {
-        state.initialize(config)
+        let root = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+        std::fs::create_dir_all(&root)
+            .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+        state.initialize_with_host_config(config, host_config_for_root(root, true))
     }
 
     #[tauri::command]
@@ -266,10 +313,32 @@ mod tests {
     use mahayana_host_protocol::ApprovalDecision;
     use mahayana_host_protocol::HostMode;
 
+    #[cfg(feature = "production-runtime")]
+    fn isolated_host_config(label: &str) -> HostCreateConfig {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "fabushi-tauri-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create isolated Tauri Host root");
+        host_config_for_root(root, false)
+    }
+
+    #[cfg(feature = "production-runtime")]
+    fn encoded_host_config(label: &str) -> Value {
+        serde_json::to_value(isolated_host_config(label)).expect("serialize Host config")
+    }
+
+    #[cfg(feature = "production-runtime")]
     #[test]
     fn headless_contract_covers_the_complete_runtime_lifecycle() {
         let state = HostState::default();
-        let initialized = state.initialize(None).expect("initialize Host");
+        let initialized = state
+            .initialize(Some(encoded_host_config("lifecycle")))
+            .expect("initialize Host");
         assert_eq!(initialized["initialized"], true);
         assert_eq!(initialized["status"]["runtimeAbiVersion"], 1);
 
@@ -287,16 +356,21 @@ mod tests {
 
         let closed = state.close().expect("close Host");
         assert_eq!(closed["closed"], true);
-        assert!(state
-            .execute(json!({"@type": "mahayana.runtime.status"}))
-            .expect_err("closed Host must reject commands")
-            .contains("not initialized"));
+        assert!(
+            state
+                .execute(json!({"@type": "mahayana.runtime.status"}))
+                .expect_err("closed Host must reject commands")
+                .contains("not initialized")
+        );
     }
 
+    #[cfg(feature = "production-runtime")]
     #[test]
     fn invalid_commands_fail_before_reaching_the_runtime() {
         let state = HostState::default();
-        state.initialize(None).expect("initialize Host");
+        state
+            .initialize(Some(encoded_host_config("invalid-command")))
+            .expect("initialize Host");
         let error = state
             .execute(json!({"@type": "unknown.command"}))
             .expect_err("unknown command must fail");
@@ -313,7 +387,10 @@ mod tests {
             })
             .expect("initialize feature Host");
         assert_eq!(info.platform, SurfacePlatform::Tauri);
-        assert_eq!(state.receive().expect("ready").unwrap().kind(), "host.ready");
+        assert_eq!(
+            state.receive().expect("ready").unwrap().kind(),
+            "host.ready"
+        );
 
         state
             .execute(FeatureCommand::ChatSend {
