@@ -4,13 +4,24 @@ on:
   pull_request:
     paths:
       - native/global-dharma/**
-      - third_party/mahayana
-      - third_party/mahayana/**
+      - third_party/mahayana/codex-rs/**
+      - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/Cargo.lock
+      - third_party/mahayana/mahayana-rs/mahayana-agent-codex/**
+      - third_party/mahayana/mahayana-rs/mahayana-agent-responses/**
+      - third_party/mahayana/mahayana-rs/mahayana-cli/**
+      - third_party/mahayana/mahayana-rs/mahayana-core/**
+      - third_party/mahayana/mahayana-rs/mahayana-ffi/**
+      - third_party/mahayana/mahayana-rs/mahayana-runtime/**
       - scripts/install-mahayana.sh
       - scripts/test-install-mahayana.sh
       - .github/workflows/global-dharma-rust.yml
   push:
     tags: ["global-dharma-v*", "mahayana-v*"]
+
+concurrency:
+  group: global-dharma-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -19,22 +30,40 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_INCREMENTAL: "1"
     defaults:
       run:
         working-directory: native/global-dharma
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      - name: Restore Global Dharma Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/global-dharma -> target
+          shared-key: global-dharma-pr-v1
+          cache-all-crates: true
       - run: cargo fmt --all --check
       - run: cargo test --workspace
 
   mahayana-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_INCREMENTAL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
+      - name: Restore Mahayana Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: global-dharma-mahayana-v1
+          cache-all-crates: true
       - run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
       - run: >-
           cargo test --locked
@@ -55,7 +84,7 @@ jobs:
         target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: taiki-e/install-action@cross
