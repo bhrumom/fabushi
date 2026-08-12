@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   protocol-and-bridge:
-    name: Rust protocol and bridge fast gate
+    name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -47,7 +47,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v2
+          shared-key: mahayana-fast-v3
           cache-all-crates: true
 
       - name: Verify formatting
@@ -59,6 +59,14 @@ jobs:
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           --profile ci
+
+      - name: Test direct Mahayana Host
+        run: >-
+          cargo test
+          -p mahayana-host
+          --profile ci
+          --no-default-features
+          --features local-only
 
       - name: Check minimal embedded FFI boundary
         run: >-

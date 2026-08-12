@@ -1,0 +1,461 @@
+//! Direct Rust host API for the long-lived Mahayana Runtime.
+//!
+//! Native shells such as Tauri, Swift, and Kotlin should depend on this crate.
+//! The C/JSON ABI remains a compatibility adapter for the legacy Flutter host.
+
+use fabushi_official_miniapps::OFFICIAL_PLUGIN_IDS;
+use fabushi_official_miniapps::app_definition;
+use mahayana_agent::UnavailableAgentBackend;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_agent_codex::CodexAgentBackend;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_agent_codex::CodexAgentConfig;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_conversation::ConversationProvider;
+use mahayana_core::ApprovalDecision;
+use mahayana_core::ApprovalId;
+use mahayana_core::BuildProfile;
+use mahayana_core::OperationId;
+use mahayana_core::RuntimeCommand;
+use mahayana_core::RuntimeConfig;
+use mahayana_core::RuntimeEvent;
+use mahayana_core::RuntimeResponse;
+use mahayana_core::RuntimeStatus;
+use mahayana_miniapp::EntitlementChecker;
+use mahayana_miniapp::MiniAppConversationProvider;
+use mahayana_miniapp::MiniAppDefinition;
+use mahayana_platform_core::HostPlatform;
+use mahayana_product::MahayanaProductClient;
+#[cfg(feature = "desktop-full")]
+use mahayana_product::default_mahayana_home;
+use mahayana_runtime_core::MahayanaRuntime;
+use mahayana_runtime_core::RuntimeBuilder;
+use mahayana_runtime_core::RuntimeError;
+use mahayana_social::MahayanaSocialConversationProvider;
+use mahayana_telegram::TelegramConversationProvider;
+use serde_json::json;
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct HostCreateConfig {
+    #[serde(flatten)]
+    pub runtime: RuntimeConfig,
+    pub product_session_path: Option<PathBuf>,
+    pub codex_home: Option<PathBuf>,
+    /// Read-only marketplace shipped inside the native application.
+    pub bundled_plugin_marketplace: Option<PathBuf>,
+    /// Optional Mahayana CLI used only for desktop argv helper dispatch.
+    pub codex_executable_path: Option<PathBuf>,
+    pub cwd: Option<PathBuf>,
+    /// Existing embedded Telegram client created by the platform login flow.
+    pub telegram_client_id: Option<u64>,
+    pub telegram_self_user_id: Option<i64>,
+    pub host_platform: Option<HostPlatform>,
+    pub mini_apps: Vec<MiniAppDefinition>,
+    pub use_codex_account: bool,
+    /// Tests and constrained hosts may opt out of inherited local plugins.
+    pub inherit_installed_plugins: Option<bool>,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct HostError {
+    message: String,
+}
+
+impl HostError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<RuntimeError> for HostError {
+    fn from(error: RuntimeError) -> Self {
+        Self::new(error.to_string())
+    }
+}
+
+/// Long-lived process-local host shared by every presentation surface.
+#[derive(Clone)]
+pub struct MahayanaHost {
+    runtime: Arc<MahayanaRuntime>,
+}
+
+impl MahayanaHost {
+    pub fn create(config: HostCreateConfig) -> Result<Self, HostError> {
+        Ok(Self {
+            runtime: Arc::new(build_runtime(config)?),
+        })
+    }
+
+    pub fn status(&self) -> RuntimeStatus {
+        self.runtime.status()
+    }
+
+    pub fn execute(&self, command: RuntimeCommand) -> Result<RuntimeResponse, HostError> {
+        self.runtime.execute(command).map_err(HostError::from)
+    }
+
+    pub fn receive(&self, timeout: Duration) -> Result<Option<RuntimeEvent>, HostError> {
+        self.runtime.receive(timeout).map_err(HostError::from)
+    }
+
+    pub fn interrupt(&self, operation_id: OperationId) -> Result<RuntimeResponse, HostError> {
+        self.execute(RuntimeCommand::Interrupt { operation_id })
+    }
+
+    pub fn resolve_approval(
+        &self,
+        approval_id: ApprovalId,
+        decision: ApprovalDecision,
+        payload: serde_json::Value,
+    ) -> Result<RuntimeResponse, HostError> {
+        self.execute(RuntimeCommand::ResolveApproval {
+            approval_id,
+            decision,
+            payload,
+        })
+    }
+}
+
+fn build_runtime(create: HostCreateConfig) -> Result<MahayanaRuntime, HostError> {
+    let runtime_config = create.runtime.clone();
+    if runtime_config.remote_agent_enabled {
+        return Err(RuntimeError::RemoteAgentForbidden.into());
+    }
+    #[cfg(all(feature = "mobile-embedded", not(feature = "desktop-full")))]
+    let runtime_config = RuntimeConfig {
+        build_profile: BuildProfile::MobileEmbedded,
+        ..runtime_config
+    };
+    let host_platform = create
+        .host_platform
+        .unwrap_or(match runtime_config.build_profile {
+            BuildProfile::DesktopFull => HostPlatform::Desktop,
+            BuildProfile::MobileEmbedded => HostPlatform::Mobile,
+            BuildProfile::WebWasm => HostPlatform::Web,
+        });
+    let product_client = create
+        .product_session_path
+        .map(|path| MahayanaProductClient::new("https://api.ombhrum.com", path))
+        .unwrap_or_default();
+    let configured_mini_apps = if create.mini_apps.is_empty() {
+        discover_mini_apps(&product_client).unwrap_or_default()
+    } else {
+        create.mini_apps.clone()
+    };
+    let mini_apps = merge_official_mini_apps(configured_mini_apps);
+    let session_token = product_client.session_token().ok();
+    let mut builder = RuntimeBuilder::new(runtime_config.clone());
+    #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+    let mut codex_conversation_providers: Vec<Arc<dyn ConversationProvider>> = Vec::new();
+    if let Some(token) = session_token.as_ref() {
+        let provider = Arc::new(MahayanaSocialConversationProvider::new(
+            product_client.clone(),
+            Some(token.clone()),
+        ));
+        #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+        codex_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
+        builder = builder.with_provider(provider)?;
+    }
+    if let Some(telegram_client_id) = create.telegram_client_id {
+        let provider = Arc::new(TelegramConversationProvider::from_client_id(
+            telegram_client_id,
+            create.telegram_self_user_id.unwrap_or_default(),
+        ));
+        #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+        codex_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
+        builder = builder.with_provider(provider)?;
+    }
+
+    #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+    if matches!(
+        runtime_config.build_profile,
+        BuildProfile::DesktopFull | BuildProfile::MobileEmbedded
+    ) {
+        let data_dir = runtime_config.data_dir.clone();
+        let cwd = create
+            .cwd
+            .or_else(|| runtime_config.workspace_roots.first().cloned())
+            .or_else(|| data_dir.as_ref().map(|path| path.join("workspace")))
+            .or_else(|| std::env::current_dir().ok())
+            .ok_or_else(|| HostError::new("current working directory is unavailable"))?;
+        let workspace_roots = if runtime_config.workspace_roots.is_empty() {
+            vec![cwd.clone()]
+        } else {
+            runtime_config.workspace_roots.clone()
+        };
+        let codex_home = create
+            .codex_home
+            .or_else(|| data_dir.map(|path| path.join("codex")))
+            .or_else(default_codex_home_if_available)
+            .ok_or_else(|| {
+                HostError::new("embedded Mahayana requires an application data directory")
+            })?;
+        let responses_base_url = create
+            .runtime
+            .model
+            .base_url
+            .clone()
+            .ok_or_else(|| HostError::new("Dacheng Responses base URL is required"))?;
+        let settings = CodexAgentConfig {
+            codex_home,
+            bundled_plugin_marketplace: create.bundled_plugin_marketplace.clone(),
+            bundled_plugin_ids: bundled_marketplace_plugin_ids(
+                create.bundled_plugin_marketplace.as_deref(),
+                &mini_apps,
+            )?,
+            inherit_installed_plugins: create.inherit_installed_plugins.unwrap_or(
+                matches!(runtime_config.build_profile, BuildProfile::DesktopFull) && !cfg!(test),
+            ),
+            cwd,
+            workspace_roots,
+            model: runtime_config.model.model.clone(),
+            responses_base_url,
+            use_codex_account: create.use_codex_account,
+            product_session_token: session_token.clone(),
+            sandbox_mode: codex_protocol::config_types::SandboxMode::WorkspaceWrite,
+            approval_policy: codex_protocol::protocol::AskForApproval::OnRequest,
+            codex_executable_path: create.codex_executable_path,
+            conversation_providers: codex_conversation_providers,
+        };
+        return builder
+            .build_with_agent_backend_and(
+                || async move {
+                    let backend = CodexAgentBackend::start(settings).await?;
+                    Ok(Arc::new(backend) as Arc<dyn mahayana_agent::AgentBackend>)
+                },
+                move |builder, backend| {
+                    let provider = MiniAppConversationProvider::new_for_platform_with_entitlements(
+                        backend,
+                        mini_apps,
+                        host_platform,
+                        Some(Arc::new(PlatformEntitlementChecker {
+                            client: product_client,
+                        })),
+                    )?;
+                    builder.with_provider(Arc::new(provider))
+                },
+            )
+            .map_err(HostError::from);
+    }
+
+    let unavailable_reason = "this platform build has no embedded Codex backend";
+    let backend: Arc<dyn mahayana_agent::AgentBackend> =
+        Arc::new(UnavailableAgentBackend::new(unavailable_reason));
+    let miniapp = MiniAppConversationProvider::new_for_platform_with_entitlements(
+        Arc::clone(&backend),
+        mini_apps,
+        host_platform,
+        Some(Arc::new(PlatformEntitlementChecker {
+            client: product_client,
+        })),
+    )
+    .map_err(|error| HostError::new(error.to_string()))?;
+    builder
+        .with_agent_backend(backend)?
+        .with_provider(Arc::new(miniapp))?
+        .build()
+        .map_err(HostError::from)
+}
+
+fn merge_official_mini_apps(
+    configured: impl IntoIterator<Item = MiniAppDefinition>,
+) -> Vec<MiniAppDefinition> {
+    let mut definitions = configured
+        .into_iter()
+        .map(|definition| (definition.plugin_id.clone(), definition))
+        .collect::<BTreeMap<_, _>>();
+    for plugin_id in OFFICIAL_PLUGIN_IDS {
+        let definition = app_definition(plugin_id).expect("official plugin definition");
+        let pinned = definitions
+            .get(plugin_id)
+            .is_some_and(|definition| definition.pinned);
+        definitions.insert(
+            plugin_id.to_string(),
+            MiniAppDefinition {
+                plugin_id: definition.id,
+                title: definition.title,
+                pinned,
+            },
+        );
+    }
+    definitions.into_values().collect()
+}
+
+fn bundled_marketplace_plugin_ids(
+    marketplace_root: Option<&Path>,
+    mini_apps: &[MiniAppDefinition],
+) -> Result<Vec<String>, HostError> {
+    let Some(marketplace_root) = marketplace_root else {
+        return Ok(Vec::new());
+    };
+    let mut plugin_ids = Vec::new();
+    for mini_app in mini_apps {
+        let plugin_id = mini_app.plugin_id.as_str();
+        if plugin_id.is_empty()
+            || !plugin_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(HostError::new(format!(
+                "invalid bundled plugin id: {plugin_id}"
+            )));
+        }
+        if marketplace_root
+            .join("plugins")
+            .join(plugin_id)
+            .join(".codex-plugin/plugin.json")
+            .is_file()
+        {
+            plugin_ids.push(plugin_id.to_string());
+        }
+    }
+    Ok(plugin_ids)
+}
+
+fn discover_mini_apps(client: &MahayanaProductClient) -> Option<Vec<MiniAppDefinition>> {
+    let registry = client
+        .execute("mahayana.miniapps.registry", &json!({}))
+        .ok()?;
+    let plugins = registry.get("plugins")?.as_array()?;
+    let definitions = plugins
+        .iter()
+        .filter_map(|plugin| {
+            let id = plugin.get("id")?.as_str()?.trim();
+            let title = plugin.get("title")?.as_str()?.trim();
+            if id.is_empty() || title.is_empty() {
+                return None;
+            }
+            Some(MiniAppDefinition {
+                plugin_id: id.to_string(),
+                title: title.to_string(),
+                pinned: false,
+            })
+        })
+        .collect::<Vec<_>>();
+    (!definitions.is_empty()).then_some(definitions)
+}
+
+#[cfg(feature = "desktop-full")]
+fn default_codex_home() -> PathBuf {
+    default_mahayana_home().join("codex")
+}
+
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+fn default_codex_home_if_available() -> Option<PathBuf> {
+    #[cfg(feature = "desktop-full")]
+    {
+        #[allow(clippy::needless_return)]
+        return Some(default_codex_home());
+    }
+    #[cfg(not(feature = "desktop-full"))]
+    {
+        None
+    }
+}
+
+#[derive(Clone)]
+struct PlatformEntitlementChecker {
+    client: MahayanaProductClient,
+}
+
+#[async_trait::async_trait]
+impl EntitlementChecker for PlatformEntitlementChecker {
+    async fn has_entitlement(&self, plugin_id: &str, capability: &str) -> Result<bool, String> {
+        let client = self.client.clone();
+        let plugin_id = plugin_id.to_string();
+        let capability = capability.to_string();
+        tokio::task::spawn_blocking(move || client.entitlement(&plugin_id, &capability))
+            .await
+            .map_err(|error| error.to_string())?
+            .map(|entitlement| entitlement.is_some())
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config() -> HostCreateConfig {
+        HostCreateConfig {
+            mini_apps: vec![MiniAppDefinition {
+                plugin_id: "test-miniapp".to_string(),
+                title: "Test MiniApp".to_string(),
+                pinned: false,
+            }],
+            inherit_installed_plugins: Some(false),
+            ..HostCreateConfig::default()
+        }
+    }
+
+    #[test]
+    fn direct_host_creates_executes_receives_and_clones() {
+        let host = MahayanaHost::create(test_config()).expect("create host");
+        let cloned = host.clone();
+        let status = cloned
+            .execute(RuntimeCommand::Status)
+            .expect("execute status");
+        let encoded = serde_json::to_value(status).expect("serialize status");
+        assert_eq!(encoded["runtimeAbiVersion"], 1);
+        assert_eq!(encoded["remoteAgentEnabled"], false);
+
+        let ready = host
+            .receive(Duration::from_millis(10))
+            .expect("receive ready")
+            .expect("ready event");
+        let encoded = serde_json::to_value(ready).expect("serialize event");
+        assert_eq!(encoded["@type"], "mahayana.runtime.ready");
+    }
+
+    #[test]
+    fn create_rejects_remote_agent_gateway() {
+        let mut config = test_config();
+        config.runtime.remote_agent_enabled = true;
+        let error = MahayanaHost::create(config)
+            .err()
+            .expect("remote agent must be rejected");
+        assert!(error.to_string().contains("remote Agent"));
+    }
+
+    #[test]
+    fn bundled_marketplace_enables_only_plugins_present_on_disk() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "mahayana-host-marketplace-{}-{unique}",
+            std::process::id()
+        ));
+        let manifest = root.join("plugins/cloud-market-hello/.codex-plugin/plugin.json");
+        std::fs::create_dir_all(manifest.parent().expect("manifest parent"))
+            .expect("create plugin tree");
+        std::fs::write(&manifest, "{}").expect("write plugin manifest");
+
+        let mini_apps = vec![
+            MiniAppDefinition {
+                plugin_id: "cloud-market-hello".into(),
+                title: "Cloud Market Hello".into(),
+                pinned: false,
+            },
+            MiniAppDefinition {
+                plugin_id: "bot-father".into(),
+                title: "Bot Father".into(),
+                pinned: false,
+            },
+        ];
+        let plugin_ids =
+            bundled_marketplace_plugin_ids(Some(&root), &mini_apps).expect("bundled plugin ids");
+        assert_eq!(plugin_ids, vec!["cloud-market-hello"]);
+        std::fs::remove_dir_all(root).expect("remove plugin tree");
+    }
+}
