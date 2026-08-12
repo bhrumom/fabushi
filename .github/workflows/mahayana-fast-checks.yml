@@ -45,7 +45,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v1
+          shared-key: mahayana-fast-v2
           cache-all-crates: true
 
       - name: Verify formatting
@@ -56,12 +56,21 @@ jobs:
           cargo test
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
+          -p mahayana-host-protocol
           --profile ci
 
       - name: Test direct Mahayana Host
         run: >-
           cargo test
           -p mahayana-host
+          --profile ci
+          --no-default-features
+          --features local-only
+
+      - name: Test deterministic feature Host
+        run: >-
+          cargo test
+          -p mahayana-feature-host
           --profile ci
           --no-default-features
           --features local-only
