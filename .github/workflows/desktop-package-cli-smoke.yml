@@ -48,7 +48,6 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            .github/scripts/assert-openclaw-bundle.sh
             .github/scripts/assert-mahayana-bundle.sh
 
       - name: Download release package
@@ -84,14 +83,13 @@ jobs:
             echo "Installed package CLI not found or not executable: $cli" >&2
             exit 1
           fi
-          ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed" linux-x64
           ./.github/scripts/assert-mahayana-bundle.sh "$RUNNER_TEMP/installed" linux
           doctor_json="$($cli doctor --json)"
           echo "$doctor_json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
-          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json)"
-          echo "$gateway_json"
-          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
+          runtime_json="$($cli runtime-smoke --json)"
+          echo "$runtime_json"
+          jq -e '.ok == true' <<<"$runtime_json" >/dev/null
           miniapp_json="$($cli miniapp-smoke --json)"
           echo "$miniapp_json"
           jq -e '.ok == true' <<<"$miniapp_json" >/dev/null
@@ -105,11 +103,9 @@ jobs:
           case "$(uname -m)" in
             arm64)
               macos_arch="arm64"
-              openclaw_platform="macos-arm64"
               ;;
             *)
               macos_arch="x64"
-              openclaw_platform="macos-x64"
               ;;
           esac
           zip_path="$(find "$RUNNER_TEMP/package" -maxdepth 1 -name "*macos-$macos_arch.zip" -print -quit)"
@@ -125,14 +121,13 @@ jobs:
             find "$RUNNER_TEMP/installed" -maxdepth 5 -type f | sort | head -100
             exit 1
           fi
-          ./.github/scripts/assert-openclaw-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" "$openclaw_platform"
           ./.github/scripts/assert-mahayana-bundle.sh "$RUNNER_TEMP/installed/global_dharma_sharing.app" macos
           doctor_json="$($cli doctor --json)"
           echo "$doctor_json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
-          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json)"
-          echo "$gateway_json"
-          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
+          runtime_json="$($cli runtime-smoke --json)"
+          echo "$runtime_json"
+          jq -e '.ok == true' <<<"$runtime_json" >/dev/null
           miniapp_json="$($cli miniapp-smoke --json)"
           echo "$miniapp_json"
           jq -e '.ok == true' <<<"$miniapp_json" >/dev/null
@@ -165,10 +160,10 @@ jobs:
           Write-Output $doctorJson
           $doctorResult = $doctorJson | ConvertFrom-Json
           if (-not $doctorResult.ok) { throw "doctor returned ok=false" }
-          $gatewayJson = & $cli gateway-smoke --timeout-seconds 120 --json | Out-String
-          Write-Output $gatewayJson
-          $gatewayResult = $gatewayJson | ConvertFrom-Json
-          if (-not $gatewayResult.ok) { throw "gateway-smoke returned ok=false" }
+          $runtimeJson = & $cli runtime-smoke --json | Out-String
+          Write-Output $runtimeJson
+          $runtimeResult = $runtimeJson | ConvertFrom-Json
+          if (-not $runtimeResult.ok) { throw "runtime-smoke returned ok=false" }
           $miniappJson = & $cli miniapp-smoke --json | Out-String
           Write-Output $miniappJson
           $miniappResult = $miniappJson | ConvertFrom-Json

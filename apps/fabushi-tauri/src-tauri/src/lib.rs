@@ -312,6 +312,62 @@ mod tests {
     use super::*;
     use mahayana_host_protocol::ApprovalDecision;
     use mahayana_host_protocol::HostMode;
+    use mahayana_host_protocol::MessageRole;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct JourneyContract {
+        schema_version: u8,
+        features: Vec<JourneyFeature>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct JourneyFeature {
+        id: String,
+        label: String,
+        steps: Vec<JourneyStep>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "action", rename_all = "camelCase")]
+    enum JourneyStep {
+        ExpectReady,
+        SendChat {
+            text: String,
+            #[serde(rename = "expectedReply")]
+            expected_reply: String,
+        },
+        InstallMiniApp {
+            #[serde(rename = "miniAppId")]
+            mini_app_id: String,
+        },
+        OpenMiniApp {
+            #[serde(rename = "miniAppId")]
+            mini_app_id: String,
+        },
+        ApproveCapability {
+            #[serde(rename = "miniAppId")]
+            mini_app_id: String,
+            capability: String,
+            decision: ApprovalDecision,
+        },
+        InterruptOperation {
+            label: String,
+        },
+        ClearSession,
+    }
+
+    fn cross_platform_journey_contract() -> JourneyContract {
+        serde_json::from_str(include_str!(
+            "../../../../contracts/automation/cross-platform-journeys.json"
+        ))
+        .expect("parse cross-platform journey contract")
+    }
+
+    fn drain_events(state: &FeatureHostState) -> Vec<HostEvent> {
+        std::iter::from_fn(|| state.receive().expect("receive journey event")).collect()
+    }
 
     #[cfg(feature = "production-runtime")]
     fn isolated_host_config(label: &str) -> HostCreateConfig {
@@ -378,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn headless_feature_commands_execute_the_complete_user_journey_in_rust() {
+    fn headless_feature_commands_execute_the_shared_cross_platform_journeys() {
         let state = FeatureHostState::default();
         let info = state
             .initialize(FeatureHostConfig {
@@ -387,82 +443,146 @@ mod tests {
             })
             .expect("initialize feature Host");
         assert_eq!(info.platform, SurfacePlatform::Tauri);
-        assert_eq!(
-            state.receive().expect("ready").unwrap().kind(),
-            "host.ready"
-        );
 
-        state
-            .execute(FeatureCommand::ChatSend {
-                request_id: "chat-1".into(),
-                text: "验证极速自动化测试".into(),
-            })
-            .expect("chat");
-        state
-            .execute(FeatureCommand::MarketplaceInstall {
-                request_id: "install-1".into(),
-                mini_app_id: "global-dharma".into(),
-            })
-            .expect("install");
-        state
-            .execute(FeatureCommand::MiniAppOpen {
-                request_id: "open-1".into(),
-                mini_app_id: "global-dharma".into(),
-            })
-            .expect("open");
-        state
-            .execute(FeatureCommand::CapabilityRequest {
-                request_id: "capability-1".into(),
-                mini_app_id: "global-dharma".into(),
-                capability: "camera".into(),
-                reason: "scan scripture".into(),
-            })
-            .expect("capability");
+        let contract = cross_platform_journey_contract();
+        assert_eq!(contract.schema_version, 1);
+        assert!(!contract.features.is_empty());
+        let mut request_sequence = 0_u64;
 
-        let mut approval_id = None;
-        let mut observed = Vec::new();
-        while let Some(event) = state.receive().expect("receive event") {
-            observed.push(event.kind());
-            if let HostEvent::ApprovalRequested {
-                approval_id: current,
-                ..
-            } = event
-            {
-                approval_id = Some(current);
+        for feature in contract.features {
+            assert!(!feature.label.is_empty(), "{} has no label", feature.id);
+            assert!(!feature.steps.is_empty(), "{} has no steps", feature.id);
+            for step in feature.steps {
+                request_sequence += 1;
+                let request_id = format!("contract-{request_sequence}");
+                match step {
+                    JourneyStep::ExpectReady => {
+                        let event = state.receive().expect("ready").expect("ready event");
+                        assert!(matches!(event, HostEvent::HostReady { .. }));
+                    }
+                    JourneyStep::SendChat {
+                        text,
+                        expected_reply,
+                    } => {
+                        state
+                            .execute(FeatureCommand::ChatSend { request_id, text })
+                            .expect("send chat");
+                        assert!(drain_events(&state).iter().any(|event| matches!(
+                            event,
+                            HostEvent::ChatMessage {
+                                role: MessageRole::Assistant,
+                                text,
+                                ..
+                            } if text == &expected_reply
+                        )));
+                    }
+                    JourneyStep::InstallMiniApp { mini_app_id } => {
+                        state
+                            .execute(FeatureCommand::MarketplaceInstall {
+                                request_id,
+                                mini_app_id: mini_app_id.clone(),
+                            })
+                            .expect("install MiniApp");
+                        assert!(drain_events(&state).iter().any(|event| matches!(
+                            event,
+                            HostEvent::MarketplaceInstalled { mini_app_id: id, .. }
+                                if id == &mini_app_id
+                        )));
+                    }
+                    JourneyStep::OpenMiniApp { mini_app_id } => {
+                        state
+                            .execute(FeatureCommand::MiniAppOpen {
+                                request_id,
+                                mini_app_id: mini_app_id.clone(),
+                            })
+                            .expect("open MiniApp");
+                        assert!(drain_events(&state).iter().any(|event| matches!(
+                            event,
+                            HostEvent::MiniAppOpened { mini_app_id: id, .. }
+                                if id == &mini_app_id
+                        )));
+                    }
+                    JourneyStep::ApproveCapability {
+                        mini_app_id,
+                        capability,
+                        decision,
+                    } => {
+                        state
+                            .execute(FeatureCommand::CapabilityRequest {
+                                request_id,
+                                mini_app_id: mini_app_id.clone(),
+                                capability: capability.clone(),
+                                reason: "cross-platform contract".into(),
+                            })
+                            .expect("request capability");
+                        let approval_id = drain_events(&state)
+                            .into_iter()
+                            .find_map(|event| match event {
+                                HostEvent::ApprovalRequested {
+                                    approval_id,
+                                    mini_app_id: id,
+                                    capability: requested,
+                                    ..
+                                } if id == mini_app_id && requested == capability => {
+                                    Some(approval_id)
+                                }
+                                _ => None,
+                            })
+                            .expect("matching approval request");
+                        state
+                            .resolve_approval(ApprovalResolution {
+                                approval_id: approval_id.clone(),
+                                decision,
+                            })
+                            .expect("resolve approval");
+                        assert!(drain_events(&state).iter().any(|event| matches!(
+                            event,
+                            HostEvent::ApprovalResolved {
+                                approval_id: id,
+                                decision: actual,
+                                ..
+                            } if id == &approval_id && actual == &decision
+                        )));
+                    }
+                    JourneyStep::InterruptOperation { label } => {
+                        let operation_id = state
+                            .execute(FeatureCommand::RuntimeLongTask {
+                                request_id,
+                                label: label.clone(),
+                            })
+                            .expect("start operation")
+                            .operation_id
+                            .expect("operation id");
+                        state.interrupt(&operation_id).expect("interrupt operation");
+                        let events = drain_events(&state);
+                        assert!(events.iter().any(|event| matches!(
+                            event,
+                            HostEvent::OperationStarted {
+                                operation_id: id,
+                                label: actual,
+                                interruptible: true,
+                                ..
+                            } if id == &operation_id && actual == &label
+                        )));
+                        assert!(events.iter().any(|event| matches!(
+                            event,
+                            HostEvent::OperationInterrupted { operation_id: id, .. }
+                                if id == &operation_id
+                        )));
+                    }
+                    JourneyStep::ClearSession => {
+                        state
+                            .execute(FeatureCommand::SessionClear { request_id })
+                            .expect("clear session");
+                        assert!(
+                            drain_events(&state)
+                                .iter()
+                                .any(|event| matches!(event, HostEvent::SessionCleared { .. }))
+                        );
+                    }
+                }
             }
         }
-        assert!(observed.contains(&"chat.message"));
-        assert!(observed.contains(&"marketplace.installed"));
-        assert!(observed.contains(&"miniapp.opened"));
-        state
-            .resolve_approval(ApprovalResolution {
-                approval_id: approval_id.expect("approval id"),
-                decision: ApprovalDecision::AllowOnce,
-            })
-            .expect("resolve approval");
-
-        let operation_id = state
-            .execute(FeatureCommand::RuntimeLongTask {
-                request_id: "operation-1".into(),
-                label: "index scriptures".into(),
-            })
-            .expect("long task")
-            .operation_id
-            .expect("operation id");
-        state.interrupt(&operation_id).expect("interrupt");
-        state
-            .execute(FeatureCommand::SessionClear {
-                request_id: "session-1".into(),
-            })
-            .expect("clear session");
-
-        let tail = std::iter::from_fn(|| state.receive().expect("receive tail"))
-            .map(|event| event.kind())
-            .collect::<Vec<_>>();
-        assert!(tail.contains(&"approval.resolved"));
-        assert!(tail.contains(&"operation.started"));
-        assert!(tail.contains(&"operation.interrupted"));
-        assert!(tail.contains(&"session.cleared"));
         state.close().expect("close");
     }
 }

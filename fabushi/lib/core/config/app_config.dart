@@ -54,10 +54,6 @@ class AppConfig {
     'DACHENG_DESKTOP_CONTROL',
     defaultValue: false,
   );
-  static const String configuredOpenClawDeepSeekApiKey = String.fromEnvironment(
-    'DACHENG_OPENCLAW_DEEPSEEK_API_KEY',
-    defaultValue: '',
-  );
   static const String defaultDachengAiWebUrl =
       'https://fabushi.ombhrum.com/app/ai';
 
@@ -95,11 +91,6 @@ class AppConfig {
       return configuredDachengAiWebUrl;
     }
     return defaultDachengAiWebUrl;
-  }
-
-  static String get openClawDeepSeekProxyBaseUrl {
-    final baseUrl = currentAiBackendUrl.replaceFirst(RegExp(r'/+$'), '');
-    return '$baseUrl/api/openclaw/deepseek/v1';
   }
 
   /// OpenAI Responses-compatible endpoint consumed by the Mahayana Rust SDK.

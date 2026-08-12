@@ -5,10 +5,10 @@
     "fabushi/lib/screens",
     "fabushi/lib/services"
   ],
-  "featureCatalogPath": "frontend/packages/shared/src/mahayana-host-features.ts",
+  "featureCatalogPath": "contracts/automation/cross-platform-journeys.json",
   "expected": {
-    "fileCount": 266,
-    "sha256": "a35b9780092cd9836b629069240aabd6dfad0b6fc280f7a3c13cb365103b8852"
+    "fileCount": 257,
+    "sha256": "a60fc6b9d0f033461eb6f4913a25b23d519d14b0ae72f7fac4d1d162ec9caaa1"
   },
   "domains": [
     {
@@ -54,8 +54,7 @@
       "requiredForCutover": true,
       "patterns": [
         "^fabushi/lib/screens/sutra_ai_page\\.dart$",
-        "^fabushi/lib/services/(agent_service|ai_backend_policy|dacheng_ai_service|llm_|multimodal_|mahayana_)",
-        "^fabushi/lib/services/openclaw/"
+        "^fabushi/lib/services/(agent_service|ai_backend_policy|dacheng_ai_service|llm_|multimodal_|mahayana_)"
       ],
       "e2eFeatureIds": [
         "runtime.boot",

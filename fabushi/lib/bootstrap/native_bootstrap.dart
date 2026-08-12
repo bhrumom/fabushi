@@ -12,7 +12,6 @@ import '../core/video_feed_di/video_feed_injector.dart';
 import '../firebase_options.dart';
 import '../services/app_initializer.dart';
 import '../services/error_report_service.dart';
-import '../services/openclaw/openclaw_home_chat_e2e.dart';
 import 'native_app.dart';
 
 Future<void> bootstrapApplication() async {
@@ -81,7 +80,6 @@ Future<void> bootstrapApplication() async {
 
       debugPrint('🚀 [native] runApp(NativeApp) begin');
       runApp(const NativeApp());
-      await maybeRunOpenClawHomeChatE2E();
     },
     (error, stackTrace) {
       unawaited(

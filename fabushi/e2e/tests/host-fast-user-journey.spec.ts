@@ -1,31 +1,69 @@
 import { expect, test, type Page } from "@playwright/test";
-import {
-  mahayanaHostFeatures,
-  type MahayanaHostJourneyStep,
+import journeyContract from "../../../contracts/automation/cross-platform-journeys.json" with { type: "json" };
+import type {
+  MahayanaHostFeature,
+  MahayanaHostJourneyStep,
 } from "../../../frontend/packages/shared/src/mahayana-host-features";
+
+const mahayanaHostFeatures =
+  journeyContract.features as ReadonlyArray<MahayanaHostFeature>;
 
 async function runJourneyStep(
   page: Page,
   step: MahayanaHostJourneyStep,
 ): Promise<void> {
   switch (step.action) {
-    case "expectText":
-      await expect(page.getByTestId(step.testId)).toHaveText(step.text);
+    case "expectReady":
+      await expect(page.getByTestId("host-status")).toHaveText("ready");
       return;
-    case "expectContainsText":
-      await expect(page.getByTestId(step.testId)).toContainText(step.text);
+    case "sendChat":
+      await page.getByTestId("chat-input").fill(step.text);
+      await page.getByTestId("send-message").click();
+      await expect(page.getByTestId("messages")).toContainText(
+        step.expectedReply,
+      );
       return;
-    case "fill":
-      await page.getByTestId(step.testId).fill(step.value);
+    case "installMiniApp":
+      await page.getByTestId("open-marketplace").click();
+      await expect(page.getByRole("dialog", { name: "插件市场" })).toBeVisible();
+      await page.getByTestId("install-miniapp").click();
+      await expect(page.getByTestId("marketplace-state")).toHaveText(
+        "installed",
+      );
       return;
-    case "click":
-      await page.getByTestId(step.testId).click();
+    case "openMiniApp":
+      await page.getByTestId("open-miniapp").click();
+      await expect(page.getByTestId("miniapp-panel")).toContainText(
+        step.miniAppId,
+      );
       return;
-    case "expectVisible":
-      await expect(page.getByTestId(step.testId)).toBeVisible();
+    case "approveCapability":
+      await page.getByTestId("request-capability").click();
+      await expect(page.getByRole("dialog", { name: "能力审批" })).toContainText(
+        step.capability,
+      );
+      await page
+        .getByTestId(
+          step.decision === "allow-once"
+            ? "approve-capability"
+            : "deny-capability",
+        )
+        .click();
+      await expect(page.getByTestId("approval-state")).toHaveText(
+        step.decision === "allow-once" ? "allowed" : "denied",
+      );
       return;
-    case "expectDialog":
-      await expect(page.getByRole("dialog", { name: step.name })).toBeVisible();
+    case "interruptOperation":
+      await page.getByTestId("start-long-operation").click();
+      await expect(page.getByTestId("operation-state")).toHaveText("running");
+      await page.getByTestId("interrupt-operation").click();
+      await expect(page.getByTestId("operation-state")).toHaveText(
+        "interrupted",
+      );
+      return;
+    case "clearSession":
+      await page.getByTestId("clear-session").click();
+      await expect(page.getByTestId("session-state")).toHaveText("cleared");
       return;
     default: {
       const unhandled: never = step;
@@ -41,7 +79,7 @@ test("Mahayana Host 的所有声明功能可由目录驱动的用户操作完成
 
   for (const feature of mahayanaHostFeatures) {
     await test.step(`${feature.id}: ${feature.label}`, async () => {
-      for (const step of feature.journey) {
+      for (const step of feature.steps) {
         await runJourneyStep(page, step);
       }
       await expect(page.getByTestId(`feature-result-${feature.id}`)).toHaveAttribute(

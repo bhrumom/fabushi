@@ -6,7 +6,7 @@
 
 - Pull Request：构建 macOS / Linux / Windows 安装包并上传 workflow artifacts，不创建 GitHub Release。
 - Push main：构建三平台安装包，成功后创建 GitHub Release 并上传产物和 `SHA256SUMS.txt`；同时上传 macOS App Store 包到 App Store Connect。
-- workflow_dispatch：可指定 `source_sha`、`release_tag`、`openclaw_version`，也可关闭 GitHub Release 发布或 macOS App Store 上传，仅做构建验证。
+- workflow_dispatch：可指定 `source_sha`、`release_tag`，也可关闭 GitHub Release 发布或 macOS App Store 上传，仅做构建验证。
 
 ## 产物
 
@@ -15,7 +15,7 @@
 - Windows：NSIS `.exe` 安装器和 `.zip`
 - Mac App Store Connect：用于 TestFlight/App Store 处理的 `.pkg`，同时保留上传状态 artifact
 
-所有平台在打包前都会运行 `scripts/build_openclaw_desktop_bundle.sh`，把 Node.js 与 OpenClaw runtime vendoring 到 `assets/openclaw/<platform>/`，最终用户无需安装 Node、npm 或 OpenClaw。默认 OpenClaw npm 版本固定为 `2026.6.1`，手动 workflow dispatch 可覆盖。
+所有桌面平台复用同一套 Mahayana CLI、Rust Runtime、官方插件合约和安装后 smoke test；平台层只负责打包路径与签名。
 
 ## macOS Developer ID 签名与公证
 

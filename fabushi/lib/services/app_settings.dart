@@ -151,147 +151,7 @@ class AppSettings {
     await prefs.setBool(_modelSetupCompleteKey, complete);
   }
 
-  // ============ AI 后端 / 内置 OpenClaw 设置 ============
-
-  static const String _aiBackendModeKey = 'ai_backend_mode_v1';
-  static const String _openClawGatewayPortKey = 'openclaw_gateway_port_v1';
-  static const String _openClawGatewayTokenKey = 'openclaw_gateway_token_v1';
-  static const String _openClawModelKey = 'openclaw_model_v1';
-  static const String _openClawModelOverrideKey = 'openclaw_model_override_v1';
-  static const String _openClawDeepSeekModelKey = 'openclaw_deepseek_model_v1';
-  static const String _openClawRemoteGatewayUrlKey =
-      'openclaw_remote_gateway_url_v1';
-  static const String _openClawActiveRuntimeSpecKey =
-      'openclaw_active_runtime_spec_v1';
-  static const String _desktopControlBridgePortKey =
-      'desktop_control_bridge_port_v1';
-  static const String _desktopControlBridgeTokenKey =
-      'desktop_control_bridge_token_v1';
-  static const String _chatGptApprovalStateKey = 'chatgpt_approval_state_v1';
-
-  static const String defaultOpenClawGatewayModel = 'openclaw/default';
-  static const String defaultOpenClawDeepSeekModel = 'deepseek/deepseek-chat';
-
-  /// AI 后端模式：auto / embedded_openclaw / cloud_api。
-  ///
-  /// 默认 auto：桌面端走内置 OpenClaw，移动端/Web 继续走云端 API。
-  static Future<String> getAiBackendModeName() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_aiBackendModeKey) ?? 'auto';
-  }
-
-  static Future<void> setAiBackendModeName(String modeName) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_aiBackendModeKey, modeName);
-  }
-
-  static Future<int> getOpenClawGatewayPort({int defaultValue = 18789}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getInt(_openClawGatewayPortKey);
-    if (saved == null || saved < 1024 || saved > 65535) {
-      return defaultValue;
-    }
-    return saved;
-  }
-
-  static Future<void> setOpenClawGatewayPort(int port) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_openClawGatewayPortKey, port.clamp(1024, 65535));
-  }
-
-  /// 生成并持久化本机 Gateway bearer token。
-  /// token 只用于 App 与本机 loopback Gateway 之间通信，不同步到云端。
-  static Future<String> getOpenClawGatewayToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final existing = prefs.getString(_openClawGatewayTokenKey);
-    if (existing != null && existing.length >= 32) {
-      return existing;
-    }
-    final random = Random.secure();
-    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
-    final token = base64UrlEncode(bytes).replaceAll('=', '');
-    await prefs.setString(_openClawGatewayTokenKey, token);
-    return token;
-  }
-
-  static Future<String> getOpenClawModel({
-    String defaultValue = defaultOpenClawGatewayModel,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_openClawModelKey)?.trim();
-    return value == null || value.isEmpty ? defaultValue : value;
-  }
-
-  static Future<void> setOpenClawModel(String model) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_openClawModelKey, model.trim());
-  }
-
-  static Future<String> getOpenClawModelOverride({
-    String defaultValue = '',
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_openClawModelOverrideKey)?.trim() ?? defaultValue;
-  }
-
-  static Future<void> setOpenClawModelOverride(String modelOverride) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_openClawModelOverrideKey, modelOverride.trim());
-  }
-
-  static Future<String> getOpenClawDeepSeekModel({
-    String defaultValue = defaultOpenClawDeepSeekModel,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_openClawDeepSeekModelKey)?.trim();
-    return value == null || value.isEmpty ? defaultValue : value;
-  }
-
-  static Future<void> setOpenClawDeepSeekModel(String model) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_openClawDeepSeekModelKey, model.trim());
-  }
-
-  static Future<String> getOpenClawRemoteGatewayUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_openClawRemoteGatewayUrlKey)?.trim() ?? '';
-  }
-
-  static Future<void> setOpenClawRemoteGatewayUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) {
-      await prefs.remove(_openClawRemoteGatewayUrlKey);
-      return;
-    }
-    await prefs.setString(_openClawRemoteGatewayUrlKey, trimmed);
-  }
-
-  static Future<Map<String, dynamic>?> getOpenClawActiveRuntimeSpec() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_openClawActiveRuntimeSpecKey);
-    if (raw == null || raw.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      await prefs.remove(_openClawActiveRuntimeSpecKey);
-    }
-    return null;
-  }
-
-  static Future<void> setOpenClawActiveRuntimeSpec(
-    Map<String, dynamic> spec,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_openClawActiveRuntimeSpecKey, jsonEncode(spec));
-  }
-
-  static Future<void> clearOpenClawActiveRuntimeSpec() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_openClawActiveRuntimeSpecKey);
-  }
+  // ============ 桌面控制设置 ============
 
   static Future<int> getDesktopControlBridgePort({
     int defaultValue = 18790,
@@ -310,7 +170,7 @@ class AppSettings {
   }
 
   /// 生成并持久化桌面工具 loopback bearer token。
-  /// token 只在本机大乘 App、内置 OpenClaw 和 Chrome 扩展之间使用。
+  /// token 只在本机大乘 App 和 Chrome 扩展之间使用。
   static Future<String> getDesktopControlBridgeToken() async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getString(_desktopControlBridgeTokenKey);
@@ -355,7 +215,7 @@ class AppSettings {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_codexApiKey)?.trim();
     return value == null || value.isEmpty || value == 'default'
-        ? 'dacheng-openclaw-proxy'
+        ? 'dacheng-codex-proxy'
         : value;
   }
 
@@ -365,7 +225,7 @@ class AppSettings {
   }
 
   static Future<String> getCodexBaseUrl() async {
-    return AppConfig.openClawDeepSeekProxyBaseUrl;
+    return AppConfig.codexDeepSeekResponsesBaseUrl;
   }
 
   static Future<void> setCodexBaseUrl(String url) async {

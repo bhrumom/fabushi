@@ -22,7 +22,6 @@ production-runtime = [
     "dep:mahayana-core",
     "dep:mahayana-host",
     "mahayana-feature-host/production",
-    "mahayana-feature-host/local-only",
 ]
 desktop = [
     "production-runtime",
@@ -30,6 +29,9 @@ desktop = [
     "dep:tauri-runtime",
     "dep:tauri-runtime-wry",
     "dep:wry",
+    "mahayana-feature-host/desktop-full",
+    "mahayana-host/desktop-full",
+    "tauri/custom-protocol",
     "tauri/wry",
 ]
 headless = []
@@ -37,7 +39,7 @@ headless = []
 [dependencies]
 mahayana-core = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-core", optional = true }
 mahayana-feature-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-feature-host", default-features = false }
-mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, features = ["local-only"], optional = true }
+mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, optional = true }
 mahayana-host-protocol = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
