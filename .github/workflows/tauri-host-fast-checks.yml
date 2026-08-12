@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - apps/fabushi-tauri/**
+      - frontend/apps/web/src/lib/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
       - third_party/mahayana/mahayana-rs/mahayana-core/**
       - third_party/mahayana/mahayana-rs/mahayana-runtime/**
       - .github/workflows/tauri-host-fast-checks.yml
@@ -12,7 +16,11 @@ on:
     branches: [main]
     paths:
       - apps/fabushi-tauri/**
+      - frontend/apps/web/src/lib/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
       - .github/workflows/tauri-host-fast-checks.yml
   workflow_dispatch:
 
@@ -28,6 +36,8 @@ jobs:
     name: Headless Tauri command contract
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      CARGO_INCREMENTAL: "1"
     steps:
       - name: Checkout shell and Rust core
         uses: actions/checkout@v5
@@ -46,7 +56,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/fabushi-tauri/src-tauri -> target
-          shared-key: tauri-host-headless-v1
+          shared-key: tauri-host-headless-v2
           cache-all-crates: true
 
       - name: Verify formatting
@@ -80,6 +90,8 @@ jobs:
     name: macOS Tauri desktop compile
     runs-on: macos-latest
     timeout-minutes: 18
+    env:
+      CARGO_INCREMENTAL: "1"
     steps:
       - name: Checkout shell and Rust core
         uses: actions/checkout@v5
@@ -96,7 +108,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/fabushi-tauri/src-tauri -> target
-          shared-key: tauri-host-macos-v1
+          shared-key: tauri-host-macos-v2
           cache-all-crates: true
 
       - name: Compile the real desktop shell
