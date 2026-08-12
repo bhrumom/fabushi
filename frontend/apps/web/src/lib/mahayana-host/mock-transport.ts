@@ -7,6 +7,10 @@ import type {
   RuntimeCommand,
   RuntimeEvent,
 } from "./contracts";
+import {
+  isTauriMahayanaHostAvailable,
+  TauriMahayanaHostTransport,
+} from "./tauri-transport";
 import type {
   MahayanaHostTransport,
   RuntimeEventListener,
@@ -14,7 +18,16 @@ import type {
 
 const now = () => new Date().toISOString();
 
+/**
+ * Deterministic browser transport used by fast UI tests.
+ *
+ * The historical class name is retained so existing pages need no migration
+ * churn. Inside a native Tauri window it automatically delegates every method
+ * to the real Rust feature Host; only an ordinary browser uses the in-memory
+ * implementation below.
+ */
 export class MockMahayanaHostTransport implements MahayanaHostTransport {
+  private readonly native: MahayanaHostTransport | null;
   private readonly listeners = new Set<RuntimeEventListener>();
   private readonly approvals = new Set<string>();
   private status: HostStatus = "idle";
@@ -25,12 +38,20 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     platform: "mock",
   };
 
+  constructor() {
+    this.native = isTauriMahayanaHostAvailable()
+      ? new TauriMahayanaHostTransport()
+      : null;
+  }
+
   subscribe(listener: RuntimeEventListener): () => void {
+    if (this.native) return this.native.subscribe(listener);
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  async initialize(_config: HostConfig): Promise<HostInfo> {
+  async initialize(config: HostConfig): Promise<HostInfo> {
+    if (this.native) return this.native.initialize(config);
     if (this.status === "ready") return this.info;
     this.status = "initializing";
     this.status = "ready";
@@ -39,6 +60,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   async execute(command: RuntimeCommand): Promise<CommandAccepted> {
+    if (this.native) return this.native.execute(command);
     this.assertReady();
 
     switch (command.type) {
@@ -111,6 +133,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   async interrupt(operationId: string): Promise<void> {
+    if (this.native) return this.native.interrupt(operationId);
     this.assertReady();
     this.emit({
       type: "operation.interrupted",
@@ -120,6 +143,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   async resolveApproval(resolution: ApprovalResolution): Promise<void> {
+    if (this.native) return this.native.resolveApproval(resolution);
     this.assertReady();
     if (!this.approvals.delete(resolution.approvalId)) {
       throw new Error(`Unknown approval: ${resolution.approvalId}`);
@@ -133,6 +157,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   async close(): Promise<void> {
+    if (this.native) return this.native.close();
     if (this.status === "closed") return;
     this.status = "closed";
     this.emit({ type: "host.closed", timestamp: now() });
