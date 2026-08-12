@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Attach Flutter HotRunner before launch and sync current Dart code to iOS.
+"""Run a compatible prebuilt iOS Runner with Flutter HotRunner and sync current Dart.
 
-Designed for the fast iOS PR lane: install a compatible prebuilt debug Runner.app,
-provision the sandbox, start this controller in the background, and let it launch
-the app only after `flutter attach --machine` is listening. The controller keeps
-the attach process resident for the duration of the UI test.
+The fast lane deliberately avoids `flutter build ios`. Flutter owns the
+prebuilt-app launch and VM-service connection via `flutter run
+--use-application-binary`, then HotRunner/DevFS synchronizes the current Dart
+sources. The process stays resident while Appium drives the application.
 """
 
 from __future__ import annotations
@@ -25,12 +25,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True)
     parser.add_argument("--udid", required=True)
-    parser.add_argument("--bundle-id", required=True)
+    parser.add_argument("--application-binary")
+    parser.add_argument("--bundle-id", help="Backward-compatible no-op; Flutter reads the bundle ID from Runner.app")
     parser.add_argument("--ready-file", required=True)
     parser.add_argument("--timing-file", required=True)
     parser.add_argument("--flutter", default="flutter")
     parser.add_argument("--target", default="lib/main.dart")
-    parser.add_argument("--timeout-seconds", type=float, default=180)
+    parser.add_argument("--timeout-seconds", type=float, default=120)
     parser.add_argument("--dart-define", action="append", default=[])
     return parser.parse_args()
 
@@ -57,20 +58,31 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
 def main() -> int:
     args = parse_args()
     project = Path(args.project).resolve()
+    application_binary = (
+        Path(args.application_binary).resolve()
+        if args.application_binary
+        else (project / "build/ios/iphonesimulator/Runner.app").resolve()
+    )
     ready_file = Path(args.ready_file).resolve()
     timing_file = Path(args.timing_file).resolve()
     ready_file.unlink(missing_ok=True)
     timing_file.unlink(missing_ok=True)
 
+    if not project.is_dir():
+        raise SystemExit(f"Project directory does not exist: {project}")
+    if not application_binary.is_dir():
+        raise SystemExit(f"Prebuilt application does not exist: {application_binary}")
+
     command = [
         args.flutter,
-        "attach",
+        "run",
         "--machine",
         "--debug",
+        "--no-pub",
         "-d",
         args.udid,
-        "--app-id",
-        args.bundle_id,
+        "--use-application-binary",
+        str(application_binary),
         "--target",
         args.target,
     ]
@@ -78,6 +90,17 @@ def main() -> int:
         command.append(f"--dart-define={define}")
 
     started = time.monotonic()
+    print(
+        json.dumps(
+            {
+                "event": "fabushi.fastLane.command",
+                "mode": "flutter-run-prebuilt",
+                "applicationBinary": str(application_binary),
+                "device": args.udid,
+            }
+        ),
+        flush=True,
+    )
     process = subprocess.Popen(
         command,
         cwd=project,
@@ -96,7 +119,6 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop_child)
     signal.signal(signal.SIGINT, stop_child)
 
-    launched = False
     app_id: str | None = None
     debug_uri: str | None = None
     deadline = started + args.timeout_seconds
@@ -104,80 +126,52 @@ def main() -> int:
     assert process.stdout is not None
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
-    while True:
-        if time.monotonic() > deadline and not ready_file.exists():
-            process.terminate()
-            raise SystemExit(
-                f"flutter attach did not reach app.started within {args.timeout_seconds:.0f}s"
-            )
+    try:
+        while True:
+            if time.monotonic() > deadline and not ready_file.exists():
+                process.terminate()
+                raise SystemExit(
+                    "flutter run --use-application-binary did not reach app.started "
+                    f"within {args.timeout_seconds:.0f}s"
+                )
 
-        events = selector.select(timeout=0.25)
-        line = process.stdout.readline() if events else ""
-        if line:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            for message in protocol_messages(line):
-                event = message.get("event")
-                params = message.get("params")
-                if not isinstance(params, dict):
-                    params = {}
-                if event == "app.start":
-                    raw_app_id = params.get("appId")
-                    if isinstance(raw_app_id, str):
-                        app_id = raw_app_id
-                    if not launched:
-                        launch_started = time.monotonic()
-                        completed = subprocess.run(
-                            [
-                                "xcrun",
-                                "simctl",
-                                "launch",
-                                "--terminate-running-process",
-                                args.udid,
-                                args.bundle_id,
-                            ],
-                            env=os.environ.copy(),
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                            timeout=60,
-                        )
-                        print(completed.stdout, end="", flush=True)
-                        if completed.returncode != 0:
-                            process.terminate()
-                            raise SystemExit(
-                                f"simctl launch failed with exit code {completed.returncode}"
-                            )
-                        launched = True
+            events = selector.select(timeout=0.25)
+            line = process.stdout.readline() if events else ""
+            if line:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                for message in protocol_messages(line):
+                    event = message.get("event")
+                    params = message.get("params")
+                    if not isinstance(params, dict):
+                        params = {}
+                    if event == "app.start":
+                        raw_app_id = params.get("appId")
+                        if isinstance(raw_app_id, str):
+                            app_id = raw_app_id
+                    elif event == "app.debugPort":
+                        ws_uri = params.get("wsUri")
+                        if isinstance(ws_uri, str):
+                            debug_uri = ws_uri
+                    elif event == "app.started" and not ready_file.exists():
+                        ready_payload = {
+                            "protocol": "fabushi.ios.flutter-prebuilt-run.v1",
+                            "appId": app_id or params.get("appId"),
+                            "debugUri": debug_uri,
+                            "elapsedMs": round((time.monotonic() - started) * 1000),
+                        }
+                        atomic_json(ready_file, ready_payload)
+                        atomic_json(timing_file, ready_payload)
                         print(
-                            json.dumps(
-                                {
-                                    "event": "fabushi.fastLane.launched",
-                                    "elapsedMs": round((time.monotonic() - launch_started) * 1000),
-                                }
-                            ),
+                            json.dumps({"event": "fabushi.fastLane.ready", **ready_payload}),
                             flush=True,
                         )
-                elif event == "app.debugPort":
-                    ws_uri = params.get("wsUri")
-                    if isinstance(ws_uri, str):
-                        debug_uri = ws_uri
-                elif event == "app.started" and not ready_file.exists():
-                    ready_payload = {
-                        "protocol": "fabushi.ios.flutter-attach-sync.v1",
-                        "appId": app_id or params.get("appId"),
-                        "debugUri": debug_uri,
-                        "elapsedMs": round((time.monotonic() - started) * 1000),
-                    }
-                    atomic_json(ready_file, ready_payload)
-                    atomic_json(timing_file, ready_payload)
-                    print(json.dumps({"event": "fabushi.fastLane.ready", **ready_payload}), flush=True)
-                    # Keep reading so flutter attach remains resident while Appium runs.
-                    deadline = float("inf")
-        elif process.poll() is not None:
-            break
-        else:
-            time.sleep(0.05)
+                        # Keep the HotRunner resident while Appium drives the UI.
+                        deadline = float("inf")
+            elif process.poll() is not None:
+                break
+    finally:
+        selector.close()
 
     return_code = process.wait()
     if not ready_file.exists():
