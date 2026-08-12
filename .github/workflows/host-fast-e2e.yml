@@ -38,9 +38,7 @@ jobs:
   host-fast-e2e:
     name: React Host complete user journey
     runs-on: ubuntu-latest
-    timeout-minutes: 8
-    container:
-      image: mcr.microsoft.com/playwright:v1.59.1-noble
+    timeout-minutes: 5
     steps:
       - name: Checkout only Host test inputs
         uses: actions/checkout@v5
@@ -50,7 +48,7 @@ jobs:
             /frontend/**
             /fabushi/e2e/**
 
-      - name: Enable pnpm through Corepack
+      - name: Enable pinned pnpm through Corepack
         run: corepack enable
 
       - name: Install frontend dependencies from lockfile
@@ -61,9 +59,14 @@ jobs:
         working-directory: frontend
         run: pnpm --filter @fabushi/web typecheck:host
 
-      - name: Install Playwright test package
+      - name: Install Playwright test package without browser download
         working-directory: fabushi/e2e
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: npm ci
+
+      - name: Verify system Chrome is available
+        run: google-chrome --version
 
       - name: Run complete Host user journey under execution budget
         id: journey
@@ -76,8 +79,8 @@ jobs:
           elapsed="$(( $(date +%s) - started_at ))"
           echo "elapsed_seconds=$elapsed" >> "$GITHUB_OUTPUT"
           echo "Host user journey elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 120 ]; then
-            echo "Host fast E2E exceeded the 120-second execution budget." >&2
+          if [ "$elapsed" -gt 60 ]; then
+            echo "Host fast E2E exceeded the 60-second execution budget." >&2
             exit 1
           fi
 
