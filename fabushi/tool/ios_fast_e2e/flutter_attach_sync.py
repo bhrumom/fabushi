@@ -3,9 +3,10 @@
 
 The fast lane deliberately avoids Xcode and avoids Dart VM service discovery.
 It builds only Flutter's debug asset/kernel bundle, replaces
-Runner.app/Frameworks/App.framework/flutter_assets, ad-hoc re-signs the app,
-installs the updated shell on the Simulator, launches it, and waits for the
-existing debug-only E2E control channel to prove the current Dart code booted.
+Runner.app/Frameworks/App.framework/flutter_assets, re-signs modified nested
+code while preserving Xcode's Debug signing metadata, installs the updated
+shell on the Simulator, launches it, and waits for the existing debug-only E2E
+control channel to prove the current Dart code booted.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import tempfile
@@ -65,6 +67,44 @@ def run(command: list[str], *, cwd: Path | None = None, timeout: float = 180) ->
     return completed.stdout
 
 
+def restore_pristine_shell(application_binary: Path) -> None:
+    runner_temp = Path(os.environ.get("RUNNER_TEMP", ""))
+    archive = runner_temp / "runner-shell" / "Runner.app.zip"
+    if not archive.is_file():
+        raise RuntimeError(f"Original Runner artifact archive is unavailable: {archive}")
+    if application_binary.exists():
+        shutil.rmtree(application_binary)
+    application_binary.parent.mkdir(parents=True, exist_ok=True)
+    run(["ditto", "-x", "-k", str(archive), str(application_binary.parent)], timeout=120)
+    if not application_binary.is_dir():
+        raise RuntimeError(f"Original Runner artifact did not restore {application_binary}")
+
+    host_info = application_binary / "Info.plist"
+    extension_info = application_binary / "PlugIns" / "ShareExtension.appex" / "Info.plist"
+    host = plistlib.loads(host_info.read_bytes())
+    extension = plistlib.loads(extension_info.read_bytes())
+    for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+        value = host.get(key)
+        if not value:
+            raise RuntimeError(f"Host app is missing {key}")
+        extension[key] = value
+    extension_info.write_bytes(
+        plistlib.dumps(extension, fmt=plistlib.FMT_BINARY, sort_keys=False)
+    )
+    print(
+        json.dumps(
+            {
+                "event": "fabushi.fastLane.pristineShell",
+                "hostVersion": host.get("CFBundleShortVersionString"),
+                "hostBuild": host.get("CFBundleVersion"),
+                "extensionVersion": extension.get("CFBundleShortVersionString"),
+                "extensionBuild": extension.get("CFBundleVersion"),
+            }
+        ),
+        flush=True,
+    )
+
+
 def wait_for_control(app_home: Path, timeout_seconds: float) -> Path:
     ready = (
         app_home
@@ -100,6 +140,10 @@ def main() -> int:
     if not application_binary.is_dir():
         raise SystemExit(f"Prebuilt application does not exist: {application_binary}")
 
+    # Rehydrate the original artifact so Xcode's Debug signing metadata is still
+    # available when modified nested code is re-signed.
+    restore_pristine_shell(application_binary)
+
     app_framework = application_binary / "Frameworks" / "App.framework"
     asset_destination = app_framework / "flutter_assets"
     if not app_framework.is_dir():
@@ -133,11 +177,8 @@ def main() -> int:
         inject_started = time.monotonic()
         # `flutter build bundle` produces the current Dart kernel/assets, but the
         # iOS Debug App.framework also carries engine bootstrap snapshots that
-        # are supplied by the native Xcode build. Replacing flutter_assets
-        # wholesale drops those files and the engine can launch a process
-        # without ever reaching Dart main(). Preserve them from the compatible
-        # prebuilt shell while replacing every app-owned asset with the current
-        # bundle.
+        # are supplied by the native Xcode build. Preserve them from the
+        # compatible prebuilt shell while replacing app-owned assets.
         bootstrap_names = ("vm_snapshot_data", "isolate_snapshot_data")
         bootstrap: dict[str, bytes] = {}
         for name in bootstrap_names:
@@ -173,15 +214,35 @@ def main() -> int:
         timings["assetInjectMs"] = round((time.monotonic() - inject_started) * 1000)
 
     sign_started = time.monotonic()
+    share_extension = application_binary / "PlugIns" / "ShareExtension.appex"
+    preserve_nested = "identifier,requirements,flags,runtime"
+    preserve_entitled = "identifier,entitlements,requirements,flags,runtime"
+
+    # Apple recommends signing modified nested code from the inside out and
+    # preserving existing signing metadata. Frameworks must not receive app
+    # entitlements; the extension and host retain the Xcode-generated Debug
+    # entitlements from the pristine artifact.
     run(
         [
-            "codesign",
-            "--force",
-            "--deep",
-            "--sign",
-            "-",
-            "--timestamp=none",
-            str(application_binary),
+            "codesign", "--force", "--sign", "-", "--timestamp=none",
+            f"--preserve-metadata={preserve_nested}",
+            "--generate-entitlement-der", str(app_framework),
+        ],
+        timeout=120,
+    )
+    run(
+        [
+            "codesign", "--force", "--sign", "-", "--timestamp=none",
+            f"--preserve-metadata={preserve_entitled}",
+            "--generate-entitlement-der", str(share_extension),
+        ],
+        timeout=120,
+    )
+    run(
+        [
+            "codesign", "--force", "--sign", "-", "--timestamp=none",
+            f"--preserve-metadata={preserve_entitled}",
+            "--generate-entitlement-der", str(application_binary),
         ],
         timeout=120,
     )
