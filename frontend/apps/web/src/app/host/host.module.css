@@ -1,0 +1,170 @@
+.page {
+  min-height: 100vh;
+  padding: 32px;
+  background: #f5f4ef;
+  color: #1d2520;
+}
+
+.header {
+  max-width: 1180px;
+  margin: 0 auto 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header h1 {
+  margin: 4px 0 0;
+  font-size: clamp(28px, 4vw, 48px);
+}
+
+.eyebrow {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #526158;
+}
+
+.status {
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #dff3e6;
+  font-weight: 700;
+}
+
+.grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.card {
+  padding: 22px;
+  border: 1px solid #d9ddd7;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgb(29 37 32 / 7%);
+}
+
+.card h2,
+.card h3 {
+  margin-top: 0;
+}
+
+.messages {
+  min-height: 120px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f6f8f5;
+}
+
+.message {
+  margin: 8px 0;
+}
+
+.form,
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.form input {
+  min-width: 0;
+  flex: 1;
+  padding: 11px 12px;
+  border: 1px solid #bcc5bd;
+  border-radius: 10px;
+}
+
+.page button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #264d38;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.page button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.miniApp {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #eef5ef;
+}
+
+.coverage {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.coverage li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: #f3f5f2;
+}
+
+.coverage li[data-state="passed"] strong {
+  color: #176b3a;
+}
+
+.muted {
+  color: #68736b;
+}
+
+.error {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #ffe7e2;
+  color: #8c251a;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 22 18 / 55%);
+}
+
+.dialog {
+  width: min(460px, 100%);
+  padding: 24px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 22%);
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 20px;
+  }
+
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
