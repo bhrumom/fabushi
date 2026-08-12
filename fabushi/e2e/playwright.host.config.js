@@ -20,8 +20,11 @@ export default defineConfig({
     video: "off",
   },
   webServer: {
+    // Run Next directly from the package installed by the pinned pnpm workspace.
+    // This keeps Playwright's container-bundled pnpm version out of the runtime
+    // path and makes local/CI startup deterministic.
     command:
-      "corepack pnpm --dir ../../frontend --filter @fabushi/web exec next dev --hostname 127.0.0.1 --port 4173",
+      "node ../../frontend/apps/web/node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173/host",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
