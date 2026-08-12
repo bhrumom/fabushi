@@ -208,8 +208,9 @@ mod desktop {
     #[tauri::command]
     fn feature_host_receive(
         state: State<'_, FeatureHostState>,
-        _timeout_ms: Option<u64>,
+        timeout_ms: Option<u64>,
     ) -> Result<Option<HostEvent>, String> {
+        let _ = timeout_ms;
         state.receive()
     }
 
