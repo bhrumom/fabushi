@@ -174,7 +174,9 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_scene_importer: ^0.9.0-0
+  # Pure-Dart importer: avoids the legacy CMake/tinygltf build hook while
+  # preserving the flatbuffer runtime used by precompiled .model assets.
+  flutter_scene_importer: ^0.11.0
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
