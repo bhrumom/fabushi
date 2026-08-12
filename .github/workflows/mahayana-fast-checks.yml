@@ -25,6 +25,8 @@ jobs:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      CARGO_INCREMENTAL: "1"
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs
@@ -45,7 +47,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v2
+          shared-key: mahayana-fast-v3
           cache-all-crates: true
 
       - name: Verify formatting
