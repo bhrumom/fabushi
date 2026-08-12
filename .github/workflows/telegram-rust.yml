@@ -33,7 +33,8 @@ on:
     branches: [main]
     paths:
       - 'native/telegram-*/**'
-      - 'third_party/mahayana/**'
+      - 'third_party/mahayana/mahayana-rs/providers/telegram-*/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-telegram/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
       - 'fabushi/lib/screens/telegram_authorization_screen.dart'
