@@ -504,7 +504,7 @@ class _CodexDesktopChatInputState extends State<CodexDesktopChatInput> {
               const SizedBox(width: 8),
               _buildDropdownPill(
                 Icons.smart_toy_outlined,
-                'codex/openclaw-remote...',
+                'codex/mahayana-runtime',
                 active: false,
                 onTap: null,
               ),

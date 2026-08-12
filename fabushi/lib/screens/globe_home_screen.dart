@@ -28,7 +28,6 @@ import '../services/desktop_control/desktop_control_models.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/dharma_publish_service.dart';
 import '../services/inbound_share_service.dart';
-import '../services/openclaw/openclaw_runtime.dart';
 import 'dharma_publish_browser_screen.dart'
     if (dart.library.html) 'dharma_publish_browser_screen_web.dart';
 import '../widgets/earth_globe_widget.dart';
@@ -123,14 +122,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   final _mahayanaCommandService = MahayanaCommandService();
   final _alipayService = AlipayService();
   final _appleIapService = AppleIapService();
-  bool _isOpenClawPanelLoading = false;
-  bool _isRunningOpenClawAction = false;
-  bool _isRestartingOpenClaw = false;
   bool _isPreparingChromeConnector = false;
-  String _openClawRemoteGatewayUrl = '';
-  String _openClawModeLabel = '自动';
-  String _openClawPermissionLabel = '默认权限';
-  OpenClawRuntimeStatus? _openClawStatus;
+  String _desktopModeLabel = '自动';
+  String _desktopPermissionLabel = '默认权限';
   DesktopControlBridgeStatus? _desktopControlStatus;
   List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
   bool? _buddhaAssetUnlocked;
@@ -261,7 +255,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       unawaited(_loadRemoteConversations());
       unawaited(_refreshBuddhaAssetEntitlement());
       unawaited(_consumeInitialShare());
-      unawaited(_loadOpenClawHomeStatus(probeOpenClaw: false));
+      unawaited(_loadDesktopControlHomeStatus());
     });
   }
 
@@ -639,29 +633,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     );
   }
 
-  Widget _buildDesktopTopBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 18, 24, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FilledButton.icon(
-            onPressed: _createOpenClawHomeMobilePairingCode,
-            icon: const Icon(Icons.rocket_launch, size: 18),
-            label: const Text('来连接移动端'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF202124),
-              side: const BorderSide(color: Color(0xFFE5E5E1)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildDesktopTopBar() => const SizedBox(height: 18);
 
   Widget _buildDesktopWorkspace(
     BuildContext context,
@@ -722,7 +694,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '你的本地 OpenClaw 超能力',
+                        '你的 Mahayana 智能工作台',
                         style: TextStyle(
                           color: const Color(0xFF17181A),
                           fontSize: compact ? 35 : 44,
@@ -738,23 +710,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                           _DesktopModeChip(
                             icon: Icons.coffee_outlined,
                             label: '日常办公',
-                            selected: _openClawModeLabel == '自动',
+                            selected: _desktopModeLabel == '自动',
                             onTap: () =>
-                                setState(() => _openClawModeLabel = '自动'),
+                                setState(() => _desktopModeLabel = '自动'),
                           ),
                           _DesktopModeChip(
                             icon: Icons.code,
                             label: '代码开发',
-                            selected: _openClawModeLabel == '本机全能',
+                            selected: _desktopModeLabel == '本机全能',
                             onTap: () =>
-                                setState(() => _openClawModeLabel = '本机全能'),
+                                setState(() => _desktopModeLabel = '本机全能'),
                           ),
                           _DesktopModeChip(
                             icon: Icons.palette_outlined,
                             label: '设计创意',
-                            selected: _openClawModeLabel == '远程接管',
+                            selected: _desktopModeLabel == '远程接管',
                             onTap: () =>
-                                setState(() => _openClawModeLabel = '远程接管'),
+                                setState(() => _desktopModeLabel = '远程接管'),
                           ),
                         ],
                       ),
@@ -793,95 +765,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 ),
               ),
             ),
-            Positioned(
-              right: 52,
-              top: compact ? 60 : 124,
-              child: _buildDesktopRemoteNotice(),
-            ),
           ],
         );
       },
     );
   }
 
-  Widget _buildDesktopRemoteNotice() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 286),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF7F4),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE3EFEB)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF00C49A),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.rocket_launch,
-                    color: Colors.white,
-                    size: 14,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    '远程通知',
-                    style: TextStyle(
-                      color: Color(0xFF303437),
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                InkWell(
-                  onTap: _refreshOpenClawHomeStatus,
-                  child: const Icon(
-                    Icons.refresh,
-                    size: 16,
-                    color: Color(0xFF777777),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _openClawRemoteGatewayUrl.trim().isEmpty
-                  ? '配置公网入口后，移动端或微信发来的任务会唤醒这台电脑。'
-                  : '移动端或微信已可通过远程入口唤醒本机 OpenClaw。',
-              style: const TextStyle(
-                color: Color(0xFF4C5555),
-                height: 1.45,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _createOpenClawHomeMobilePairingCode,
-                child: const Text('查看配对'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDesktopStatusStrip() {
-    final openClawHealthy = _openClawStatus?.isHealthy == true;
     final bridgeReady = _desktopControlStatus?.bridgeRunning == true;
-    final remoteReady = _openClawRemoteGatewayUrl.trim().isNotEmpty;
     final chromeReady = _desktopControlStatus?.chrome.connected == true;
     final pending = _desktopControlPending.isEmpty
         ? null
@@ -892,26 +783,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       runSpacing: 8,
       children: [
         _DesktopStatusPill(
-          icon: Icons.hub_outlined,
-          label: _isOpenClawPanelLoading
-              ? 'OpenClaw 检测中'
-              : openClawHealthy
-              ? 'OpenClaw 运行中'
-              : _openClawStatus?.label ?? 'OpenClaw 未检测',
-          active: openClawHealthy,
-          onTap: _refreshOpenClawHomeStatus,
-        ),
-        _DesktopStatusPill(
           icon: Icons.desktop_mac_outlined,
           label: bridgeReady ? '桌面工具已连接' : '桌面工具待启动',
           active: bridgeReady,
           onTap: _startDesktopBridgeFromHome,
-        ),
-        _DesktopStatusPill(
-          icon: Icons.chat_bubble_outline,
-          label: remoteReady ? '微信/移动端待命' : '远程未配置',
-          active: remoteReady,
-          onTap: _createOpenClawHomeMobilePairingCode,
         ),
         _DesktopStatusPill(
           icon: Icons.public,
@@ -1031,34 +906,23 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   }
 
   Widget _buildAiBackendBadge() {
-    final authModel = Provider.of<AuthModel?>(context, listen: false);
-    return FutureBuilder<String>(
-      future: AiBackendPolicy.activeBackendLabel(
-        isMember: authModel?.hasPermission('premium') ?? false,
+    return Container(
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.greenAccent.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
-      builder: (context, snapshot) {
-        final label = snapshot.data ?? '本机 OpenClaw';
-        final isLocal = label.contains('OpenClaw');
-        return Container(
-          margin: const EdgeInsets.only(top: 1),
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-          decoration: BoxDecoration(
-            color: (isLocal ? Colors.greenAccent : Colors.blueAccent)
-                .withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-          ),
-          child: Text(
-            isLocal ? '本机 OpenClaw' : '云端 API',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 10,
-              height: 1.1,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        );
-      },
+      child: const Text(
+        'Mahayana Runtime',
+        style: TextStyle(
+          color: Colors.white70,
+          fontSize: 10,
+          height: 1.1,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -1159,7 +1023,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                   IconButton(
                     tooltip: embedded ? '检测' : '关闭',
                     onPressed: embedded
-                        ? _refreshOpenClawHomeStatus
+                        ? _loadDesktopControlHomeStatus
                         : () => Navigator.maybePop(context),
                     icon: Icon(
                       embedded ? Icons.filter_alt_outlined : Icons.close,
@@ -1193,13 +1057,13 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 icon: Icons.smart_toy_outlined,
                 label: '助理',
                 embedded: false,
-                onTap: () => _prefillPrompt('让本机 OpenClaw 助理接手：'),
+                onTap: () => _prefillPrompt('让 Mahayana 助理接手：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.account_tree_outlined,
                 label: '项目',
                 embedded: false,
-                onTap: () => _prefillPrompt('新建一个本机 OpenClaw 项目，目标是：'),
+                onTap: () => _prefillPrompt('新建一个 Mahayana 项目，目标是：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.hub_outlined,
@@ -1212,7 +1076,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 icon: Icons.alarm_on_outlined,
                 label: '自动化',
                 embedded: false,
-                onTap: () => _prefillPrompt('创建一个 OpenClaw 自动化任务：'),
+                onTap: () => _prefillPrompt('创建一个自动化任务：'),
               ),
               _buildSidebarActionTile(
                 icon: Icons.apps_outlined,
@@ -1273,15 +1137,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 embedded: false,
                 onTap: _startDesktopBridgeFromHome,
               ),
-              _buildSidebarSpaceTile(
-                icon: Icons.chat_bubble_outline,
-                title: '微信远程',
-                subtitle: _openClawRemoteGatewayUrl.trim().isEmpty
-                    ? '待配置'
-                    : '已配置',
-                embedded: false,
-                onTap: _createOpenClawHomeMobilePairingCode,
-              ),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -1301,13 +1156,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '移动端配对',
-                    onPressed: _isRunningOpenClawAction
-                        ? null
-                        : _createOpenClawHomeMobilePairingCode,
-                    icon: Icon(Icons.qr_code_2_outlined, color: secondaryText),
                   ),
                 ],
               ),
@@ -3279,7 +3127,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   Widget _buildDesktopModeMenu() {
     return PopupMenuButton<String>(
       tooltip: '模型模式',
-      onSelected: (value) => setState(() => _openClawModeLabel = value),
+      onSelected: (value) => setState(() => _desktopModeLabel = value),
       itemBuilder: (context) => const [
         PopupMenuItem(value: '自动', child: Text('自动')),
         PopupMenuItem(value: '本机全能', child: Text('本机全能')),
@@ -3288,7 +3136,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       ],
       child: _DesktopComposerButton(
         icon: Icons.psychology_alt_outlined,
-        label: _openClawModeLabel,
+        label: _desktopModeLabel,
       ),
     );
   }
@@ -3323,16 +3171,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       tooltip: '连应用',
       onSelected: _handleDesktopConnectorSelection,
       itemBuilder: (context) => const [
-        PopupMenuItem(value: 'wechat', child: Text('微信')),
-        PopupMenuItem(value: 'wechatPlugin', child: Text('安装微信插件')),
-        PopupMenuItem(value: 'mobile', child: Text('移动端')),
         PopupMenuItem(value: 'chrome', child: Text('Chrome')),
         PopupMenuItem(value: 'desktop', child: Text('本机桌面')),
-        PopupMenuItem(value: 'remote', child: Text('远程入口')),
         PopupMenuItem(value: 'permissions', child: Text('系统权限')),
         PopupMenuDivider(),
-        PopupMenuItem(value: 'restart', child: Text('重启本机 AI')),
-        PopupMenuItem(value: 'channels', child: Text('渠道状态')),
         PopupMenuItem(value: 'log', child: Text('复制诊断日志')),
       ],
       child: const _DesktopComposerButton(
@@ -3347,9 +3189,9 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     return PopupMenuButton<String>(
       tooltip: '权限',
       onSelected: (value) {
-        setState(() => _openClawPermissionLabel = value);
+        setState(() => _desktopPermissionLabel = value);
         if (value == '完全访问权限') {
-          unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+          unawaited(_loadDesktopControlHomeStatus());
         }
       },
       itemBuilder: (context) => const [
@@ -3358,7 +3200,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       ],
       child: _DesktopComposerButton(
         icon: Icons.verified_user_outlined,
-        label: _openClawPermissionLabel,
+        label: _desktopPermissionLabel,
       ),
     );
   }
@@ -3583,7 +3425,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
   void _handleDesktopSkillSelection(String value) {
     switch (value) {
       case 'find':
-        _prefillPrompt('帮我查找并安装适合当前任务的 OpenClaw 技能');
+        _prefillPrompt('帮我查找并安装适合当前任务的技能');
         break;
       case 'publish':
         _prefillPrompt('使用 media-auto-publisher 发布这篇内容');
@@ -3598,30 +3440,18 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
         _prefillPrompt('帮我处理 PDF/Word/Excel 文件并生成结果');
         break;
       case 'import':
-        _prefillPrompt('帮我导入一个 OpenClaw 技能');
+        _prefillPrompt('帮我导入一个技能');
         break;
     }
   }
 
   void _handleDesktopConnectorSelection(String value) {
     switch (value) {
-      case 'wechat':
-        unawaited(_loginOpenClawHomeWeChat());
-        break;
-      case 'wechatPlugin':
-        unawaited(_installOpenClawHomeWeChatPlugin());
-        break;
-      case 'mobile':
-        unawaited(_createOpenClawHomeMobilePairingCode());
-        break;
       case 'chrome':
         unawaited(_prepareHomeChromeConnector());
         break;
       case 'desktop':
         unawaited(_startDesktopBridgeFromHome());
-        break;
-      case 'remote':
-        unawaited(_editOpenClawHomeRemoteGatewayUrl());
         break;
       case 'permissions':
         unawaited(
@@ -3630,12 +3460,6 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
                 _desktopControlStatus?.screenRecordingGranted != true,
           ),
         );
-        break;
-      case 'restart':
-        unawaited(_restartOpenClawFromHome());
-        break;
-      case 'channels':
-        unawaited(_inspectOpenClawHomeChannels());
         break;
       case 'log':
         unawaited(_copyDiagnosticLogTailFromHome());
@@ -5359,15 +5183,10 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     });
   }
 
-  Future<void> _loadOpenClawHomeStatus({required bool probeOpenClaw}) async {
+  Future<void> _loadDesktopControlHomeStatus() async {
     if (!AiBackendPolicy.isDesktopNative) return;
-    if (mounted) setState(() => _isOpenClawPanelLoading = true);
     try {
       final values = await Future.wait<dynamic>([
-        AppSettings.getOpenClawRemoteGatewayUrl(),
-        OpenClawRuntime.instance
-            .getStatus(probe: probeOpenClaw)
-            .timeout(const Duration(seconds: 8)),
         DesktopControlBridge.instance.getStatus().timeout(
           const Duration(seconds: 5),
         ),
@@ -5377,187 +5196,14 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
       ]);
       if (!mounted) return;
       setState(() {
-        _openClawRemoteGatewayUrl = (values[0] as String).trim();
-        _openClawStatus = values[1] as OpenClawRuntimeStatus;
-        _desktopControlStatus = values[2] as DesktopControlBridgeStatus;
+        _desktopControlStatus = values[0] as DesktopControlBridgeStatus;
         _desktopControlPending =
-            values[3] as List<DesktopControlPendingConfirmation>;
-        _isOpenClawPanelLoading = false;
+            values[1] as List<DesktopControlPendingConfirmation>;
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _openClawStatus = OpenClawRuntimeStatus(
-          state: OpenClawRuntimeState.failed,
-          message: 'OpenClaw 状态检测失败：$error',
-          checkedAt: DateTime.now(),
-        );
-        _desktopControlPending = const [];
-        _isOpenClawPanelLoading = false;
-      });
+      setState(() => _desktopControlPending = const []);
     }
-  }
-
-  Future<void> _refreshOpenClawHomeStatus() {
-    return _loadOpenClawHomeStatus(probeOpenClaw: true);
-  }
-
-  Future<void> _restartOpenClawFromHome() async {
-    if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
-    setState(() => _isRestartingOpenClaw = true);
-    OpenClawRuntimeStatus status;
-    try {
-      status = await OpenClawRuntime.instance.restart().timeout(
-        const Duration(seconds: 75),
-      );
-    } catch (error) {
-      status = OpenClawRuntimeStatus(
-        state: OpenClawRuntimeState.failed,
-        message: 'OpenClaw 重启失败：$error',
-        checkedAt: DateTime.now(),
-      );
-    }
-    if (!mounted) return;
-    setState(() {
-      _openClawStatus = status;
-      _isRestartingOpenClaw = false;
-    });
-    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
-    _showHomeSnack(
-      status.isHealthy ? '本机 OpenClaw 已启动' : status.message,
-      ok: status.isHealthy,
-    );
-  }
-
-  Future<void> _runOpenClawHomeCliAction(
-    String label,
-    Future<OpenClawCliResult> Function() action,
-  ) async {
-    if (!AiBackendPolicy.isDesktopNative || _isRunningOpenClawAction) return;
-    setState(() => _isRunningOpenClawAction = true);
-    OpenClawCliResult? result;
-    Object? error;
-    try {
-      result = await action();
-    } catch (err) {
-      error = err;
-      debugPrint('首页 OpenClaw $label 失败: $err');
-    }
-    if (!mounted) return;
-    setState(() => _isRunningOpenClawAction = false);
-    if (result == null) {
-      _showHomeSnack('$label 失败：$error', ok: false);
-      return;
-    }
-    await _showOpenClawCliResult(label, result);
-    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
-  }
-
-  Future<void> _showOpenClawCliResult(
-    String title,
-    OpenClawCliResult result,
-  ) async {
-    final output = [
-      result.command,
-      'exitCode=${result.exitCode}${result.timedOut ? ' · timed out' : ''}',
-      if (result.combinedOutput.trim().isNotEmpty) '',
-      if (result.combinedOutput.trim().isNotEmpty) result.combinedOutput,
-    ].join('\n');
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 620,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              output,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: output));
-              Navigator.of(context).pop();
-            },
-            child: const Text('复制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _editOpenClawHomeRemoteGatewayUrl() async {
-    final controller = TextEditingController(text: _openClawRemoteGatewayUrl);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('远程入口'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'wss://...',
-            helperText: '移动端、微信、小程序从公网远程连接这台电脑',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null) return;
-    await AppSettings.setOpenClawRemoteGatewayUrl(value.trim());
-    if (!mounted) return;
-    setState(() => _openClawRemoteGatewayUrl = value.trim());
-    _showHomeSnack('已保存远程入口，重启本机 AI 后生效');
-  }
-
-  Future<void> _createOpenClawHomeMobilePairingCode() async {
-    if (_openClawRemoteGatewayUrl.trim().isEmpty) {
-      await _editOpenClawHomeRemoteGatewayUrl();
-      if (_openClawRemoteGatewayUrl.trim().isEmpty) return;
-    }
-    await _runOpenClawHomeCliAction(
-      '移动端配对码',
-      () => OpenClawRuntime.instance.createMobilePairingCode(remote: true),
-    );
-  }
-
-  Future<void> _installOpenClawHomeWeChatPlugin() {
-    return _runOpenClawHomeCliAction(
-      '安装微信插件',
-      OpenClawRuntime.instance.installWeChatPlugin,
-    );
-  }
-
-  Future<void> _loginOpenClawHomeWeChat() {
-    return _runOpenClawHomeCliAction(
-      '微信扫码登录',
-      OpenClawRuntime.instance.loginWeChat,
-    );
-  }
-
-  Future<void> _inspectOpenClawHomeChannels() {
-    return _runOpenClawHomeCliAction(
-      'OpenClaw 渠道状态',
-      OpenClawRuntime.instance.inspectChannels,
-    );
   }
 
   Future<void> _prepareHomeChromeConnector() async {
@@ -5576,7 +5222,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     }
     if (!mounted) return;
     setState(() => _isPreparingChromeConnector = false);
-    unawaited(_loadOpenClawHomeStatus(probeOpenClaw: true));
+    unawaited(_loadDesktopControlHomeStatus());
     _showHomeSnack(
       error != null
           ? 'Chrome 连接器准备失败：$error'
@@ -5607,7 +5253,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   Future<void> _approveHomeDesktopControlRequest(String id) async {
     final item = await DesktopControlBridge.instance.approvePendingRequest(id);
-    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    await _loadDesktopControlHomeStatus();
     if (!mounted) return;
     _showHomeSnack(
       item == null ? '确认请求已失效' : '已允许该动作，工具可继续执行',
@@ -5617,7 +5263,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
 
   Future<void> _rejectHomeDesktopControlRequest(String id) async {
     final item = await DesktopControlBridge.instance.rejectPendingRequest(id);
-    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    await _loadDesktopControlHomeStatus();
     if (!mounted) return;
     _showHomeSnack(item == null ? '确认请求已失效' : '已拒绝该动作', ok: false);
   }
@@ -5628,7 +5274,7 @@ class GlobeHomeScreenState extends State<GlobeHomeScreen>
     final result = screenRecording
         ? await DesktopControlBridge.instance.requestScreenRecordingPermission()
         : await DesktopControlBridge.instance.requestAccessibilityPermission();
-    await _loadOpenClawHomeStatus(probeOpenClaw: true);
+    await _loadDesktopControlHomeStatus();
     if (!mounted) return;
     _showHomeSnack(result['message']?.toString() ?? '已打开系统权限请求');
   }

@@ -9,6 +9,7 @@ on:
       - frontend/apps/web/tsconfig.host.json
       - frontend/apps/web/package.json
       - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
       - frontend/packages/shared/src/index.ts
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
@@ -26,6 +27,7 @@ on:
       - frontend/apps/web/src/lib/mahayana-host/**
       - frontend/apps/web/tsconfig.host.json
       - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
       - fabushi/e2e/**
@@ -52,6 +54,7 @@ jobs:
           sparse-checkout: |
             /frontend/**
             /fabushi/e2e/**
+            /contracts/automation/cross-platform-journeys.json
 
       - name: Enable pinned pnpm through Corepack
         run: corepack enable

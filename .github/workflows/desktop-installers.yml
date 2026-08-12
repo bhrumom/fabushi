@@ -12,8 +12,6 @@ on:
       - .github/scripts/build-desktop-cli.sh
       - .github/scripts/build-mahayana-desktop-bundle.sh
       - .github/scripts/assert-mahayana-bundle.sh
-      - .github/scripts/assert-openclaw-bundle.sh
-      - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
@@ -29,8 +27,6 @@ on:
       - .github/scripts/build-desktop-cli.sh
       - .github/scripts/build-mahayana-desktop-bundle.sh
       - .github/scripts/assert-mahayana-bundle.sh
-      - .github/scripts/assert-openclaw-bundle.sh
-      - .github/scripts/sync-openclaw-build-assets-v2.sh
       - .github/scripts/notarize-macos-dmg.sh
       - .github/scripts/fix-macos-bundled-dylibs.sh
       - .github/scripts/upload-macos-app-store.sh
@@ -55,11 +51,6 @@ on:
         required: false
         default: true
         type: boolean
-      openclaw_version:
-        description: OpenClaw npm version to vendor into desktop packages.
-        required: false
-        default: 2026.6.1
-        type: string
 
 concurrency:
   group: desktop-installers-${{ github.event.pull_request.number || github.ref || github.run_id }}
@@ -74,7 +65,6 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   FLUTTER_VERSION: '3.41.9'
-  OPENCLAW_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.openclaw_version || '2026.6.1' }}
 
 jobs:
   resolve-release-context:
@@ -202,7 +192,6 @@ jobs:
             echo "- Release tag: \`$release_tag\`"
             echo "- Publish release: \`$publish_release\`"
             echo "- Upload macOS App Store Connect build: \`$upload_macos_app_store\`"
-            echo "- OpenClaw version: \`${OPENCLAW_VERSION}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   build-desktop-installers:
@@ -220,12 +209,10 @@ jobs:
           - label: Linux
             target: linux
             os: ubuntu-latest
-            openclaw_platform: linux-x64
             desktop_arch: x64
           - label: Windows
             target: windows
             os: windows-latest
-            openclaw_platform: windows-x64
             desktop_arch: x64
     defaults:
       run:
@@ -290,11 +277,6 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-
-      - name: Set up Node.js for OpenClaw vendoring
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
 
       - name: Enable Flutter desktop target
         shell: bash
@@ -372,34 +354,24 @@ jobs:
         shell: bash
         run: scripts/fix_desktop_generated_plugins.sh
 
-      - name: Resolve OpenClaw bundle platform
-        id: openclaw
+      - name: Resolve desktop architecture
+        id: desktop
         shell: bash
         run: |
           set -euo pipefail
-          platform="${{ matrix.openclaw_platform }}"
           arch="${{ matrix.desktop_arch }}"
           if [ "${{ matrix.target }}" = "macos" ]; then
             case "$(uname -m)" in
               arm64)
-                platform="macos-arm64"
                 arch="arm64"
                 ;;
               *)
-                platform="macos-x64"
                 arch="x64"
                 ;;
             esac
           fi
-          echo "platform=$platform" >> "$GITHUB_OUTPUT"
           echo "arch=$arch" >> "$GITHUB_OUTPUT"
           echo "DESKTOP_ARCH=$arch" >> "$GITHUB_ENV"
-
-      - name: Vendor embedded OpenClaw runtime
-        shell: bash
-        env:
-          OPENCLAW_VERSION: ${{ env.OPENCLAW_VERSION }}
-        run: scripts/build_openclaw_desktop_bundle.sh "${{ steps.openclaw.outputs.platform }}"
 
       - name: Refresh Flutter generated asset manifest
         run: flutter pub get
@@ -417,26 +389,16 @@ jobs:
         shell: bash
         run: ../.github/scripts/build-mahayana-desktop-bundle.sh macos
 
-      - name: Sync macOS OpenClaw assets into release app
-        if: matrix.target == 'macos'
-        shell: bash
-        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh "${{ steps.openclaw.outputs.platform }}" build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/Frameworks/App.framework/Resources/flutter_assets
-
       - name: Build macOS package CLI
         if: matrix.target == 'macos'
         shell: bash
         run: ../.github/scripts/build-desktop-cli.sh macos
 
-      - name: Verify macOS OpenClaw bundle in release app
-        if: matrix.target == 'macos'
-        shell: bash
-        run: ../.github/scripts/assert-openclaw-bundle.sh build/macos/Build/Products/Release/global_dharma_sharing.app "${{ steps.openclaw.outputs.platform }}"
-
       - name: Run macOS package CLI smoke
         if: matrix.target == 'macos'
         shell: bash
         run: |
-          build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+          build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli runtime-smoke --json
           build/macos/Build/Products/Release/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Import macOS Developer ID certificate
@@ -480,7 +442,7 @@ jobs:
           fi
           app_path="build/macos/Build/Products/Release/global_dharma_sharing.app"
           plugins_root="$app_path/Contents/Resources/mahayana/share/mahayana/plugins/plugins"
-          child_entitlements="$PWD/macos/Runner/OpenClawChild.entitlements"
+          child_entitlements="$PWD/macos/Runner/Release.entitlements"
           signed_plugin_runtimes=0
 
           if [ ! -d "$plugins_root" ]; then
@@ -544,10 +506,9 @@ jobs:
           ditto "$mount_dir/global_dharma_sharing.app" "$install_dir/global_dharma_sharing.app"
           cleanup
           trap - EXIT
-          ../.github/scripts/assert-openclaw-bundle.sh "$install_dir/global_dharma_sharing.app" "${{ steps.openclaw.outputs.platform }}"
           ../.github/scripts/assert-mahayana-bundle.sh "$install_dir/global_dharma_sharing.app" macos
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" doctor --json
-          "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" gateway-smoke --timeout-seconds 120 --json
+          "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" runtime-smoke --json
           "$install_dir/global_dharma_sharing.app/Contents/MacOS/global_dharma_sharing_cli" miniapp-smoke --json
 
       - name: Notarize macOS DMG
@@ -582,26 +543,16 @@ jobs:
         shell: bash
         run: ../.github/scripts/build-mahayana-desktop-bundle.sh linux
 
-      - name: Sync Linux OpenClaw assets into release build
-        if: matrix.target == 'linux'
-        shell: bash
-        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh linux-x64 build/linux/x64/release/bundle/data/flutter_assets
-
       - name: Build Linux package CLI
         if: matrix.target == 'linux'
         shell: bash
         run: ../.github/scripts/build-desktop-cli.sh linux
 
-      - name: Verify Linux OpenClaw bundle in release build
-        if: matrix.target == 'linux'
-        shell: bash
-        run: ../.github/scripts/assert-openclaw-bundle.sh build/linux/x64/release/bundle linux-x64
-
       - name: Run Linux package CLI smoke
         if: matrix.target == 'linux'
         shell: bash
         run: |
-          build/linux/x64/release/bundle/global_dharma_sharing_cli gateway-smoke --timeout-seconds 120 --json
+          build/linux/x64/release/bundle/global_dharma_sharing_cli runtime-smoke --json
           build/linux/x64/release/bundle/global_dharma_sharing_cli miniapp-smoke --json
 
       - name: Package Linux installers
@@ -626,7 +577,7 @@ jobs:
           ../.github/scripts/assert-mahayana-bundle.sh /opt/global-dharma-sharing linux
           mahayana --help >/dev/null
           global-dharma-sharing-cli doctor --json
-          global-dharma-sharing-cli gateway-smoke --timeout-seconds 120 --json
+          global-dharma-sharing-cli runtime-smoke --json
           global-dharma-sharing-cli miniapp-smoke --json
 
       - name: Build Windows release app
@@ -647,26 +598,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Sync Windows OpenClaw assets into release build
-        if: matrix.target == 'windows'
-        shell: bash
-        run: ../.github/scripts/sync-openclaw-build-assets-v2.sh windows-x64 build/windows/x64/runner/Release/data/flutter_assets
-
       - name: Build Windows package CLI
         if: matrix.target == 'windows'
         shell: bash
         run: ../.github/scripts/build-desktop-cli.sh windows
 
-      - name: Verify Windows OpenClaw bundle in release build
-        if: matrix.target == 'windows'
-        shell: bash
-        run: ../.github/scripts/assert-openclaw-bundle.sh build/windows/x64/runner/Release windows-x64
-
       - name: Run Windows package CLI smoke
         if: matrix.target == 'windows'
         shell: pwsh
         run: |
-          .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe gateway-smoke --timeout-seconds 120 --json
+          .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe runtime-smoke --json
           .\build\windows\x64\runner\Release\global_dharma_sharing_cli.exe miniapp-smoke --json
 
       - name: Package Windows installer
@@ -699,13 +640,13 @@ jobs:
           if ($mahayanaStatus.modelProvider -ne "first-party-dacheng") { throw "Unexpected Mahayana provider" }
           if ($mahayanaStatus.remoteAgentEnabled -ne $false) { throw "Remote Mahayana agent must stay disabled" }
           & $cli doctor --json
-          & $cli gateway-smoke --timeout-seconds 120 --json
+          & $cli runtime-smoke --json
           & $cli miniapp-smoke --json
 
       - name: Upload desktop installer artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: desktop-${{ matrix.target }}-${{ steps.openclaw.outputs.arch }}
+          name: desktop-${{ matrix.target }}-${{ steps.desktop.outputs.arch }}
           path: desktop-artifacts/*
           if-no-files-found: error
           retention-days: 30
@@ -765,11 +706,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      - name: Set up Node.js for OpenClaw vendoring
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
       - name: Enable Flutter macOS desktop target
         run: flutter config --enable-macos-desktop
 
@@ -821,18 +757,6 @@ jobs:
       - name: Stabilize generated desktop plugin bindings
         shell: bash
         run: scripts/fix_desktop_generated_plugins.sh
-
-      - name: Vendor embedded OpenClaw runtime
-        shell: bash
-        env:
-          OPENCLAW_VERSION: ${{ env.OPENCLAW_VERSION }}
-        run: |
-          set -euo pipefail
-          case "$(uname -m)" in
-            arm64) platform="macos-arm64" ;;
-            *) platform="macos-x64" ;;
-          esac
-          scripts/build_openclaw_desktop_bundle.sh "$platform"
 
       - name: Archive, export, and upload macOS App Store package
         shell: bash
@@ -895,8 +819,6 @@ jobs:
           Desktop installers for global_dharma_sharing $APP_VERSION.
 
           Source commit: $SOURCE_SHA
-          OpenClaw version: ${OPENCLAW_VERSION}
-
           Artifacts include:
           - macOS DMG and ZIP
           - Linux DEB and TAR.GZ

@@ -8,6 +8,8 @@ on:
       - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
       - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
+      - scripts/check-tauri-production-contract.mjs
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
       - third_party/mahayana/mahayana-rs/Cargo.toml
@@ -26,6 +28,8 @@ on:
       - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
       - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
+      - scripts/check-tauri-production-contract.mjs
       - frontend/pnpm-lock.yaml
       - frontend/pnpm-workspace.yaml
       - third_party/mahayana/mahayana-rs/Cargo.toml
@@ -57,6 +61,8 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /apps/fabushi-tauri/**
+            /contracts/automation/cross-platform-journeys.json
+            /scripts/check-tauri-production-contract.mjs
             /third_party/mahayana/**
 
       - name: Set up Rust
@@ -73,6 +79,9 @@ jobs:
 
       - name: Verify formatting
         run: cargo fmt --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml -- --check
+
+      - name: Verify production asset and Runtime wiring
+        run: node scripts/check-tauri-production-contract.mjs
 
       - name: Test command contract under execution budget
         shell: bash
@@ -114,7 +123,9 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /apps/fabushi-tauri/**
+            /contracts/automation/cross-platform-journeys.json
             /frontend/**
+            /scripts/check-tauri-production-contract.mjs
             /third_party/mahayana/**
 
       - name: Enable pinned pnpm through Corepack
@@ -136,6 +147,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify production asset and Runtime wiring
+        run: node scripts/check-tauri-production-contract.mjs
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -143,7 +157,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: tauri-host-macos-v3
+          shared-key: tauri-host-macos-v4-desktop-full
           cache-all-crates: true
 
       - name: Build the real desktop executable under budget
@@ -158,8 +172,8 @@ jobs:
             --features desktop
           elapsed="$(( $(date +%s) - started_at ))"
           echo "macOS Tauri executable build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 300 ]; then
-            echo "macOS Tauri executable exceeded the 300-second build budget." >&2
+          if [ "$elapsed" -gt 480 ]; then
+            echo "macOS Tauri executable exceeded the 480-second cold build budget." >&2
             exit 1
           fi
 
@@ -167,13 +181,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -x third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
-          file third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
+          test -x third_party/mahayana/mahayana-rs/target/ci/fabushi
+          file third_party/mahayana/mahayana-rs/target/ci/fabushi
 
       - name: Upload the macOS Tauri executable
         uses: actions/upload-artifact@v7
         with:
           name: fabushi-tauri-macos-ci
-          path: third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
+          path: third_party/mahayana/mahayana-rs/target/ci/fabushi
           if-no-files-found: error
           retention-days: 3

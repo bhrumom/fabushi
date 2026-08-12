@@ -85,13 +85,18 @@ for (const domain of compiledDomains) {
   }
 }
 
-const featureCatalog = await fs.readFile(
-  path.join(root, manifest.featureCatalogPath),
-  "utf8",
+const featureCatalog = JSON.parse(
+  await fs.readFile(path.join(root, manifest.featureCatalogPath), "utf8"),
 );
+if (featureCatalog.schemaVersion !== 1 || !Array.isArray(featureCatalog.features)) {
+  errors.push("invalid cross-platform E2E feature catalog");
+}
 const featureIds = new Set(
-  [...featureCatalog.matchAll(/\bid:\s*"([^"]+)"/g)].map((match) => match[1]),
+  (featureCatalog.features ?? []).map((feature) => feature.id),
 );
+if (featureIds.size !== (featureCatalog.features ?? []).length) {
+  errors.push("cross-platform E2E feature catalog contains duplicate ids");
+}
 for (const domain of compiledDomains) {
   for (const featureId of domain.e2eFeatureIds) {
     if (!featureIds.has(featureId)) {

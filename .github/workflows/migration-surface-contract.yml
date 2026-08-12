@@ -7,7 +7,9 @@ on:
       - fabushi/lib/screens/**
       - fabushi/lib/services/**
       - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
       - contracts/migration/legacy-surface.json
+      - contracts/automation/cross-platform-journeys.json
       - scripts/check-migration-surface.mjs
       - .github/workflows/migration-surface-contract.yml
   push:
@@ -38,6 +40,7 @@ jobs:
             /fabushi/lib/screens/**
             /fabushi/lib/services/**
             /frontend/packages/shared/src/mahayana-host-features.ts
+            /contracts/automation/cross-platform-journeys.json
             /contracts/migration/legacy-surface.json
             /scripts/check-migration-surface.mjs
 
