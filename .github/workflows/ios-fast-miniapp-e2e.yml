@@ -74,28 +74,8 @@ jobs:
           python3 fabushi/tool/ios_fast_e2e/find_native_shell_artifact.py \
             --prefix "$ARTIFACT_PREFIX"
 
-      - name: Cancel redundant full packaged canary for this head
-        if: github.event_name == 'pull_request' && steps.shell.outputs.hit == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&per_page=100" \
-              --jq ".workflow_runs[] | select(.name == \"iOS External MiniApp E2E\" and .head_sha == \"$HEAD_SHA\" and (.status == \"queued\" or .status == \"in_progress\")) | .id" \
-              > "$RUNNER_TEMP/full-ios-runs.txt"
-            while IFS= read -r run_id; do
-              [ -n "$run_id" ] || continue
-              echo "Cancelling redundant full iOS run $run_id because compatible native shell exists"
-              gh api --method POST "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/cancel" || true
-            done < "$RUNNER_TEMP/full-ios-runs.txt"
-            sleep 2
-          done
-
   fast-e2e:
-    name: iOS full user journey (hot-sync)
+    name: iOS full user journey (bundle-inject)
     needs: qualify
     if: needs.qualify.outputs.hit == 'true'
     runs-on: macos-15
@@ -219,7 +199,7 @@ jobs:
             '${{ needs.qualify.outputs.producer_sha }}' '${{ needs.qualify.outputs.name }}' \
             | tee artifacts/performance/native-shell.txt
 
-      - name: Setup Flutter for Dart hot-sync
+      - name: Setup Flutter for Dart bundle injection
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -309,7 +289,7 @@ jobs:
           plugin_root="$app_home/Library/Application Support/mahayana-runtime/codex/plugins/$PLUGIN_ID"
           test ! -e "$plugin_root"
 
-      - name: Hot-sync current Dart code and launch logged-out app
+      - name: Inject current Dart bundle and launch logged-out app
         shell: bash
         env:
           IOS_UDID: ${{ steps.simulator.outputs.udid }}
@@ -333,9 +313,9 @@ jobs:
           while time.monotonic()<deadline:
               if ready.is_file(): print(ready.read_text(),end=''); raise SystemExit(0)
               try: os.kill(pid,0)
-              except OSError: raise SystemExit('flutter attach exited before app.started')
+              except OSError: raise SystemExit('Flutter bundle injection exited before control ready')
               time.sleep(.25)
-          raise SystemExit('flutter attach did not hot-sync current Dart within 180 seconds')
+          raise SystemExit('Flutter bundle injection did not boot current Dart within 180 seconds')
           PY
 
       - name: Prove app starts logged out with no preinstalled target
@@ -470,9 +450,15 @@ jobs:
             echo '### iOS fast MiniApp user journey'
             echo '- Native Xcode build: skipped (compatible Runner shell)'
             echo '- Native shell producer: ${{ needs.qualify.outputs.producer_sha }}'
-            [ -f artifacts/performance/flutter-attach.json ] && echo "- Dart hot-sync: $(cat artifacts/performance/flutter-attach.json)"
-            [ -f artifacts/performance/simulator-boot.json ] && echo "- Simulator boot: $(cat artifacts/performance/simulator-boot.json)"
-            [ -f artifacts/ios/journey-result.json ] && echo "- Journey: $(cat artifacts/ios/journey-result.json)"
+            if [ -f artifacts/performance/flutter-attach.json ]; then
+              echo "- Dart bundle injection: $(cat artifacts/performance/flutter-attach.json)"
+            fi
+            if [ -f artifacts/performance/simulator-boot.json ]; then
+              echo "- Simulator boot: $(cat artifacts/performance/simulator-boot.json)"
+            fi
+            if [ -f artifacts/ios/journey-result.json ]; then
+              echo "- Journey: $(cat artifacts/ios/journey-result.json)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
