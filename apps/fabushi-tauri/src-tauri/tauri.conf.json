@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.ombhrum.fabushi",
   "build": {
-    "frontendDist": "../ui"
+    "beforeDevCommand": "cd ../../../frontend && corepack pnpm --filter @fabushi/host dev",
+    "beforeBuildCommand": "cd ../../../frontend && corepack pnpm --filter @fabushi/host build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../../../frontend/apps/host/dist"
   },
   "app": {
     "withGlobalTauri": true,

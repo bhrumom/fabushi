@@ -4,8 +4,14 @@ on:
   pull_request:
     paths:
       - apps/fabushi-tauri/**
+      - frontend/apps/host/**
+      - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
+      - frontend/packages/shared/src/mahayana-host-features.ts
+      - frontend/pnpm-lock.yaml
+      - frontend/pnpm-workspace.yaml
       - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/Cargo.lock
       - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
@@ -16,8 +22,14 @@ on:
     branches: [main]
     paths:
       - apps/fabushi-tauri/**
+      - frontend/apps/host/**
+      - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
+      - frontend/packages/shared/src/mahayana-host-features.ts
+      - frontend/pnpm-lock.yaml
+      - frontend/pnpm-workspace.yaml
       - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/Cargo.lock
       - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
@@ -75,8 +87,8 @@ jobs:
             --features headless
           elapsed="$(( $(date +%s) - started_at ))"
           echo "Headless Tauri command contract elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 90 ]; then
-            echo "Headless Tauri contract exceeded the 90-second cold budget." >&2
+          if [ "$elapsed" -gt 60 ]; then
+            echo "Headless Tauri contract exceeded the 60-second cold budget." >&2
             exit 1
           fi
 
@@ -102,7 +114,27 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /apps/fabushi-tauri/**
+            /frontend/**
             /third_party/mahayana/**
+
+      - name: Enable pinned pnpm through Corepack
+        run: corepack enable
+
+      - name: Install the standalone React Host from lockfile
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the React Host consumed by Tauri
+        working-directory: frontend
+        run: |
+          started_at="$(date +%s)"
+          pnpm --filter @fabushi/host build
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "Standalone React Host build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 30 ]; then
+            echo "Standalone React Host exceeded the 30-second build budget." >&2
+            exit 1
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,10 +146,34 @@ jobs:
           shared-key: tauri-host-macos-v3
           cache-all-crates: true
 
-      - name: Compile the real desktop shell
-        run: >-
-          cargo check
-          --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
-          --profile ci
-          --locked
-          --features desktop
+      - name: Build the real desktop executable under budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date +%s)"
+          cargo build \
+            --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml \
+            --profile ci \
+            --locked \
+            --features desktop
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "macOS Tauri executable build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 300 ]; then
+            echo "macOS Tauri executable exceeded the 300-second build budget." >&2
+            exit 1
+          fi
+
+      - name: Verify and publish the executable evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
+          file third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
+
+      - name: Upload the macOS Tauri executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-tauri-macos-ci
+          path: third_party/mahayana/mahayana-rs/target/ci/fabushi-tauri
+          if-no-files-found: error
+          retention-days: 3

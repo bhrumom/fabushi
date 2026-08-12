@@ -37,7 +37,7 @@ async function runJourneyStep(
 test("Mahayana Host 的所有声明功能可由目录驱动的用户操作完成", async ({
   page,
 }) => {
-  await page.goto("/host");
+  await page.goto("/");
 
   for (const feature of mahayanaHostFeatures) {
     await test.step(`${feature.id}: ${feature.label}`, async () => {
