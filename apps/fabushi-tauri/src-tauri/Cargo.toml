@@ -1,0 +1,31 @@
+[package]
+name = "fabushi-tauri"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "fabushi_tauri_lib"
+crate-type = ["rlib", "cdylib", "staticlib"]
+doctest = false
+
+[[bin]]
+name = "fabushi"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:tauri", "tauri/wry"]
+headless = []
+
+[dependencies]
+mahayana-core = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-core" }
+mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host", default-features = false, features = ["local-only"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", default-features = false, optional = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

@@ -1,0 +1,106 @@
+name: Tauri Host fast checks
+
+on:
+  pull_request:
+    paths:
+      - apps/fabushi-tauri/**
+      - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-core/**
+      - third_party/mahayana/mahayana-rs/mahayana-runtime/**
+      - .github/workflows/tauri-host-fast-checks.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/fabushi-tauri/**
+      - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - .github/workflows/tauri-host-fast-checks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: tauri-host-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  headless-contract:
+    name: Headless Tauri command contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout shell and Rust core
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /apps/fabushi-tauri/**
+            /third_party/mahayana/**
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Restore Tauri Host Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/fabushi-tauri/src-tauri -> target
+          shared-key: tauri-host-headless-v1
+          cache-all-crates: true
+
+      - name: Verify formatting
+        run: cargo fmt --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml -- --check
+
+      - name: Test command contract under execution budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date +%s)"
+          cargo test \
+            --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml \
+            --no-default-features \
+            --features headless
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "Headless Tauri command contract elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 300 ]; then
+            echo "Headless Tauri contract exceeded the 300-second cold budget." >&2
+            exit 1
+          fi
+
+      - name: Upload generated application lockfile
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-tauri-cargo-lock
+          path: apps/fabushi-tauri/src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+
+  desktop-compile:
+    name: macOS Tauri desktop compile
+    runs-on: macos-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout shell and Rust core
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /apps/fabushi-tauri/**
+            /third_party/mahayana/**
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore macOS Tauri Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/fabushi-tauri/src-tauri -> target
+          shared-key: tauri-host-macos-v1
+          cache-all-crates: true
+
+      - name: Compile the real desktop shell
+        run: >-
+          cargo check
+          --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
+          --features desktop
