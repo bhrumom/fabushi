@@ -55,8 +55,8 @@ jobs:
       - name: Restore Tauri Host Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/fabushi-tauri/src-tauri -> target
-          shared-key: tauri-host-headless-v2
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: tauri-host-headless-v3
           cache-all-crates: true
 
       - name: Verify formatting
@@ -69,22 +69,25 @@ jobs:
           started_at="$(date +%s)"
           cargo test \
             --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml \
+            --profile ci \
+            --locked \
             --no-default-features \
             --features headless
           elapsed="$(( $(date +%s) - started_at ))"
           echo "Headless Tauri command contract elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 300 ]; then
-            echo "Headless Tauri contract exceeded the 300-second cold budget." >&2
+          if [ "$elapsed" -gt 90 ]; then
+            echo "Headless Tauri contract exceeded the 90-second cold budget." >&2
             exit 1
           fi
 
-      - name: Upload generated application lockfile
-        uses: actions/upload-artifact@v7
-        with:
-          name: fabushi-tauri-cargo-lock
-          path: apps/fabushi-tauri/src-tauri/Cargo.lock
-          if-no-files-found: error
-          retention-days: 3
+      - name: Verify the shared Rust dependency graph is locked
+        run: >-
+          cargo metadata
+          --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
+          --locked
+          --no-deps
+          --format-version 1
+          > /dev/null
 
   desktop-compile:
     name: macOS Tauri desktop compile
@@ -107,12 +110,14 @@ jobs:
       - name: Restore macOS Tauri Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/fabushi-tauri/src-tauri -> target
-          shared-key: tauri-host-macos-v2
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: tauri-host-macos-v3
           cache-all-crates: true
 
       - name: Compile the real desktop shell
         run: >-
           cargo check
           --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
+          --profile ci
+          --locked
           --features desktop

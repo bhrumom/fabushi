@@ -33,8 +33,8 @@ use mahayana_runtime_core::RuntimeBuilder;
 use mahayana_runtime_core::RuntimeError;
 use mahayana_social::MahayanaSocialConversationProvider;
 use mahayana_telegram::TelegramConversationProvider;
-use serde_json::json;
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -86,12 +86,19 @@ impl From<RuntimeError> for HostError {
 #[derive(Clone)]
 pub struct MahayanaHost {
     runtime: Arc<MahayanaRuntime>,
+    product_client: MahayanaProductClient,
 }
 
 impl MahayanaHost {
     pub fn create(config: HostCreateConfig) -> Result<Self, HostError> {
+        let product_client = config
+            .product_session_path
+            .clone()
+            .map(|path| MahayanaProductClient::new("https://api.ombhrum.com", path))
+            .unwrap_or_default();
         Ok(Self {
-            runtime: Arc::new(build_runtime(config)?),
+            runtime: Arc::new(build_runtime(config, product_client.clone())?),
+            product_client,
         })
     }
 
@@ -123,9 +130,30 @@ impl MahayanaHost {
             payload,
         })
     }
+
+    /// Execute a first-party account, social, or marketplace request while
+    /// keeping bearer and refresh credentials inside Rust-owned storage.
+    pub fn product_execute(
+        &self,
+        request_type: &str,
+        request: &serde_json::Value,
+    ) -> Result<serde_json::Value, HostError> {
+        self.product_client
+            .execute(request_type, request)
+            .map_err(|error| HostError::new(error.to_string()))
+    }
+
+    /// Revoke and remove the Rust-owned product session without exposing any
+    /// bearer or refresh credential to the host UI.
+    pub fn clear_session(&self) -> Result<serde_json::Value, HostError> {
+        self.product_execute("mahayana.auth.logout", &serde_json::json!({}))
+    }
 }
 
-fn build_runtime(create: HostCreateConfig) -> Result<MahayanaRuntime, HostError> {
+fn build_runtime(
+    create: HostCreateConfig,
+    product_client: MahayanaProductClient,
+) -> Result<MahayanaRuntime, HostError> {
     let runtime_config = create.runtime.clone();
     if runtime_config.remote_agent_enabled {
         return Err(RuntimeError::RemoteAgentForbidden.into());
@@ -142,15 +170,10 @@ fn build_runtime(create: HostCreateConfig) -> Result<MahayanaRuntime, HostError>
             BuildProfile::MobileEmbedded => HostPlatform::Mobile,
             BuildProfile::WebWasm => HostPlatform::Web,
         });
-    let product_client = create
-        .product_session_path
-        .map(|path| MahayanaProductClient::new("https://api.ombhrum.com", path))
-        .unwrap_or_default();
-    let configured_mini_apps = if create.mini_apps.is_empty() {
-        discover_mini_apps(&product_client).unwrap_or_default()
-    } else {
-        create.mini_apps.clone()
-    };
+    // Runtime construction is intentionally network-free. Remote marketplace
+    // discovery belongs to an explicit product refresh command, not process
+    // startup or every unit test. Official bundled MiniApps are merged below.
+    let configured_mini_apps = create.mini_apps.clone();
     let mini_apps = merge_official_mini_apps(configured_mini_apps);
     let session_token = product_client.session_token().ok();
     let mut builder = RuntimeBuilder::new(runtime_config.clone());
@@ -290,6 +313,7 @@ fn merge_official_mini_apps(
     definitions.into_values().collect()
 }
 
+#[cfg(test)]
 fn bundled_marketplace_plugin_ids(
     marketplace_root: Option<&Path>,
     mini_apps: &[MiniAppDefinition],
@@ -319,29 +343,6 @@ fn bundled_marketplace_plugin_ids(
         }
     }
     Ok(plugin_ids)
-}
-
-fn discover_mini_apps(client: &MahayanaProductClient) -> Option<Vec<MiniAppDefinition>> {
-    let registry = client
-        .execute("mahayana.miniapps.registry", &json!({}))
-        .ok()?;
-    let plugins = registry.get("plugins")?.as_array()?;
-    let definitions = plugins
-        .iter()
-        .filter_map(|plugin| {
-            let id = plugin.get("id")?.as_str()?.trim();
-            let title = plugin.get("title")?.as_str()?.trim();
-            if id.is_empty() || title.is_empty() {
-                return None;
-            }
-            Some(MiniAppDefinition {
-                plugin_id: id.to_string(),
-                title: title.to_string(),
-                pinned: false,
-            })
-        })
-        .collect::<Vec<_>>();
-    (!definitions.is_empty()).then_some(definitions)
 }
 
 #[cfg(feature = "desktop-full")]
@@ -386,7 +387,21 @@ mod tests {
     use super::*;
 
     fn test_config() -> HostCreateConfig {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "mahayana-host-test-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("create isolated Host root");
         HostCreateConfig {
+            runtime: RuntimeConfig {
+                data_dir: Some(root.join("runtime")),
+                ..RuntimeConfig::default()
+            },
+            product_session_path: Some(root.join("product-session.json")),
             mini_apps: vec![MiniAppDefinition {
                 plugin_id: "test-miniapp".to_string(),
                 title: "Test MiniApp".to_string(),

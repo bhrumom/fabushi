@@ -128,15 +128,25 @@ pub enum MessageRole {
 #[serde(tag = "type")]
 pub enum HostEvent {
     #[serde(rename = "host.ready")]
-    HostReady {
-        timestamp: String,
-        info: HostInfo,
-    },
+    HostReady { timestamp: String, info: HostInfo },
     #[serde(rename = "chat.message")]
     ChatMessage {
         timestamp: String,
         role: MessageRole,
         text: String,
+        #[serde(
+            rename = "operationId",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        operation_id: Option<String>,
+    },
+    #[serde(rename = "chat.delta")]
+    ChatDelta {
+        timestamp: String,
+        #[serde(rename = "operationId")]
+        operation_id: String,
+        delta: String,
     },
     #[serde(rename = "marketplace.installed")]
     MarketplaceInstalled {
@@ -182,6 +192,20 @@ pub enum HostEvent {
         #[serde(rename = "operationId")]
         operation_id: String,
     },
+    #[serde(rename = "operation.completed")]
+    OperationCompleted {
+        timestamp: String,
+        #[serde(rename = "operationId")]
+        operation_id: String,
+    },
+    #[serde(rename = "operation.failed")]
+    OperationFailed {
+        timestamp: String,
+        #[serde(rename = "operationId")]
+        operation_id: String,
+        code: String,
+        message: String,
+    },
     #[serde(rename = "session.cleared")]
     SessionCleared { timestamp: String },
     #[serde(rename = "host.closed")]
@@ -193,12 +217,15 @@ impl HostEvent {
         match self {
             Self::HostReady { .. } => "host.ready",
             Self::ChatMessage { .. } => "chat.message",
+            Self::ChatDelta { .. } => "chat.delta",
             Self::MarketplaceInstalled { .. } => "marketplace.installed",
             Self::MiniAppOpened { .. } => "miniapp.opened",
             Self::ApprovalRequested { .. } => "approval.requested",
             Self::ApprovalResolved { .. } => "approval.resolved",
             Self::OperationStarted { .. } => "operation.started",
             Self::OperationInterrupted { .. } => "operation.interrupted",
+            Self::OperationCompleted { .. } => "operation.completed",
+            Self::OperationFailed { .. } => "operation.failed",
             Self::SessionCleared { .. } => "session.cleared",
             Self::HostClosed { .. } => "host.closed",
         }

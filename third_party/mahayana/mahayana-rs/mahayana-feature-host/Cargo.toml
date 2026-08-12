@@ -10,16 +10,19 @@ publish = false
 doctest = false
 
 [features]
-default = ["local-only"]
-desktop-full = ["mahayana-host/desktop-full"]
-mobile-embedded = ["mahayana-host/mobile-embedded"]
-linux-shared = ["mahayana-host/linux-shared"]
-web-wasm = ["mahayana-host/web-wasm"]
-local-only = ["mahayana-host/local-only"]
-remote-model-provider = ["mahayana-host/remote-model-provider"]
-telemetry = ["mahayana-host/telemetry"]
+default = ["production", "local-only"]
+production = ["dep:mahayana-core", "dep:mahayana-host", "dep:serde_json"]
+desktop-full = ["production", "mahayana-host/desktop-full"]
+mobile-embedded = ["production", "mahayana-host/mobile-embedded"]
+linux-shared = ["production", "mahayana-host/linux-shared"]
+web-wasm = ["production", "mahayana-host/web-wasm"]
+local-only = ["production", "mahayana-host/local-only"]
+remote-model-provider = ["production", "mahayana-host/remote-model-provider"]
+telemetry = ["production", "mahayana-host/telemetry"]
 
 [dependencies]
-mahayana-host = { workspace = true, default-features = false }
+mahayana-core = { workspace = true, optional = true }
+mahayana-host = { workspace = true, default-features = false, optional = true }
 mahayana-host-protocol.workspace = true
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true

@@ -43,6 +43,12 @@ export type RuntimeEvent =
       type: "chat.message";
       role: "user" | "assistant";
       text: string;
+      operationId?: string;
+    })
+  | (EventBase & {
+      type: "chat.delta";
+      operationId: string;
+      delta: string;
     })
   | (EventBase & {
       type: "marketplace.installed";
@@ -69,6 +75,13 @@ export type RuntimeEvent =
       interruptible: boolean;
     })
   | (EventBase & { type: "operation.interrupted"; operationId: string })
+  | (EventBase & { type: "operation.completed"; operationId: string })
+  | (EventBase & {
+      type: "operation.failed";
+      operationId: string;
+      code: string;
+      message: string;
+    })
   | (EventBase & { type: "session.cleared" })
   | (EventBase & { type: "host.closed" });
 

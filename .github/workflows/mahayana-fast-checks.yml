@@ -69,13 +69,21 @@ jobs:
           --no-default-features
           --features local-only
 
-      - name: Test deterministic feature Host
+      - name: Test deterministic feature Host without the production dependency graph
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+
+      - name: Test production feature adapters over the cached direct Host
         run: >-
           cargo test
           -p mahayana-feature-host
           --profile ci
           --no-default-features
           --features local-only
+          production_uses_the_real_runtime_and_rust_owned_session_store
 
       - name: Check minimal embedded FFI boundary
         run: >-

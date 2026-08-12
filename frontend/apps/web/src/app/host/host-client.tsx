@@ -18,6 +18,7 @@ import type {
   RuntimeCommand,
 } from "../../lib/mahayana-host/contracts";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
+import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
 
 const miniAppId = "global-dharma";
@@ -42,7 +43,11 @@ export default function HostClient() {
   const [hostStatus, setHostStatus] = useState("initializing");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<
-    Array<{ role: "user" | "assistant"; text: string }>
+    Array<{
+      role: "user" | "assistant";
+      text: string;
+      operationId?: string;
+    }>
   >([]);
   const [marketplaceState, setMarketplaceState] = useState("not-installed");
   const [openedMiniApp, setOpenedMiniApp] = useState<string | null>(null);
@@ -71,11 +76,51 @@ export default function HostClient() {
           pass("runtime.boot");
           break;
         case "chat.message":
-          setMessages((current) => [
-            ...current,
-            { role: event.role, text: event.text },
-          ]);
+          setMessages((current) => {
+            if (event.role === "assistant" && event.operationId) {
+              const index = current.findIndex(
+                (message) => message.operationId === event.operationId,
+              );
+              if (index >= 0) {
+                return current.map((message, messageIndex) =>
+                  messageIndex === index
+                    ? { ...message, text: event.text }
+                    : message,
+                );
+              }
+            }
+            return [
+              ...current,
+              {
+                role: event.role,
+                text: event.text,
+                operationId: event.operationId,
+              },
+            ];
+          });
           if (event.role === "assistant") pass("chat.send");
+          break;
+        case "chat.delta":
+          setMessages((current) => {
+            const index = current.findIndex(
+              (message) => message.operationId === event.operationId,
+            );
+            if (index < 0) {
+              return [
+                ...current,
+                {
+                  role: "assistant",
+                  text: event.delta,
+                  operationId: event.operationId,
+                },
+              ];
+            }
+            return current.map((message, messageIndex) =>
+              messageIndex === index
+                ? { ...message, text: `${message.text}${event.delta}` }
+                : message,
+            );
+          });
           break;
         case "marketplace.installed":
           setMarketplaceState("installed");
@@ -105,6 +150,21 @@ export default function HostClient() {
           setOperationState("interrupted");
           pass("operation.interrupt");
           break;
+        case "operation.completed":
+          setActiveOperationId((current) =>
+            current === event.operationId ? null : current,
+          );
+          setOperationState((current) =>
+            current === "running" ? "completed" : current,
+          );
+          break;
+        case "operation.failed":
+          setActiveOperationId((current) =>
+            current === event.operationId ? null : current,
+          );
+          setOperationState("failed");
+          setError(`${event.code}: ${event.message}`);
+          break;
         case "session.cleared":
           setSessionState("cleared");
           pass("session.clear");
@@ -115,8 +175,16 @@ export default function HostClient() {
       }
     });
 
+    const configuredMode = process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE;
+    const mode =
+      configuredMode === "production" || configuredMode === "test"
+        ? configuredMode
+        : isTauriMahayanaHostAvailable()
+          ? "production"
+          : "test";
+
     void transport
-      .initialize({ profileId: "fast-e2e", mode: "test" })
+      .initialize({ profileId: "default", mode })
       .catch((cause: unknown) => {
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
