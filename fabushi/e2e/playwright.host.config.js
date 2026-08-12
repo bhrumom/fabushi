@@ -15,14 +15,15 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://127.0.0.1:4173",
+    // GitHub's Ubuntu image already ships Google Chrome. Reusing it removes the
+    // 20+ second Playwright container pull while keeping the browser version
+    // explicit in the runner image release metadata.
+    channel: process.env.CI ? "chrome" : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
   },
   webServer: {
-    // Run Next directly from the package installed by the pinned pnpm workspace.
-    // Pin both the executable and working directory so Playwright's container
-    // package manager cannot change startup behavior.
     command:
       "cd ../../frontend/apps/web && node ./node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173/host",
