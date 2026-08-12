@@ -71,6 +71,7 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /apps/fabushi-tauri/src-tauri/**
             /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
@@ -154,6 +155,7 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /apps/fabushi-tauri/src-tauri/**
             /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**
@@ -240,6 +242,7 @@ jobs:
           sparse-checkout: |
             /fabushi/**
             /native/telegram-*/**
+            /apps/fabushi-tauri/src-tauri/**
             /third_party/**
             !/fabushi/assets/built_in/**
             !/fabushi/web/assets/built_in/**

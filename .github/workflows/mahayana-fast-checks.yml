@@ -36,6 +36,7 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /apps/fabushi-tauri/src-tauri/**
             /third_party/mahayana/**
 
       - name: Set up Rust
