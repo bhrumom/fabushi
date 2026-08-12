@@ -45,6 +45,8 @@ pub enum FeatureCommand {
         #[serde(rename = "requestId")]
         request_id: String,
         text: String,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
     },
     #[serde(rename = "marketplace.install")]
     MarketplaceInstall {
@@ -160,6 +162,8 @@ pub enum HostEvent {
         timestamp: String,
         #[serde(rename = "miniAppId")]
         mini_app_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        html: Option<String>,
     },
     #[serde(rename = "approval.requested")]
     ApprovalRequested {

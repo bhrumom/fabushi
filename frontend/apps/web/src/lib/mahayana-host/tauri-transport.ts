@@ -1,5 +1,6 @@
 import type {
   ApprovalResolution,
+  AuthState,
   CommandAccepted,
   HostConfig,
   HostInfo,
@@ -69,6 +70,21 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
 
   execute(command: RuntimeCommand): Promise<CommandAccepted> {
     return nativeInvoke<CommandAccepted>("feature_host_execute", { command });
+  }
+
+  authStatus(): Promise<AuthState> {
+    return nativeInvoke<AuthState>("feature_host_auth_status");
+  }
+
+  passwordLogin(username: string, password: string): Promise<AuthState> {
+    return nativeInvoke<AuthState>("feature_host_password_login", {
+      username,
+      password,
+    });
+  }
+
+  logout(): Promise<AuthState> {
+    return nativeInvoke<AuthState>("feature_host_logout");
   }
 
   interrupt(operationId: string): Promise<void> {

@@ -1,6 +1,7 @@
 import journeyContract from "../../../../contracts/automation/cross-platform-journeys.json";
 
 export type MahayanaHostJourneyStep =
+  | { action: "login"; username: string; password: string }
   | { action: "expectReady" }
   | { action: "sendChat"; text: string; expectedReply: string }
   | { action: "installMiniApp"; miniAppId: string }
@@ -31,6 +32,7 @@ export const mahayanaHostJourneyContract =
 export const mahayanaHostFeatures = mahayanaHostJourneyContract.features;
 
 export type MahayanaHostFeatureId =
+  | "auth.login"
   | "runtime.boot"
   | "chat.send"
   | "marketplace.install"

@@ -649,6 +649,15 @@
   margin: 0;
 }
 
+.miniAppFrame {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 230px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 9px;
+  background: #101722;
+}
+
 .coverageTitle span {
   color: var(--muted);
   font-size: 10px;
@@ -840,6 +849,111 @@
   box-shadow: 0 30px 100px rgb(0 0 0 / 65%);
   text-align: center;
   animation: popIn .18s ease-out;
+}
+
+.loginDialog,
+.accountDialog {
+  width: min(420px, calc(100vw - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: linear-gradient(155deg, #20252f, #14171e 72%);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.58);
+  color: #f7f8fb;
+}
+
+.loginMark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #795df6, #4f8ff7);
+  font-size: 25px;
+  font-weight: 800;
+  box-shadow: 0 12px 34px rgba(91, 102, 246, 0.3);
+}
+
+.loginDialog > p {
+  margin: 5px 0 -8px;
+  color: #8e82ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.loginDialog h2,
+.accountDialog h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.loginDialog > small,
+.accountDialog p {
+  margin: -6px 0 8px;
+  color: #9da4b3;
+  line-height: 1.55;
+}
+
+.loginDialog label {
+  display: grid;
+  gap: 7px;
+  color: #b8beca;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.loginDialog input {
+  min-height: 44px;
+  border: 1px solid #343a47;
+  border-radius: 11px;
+  outline: none;
+  background: #10131a;
+  padding: 0 14px;
+  color: #f8f9fc;
+  font: inherit;
+}
+
+.loginDialog input:focus {
+  border-color: #7565ec;
+  box-shadow: 0 0 0 3px rgba(117, 101, 236, 0.14);
+}
+
+.loginDialog output {
+  color: #ff8f99;
+  font-size: 12px;
+}
+
+.loginDialog > button,
+.accountDialog button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #745ef1, #566ff4);
+  color: white;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.accountDialog {
+  align-items: center;
+  text-align: center;
+}
+
+.accountDialog .profileAvatar {
+  width: 58px;
+  height: 58px;
+  font-size: 22px;
+}
+
+.accountDialog button {
+  width: 100%;
+  background: #292e39;
+  color: #ff9ba3;
 }
 
 .approvalIcon {

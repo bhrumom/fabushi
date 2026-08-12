@@ -1,5 +1,6 @@
 import type {
   ApprovalResolution,
+  AuthState,
   CommandAccepted,
   HostConfig,
   HostInfo,
@@ -32,6 +33,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly approvals = new Set<string>();
   private status: HostStatus = "idle";
   private sequence = 0;
+  private auth: AuthState = { loggedIn: false, provider: "test" };
   private info: HostInfo = {
     runtimeVersion: "mahayana-mock-1.0.0",
     protocolVersion: "1",
@@ -100,6 +102,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           type: "miniapp.opened",
           timestamp: now(),
           miniAppId: command.miniAppId,
+          html: `<!doctype html><html lang="zh-CN"><body style="font:15px system-ui;background:#101722;color:#edf3ff;padding:20px"><h1>测试 MiniApp</h1><p>${command.miniAppId} 已在隔离容器中打开。</p></body></html>`,
         });
         return { requestId: command.requestId };
       case "capability.request": {
@@ -130,6 +133,29 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         this.emit({ type: "session.cleared", timestamp: now() });
         return { requestId: command.requestId };
     }
+  }
+
+  async authStatus(): Promise<AuthState> {
+    if (this.native) return this.native.authStatus();
+    return this.auth;
+  }
+
+  async passwordLogin(username: string, password: string): Promise<AuthState> {
+    if (this.native) return this.native.passwordLogin(username, password);
+    this.assertReady();
+    if (!username.trim() || !password) throw new Error("请输入账号和密码");
+    this.auth = {
+      loggedIn: true,
+      provider: "test",
+      user: { id: "fast-e2e-user", username, nickname: "本地测试用户" },
+    };
+    return this.auth;
+  }
+
+  async logout(): Promise<AuthState> {
+    if (this.native) return this.native.logout();
+    this.auth = { loggedIn: false, provider: "test" };
+    return this.auth;
   }
 
   async interrupt(operationId: string): Promise<void> {

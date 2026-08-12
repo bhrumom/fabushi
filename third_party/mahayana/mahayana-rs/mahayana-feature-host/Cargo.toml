@@ -11,7 +11,7 @@ doctest = false
 
 [features]
 default = ["production", "local-only"]
-production = ["dep:mahayana-core", "dep:mahayana-host", "dep:serde_json"]
+production = ["dep:mahayana-core", "dep:mahayana-host"]
 desktop-full = ["production", "mahayana-host/desktop-full"]
 mobile-embedded = ["production", "mahayana-host/mobile-embedded"]
 linux-shared = ["production", "mahayana-host/linux-shared"]
@@ -24,5 +24,5 @@ telemetry = ["production", "mahayana-host/telemetry"]
 mahayana-core = { workspace = true, optional = true }
 mahayana-host = { workspace = true, default-features = false, optional = true }
 mahayana-host-protocol.workspace = true
-serde_json = { workspace = true, optional = true }
+serde_json.workspace = true
 thiserror.workspace = true

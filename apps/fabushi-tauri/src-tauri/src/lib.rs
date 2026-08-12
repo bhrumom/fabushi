@@ -13,6 +13,8 @@ use mahayana_feature_host::FeatureHostController;
 use mahayana_host::HostCreateConfig;
 #[cfg(feature = "production-runtime")]
 use mahayana_host::MahayanaHost;
+#[cfg(feature = "production-runtime")]
+use mahayana_host::default_product_session_path;
 use mahayana_host_protocol::ApprovalResolution;
 use mahayana_host_protocol::CommandAccepted;
 use mahayana_host_protocol::FeatureCommand;
@@ -26,18 +28,29 @@ use serde_json::Value;
 use serde_json::json;
 #[cfg(feature = "production-runtime")]
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 #[cfg(feature = "production-runtime")]
 use std::time::Duration;
 
 #[cfg(feature = "production-runtime")]
 fn host_config_for_root(root: PathBuf, inherit_installed_plugins: bool) -> HostCreateConfig {
+    // Keep the account Keychain identity independent from Runtime/Codex data.
+    // This path is stable across app upgrades and avoids an older development
+    // signature's secrets ACL blocking the whole native startup.
+    let account_root = root.join("account");
+    let _ = std::fs::create_dir_all(&account_root);
+    let product_session_path = account_root.join("session.json");
+    let shared_session_path = default_product_session_path();
+    if !product_session_path.exists() && shared_session_path.is_file() {
+        let _ = std::fs::copy(&shared_session_path, &product_session_path);
+    }
     HostCreateConfig {
         runtime: RuntimeConfig {
             data_dir: Some(root.join("runtime")),
             ..RuntimeConfig::default()
         },
-        product_session_path: Some(root.join("product-session.json")),
+        product_session_path: Some(product_session_path),
         inherit_installed_plugins: Some(inherit_installed_plugins),
         ..HostCreateConfig::default()
     }
@@ -111,7 +124,7 @@ impl HostState {
 
 #[derive(Default)]
 pub struct FeatureHostState {
-    controller: Mutex<Option<FeatureHostController>>,
+    controller: Mutex<Option<Arc<FeatureHostController>>>,
 }
 
 impl FeatureHostState {
@@ -119,7 +132,7 @@ impl FeatureHostState {
         let controller = FeatureHostController::create(config, SurfacePlatform::Tauri)
             .map_err(|error| error.to_string())?;
         let info = controller.info();
-        *self.lock()? = Some(controller);
+        *self.lock()? = Some(Arc::new(controller));
         Ok(info)
     }
 
@@ -136,12 +149,28 @@ impl FeatureHostState {
         )
         .map_err(|error| error.to_string())?;
         let info = controller.info();
-        *self.lock()? = Some(controller);
+        *self.lock()? = Some(Arc::new(controller));
         Ok(info)
     }
 
     pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, String> {
         self.with_controller(|controller| controller.execute(command))
+    }
+
+    pub fn auth_status(&self) -> Result<serde_json::Value, String> {
+        self.with_controller(FeatureHostController::auth_status)
+    }
+
+    pub fn password_login(
+        &self,
+        username: String,
+        password: String,
+    ) -> Result<serde_json::Value, String> {
+        self.with_controller(|controller| controller.password_login(username, password))
+    }
+
+    pub fn logout(&self) -> Result<serde_json::Value, String> {
+        self.with_controller(FeatureHostController::logout)
     }
 
     pub fn receive(&self) -> Result<Option<HostEvent>, String> {
@@ -171,14 +200,17 @@ impl FeatureHostState {
             &FeatureHostController,
         ) -> Result<T, mahayana_feature_host::FeatureHostError>,
     ) -> Result<T, String> {
-        let guard = self.lock()?;
-        let controller = guard
+        let controller = self
+            .lock()?
             .as_ref()
+            .cloned()
             .ok_or_else(|| "Mahayana feature Host is not initialized".to_string())?;
-        operation(controller).map_err(|error| error.to_string())
+        operation(&controller).map_err(|error| error.to_string())
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<FeatureHostController>>, String> {
+    fn lock(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<Arc<FeatureHostController>>>, String> {
         self.controller
             .lock()
             .map_err(|_| "Mahayana feature Host state mutex is poisoned".to_string())
@@ -241,7 +273,20 @@ mod desktop {
             .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
         std::fs::create_dir_all(&root)
             .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
-        state.initialize_with_host_config(config, host_config_for_root(root, true))
+        // The signed desktop shell uses its bundled marketplace. Reading the
+        // mutable global Codex plugin registry here can block first paint on
+        // macOS and would make app behavior depend on unrelated developer
+        // plugins installed outside Fabushi.
+        let mut host_config = host_config_for_root(root, false);
+        let bundled_marketplace = app
+            .path()
+            .resource_dir()
+            .map_err(|error| format!("resolve Fabushi resources: {error}"))?
+            .join("fabushi-official");
+        if bundled_marketplace.join("marketplace.json").is_file() {
+            host_config.bundled_plugin_marketplace = Some(bundled_marketplace);
+        }
+        state.initialize_with_host_config(config, host_config)
     }
 
     #[tauri::command]
@@ -250,6 +295,25 @@ mod desktop {
         command: FeatureCommand,
     ) -> Result<CommandAccepted, String> {
         state.execute(command)
+    }
+
+    #[tauri::command]
+    async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+        state.auth_status()
+    }
+
+    #[tauri::command]
+    async fn feature_host_password_login(
+        state: State<'_, FeatureHostState>,
+        username: String,
+        password: String,
+    ) -> Result<Value, String> {
+        state.password_login(username, password)
+    }
+
+    #[tauri::command]
+    async fn feature_host_logout(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+        state.logout()
     }
 
     #[tauri::command]
@@ -294,6 +358,9 @@ mod desktop {
                 host_close,
                 feature_host_initialize,
                 feature_host_execute,
+                feature_host_auth_status,
+                feature_host_password_login,
+                feature_host_logout,
                 feature_host_receive,
                 feature_host_resolve_approval,
                 feature_host_interrupt,
@@ -332,6 +399,10 @@ mod tests {
     #[derive(Debug, Deserialize)]
     #[serde(tag = "action", rename_all = "camelCase")]
     enum JourneyStep {
+        Login {
+            username: String,
+            password: String,
+        },
         ExpectReady,
         SendChat {
             text: String,
@@ -456,6 +527,14 @@ mod tests {
                 request_sequence += 1;
                 let request_id = format!("contract-{request_sequence}");
                 match step {
+                    JourneyStep::Login { username, password } => {
+                        let session = state
+                            .password_login(username.clone(), password)
+                            .expect("password login");
+                        assert_eq!(session["loggedIn"], true);
+                        assert_eq!(session["user"]["username"], username);
+                        assert_eq!(state.auth_status().expect("auth status")["loggedIn"], true);
+                    }
                     JourneyStep::ExpectReady => {
                         let event = state.receive().expect("ready").expect("ready event");
                         assert!(matches!(event, HostEvent::HostReady { .. }));
@@ -465,7 +544,11 @@ mod tests {
                         expected_reply,
                     } => {
                         state
-                            .execute(FeatureCommand::ChatSend { request_id, text })
+                            .execute(FeatureCommand::ChatSend {
+                                request_id,
+                                text,
+                                agent_id: None,
+                            })
                             .expect("send chat");
                         assert!(drain_events(&state).iter().any(|event| matches!(
                             event,
