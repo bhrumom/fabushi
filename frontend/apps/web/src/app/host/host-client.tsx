@@ -1,11 +1,9 @@
-"use client";
-
 import {
   mahayanaHostFeatures,
   type MahayanaHostFeatureId,
   type MahayanaHostFeatureState,
 } from "@fabushi/shared";
-import {
+import React, {
   useEffect,
   useMemo,
   useRef,
@@ -175,7 +173,10 @@ export default function HostClient() {
       }
     });
 
-    const configuredMode = process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE;
+    const configuredMode =
+      typeof process !== "undefined"
+        ? process.env.NEXT_PUBLIC_MAHAYANA_HOST_MODE
+        : undefined;
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode

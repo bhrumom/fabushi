@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import HostClient from "./host-client";
+import HostClientEntry from "./host-client-entry";
 
 export const metadata: Metadata = {
   title: "Fabushi Mahayana Host",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function HostPage() {
-  return <HostClient />;
+  return <HostClientEntry />;
 }

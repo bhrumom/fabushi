@@ -34,12 +34,11 @@ export default defineConfig({
     video: "off",
   },
   webServer: {
-    // Run Next directly from the package installed by the pinned pnpm workspace.
-    // Pin both the executable and working directory so Playwright's container
-    // package manager cannot change startup behavior.
+    // Exercise the exact production bundle consumed by Tauri instead of a
+    // development-only transform pipeline.
     command:
-      "cd ../../frontend/apps/web && node ./node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 4173",
-    url: "http://127.0.0.1:4173/host",
+      "cd ../../frontend && corepack pnpm --filter @fabushi/host build && corepack pnpm --filter @fabushi/host preview:e2e",
+    url: "http://127.0.0.1:4173/",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: "pipe",

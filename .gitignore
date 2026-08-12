@@ -85,3 +85,6 @@ fabushi/web/.dev.vars
 **/*.p8
 fabushi/linux/telegram_runtime/
 fabushi/windows/telegram_runtime/
+
+# Generated standalone React Host bundle
+frontend/apps/host/dist/
