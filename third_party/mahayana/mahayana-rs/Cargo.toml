@@ -6,8 +6,10 @@ members = [
     "mahayana-agent-responses",
     "mahayana-conversation",
     "mahayana-core",
+    "mahayana-feature-host",
     "mahayana-ffi",
     "mahayana-host",
+    "mahayana-host-protocol",
     "mahayana-model",
     "mahayana-miniapp-bridge",
     "mahayana-miniapp-protocol",
@@ -62,7 +64,9 @@ mahayana-agent = { path = "mahayana-agent" }
 mahayana-agent-responses = { path = "mahayana-agent-responses" }
 mahayana-conversation = { path = "mahayana-conversation" }
 mahayana-core = { path = "mahayana-core" }
+mahayana-feature-host = { path = "mahayana-feature-host" }
 mahayana-host = { path = "mahayana-host" }
+mahayana-host-protocol = { path = "mahayana-host-protocol" }
 mahayana-model = { path = "mahayana-model" }
 mahayana-miniapp-bridge = { path = "mahayana-miniapp-bridge" }
 mahayana-miniapp-protocol = { path = "mahayana-miniapp-protocol" }

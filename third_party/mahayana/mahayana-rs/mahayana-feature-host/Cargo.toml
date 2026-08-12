@@ -1,0 +1,25 @@
+[package]
+name = "mahayana-feature-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Product-level feature controller over the direct Mahayana Runtime Host."
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+default = ["local-only"]
+desktop-full = ["mahayana-host/desktop-full"]
+mobile-embedded = ["mahayana-host/mobile-embedded"]
+linux-shared = ["mahayana-host/linux-shared"]
+web-wasm = ["mahayana-host/web-wasm"]
+local-only = ["mahayana-host/local-only"]
+remote-model-provider = ["mahayana-host/remote-model-provider"]
+telemetry = ["mahayana-host/telemetry"]
+
+[dependencies]
+mahayana-host = { workspace = true, default-features = false }
+mahayana-host-protocol.workspace = true
+thiserror.workspace = true
