@@ -122,6 +122,7 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /.agents/plugins/**
             /apps/fabushi-tauri/**
             /contracts/automation/cross-platform-journeys.json
             /frontend/**
