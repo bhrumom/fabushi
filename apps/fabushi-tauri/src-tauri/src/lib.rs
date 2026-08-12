@@ -1,12 +1,20 @@
 //! Thin Tauri shell around the direct `mahayana-host` Rust API.
 //!
-//! The state machine is independent from Tauri so ordinary pull requests can
-//! exercise every command without a window server or simulator. The desktop
-//! adapter below only converts Tauri inputs into the same typed state methods.
+//! Both state machines are independent from Tauri so ordinary pull requests
+//! exercise raw Runtime commands and complete product-level user journeys
+//! without a window server or simulator.
 
 use mahayana_core::RuntimeCommand;
+use mahayana_feature_host::FeatureHostController;
 use mahayana_host::HostCreateConfig;
 use mahayana_host::MahayanaHost;
+use mahayana_host_protocol::ApprovalResolution;
+use mahayana_host_protocol::CommandAccepted;
+use mahayana_host_protocol::FeatureCommand;
+use mahayana_host_protocol::HostConfig as FeatureHostConfig;
+use mahayana_host_protocol::HostEvent;
+use mahayana_host_protocol::HostInfo;
+use mahayana_host_protocol::SurfacePlatform;
 use serde_json::Value;
 use serde_json::json;
 use std::sync::Mutex;
@@ -76,9 +84,77 @@ impl HostState {
     }
 }
 
+#[derive(Default)]
+pub struct FeatureHostState {
+    controller: Mutex<Option<FeatureHostController>>,
+}
+
+impl FeatureHostState {
+    pub fn initialize(&self, config: FeatureHostConfig) -> Result<HostInfo, String> {
+        let controller = FeatureHostController::create(config, SurfacePlatform::Tauri)
+            .map_err(|error| error.to_string())?;
+        let info = controller.info();
+        *self.lock()? = Some(controller);
+        Ok(info)
+    }
+
+    pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, String> {
+        self.with_controller(|controller| controller.execute(command))
+    }
+
+    pub fn receive(&self) -> Result<Option<HostEvent>, String> {
+        self.with_controller(|controller| controller.receive())
+    }
+
+    pub fn resolve_approval(&self, resolution: ApprovalResolution) -> Result<(), String> {
+        self.with_controller(|controller| controller.resolve_approval(resolution))
+    }
+
+    pub fn interrupt(&self, operation_id: &str) -> Result<(), String> {
+        self.with_controller(|controller| controller.interrupt(operation_id))
+    }
+
+    pub fn close(&self) -> Result<(), String> {
+        let mut guard = self.lock()?;
+        if let Some(controller) = guard.as_ref() {
+            controller.close().map_err(|error| error.to_string())?;
+        }
+        *guard = None;
+        Ok(())
+    }
+
+    fn with_controller<T>(
+        &self,
+        operation: impl FnOnce(
+            &FeatureHostController,
+        ) -> Result<T, mahayana_feature_host::FeatureHostError>,
+    ) -> Result<T, String> {
+        let guard = self.lock()?;
+        let controller = guard
+            .as_ref()
+            .ok_or_else(|| "Mahayana feature Host is not initialized".to_string())?;
+        operation(controller).map_err(|error| error.to_string())
+    }
+
+    fn lock(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<FeatureHostController>>, String> {
+        self.controller
+            .lock()
+            .map_err(|_| "Mahayana feature Host state mutex is poisoned".to_string())
+    }
+}
+
 #[cfg(feature = "desktop")]
 mod desktop {
+    use super::FeatureHostState;
     use super::HostState;
+    use mahayana_host_protocol::ApprovalResolution;
+    use mahayana_host_protocol::CommandAccepted;
+    use mahayana_host_protocol::FeatureCommand;
+    use mahayana_host_protocol::HostConfig;
+    use mahayana_host_protocol::HostEvent;
+    use mahayana_host_protocol::HostInfo;
     use serde_json::Value;
     use tauri::State;
 
@@ -113,15 +189,67 @@ mod desktop {
         state.close()
     }
 
+    #[tauri::command]
+    fn feature_host_initialize(
+        state: State<'_, FeatureHostState>,
+        config: HostConfig,
+    ) -> Result<HostInfo, String> {
+        state.initialize(config)
+    }
+
+    #[tauri::command]
+    fn feature_host_execute(
+        state: State<'_, FeatureHostState>,
+        command: FeatureCommand,
+    ) -> Result<CommandAccepted, String> {
+        state.execute(command)
+    }
+
+    #[tauri::command]
+    fn feature_host_receive(
+        state: State<'_, FeatureHostState>,
+        _timeout_ms: Option<u64>,
+    ) -> Result<Option<HostEvent>, String> {
+        state.receive()
+    }
+
+    #[tauri::command]
+    fn feature_host_resolve_approval(
+        state: State<'_, FeatureHostState>,
+        resolution: ApprovalResolution,
+    ) -> Result<(), String> {
+        state.resolve_approval(resolution)
+    }
+
+    #[tauri::command]
+    fn feature_host_interrupt(
+        state: State<'_, FeatureHostState>,
+        operation_id: String,
+    ) -> Result<(), String> {
+        state.interrupt(&operation_id)
+    }
+
+    #[tauri::command]
+    fn feature_host_close(state: State<'_, FeatureHostState>) -> Result<(), String> {
+        state.close()
+    }
+
     pub fn run() {
         tauri::Builder::default()
             .manage(HostState::default())
+            .manage(FeatureHostState::default())
             .invoke_handler(tauri::generate_handler![
                 host_initialize,
                 host_execute,
                 host_receive,
                 host_snapshot,
                 host_close,
+                feature_host_initialize,
+                feature_host_execute,
+                feature_host_receive,
+                feature_host_resolve_approval,
+                feature_host_interrupt,
+                feature_host_close,
             ])
             .run(tauri::generate_context!())
             .expect("Fabushi Tauri Host failed to run");
@@ -134,6 +262,8 @@ pub use desktop::run;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mahayana_host_protocol::ApprovalDecision;
+    use mahayana_host_protocol::HostMode;
 
     #[test]
     fn headless_contract_covers_the_complete_runtime_lifecycle() {
@@ -170,5 +300,91 @@ mod tests {
             .execute(json!({"@type": "unknown.command"}))
             .expect_err("unknown command must fail");
         assert!(error.contains("invalid Runtime command"));
+    }
+
+    #[test]
+    fn headless_feature_commands_execute_the_complete_user_journey_in_rust() {
+        let state = FeatureHostState::default();
+        let info = state
+            .initialize(FeatureHostConfig {
+                profile_id: "fast-e2e".into(),
+                mode: HostMode::Test,
+            })
+            .expect("initialize feature Host");
+        assert_eq!(info.platform, SurfacePlatform::Tauri);
+        assert_eq!(state.receive().expect("ready").unwrap().kind(), "host.ready");
+
+        state
+            .execute(FeatureCommand::ChatSend {
+                request_id: "chat-1".into(),
+                text: "验证极速自动化测试".into(),
+            })
+            .expect("chat");
+        state
+            .execute(FeatureCommand::MarketplaceInstall {
+                request_id: "install-1".into(),
+                mini_app_id: "global-dharma".into(),
+            })
+            .expect("install");
+        state
+            .execute(FeatureCommand::MiniAppOpen {
+                request_id: "open-1".into(),
+                mini_app_id: "global-dharma".into(),
+            })
+            .expect("open");
+        state
+            .execute(FeatureCommand::CapabilityRequest {
+                request_id: "capability-1".into(),
+                mini_app_id: "global-dharma".into(),
+                capability: "camera".into(),
+                reason: "scan scripture".into(),
+            })
+            .expect("capability");
+
+        let mut approval_id = None;
+        let mut observed = Vec::new();
+        while let Some(event) = state.receive().expect("receive event") {
+            observed.push(event.kind());
+            if let HostEvent::ApprovalRequested {
+                approval_id: current,
+                ..
+            } = event
+            {
+                approval_id = Some(current);
+            }
+        }
+        assert!(observed.contains(&"chat.message"));
+        assert!(observed.contains(&"marketplace.installed"));
+        assert!(observed.contains(&"miniapp.opened"));
+        state
+            .resolve_approval(ApprovalResolution {
+                approval_id: approval_id.expect("approval id"),
+                decision: ApprovalDecision::AllowOnce,
+            })
+            .expect("resolve approval");
+
+        let operation_id = state
+            .execute(FeatureCommand::RuntimeLongTask {
+                request_id: "operation-1".into(),
+                label: "index scriptures".into(),
+            })
+            .expect("long task")
+            .operation_id
+            .expect("operation id");
+        state.interrupt(&operation_id).expect("interrupt");
+        state
+            .execute(FeatureCommand::SessionClear {
+                request_id: "session-1".into(),
+            })
+            .expect("clear session");
+
+        let tail = std::iter::from_fn(|| state.receive().expect("receive tail"))
+            .map(|event| event.kind())
+            .collect::<Vec<_>>();
+        assert!(tail.contains(&"approval.resolved"));
+        assert!(tail.contains(&"operation.started"));
+        assert!(tail.contains(&"operation.interrupted"));
+        assert!(tail.contains(&"session.cleared"));
+        state.close().expect("close");
     }
 }
