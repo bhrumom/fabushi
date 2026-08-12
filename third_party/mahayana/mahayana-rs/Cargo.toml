@@ -62,7 +62,7 @@ mahayana-agent = { path = "mahayana-agent" }
 mahayana-agent-responses = { path = "mahayana-agent-responses" }
 mahayana-conversation = { path = "mahayana-conversation" }
 mahayana-core = { path = "mahayana-core" }
-mahayana-host = { path = "mahayana-host" }
+mahayana-host = { path = "mahayana-host", default-features = false }
 mahayana-model = { path = "mahayana-model" }
 mahayana-miniapp-bridge = { path = "mahayana-miniapp-bridge" }
 mahayana-miniapp-protocol = { path = "mahayana-miniapp-protocol" }
