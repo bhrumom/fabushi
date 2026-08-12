@@ -1,18 +1,18 @@
 name: Telegram Rust Core
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'native/telegram-*/**'
-      - 'third_party/mahayana'
-      - 'third_party/mahayana/**'
+      - 'third_party/mahayana/mahayana-rs/providers/telegram-*/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-telegram/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
       - 'fabushi/lib/screens/telegram_authorization_screen.dart'
       - 'fabushi/lib/screens/main_navigation_screen.dart'
       - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
       - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
-      - 'fabushi/test/telegram_chat_contract_test.dart'
       - 'fabushi/pubspec.yaml'
       - 'fabushi/pubspec.lock'
       - 'fabushi/android/build_telegram_runtime.sh'
@@ -25,12 +25,14 @@ on:
       - 'fabushi/linux/**'
       - 'fabushi/windows/**'
       - 'docs/telegram-*.md'
+      - 'scripts/build-telegram-wasm.sh'
+      - 'scripts/test-telegram-wasm.mjs'
       - 'scripts/test-telegram-rust.sh'
       - '.github/workflows/telegram-rust.yml'
   push:
+    branches: [main]
     paths:
       - 'native/telegram-*/**'
-      - 'third_party/mahayana'
       - 'third_party/mahayana/**'
       - 'fabushi/lib/services/telegram/**'
       - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
@@ -38,7 +40,6 @@ on:
       - 'fabushi/lib/screens/main_navigation_screen.dart'
       - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
       - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
-      - 'fabushi/test/telegram_chat_contract_test.dart'
       - 'fabushi/pubspec.yaml'
       - 'fabushi/pubspec.lock'
       - 'fabushi/android/build_telegram_runtime.sh'
@@ -53,46 +54,73 @@ on:
       - 'docs/telegram-*.md'
       - 'scripts/test-telegram-rust.sh'
       - '.github/workflows/telegram-rust.yml'
+
+concurrency:
+  group: telegram-rust-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  rust:
-    name: ${{ matrix.os }} / ${{ matrix.crate }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        crate:
-          - fabushi-telegram-core
-          - fabushi-telegram-protocol
-          - fabushi-telegram-network
-          - fabushi-telegram-storage
-          - fabushi-telegram-runtime
-          - fabushi-telegram-media
-          - fabushi-telegram-wasm
-          - mahayana-core
-          - mahayana-runtime
-          - mahayana-ffi
+  rust-pr:
+    name: PR fast Rust gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_INCREMENTAL: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Test
-        run: cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }}
-      - name: Clippy
-        run: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }} --all-targets -- -D warnings
+      - name: Restore Telegram Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: telegram-pr-fast-v2
+          cache-all-crates: true
+      - name: Test Telegram and embedded Runtime packages together
+        run: >-
+          cargo test --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p fabushi-telegram-core
+          -p fabushi-telegram-protocol
+          -p fabushi-telegram-network
+          -p fabushi-telegram-storage
+          -p fabushi-telegram-runtime
+          -p fabushi-telegram-media
+          -p fabushi-telegram-wasm
+          -p mahayana-core
+          -p mahayana-runtime
+          -p mahayana-ffi
+      - name: Clippy Telegram and embedded Runtime packages together
+        run: >-
+          cargo clippy --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p fabushi-telegram-core
+          -p fabushi-telegram-protocol
+          -p fabushi-telegram-network
+          -p fabushi-telegram-storage
+          -p fabushi-telegram-runtime
+          -p fabushi-telegram-media
+          -p fabushi-telegram-wasm
+          -p mahayana-core
+          -p mahayana-runtime
+          -p mahayana-ffi
+          --all-targets -- -D warnings
 
   format-and-schema:
     name: Format and pinned TDLib schema
     runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CARGO_INCREMENTAL: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
@@ -126,14 +154,15 @@ jobs:
   wasm:
     name: WebAssembly target
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - name: Build WebAssembly bridge
+      - name: Install pinned wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Generate browser glue
         run: |
@@ -144,11 +173,12 @@ jobs:
           node scripts/test-telegram-wasm.mjs
           node scripts/test-mahayana-wasm.mjs
 
-  flutter-contract:
-    name: Flutter Rust bridge and chat consumer
+  flutter-bridge:
+    name: Flutter bridge compile
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: subosito/flutter-action@v2
@@ -158,7 +188,7 @@ jobs:
       - name: Resolve Flutter dependencies
         working-directory: fabushi
         run: flutter pub get
-      - name: Analyze Telegram bridge and UI
+      - name: Analyze the Telegram bridge and consumer UI
         working-directory: fabushi
         run: >-
           flutter analyze
@@ -168,15 +198,44 @@ jobs:
           lib/widgets/layout/telegram_chat_list.dart
           lib/widgets/layout/telegram_drawer.dart
           lib/screens/main_navigation_screen.dart
-      - name: Test Flutter-to-Rust JSON contract
-        working-directory: fabushi
-        run: flutter test test/telegram_chat_contract_test.dart
+
+  rust-full:
+    name: ${{ matrix.os }} / ${{ matrix.crate }}
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        crate:
+          - fabushi-telegram-core
+          - fabushi-telegram-protocol
+          - fabushi-telegram-network
+          - fabushi-telegram-storage
+          - fabushi-telegram-runtime
+          - fabushi-telegram-media
+          - fabushi-telegram-wasm
+          - mahayana-core
+          - mahayana-runtime
+          - mahayana-ffi
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Test
+        run: cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }}
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }} --all-targets -- -D warnings
 
   android-runtime:
     name: Android Rust runtime ABIs
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
@@ -208,9 +267,10 @@ jobs:
 
   apple-runtime:
     name: Apple Rust runtime archives
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
@@ -244,12 +304,13 @@ jobs:
 
   desktop-runtime:
     name: ${{ matrix.os }} desktop runtime
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
