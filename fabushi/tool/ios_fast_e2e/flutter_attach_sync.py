@@ -131,9 +131,45 @@ def main() -> int:
             raise RuntimeError(f"Debug bundle did not produce kernel_blob.bin at {kernel}")
 
         inject_started = time.monotonic()
+        # `flutter build bundle` produces the current Dart kernel/assets, but the
+        # iOS Debug App.framework also carries engine bootstrap snapshots that
+        # are supplied by the native Xcode build. Replacing flutter_assets
+        # wholesale drops those files and the engine can launch a process
+        # without ever reaching Dart main(). Preserve them from the compatible
+        # prebuilt shell while replacing every app-owned asset with the current
+        # bundle.
+        bootstrap_names = ("vm_snapshot_data", "isolate_snapshot_data")
+        bootstrap: dict[str, bytes] = {}
+        for name in bootstrap_names:
+            path = asset_destination / name
+            if not path.is_file() or path.stat().st_size == 0:
+                raise RuntimeError(f"Prebuilt shell is missing required {name}: {path}")
+            bootstrap[name] = path.read_bytes()
+
         if asset_destination.exists():
             shutil.rmtree(asset_destination)
         shutil.copytree(asset_source, asset_destination, symlinks=True)
+        for name, data in bootstrap.items():
+            path = asset_destination / name
+            if not path.exists():
+                path.write_bytes(data)
+
+        required = ("kernel_blob.bin", *bootstrap_names)
+        injected_sizes = {}
+        for name in required:
+            path = asset_destination / name
+            if not path.is_file() or path.stat().st_size == 0:
+                raise RuntimeError(f"Injected App.framework is missing required {name}: {path}")
+            injected_sizes[name] = path.stat().st_size
+        print(
+            json.dumps(
+                {
+                    "event": "fabushi.fastLane.injectedAssets",
+                    "sizes": injected_sizes,
+                }
+            ),
+            flush=True,
+        )
         timings["assetInjectMs"] = round((time.monotonic() - inject_started) * 1000)
 
     sign_started = time.monotonic()
