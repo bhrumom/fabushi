@@ -24,6 +24,8 @@ use mahayana_platform_core::Quote;
 use mahayana_platform_core::UsageCaptureRequest;
 use mahayana_platform_core::UsageReservation;
 use mahayana_platform_core::UsageReservationRequest;
+use mahayana_platform_core::canonical_json_bytes;
+use mahayana_platform_core::canonical_json_sha256;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -1786,9 +1788,12 @@ async fn marketplace_release_publish(
     }
     let source_json = serde_json::to_string(&source)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    let release_manifest_json = serde_json::to_string(&release_manifest)
+    let release_manifest_bytes = canonical_json_bytes(&release_manifest)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    let release_manifest_sha256 = format!("{:x}", Sha256::digest(release_manifest_json.as_bytes()));
+    let release_manifest_json = String::from_utf8(release_manifest_bytes)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let release_manifest_sha256 = canonical_json_sha256(&release_manifest)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
     let package = match form.get("package") {
         Some(FormEntry::File(file)) => file.bytes().await?,
         _ => {

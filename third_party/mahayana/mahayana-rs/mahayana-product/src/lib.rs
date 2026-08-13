@@ -12,6 +12,8 @@ use mahayana_platform_core::DelegatedTokenRequest;
 use mahayana_platform_core::Entitlement;
 use mahayana_platform_core::PurchaseRequest;
 use mahayana_platform_core::Quote;
+use mahayana_platform_core::canonical_json_bytes;
+use mahayana_platform_core::canonical_json_sha256;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Map;
@@ -361,6 +363,11 @@ impl MahayanaProductClient {
         if !actual_sha256.eq_ignore_ascii_case(package_sha256) {
             return Err(ProductError::InvalidParameter("packageSha256"));
         }
+        let release_manifest_json = String::from_utf8(
+            canonical_json_bytes(release_manifest)
+                .map_err(|error| ProductError::Configuration(error.to_string()))?,
+        )
+        .map_err(|error| ProductError::Configuration(error.to_string()))?;
         let token = self.authorization_token(&Value::Null)?;
         let package_part = reqwest::blocking::multipart::Part::bytes(package.to_vec())
             .file_name(format!("{plugin_id}-{version}.tar.gz"));
@@ -380,11 +387,7 @@ impl MahayanaProductClient {
                 serde_json::to_string(source)
                     .map_err(|error| ProductError::Configuration(error.to_string()))?,
             )
-            .text(
-                "releaseManifest",
-                serde_json::to_string(release_manifest)
-                    .map_err(|error| ProductError::Configuration(error.to_string()))?,
-            )
+            .text("releaseManifest", release_manifest_json)
             .part("package", package_part);
         let client = http_client()?;
         decode_response(
@@ -1226,7 +1229,7 @@ fn verify_marketplace_deployment_once(
         return Err("release manifest exceeds 256 KiB".into());
     }
     let expected_release_bytes =
-        serde_json::to_vec(release_manifest).map_err(|error| error.to_string())?;
+        canonical_json_bytes(release_manifest).map_err(|error| error.to_string())?;
     if release_bytes.as_ref() != expected_release_bytes.as_slice() {
         return Err("deployed release manifest differs from the source-bound manifest".into());
     }
@@ -1271,9 +1274,8 @@ fn validate_marketplace_site_manifest(
     source: &Value,
     release_manifest: &Value,
 ) -> Result<(), String> {
-    let release_manifest_bytes =
-        serde_json::to_vec(release_manifest).map_err(|error| error.to_string())?;
-    let release_manifest_sha256 = format!("{:x}", sha2::Sha256::digest(&release_manifest_bytes));
+    let release_manifest_sha256 =
+        canonical_json_sha256(release_manifest).map_err(|error| error.to_string())?;
     let matches = manifest.get("schemaVersion").and_then(Value::as_u64) == Some(2)
         && manifest.get("pluginId").and_then(Value::as_str) == Some(plugin_id)
         && manifest.get("version").and_then(Value::as_str) == Some(version)
@@ -1787,15 +1789,9 @@ mod tests {
             "runtime": "independent-worker-or-pages",
             "source": {"provider":"github","repository":"bhrumom/fabushi"},
             "releaseManifestPath": "/mahayana/release-manifest.json",
-            "releaseManifestSha256": format!(
-                "{:x}",
-                sha2::Sha256::digest(
-                    serde_json::to_vec(&json!({
-                        "protocol": "mahayana.multi-artifact-release.v1"
-                    }))
-                    .unwrap()
-                )
-            ),
+            "releaseManifestSha256": canonical_json_sha256(&json!({
+                "protocol": "mahayana.multi-artifact-release.v1"
+            })).unwrap(),
         });
         let source = json!({"provider":"github","repository":"bhrumom/fabushi"});
         let release_manifest = json!({"protocol":"mahayana.multi-artifact-release.v1"});
