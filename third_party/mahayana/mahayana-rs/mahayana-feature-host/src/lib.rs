@@ -263,6 +263,84 @@ impl FeatureHostController {
         }
     }
 
+    pub fn auth_providers(&self) -> Result<Value, FeatureHostError> {
+        match self.config.mode {
+            HostMode::Test => Ok(json!([
+                {"id": "google", "displayName": "Google", "enabled": true},
+                {"id": "apple", "displayName": "Apple", "enabled": true},
+                {"id": "microsoft", "displayName": "Microsoft", "enabled": true},
+                {"id": "github", "displayName": "GitHub", "enabled": true}
+            ])),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute("mahayana.auth.oauth.providers", &json!({}))
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn oauth_start(&self, provider: String) -> Result<Value, FeatureHostError> {
+        let provider = required(provider, "provider")?;
+        match self.config.mode {
+            HostMode::Test => Ok(json!({
+                "attemptId": format!("test-oauth-{provider}"),
+                "provider": provider,
+                "authorizationUrl": format!("about:blank#fabushi-test-oauth-{provider}"),
+            })),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.oauth.start",
+                        &json!({"provider": provider, "platform": "macos"}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn oauth_poll(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => {
+                let user = json!({
+                    "id": "fast-e2e-oauth-user",
+                    "email": "oauth@example.test",
+                    "nickname": "OAuth 测试用户",
+                });
+                self.state()?.auth_user = Some(user.clone());
+                Ok(json!({
+                    "attemptId": attempt_id,
+                    "status": "completed",
+                    "auth": {
+                        "loggedIn": true,
+                        "provider": "google",
+                        "user": user,
+                    }
+                }))
+            }
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.oauth.poll",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
     pub fn logout(&self) -> Result<Value, FeatureHostError> {
         match self.config.mode {
             HostMode::Test => {
@@ -1092,6 +1170,30 @@ mod tests {
         assert!(kinds.contains(&"operation.interrupted"));
         assert!(kinds.contains(&"session.cleared"));
         assert!(kinds.contains(&"host.closed"));
+    }
+
+    #[test]
+    fn deterministic_oauth_journey_matches_the_cross_platform_ui_contract() {
+        let controller = controller();
+        let providers = controller.auth_providers().expect("OAuth providers");
+        assert_eq!(providers.as_array().map(Vec::len), Some(4));
+        assert_eq!(providers[0]["id"], "google");
+
+        let attempt = controller
+            .oauth_start("google".into())
+            .expect("start OAuth");
+        assert_eq!(attempt["provider"], "google");
+        let completed = controller
+            .oauth_poll(
+                attempt["attemptId"]
+                    .as_str()
+                    .expect("attempt id")
+                    .to_string(),
+            )
+            .expect("complete OAuth");
+        assert_eq!(completed["status"], "completed");
+        assert_eq!(completed["auth"]["loggedIn"], true);
+        assert_eq!(controller.auth_status().unwrap()["loggedIn"], true);
     }
 
     #[cfg(not(feature = "production"))]

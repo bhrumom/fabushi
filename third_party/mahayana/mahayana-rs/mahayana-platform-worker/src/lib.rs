@@ -6,6 +6,8 @@ mod auth;
 pub const PLATFORM_SCHEMA_V1: &str = include_str!("../migrations/0001_platform.sql");
 pub const ACCOUNT_AUTH_SCHEMA_V2: &str =
     include_str!("../account-migrations/0001_account_auth.sql");
+pub const ACCOUNT_OAUTH_SCHEMA_V3: &str =
+    include_str!("../account-migrations/0002_oauth_identities.sql");
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SchemaError {
@@ -63,6 +65,16 @@ pub fn validate_account_auth_schema(schema: &str) -> Result<(), SchemaError> {
         "account_refresh_tokens",
         "account_auth_events",
     ] {
+        let declaration = format!("CREATE TABLE IF NOT EXISTS {table}");
+        if !schema.contains(&declaration) {
+            return Err(SchemaError::MissingTable(table));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_account_oauth_schema(schema: &str) -> Result<(), SchemaError> {
+    for table in ["account_identities", "account_oauth_attempts"] {
         let declaration = format!("CREATE TABLE IF NOT EXISTS {table}");
         if !schema.contains(&declaration) {
             return Err(SchemaError::MissingTable(table));

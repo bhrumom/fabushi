@@ -6,9 +6,8 @@
       "label": "账号登录",
       "steps": [
         {
-          "action": "login",
-          "username": "macos-fast-e2e",
-          "password": "deterministic-test-password"
+          "action": "oauthLogin",
+          "provider": "google"
         }
       ]
     },

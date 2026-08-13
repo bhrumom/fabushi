@@ -17,6 +17,7 @@ on:
       - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
+      - third_party/mahayana/mahayana-rs/mahayana-product/**
       - third_party/mahayana/mahayana-rs/mahayana-core/**
       - third_party/mahayana/mahayana-rs/mahayana-runtime/**
       - .github/workflows/tauri-host-fast-checks.yml
@@ -37,6 +38,7 @@ on:
       - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host/**
       - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
+      - third_party/mahayana/mahayana-rs/mahayana-product/**
       - .github/workflows/tauri-host-fast-checks.yml
   workflow_dispatch:
 

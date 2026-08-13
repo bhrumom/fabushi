@@ -1,12 +1,16 @@
 import type {
   ApprovalResolution,
   AuthState,
+  AuthProvider,
+  AuthProviderId,
   CommandAccepted,
   HostConfig,
   HostInfo,
   HostStatus,
   RuntimeCommand,
   RuntimeEvent,
+  OAuthAttempt,
+  OAuthPollResult,
 } from "./contracts";
 import {
   isTauriMahayanaHostAvailable,
@@ -34,6 +38,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private status: HostStatus = "idle";
   private sequence = 0;
   private auth: AuthState = { loggedIn: false, provider: "test" };
+  private oauthAttempt: OAuthAttempt | null = null;
   private info: HostInfo = {
     runtimeVersion: "mahayana-mock-1.0.0",
     protocolVersion: "1",
@@ -138,6 +143,53 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   async authStatus(): Promise<AuthState> {
     if (this.native) return this.native.authStatus();
     return this.auth;
+  }
+
+  async authProviders(): Promise<AuthProvider[]> {
+    if (this.native) return this.native.authProviders();
+    return [
+      { id: "google", displayName: "Google", enabled: true },
+      { id: "apple", displayName: "Apple", enabled: true },
+      { id: "microsoft", displayName: "Microsoft", enabled: true },
+      { id: "github", displayName: "GitHub", enabled: true },
+    ];
+  }
+
+  async oauthStart(provider: AuthProviderId): Promise<OAuthAttempt> {
+    if (this.native) return this.native.oauthStart(provider);
+    this.assertReady();
+    this.oauthAttempt = {
+      attemptId: `oauth-${provider}-${this.nextId("attempt")}`,
+      provider,
+      authorizationUrl: `about:blank#fabushi-test-oauth-${provider}`,
+    };
+    return this.oauthAttempt;
+  }
+
+  async oauthPoll(attemptId: string): Promise<OAuthPollResult> {
+    if (this.native) return this.native.oauthPoll(attemptId);
+    if (this.oauthAttempt?.attemptId !== attemptId) {
+      return { status: "expired" };
+    }
+    const provider = this.oauthAttempt.provider;
+    this.auth = {
+      loggedIn: true,
+      provider,
+      user: {
+        id: `fast-e2e-${provider}`,
+        email: `test@${provider}.example`,
+        nickname: `${provider} 测试用户`,
+      },
+    };
+    this.oauthAttempt = null;
+    return { status: "completed", auth: this.auth };
+  }
+
+  async openExternal(url: string): Promise<void> {
+    if (this.native) return this.native.openExternal(url);
+    if (url.startsWith("about:blank#fabushi-test-oauth")) return;
+    const popup = window.open(url, "fabushi-oauth", "popup,width=520,height=720");
+    if (!popup) throw new Error("浏览器窗口被拦截，请允许弹出窗口后重试");
   }
 
   async passwordLogin(username: string, password: string): Promise<AuthState> {

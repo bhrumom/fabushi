@@ -12,6 +12,16 @@ fn account_auth_migration_contains_rotating_session_state() {
 }
 
 #[test]
+fn oauth_schema_separates_provider_identity_from_user_profile() {
+    assert_eq!(
+        validate_account_oauth_schema(ACCOUNT_OAUTH_SCHEMA_V3),
+        Ok(())
+    );
+    assert!(ACCOUNT_OAUTH_SCHEMA_V3.contains("UNIQUE(issuer, subject)"));
+    assert!(!ACCOUNT_OAUTH_SCHEMA_V3.contains("UNIQUE(email)"));
+}
+
+#[test]
 fn validation_rejects_floating_point_money() {
     let schema = PLATFORM_SCHEMA_V1.replace("amount INTEGER", "amount REAL");
     assert_eq!(
