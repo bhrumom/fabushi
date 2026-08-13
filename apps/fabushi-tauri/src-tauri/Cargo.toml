@@ -2,6 +2,7 @@
 name = "fabushi-tauri"
 workspace = "../../../third_party/mahayana/mahayana-rs"
 version = "0.1.0"
+default-run = "fabushi"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
@@ -28,6 +29,8 @@ desktop = [
     "dep:tauri",
     "dep:tauri-runtime",
     "dep:tauri-runtime-wry",
+    "dep:tauri-plugin-process",
+    "dep:tauri-plugin-updater",
     "dep:wry",
     "mahayana-feature-host/desktop-full",
     "mahayana-host/desktop-full",
@@ -43,9 +46,11 @@ mahayana-host = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-hos
 mahayana-host-protocol = { path = "../../../third_party/mahayana/mahayana-rs/mahayana-host-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "=2.10.3", default-features = false, optional = true }
+tauri = { version = "=2.10.3", default-features = false, optional = true , features = [] }
 tauri-runtime = { version = "=2.10.1", optional = true }
 tauri-runtime-wry = { version = "=2.10.1", default-features = false, optional = true }
+tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
 wry = { version = "=0.54.0", default-features = false, optional = true }
 
 [build-dependencies]

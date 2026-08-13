@@ -55,6 +55,7 @@ codex-feedback = { path = "../codex-rs/feedback" }
 codex-login = { path = "../codex-rs/login" }
 codex-model-provider-info = { path = "../codex-rs/model-provider-info" }
 codex-protocol = { path = "../codex-rs/protocol" }
+codex-rmcp-client = { path = "../codex-rs/rmcp-client" }
 codex-secrets = { path = "../codex-rs/secrets" }
 codex-tui = { path = "../codex-rs/tui" }
 codex-utils-absolute-path = { path = "../codex-rs/utils/absolute-path" }

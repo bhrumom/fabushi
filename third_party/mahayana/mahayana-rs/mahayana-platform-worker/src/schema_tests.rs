@@ -7,6 +7,13 @@ fn migration_contains_the_authoritative_commerce_tables() {
 }
 
 #[test]
+fn listener_relay_migration_contains_durable_registration_and_event_tables() {
+    assert_eq!(validate_listener_relay_schema(LISTENER_RELAY_SCHEMA_V5), Ok(()));
+    assert!(LISTENER_RELAY_SCHEMA_V5.contains("acknowledged_at"));
+    assert!(LISTENER_RELAY_SCHEMA_V5.contains("listener_events_pending_idx"));
+}
+
+#[test]
 fn account_auth_migration_contains_rotating_session_state() {
     assert_eq!(validate_account_auth_schema(ACCOUNT_AUTH_SCHEMA_V2), Ok(()));
 }
