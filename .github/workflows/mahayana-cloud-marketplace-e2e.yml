@@ -24,8 +24,10 @@ env:
 jobs:
   cloud-marketplace-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
+      CARGO_INCREMENTAL: 1
+      CARGO_PROFILE: ci
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
       TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
@@ -59,8 +61,13 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
-      - name: Install Cloudflare Worker build tool
-        run: cargo install worker-build --locked
+      - name: Restore Marketplace Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-cloud-marketplace
+          cache-bin: true
+          cache-on-failure: true
 
       - name: Prepare marketplace validation diagnostics
         shell: bash
@@ -81,25 +88,27 @@ jobs:
           fi
           exit "$status"
 
-      - name: Test Mahayana marketplace packages
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
-            | tee artifacts/marketplace-validation/cargo-test.log
-
+      # Compile the deployable boundary before the larger native test graph. This
+      # catches Worker-only macro and target errors in seconds on a warm cache.
       - name: Check Mahayana platform Worker
         shell: bash
         run: |
           set -o pipefail
-          cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker 2>&1 \
+          cargo check --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker 2>&1 \
             | tee artifacts/marketplace-validation/platform-worker-check.log
 
-      - name: Build Mahayana CLI release binary
+      - name: Test Mahayana marketplace packages
         shell: bash
         run: |
           set -o pipefail
-          cargo build --locked --release --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
+          cargo test --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli --package mahayana-platform-client 2>&1 \
+            | tee artifacts/marketplace-validation/cargo-test.log
+
+      - name: Build Mahayana CLI E2E binary
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --locked --profile "$CARGO_PROFILE" --manifest-path "$MAHAYANA_MANIFEST" --package mahayana-cli 2>&1 \
             | tee artifacts/marketplace-validation/mahayana-cli-build.log
 
       - name: Upload marketplace validation diagnostics
@@ -110,6 +119,11 @@ jobs:
           path: artifacts/marketplace-validation
           if-no-files-found: error
           retention-days: 7
+
+      # Deployment tooling is deliberately installed after all deterministic
+      # validation, so a compile failure never waits on a network tool install.
+      - name: Install Cloudflare Worker build tool
+        run: cargo install worker-build --locked
 
       - name: Apply marketplace database migrations
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
@@ -149,7 +163,7 @@ jobs:
           MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
         run: |
           set -euo pipefail
-          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
           manifest="$PLUGIN_DIR/.codex-plugin/plugin.json"
           jq --arg version "$PLUGIN_VERSION" '.version = $version' "$manifest" > "$RUNNER_TEMP/plugin-manifest.json"
           mv "$RUNNER_TEMP/plugin-manifest.json" "$manifest"
@@ -323,7 +337,7 @@ jobs:
           MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
         run: |
           set -euo pipefail
-          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
           "$cli" marketplace browse \
             2> >(tee "$RUNNER_TEMP/browse.stderr" >&2) | tee "$RUNNER_TEMP/browse.json"
           jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" --arg deployment "${{ steps.publish.outputs.deployment_url }}" '
@@ -368,7 +382,7 @@ jobs:
           MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
         run: |
           set -euo pipefail
-          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
           install_repo="$RUNNER_TEMP/installed-repository"
           cd "$install_repo"
           "$cli" plugin run "$PLUGIN_ID" hello --json '{"name":"Actions"}' \
@@ -383,7 +397,7 @@ jobs:
           MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
         run: |
           set -euo pipefail
-          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/release/mahayana"
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
           curl --fail --silent --show-error \
             --request POST "$PLATFORM_URL/v1/marketplace/plugins/$PLUGIN_ID/releases/$PLUGIN_VERSION/revoke" \
             --header "Authorization: Bearer $TEST_ACCOUNT_TOKEN" \
