@@ -390,7 +390,7 @@ jobs:
           grep -F 'Hello, Actions!' "$RUNNER_TEMP/run.txt"
           grep -F 'cloud-market-hello' "$RUNNER_TEMP/run.txt"
 
-      - name: Revoke release and reject browse download and install
+      - name: Revoke release and reject revoked version download and install
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.platform.outputs.url }}
@@ -412,7 +412,14 @@ jobs:
           "$cli" marketplace browse \
             2> >(tee "$RUNNER_TEMP/after-revoke-browse.stderr" >&2) \
             | tee "$RUNNER_TEMP/after-revoke-browse.json"
-          jq -e --arg id "$PLUGIN_ID" 'all(.plugins[]; .pluginId != $id)' \
+          # Browse may legitimately fall back to an older approved release of the
+          # same plugin. It must never advertise the version revoked above.
+          jq -e --arg id "$PLUGIN_ID" --arg version "$PLUGIN_VERSION" '
+            all(.plugins[];
+              .pluginId != $id or
+              (.latestVersion != $version and .releaseStatus == "approved")
+            )
+          ' \
             "$RUNNER_TEMP/after-revoke-browse.json" >/dev/null
 
           metadata_status="$(curl --silent --show-error \
