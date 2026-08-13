@@ -27,6 +27,7 @@ use mahayana_miniapp::MiniAppDefinition;
 use mahayana_platform_core::HostPlatform;
 use mahayana_product::MahayanaProductClient;
 use mahayana_product::default_mahayana_home;
+use mahayana_product::default_product_surface_state_path;
 use mahayana_runtime_core::MahayanaRuntime;
 use mahayana_runtime_core::RuntimeBuilder;
 use mahayana_runtime_core::RuntimeError;
@@ -45,6 +46,9 @@ pub struct HostCreateConfig {
     #[serde(flatten)]
     pub runtime: RuntimeConfig,
     pub product_session_path: Option<PathBuf>,
+    pub product_surface_state_path: Option<PathBuf>,
+    /// Shared automation store used by CLI and native application shells.
+    pub automation_path: Option<PathBuf>,
     pub codex_home: Option<PathBuf>,
     /// Read-only marketplace shipped inside the native application.
     pub bundled_plugin_marketplace: Option<PathBuf>,
@@ -90,11 +94,27 @@ pub struct MahayanaHost {
 
 impl MahayanaHost {
     pub fn create(config: HostCreateConfig) -> Result<Self, HostError> {
-        let product_client = config
-            .product_session_path
-            .clone()
-            .map(|path| MahayanaProductClient::new("https://api.ombhrum.com", path))
-            .unwrap_or_default();
+        let product_client = match (
+            config.product_session_path.clone(),
+            config.product_surface_state_path.clone(),
+        ) {
+            (Some(session_path), Some(surface_state_path)) => {
+                MahayanaProductClient::new_with_surface_state_path(
+                    "https://api.ombhrum.com",
+                    session_path,
+                    surface_state_path,
+                )
+            }
+            (Some(session_path), None) => {
+                MahayanaProductClient::new("https://api.ombhrum.com", session_path)
+            }
+            (None, Some(surface_state_path)) => MahayanaProductClient::new_with_surface_state_path(
+                "https://api.ombhrum.com",
+                default_product_session_path(),
+                surface_state_path,
+            ),
+            (None, None) => MahayanaProductClient::default(),
+        };
         Ok(Self {
             runtime: Arc::new(build_runtime(config, product_client.clone())?),
             product_client,
@@ -151,6 +171,14 @@ impl MahayanaHost {
 
 /// Canonical Rust-owned account session shared by the Mahayana CLI and native
 /// desktop shell. Presentation code receives only UI-safe account fields.
+pub fn default_product_surface_path() -> PathBuf {
+    default_product_surface_state_path()
+}
+
+pub fn default_automation_path() -> PathBuf {
+    default_mahayana_home().join("automations.json")
+}
+
 pub fn default_product_session_path() -> PathBuf {
     let shared = default_mahayana_home().join("session.json");
     if shared.is_file() {

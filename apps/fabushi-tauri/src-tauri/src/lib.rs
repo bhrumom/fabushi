@@ -14,7 +14,11 @@ use mahayana_host::HostCreateConfig;
 #[cfg(feature = "production-runtime")]
 use mahayana_host::MahayanaHost;
 #[cfg(feature = "production-runtime")]
+use mahayana_host::default_automation_path;
+#[cfg(feature = "production-runtime")]
 use mahayana_host::default_product_session_path;
+#[cfg(feature = "production-runtime")]
+use mahayana_host::default_product_surface_path;
 use mahayana_host_protocol::ApprovalResolution;
 use mahayana_host_protocol::CommandAccepted;
 use mahayana_host_protocol::FeatureCommand;
@@ -51,6 +55,11 @@ fn host_config_for_root(root: PathBuf, inherit_installed_plugins: bool) -> HostC
             ..RuntimeConfig::default()
         },
         product_session_path: Some(product_session_path),
+        // Connector aliases/tool preferences, private Skills, hidden Bots and
+        // listener state are shared with the CLI through the Mahayana app-group
+        // store rather than being trapped in Tauri's per-app data directory.
+        product_surface_state_path: Some(default_product_surface_path()),
+        automation_path: Some(default_automation_path()),
         inherit_installed_plugins: Some(inherit_installed_plugins),
         ..HostCreateConfig::default()
     }
