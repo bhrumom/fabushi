@@ -30,6 +30,16 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly native: MahayanaHostTransport | null;
   private readonly listeners = new Set<RuntimeEventListener>();
   private readonly approvals = new Set<string>();
+  private readonly contacts = [
+    { id: "contact-1", displayName: "善友", unreadCount: 1 },
+    { id: "contact-2", displayName: "法喜", unreadCount: 0 },
+  ];
+  private account = {
+    loggedIn: false,
+    provider: "password",
+    displayName: undefined as string | undefined,
+    membership: undefined as string | undefined,
+  };
   private status: HostStatus = "idle";
   private sequence = 0;
   private info: HostInfo = {
@@ -64,6 +74,109 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     this.assertReady();
 
     switch (command.type) {
+      case "account.status":
+        this.emit({
+          type: "account.updated",
+          timestamp: now(),
+          account: { ...this.account },
+        });
+        return { requestId: command.requestId };
+      case "account.password.login":
+        if (!command.username.trim() || !command.password.trim()) {
+          throw new Error("Username and password are required");
+        }
+        this.account = {
+          loggedIn: true,
+          provider: "password",
+          displayName: command.username.trim(),
+          membership: "free",
+        };
+        this.emit({
+          type: "account.updated",
+          timestamp: now(),
+          account: { ...this.account },
+        });
+        return { requestId: command.requestId };
+      case "account.provider.start":
+        if (command.provider !== "alipay") {
+          throw new Error(`Unsupported account provider: ${command.provider}`);
+        }
+        this.emit({
+          type: "account.provider.authorization",
+          timestamp: now(),
+          provider: command.provider,
+          loginUrl: "https://example.invalid/alipay-login",
+          state: "test-provider-state",
+        });
+        return { requestId: command.requestId };
+      case "account.provider.poll":
+        this.account = {
+          loggedIn: true,
+          provider: command.provider,
+          displayName: "测试用户",
+          membership: "free",
+        };
+        this.emit({
+          type: "account.updated",
+          timestamp: now(),
+          account: { ...this.account },
+        });
+        return { requestId: command.requestId };
+      case "account.logout":
+        this.account = {
+          loggedIn: false,
+          provider: "official",
+          displayName: undefined,
+          membership: undefined,
+        };
+        this.emit({
+          type: "account.updated",
+          timestamp: now(),
+          account: { ...this.account },
+        });
+        return { requestId: command.requestId };
+      case "contacts.list":
+        this.assertAuthenticated();
+        this.emit({
+          type: "contacts.loaded",
+          timestamp: now(),
+          contacts: this.contacts.map((contact) => ({ ...contact })),
+        });
+        return { requestId: command.requestId };
+      case "contacts.search": {
+        this.assertAuthenticated();
+        const query = command.query.trim().toLocaleLowerCase();
+        this.emit({
+          type: "contacts.search.results",
+          timestamp: now(),
+          contacts: this.contacts.filter(
+            (contact) =>
+              contact.id.toLocaleLowerCase().includes(query) ||
+              contact.displayName.toLocaleLowerCase().includes(query),
+          ),
+        });
+        return { requestId: command.requestId };
+      }
+      case "contacts.request":
+        this.assertAuthenticated();
+        this.emit({
+          type: "contacts.request.sent",
+          timestamp: now(),
+          contact: command.contact,
+        });
+        return { requestId: command.requestId };
+      case "contacts.message.send":
+        this.assertAuthenticated();
+        if (!this.contacts.some((contact) => contact.id === command.contact)) {
+          throw new Error(`Unknown contact: ${command.contact}`);
+        }
+        this.emit({
+          type: "contacts.message.sent",
+          timestamp: now(),
+          contact: command.contact,
+          text: command.text,
+        });
+        return { requestId: command.requestId };
       case "chat.send": {
         const operationId = this.nextId("chat");
         this.emit({
@@ -127,6 +240,17 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         return { requestId: command.requestId, operationId };
       }
       case "session.clear":
+        this.account = {
+          loggedIn: false,
+          provider: this.account.provider,
+          displayName: undefined,
+          membership: undefined,
+        };
+        this.emit({
+          type: "account.updated",
+          timestamp: now(),
+          account: { ...this.account },
+        });
         this.emit({ type: "session.cleared", timestamp: now() });
         return { requestId: command.requestId };
     }
@@ -166,6 +290,12 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private assertReady(): void {
     if (this.status !== "ready") {
       throw new Error(`Mahayana host is not ready: ${this.status}`);
+    }
+  }
+
+  private assertAuthenticated(): void {
+    if (!this.account.loggedIn) {
+      throw new Error("Account must be logged in");
     }
   }
 
