@@ -15,7 +15,41 @@ interface CommandBase {
   requestId: string;
 }
 
+export interface AccountSummary {
+  loggedIn: boolean;
+  provider: string;
+  displayName?: string;
+  membership?: string;
+}
+
+export interface ContactSummary {
+  id: string;
+  displayName: string;
+  unreadCount: number;
+}
+
 export type RuntimeCommand =
+  | (CommandBase & { type: "account.status" })
+  | (CommandBase & {
+      type: "account.password.login";
+      username: string;
+      password: string;
+    })
+  | (CommandBase & { type: "account.provider.start"; provider: string })
+  | (CommandBase & { type: "account.provider.poll"; provider: string; state: string })
+  | (CommandBase & { type: "account.logout" })
+  | (CommandBase & { type: "contacts.list" })
+  | (CommandBase & { type: "contacts.search"; query: string })
+  | (CommandBase & {
+      type: "contacts.request";
+      contact: string;
+      message?: string;
+    })
+  | (CommandBase & {
+      type: "contacts.message.send";
+      contact: string;
+      text: string;
+    })
   | (CommandBase & { type: "chat.send"; text: string })
   | (CommandBase & { type: "marketplace.install"; miniAppId: string })
   | (CommandBase & { type: "miniapp.open"; miniAppId: string })
@@ -39,6 +73,20 @@ interface EventBase {
 
 export type RuntimeEvent =
   | (EventBase & { type: "host.ready"; info: HostInfo })
+  | (EventBase & { type: "account.updated"; account: AccountSummary })
+  | (EventBase & { type: "account.provider.authorization"; provider: string; loginUrl: string; state: string })
+  | (EventBase & { type: "account.provider.pending"; provider: string; state: string })
+  | (EventBase & { type: "contacts.loaded"; contacts: ContactSummary[] })
+  | (EventBase & {
+      type: "contacts.search.results";
+      contacts: ContactSummary[];
+    })
+  | (EventBase & { type: "contacts.request.sent"; contact: string })
+  | (EventBase & {
+      type: "contacts.message.sent";
+      contact: string;
+      text: string;
+    })
   | (EventBase & {
       type: "chat.message";
       role: "user" | "assistant";
