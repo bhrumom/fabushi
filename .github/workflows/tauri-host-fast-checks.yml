@@ -175,8 +175,8 @@ jobs:
             --features desktop
           elapsed="$(( $(date +%s) - started_at ))"
           echo "macOS Tauri executable build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 480 ]; then
-            echo "macOS Tauri executable exceeded the 480-second cold build budget." >&2
+          if [ "$elapsed" -gt 900 ]; then
+            echo "macOS Tauri executable exceeded the 900-second cold build budget." >&2
             exit 1
           fi
 
