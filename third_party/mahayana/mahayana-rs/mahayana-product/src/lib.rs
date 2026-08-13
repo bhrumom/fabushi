@@ -517,6 +517,9 @@ impl MahayanaProductClient {
             "mahayana.auth.status" => self.auth_status(request),
             "mahayana.auth.session.restore" => self.restore_session(),
             "mahayana.auth.password.login" => self.password_login(request),
+            "mahayana.auth.oauth.providers" => self.oauth_providers(),
+            "mahayana.auth.oauth.start" => self.oauth_start(request),
+            "mahayana.auth.oauth.poll" => self.oauth_poll(request),
             "mahayana.auth.register" => self.register(request),
             "mahayana.auth.verification.send" => self.verification_send(request),
             "mahayana.auth.password.forgot" => self.password_forgot(request),
@@ -639,6 +642,43 @@ impl MahayanaProductClient {
         let response = self.post_json("/api/auth/login", body, None)?;
         self.store_login_response(&response, "password")?;
         typed_session(response, "password", true)
+    }
+
+    fn oauth_providers(&self) -> Result<Value, ProductError> {
+        let response = self.get_json("/api/auth/oauth/providers", &[], None)?;
+        Ok(response.get("providers").cloned().unwrap_or(response))
+    }
+
+    fn oauth_start(&self, request: &Value) -> Result<Value, ProductError> {
+        let provider = required_identifier(request, "provider")?;
+        self.post_json(
+            "/api/auth/oauth/start",
+            json!({
+                "provider": provider,
+                "platform": optional_string(request, "platform").unwrap_or("desktop"),
+                "deviceId": optional_string(request, "deviceId"),
+            }),
+            None,
+        )
+    }
+
+    fn oauth_poll(&self, request: &Value) -> Result<Value, ProductError> {
+        let attempt_id = required_identifier(request, "attemptId")?;
+        let response =
+            self.get_json(&format!("/api/auth/oauth/attempts/{attempt_id}"), &[], None)?;
+        if response.get("status").and_then(Value::as_str) != Some("completed") {
+            return Ok(response);
+        }
+        let session = response.get("session").unwrap_or(&response);
+        let provider = response
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("oauth");
+        self.store_login_response(session, provider)?;
+        Ok(json!({
+            "status": "completed",
+            "auth": typed_session(session.clone(), provider, true)?,
+        }))
     }
 
     fn register(&self, request: &Value) -> Result<Value, ProductError> {

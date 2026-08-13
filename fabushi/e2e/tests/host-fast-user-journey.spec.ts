@@ -13,6 +13,11 @@ async function runJourneyStep(
   step: MahayanaHostJourneyStep,
 ): Promise<void> {
   switch (step.action) {
+    case "oauthLogin":
+      await expect(page.getByTestId("login-gate")).toBeVisible();
+      await page.getByTestId(`oauth-${step.provider}`).click();
+      await expect(page.getByTestId("login-gate")).toBeHidden();
+      break;
     case "login":
       await expect(page.getByTestId("login-gate")).toBeVisible();
       await page.getByTestId("login-username").fill(step.username);
@@ -110,6 +115,7 @@ test("所有官方应用复用同一条安装、机器人和 MiniApp 打开旅�
   ];
 
   await page.goto("/");
+  await page.getByTestId("password-login-toggle").click();
   await page.getByTestId("login-username").fill("marketplace-fast-e2e");
   await page.getByTestId("login-password").fill("deterministic-test-password");
   await page.getByTestId("login-submit").click();

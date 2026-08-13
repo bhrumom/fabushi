@@ -2,6 +2,7 @@ import journeyContract from "../../../../contracts/automation/cross-platform-jou
 
 export type MahayanaHostJourneyStep =
   | { action: "login"; username: string; password: string }
+  | { action: "oauthLogin"; provider: "google" | "apple" | "microsoft" | "github" }
   | { action: "expectReady" }
   | { action: "sendChat"; text: string; expectedReply: string }
   | { action: "installMiniApp"; miniAppId: string }

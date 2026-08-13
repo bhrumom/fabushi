@@ -9396,6 +9396,7 @@ dependencies = [
  "thiserror 2.0.18",
  "url",
  "uuid",
+ "wasm-bindgen",
  "worker",
 ]
 

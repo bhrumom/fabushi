@@ -169,6 +169,18 @@ impl FeatureHostState {
         self.with_controller(|controller| controller.password_login(username, password))
     }
 
+    pub fn auth_providers(&self) -> Result<serde_json::Value, String> {
+        self.with_controller(FeatureHostController::auth_providers)
+    }
+
+    pub fn oauth_start(&self, provider: String) -> Result<serde_json::Value, String> {
+        self.with_controller(|controller| controller.oauth_start(provider))
+    }
+
+    pub fn oauth_poll(&self, attempt_id: String) -> Result<serde_json::Value, String> {
+        self.with_controller(|controller| controller.oauth_poll(attempt_id))
+    }
+
     pub fn logout(&self) -> Result<serde_json::Value, String> {
         self.with_controller(FeatureHostController::logout)
     }
@@ -312,6 +324,52 @@ mod desktop {
     }
 
     #[tauri::command]
+    async fn feature_host_auth_providers(
+        state: State<'_, FeatureHostState>,
+    ) -> Result<Value, String> {
+        state.auth_providers()
+    }
+
+    #[tauri::command]
+    async fn feature_host_oauth_start(
+        state: State<'_, FeatureHostState>,
+        provider: String,
+    ) -> Result<Value, String> {
+        state.oauth_start(provider)
+    }
+
+    #[tauri::command]
+    async fn feature_host_oauth_poll(
+        state: State<'_, FeatureHostState>,
+        attempt_id: String,
+    ) -> Result<Value, String> {
+        state.oauth_poll(attempt_id)
+    }
+
+    #[tauri::command]
+    fn feature_host_open_external(url: String) -> Result<(), String> {
+        if !url.starts_with("https://")
+            || url.len() > 4096
+            || url.chars().any(char::is_control)
+        {
+            return Err("Fabushi only opens validated HTTPS login URLs".to_string());
+        }
+        #[cfg(target_os = "macos")]
+        let status = std::process::Command::new("open").arg(&url).status();
+        #[cfg(target_os = "windows")]
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .status();
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let status = std::process::Command::new("xdg-open").arg(&url).status();
+        status
+            .map_err(|error| format!("open system browser: {error}"))?
+            .success()
+            .then_some(())
+            .ok_or_else(|| "system browser rejected the login URL".to_string())
+    }
+
+    #[tauri::command]
     async fn feature_host_logout(state: State<'_, FeatureHostState>) -> Result<Value, String> {
         state.logout()
     }
@@ -360,6 +418,10 @@ mod desktop {
                 feature_host_execute,
                 feature_host_auth_status,
                 feature_host_password_login,
+                feature_host_auth_providers,
+                feature_host_oauth_start,
+                feature_host_oauth_poll,
+                feature_host_open_external,
                 feature_host_logout,
                 feature_host_receive,
                 feature_host_resolve_approval,

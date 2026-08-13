@@ -1,11 +1,15 @@
 import type {
   ApprovalResolution,
   AuthState,
+  AuthProvider,
+  AuthProviderId,
   CommandAccepted,
   HostConfig,
   HostInfo,
   RuntimeCommand,
   RuntimeEvent,
+  OAuthAttempt,
+  OAuthPollResult,
 } from "./contracts";
 import type {
   MahayanaHostTransport,
@@ -74,6 +78,22 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
 
   authStatus(): Promise<AuthState> {
     return nativeInvoke<AuthState>("feature_host_auth_status");
+  }
+
+  authProviders(): Promise<AuthProvider[]> {
+    return nativeInvoke<AuthProvider[]>("feature_host_auth_providers");
+  }
+
+  oauthStart(provider: AuthProviderId): Promise<OAuthAttempt> {
+    return nativeInvoke<OAuthAttempt>("feature_host_oauth_start", { provider });
+  }
+
+  oauthPoll(attemptId: string): Promise<OAuthPollResult> {
+    return nativeInvoke<OAuthPollResult>("feature_host_oauth_poll", { attemptId });
+  }
+
+  openExternal(url: string): Promise<void> {
+    return nativeInvoke<void>("feature_host_open_external", { url });
   }
 
   passwordLogin(username: string, password: string): Promise<AuthState> {

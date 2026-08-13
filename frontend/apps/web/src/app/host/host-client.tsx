@@ -13,6 +13,8 @@ import React, {
 import styles from "./host.module.css";
 import type {
   ApprovalRequestedEvent,
+  AuthProvider,
+  AuthProviderId,
   AuthState,
   RuntimeCommand,
 } from "../../lib/mahayana-host/contracts";
@@ -155,7 +157,10 @@ export default function HostClient() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
+  const [loginProvider, setLoginProvider] = useState<AuthProviderId | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [authProviders, setAuthProviders] = useState<AuthProvider[]>([]);
+  const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState("mahayana-assistant");
 
@@ -302,6 +307,25 @@ export default function HostClient() {
       .initialize({ profileId: "default", mode })
       .then(async () => {
         try {
+          setAuthProviders(
+            (
+              await Promise.race([
+                transport.authProviders(),
+                new Promise<AuthProvider[]>((_, reject) =>
+                  window.setTimeout(
+                    () => reject(new Error("登录方式发现超时")),
+                    4_000,
+                  ),
+                ),
+              ])
+            ).filter((provider) => provider.enabled),
+          );
+        } catch {
+          // Provider discovery is server-owned. Password login remains the
+          // safe fallback when an older deployment has not enabled OAuth yet.
+          setAuthProviders([]);
+        }
+        try {
           const authState = await Promise.race([
             transport.authStatus(),
             new Promise<never>((_, reject) =>
@@ -413,6 +437,42 @@ export default function HostClient() {
       setAuth({ ...state, loggedIn: false });
       setAccountOpen(false);
     });
+  };
+
+  const oauthLogin = async (provider: AuthProviderId) => {
+    setLoginBusy(true);
+    setLoginProvider(provider);
+    setLoginError(null);
+    try {
+      const attempt = await transport.oauthStart(provider);
+      await transport.openExternal(attempt.authorizationUrl);
+      for (let poll = 0; poll < 160; poll += 1) {
+        const result = await transport.oauthPoll(attempt.attemptId);
+        if (result.status === "completed" && result.auth) {
+          setAuth({ ...result.auth, loggedIn: true });
+          setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+          return;
+        }
+        if (result.status !== "pending") throw new Error("登录链接已失效，请重新登录");
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+      }
+      throw new Error("等待登录超时，请重试");
+    } catch (cause: unknown) {
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoginBusy(false);
+      setLoginProvider(null);
+    }
+  };
+
+  const providerIcon = (provider: AuthProviderId) => {
+    const labels: Record<AuthProviderId, string> = {
+      google: "G",
+      apple: "●",
+      microsoft: "⊞",
+      github: "⌘",
+    };
+    return <span className={`${styles.providerIcon} ${styles[provider]}`}>{labels[provider]}</span>;
   };
 
   const installMiniApp = (miniAppId: string) => {
@@ -861,37 +921,56 @@ export default function HostClient() {
 
       {auth?.loggedIn === false ? (
         <div className={styles.backdrop} data-testid="login-gate">
-          <form className={styles.loginDialog} onSubmit={(event) => void login(event)}>
-            <span className={styles.loginMark}>乘</span>
-            <p>FABUSHI ACCOUNT</p>
-            <h2>登录大乘</h2>
+          <section className={styles.loginDialog} role="dialog" aria-modal="true" aria-labelledby="login-title">
+            <div className={styles.loginBrand}>
+              <span className={styles.loginMark}>乘</span>
+              <p>FABUSHI</p>
+            </div>
+            <h2 id="login-title">欢迎回来</h2>
             <small>登录后继续使用智能体、插件市场与安全会话。</small>
-            <label>
-              <span>账号或邮箱</span>
-              <input
-                data-testid="login-username"
-                autoComplete="username"
-                value={loginUsername}
-                onChange={(event) => setLoginUsername(event.target.value)}
-                placeholder="请输入账号或邮箱"
-              />
-            </label>
-            <label>
-              <span>密码</span>
-              <input
-                data-testid="login-password"
-                autoComplete="current-password"
-                type="password"
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-                placeholder="请输入密码"
-              />
-            </label>
-            {loginError ? <output role="alert">{loginError}</output> : null}
-            <button data-testid="login-submit" type="submit" disabled={loginBusy}>
-              {loginBusy ? "登录中…" : "登录"}
+            <div className={styles.providerList}>
+              {authProviders.map((provider) => (
+                <button
+                  key={provider.id}
+                  data-testid={`oauth-${provider.id}`}
+                  type="button"
+                  disabled={loginBusy}
+                  onClick={() => void oauthLogin(provider.id)}
+                >
+                  {providerIcon(provider.id)}
+                  <span>使用 {provider.displayName} 登录</span>
+                  {loginProvider === provider.id ? <i aria-label="登录中" /> : null}
+                </button>
+              ))}
+            </div>
+            {authProviders.length ? <div className={styles.loginDivider}><span>或使用账号密码</span></div> : null}
+            <button
+              className={styles.passwordToggle}
+              data-testid="password-login-toggle"
+              type="button"
+              aria-expanded={passwordLoginOpen || authProviders.length === 0}
+              onClick={() => setPasswordLoginOpen((open) => !open)}
+            >
+              账号密码登录
             </button>
-          </form>
+            {passwordLoginOpen || authProviders.length === 0 ? (
+              <form className={styles.passwordForm} onSubmit={(event) => void login(event)}>
+                <label>
+                  <span>账号或邮箱</span>
+                  <input data-testid="login-username" autoComplete="username" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} placeholder="请输入账号或邮箱" />
+                </label>
+                <label>
+                  <span>密码</span>
+                  <input data-testid="login-password" autoComplete="current-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="请输入密码" />
+                </label>
+                <button data-testid="login-submit" type="submit" disabled={loginBusy}>
+                  {loginBusy ? "登录中…" : "登录"}
+                </button>
+              </form>
+            ) : null}
+            {loginError ? <output role="alert">{loginError}</output> : null}
+            <p className={styles.loginTerms}>继续即表示你同意《服务条款》和《隐私政策》</p>
+          </section>
         </div>
       ) : null}
 

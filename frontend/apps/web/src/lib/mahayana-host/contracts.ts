@@ -25,6 +25,26 @@ export interface AuthState {
   user?: AuthUser;
 }
 
+export type AuthProviderId = "google" | "apple" | "microsoft" | "github";
+
+export interface AuthProvider {
+  id: AuthProviderId;
+  displayName: string;
+  enabled: boolean;
+}
+
+export interface OAuthAttempt {
+  attemptId: string;
+  provider: AuthProviderId;
+  authorizationUrl: string;
+  expiresAt?: number;
+}
+
+export interface OAuthPollResult {
+  status: "pending" | "completed" | "expired" | "cancelled";
+  auth?: AuthState;
+}
+
 interface CommandBase {
   requestId: string;
 }
