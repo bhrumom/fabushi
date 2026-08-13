@@ -15,6 +15,23 @@ export const mahayanaHostFeatures = [
     ],
   },
   {
+    id: "account.password.login",
+    label: "账号密码登录",
+    journey: [
+      { action: "fill", testId: "account-username", value: "e2e-user" },
+      { action: "fill", testId: "account-password", value: "e2e-password" },
+      { action: "click", testId: "account-password-login" },
+      { action: "expectContainsText", testId: "account-state", text: "e2e-user" },
+    ],
+  },
+  {
+    id: "contacts.list",
+    label: "联系人列表",
+    journey: [
+      { action: "expectContainsText", testId: "contact-list", text: "善友" },
+    ],
+  },
+  {
     id: "chat.send",
     label: "聊天发送与响应",
     journey: [
