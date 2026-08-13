@@ -348,10 +348,7 @@ mod desktop {
 
     #[tauri::command]
     fn feature_host_open_external(url: String) -> Result<(), String> {
-        if !url.starts_with("https://")
-            || url.len() > 4096
-            || url.chars().any(char::is_control)
-        {
+        if !url.starts_with("https://") || url.len() > 4096 || url.chars().any(char::is_control) {
             return Err("Fabushi only opens validated HTTPS login URLs".to_string());
         }
         #[cfg(target_os = "macos")]
