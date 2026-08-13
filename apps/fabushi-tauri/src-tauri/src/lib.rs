@@ -462,6 +462,9 @@ mod tests {
             username: String,
             password: String,
         },
+        OauthLogin {
+            provider: String,
+        },
         ExpectReady,
         SendChat {
             text: String,
@@ -592,6 +595,21 @@ mod tests {
                             .expect("password login");
                         assert_eq!(session["loggedIn"], true);
                         assert_eq!(session["user"]["username"], username);
+                        assert_eq!(state.auth_status().expect("auth status")["loggedIn"], true);
+                    }
+                    JourneyStep::OauthLogin { provider } => {
+                        let attempt = state.oauth_start(provider.clone()).expect("start OAuth");
+                        assert_eq!(attempt["provider"], provider);
+                        let result = state
+                            .oauth_poll(
+                                attempt["attemptId"]
+                                    .as_str()
+                                    .expect("OAuth attempt id")
+                                    .to_string(),
+                            )
+                            .expect("complete OAuth");
+                        assert_eq!(result["status"], "completed");
+                        assert_eq!(result["auth"]["loggedIn"], true);
                         assert_eq!(state.auth_status().expect("auth status")["loggedIn"], true);
                     }
                     JourneyStep::ExpectReady => {
