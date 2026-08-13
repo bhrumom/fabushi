@@ -958,7 +958,7 @@ async fn oauth_resolve_user(
         let user_id = if let Some(user) = existing {
             user.id.to_string()
         } else {
-            let max = worker::query!(database, "SELECT MAX(id) AS max_id FROM users")?
+            let max = worker::query!(database, "SELECT MAX(id) AS max_id FROM users")
                 .first::<MaxUserIdRow>(None)
                 .await?
                 .and_then(|row| row.max_id)
