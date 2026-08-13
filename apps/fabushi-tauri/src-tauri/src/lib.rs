@@ -634,6 +634,11 @@ mod tests {
                                 request_id,
                                 text,
                                 agent_id: None,
+                                conversation_id: None,
+                                mode: Default::default(),
+                                mode_statement: None,
+                                model: None,
+                                attachments: Vec::new(),
                             })
                             .expect("send chat");
                         assert!(drain_events(&state).iter().any(|event| matches!(
