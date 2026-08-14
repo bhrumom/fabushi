@@ -1007,10 +1007,17 @@ fn run_mahayana_plugin_command(
     repository: &Path,
     arguments: &[&str],
 ) -> Result<(), String> {
+    let codex_home = mahayana_runtime_codex_home();
+    fs::create_dir_all(&codex_home).map_err(|error| {
+        format!(
+            "failed to prepare Mahayana Codex home {}: {error}",
+            codex_home.display()
+        )
+    })?;
     let output = Command::new(executable)
         .args(arguments)
         .current_dir(repository)
-        .env("CODEX_HOME", mahayana_runtime_codex_home())
+        .env("CODEX_HOME", &codex_home)
         .output()
         .map_err(|error| format!("failed to run mahayana {}: {error}", arguments.join(" ")))?;
     if output.status.success() {
