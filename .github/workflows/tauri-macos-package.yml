@@ -8,6 +8,7 @@ on:
       - apps/fabushi-tauri/**
       - contracts/automation/cross-platform-journeys.json
       - fabushi/e2e/**
+      - fabushi/tauri-e2e/**
       - frontend/apps/host/**
       - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
@@ -25,7 +26,7 @@ permissions:
 
 jobs:
   build-package:
-    name: Build macOS installer package
+    name: Build and smoke-test macOS app
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -34,77 +35,206 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Compute packaged PR app cache key
+        if: github.event_name == 'pull_request'
+        id: packaged-app-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_source_key="$(
+            git ls-files -s -z -- \
+              apps/fabushi-tauri \
+              frontend \
+              third_party/mahayana/mahayana-rs \
+            | shasum -a 256 \
+            | awk '{print $1}'
+          )"
+          test -n "$app_source_key"
+          echo "key=$app_source_key" >> "$GITHUB_OUTPUT"
+
+      - name: Restore packaged PR app cache
+        if: github.event_name == 'pull_request'
+        id: packaged-app-cache
+        uses: actions/cache@v4
+        with:
+          path: macos-package-artifacts/Fabushi.app.zip
+          key: tauri-macos-functional-app-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.packaged-app-key.outputs.key }}
+
       - name: Enable pinned pnpm through Corepack
+        if: github.event_name != 'pull_request' || steps.packaged-app-cache.outputs.cache-hit != 'true'
         run: corepack enable
 
       - name: Install frontend dependencies
+        if: github.event_name != 'pull_request' || steps.packaged-app-cache.outputs.cache-hit != 'true'
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Set up Rust
+        if: github.event_name != 'pull_request' || steps.packaged-app-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Tauri Cargo cache
+        if: github.event_name != 'pull_request' || steps.packaged-app-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: tauri-macos-package-v1
+          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v3-wdio-overlay' || 'tauri-macos-package-release-v1' }}
           cache-all-crates: true
+          cache-workspace-crates: true
 
-      - name: Build macOS app and DMG
+      - name: Prepare PR-only embedded WebDriver Cargo overlay
+        if: github.event_name == 'pull_request' && steps.packaged-app-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp apps/fabushi-tauri/src-tauri/Cargo.functional-e2e.toml apps/fabushi-tauri/src-tauri/Cargo.toml
+
+      - name: Build fast macOS app for PR functional testing
+        if: github.event_name == 'pull_request' && steps.packaged-app-cache.outputs.cache-hit != 'true'
+        working-directory: apps/fabushi-tauri
+        env:
+          FABUSHI_TAURI_WDIO_E2E: "1"
+        run: >-
+          corepack pnpm dlx @tauri-apps/cli@2.11.3 build
+          --debug
+          --features desktop
+          --config src-tauri/tauri.functional.conf.json
+
+      - name: Build release macOS app and DMG
+        if: github.event_name == 'workflow_dispatch'
         working-directory: apps/fabushi-tauri
         run: >-
           corepack pnpm dlx @tauri-apps/cli@2.11.3 build
           --features desktop
           --config src-tauri/tauri.package.conf.json
 
-      - name: Verify and stage installer artifacts
+      - name: Verify and stage macOS app artifacts
         id: package
         shell: bash
         run: |
           set -euo pipefail
-          bundle_root="third_party/mahayana/mahayana-rs/target/release/bundle"
-          app_path="$(find "$bundle_root/macos" -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
-          dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print | sort | head -n 1)"
+          cache_hit="false"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            profile="debug"
+            artifact_name="fabushi-macos-functional-app"
+            cache_hit="${{ steps.packaged-app-cache.outputs.cache-hit }}"
+          else
+            profile="release"
+            artifact_name="fabushi-macos-package"
+          fi
+
+          mkdir -p macos-package-artifacts
+          if [ "$cache_hit" = "true" ]; then
+            test -f macos-package-artifacts/Fabushi.app.zip
+            rm -rf "$RUNNER_TEMP/fabushi-cached-app"
+            mkdir -p "$RUNNER_TEMP/fabushi-cached-app"
+            ditto -x -k macos-package-artifacts/Fabushi.app.zip "$RUNNER_TEMP/fabushi-cached-app"
+            app_path="$(find "$RUNNER_TEMP/fabushi-cached-app" -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          else
+            bundle_root="third_party/mahayana/mahayana-rs/target/$profile/bundle"
+            app_path="$(find "$bundle_root/macos" -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          fi
+
           test -n "$app_path"
-          test -n "$dmg_path"
           test ! -e "$app_path/Contents/Resources/fabushi-official"
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           test -x "$app_path/Contents/MacOS/$executable"
 
-          mkdir -p macos-package-artifacts
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" macos-package-artifacts/Fabushi.app.zip
-          cp "$dmg_path" macos-package-artifacts/
+          if [ "$cache_hit" != "true" ]; then
+            ditto -c -k --sequesterRsrc --keepParent "$app_path" macos-package-artifacts/Fabushi.app.zip
+          fi
           printf '%s\n' "$GITHUB_SHA" > macos-package-artifacts/source-sha.txt
+
+          dmg_name=""
+          if [ "$profile" = "release" ]; then
+            dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print | sort | head -n 1)"
+            test -n "$dmg_path"
+            cp "$dmg_path" macos-package-artifacts/
+            dmg_name="$(basename "$dmg_path")"
+          fi
+
           (
             cd macos-package-artifacts
-            shasum -a 256 Fabushi.app.zip *.dmg > SHA256SUMS.txt
+            shasum -a 256 Fabushi.app.zip > SHA256SUMS.txt
+            if ls ./*.dmg >/dev/null 2>&1; then
+              shasum -a 256 ./*.dmg >> SHA256SUMS.txt
+            fi
           )
 
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "app_name=$(basename "$app_path")" >> "$GITHUB_OUTPUT"
-          echo "dmg_name=$(basename "$dmg_path")" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$dmg_name" >> "$GITHUB_OUTPUT"
+          echo "cache_hit=$cache_hit" >> "$GITHUB_OUTPUT"
 
-      - name: Upload macOS installer package
+      - name: Launch staged Mac app for PR smoke test
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/fabushi-build-smoke"
+          mkdir -p "$RUNNER_TEMP/fabushi-build-smoke"
+          ditto -x -k macos-package-artifacts/Fabushi.app.zip "$RUNNER_TEMP/fabushi-build-smoke"
+          app_path="$(find "$RUNNER_TEMP/fabushi-build-smoke" -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          test -n "$app_path"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable"
+          test -x "$executable_path"
+
+          "$executable_path" > "$RUNNER_TEMP/fabushi-packaged-app.log" 2>&1 &
+          app_pid=$!
+          sleep 8
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            echo "Packaged Tauri app exited during startup." >&2
+            cat "$RUNNER_TEMP/fabushi-packaged-app.log" >&2 || true
+            exit 1
+          fi
+          kill "$app_pid" || true
+          wait "$app_pid" || true
+
+      - name: Upload macOS app artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fabushi-macos-package
+          name: ${{ steps.package.outputs.artifact_name }}
           path: macos-package-artifacts
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload PR smoke diagnostics
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-macos-functional-test-diagnostics
+          path: ${{ runner.temp }}/fabushi-packaged-app.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Summarize package
         shell: bash
         run: |
           {
-            echo "## macOS package"
+            echo "## macOS build"
             echo "- Source: \`$GITHUB_SHA\`"
+            echo "- Profile: \`${{ steps.package.outputs.profile }}\`"
             echo "- App: \`${{ steps.package.outputs.app_name }}\`"
-            echo "- DMG: \`${{ steps.package.outputs.dmg_name }}\`"
+            if [ -n "${{ steps.package.outputs.dmg_name }}" ]; then
+              echo "- DMG: \`${{ steps.package.outputs.dmg_name }}\`"
+            else
+              echo "- DMG: skipped for fast PR validation"
+            fi
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "- Packaged app cache hit: \`${{ steps.package.outputs.cache_hit }}\`"
+              echo "- Packaged app smoke: staged artifact launched successfully on the build runner"
+              echo "- Real WKWebView/native-window E2E: runs against the downloaded .app in the downstream functional-test job"
+              echo "- Browser Host journey contract: covered by the dedicated Host fast E2E workflow"
+              echo "- Tauri command/runtime contract: covered by the dedicated Tauri Host fast checks workflow"
+              echo "- WebDriver Rust dependency: injected only by the PR Cargo overlay; absent from the product/release manifest"
+            fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
   functional-test:
-    name: Test packaged Mac app and all Host journeys
+    name: Test packaged Mac app
     needs: build-package
     runs-on: macos-15
     timeout-minutes: 45
@@ -117,43 +247,84 @@ jobs:
       - name: Download packaged app
         uses: actions/download-artifact@v5
         with:
-          name: fabushi-macos-package
+          name: ${{ github.event_name == 'pull_request' && 'fabushi-macos-functional-app' || 'fabushi-macos-package' }}
           path: macos-package-artifacts
 
       - name: Enable pinned pnpm through Corepack
+        if: github.event_name == 'workflow_dispatch'
         run: corepack enable
 
       - name: Install frontend dependencies
+        if: github.event_name == 'workflow_dispatch'
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Install Host E2E package
+        if: github.event_name == 'workflow_dispatch'
         working-directory: fabushi/e2e
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: npm ci
 
       - name: Verify system Chrome
+        if: github.event_name == 'workflow_dispatch'
         run: /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version
 
       - name: Run complete Host user journeys
+        if: github.event_name == 'workflow_dispatch'
         working-directory: fabushi/e2e
         run: npm run test:host-fast
 
+      - name: Prepare downloaded app for real Tauri WebDriver E2E
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p macos-package-wdio
+          ditto -x -k macos-package-artifacts/Fabushi.app.zip macos-package-wdio
+          app_path="$(find macos-package-wdio -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          test -n "$app_path"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable"
+          test -x "$executable_path"
+          echo "FABUSHI_TAURI_APP_BINARY=$PWD/$executable_path" >> "$GITHUB_ENV"
+          echo "FABUSHI_TAURI_E2E_OUTPUT_DIR=$PWD/fabushi/tauri-e2e/wdio-output" >> "$GITHUB_ENV"
+
+      - name: Set up Node for packaged Tauri WebDriver E2E
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install packaged Tauri WebDriver E2E package
+        if: github.event_name == 'pull_request'
+        working-directory: fabushi/tauri-e2e
+        run: npm install --no-audit --no-fund
+
+      - name: Drive real packaged Tauri WKWebView and native window
+        if: github.event_name == 'pull_request'
+        working-directory: fabushi/tauri-e2e
+        run: npm test
+
       - name: Verify Tauri production wiring
+        if: github.event_name == 'workflow_dispatch'
         run: node scripts/check-tauri-production-contract.mjs
 
       - name: Set up Rust
+        if: github.event_name == 'workflow_dispatch'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Tauri Cargo cache
+        if: github.event_name == 'workflow_dispatch'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: tauri-macos-package-v1
+          shared-key: tauri-macos-functional-contract-v1
           cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run Tauri command contract
+        if: github.event_name == 'workflow_dispatch'
         run: >-
           cargo test
           --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
@@ -162,7 +333,7 @@ jobs:
           --no-default-features
           --features headless
 
-      - name: Verify packaged resources and launch app
+      - name: Verify downloaded packaged resources and launch app
         shell: bash
         run: |
           set -euo pipefail
@@ -194,6 +365,8 @@ jobs:
           path: |
             fabushi/e2e/playwright-report/host-fast
             fabushi/e2e/test-results
+            fabushi/tauri-e2e/wdio-output
+            fabushi/tauri-e2e/package-lock.json
             ${{ runner.temp }}/fabushi-packaged-app.log
           if-no-files-found: ignore
           retention-days: 14
