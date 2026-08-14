@@ -26,9 +26,6 @@
     }
   },
   "bundle": {
-    "active": false,
-    "resources": {
-      "../../../.agents/plugins": "fabushi-official"
-    }
+    "active": false
   }
 }
