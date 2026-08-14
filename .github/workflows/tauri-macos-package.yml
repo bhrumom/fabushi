@@ -50,6 +50,7 @@ jobs:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v1' || 'tauri-macos-package-release-v1' }}
           cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Build fast macOS app for PR functional testing
         if: github.event_name == 'pull_request'
@@ -223,6 +224,7 @@ jobs:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: tauri-macos-functional-contract-v1
           cache-all-crates: true
+          cache-workspace-crates: true
 
       - name: Run Tauri command contract
         run: >-
