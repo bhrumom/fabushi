@@ -410,7 +410,7 @@ fn compile_allowed_source(
             let source =
                 parse_marketplace_source(url, ref_name).map_err(|err| invalid(&err.to_string()))?;
             let MarketplaceSource::Git { url, ref_name } = source else {
-                return Err("configured Git marketplace source is not a Git URL".to_string());
+                return Err(invalid("expected a Git URL"));
             };
             Ok(AllowedMarketplaceSource::GitUrl { url, ref_name })
         }
