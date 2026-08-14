@@ -944,10 +944,8 @@ fn sync_installed_marketplace_with_codex(
     plugin_id: &str,
 ) -> Result<(), String> {
     let executable = env::current_exe().map_err(|error| error.to_string())?;
-    let is_mahayana_cli = executable
-        .file_stem()
-        .and_then(|value| value.to_str())
-        == Some("mahayana");
+    let is_mahayana_cli =
+        executable.file_stem().and_then(|value| value.to_str()) == Some("mahayana");
     if !is_mahayana_cli {
         return Ok(());
     }
