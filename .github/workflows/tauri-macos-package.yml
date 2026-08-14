@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build-package:
-    name: Build macOS installer package
+    name: Build macOS functional app
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -48,46 +48,75 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: tauri-macos-package-v1
+          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v1' || 'tauri-macos-package-release-v1' }}
           cache-all-crates: true
 
-      - name: Build macOS app and DMG
+      - name: Build fast macOS app for PR functional testing
+        if: github.event_name == 'pull_request'
+        working-directory: apps/fabushi-tauri
+        run: >-
+          corepack pnpm dlx @tauri-apps/cli@2.11.3 build
+          --debug
+          --features desktop
+          --config src-tauri/tauri.functional.conf.json
+
+      - name: Build release macOS app and DMG
+        if: github.event_name == 'workflow_dispatch'
         working-directory: apps/fabushi-tauri
         run: >-
           corepack pnpm dlx @tauri-apps/cli@2.11.3 build
           --features desktop
           --config src-tauri/tauri.package.conf.json
 
-      - name: Verify and stage installer artifacts
+      - name: Verify and stage macOS app artifacts
         id: package
         shell: bash
         run: |
           set -euo pipefail
-          bundle_root="third_party/mahayana/mahayana-rs/target/release/bundle"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            profile="debug"
+            artifact_name="fabushi-macos-functional-app"
+          else
+            profile="release"
+            artifact_name="fabushi-macos-package"
+          fi
+
+          bundle_root="third_party/mahayana/mahayana-rs/target/$profile/bundle"
           app_path="$(find "$bundle_root/macos" -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
-          dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print | sort | head -n 1)"
           test -n "$app_path"
-          test -n "$dmg_path"
           test ! -e "$app_path/Contents/Resources/fabushi-official"
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           test -x "$app_path/Contents/MacOS/$executable"
 
           mkdir -p macos-package-artifacts
           ditto -c -k --sequesterRsrc --keepParent "$app_path" macos-package-artifacts/Fabushi.app.zip
-          cp "$dmg_path" macos-package-artifacts/
           printf '%s\n' "$GITHUB_SHA" > macos-package-artifacts/source-sha.txt
+
+          dmg_name=""
+          if [ "$profile" = "release" ]; then
+            dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print | sort | head -n 1)"
+            test -n "$dmg_path"
+            cp "$dmg_path" macos-package-artifacts/
+            dmg_name="$(basename "$dmg_path")"
+          fi
+
           (
             cd macos-package-artifacts
-            shasum -a 256 Fabushi.app.zip *.dmg > SHA256SUMS.txt
+            shasum -a 256 Fabushi.app.zip > SHA256SUMS.txt
+            if ls ./*.dmg >/dev/null 2>&1; then
+              shasum -a 256 ./*.dmg >> SHA256SUMS.txt
+            fi
           )
 
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "app_name=$(basename "$app_path")" >> "$GITHUB_OUTPUT"
-          echo "dmg_name=$(basename "$dmg_path")" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$dmg_name" >> "$GITHUB_OUTPUT"
 
-      - name: Upload macOS installer package
+      - name: Upload macOS app artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fabushi-macos-package
+          name: ${{ steps.package.outputs.artifact_name }}
           path: macos-package-artifacts
           if-no-files-found: error
           retention-days: 30
@@ -96,10 +125,15 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## macOS package"
+            echo "## macOS build"
             echo "- Source: \`$GITHUB_SHA\`"
+            echo "- Profile: \`${{ steps.package.outputs.profile }}\`"
             echo "- App: \`${{ steps.package.outputs.app_name }}\`"
-            echo "- DMG: \`${{ steps.package.outputs.dmg_name }}\`"
+            if [ -n "${{ steps.package.outputs.dmg_name }}" ]; then
+              echo "- DMG: \`${{ steps.package.outputs.dmg_name }}\`"
+            else
+              echo "- DMG: skipped for fast PR validation"
+            fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -117,7 +151,7 @@ jobs:
       - name: Download packaged app
         uses: actions/download-artifact@v5
         with:
-          name: fabushi-macos-package
+          name: ${{ github.event_name == 'pull_request' && 'fabushi-macos-functional-app' || 'fabushi-macos-package' }}
           path: macos-package-artifacts
 
       - name: Enable pinned pnpm through Corepack
@@ -150,7 +184,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: tauri-macos-package-v1
+          shared-key: tauri-macos-functional-contract-v1
           cache-all-crates: true
 
       - name: Run Tauri command contract
