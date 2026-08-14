@@ -195,9 +195,6 @@ flutter:
     - assets/earth_texture.jpg
     - assets/ip_data/
     - assets/sherpa_models/streaming-paraformer-zh-en/
-    # OpenClaw manifest is always available; large desktop runtimes are
-    # injected by release/test scripts or supplied via DACHENG_OPENCLAW_RUNTIME_DIR.
-    - assets/openclaw/bundle_manifest.json
     - assets/desktop_control/chrome_extension/
     # Android/iOS 使用 R2 上的 flutter_scene .model，不再打包 GLB 到 APK/IPA
   

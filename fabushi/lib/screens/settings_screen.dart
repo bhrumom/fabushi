@@ -17,7 +17,6 @@ import '../services/device_capability_service.dart';
 import '../services/desktop_control/desktop_control_bridge.dart';
 import '../services/desktop_control/desktop_control_models.dart';
 import '../services/diagnostic_log_service.dart';
-import '../services/openclaw/openclaw_runtime.dart';
 import '../services/worker_config.dart';
 import '../widgets/model_selection_dialog.dart';
 import '../widgets/settings/codex_profile_dashboard.dart';
@@ -54,18 +53,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _downloadStage = '';
   bool _isDownloading = false;
 
-  // 桌面 AI / OpenClaw 设置
-  String _aiBackendModeName = 'auto';
-  String _openClawRemoteGatewayUrl = '';
-  String _codexApiKey = 'dacheng-openclaw-proxy';
-  String _codexBaseUrl = AppConfig.openClawDeepSeekProxyBaseUrl;
+  // Codex 与桌面控制设置
+  String _codexApiKey = 'dacheng-codex-proxy';
+  String _codexBaseUrl = AppConfig.codexDeepSeekResponsesBaseUrl;
   String _codexModelName = 'deepseek-chat';
   String _codexProvider = 'deepSeek';
-  OpenClawRuntimeStatus? _openClawStatus;
   DesktopControlBridgeStatus? _desktopControlStatus;
   List<DesktopControlPendingConfirmation> _desktopControlPending = const [];
-  bool _isRestartingOpenClaw = false;
-  bool _isRunningOpenClawCli = false;
   bool _isPreparingChromeConnector = false;
   StreamSubscription<void>? _desktopControlSubscription;
   String _settingsCategory = 'system';
@@ -162,16 +156,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         AppBuildInfoService.instance.getVersionLabel(),
         _appVersionLabel,
       ),
-      _loadSetting<String>(
-        'AI 后端模式',
-        AppSettings.getAiBackendModeName(),
-        _aiBackendModeName,
-      ),
-      _loadSetting<String>(
-        'OpenClaw 远程入口',
-        AppSettings.getOpenClawRemoteGatewayUrl(),
-        _openClawRemoteGatewayUrl,
-      ),
       _loadSetting<String>('Codex Key', AppSettings.getCodexApiKey(), _codexApiKey),
       _loadSetting<String>('Codex URL', AppSettings.getCodexBaseUrl(), _codexBaseUrl),
       _loadSetting<String>('Codex Model', AppSettings.getCodexModelName(), _codexModelName),
@@ -184,18 +168,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _fastMatchThreshold = values[1] as double;
         _matchThreshold = values[2] as double;
         _appVersionLabel = values[3] as String;
-        _aiBackendModeName = values[4] as String;
-        _openClawRemoteGatewayUrl = values[5] as String;
-        _codexApiKey = values[6] as String;
-        _codexBaseUrl = values[7] as String;
-        _codexModelName = values[8] as String;
-        _codexProvider = values[9] as String;
+        _codexApiKey = values[4] as String;
+        _codexBaseUrl = values[5] as String;
+        _codexModelName = values[6] as String;
+        _codexProvider = values[7] as String;
         _isLoading = false;
       });
     }
 
     unawaited(_loadModelSettings());
-    unawaited(_loadDesktopRuntimeSettings(probeOpenClaw: false));
+    unawaited(_loadDesktopControlSettings());
   }
 
   Future<void> _loadModelSettings() async {
@@ -234,12 +216,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _loadDesktopRuntimeSettings({
-    required bool probeOpenClaw,
-  }) async {
+  Future<void> _loadDesktopControlSettings() async {
     if (!AiBackendPolicy.isDesktopNative) return;
     final values = await Future.wait<dynamic>([
-      _readOpenClawStatus(probe: probeOpenClaw),
       _readDesktopControlStatus(),
       _loadSetting<List<DesktopControlPendingConfirmation>>(
         '桌面控制确认请求',
@@ -250,28 +229,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (mounted) {
       setState(() {
-        _openClawStatus = values[0] as OpenClawRuntimeStatus;
-        _desktopControlStatus = values[1] as DesktopControlBridgeStatus;
+        _desktopControlStatus = values[0] as DesktopControlBridgeStatus;
         _desktopControlPending =
-            values[2] as List<DesktopControlPendingConfirmation>;
+            values[1] as List<DesktopControlPendingConfirmation>;
       });
-    }
-  }
-
-  Future<OpenClawRuntimeStatus> _readOpenClawStatus({
-    required bool probe,
-  }) async {
-    try {
-      return await OpenClawRuntime.instance
-          .getStatus(probe: probe)
-          .timeout(const Duration(seconds: 8));
-    } catch (error) {
-      debugPrint('Settings: OpenClaw 状态检测失败: $error');
-      return OpenClawRuntimeStatus(
-        state: OpenClawRuntimeState.failed,
-        message: 'OpenClaw 状态检测失败：$error',
-        checkedAt: DateTime.now(),
-      );
     }
   }
 
@@ -329,55 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await AppSettings.setMatchThreshold(value);
   }
 
-  Future<void> _setAiBackendModeName(String? value) async {
-    if (value == null || value.isEmpty) return;
-    setState(() => _aiBackendModeName = value);
-    await AppSettings.setAiBackendModeName(value);
-  }
-
-  Future<void> _editOpenClawRemoteGatewayUrl() async {
-    final controller = TextEditingController(text: _openClawRemoteGatewayUrl);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('远程入口'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'wss://...',
-            helperText: '移动端远程扫码需要公网 HTTPS/Tailscale Serve/Funnel 入口',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null) return;
-    await AppSettings.setOpenClawRemoteGatewayUrl(value);
-    if (!mounted) return;
-    setState(() => _openClawRemoteGatewayUrl = value.trim());
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已保存远程入口，重启本机 AI 后生效'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
   Future<void> _editCodexApiConfig() async {
     final keyCtrl = TextEditingController();
     final urlCtrl = TextEditingController(
-      text: AppConfig.openClawDeepSeekProxyBaseUrl,
+      text: AppConfig.codexDeepSeekResponsesBaseUrl,
     );
     final modelCtrl = TextEditingController(
       text: _codexModelName == 'deepseek-reasoner'
@@ -408,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (val != null) {
                       setDialogState(() {
                         selectedProvider = val;
-                        urlCtrl.text = AppConfig.openClawDeepSeekProxyBaseUrl;
+                        urlCtrl.text = AppConfig.codexDeepSeekResponsesBaseUrl;
                         modelCtrl.text = 'deepseek-chat';
                         keyCtrl.text = '';
                       });
@@ -421,7 +337,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   readOnly: true,
                   decoration: const InputDecoration(
                     labelText: '后端代理地址 (Base URL)',
-                    helperText: '默认使用大乘后端 /api/openclaw/deepseek/v1',
+                    helperText: '默认使用大乘 Codex Responses 后端',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -464,10 +380,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (value != true) return;
     final finalKey = keyCtrl.text.trim().isEmpty
-        ? 'dacheng-openclaw-proxy'
+        ? 'dacheng-codex-proxy'
         : keyCtrl.text.trim();
     final finalUrl = urlCtrl.text.trim().isEmpty
-        ? AppConfig.openClawDeepSeekProxyBaseUrl
+        ? AppConfig.codexDeepSeekResponsesBaseUrl
         : urlCtrl.text.trim();
     final finalModel = modelCtrl.text.trim().isEmpty
         ? 'deepseek-chat'
@@ -494,108 +410,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _runOpenClawCliAction(
-    String label,
-    Future<OpenClawCliResult> Function() action,
-  ) async {
-    if (!AiBackendPolicy.isDesktopNative || _isRunningOpenClawCli) return;
-    setState(() => _isRunningOpenClawCli = true);
-    OpenClawCliResult? result;
-    Object? error;
-    try {
-      result = await action();
-    } catch (err) {
-      error = err;
-      debugPrint('Settings: $label 失败: $err');
-    }
-    if (!mounted) return;
-    setState(() => _isRunningOpenClawCli = false);
-    if (result != null) {
-      await _showOpenClawCliResult(label, result);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$label 失败：$error'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-    unawaited(_loadDesktopRuntimeSettings(probeOpenClaw: true));
-  }
-
-  Future<void> _showOpenClawCliResult(
-    String title,
-    OpenClawCliResult result,
-  ) async {
-    final output = [
-      result.command,
-      'exitCode=${result.exitCode}${result.timedOut ? ' · timed out' : ''}',
-      if (result.combinedOutput.trim().isNotEmpty) '',
-      if (result.combinedOutput.trim().isNotEmpty) result.combinedOutput,
-    ].join('\n');
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              output,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: output));
-              Navigator.of(context).pop();
-            },
-            child: const Text('复制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createOpenClawMobilePairingCode() async {
-    if (_openClawRemoteGatewayUrl.trim().isEmpty) {
-      await _editOpenClawRemoteGatewayUrl();
-      if (_openClawRemoteGatewayUrl.trim().isEmpty) return;
-    }
-    await _runOpenClawCliAction(
-      '移动端配对码',
-      () => OpenClawRuntime.instance.createMobilePairingCode(remote: true),
-    );
-  }
-
-  Future<void> _installOpenClawWeChatPlugin() {
-    return _runOpenClawCliAction(
-      '安装微信插件',
-      OpenClawRuntime.instance.installWeChatPlugin,
-    );
-  }
-
-  Future<void> _loginOpenClawWeChat() {
-    return _runOpenClawCliAction(
-      '微信扫码登录',
-      OpenClawRuntime.instance.loginWeChat,
-    );
-  }
-
-  Future<void> _inspectOpenClawChannels() {
-    return _runOpenClawCliAction(
-      'OpenClaw 渠道状态',
-      OpenClawRuntime.instance.inspectChannels,
-    );
-  }
-
   Future<void> _requestDesktopPermission({
     required bool screenRecording,
   }) async {
@@ -612,15 +426,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _refreshOpenClawStatus() async {
-    if (!AiBackendPolicy.isDesktopNative) return;
-    final status = await _readOpenClawStatus(probe: true);
-    if (mounted) {
-      setState(() => _openClawStatus = status);
-    }
-    await _refreshDesktopControlStatus();
-  }
-
   Future<void> _refreshDesktopControlStatus({bool startBridge = false}) async {
     if (!AiBackendPolicy.isDesktopNative) return;
     final status = await _readDesktopControlStatus(startBridge: startBridge);
@@ -634,39 +439,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _desktopControlStatus = status;
         _desktopControlPending = pending;
       });
-    }
-  }
-
-  Future<void> _restartOpenClawRuntime() async {
-    if (!AiBackendPolicy.isDesktopNative || _isRestartingOpenClaw) return;
-    setState(() => _isRestartingOpenClaw = true);
-    final status = await _restartOpenClawRuntimeSafely();
-    if (!mounted) return;
-    setState(() {
-      _openClawStatus = status;
-      _isRestartingOpenClaw = false;
-    });
-    unawaited(_refreshDesktopControlStatus());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(status.isHealthy ? '本机 OpenClaw 已启动' : status.message),
-        backgroundColor: status.isHealthy ? Colors.green : Colors.redAccent,
-      ),
-    );
-  }
-
-  Future<OpenClawRuntimeStatus> _restartOpenClawRuntimeSafely() async {
-    try {
-      return await OpenClawRuntime.instance.restart().timeout(
-        const Duration(seconds: 75),
-      );
-    } catch (error) {
-      debugPrint('Settings: OpenClaw 重启失败: $error');
-      return OpenClawRuntimeStatus(
-        state: OpenClawRuntimeState.failed,
-        message: 'OpenClaw 重启失败：$error',
-        checkedAt: DateTime.now(),
-      );
     }
   }
 
@@ -1073,7 +845,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (AiBackendPolicy.isDesktopNative) ...[
-            _buildOpenClawSettingCard(),
+            _buildDesktopControlSettingCard(),
             const SizedBox(height: 12),
           ],
           _buildSettingItem(
@@ -1081,7 +853,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.api_outlined,
             iconColor: Colors.amberAccent,
             title: 'Codex DeepSeek 后端',
-            subtitle: '使用 OpenClaw 同款后端代理与账户 API 额度',
+            subtitle: '使用大乘 Codex Responses 后端与账户 API 额度',
             onTap: _editCodexApiConfig,
           ),
           if (Platform.isAndroid)
@@ -1365,7 +1137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsLightRow(
             icon: Icons.article_outlined,
             title: '诊断日志',
-            subtitle: '复制或打开 OpenClaw 和桌面控制日志。',
+            subtitle: '复制或打开 Codex 和桌面控制日志。',
             onTap: _openDiagnosticLogLocation,
           ),
           const SizedBox(height: 24),
@@ -1379,11 +1151,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildModelSettingCard(),
           const SizedBox(height: 24),
           _buildSettingsSectionTitle('智能体控制'),
-          if (AiBackendPolicy.isDesktopNative) _buildOpenClawSettingCard(),
+          if (AiBackendPolicy.isDesktopNative) _buildDesktopControlSettingCard(),
           _SettingsLightRow(
             icon: Icons.api_outlined,
             title: 'Codex DeepSeek 后端',
-            subtitle: '使用 OpenClaw 同款后端代理与账户 API 额度。',
+            subtitle: '使用大乘 Codex Responses 后端与账户 API 额度。',
             onTap: _editCodexApiConfig,
           ),
           _SettingsLightRow(
@@ -1599,20 +1371,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildOpenClawSettingCard() {
-    final mode = aiBackendModeFromStorageName(_aiBackendModeName);
-    final status = _openClawStatus;
+  Widget _buildDesktopControlSettingCard() {
     final desktopStatus = _desktopControlStatus;
     final chromeStatus = desktopStatus?.chrome;
-    final remoteGatewayConfigured = _openClawRemoteGatewayUrl.trim().isNotEmpty;
-    final statusColor = switch (status?.state) {
-      OpenClawRuntimeState.running => Colors.greenAccent,
-      OpenClawRuntimeState.starting => Colors.amberAccent,
-      OpenClawRuntimeState.notBundled => Colors.orangeAccent,
-      OpenClawRuntimeState.failed => Colors.redAccent,
-      OpenClawRuntimeState.unsupported => Colors.white38,
-      _ => Colors.white54,
-    };
 
     return Card(
       color: const Color(0xFF1E1E1E),
@@ -1623,154 +1384,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.greenAccent.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.hub_outlined,
-                    color: Colors.greenAccent,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '桌面 AI / OpenClaw',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '桌面首页 AI 对话使用本机 OpenClaw，经云端代理计量',
-                        style: TextStyle(color: Colors.white54, fontSize: 13),
-                      ),
-                    ],
+                Icon(Icons.computer_outlined, color: Colors.greenAccent),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "桌面控制",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            DropdownButtonFormField<String>(
-              initialValue: mode.storageName,
-              dropdownColor: const Color(0xFF2A2A2A),
-              decoration: InputDecoration(
-                labelText: 'AI 后端',
-                labelStyle: const TextStyle(color: Colors.white70),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.04),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              style: const TextStyle(color: Colors.white),
-              items: AiBackendMode.values
-                  .map(
-                    (item) => DropdownMenuItem<String>(
-                      value: item.storageName,
-                      child: Text('${item.label} · ${item.description}'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: _isRestartingOpenClaw ? null : _setAiBackendModeName,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.verified_user_outlined, color: Colors.white70),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Codex 默认使用 OpenClaw 同款 DeepSeek 后端代理，DeepSeek Key 留在后端，按账户 API 额度统一计费。',
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.tune, size: 16),
-                      label: Text('选择 Codex 模型 ($_codexModelName)'),
-                      onPressed: _editCodexApiConfig,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.circle, size: 10, color: statusColor),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      status == null
-                          ? '尚未检测本机 OpenClaw 状态'
-                          : '${status.label} · ${status.message}',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 12),
             _buildDesktopControlStatusRow(
               icon: Icons.mouse_outlined,
-              title: '桌面控制',
-              message: desktopStatus == null
-                  ? '尚未检测桌面控制桥'
-                  : desktopStatus.message,
-              color: desktopStatus == null
-                  ? Colors.white38
-                  : !desktopStatus.enabledByBuild
-                  ? Colors.orangeAccent
-                  : desktopStatus.supportedPlatform &&
-                        desktopStatus.bridgeRunning
+              title: "控制桥",
+              message: desktopStatus?.message ?? "尚未检测桌面控制桥",
+              color: desktopStatus?.bridgeRunning == true
                   ? Colors.greenAccent
-                  : Colors.amberAccent,
+                  : Colors.orangeAccent,
             ),
             const SizedBox(height: 8),
             _buildDesktopControlStatusRow(
               icon: Icons.security_outlined,
-              title: '权限',
+              title: "权限",
               message: desktopStatus == null
-                  ? '尚未检测权限'
-                  : '屏幕录制 ${desktopStatus.screenRecordingGranted ? '已授权' : '未授权'} · 辅助功能 ${desktopStatus.accessibilityGranted ? '已授权' : '未授权'}',
+                  ? "尚未检测权限"
+                  : "屏幕录制 ${desktopStatus.screenRecordingGranted ? "已授权" : "未授权"} · 辅助功能 ${desktopStatus.accessibilityGranted ? "已授权" : "未授权"}",
               color:
                   desktopStatus != null &&
                       desktopStatus.screenRecordingGranted &&
@@ -1780,20 +1425,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             _buildDesktopControlStatusRow(
-              icon: Icons.qr_code_2_outlined,
-              title: '远程入口',
-              message: remoteGatewayConfigured
-                  ? _openClawRemoteGatewayUrl
-                  : '未配置公网 wss:// 或 Tailscale Serve/Funnel 入口',
-              color: remoteGatewayConfigured
-                  ? Colors.greenAccent
-                  : Colors.orangeAccent,
-            ),
-            const SizedBox(height: 8),
-            _buildDesktopControlStatusRow(
               icon: Icons.public,
-              title: 'Chrome 连接器',
-              message: chromeStatus?.message ?? '尚未检测 Chrome 连接器',
+              title: "Chrome 连接器",
+              message: chromeStatus?.message ?? "尚未检测 Chrome 连接器",
               color: chromeStatus?.connected == true
                   ? Colors.greenAccent
                   : Colors.orangeAccent,
@@ -1807,60 +1441,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
-                        ? null
-                        : _refreshOpenClawStatus,
-                    icon: const Icon(
-                      Icons.health_and_safety_outlined,
-                      size: 18,
-                    ),
-                    label: const Text('检测'),
+                    onPressed: _refreshDesktopControlStatus,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text("检测"),
                   ),
                 ),
                 const SizedBox(width: 10),
                 FilledButton.icon(
-                  onPressed: _isRestartingOpenClaw || _isRunningOpenClawCli
+                  onPressed: _isPreparingChromeConnector
                       ? null
-                      : () => unawaited(_restartOpenClawRuntime()),
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: Text(_isRestartingOpenClaw ? '启动中' : '重启本机 AI'),
+                      : () => unawaited(_prepareChromeConnectorInstall()),
+                  icon: const Icon(Icons.extension_outlined, size: 18),
+                  label: Text(_isPreparingChromeConnector ? "准备中" : "Chrome 连接器"),
                 ),
-                const SizedBox(width: 8),
                 PopupMenuButton<String>(
-                  tooltip: '高级操作',
-                  enabled:
-                      !_isRestartingOpenClaw &&
-                      !_isRunningOpenClawCli &&
-                      !_isPreparingChromeConnector,
+                  tooltip: "更多",
                   onSelected: (value) {
                     switch (value) {
-                      case 'restart':
-                        unawaited(_restartOpenClawRuntime());
-                        break;
-                      case 'tools':
-                        unawaited(
-                          _refreshDesktopControlStatus(startBridge: true),
-                        );
-                        break;
-                      case 'connector':
-                        unawaited(_prepareChromeConnectorInstall());
-                        break;
-                      case 'remote':
-                        unawaited(_editOpenClawRemoteGatewayUrl());
-                        break;
-                      case 'mobile':
-                        unawaited(_createOpenClawMobilePairingCode());
-                        break;
-                      case 'wechatPlugin':
-                        unawaited(_installOpenClawWeChatPlugin());
-                        break;
-                      case 'wechatLogin':
-                        unawaited(_loginOpenClawWeChat());
-                        break;
-                      case 'channels':
-                        unawaited(_inspectOpenClawChannels());
-                        break;
-                      case 'permissions':
+                      case "permissions":
                         unawaited(
                           _requestDesktopPermission(
                             screenRecording:
@@ -1868,44 +1466,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         );
                         break;
-                      case 'copyLog':
+                      case "copyLog":
                         unawaited(_copyDiagnosticLogTail());
                         break;
-                      case 'openLog':
+                      case "openLog":
                         unawaited(_openDiagnosticLogLocation());
                         break;
                     }
                   },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'tools', child: Text('工具诊断')),
-                    PopupMenuItem(
-                      value: 'connector',
-                      child: Text(_isPreparingChromeConnector ? '准备中' : '连接器'),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(value: 'remote', child: Text('远程入口')),
-                    const PopupMenuItem(value: 'mobile', child: Text('移动配对')),
-                    const PopupMenuItem(
-                      value: 'wechatPlugin',
-                      child: Text('微信插件'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'wechatLogin',
-                      child: Text('微信登录'),
-                    ),
-                    const PopupMenuItem(value: 'channels', child: Text('渠道状态')),
-                    const PopupMenuItem(
-                      value: 'permissions',
-                      child: Text('系统权限'),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(value: 'copyLog', child: Text('复制日志')),
-                    const PopupMenuItem(value: 'openLog', child: Text('日志位置')),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: "permissions", child: Text("系统权限")),
+                    PopupMenuItem(value: "copyLog", child: Text("复制日志")),
+                    PopupMenuItem(value: "openLog", child: Text("日志位置")),
                   ],
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: Icon(Icons.more_horiz, color: Colors.white70),
-                  ),
                 ),
               ],
             ),

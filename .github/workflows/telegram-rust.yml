@@ -7,23 +7,6 @@ on:
       - 'native/telegram-*/**'
       - 'third_party/mahayana/mahayana-rs/providers/telegram-*/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-telegram/**'
-      - 'fabushi/lib/services/telegram/**'
-      - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
-      - 'fabushi/lib/screens/telegram_authorization_screen.dart'
-      - 'fabushi/lib/screens/main_navigation_screen.dart'
-      - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
-      - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
-      - 'fabushi/pubspec.yaml'
-      - 'fabushi/pubspec.lock'
-      - 'fabushi/android/build_telegram_runtime.sh'
-      - 'fabushi/android/app/build.gradle.kts'
-      - 'fabushi/android/app/src/main/AndroidManifest.xml'
-      - 'fabushi/ios/build_telegram_runtime.sh'
-      - 'fabushi/ios/Runner/Runner.entitlements'
-      - 'fabushi/macos/build_telegram_runtime.sh'
-      - 'fabushi/macos/Runner/*.entitlements'
-      - 'fabushi/linux/**'
-      - 'fabushi/windows/**'
       - 'docs/telegram-*.md'
       - 'scripts/build-telegram-wasm.sh'
       - 'scripts/test-telegram-wasm.mjs'
@@ -33,25 +16,11 @@ on:
     branches: [main]
     paths:
       - 'native/telegram-*/**'
-      - 'third_party/mahayana/**'
-      - 'fabushi/lib/services/telegram/**'
-      - 'fabushi/lib/screens/telegram_friend_chat_screen.dart'
-      - 'fabushi/lib/screens/telegram_authorization_screen.dart'
-      - 'fabushi/lib/screens/main_navigation_screen.dart'
-      - 'fabushi/lib/widgets/layout/telegram_chat_list.dart'
-      - 'fabushi/lib/widgets/layout/telegram_drawer.dart'
-      - 'fabushi/pubspec.yaml'
-      - 'fabushi/pubspec.lock'
-      - 'fabushi/android/build_telegram_runtime.sh'
-      - 'fabushi/android/app/build.gradle.kts'
-      - 'fabushi/android/app/src/main/AndroidManifest.xml'
-      - 'fabushi/ios/build_telegram_runtime.sh'
-      - 'fabushi/ios/Runner/Runner.entitlements'
-      - 'fabushi/macos/build_telegram_runtime.sh'
-      - 'fabushi/macos/Runner/*.entitlements'
-      - 'fabushi/linux/**'
-      - 'fabushi/windows/**'
+      - 'third_party/mahayana/mahayana-rs/providers/telegram-*/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-telegram/**'
       - 'docs/telegram-*.md'
+      - 'scripts/build-telegram-wasm.sh'
+      - 'scripts/test-telegram-wasm.mjs'
       - 'scripts/test-telegram-rust.sh'
       - '.github/workflows/telegram-rust.yml'
 
@@ -172,32 +141,6 @@ jobs:
         run: |
           node scripts/test-telegram-wasm.mjs
           node scripts/test-mahayana-wasm.mjs
-
-  flutter-bridge:
-    name: Flutter bridge compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          submodules: recursive
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Resolve Flutter dependencies
-        working-directory: fabushi
-        run: flutter pub get
-      - name: Analyze the Telegram bridge and consumer UI
-        working-directory: fabushi
-        run: >-
-          flutter analyze
-          lib/services/telegram
-          lib/screens/telegram_friend_chat_screen.dart
-          lib/screens/telegram_authorization_screen.dart
-          lib/widgets/layout/telegram_chat_list.dart
-          lib/widgets/layout/telegram_drawer.dart
-          lib/screens/main_navigation_screen.dart
 
   rust-full:
     name: ${{ matrix.os }} / ${{ matrix.crate }}

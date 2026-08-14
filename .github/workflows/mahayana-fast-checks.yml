@@ -1,0 +1,95 @@
+name: Mahayana fast checks
+
+on:
+  pull_request:
+    paths:
+      - third_party/mahayana/mahayana-rs/**
+      - .github/workflows/mahayana-fast-checks.yml
+  push:
+    branches:
+      - main
+    paths:
+      - third_party/mahayana/mahayana-rs/**
+      - .github/workflows/mahayana-fast-checks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: mahayana-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-and-bridge:
+    name: Rust protocol, Host, and bridge fast gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CARGO_INCREMENTAL: "1"
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - name: Checkout Mahayana sources
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /apps/fabushi-tauri/src-tauri/**
+            /third_party/mahayana/**
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Restore targeted Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-fast-v3
+          cache-all-crates: true
+
+      - name: Verify formatting
+        run: cargo fmt --all -- --check
+
+      - name: Test protocol and MiniApp bridge
+        run: >-
+          cargo test
+          -p mahayana-miniapp-protocol
+          -p mahayana-miniapp-bridge
+          -p mahayana-host-protocol
+          --profile ci
+
+      - name: Test direct Mahayana Host
+        run: >-
+          cargo test
+          -p mahayana-host
+          --profile ci
+          --no-default-features
+          --features local-only
+
+      - name: Test deterministic feature Host without the production dependency graph
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+
+      - name: Test production feature adapters over the cached direct Host
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+          --features local-only
+          production_uses_the_real_runtime_and_rust_owned_session_store
+
+      - name: Check minimal embedded FFI boundary
+        run: >-
+          cargo check
+          -p mahayana-ffi
+          --profile ci
+          --no-default-features
+          --features local-only

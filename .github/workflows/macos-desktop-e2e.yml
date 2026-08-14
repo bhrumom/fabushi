@@ -34,7 +34,6 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            .github/scripts/assert-openclaw-bundle.sh
 
       - name: Prepare evidence folders
         shell: bash
@@ -149,8 +148,8 @@ jobs:
           fi
           arch="$(uname -m)"
           case "$arch" in
-            arm64) zip_pattern='*macos-arm64.zip'; openclaw_platform='macos-arm64' ;;
-            *) zip_pattern='*macos-x64.zip'; openclaw_platform='macos-x64' ;;
+            arm64) zip_pattern='*macos-arm64.zip' ;;
+            *) zip_pattern='*macos-x64.zip' ;;
           esac
           zip_path="$(find "$EVIDENCE_DIR/release" -maxdepth 1 -name "$zip_pattern" -print -quit)"
           if [ -z "$zip_path" ]; then
@@ -169,7 +168,6 @@ jobs:
             exit 1
           fi
           echo "app_path=$app_path" >> "$GITHUB_OUTPUT"
-          echo "openclaw_platform=$openclaw_platform" >> "$GITHUB_OUTPUT"
           {
             echo "Installed app: $app_path"
             find "$app_path" -maxdepth 4 -print | sort | head -200
@@ -182,19 +180,17 @@ jobs:
         run: |
           set -euo pipefail
           app_path='${{ steps.install.outputs.app_path }}'
-          openclaw_platform='${{ steps.install.outputs.openclaw_platform }}'
           cli="$app_path/Contents/MacOS/global_dharma_sharing_cli"
           if [ ! -x "$cli" ]; then
             echo "CLI missing or not executable: $cli" >&2
             exit 1
           fi
-          ./.github/scripts/assert-openclaw-bundle.sh "$app_path" "$openclaw_platform" | tee "$EVIDENCE_DIR/logs/05-openclaw-bundle.log"
           doctor_json="$($cli doctor --json)"
           echo "$doctor_json" | tee "$EVIDENCE_DIR/json/06-doctor.json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
-          gateway_json="$($cli gateway-smoke --timeout-seconds 120 --json --verbose 2> >(tee "$EVIDENCE_DIR/logs/07-gateway-stderr.log" >&2))"
-          echo "$gateway_json" | tee "$EVIDENCE_DIR/json/07-gateway-smoke.json"
-          jq -e '.ok == true' <<<"$gateway_json" >/dev/null
+          runtime_json="$($cli runtime-smoke --json)"
+          echo "$runtime_json" | tee "$EVIDENCE_DIR/json/07-runtime-smoke.json"
+          jq -e '.ok == true' <<<"$runtime_json" >/dev/null
           miniapp_json="$($cli miniapp-smoke --json)"
           echo "$miniapp_json" | tee "$EVIDENCE_DIR/json/08-miniapp-smoke.json"
           jq -e '.ok == true' <<<"$miniapp_json" >/dev/null
@@ -233,7 +229,8 @@ jobs:
           - desktop/mini-app state consistency
 
           Automated evidence in this workflow:
-          - json/08-miniapp-smoke.json validates the six official Codex plugin registry entries
+          - json/07-runtime-smoke.json validates the packaged Mahayana CLI and production defaults
+          - json/08-miniapp-smoke.json validates the seven official Codex plugin registry entries
           - json/08-miniapp-smoke.json validates exact MCP Tool contracts and four-platform runtimeVariants
           - json/08-miniapp-smoke.json validates versioned MCP App home resources and their MIME type
           - json/08-miniapp-smoke.json rejects missing MCP servers, platform coverage, and non-versioned UI resources

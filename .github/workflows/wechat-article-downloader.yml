@@ -6,7 +6,6 @@ on:
       - '.agents/plugins/marketplace.json'
       - '.agents/plugins/plugins/wechat-article-downloader/**'
       - 'frontend/apps/web/public/.well-known/mahayana/marketplace.json'
-      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
       - '.github/workflows/wechat-article-downloader.yml'
   workflow_dispatch:
@@ -42,7 +41,7 @@ concurrency:
 env:
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   PLUGIN_PACKAGE: fabushi-official-miniapps
-  PLUGIN_BINARY: third_party/mahayana/mahayana-rs/target/release/fabushi-plugin-cli
+  PLUGIN_BINARY: third_party/mahayana/mahayana-rs/target/ci/fabushi-plugin-cli
   TARGET_SEED: https://mp.weixin.qq.com/s/qhuAA1GduPwC6VM-kFohyg
 
 jobs:
@@ -74,8 +73,8 @@ jobs:
       - name: Test Rust downloader
         run: cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
 
-      - name: Build release CLI
-        run: cargo build --locked --release --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
+      - name: Build fast deterministic CLI
+        run: cargo build --locked --profile ci --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
 
       - name: Validate plugin manifest
         shell: bash
@@ -90,6 +89,7 @@ jobs:
           ' plugin-manifest.json >/dev/null
 
       - name: Inspect real target article
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -103,6 +103,7 @@ jobs:
           ' inspect.json >/dev/null
 
       - name: Archive public articles
+        if: github.event_name == 'workflow_dispatch'
         id: archive
         shell: bash
         env:
@@ -139,6 +140,7 @@ jobs:
           echo "kind=$archive_kind" >> "$GITHUB_OUTPUT"
 
       - name: Verify archive
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -175,7 +177,7 @@ jobs:
           jq '{account,stats,albumCount:(.albums|length),warnings,failures}' "$manifest" | tee artifacts/archive-summary.json
 
       - name: Compress archive
-        if: always()
+        if: github.event_name == 'workflow_dispatch' && always()
         shell: bash
         run: |
           if [ -d artifacts/wechat-archive ]; then
@@ -183,8 +185,17 @@ jobs:
             sha256sum artifacts/wechat-archive.tar.gz > artifacts/wechat-archive.tar.gz.sha256
           fi
 
+      - name: Upload fast contract evidence
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wechat-downloader-contract-${{ github.run_id }}
+          path: plugin-manifest.json
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Upload archive and evidence
-        if: always()
+        if: github.event_name == 'workflow_dispatch' && always()
         uses: actions/upload-artifact@v4
         with:
           name: wechat-article-archive-${{ steps.archive.outputs.kind || 'failed' }}-${{ github.run_id }}

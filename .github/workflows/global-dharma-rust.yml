@@ -5,8 +5,6 @@ on:
     paths:
       - native/global-dharma/**
       - third_party/mahayana/codex-rs/**
-      - third_party/mahayana/mahayana-rs/Cargo.toml
-      - third_party/mahayana/mahayana-rs/Cargo.lock
       - third_party/mahayana/mahayana-rs/mahayana-agent-codex/**
       - third_party/mahayana/mahayana-rs/mahayana-agent-responses/**
       - third_party/mahayana/mahayana-rs/mahayana-cli/**

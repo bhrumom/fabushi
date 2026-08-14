@@ -57,6 +57,10 @@ fabushi/build_output_full.txt
 fabushi/flutter_logs_capture.txt
 fabushi/playwright-report/
 fabushi/test-results/
+fabushi/e2e/playwright-report/
+fabushi/e2e/test-results/
+third_party/mahayana/mahayana-rs/target/
+apps/fabushi-tauri/src-tauri/gen/
 fabushi/test_bundle.dart
 fabushi/patrol_test/test_bundle.dart
 tf_swift_cache/
@@ -81,3 +85,6 @@ fabushi/web/.dev.vars
 **/*.p8
 fabushi/linux/telegram_runtime/
 fabushi/windows/telegram_runtime/
+
+# Generated standalone React Host bundle
+frontend/apps/host/dist/
