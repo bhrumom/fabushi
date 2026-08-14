@@ -29,8 +29,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check .github/patches/remove-bundled-marketplace.patch
-          git apply .github/patches/remove-bundled-marketplace.patch
+          git apply --recount --check .github/patches/remove-bundled-marketplace.patch
+          git apply --recount .github/patches/remove-bundled-marketplace.patch
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
       - name: Commit migrated runtime
         shell: bash
