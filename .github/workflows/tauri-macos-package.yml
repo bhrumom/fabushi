@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build-package:
-    name: Build macOS functional app
+    name: Build and smoke-test macOS app
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -113,6 +113,28 @@ jobs:
           echo "app_name=$(basename "$app_path")" >> "$GITHUB_OUTPUT"
           echo "dmg_name=$dmg_name" >> "$GITHUB_OUTPUT"
 
+      - name: Launch generated Mac app for PR smoke test
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$(find third_party/mahayana/mahayana-rs/target/debug/bundle/macos -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          test -n "$app_path"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable"
+          test -x "$executable_path"
+
+          "$executable_path" > "$RUNNER_TEMP/fabushi-packaged-app.log" 2>&1 &
+          app_pid=$!
+          sleep 8
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            echo "Packaged Tauri app exited during startup." >&2
+            cat "$RUNNER_TEMP/fabushi-packaged-app.log" >&2 || true
+            exit 1
+          fi
+          kill "$app_pid" || true
+          wait "$app_pid" || true
+
       - name: Upload macOS app artifact
         uses: actions/upload-artifact@v7
         with:
@@ -120,6 +142,15 @@ jobs:
           path: macos-package-artifacts
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload PR smoke diagnostics
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-macos-functional-test-diagnostics
+          path: ${{ runner.temp }}/fabushi-packaged-app.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Summarize package
         shell: bash
@@ -134,11 +165,17 @@ jobs:
             else
               echo "- DMG: skipped for fast PR validation"
             fi
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "- Packaged app smoke: launched successfully on the build runner"
+              echo "- Host journeys: covered by the dedicated Host fast E2E workflow"
+              echo "- Tauri command contract: covered by the dedicated Tauri Host fast checks workflow"
+            fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  functional-test:
-    name: Test packaged Mac app and all Host journeys
+  release-functional-test:
+    name: Test release Mac app and all Host journeys
+    if: github.event_name == 'workflow_dispatch'
     needs: build-package
     runs-on: macos-15
     timeout-minutes: 45
@@ -151,7 +188,7 @@ jobs:
       - name: Download packaged app
         uses: actions/download-artifact@v5
         with:
-          name: ${{ github.event_name == 'pull_request' && 'fabushi-macos-functional-app' || 'fabushi-macos-package' }}
+          name: fabushi-macos-package
           path: macos-package-artifacts
 
       - name: Enable pinned pnpm through Corepack
