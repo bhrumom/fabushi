@@ -1,0 +1,44 @@
+name: Apply cloud marketplace migration patch v2
+
+on:
+  push:
+    branches:
+      - codex/tauri-ci-cleanup-staging
+    paths:
+      - .github/patches/remove-bundled-marketplace.patch
+      - .github/workflows/apply-cloud-marketplace-migration-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v5
+        with:
+          ref: codex/tauri-ci-cleanup-staging
+          fetch-depth: 0
+      - name: Set up Rust formatter
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply bundled-marketplace removal patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --recount --check .github/patches/remove-bundled-marketplace.patch
+          git apply --recount .github/patches/remove-bundled-marketplace.patch
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
+      - name: Commit migrated runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs
+          git diff --cached --check
+          git commit -m 'migration: remove bundled plugin marketplace runtime fallback'
+          git push origin HEAD:codex/tauri-ci-cleanup-staging
