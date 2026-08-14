@@ -1,0 +1,442 @@
+diff --git a/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/lib.rs b/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/lib.rs
+index b286db0a9..8b66e3ef3 100644
+--- a/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/lib.rs
++++ b/third_party/mahayana/mahayana-rs/mahayana-agent-codex/src/lib.rs
+@@ -113,64 +113,6 @@ use std::time::UNIX_EPOCH;
+ use tokio::sync::oneshot;
+ 
+ const PROVIDER_ID: &str = "dacheng-deepseek";
+-const BUNDLED_MARKETPLACE_NAME: &str = "fabushi-official";
+-
+-fn bundled_plugin_overrides(
+-    settings: &CodexAgentConfig,
+-) -> Result<Vec<(String, toml::Value)>, AgentError> {
+-    let Some(root) = settings.bundled_plugin_marketplace.as_deref() else {
+-        return Ok(Vec::new());
+-    };
+-    if !root.join("marketplace.json").is_file() {
+-        return Err(AgentError::Backend(format!(
+-            "bundled plugin marketplace is invalid: {}",
+-            root.display()
+-        )));
+-    }
+-    let root = root
+-        .canonicalize()
+-        .map_err(|error| AgentError::Backend(error.to_string()))?;
+-    let mut marketplace = toml::map::Map::new();
+-    marketplace.insert("source_type".into(), toml::Value::String("local".into()));
+-    marketplace.insert(
+-        "source".into(),
+-        toml::Value::String(root.to_string_lossy().into_owned()),
+-    );
+-    let mut overrides = vec![
+-        ("features.plugins".into(), toml::Value::Boolean(true)),
+-        (
+-            format!("marketplaces.{BUNDLED_MARKETPLACE_NAME}"),
+-            toml::Value::Table(marketplace),
+-        ),
+-    ];
+-    for plugin_id in &settings.bundled_plugin_ids {
+-        if plugin_id.is_empty()
+-            || !plugin_id
+-                .bytes()
+-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+-        {
+-            return Err(AgentError::Backend(format!(
+-                "invalid bundled plugin id: {plugin_id}"
+-            )));
+-        }
+-        if !root
+-            .join("plugins")
+-            .join(plugin_id)
+-            .join(".codex-plugin/plugin.json")
+-            .is_file()
+-        {
+-            return Err(AgentError::Backend(format!(
+-                "bundled plugin `{plugin_id}` is missing from {}",
+-                root.display()
+-            )));
+-        }
+-        overrides.push((
+-            format!("plugins.{plugin_id}@{BUNDLED_MARKETPLACE_NAME}.enabled"),
+-            toml::Value::Boolean(true),
+-        ));
+-    }
+-    Ok(overrides)
+-}
+ 
+ fn shared_installed_plugin_overrides(
+     runtime_codex_home: &Path,
+@@ -425,11 +367,6 @@ fn debug_mcp_runtime_configs(configs: &HashMap<String, McpServerConfig>) {
+ #[derive(Clone)]
+ pub struct CodexAgentConfig {
+     pub codex_home: PathBuf,
+-    /// Optional local marketplace bundled by the Fabushi desktop installer.
+-    /// It is injected into Codex's in-memory config and never written into the
+-    /// user's personal Codex configuration.
+-    pub bundled_plugin_marketplace: Option<PathBuf>,
+-    pub bundled_plugin_ids: Vec<String>,
+     /// Reuse enabled local Codex plugins and MCP servers from the user's
+     /// standard Codex installation without sharing auth or conversation state.
+     pub inherit_installed_plugins: bool,
+@@ -517,8 +454,6 @@ enum ApprovalResponseKind {
+ struct CodexAgentInner {
+     config: Arc<codex_core::config::Config>,
+     requests: InProcessAppServerRequestHandle,
+-    bundled_marketplace_path: Option<codex_utils_absolute_path::AbsolutePathBuf>,
+-    bundled_plugin_ids: HashSet<String>,
+     shared_installed_plugin_roots: Vec<PathBuf>,
+     next_request_id: AtomicI64,
+     operations: Mutex<HashMap<OperationId, ActiveOperation>>,
+@@ -1365,17 +1300,6 @@ pub struct CodexAgentBackend {
+ impl CodexAgentBackend {
+     pub async fn start(settings: CodexAgentConfig) -> Result<Self, AgentError> {
+         settings.validate()?;
+-        let bundled_plugin_marketplace = settings.bundled_plugin_marketplace.clone();
+-        let bundled_plugin_ids = settings.bundled_plugin_ids.clone();
+-        let bundled_marketplace_path = bundled_plugin_marketplace
+-            .as_ref()
+-            .map(|root| {
+-                codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+-                    root.join("marketplace.json"),
+-                )
+-                .map_err(|error| AgentError::Backend(error.to_string()))
+-            })
+-            .transpose()?;
+         std::fs::create_dir_all(&settings.codex_home)
+             .map_err(|error| AgentError::Backend(error.to_string()))?;
+ 
+@@ -1393,7 +1317,6 @@ impl CodexAgentBackend {
+         if settings.inherit_installed_plugins {
+             cli_overrides.extend(shared_installed_plugin_overrides(&settings.codex_home)?);
+         }
+-        cli_overrides.extend(bundled_plugin_overrides(&settings)?);
+         let mut config = ConfigBuilder::default()
+             .codex_home(settings.codex_home)
+             .cli_overrides(cli_overrides.clone())
+@@ -1520,8 +1443,6 @@ impl CodexAgentBackend {
+         let inner = Arc::new(CodexAgentInner {
+             config,
+             requests: client.request_handle(),
+-            bundled_marketplace_path,
+-            bundled_plugin_ids: bundled_plugin_ids.iter().cloned().collect(),
+             shared_installed_plugin_roots: inherited_plugin_roots,
+             next_request_id: AtomicI64::new(1),
+             operations: Mutex::new(HashMap::new()),
+@@ -1529,72 +1450,10 @@ impl CodexAgentBackend {
+             conversation_providers: settings.conversation_providers,
+         });
+         tokio::spawn(dispatch_events(client, Arc::downgrade(&inner)));
+-        if !settings.use_codex_account
+-            && let Some(marketplace_root) = bundled_plugin_marketplace
+-        {
+-            install_missing_bundled_plugins(inner.as_ref(), marketplace_root, &bundled_plugin_ids)
+-                .await?;
+-        }
+         Ok(Self { inner })
+     }
+ }
+ 
+-async fn install_missing_bundled_plugins(
+-    inner: &CodexAgentInner,
+-    marketplace_root: PathBuf,
+-    plugin_ids: &[String],
+-) -> Result<(), AgentError> {
+-    if plugin_ids.is_empty() {
+-        return Ok(());
+-    }
+-    let marketplace_path = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+-        marketplace_root.join("marketplace.json"),
+-    )
+-    .map_err(|error| AgentError::Backend(error.to_string()))?;
+-    let installed: PluginInstalledResponse = inner
+-        .requests
+-        .request_typed(ClientRequest::PluginInstalled {
+-            request_id: inner.request_id(),
+-            params: PluginInstalledParams {
+-                cwds: Some(vec![inner.config.cwd.clone()]),
+-                install_suggestion_plugin_names: None,
+-            },
+-        })
+-        .await
+-        .map_err(|error| AgentError::Backend(error.to_string()))?;
+-    let installed_plugin_ids = installed
+-        .marketplaces
+-        .into_iter()
+-        .flat_map(|marketplace| marketplace.plugins)
+-        .filter(|plugin| plugin.installed)
+-        .map(|plugin| plugin.id)
+-        .collect::<HashSet<_>>();
+-
+-    for plugin_name in plugin_ids {
+-        let plugin_id = format!("{plugin_name}@{BUNDLED_MARKETPLACE_NAME}");
+-        if installed_plugin_ids.contains(&plugin_id) {
+-            continue;
+-        }
+-        let _: PluginInstallResponse = inner
+-            .requests
+-            .request_typed(ClientRequest::PluginInstall {
+-                request_id: inner.request_id(),
+-                params: PluginInstallParams {
+-                    marketplace_path: Some(marketplace_path.clone()),
+-                    remote_marketplace_name: None,
+-                    plugin_name: plugin_name.clone(),
+-                },
+-            })
+-            .await
+-            .map_err(|error| {
+-                AgentError::Backend(format!(
+-                    "failed to install bundled plugin `{plugin_name}`: {error}"
+-                ))
+-            })?;
+-    }
+-    Ok(())
+-}
+-
+ #[async_trait]
+ impl AgentBackend for CodexAgentBackend {
+@@ -1904,7 +1763,6 @@ impl AgentBackend for CodexAgentBackend {
+     }
+ 
+     async fn open_mcp_app(&self, request: OpenMcpAppRequest) -> Result<McpAppSession, AgentError> {
+-        let is_bundled = self.inner.bundled_plugin_ids.contains(&request.plugin_id);
+         let installed: PluginInstalledResponse = self
+@@ -1950,12 +1808,6 @@ impl AgentBackend for CodexAgentBackend {
+                         (marketplace.path.clone(), remote_name)
+                     })
+             })
+-            .or_else(|| {
+-                is_bundled
+-                    .then(|| self.inner.bundled_marketplace_path.clone())
+-                    .flatten()
+-                    .map(|path| (Some(path), None))
+-            })
+             .ok_or_else(|| {
+@@ -1975,7 +1827,7 @@ impl AgentBackend for CodexAgentBackend {
+             })
+             .await
+             .map_err(|error| AgentError::Backend(error.to_string()))?;
+-        if !detail.plugin.summary.enabled && !is_bundled {
++        if !detail.plugin.summary.enabled {
+             return Err(AgentError::Backend(format!(
+@@ -2614,8 +2466,6 @@ mod tests {
+     fn accepts_anonymous_product_session_for_first_party_allowance() {
+         let config = CodexAgentConfig {
+             codex_home: PathBuf::from("/tmp/mahayana-test"),
+-            bundled_plugin_marketplace: None,
+-            bundled_plugin_ids: Vec::new(),
+             inherit_installed_plugins: false,
+@@ -2635,8 +2485,6 @@ mod tests {
+     fn rejects_non_https_provider_and_header_injection() {
+         let mut config = CodexAgentConfig {
+             codex_home: PathBuf::from("/tmp/mahayana-test"),
+-            bundled_plugin_marketplace: None,
+-            bundled_plugin_ids: Vec::new(),
+             inherit_installed_plugins: false,
+@@ -2669,35 +2517,6 @@ mod tests {
+         ));
+     }
+ 
+-    #[test]
+-    fn bundled_official_marketplace_is_projected_into_memory_only() {
+-        let marketplace =
+-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../.agents/plugins");
+-        let config = CodexAgentConfig {
+-            codex_home: PathBuf::from("/tmp/mahayana-test"),
+-            bundled_plugin_marketplace: Some(marketplace),
+-            bundled_plugin_ids: vec!["global-dharma".into(), "faliu-flashcards".into()],
+-            inherit_installed_plugins: false,
+-            cwd: PathBuf::from("/tmp"),
+-            workspace_roots: Vec::new(),
+-            model: "deepseek-chat".into(),
+-            responses_base_url: "https://example.test/v1".into(),
+-            use_codex_account: false,
+-            product_session_token: None,
+-            sandbox_mode: SandboxMode::ReadOnly,
+-            approval_policy: AskForApproval::OnRequest,
+-            codex_executable_path: None,
+-            conversation_providers: Vec::new(),
+-        };
+-        let overrides = bundled_plugin_overrides(&config).expect("bundled plugin overrides");
+-        assert!(overrides.iter().any(|(key, _)| key == "features.plugins"));
+-        assert!(
+-            overrides
+-                .iter()
+-                .any(|(key, _)| { key == "plugins.global-dharma@fabushi-official.enabled" })
+-        );
+-    }
+-
+     #[test]
+     fn shared_local_plugins_and_mcp_servers_are_projected_without_auth_state() {
+         let marketplace =
+diff --git a/third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs b/third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
+index 98f4cb4ec..eea51a250 100644
+--- a/third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
++++ b/third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
+@@ -707,12 +707,6 @@ fn cli_feature_host(
+     codex_executable_path: Option<&Path>,
+ ) -> Result<FeatureHostController, String> {
+     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+-    let bundled_plugin_marketplace = find_bundled_plugin_marketplace(&cwd);
+-    let mini_apps = bundled_plugin_marketplace
+-        .as_deref()
+-        .map(plugin_dev::marketplace_mini_apps)
+-        .transpose()?
+-        .unwrap_or_default();
+     let mut host = HostCreateConfig::default();
+@@ -727,8 +721,6 @@ fn cli_feature_host(
+     host.codex_executable_path = codex_executable_path.map(Path::to_path_buf);
+     host.cwd = Some(cwd);
+     host.host_platform = Some(HostPlatform::Cli);
+-    host.bundled_plugin_marketplace = bundled_plugin_marketplace;
+-    host.mini_apps = mini_apps;
+     host.inherit_installed_plugins = Some(true);
+@@ -1658,20 +1650,12 @@ struct RuntimeHandle(u64);
+ impl RuntimeHandle {
+     fn create(codex_executable_path: Option<&Path>) -> Result<Self, String> {
+         let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+-        let bundled_plugin_marketplace = find_bundled_plugin_marketplace(&cwd);
+-        let mini_apps = bundled_plugin_marketplace
+-            .as_deref()
+-            .map(plugin_dev::marketplace_mini_apps)
+-            .transpose()?
+-            .unwrap_or_default();
+         let use_codex_account = std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
+         let mut config = json!({
+@@ -1665,8 +1649,6 @@ impl RuntimeHandle {
+             "hostPlatform": "cli",
+             "cwd": cwd,
+             "workspaceRoots": [cwd],
+-            "bundledPluginMarketplace": bundled_plugin_marketplace,
+-            "miniApps": mini_apps,
+             "useCodexAccount": use_codex_account,
+@@ -1734,28 +1716,6 @@ impl RuntimeHandle {
+     }
+ }
+ 
+-fn find_bundled_plugin_marketplace(cwd: &Path) -> Option<PathBuf> {
+-    let mut candidates = Vec::new();
+-    if let Some(path) = std::env::var_os("MAHAYANA_BUNDLED_PLUGIN_MARKETPLACE") {
+-        candidates.push(PathBuf::from(path));
+-    }
+-    candidates.push(cwd.join(".agents/plugins"));
+-    if let Ok(executable) = std::env::current_exe()
+-        && let Some(bin_dir) = executable.parent()
+-    {
+-        candidates.push(bin_dir.join("../share/mahayana/plugins"));
+-        candidates.push(bin_dir.join("share/mahayana/plugins"));
+-        candidates.push(bin_dir.join("../Resources/mahayana/share/mahayana/plugins"));
+-    }
+-    candidates.into_iter().find_map(|candidate| {
+-        candidate
+-            .join("marketplace.json")
+-            .is_file()
+-            .then(|| candidate.canonicalize().ok())
+-            .flatten()
+-    })
+-}
+-
+ impl Drop for RuntimeHandle {
+diff --git a/third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs b/third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs
+index 4f1ceed33..a7cca3e80 100644
+--- a/third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs
++++ b/third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs
+@@ -34,8 +34,6 @@ use mahayana_runtime_core::RuntimeError;
+ use mahayana_social::MahayanaSocialConversationProvider;
+ use mahayana_telegram::TelegramConversationProvider;
+ use std::collections::BTreeMap;
+-#[cfg(any(test, feature = "desktop-full", feature = "mobile-embedded"))]
+-use std::path::Path;
+ use std::path::PathBuf;
+@@ -50,8 +48,6 @@ pub struct HostCreateConfig {
+     /// Shared automation store used by CLI and native application shells.
+     pub automation_path: Option<PathBuf>,
+     pub codex_home: Option<PathBuf>,
+-    /// Read-only marketplace shipped inside the native application.
+-    pub bundled_plugin_marketplace: Option<PathBuf>,
+     /// Optional Mahayana CLI used only for desktop argv helper dispatch.
+@@ -278,11 +274,6 @@ fn build_runtime(
+         let settings = CodexAgentConfig {
+             codex_home,
+-            bundled_plugin_marketplace: create.bundled_plugin_marketplace.clone(),
+-            bundled_plugin_ids: bundled_marketplace_plugin_ids(
+-                create.bundled_plugin_marketplace.as_deref(),
+-                &mini_apps,
+-            )?,
+             inherit_installed_plugins: create.inherit_installed_plugins.unwrap_or(
+@@ -361,38 +352,6 @@ fn merge_official_mini_apps(
+     definitions.into_values().collect()
+ }
+ 
+-#[cfg(any(test, feature = "desktop-full", feature = "mobile-embedded"))]
+-fn bundled_marketplace_plugin_ids(
+-    marketplace_root: Option<&Path>,
+-    mini_apps: &[MiniAppDefinition],
+-) -> Result<Vec<String>, HostError> {
+-    let Some(marketplace_root) = marketplace_root else {
+-        return Ok(Vec::new());
+-    };
+-    let mut plugin_ids = Vec::new();
+-    for mini_app in mini_apps {
+-        let plugin_id = mini_app.plugin_id.as_str();
+-        if plugin_id.is_empty()
+-            || !plugin_id
+-                .bytes()
+-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+-        {
+-            return Err(HostError::new(format!(
+-                "invalid bundled plugin id: {plugin_id}"
+-            )));
+-        }
+-        if marketplace_root
+-            .join("plugins")
+-            .join(plugin_id)
+-            .join(".codex-plugin/plugin.json")
+-            .is_file()
+-        {
+-            plugin_ids.push(plugin_id.to_string());
+-        }
+-    }
+-    Ok(plugin_ids)
+-}
+-
+ #[cfg(feature = "desktop-full")]
+ fn default_codex_home() -> PathBuf {
+@@ -488,37 +447,4 @@ mod tests {
+             .expect("remote agent must be rejected");
+         assert!(error.to_string().contains("remote Agent"));
+     }
+-
+-    #[test]
+-    fn bundled_marketplace_enables_only_plugins_present_on_disk() {
+-        let unique = std::time::SystemTime::now()
+-            .duration_since(std::time::UNIX_EPOCH)
+-            .expect("system time")
+-            .as_nanos();
+-        let root = std::env::temp_dir().join(format!(
+-            "mahayana-host-marketplace-{}-{unique}",
+-            std::process::id()
+-        ));
+-        let manifest = root.join("plugins/cloud-market-hello/.codex-plugin/plugin.json");
+-        std::fs::create_dir_all(manifest.parent().expect("manifest parent"))
+-            .expect("create plugin tree");
+-        std::fs::write(&manifest, "{}").expect("write plugin manifest");
+-
+-        let mini_apps = vec![
+-            MiniAppDefinition {
+-                plugin_id: "cloud-market-hello".into(),
+-                title: "Cloud Market Hello".into(),
+-                pinned: false,
+-            },
+-            MiniAppDefinition {
+-                plugin_id: "bot-father".into(),
+-                title: "Bot Father".into(),
+-                pinned: false,
+-            },
+-        ];
+-        let plugin_ids =
+-            bundled_marketplace_plugin_ids(Some(&root), &mini_apps).expect("bundled plugin ids");
+-        assert_eq!(plugin_ids, vec!["cloud-market-hello"]);
+-        std::fs::remove_dir_all(root).expect("remove plugin tree");
+-    }
+ }
