@@ -294,19 +294,10 @@ mod desktop {
             .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
         std::fs::create_dir_all(&root)
             .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
-        // The signed desktop shell uses its bundled marketplace. Reading the
-        // mutable global Codex plugin registry here can block first paint on
-        // macOS and would make app behavior depend on unrelated developer
-        // plugins installed outside Fabushi.
-        let mut host_config = host_config_for_root(root, false);
-        let bundled_marketplace = app
-            .path()
-            .resource_dir()
-            .map_err(|error| format!("resolve Fabushi resources: {error}"))?
-            .join("fabushi-official");
-        if bundled_marketplace.join("marketplace.json").is_file() {
-            host_config.bundled_plugin_marketplace = Some(bundled_marketplace);
-        }
+        // Runtime construction stays local and fast. Marketplace discovery and
+        // plugin installation are explicit cloud-backed product operations;
+        // the signed desktop shell never ships or auto-installs a plugin tree.
+        let host_config = host_config_for_root(root, false);
         state.initialize_with_host_config(config, host_config)
     }
 

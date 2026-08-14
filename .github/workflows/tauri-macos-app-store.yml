@@ -68,7 +68,7 @@ jobs:
           ditto -x -k macos-package-artifacts/Fabushi.app.zip macos-app-store-input
           app_path="$(find macos-app-store-input -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
           test -n "$app_path"
-          test -f "$app_path/Contents/Resources/fabushi-official/marketplace.json"
+          test ! -e "$app_path/Contents/Resources/fabushi-official"
           echo "TAURI_APP_PATH=$app_path" >> "$GITHUB_ENV"
 
       - name: Sign, package, validate and upload

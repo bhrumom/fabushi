@@ -4,7 +4,6 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - .agents/plugins/**
       - .github/workflows/tauri-macos-package.yml
       - apps/fabushi-tauri/**
       - contracts/automation/cross-platform-journeys.json
@@ -69,7 +68,7 @@ jobs:
           dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print | sort | head -n 1)"
           test -n "$app_path"
           test -n "$dmg_path"
-          test -f "$app_path/Contents/Resources/fabushi-official/marketplace.json"
+          test ! -e "$app_path/Contents/Resources/fabushi-official"
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           test -x "$app_path/Contents/MacOS/$executable"
 
@@ -171,7 +170,7 @@ jobs:
           ditto -x -k macos-package-artifacts/Fabushi.app.zip macos-package-smoke
           app_path="$(find macos-package-smoke -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
           test -n "$app_path"
-          test -f "$app_path/Contents/Resources/fabushi-official/marketplace.json"
+          test ! -e "$app_path/Contents/Resources/fabushi-official"
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           executable_path="$app_path/Contents/MacOS/$executable"
           test -x "$executable_path"
