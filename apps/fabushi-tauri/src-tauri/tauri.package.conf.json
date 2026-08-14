@@ -4,9 +4,6 @@
   "identifier": "com.ombhrum.fabushi",
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "resources": {
-      "../../../.agents/plugins": "fabushi-official"
-    }
+    "targets": ["app", "dmg"]
   }
 }
