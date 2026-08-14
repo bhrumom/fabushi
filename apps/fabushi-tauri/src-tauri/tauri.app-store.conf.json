@@ -5,9 +5,6 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
-    "resources": {
-      "../../../.agents/plugins": "fabushi-official"
-    },
     "macOS": {
       "entitlements": "AppStore.entitlements"
     }

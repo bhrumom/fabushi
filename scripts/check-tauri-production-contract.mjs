@@ -54,5 +54,12 @@ assert.equal(
   false,
   "the fast compile gate must not spend time producing installers",
 );
+assert.ok(
+  !tauriConfig.bundle.resources ||
+    !Object.keys(tauriConfig.bundle.resources).some((source) =>
+      source.includes(".agents/plugins"),
+    ),
+  "Tauri must not bundle the plugin marketplace; plugins are downloaded from the cloud on install",
+);
 
 console.log("Tauri production contract passed");

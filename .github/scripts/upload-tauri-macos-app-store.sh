@@ -55,10 +55,8 @@ if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
   exit 1
 fi
 
-marketplace_path="$app_path/Contents/Resources/fabushi-official/marketplace.json"
-if [ ! -f "$marketplace_path" ]; then
-  echo "Bundled marketplace is missing: $marketplace_path" >&2
-  find "$app_path/Contents/Resources" -maxdepth 3 -type f -print >&2 || true
+if [ -e "$app_path/Contents/Resources/fabushi-official" ]; then
+  echo "Bundled plugin marketplace must not be shipped inside the App Store package" >&2
   exit 1
 fi
 
