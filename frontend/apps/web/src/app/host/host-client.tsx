@@ -265,9 +265,12 @@ function Icon({
 }
 
 export default function HostClient() {
+  const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
+  const screenshotHasMiniApp = screenshotMode === "miniapp";
+  const screenshotComputerOpen = ["computer", "running", "miniapp"].includes(screenshotMode ?? "");
   const transport = useMemo<MahayanaHostTransport>(
-    () => new MockMahayanaHostTransport(),
-    [],
+    () => new MockMahayanaHostTransport({ authenticated: screenshotMode !== null }),
+    [screenshotMode],
   );
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -281,24 +284,32 @@ export default function HostClient() {
     }>
   >([]);
   const [installedMiniApps, setInstalledMiniApps] = useState<Set<string>>(
-    () => new Set(),
+    () => new Set(screenshotHasMiniApp ? [defaultMiniAppId] : []),
   );
-  const [openedMiniApp, setOpenedMiniApp] = useState<string | null>(null);
-  const [openedMiniAppHtml, setOpenedMiniAppHtml] = useState<string | null>(null);
+  const [openedMiniApp, setOpenedMiniApp] = useState<string | null>(
+    screenshotHasMiniApp ? defaultMiniAppId : null,
+  );
+  const [openedMiniAppHtml, setOpenedMiniAppHtml] = useState<string | null>(
+    screenshotHasMiniApp
+      ? '<!doctype html><html lang="zh-CN"><body style="font:15px system-ui;background:#101722;color:#edf3ff;padding:20px"><h1>全球法流</h1><p>MiniApp 已在隔离容器中打开，可通过受控能力与宿主通信。</p></body></html>'
+      : null,
+  );
   const [approval, setApproval] = useState<ApprovalRequestedEvent | null>(null);
   const [approvalState, setApprovalState] = useState("not-requested");
-  const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
-  const [operationState, setOperationState] = useState("idle");
+  const [activeOperationId, setActiveOperationId] = useState<string | null>(
+    screenshotMode === "running" ? "operation-screenshot" : null,
+  );
+  const [operationState, setOperationState] = useState(screenshotMode === "running" ? "running" : "idle");
   const [sessionState, setSessionState] = useState("active");
   const [featureStates, setFeatureStates] = useState<FeatureStates>(
     createInitialFeatureStates,
   );
   const [error, setError] = useState<string | null>(null);
-  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
-  const [automationOpen, setAutomationOpen] = useState(false);
-  const [computerOpen, setComputerOpen] = useState(false);
+  const [automationOpen, setAutomationOpen] = useState(screenshotMode === "automation");
+  const [computerOpen, setComputerOpen] = useState(screenshotComputerOpen);
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
   const [agentTitle, setAgentTitle] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
@@ -316,7 +327,7 @@ export default function HostClient() {
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [preferences, setPreferences] = useState<HostPreferences>(defaultPreferences);
   const [ruleDraft, setRuleDraft] = useState("");
@@ -651,6 +662,7 @@ export default function HostClient() {
           setOpenedMiniAppHtml(event.html ?? null);
           setActiveAgentId(event.miniAppId);
           setMarketplaceOpen(false);
+          setComputerOpen(true);
           setBusyMiniApp(null);
           pass("miniapp.open");
           break;

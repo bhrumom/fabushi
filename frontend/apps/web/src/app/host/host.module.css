@@ -2598,11 +2598,7 @@
 .agentNotification small { color: var(--muted); line-height: 1.35; }
 
 .activityHeader,
-.agentRunCard,
-.controlCard,
-.coverageCard,
-.emptyMiniApp,
-.miniAppPanel {
+.agentRunCard {
   display: none;
 }
 

@@ -20,7 +20,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import {
+import React, {
   Fragment,
   useEffect,
   useId,

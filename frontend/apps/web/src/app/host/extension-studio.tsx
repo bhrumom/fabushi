@@ -16,7 +16,7 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import React, { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type {
   BotSummary,
   ConnectorSummary,
@@ -435,7 +435,7 @@ export function MarketplaceTabs({
   onChange: (section: MarketplaceSection) => void;
   counts: Record<MarketplaceSection, number>;
 }) {
-  const tabs: Array<[MarketplaceSection, string, React.ReactNode]> = [
+  const tabs: Array<[MarketplaceSection, string, ReactNode]> = [
     ["apps", "Apps", <Cloud size={14} key="apps" />],
     ["connectors", "Connectors", <Link2 size={14} key="connectors" />],
     ["skills", "Skills", <Wrench size={14} key="skills" />],
