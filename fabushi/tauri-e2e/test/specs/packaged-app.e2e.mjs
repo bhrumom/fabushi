@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 const selectorForTestId = (id) => `[data-testid="${id}"]`;
 const testId = (id) => browser.$(selectorForTestId(id));
 
+async function stage(label, operation) {
+  const startedAt = Date.now();
+  console.log(`[tauri-e2e] start: ${label}`);
+  const result = await operation();
+  console.log(`[tauri-e2e] done: ${label} (${Date.now() - startedAt}ms)`);
+  return result;
+}
+
 async function domState(selector) {
   return browser.executeAsync((target, done) => {
     try {
@@ -69,9 +77,12 @@ async function isVisible(selector) {
   }
 }
 
-async function onboardingNextState() {
+async function markOnboardingNextButton() {
   return browser.executeAsync((done) => {
     try {
+      document
+        .querySelectorAll('[data-wdio-onboarding-next="true"]')
+        .forEach((element) => element.removeAttribute("data-wdio-onboarding-next"));
       const button = Array.from(document.querySelectorAll("button")).find(
         (candidate) => candidate.textContent?.trim() === "下一步",
       );
@@ -81,14 +92,13 @@ async function onboardingNextState() {
       }
       const style = window.getComputedStyle(button);
       const rect = button.getBoundingClientRect();
-      done({
-        exists: true,
-        visible:
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          rect.width > 0 &&
-          rect.height > 0,
-      });
+      const visible =
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        rect.width > 0 &&
+        rect.height > 0;
+      if (visible) button.setAttribute("data-wdio-onboarding-next", "true");
+      done({ exists: true, visible });
     } catch (error) {
       done({ exists: false, visible: false, error: String(error) });
     }
@@ -96,37 +106,44 @@ async function onboardingNextState() {
 }
 
 async function finishOnboarding() {
-  const nextSelector = '//button[normalize-space(.)="下一步"]';
+  const nextSelector = '[data-wdio-onboarding-next="true"]';
   for (let index = 0; index < 8; index += 1) {
-    const state = await onboardingNextState();
+    const state = await stage(`inspect onboarding step ${index}`, markOnboardingNextButton);
     if (!state.visible) return;
 
-    const next = await browser.$(nextSelector);
-    await next.click();
+    const next = await stage(`locate onboarding next ${index}`, () => browser.$(nextSelector));
+    await stage(`click onboarding next ${index}`, () => next.click());
   }
   throw new Error("Tauri onboarding did not finish within eight steps");
 }
 
 describe("packaged Fabushi Tauri app", () => {
   it("drives the real WKWebView login controls", async () => {
-    await waitForVisible(selectorForTestId("login-gate"));
+    await stage("wait for login gate", () => waitForVisible(selectorForTestId("login-gate")));
     await finishOnboarding();
 
-    if (await isVisible(selectorForTestId("show-login-options"))) {
-      await testId("show-login-options").click();
+    if (await stage("inspect login options button", () => isVisible(selectorForTestId("show-login-options")))) {
+      const showLoginOptions = await stage("locate login options button", () => testId("show-login-options"));
+      await stage("click login options button", () => showLoginOptions.click());
     }
 
-    const passwordToggle = await waitForVisible(selectorForTestId("password-login-toggle"));
-    await passwordToggle.click();
+    const passwordToggle = await stage("wait for password login toggle", () =>
+      waitForVisible(selectorForTestId("password-login-toggle")),
+    );
+    await stage("click password login toggle", () => passwordToggle.click());
 
-    const username = await waitForVisible(selectorForTestId("login-username"));
-    const password = await waitForVisible(selectorForTestId("login-password"));
+    const username = await stage("wait for username input", () =>
+      waitForVisible(selectorForTestId("login-username")),
+    );
+    const password = await stage("wait for password input", () =>
+      waitForVisible(selectorForTestId("login-password")),
+    );
 
-    await username.setValue("tauri-wdio-e2e");
-    await password.setValue("real-wkwebview-input");
+    await stage("type username", () => username.setValue("tauri-wdio-e2e"));
+    await stage("type password", () => password.setValue("real-wkwebview-input"));
 
-    assert.equal(await username.getValue(), "tauri-wdio-e2e");
-    assert.equal(await password.getValue(), "real-wkwebview-input");
+    assert.equal(await stage("read username", () => username.getValue()), "tauri-wdio-e2e");
+    assert.equal(await stage("read password", () => password.getValue()), "real-wkwebview-input");
   });
 
   it("crosses the real WKWebView to Rust IPC boundary", async () => {
