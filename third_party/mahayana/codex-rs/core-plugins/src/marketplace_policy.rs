@@ -410,7 +410,7 @@ fn compile_allowed_source(
             let source =
                 parse_marketplace_source(url, ref_name).map_err(|err| invalid(&err.to_string()))?;
             let MarketplaceSource::Git { url, ref_name } = source else {
-                return Err(invalid("expected a Git URL"));
+                return Err("configured Git marketplace source is not a Git URL".to_string());
             };
             Ok(AllowedMarketplaceSource::GitUrl { url, ref_name })
         }
@@ -549,7 +549,7 @@ fn git_hostname(url: &str) -> Option<String> {
     }
     let (_, host_and_path) = url.split_once('@')?;
     let (hostname, _) = host_and_path.split_once(':')?;
-    (!hostname.is_empty()).then(|| hostname.to_ascii_lowercase)
+    (!hostname.is_empty()).then(|| hostname.to_ascii_lowercase())
 }
 
 #[cfg(test)]
