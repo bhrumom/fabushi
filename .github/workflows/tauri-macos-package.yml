@@ -8,6 +8,7 @@ on:
       - apps/fabushi-tauri/**
       - contracts/automation/cross-platform-journeys.json
       - fabushi/e2e/**
+      - fabushi/tauri-e2e/**
       - frontend/apps/host/**
       - frontend/apps/web/src/app/host/**
       - frontend/apps/web/src/lib/mahayana-host/**
@@ -48,7 +49,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v1' || 'tauri-macos-package-release-v1' }}
+          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v2-wdio' || 'tauri-macos-package-release-v1' }}
           cache-all-crates: true
           cache-workspace-crates: true
 
@@ -58,7 +59,7 @@ jobs:
         run: >-
           corepack pnpm dlx @tauri-apps/cli@2.11.3 build
           --debug
-          --features desktop
+          --features desktop,tauri-wdio-e2e
           --config src-tauri/tauri.functional.conf.json
 
       - name: Build release macOS app and DMG
@@ -92,6 +93,7 @@ jobs:
           mkdir -p macos-package-artifacts
           ditto -c -k --sequesterRsrc --keepParent "$app_path" macos-package-artifacts/Fabushi.app.zip
           printf '%s\n' "$GITHUB_SHA" > macos-package-artifacts/source-sha.txt
+          cp third_party/mahayana/mahayana-rs/Cargo.lock macos-package-artifacts/Cargo.lock.generated
 
           dmg_name=""
           if [ "$profile" = "release" ]; then
@@ -168,7 +170,8 @@ jobs:
             fi
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               echo "- Packaged app smoke: launched successfully on the build runner"
-              echo "- Packaged app functional E2E: runs in the downstream functional-test job"
+              echo "- Real WKWebView/native-window E2E: runs against the downloaded .app in the downstream functional-test job"
+              echo "- Browser Host journey contract: remains as the fast deterministic layer"
               echo "- Tauri command contract: rerun in the downstream functional-test job"
             fi
             echo "- Apple upload: not performed"
@@ -210,6 +213,37 @@ jobs:
       - name: Run complete Host user journeys
         working-directory: fabushi/e2e
         run: npm run test:host-fast
+
+      - name: Prepare downloaded app for real Tauri WebDriver E2E
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p macos-package-wdio
+          ditto -x -k macos-package-artifacts/Fabushi.app.zip macos-package-wdio
+          app_path="$(find macos-package-wdio -maxdepth 1 -type d -name '*.app' -print | sort | head -n 1)"
+          test -n "$app_path"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable"
+          test -x "$executable_path"
+          echo "FABUSHI_TAURI_APP_BINARY=$PWD/$executable_path" >> "$GITHUB_ENV"
+          echo "FABUSHI_TAURI_E2E_OUTPUT_DIR=$PWD/fabushi/tauri-e2e/.wdio-output" >> "$GITHUB_ENV"
+
+      - name: Set up Node for packaged Tauri WebDriver E2E
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install packaged Tauri WebDriver E2E package
+        if: github.event_name == 'pull_request'
+        working-directory: fabushi/tauri-e2e
+        run: npm install --no-audit --no-fund
+
+      - name: Drive real packaged Tauri WKWebView and native window
+        if: github.event_name == 'pull_request'
+        working-directory: fabushi/tauri-e2e
+        run: npm test
 
       - name: Verify Tauri production wiring
         run: node scripts/check-tauri-production-contract.mjs
@@ -266,6 +300,8 @@ jobs:
           path: |
             fabushi/e2e/playwright-report/host-fast
             fabushi/e2e/test-results
+            fabushi/tauri-e2e/.wdio-output
+            fabushi/tauri-e2e/package-lock.json
             ${{ runner.temp }}/fabushi-packaged-app.log
           if-no-files-found: ignore
           retention-days: 14
