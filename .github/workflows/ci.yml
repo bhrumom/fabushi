@@ -149,7 +149,9 @@ jobs:
               exit 1
             fi
           done
-          if grep -R -n -E 'subosito/flutter-action|flutter (pub get|build|test|analyze)' .github/workflows; then
+          flutter_action='subosito/'"flutter-action"
+          flutter_command='flutter '"(pub get|build|test|analyze)"
+          if grep -R -n -E "${flutter_action}|${flutter_command}" .github/workflows; then
             echo "Flutter commands are not allowed in the migrated automatic workflow set." >&2
             exit 1
           fi
