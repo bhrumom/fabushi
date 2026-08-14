@@ -52,13 +52,10 @@ jobs:
           shared-key: tauri-macos-package-v1
           cache-all-crates: true
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version '^2' --locked
-
       - name: Build macOS app and DMG
         working-directory: apps/fabushi-tauri
         run: >-
-          cargo tauri build
+          corepack pnpm dlx @tauri-apps/cli@2.11.3 build
           --features desktop
           --config src-tauri/tauri.package.conf.json
 
