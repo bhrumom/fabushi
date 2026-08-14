@@ -168,15 +168,14 @@ jobs:
             fi
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               echo "- Packaged app smoke: launched successfully on the build runner"
-              echo "- Host journeys: covered by the dedicated Host fast E2E workflow"
-              echo "- Tauri command contract: covered by the dedicated Tauri Host fast checks workflow"
+              echo "- Packaged app functional E2E: runs in the downstream functional-test job"
+              echo "- Tauri command contract: rerun in the downstream functional-test job"
             fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  release-functional-test:
-    name: Test release Mac app and all Host journeys
-    if: github.event_name == 'workflow_dispatch'
+  functional-test:
+    name: Test packaged Mac app and all Host journeys
     needs: build-package
     runs-on: macos-15
     timeout-minutes: 45
@@ -189,7 +188,7 @@ jobs:
       - name: Download packaged app
         uses: actions/download-artifact@v5
         with:
-          name: fabushi-macos-package
+          name: ${{ github.event_name == 'pull_request' && 'fabushi-macos-functional-app' || 'fabushi-macos-package' }}
           path: macos-package-artifacts
 
       - name: Enable pinned pnpm through Corepack
