@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "jsx": "react-jsx",
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/host/**/*.ts",
+    "src/app/host/**/*.tsx",
+    "src/lib/mahayana-host/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
+}

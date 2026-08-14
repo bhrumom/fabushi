@@ -4,10 +4,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/config/app_config.dart';
-import 'ai_backend_policy.dart';
 import 'diagnostic_log_service.dart';
 import 'mahayana_sdk.dart';
-import 'openclaw/openclaw_ai_bridge.dart';
 
 const String _dachengAiUnavailableMessage = '大乘 AI 后端暂时不可用，请稍后重试。';
 const int _maxErrorMessageLength = 240;
@@ -214,15 +212,12 @@ class DachengAiService {
   DachengAiService({
     http.Client? httpClient,
     Future<String> Function()? baseUrl,
-    OpenClawAiBridge? openClawBridge,
   }) : _httpClient = httpClient ?? http.Client(),
        _baseUrl = baseUrl ?? (() async => AppConfig.currentAiBackendUrl),
-       _openClawBridge = openClawBridge ?? OpenClawAiBridge(),
        _useRustRuntime = httpClient == null && baseUrl == null;
 
   final http.Client _httpClient;
   final Future<String> Function() _baseUrl;
-  final OpenClawAiBridge _openClawBridge;
   final bool _useRustRuntime;
 
   Future<DachengAiChatResult> sendChat({
@@ -251,18 +246,6 @@ class DachengAiService {
         usage: DachengAiUsage.fromJson(_readMap(response['usage'])),
       );
     }
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
-      return _openClawBridge.sendChat(
-        message: message,
-        conversationId: conversationId,
-        model: model,
-        client: client,
-        token: token,
-        username: username,
-        isMember: isMember,
-      );
-    }
-
     final data = await _postJson(
       '/api/ai/chat',
       token: token,
@@ -305,32 +288,16 @@ class DachengAiService {
       );
       return;
     }
-    final useEmbedded = await AiBackendPolicy.shouldUseEmbeddedOpenClaw(
-      isMember: isMember,
-    );
     _diag(
       'stream.route',
       data: {
-        'useEmbeddedOpenClaw': useEmbedded,
+        'runtime': 'cloud-api',
         'messageLength': message.trim().length,
         'conversationId': conversationId,
         'model': model,
         'hasClientContext': client != null && client.isNotEmpty,
       },
     );
-    if (useEmbedded) {
-      yield* _openClawBridge.sendChatStream(
-        message: message,
-        conversationId: conversationId,
-        model: model,
-        client: client,
-        token: token,
-        username: username,
-        isMember: isMember,
-      );
-      return;
-    }
-
     final uri = await _buildUri('/api/ai/chat/stream');
     _diag(
       'cloud.stream.request',
@@ -474,10 +441,6 @@ class DachengAiService {
           })
           .toList(growable: false);
     }
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
-      return _openClawBridge.listConversations();
-    }
-
     final data = await _getJson(
       '/api/ai/conversations',
       token: token,
@@ -519,12 +482,6 @@ class DachengAiService {
           })
           .toList(growable: false);
     }
-    if (await AiBackendPolicy.shouldUseEmbeddedOpenClaw(isMember: isMember)) {
-      return _openClawBridge.getConversationMessages(
-        conversationId: conversationId,
-      );
-    }
-
     final data = await _getJson(
       '/api/ai/conversations/$conversationId',
       token: token,

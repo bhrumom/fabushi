@@ -1,0 +1,196 @@
+name: Tauri Host fast checks
+
+on:
+  pull_request:
+    paths:
+      - apps/fabushi-tauri/**
+      - frontend/apps/host/**
+      - frontend/apps/web/src/app/host/**
+      - frontend/apps/web/src/lib/mahayana-host/**
+      - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
+      - scripts/check-tauri-production-contract.mjs
+      - frontend/pnpm-lock.yaml
+      - frontend/pnpm-workspace.yaml
+      - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/Cargo.lock
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
+      - third_party/mahayana/mahayana-rs/mahayana-product/**
+      - third_party/mahayana/mahayana-rs/mahayana-core/**
+      - third_party/mahayana/mahayana-rs/mahayana-runtime/**
+      - .github/workflows/tauri-host-fast-checks.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/fabushi-tauri/**
+      - frontend/apps/host/**
+      - frontend/apps/web/src/app/host/**
+      - frontend/apps/web/src/lib/mahayana-host/**
+      - frontend/packages/shared/src/mahayana-host-features.ts
+      - contracts/automation/cross-platform-journeys.json
+      - scripts/check-tauri-production-contract.mjs
+      - frontend/pnpm-lock.yaml
+      - frontend/pnpm-workspace.yaml
+      - third_party/mahayana/mahayana-rs/Cargo.toml
+      - third_party/mahayana/mahayana-rs/Cargo.lock
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host/**
+      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
+      - third_party/mahayana/mahayana-rs/mahayana-product/**
+      - .github/workflows/tauri-host-fast-checks.yml
+  workflow_dispatch:
+
+concurrency:
+  group: tauri-host-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  headless-contract:
+    name: Headless Tauri command contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CARGO_INCREMENTAL: "1"
+    steps:
+      - name: Checkout shell and Rust core
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /apps/fabushi-tauri/**
+            /contracts/automation/cross-platform-journeys.json
+            /scripts/check-tauri-production-contract.mjs
+            /third_party/mahayana/**
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Restore Tauri Host Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: tauri-host-headless-v3
+          cache-all-crates: true
+
+      - name: Verify formatting
+        run: cargo fmt --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml -- --check
+
+      - name: Verify production asset and Runtime wiring
+        run: node scripts/check-tauri-production-contract.mjs
+
+      - name: Test command contract under execution budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date +%s)"
+          cargo test \
+            --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml \
+            --profile ci \
+            --locked \
+            --no-default-features \
+            --features headless
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "Headless Tauri command contract elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 60 ]; then
+            echo "Headless Tauri contract exceeded the 60-second cold budget." >&2
+            exit 1
+          fi
+
+      - name: Verify the shared Rust dependency graph is locked
+        run: >-
+          cargo metadata
+          --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
+          --locked
+          --no-deps
+          --format-version 1
+          > /dev/null
+
+  desktop-compile:
+    name: macOS Tauri desktop compile
+    runs-on: macos-latest
+    timeout-minutes: 18
+    env:
+      CARGO_INCREMENTAL: "1"
+    steps:
+      - name: Checkout shell and Rust core
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.agents/plugins/**
+            /apps/fabushi-tauri/**
+            /contracts/automation/cross-platform-journeys.json
+            /frontend/**
+            /scripts/check-tauri-production-contract.mjs
+            /third_party/mahayana/**
+
+      - name: Enable pinned pnpm through Corepack
+        run: corepack enable
+
+      - name: Install the standalone React Host from lockfile
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the React Host consumed by Tauri
+        working-directory: frontend
+        run: |
+          started_at="$(date +%s)"
+          pnpm --filter @fabushi/host build
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "Standalone React Host build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 30 ]; then
+            echo "Standalone React Host exceeded the 30-second build budget." >&2
+            exit 1
+          fi
+
+      - name: Verify production asset and Runtime wiring
+        run: node scripts/check-tauri-production-contract.mjs
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore macOS Tauri Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: tauri-host-macos-v4-desktop-full
+          cache-all-crates: true
+
+      - name: Build the real desktop executable under budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date +%s)"
+          cargo build \
+            --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml \
+            --profile ci \
+            --locked \
+            --features desktop
+          elapsed="$(( $(date +%s) - started_at ))"
+          echo "macOS Tauri executable build elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt 900 ]; then
+            echo "macOS Tauri executable exceeded the 900-second cold build budget." >&2
+            exit 1
+          fi
+
+      - name: Verify and publish the executable evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x third_party/mahayana/mahayana-rs/target/ci/fabushi
+          file third_party/mahayana/mahayana-rs/target/ci/fabushi
+
+      - name: Upload the macOS Tauri executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-tauri-macos-ci
+          path: third_party/mahayana/mahayana-rs/target/ci/fabushi
+          if-no-files-found: error
+          retention-days: 3
