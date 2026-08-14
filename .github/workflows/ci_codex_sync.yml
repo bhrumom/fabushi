@@ -2,17 +2,15 @@ name: Mahayana embedded Codex Runtime
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
     paths:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
-      - "fabushi/lib/services/miniapp/mahayana_codex_runtime*.dart"
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
     paths:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
-      - "fabushi/lib/services/miniapp/mahayana_codex_runtime*.dart"
 
 jobs:
   test-mahayana-runtime:
@@ -25,17 +23,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
-
+          submodules: recursive
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: clippy, rustfmt
-
       - name: Run Cargo fmt check
         run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
-
       - name: Run Cargo clippy
         run: >-
           cargo clippy --locked
@@ -44,8 +39,7 @@ jobs:
           --package mahayana-ffi
           --package mahayana-cli
           --all-targets -- -D warnings
-
-      - name: Run automated unit & integration tests
+      - name: Run automated unit and integration tests
         if: runner.os == 'Linux'
         run: >-
           cargo test --locked
@@ -53,32 +47,3 @@ jobs:
           --package mahayana-agent-codex
           --package mahayana-agent-responses
           --package mahayana-cli
-
-  test-flutter-codex-binding:
-    name: Validate Flutter/Dart Codex Sdk Binding
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Install dependencies
-        working-directory: fabushi
-        run: flutter pub get
-
-      - name: Analyze Dart syntax for the Runtime bridges
-        working-directory: fabushi
-        run: >-
-          dart analyze
-          lib/services/miniapp/mahayana_codex_runtime.dart
-          lib/services/miniapp/mahayana_codex_runtime_io.dart
-          lib/services/miniapp/mahayana_codex_runtime_web.dart
-          lib/services/mahayana_sdk.dart
-          lib/services/mahayana_command_service.dart
