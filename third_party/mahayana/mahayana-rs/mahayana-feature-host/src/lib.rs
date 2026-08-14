@@ -14,10 +14,6 @@ use mahayana_core::ApprovalDecision as RuntimeApprovalDecision;
 #[cfg(feature = "production")]
 use mahayana_core::ApprovalId;
 #[cfg(feature = "production")]
-use mahayana_core::capability::CapabilityAvailability;
-#[cfg(feature = "production")]
-use mahayana_core::capability::CapabilityKind;
-#[cfg(feature = "production")]
 use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;
 #[cfg(feature = "production")]
 use mahayana_core::ConversationId;
@@ -34,31 +30,35 @@ use mahayana_core::RuntimeEvent;
 #[cfg(feature = "production")]
 use mahayana_core::RuntimeResponse;
 #[cfg(feature = "production")]
+use mahayana_core::capability::CapabilityAvailability;
+#[cfg(feature = "production")]
+use mahayana_core::capability::CapabilityKind;
+#[cfg(feature = "production")]
 use mahayana_host::HostCreateConfig;
 #[cfg(feature = "production")]
 use mahayana_host::MahayanaHost;
 use mahayana_host_protocol::AgentMode;
 use mahayana_host_protocol::AgentStepStatus;
+#[cfg(feature = "production")]
+use mahayana_host_protocol::ApprovalDecision;
+use mahayana_host_protocol::ApprovalResolution;
+use mahayana_host_protocol::AttachmentContext;
 use mahayana_host_protocol::AutomationSummary;
 use mahayana_host_protocol::AutomationTrigger;
 use mahayana_host_protocol::BotSummary;
+use mahayana_host_protocol::CapabilitySummary;
+use mahayana_host_protocol::CommandAccepted;
 use mahayana_host_protocol::ConnectorAccountSummary;
 use mahayana_host_protocol::ConnectorStatus;
 use mahayana_host_protocol::ConnectorSummary;
 use mahayana_host_protocol::ConnectorToolSummary;
 use mahayana_host_protocol::ConnectorTransport;
+use mahayana_host_protocol::ConversationMessage;
+use mahayana_host_protocol::ConversationSummary;
 use mahayana_host_protocol::DraftAction;
 use mahayana_host_protocol::DraftSendState;
 use mahayana_host_protocol::EventCard;
 use mahayana_host_protocol::EventField;
-#[cfg(feature = "production")]
-use mahayana_host_protocol::ApprovalDecision;
-use mahayana_host_protocol::ApprovalResolution;
-use mahayana_host_protocol::AttachmentContext;
-use mahayana_host_protocol::CapabilitySummary;
-use mahayana_host_protocol::CommandAccepted;
-use mahayana_host_protocol::ConversationMessage;
-use mahayana_host_protocol::ConversationSummary;
 use mahayana_host_protocol::FeatureCommand;
 use mahayana_host_protocol::HOST_PROTOCOL_VERSION;
 use mahayana_host_protocol::HostConfig;
@@ -469,7 +469,10 @@ impl FeatureHostController {
                     timestamp: timestamp(),
                     automations,
                 });
-                Ok(CommandAccepted { request_id, operation_id: None })
+                Ok(CommandAccepted {
+                    request_id,
+                    operation_id: None,
+                })
             }
             FeatureCommand::AutomationUpsert {
                 id,
@@ -488,10 +491,7 @@ impl FeatureHostController {
                 let (schedule, trigger) = match trigger {
                     AutomationTrigger::Schedule { schedule } => {
                         let schedule = normalize_automation_schedule(&schedule)?;
-                        (
-                            schedule.clone(),
-                            AutomationTrigger::Schedule { schedule },
-                        )
+                        (schedule.clone(), AutomationTrigger::Schedule { schedule })
                     }
                     AutomationTrigger::Event {
                         source,
@@ -541,7 +541,10 @@ impl FeatureHostController {
                     action: action.into(),
                     automation,
                 });
-                Ok(CommandAccepted { request_id, operation_id: None })
+                Ok(CommandAccepted {
+                    request_id,
+                    operation_id: None,
+                })
             }
             FeatureCommand::AutomationSetEnabled { id, enabled, .. } => {
                 let mut state = self.state()?;
@@ -549,11 +552,13 @@ impl FeatureHostController {
                     FeatureHostError::Contract(format!("unknown automation: {id}"))
                 })?;
                 automation.enabled = enabled;
-                let trigger = automation.trigger.clone().unwrap_or_else(|| {
-                    AutomationTrigger::Schedule {
-                        schedule: automation.schedule.clone(),
-                    }
-                });
+                let trigger =
+                    automation
+                        .trigger
+                        .clone()
+                        .unwrap_or_else(|| AutomationTrigger::Schedule {
+                            schedule: automation.schedule.clone(),
+                        });
                 automation.next_run_at_ms =
                     automation_next_run(&trigger, &automation.schedule, enabled, now_millis());
                 let automation = automation.clone();
@@ -563,7 +568,10 @@ impl FeatureHostController {
                     action: if enabled { "resumed" } else { "paused" }.into(),
                     automation,
                 });
-                Ok(CommandAccepted { request_id, operation_id: None })
+                Ok(CommandAccepted {
+                    request_id,
+                    operation_id: None,
+                })
             }
             FeatureCommand::AutomationDelete { id, .. } => {
                 let mut state = self.state()?;
@@ -576,36 +584,40 @@ impl FeatureHostController {
                     action: "deleted".into(),
                     automation,
                 });
-                Ok(CommandAccepted { request_id, operation_id: None })
+                Ok(CommandAccepted {
+                    request_id,
+                    operation_id: None,
+                })
             }
             FeatureCommand::AutomationRun { id, .. } => {
-                let automation = {
-                    let mut state = self.state()?;
-                    let automation = state.automations.get_mut(&id).ok_or_else(|| {
-                        FeatureHostError::Contract(format!("unknown automation: {id}"))
-                    })?;
-                    let now = now_millis();
-                    automation.last_run_at_ms = Some(now);
-                    let trigger = automation.trigger.clone().unwrap_or_else(|| {
-                        AutomationTrigger::Schedule {
-                            schedule: automation.schedule.clone(),
-                        }
-                    });
-                    automation.next_run_at_ms = automation_next_run(
-                        &trigger,
-                        &automation.schedule,
-                        automation.enabled,
-                        now,
-                    );
-                    let automation = automation.clone();
-                    self.persist_automations(&state.automations)?;
-                    state.events.push_back(HostEvent::AutomationChanged {
-                        timestamp: timestamp(),
-                        action: "running".into(),
-                        automation: automation.clone(),
-                    });
-                    automation
-                };
+                let automation =
+                    {
+                        let mut state = self.state()?;
+                        let automation = state.automations.get_mut(&id).ok_or_else(|| {
+                            FeatureHostError::Contract(format!("unknown automation: {id}"))
+                        })?;
+                        let now = now_millis();
+                        automation.last_run_at_ms = Some(now);
+                        let trigger = automation.trigger.clone().unwrap_or_else(|| {
+                            AutomationTrigger::Schedule {
+                                schedule: automation.schedule.clone(),
+                            }
+                        });
+                        automation.next_run_at_ms = automation_next_run(
+                            &trigger,
+                            &automation.schedule,
+                            automation.enabled,
+                            now,
+                        );
+                        let automation = automation.clone();
+                        self.persist_automations(&state.automations)?;
+                        state.events.push_back(HostEvent::AutomationChanged {
+                            timestamp: timestamp(),
+                            action: "running".into(),
+                            automation: automation.clone(),
+                        });
+                        automation
+                    };
                 if let Some(AutomationTrigger::Event {
                     source,
                     event,
@@ -621,10 +633,7 @@ impl FeatureHostController {
                                 source: *source,
                                 event: event.clone(),
                                 title: format!("{} event", listener_platform_display(*source)),
-                                summary: format!(
-                                    "{} woke routine “{}”.",
-                                    event, automation.name
-                                ),
+                                summary: format!("{} woke routine “{}”.", event, automation.name),
                                 url: None,
                                 actor: None,
                                 fields: filter.as_ref().map(|filter| {
@@ -767,7 +776,9 @@ impl FeatureHostController {
                     .iter_mut()
                     .find(|account| account.id == account_id)
                     .ok_or_else(|| {
-                        FeatureHostError::Contract(format!("unknown connector account: {account_id}"))
+                        FeatureHostError::Contract(format!(
+                            "unknown connector account: {account_id}"
+                        ))
                     })?;
                 if account.team_managed == Some(true) {
                     return Err(FeatureHostError::Contract(
@@ -800,7 +811,9 @@ impl FeatureHostController {
                     ));
                 }
                 let before = connector.accounts.len();
-                connector.accounts.retain(|account| account.id != account_id);
+                connector
+                    .accounts
+                    .retain(|account| account.id != account_id);
                 if before == connector.accounts.len() {
                     return Err(FeatureHostError::Contract(format!(
                         "unknown connector account: {account_id}"
@@ -904,9 +917,10 @@ impl FeatureHostController {
                 });
             }
             FeatureCommand::SkillDelete { id, .. } => {
-                let skill = state.skills.get(&id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!("unknown skill: {id}"))
-                })?;
+                let skill = state
+                    .skills
+                    .get(&id)
+                    .ok_or_else(|| FeatureHostError::Contract(format!("unknown skill: {id}")))?;
                 if skill.read_only == Some(true) || skill.source == SkillSource::Team {
                     return Err(FeatureHostError::Contract(
                         "team-managed skills cannot be deleted".into(),
@@ -926,9 +940,10 @@ impl FeatureHostController {
                     .ok_or_else(|| {
                         FeatureHostError::Contract(format!("unknown skill team: {team_id}"))
                     })?;
-                let skill = state.skills.get_mut(&id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!("unknown skill: {id}"))
-                })?;
+                let skill = state
+                    .skills
+                    .get_mut(&id)
+                    .ok_or_else(|| FeatureHostError::Contract(format!("unknown skill: {id}")))?;
                 if skill.description.trim().is_empty() {
                     return Err(FeatureHostError::Contract(
                         "add a skill description before publishing".into(),
@@ -947,9 +962,10 @@ impl FeatureHostController {
                 });
             }
             FeatureCommand::SkillUnpublish { id, .. } => {
-                let skill = state.skills.get_mut(&id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!("unknown skill: {id}"))
-                })?;
+                let skill = state
+                    .skills
+                    .get_mut(&id)
+                    .ok_or_else(|| FeatureHostError::Contract(format!("unknown skill: {id}")))?;
                 if skill.publish_state == SkillPublishState::Managed {
                     return Err(FeatureHostError::Contract(
                         "managed skills cannot be unpublished".into(),
@@ -968,9 +984,10 @@ impl FeatureHostController {
                 });
             }
             FeatureCommand::SkillSync { id, .. } => {
-                let skill = state.skills.get_mut(&id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!("unknown skill: {id}"))
-                })?;
+                let skill = state
+                    .skills
+                    .get_mut(&id)
+                    .ok_or_else(|| FeatureHostError::Contract(format!("unknown skill: {id}")))?;
                 if skill.team_id.is_none() {
                     return Err(FeatureHostError::Contract(
                         "only published skills can be synced".into(),
@@ -993,9 +1010,10 @@ impl FeatureHostController {
                 });
             }
             FeatureCommand::BotSetHidden { id, hidden, .. } => {
-                let bot = state.bots.get_mut(&id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!("unknown bot: {id}"))
-                })?;
+                let bot = state
+                    .bots
+                    .get_mut(&id)
+                    .ok_or_else(|| FeatureHostError::Contract(format!("unknown bot: {id}")))?;
                 bot.hidden = hidden;
                 let bot = bot.clone();
                 state.events.push_back(HostEvent::BotChanged {
@@ -1159,10 +1177,17 @@ impl FeatureHostController {
     #[cfg(feature = "production")]
     fn production_connector_snapshot(
         &self,
-    ) -> Result<(Vec<ConnectorSummary>, BTreeMap<String, LiveConnectorProjection>), FeatureHostError>
-    {
+    ) -> Result<
+        (
+            Vec<ConnectorSummary>,
+            BTreeMap<String, LiveConnectorProjection>,
+        ),
+        FeatureHostError,
+    > {
         let payload = json!({"type": "connector.list", "requestId": "connector-snapshot"});
-        let response = self.runtime()?.product_execute("mahayana.connector.list", &payload)?;
+        let response = self
+            .runtime()?
+            .product_execute("mahayana.connector.list", &payload)?;
         let base: Vec<ConnectorSummary> =
             decode_product_field(response, "connectors", "mahayana.connector.list")?;
         let (servers, apps) = self.production_live_connector_sources()?;
@@ -1180,7 +1205,9 @@ impl FeatureHostController {
         let connector = connectors
             .into_iter()
             .find(|connector| connector.id == connector_id)
-            .ok_or_else(|| FeatureHostError::Contract(format!("unknown connector: {connector_id}")))?;
+            .ok_or_else(|| {
+                FeatureHostError::Contract(format!("unknown connector: {connector_id}"))
+            })?;
         self.state()?.events.push_back(HostEvent::ConnectorChanged {
             timestamp: timestamp(),
             action: action.into(),
@@ -1236,11 +1263,13 @@ impl FeatureHostController {
                             "connector authorization URL must use HTTPS".into(),
                         ));
                     }
-                    self.state()?.events.push_back(HostEvent::ConnectorOauthRequested {
-                        timestamp: timestamp(),
-                        connector_id: connector_id.clone(),
-                        authorization_url: url,
-                    });
+                    self.state()?
+                        .events
+                        .push_back(HostEvent::ConnectorOauthRequested {
+                            timestamp: timestamp(),
+                            connector_id: connector_id.clone(),
+                            authorization_url: url,
+                        });
                     return Ok(Some(CommandAccepted {
                         request_id,
                         operation_id: None,
@@ -1258,21 +1287,25 @@ impl FeatureHostController {
                         operation_id: None,
                     }));
                 }
-                let authorization_url = match self
-                    .runtime()?
-                    .execute(RuntimeCommand::McpOauthLogin { server: server.clone() })?
-                {
-                    RuntimeResponse::McpOauth {
-                        authorization_url: Some(url),
-                        ..
-                    } => url,
-                    other => return Err(unexpected_response("mahayana.mcp.oauth.login", other)),
-                };
-                self.state()?.events.push_back(HostEvent::ConnectorOauthRequested {
-                    timestamp: timestamp(),
-                    connector_id: connector_id.clone(),
-                    authorization_url,
-                });
+                let authorization_url =
+                    match self.runtime()?.execute(RuntimeCommand::McpOauthLogin {
+                        server: server.clone(),
+                    })? {
+                        RuntimeResponse::McpOauth {
+                            authorization_url: Some(url),
+                            ..
+                        } => url,
+                        other => {
+                            return Err(unexpected_response("mahayana.mcp.oauth.login", other));
+                        }
+                    };
+                self.state()?
+                    .events
+                    .push_back(HostEvent::ConnectorOauthRequested {
+                        timestamp: timestamp(),
+                        connector_id: connector_id.clone(),
+                        authorization_url,
+                    });
                 Ok(Some(CommandAccepted {
                     request_id,
                     operation_id: None,
@@ -1307,11 +1340,13 @@ impl FeatureHostController {
                 if let Some(projection) = live.get(connector_id) {
                     if projection.server_name.as_deref() == Some("codex_apps") {
                         if let Some(url) = projection.install_url.clone() {
-                            self.state()?.events.push_back(HostEvent::ConnectorOauthRequested {
-                                timestamp: timestamp(),
-                                connector_id: connector_id.clone(),
-                                authorization_url: url,
-                            });
+                            self.state()?
+                                .events
+                                .push_back(HostEvent::ConnectorOauthRequested {
+                                    timestamp: timestamp(),
+                                    connector_id: connector_id.clone(),
+                                    authorization_url: url,
+                                });
                         }
                         return Err(FeatureHostError::Contract(
                             "this linked ChatGPT App account is server-managed; its account page was opened because the current Codex connector API does not expose unlink"
@@ -1380,11 +1415,12 @@ impl FeatureHostController {
                         "{connector_id} connector does not expose an MCP server"
                     ))
                 })?;
-                let (tool, schema) = projection_send_tool(projection, connector_id).ok_or_else(|| {
-                    FeatureHostError::Contract(format!(
-                        "{connector_id} connector has no compatible send tool"
-                    ))
-                })?;
+                let (tool, schema) =
+                    projection_send_tool(projection, connector_id).ok_or_else(|| {
+                        FeatureHostError::Contract(format!(
+                            "{connector_id} connector has no compatible send tool"
+                        ))
+                    })?;
                 let arguments = draft_tool_arguments(draft, schema)?;
                 self.state()?.events.push_back(HostEvent::DraftChanged {
                     timestamp: timestamp(),
@@ -1430,11 +1466,8 @@ impl FeatureHostController {
                 let response = self
                     .runtime()?
                     .product_execute("mahayana.listener.list", &payload)?;
-                let mut integrations: Vec<ListenerIntegrationSummary> = decode_product_field(
-                    response,
-                    "integrations",
-                    "mahayana.listener.list",
-                )?;
+                let mut integrations: Vec<ListenerIntegrationSummary> =
+                    decode_product_field(response, "integrations", "mahayana.listener.list")?;
                 let (connectors, _) = self.production_connector_snapshot()?;
                 for integration in &mut integrations {
                     if integration.platform == ListenerPlatform::Git {
@@ -1442,13 +1475,15 @@ impl FeatureHostController {
                         integration.account_label = Some("Local repository".into());
                         continue;
                     }
-                    if let Some(connector_id) = connector_for_listener_platform(integration.platform)
+                    if let Some(connector_id) =
+                        connector_for_listener_platform(integration.platform)
                     {
                         if let Some(connector) = connectors
                             .iter()
                             .find(|connector| connector.id == connector_id)
                         {
-                            integration.is_connected = connector.status == ConnectorStatus::Connected;
+                            integration.is_connected =
+                                connector.status == ConnectorStatus::Connected;
                             integration.account_label = connector
                                 .accounts
                                 .first()
@@ -1473,11 +1508,8 @@ impl FeatureHostController {
                     let response = self
                         .runtime()?
                         .product_execute("mahayana.listener.connect", &payload)?;
-                    let integration = decode_product_field(
-                        response,
-                        "integration",
-                        "mahayana.listener.connect",
-                    )?;
+                    let integration =
+                        decode_product_field(response, "integration", "mahayana.listener.connect")?;
                     self.state()?.events.push_back(HostEvent::ListenerChanged {
                         timestamp: timestamp(),
                         integration,
@@ -1561,9 +1593,7 @@ impl FeatureHostController {
                         authorization_url: url,
                     });
                 }
-                if response.get("connector").is_some()
-                    || response.get("id").is_some()
-                {
+                if response.get("connector").is_some() || response.get("id").is_some() {
                     let connector = decode_product_field(response, "connector", method)?;
                     state.events.push_back(HostEvent::ConnectorChanged {
                         timestamp: timestamp(),
@@ -1701,8 +1731,9 @@ impl FeatureHostController {
     /// intentionally not a renderer command: only the backend relay/native
     /// listener bridge may call it, so web content cannot forge trigger events.
     pub fn ingest_listener_event(&self, event: EventCard) -> Result<usize, FeatureHostError> {
-        let serialized = serde_json::to_string(&event)
-            .map_err(|error| FeatureHostError::Contract(format!("encode listener event: {error}")))?;
+        let serialized = serde_json::to_string(&event).map_err(|error| {
+            FeatureHostError::Contract(format!("encode listener event: {error}"))
+        })?;
         let matching_ids = {
             let state = self.state()?;
             state
@@ -1774,7 +1805,11 @@ impl FeatureHostController {
                 event.event,
                 event.title,
                 event.summary,
-                if details.is_empty() { String::new() } else { format!("\n{details}") },
+                if details.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n{details}")
+                },
                 automation.prompt
             );
             let request_id = format!("listener-{}-{}", automation.id, now_millis());
@@ -1826,9 +1861,14 @@ impl FeatureHostController {
 
     fn fire_due_automation(&self) -> Result<(), FeatureHostError> {
         let now = now_millis();
-        let due = self.state()?.automations.values().find(|automation| {
-            automation.enabled && automation.next_run_at_ms.is_some_and(|next| next <= now)
-        }).map(|automation| automation.id.clone());
+        let due = self
+            .state()?
+            .automations
+            .values()
+            .find(|automation| {
+                automation.enabled && automation.next_run_at_ms.is_some_and(|next| next <= now)
+            })
+            .map(|automation| automation.id.clone());
         if let Some(id) = due {
             let _ = self.execute_automation(FeatureCommand::AutomationRun {
                 request_id: format!("scheduled-{id}-{now}"),
@@ -1872,9 +1912,7 @@ impl FeatureHostController {
                 if let Some(runtime_approval_id) = pending.runtime_approval_id {
                     let decision = match resolution.decision {
                         ApprovalDecision::AllowOnce => RuntimeApprovalDecision::Accept,
-                        ApprovalDecision::AllowSession => {
-                            RuntimeApprovalDecision::AcceptForSession
-                        }
+                        ApprovalDecision::AllowSession => RuntimeApprovalDecision::AcceptForSession,
                         ApprovalDecision::Deny => RuntimeApprovalDecision::Decline,
                     };
                     self.runtime()?.resolve_approval(
@@ -2945,10 +2983,7 @@ impl FeatureHostController {
 
 fn transcript_cards_from_metadata(metadata: &Value) -> Vec<TranscriptCard> {
     if let Some(cards) = metadata.get("cards").and_then(Value::as_array) {
-        return cards
-            .iter()
-            .filter_map(decode_transcript_card)
-            .collect();
+        return cards.iter().filter_map(decode_transcript_card).collect();
     }
     for field in ["transcriptCard", "card", "artifact"] {
         if let Some(card) = metadata.get(field).and_then(decode_transcript_card) {
@@ -3073,7 +3108,8 @@ fn live_connector_projections(
     for app in apps {
         let name = app.get("name").and_then(Value::as_str).unwrap_or_default();
         let id = app.get("id").and_then(Value::as_str).unwrap_or_default();
-        let Some(key) = connector_key_from_name(name).or_else(|| connector_key_from_name(id)) else {
+        let Some(key) = connector_key_from_name(name).or_else(|| connector_key_from_name(id))
+        else {
             continue;
         };
         let entry = live.entry(key.to_string()).or_default();
@@ -3216,8 +3252,18 @@ fn projection_send_tool<'a>(
     connector_id: &str,
 ) -> Option<(&'a str, Option<&'a Value>)> {
     let preferred: &[&str] = match connector_id {
-        "gmail" => &["gmail.send_email", "send_email", "gmail.send_draft", "send_draft"],
-        "slack" => &["slack.send_message", "slack.post_message", "send_message", "post_message"],
+        "gmail" => &[
+            "gmail.send_email",
+            "send_email",
+            "gmail.send_draft",
+            "send_draft",
+        ],
+        "slack" => &[
+            "slack.send_message",
+            "slack.post_message",
+            "send_message",
+            "post_message",
+        ],
         _ => &[],
     };
     for candidate in preferred {
@@ -3241,7 +3287,10 @@ fn schema_property_is_array(schema: Option<&Value>, name: &str) -> bool {
 }
 
 #[cfg(feature = "production")]
-fn draft_tool_arguments(draft: &MessageDraft, schema: Option<&Value>) -> Result<Value, FeatureHostError> {
+fn draft_tool_arguments(
+    draft: &MessageDraft,
+    schema: Option<&Value>,
+) -> Result<Value, FeatureHostError> {
     let properties = schema
         .and_then(|schema| schema.get("properties"))
         .and_then(Value::as_object);
@@ -3255,7 +3304,9 @@ fn draft_tool_arguments(draft: &MessageDraft, schema: Option<&Value>) -> Result<
             ..
         } => {
             if to.is_empty() {
-                return Err(FeatureHostError::Contract("email draft requires at least one recipient".into()));
+                return Err(FeatureHostError::Contract(
+                    "email draft requires at least one recipient".into(),
+                ));
             }
             let mut arguments = serde_json::Map::new();
             if schema_property_is_array(schema, "to") {
@@ -3286,7 +3337,9 @@ fn draft_tool_arguments(draft: &MessageDraft, schema: Option<&Value>) -> Result<
                 }
             }
             if let Some(from) = from.as_ref().filter(|from| !from.trim().is_empty()) {
-                let key = if properties.is_some_and(|properties| properties.contains_key("from_address")) {
+                let key = if properties
+                    .is_some_and(|properties| properties.contains_key("from_address"))
+                {
                     "from_address"
                 } else {
                     "from"
@@ -3313,18 +3366,28 @@ fn draft_tool_arguments(draft: &MessageDraft, schema: Option<&Value>) -> Result<
                     "Slack connector did not expose an input schema for its send tool".into(),
                 )
             })?;
-            let target_key = ["channel", "channel_id", "target", "conversation", "conversation_id"]
-                .into_iter()
-                .find(|key| properties.contains_key(*key))
-                .ok_or_else(|| FeatureHostError::Contract(
+            let target_key = [
+                "channel",
+                "channel_id",
+                "target",
+                "conversation",
+                "conversation_id",
+            ]
+            .into_iter()
+            .find(|key| properties.contains_key(*key))
+            .ok_or_else(|| {
+                FeatureHostError::Contract(
                     "Slack send tool has no supported channel/target parameter".into(),
-                ))?;
+                )
+            })?;
             let body_key = ["text", "message", "body"]
                 .into_iter()
                 .find(|key| properties.contains_key(*key))
-                .ok_or_else(|| FeatureHostError::Contract(
-                    "Slack send tool has no supported message parameter".into(),
-                ))?;
+                .ok_or_else(|| {
+                    FeatureHostError::Contract(
+                        "Slack send tool has no supported message parameter".into(),
+                    )
+                })?;
             let mut arguments = serde_json::Map::new();
             arguments.insert(target_key.into(), Value::String(target.clone()));
             arguments.insert(body_key.into(), Value::String(body.clone()));
@@ -3357,7 +3420,10 @@ fn merge_live_connectors(
             connector.status = status;
         }
         connector.can_add_account = projection.install_url.is_some()
-            || projection.server_name.as_deref().is_some_and(|name| name != "codex_apps");
+            || projection
+                .server_name
+                .as_deref()
+                .is_some_and(|name| name != "codex_apps");
         if let Some(source) = projection
             .connector_id
             .as_ref()
@@ -3498,9 +3564,21 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Repositories, pull requests, issues, comments and CI.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("read_repository", "Read repository", "Read repository files and metadata."),
-                connector_tool("create_issue", "Create issue", "Create and update GitHub issues."),
-                connector_tool("comment_pull_request", "Comment on pull request", "Post review comments on pull requests."),
+                connector_tool(
+                    "read_repository",
+                    "Read repository",
+                    "Read repository files and metadata.",
+                ),
+                connector_tool(
+                    "create_issue",
+                    "Create issue",
+                    "Create and update GitHub issues.",
+                ),
+                connector_tool(
+                    "comment_pull_request",
+                    "Comment on pull request",
+                    "Post review comments on pull requests.",
+                ),
             ],
         ),
         connector_summary(
@@ -3509,9 +3587,21 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Messages, mentions, reactions and approved drafts.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("search_messages", "Search messages", "Search workspace messages and threads."),
-                connector_tool("post_message", "Post message", "Send an approved message or thread reply."),
-                connector_tool("add_reaction", "Add reaction", "Add a reaction to a message."),
+                connector_tool(
+                    "search_messages",
+                    "Search messages",
+                    "Search workspace messages and threads.",
+                ),
+                connector_tool(
+                    "post_message",
+                    "Post message",
+                    "Send an approved message or thread reply.",
+                ),
+                connector_tool(
+                    "add_reaction",
+                    "Add reaction",
+                    "Add a reaction to a message.",
+                ),
             ],
         ),
         connector_summary(
@@ -3520,8 +3610,16 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Teams messages, mentions, channels and approved drafts.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("search_messages", "Search messages", "Search Teams channels and chats."),
-                connector_tool("post_message", "Post message", "Send an approved Teams message."),
+                connector_tool(
+                    "search_messages",
+                    "Search messages",
+                    "Search Teams channels and chats.",
+                ),
+                connector_tool(
+                    "post_message",
+                    "Post message",
+                    "Send an approved Teams message.",
+                ),
             ],
         ),
         connector_summary(
@@ -3530,8 +3628,16 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Issues, comments, status changes and projects.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("read_issues", "Read issues", "Read Linear issues and projects."),
-                connector_tool("update_issue", "Update issue", "Update issue state, assignee and fields."),
+                connector_tool(
+                    "read_issues",
+                    "Read issues",
+                    "Read Linear issues and projects.",
+                ),
+                connector_tool(
+                    "update_issue",
+                    "Update issue",
+                    "Update issue state, assignee and fields.",
+                ),
             ],
         ),
         connector_summary(
@@ -3540,8 +3646,16 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Errors, regressions, releases and issue ownership.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("read_issues", "Read issues", "Read Sentry issues and events."),
-                connector_tool("resolve_issue", "Resolve issue", "Resolve or assign a Sentry issue."),
+                connector_tool(
+                    "read_issues",
+                    "Read issues",
+                    "Read Sentry issues and events.",
+                ),
+                connector_tool(
+                    "resolve_issue",
+                    "Resolve issue",
+                    "Resolve or assign a Sentry issue.",
+                ),
             ],
         ),
         connector_summary(
@@ -3550,8 +3664,16 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Incidents, acknowledgements, responders and escalation.",
             ConnectorTransport::Http,
             vec![
-                connector_tool("read_incidents", "Read incidents", "Read incident details and timelines."),
-                connector_tool("acknowledge_incident", "Acknowledge incident", "Acknowledge an incident after approval."),
+                connector_tool(
+                    "read_incidents",
+                    "Read incidents",
+                    "Read incident details and timelines.",
+                ),
+                connector_tool(
+                    "acknowledge_incident",
+                    "Acknowledge incident",
+                    "Acknowledge an incident after approval.",
+                ),
             ],
         ),
         connector_summary(
@@ -3560,8 +3682,16 @@ fn default_connectors() -> BTreeMap<String, ConnectorSummary> {
             "Local commits, branches and repository state.",
             ConnectorTransport::Command,
             vec![
-                connector_tool("read_status", "Read status", "Read local repository status."),
-                connector_tool("read_history", "Read history", "Read commit and branch history."),
+                connector_tool(
+                    "read_status",
+                    "Read status",
+                    "Read local repository status.",
+                ),
+                connector_tool(
+                    "read_history",
+                    "Read history",
+                    "Read commit and branch history.",
+                ),
             ],
         ),
     ]
@@ -3731,10 +3861,7 @@ fn connector_for_listener_platform(platform: ListenerPlatform) -> Option<&'stati
 fn validate_draft(draft: &MessageDraft) -> Result<(), FeatureHostError> {
     match draft {
         MessageDraft::Email {
-            to,
-            subject,
-            body,
-            ..
+            to, subject, body, ..
         } => {
             if to.is_empty()
                 || to
@@ -3921,16 +4048,12 @@ fn persist_automations(
         })?;
     }
     let temp = path.with_extension("json.tmp");
-    let data = serde_json::to_vec_pretty(
-        &automations.values().cloned().collect::<Vec<_>>(),
-    )
-    .map_err(|error| FeatureHostError::Contract(format!("serialize automations: {error}")))?;
-    std::fs::write(&temp, data).map_err(|error| {
-        FeatureHostError::Contract(format!("write automation store: {error}"))
-    })?;
-    std::fs::rename(&temp, path).map_err(|error| {
-        FeatureHostError::Contract(format!("commit automation store: {error}"))
-    })?;
+    let data = serde_json::to_vec_pretty(&automations.values().cloned().collect::<Vec<_>>())
+        .map_err(|error| FeatureHostError::Contract(format!("serialize automations: {error}")))?;
+    std::fs::write(&temp, data)
+        .map_err(|error| FeatureHostError::Contract(format!("write automation store: {error}")))?;
+    std::fs::rename(&temp, path)
+        .map_err(|error| FeatureHostError::Contract(format!("commit automation store: {error}")))?;
     Ok(())
 }
 
@@ -4288,11 +4411,17 @@ mod tests {
         let events = drain(&controller);
         assert!(events.iter().any(|event| matches!(
             event,
-            HostEvent::DraftChanged { status: DraftSendState::Sending, .. }
+            HostEvent::DraftChanged {
+                status: DraftSendState::Sending,
+                ..
+            }
         )));
         assert!(events.iter().any(|event| matches!(
             event,
-            HostEvent::DraftChanged { status: DraftSendState::Sent, .. }
+            HostEvent::DraftChanged {
+                status: DraftSendState::Sent,
+                ..
+            }
         )));
 
         controller
@@ -4369,11 +4498,17 @@ mod tests {
         let events = drain(&controller);
         assert!(events.iter().any(|event| matches!(
             event,
-            HostEvent::UpdateChanged { state: UpdateState::Checking, .. }
+            HostEvent::UpdateChanged {
+                state: UpdateState::Checking,
+                ..
+            }
         )));
         assert!(events.iter().any(|event| matches!(
             event,
-            HostEvent::UpdateChanged { state: UpdateState::UpToDate { .. }, .. }
+            HostEvent::UpdateChanged {
+                state: UpdateState::UpToDate { .. },
+                ..
+            }
         )));
     }
 

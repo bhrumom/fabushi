@@ -6,12 +6,6 @@ use codex_secrets::SecretName;
 use codex_secrets::SecretScope;
 use codex_secrets::SecretsBackendKind;
 use codex_secrets::SecretsManager;
-use mahayana_platform_core::AccountUsageStatus;
-use mahayana_platform_core::Currency;
-use mahayana_platform_core::DelegatedTokenRequest;
-use mahayana_platform_core::Entitlement;
-use mahayana_platform_core::PurchaseRequest;
-use mahayana_platform_core::Quote;
 use mahayana_host_protocol::BotSummary;
 use mahayana_host_protocol::ConnectorAccountSummary;
 use mahayana_host_protocol::ConnectorStatus;
@@ -30,6 +24,12 @@ use mahayana_host_protocol::SkillSummary;
 use mahayana_host_protocol::SkillTeamSummary;
 use mahayana_host_protocol::UpdateDisabledReason;
 use mahayana_host_protocol::UpdateState;
+use mahayana_platform_core::AccountUsageStatus;
+use mahayana_platform_core::Currency;
+use mahayana_platform_core::DelegatedTokenRequest;
+use mahayana_platform_core::Entitlement;
+use mahayana_platform_core::PurchaseRequest;
+use mahayana_platform_core::Quote;
 use mahayana_platform_core::canonical_json_bytes;
 use mahayana_platform_core::canonical_json_sha256;
 use serde::Deserialize;
@@ -161,7 +161,11 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             ConnectorTransport::Http,
             vec![
                 surface_connector_tool("search", "Search mail", "Search messages and threads."),
-                surface_connector_tool("draft", "Draft mail", "Create an email draft for user approval."),
+                surface_connector_tool(
+                    "draft",
+                    "Draft mail",
+                    "Create an email draft for user approval.",
+                ),
                 surface_connector_tool("send", "Send mail", "Send an approved email draft."),
             ],
         ),
@@ -171,9 +175,21 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Repositories, pull requests, issues, comments, and CI.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("read_repository", "Read repository", "Read repository files and metadata."),
-                surface_connector_tool("create_issue", "Create issue", "Create and update GitHub issues."),
-                surface_connector_tool("comment_pull_request", "Comment on pull request", "Post review comments on pull requests."),
+                surface_connector_tool(
+                    "read_repository",
+                    "Read repository",
+                    "Read repository files and metadata.",
+                ),
+                surface_connector_tool(
+                    "create_issue",
+                    "Create issue",
+                    "Create and update GitHub issues.",
+                ),
+                surface_connector_tool(
+                    "comment_pull_request",
+                    "Comment on pull request",
+                    "Post review comments on pull requests.",
+                ),
             ],
         ),
         surface_connector(
@@ -182,9 +198,21 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Messages, mentions, reactions, and approved drafts.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("search_messages", "Search messages", "Search workspace messages and threads."),
-                surface_connector_tool("post_message", "Post message", "Send an approved message or thread reply."),
-                surface_connector_tool("add_reaction", "Add reaction", "Add a reaction to a message."),
+                surface_connector_tool(
+                    "search_messages",
+                    "Search messages",
+                    "Search workspace messages and threads.",
+                ),
+                surface_connector_tool(
+                    "post_message",
+                    "Post message",
+                    "Send an approved message or thread reply.",
+                ),
+                surface_connector_tool(
+                    "add_reaction",
+                    "Add reaction",
+                    "Add a reaction to a message.",
+                ),
             ],
         ),
         surface_connector(
@@ -193,8 +221,16 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Teams messages, mentions, channels, and approved drafts.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("search_messages", "Search messages", "Search Teams channels and chats."),
-                surface_connector_tool("post_message", "Post message", "Send an approved Teams message."),
+                surface_connector_tool(
+                    "search_messages",
+                    "Search messages",
+                    "Search Teams channels and chats.",
+                ),
+                surface_connector_tool(
+                    "post_message",
+                    "Post message",
+                    "Send an approved Teams message.",
+                ),
             ],
         ),
         surface_connector(
@@ -203,8 +239,16 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Issues, comments, status changes, and projects.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("read_issues", "Read issues", "Read Linear issues and projects."),
-                surface_connector_tool("update_issue", "Update issue", "Update issue state, assignee, and fields."),
+                surface_connector_tool(
+                    "read_issues",
+                    "Read issues",
+                    "Read Linear issues and projects.",
+                ),
+                surface_connector_tool(
+                    "update_issue",
+                    "Update issue",
+                    "Update issue state, assignee, and fields.",
+                ),
             ],
         ),
         surface_connector(
@@ -213,8 +257,16 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Errors, regressions, releases, and issue ownership.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("read_issues", "Read issues", "Read Sentry issues and events."),
-                surface_connector_tool("resolve_issue", "Resolve issue", "Resolve or assign a Sentry issue."),
+                surface_connector_tool(
+                    "read_issues",
+                    "Read issues",
+                    "Read Sentry issues and events.",
+                ),
+                surface_connector_tool(
+                    "resolve_issue",
+                    "Resolve issue",
+                    "Resolve or assign a Sentry issue.",
+                ),
             ],
         ),
         surface_connector(
@@ -223,8 +275,16 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Incidents, acknowledgements, responders, and escalation.",
             ConnectorTransport::Http,
             vec![
-                surface_connector_tool("read_incidents", "Read incidents", "Read incident details and timelines."),
-                surface_connector_tool("acknowledge_incident", "Acknowledge incident", "Acknowledge an incident after approval."),
+                surface_connector_tool(
+                    "read_incidents",
+                    "Read incidents",
+                    "Read incident details and timelines.",
+                ),
+                surface_connector_tool(
+                    "acknowledge_incident",
+                    "Acknowledge incident",
+                    "Acknowledge an incident after approval.",
+                ),
             ],
         ),
         surface_connector(
@@ -233,8 +293,16 @@ fn default_surface_connectors() -> Vec<ConnectorSummary> {
             "Local commits, branches, and repository state.",
             ConnectorTransport::Command,
             vec![
-                surface_connector_tool("read_status", "Read status", "Read local repository status."),
-                surface_connector_tool("read_history", "Read history", "Read commit and branch history."),
+                surface_connector_tool(
+                    "read_status",
+                    "Read status",
+                    "Read local repository status.",
+                ),
+                surface_connector_tool(
+                    "read_history",
+                    "Read history",
+                    "Read commit and branch history.",
+                ),
             ],
         ),
     ]
@@ -246,7 +314,9 @@ fn default_surface_skills() -> Vec<SkillSummary> {
         name: "Research brief".into(),
         description: "Turn verified sources into a concise research brief.".into(),
         use_when: "Use when a task needs sourced research and a decision-ready summary.".into(),
-        instructions: "Verify sources, distinguish facts from inference, and end with actionable conclusions.".into(),
+        instructions:
+            "Verify sources, distinguish facts from inference, and end with actionable conclusions."
+                .into(),
         source: SkillSource::Private,
         publish_state: SkillPublishState::Local,
         owner_agent_id: Some("mahayana-assistant".into()),
@@ -303,13 +373,41 @@ fn surface_listener(
 
 fn default_surface_listeners() -> Vec<ListenerIntegrationSummary> {
     vec![
-        surface_listener(ListenerPlatform::Github, "GitHub", "Watch repository PRs, comments, issues, and CI."),
-        surface_listener(ListenerPlatform::Git, "Git", "Wake routines on local repository activity."),
-        surface_listener(ListenerPlatform::Slack, "Slack", "Wake routines on messages, mentions, and reactions."),
-        surface_listener(ListenerPlatform::Teams, "Microsoft Teams", "Wake routines on Teams activity."),
-        surface_listener(ListenerPlatform::Linear, "Linear", "Wake routines on issue and project activity."),
-        surface_listener(ListenerPlatform::Sentry, "Sentry", "Wake routines on issue and regression activity."),
-        surface_listener(ListenerPlatform::Pagerduty, "PagerDuty", "Wake routines on incident activity."),
+        surface_listener(
+            ListenerPlatform::Github,
+            "GitHub",
+            "Watch repository PRs, comments, issues, and CI.",
+        ),
+        surface_listener(
+            ListenerPlatform::Git,
+            "Git",
+            "Wake routines on local repository activity.",
+        ),
+        surface_listener(
+            ListenerPlatform::Slack,
+            "Slack",
+            "Wake routines on messages, mentions, and reactions.",
+        ),
+        surface_listener(
+            ListenerPlatform::Teams,
+            "Microsoft Teams",
+            "Wake routines on Teams activity.",
+        ),
+        surface_listener(
+            ListenerPlatform::Linear,
+            "Linear",
+            "Wake routines on issue and project activity.",
+        ),
+        surface_listener(
+            ListenerPlatform::Sentry,
+            "Sentry",
+            "Wake routines on issue and regression activity.",
+        ),
+        surface_listener(
+            ListenerPlatform::Pagerduty,
+            "PagerDuty",
+            "Wake routines on incident activity.",
+        ),
     ]
 }
 
@@ -373,9 +471,9 @@ fn default_codex_skills_root() -> PathBuf {
 fn safe_skill_directory_name(skill_id: &str) -> Result<String, ProductError> {
     let value = skill_id.trim();
     if value.is_empty()
-        || !value
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_')
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
     {
         return Err(ProductError::InvalidParameter("skillId"));
     }
@@ -487,23 +585,25 @@ impl MahayanaProductClient {
         let dir_name = safe_skill_directory_name(&skill.id)?;
         let directory = self.skills_root.join(dir_name);
         std::fs::create_dir_all(&directory).map_err(|error| {
-            ProductError::State(format!("create skill directory {}: {error}", directory.display()))
+            ProductError::State(format!(
+                "create skill directory {}: {error}",
+                directory.display()
+            ))
         })?;
         let name = serde_json::to_string(&skill.name)
             .map_err(|error| ProductError::State(format!("encode skill name: {error}")))?;
-        let description = serde_json::to_string(&format!(
-            "{} {}",
-            skill.description.trim(),
-            skill.use_when.trim()
-        ).trim().to_string())
-            .map_err(|error| ProductError::State(format!("encode skill description: {error}")))?;
+        let description = serde_json::to_string(
+            &format!("{} {}", skill.description.trim(), skill.use_when.trim())
+                .trim()
+                .to_string(),
+        )
+        .map_err(|error| ProductError::State(format!("encode skill description: {error}")))?;
         let contents = format!(
             "---\nname: {name}\ndescription: {description}\n---\n\n{}\n",
             skill.instructions.trim()
         );
-        std::fs::write(directory.join("SKILL.md"), contents).map_err(|error| {
-            ProductError::State(format!("write skill {}: {error}", skill.id))
-        })
+        std::fs::write(directory.join("SKILL.md"), contents)
+            .map_err(|error| ProductError::State(format!("write skill {}: {error}", skill.id)))
     }
 
     fn remove_private_skill(&self, skill_id: &str) -> Result<(), ProductError> {
@@ -512,7 +612,8 @@ impl MahayanaProductClient {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(ProductError::State(format!(
-                "remove skill directory {}: {error}", directory.display()
+                "remove skill directory {}: {error}",
+                directory.display()
             ))),
         }
     }
@@ -880,9 +981,14 @@ impl MahayanaProductClient {
 
     fn load_surface_state(&self) -> Result<ProductSurfaceState, ProductError> {
         let mut state = match std::fs::read(&self.surface_state_path) {
-            Ok(bytes) => serde_json::from_slice::<ProductSurfaceState>(&bytes)
-                .map_err(|error| ProductError::State(format!("decode product surface state: {error}")))?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProductSurfaceState::default(),
+            Ok(bytes) => {
+                serde_json::from_slice::<ProductSurfaceState>(&bytes).map_err(|error| {
+                    ProductError::State(format!("decode product surface state: {error}"))
+                })?
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                ProductSurfaceState::default()
+            }
             Err(error) => {
                 return Err(ProductError::State(format!(
                     "read {}: {error}",
@@ -921,12 +1027,12 @@ impl MahayanaProductClient {
                 ProductError::State(format!("create {}: {error}", parent.display()))
             })?;
         }
-        let temp = self.surface_state_path.with_extension(format!(
-            "json.{}.tmp",
-            std::process::id()
-        ));
-        let bytes = serde_json::to_vec_pretty(state)
-            .map_err(|error| ProductError::State(format!("encode product surface state: {error}")))?;
+        let temp = self
+            .surface_state_path
+            .with_extension(format!("json.{}.tmp", std::process::id()));
+        let bytes = serde_json::to_vec_pretty(state).map_err(|error| {
+            ProductError::State(format!("encode product surface state: {error}"))
+        })?;
         std::fs::write(&temp, bytes)
             .map_err(|error| ProductError::State(format!("write {}: {error}", temp.display())))?;
         std::fs::rename(&temp, &self.surface_state_path).map_err(|error| {
@@ -952,8 +1058,9 @@ impl MahayanaProductClient {
                     .or(Some("desktop")),
             );
         }
-        let command: FeatureCommand = serde_json::from_value(request.clone())
-            .map_err(|error| ProductError::State(format!("decode product surface command: {error}")))?;
+        let command: FeatureCommand = serde_json::from_value(request.clone()).map_err(|error| {
+            ProductError::State(format!("decode product surface command: {error}"))
+        })?;
         let mut state = self.load_surface_state()?;
         let mut changed = false;
         let response = match command {
@@ -963,7 +1070,9 @@ impl MahayanaProductClient {
                     .connectors
                     .iter_mut()
                     .find(|connector| connector.id == connector_id)
-                    .ok_or_else(|| ProductError::State(format!("unknown connector: {connector_id}")))?;
+                    .ok_or_else(|| {
+                        ProductError::State(format!("unknown connector: {connector_id}"))
+                    })?;
                 if connector.transport == ConnectorTransport::Command {
                     connector.status = ConnectorStatus::Connected;
                     changed = true;
@@ -982,14 +1091,21 @@ impl MahayanaProductClient {
             } => {
                 let label = label.trim();
                 if label.is_empty() {
-                    return Err(ProductError::State("account label must not be empty".into()));
+                    return Err(ProductError::State(
+                        "account label must not be empty".into(),
+                    ));
                 }
                 let connector = state
                     .connectors
                     .iter_mut()
                     .find(|connector| connector.id == connector_id)
-                    .ok_or_else(|| ProductError::State(format!("unknown connector: {connector_id}")))?;
-                if !connector.accounts.iter().any(|account| account.id == account_id)
+                    .ok_or_else(|| {
+                        ProductError::State(format!("unknown connector: {connector_id}"))
+                    })?;
+                if !connector
+                    .accounts
+                    .iter()
+                    .any(|account| account.id == account_id)
                     && account_id.starts_with(&format!("mcp:{connector_id}"))
                 {
                     connector.accounts.push(ConnectorAccountSummary {
@@ -1005,7 +1121,9 @@ impl MahayanaProductClient {
                     .accounts
                     .iter_mut()
                     .find(|account| account.id == account_id)
-                    .ok_or_else(|| ProductError::State(format!("unknown connector account: {account_id}")))?;
+                    .ok_or_else(|| {
+                        ProductError::State(format!("unknown connector account: {account_id}"))
+                    })?;
                 if account.team_managed == Some(true) {
                     return Err(ProductError::State(
                         "team-managed accounts cannot be renamed".into(),
@@ -1024,7 +1142,9 @@ impl MahayanaProductClient {
                     .connectors
                     .iter_mut()
                     .find(|connector| connector.id == connector_id)
-                    .ok_or_else(|| ProductError::State(format!("unknown connector: {connector_id}")))?;
+                    .ok_or_else(|| {
+                        ProductError::State(format!("unknown connector: {connector_id}"))
+                    })?;
                 if connector
                     .accounts
                     .iter()
@@ -1035,7 +1155,9 @@ impl MahayanaProductClient {
                     ));
                 }
                 let before = connector.accounts.len();
-                connector.accounts.retain(|account| account.id != account_id);
+                connector
+                    .accounts
+                    .retain(|account| account.id != account_id);
                 if connector.accounts.len() == before
                     && !account_id.starts_with(&format!("mcp:{connector_id}"))
                 {
@@ -1059,7 +1181,9 @@ impl MahayanaProductClient {
                     .connectors
                     .iter_mut()
                     .find(|connector| connector.id == connector_id)
-                    .ok_or_else(|| ProductError::State(format!("unknown connector: {connector_id}")))?;
+                    .ok_or_else(|| {
+                        ProductError::State(format!("unknown connector: {connector_id}"))
+                    })?;
                 if !connector.tools.iter().any(|tool| tool.id == tool_id) {
                     connector.tools.push(ConnectorToolSummary {
                         id: tool_id.clone(),
@@ -1068,7 +1192,9 @@ impl MahayanaProductClient {
                         enabled,
                         requires_approval: Some(true),
                     });
-                } else if let Some(tool) = connector.tools.iter_mut().find(|tool| tool.id == tool_id) {
+                } else if let Some(tool) =
+                    connector.tools.iter_mut().find(|tool| tool.id == tool_id)
+                {
                     tool.enabled = enabled;
                 }
                 changed = true;
@@ -1080,7 +1206,10 @@ impl MahayanaProductClient {
                     .iter()
                     .filter(|skill| {
                         agent_id.as_ref().is_none_or(|agent_id| {
-                            skill.owner_agent_id.as_ref().is_none_or(|owner| owner == agent_id)
+                            skill
+                                .owner_agent_id
+                                .as_ref()
+                                .is_none_or(|owner| owner == agent_id)
                         })
                     })
                     .cloned()
@@ -1109,7 +1238,9 @@ impl MahayanaProductClient {
                 });
                 let existing = state.skills.iter().position(|skill| skill.id == id);
                 if existing.is_some_and(|index| state.skills[index].read_only == Some(true)) {
-                    return Err(ProductError::State("managed skills cannot be edited".into()));
+                    return Err(ProductError::State(
+                        "managed skills cannot be edited".into(),
+                    ));
                 }
                 let previous = existing.map(|index| state.skills[index].clone());
                 let skill = SkillSummary {
@@ -1118,7 +1249,9 @@ impl MahayanaProductClient {
                     description: description.trim().to_string(),
                     use_when: use_when.to_string(),
                     instructions,
-                    source: previous.as_ref().map_or(SkillSource::Private, |skill| skill.source),
+                    source: previous
+                        .as_ref()
+                        .map_or(SkillSource::Private, |skill| skill.source),
                     publish_state: previous
                         .as_ref()
                         .map_or(SkillPublishState::Local, |skill| skill.publish_state),
@@ -1146,7 +1279,9 @@ impl MahayanaProductClient {
                 if state.skills[index].read_only == Some(true)
                     || state.skills[index].publish_state == SkillPublishState::Managed
                 {
-                    return Err(ProductError::State("managed skills cannot be deleted".into()));
+                    return Err(ProductError::State(
+                        "managed skills cannot be deleted".into(),
+                    ));
                 }
                 let skill = state.skills.remove(index);
                 self.remove_private_skill(&skill.id)?;
@@ -1159,9 +1294,11 @@ impl MahayanaProductClient {
                     .iter()
                     .find(|team| team.id == team_id)
                     .cloned()
-                    .ok_or_else(|| ProductError::State(
-                        "no publishable Mahayana team is available for this account".into(),
-                    ))?;
+                    .ok_or_else(|| {
+                        ProductError::State(
+                            "no publishable Mahayana team is available for this account".into(),
+                        )
+                    })?;
                 let skill = state
                     .skills
                     .iter_mut()
@@ -1187,7 +1324,9 @@ impl MahayanaProductClient {
                     .find(|skill| skill.id == id)
                     .ok_or_else(|| ProductError::State(format!("unknown skill: {id}")))?;
                 if skill.publish_state == SkillPublishState::Managed {
-                    return Err(ProductError::State("managed skills cannot be unpublished".into()));
+                    return Err(ProductError::State(
+                        "managed skills cannot be unpublished".into(),
+                    ));
                 }
                 skill.source = SkillSource::Private;
                 skill.publish_state = SkillPublishState::Local;
@@ -1204,7 +1343,9 @@ impl MahayanaProductClient {
                     .find(|skill| skill.id == id)
                     .ok_or_else(|| ProductError::State(format!("unknown skill: {id}")))?;
                 if skill.team_id.is_none() {
-                    return Err(ProductError::State("only published skills can be synced".into()));
+                    return Err(ProductError::State(
+                        "only published skills can be synced".into(),
+                    ));
                 }
                 skill.publish_state = SkillPublishState::Synced;
                 skill.updated_at_ms = surface_now_millis();
@@ -2182,8 +2323,7 @@ fn managed_secret_name(secret_request_id: &str) -> Result<SecretName, ProductErr
         return Err(ProductError::InvalidParameter("secretRequestId"));
     }
     let digest = sha2::Sha256::digest(id.as_bytes());
-    SecretName::new(&format!("MAHAYANA_REQUESTED_SECRET_{digest:X}"))
-        .map_err(secrets_error)
+    SecretName::new(&format!("MAHAYANA_REQUESTED_SECRET_{digest:X}")).map_err(secrets_error)
 }
 
 fn merge_refreshed_session(session: Value, response: Value, access_token: &str) -> Value {
@@ -2254,10 +2394,7 @@ fn now_seconds() -> i64 {
 fn validate_surface_draft(draft: &MessageDraft) -> Result<(), ProductError> {
     match draft {
         MessageDraft::Email {
-            to,
-            subject,
-            body,
-            ..
+            to, subject, body, ..
         } => {
             if to.is_empty()
                 || to
@@ -2771,13 +2908,18 @@ mod tests {
         };
         client.persist_private_skill(&skill).expect("persist skill");
         let contents = std::fs::read_to_string(
-            client.skills_root().join("skill-real-runtime").join("SKILL.md"),
+            client
+                .skills_root()
+                .join("skill-real-runtime")
+                .join("SKILL.md"),
         )
         .expect("read persisted skill");
         assert!(contents.contains("name: \"Real runtime skill\""));
         assert!(contents.contains("Use when testing skill persistence."));
         assert!(contents.contains("Perform the requested action"));
-        client.remove_private_skill(&skill.id).expect("remove skill");
+        client
+            .remove_private_skill(&skill.id)
+            .expect("remove skill");
         assert!(!client.skills_root().join("skill-real-runtime").exists());
         let _ = std::fs::remove_dir_all(root);
     }
