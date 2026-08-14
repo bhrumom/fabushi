@@ -440,10 +440,7 @@ fn valid_relay_identifier(value: &str, max_len: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
 }
 
-async fn listener_register(
-    mut request: Request,
-    context: RouteContext<()>,
-) -> Result<Response> {
+async fn listener_register(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => {

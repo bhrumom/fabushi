@@ -75,9 +75,14 @@ impl RuntimeBuilder {
         Ok(self)
     }
 
-    pub fn with_agent_backend(mut self, backend: Arc<dyn AgentBackend>) -> Result<Self, RuntimeError> {
+    pub fn with_agent_backend(
+        mut self,
+        backend: Arc<dyn AgentBackend>,
+    ) -> Result<Self, RuntimeError> {
         self.providers
-            .register(Arc::new(AgentConversationProvider::new(Arc::clone(&backend))))?;
+            .register(Arc::new(AgentConversationProvider::new(Arc::clone(
+                &backend,
+            ))))?;
         self.agent_backend = Some(backend);
         Ok(self)
     }

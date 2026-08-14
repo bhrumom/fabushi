@@ -16,10 +16,10 @@ use mahayana_host_protocol::HostEvent;
 use mahayana_host_protocol::HostMode;
 use mahayana_host_protocol::ListenerPlatform;
 use mahayana_host_protocol::SurfacePlatform;
+use mahayana_platform_core::HostPlatform;
 use mahayana_plugin_host::LocalPlugin;
 use mahayana_product::MahayanaProductClient;
 use mahayana_product::default_mahayana_home;
-use mahayana_platform_core::HostPlatform;
 use mahayana_product::redact_secrets;
 use mahayana_runtime::mahayana_runtime_close;
 use mahayana_runtime::mahayana_runtime_create;
@@ -281,10 +281,19 @@ enum SkillCommand {
         #[arg(long)]
         owner_agent_id: Option<String>,
     },
-    Delete { id: String },
-    Publish { id: String, team_id: String },
-    Unpublish { id: String },
-    Sync { id: String },
+    Delete {
+        id: String,
+    },
+    Publish {
+        id: String,
+        team_id: String,
+    },
+    Unpublish {
+        id: String,
+    },
+    Sync {
+        id: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -320,10 +329,18 @@ enum RoutineCommand {
         #[arg(long)]
         disabled: bool,
     },
-    Pause { id: String },
-    Resume { id: String },
-    Run { id: String },
-    Delete { id: String },
+    Pause {
+        id: String,
+    },
+    Resume {
+        id: String,
+    },
+    Run {
+        id: String,
+    },
+    Delete {
+        id: String,
+    },
     /// Inject a local event into matching event-driven routines. This is the
     /// CLI/webhook bridge for platforms whose hosted listener service is not
     /// available in this build.
@@ -703,16 +720,8 @@ fn parse_listener_platform(value: &str) -> Result<ListenerPlatform, String> {
     }
 }
 
-fn cli_feature_host(
-    codex_executable_path: Option<&Path>,
-) -> Result<FeatureHostController, String> {
+fn cli_feature_host(codex_executable_path: Option<&Path>) -> Result<FeatureHostController, String> {
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-    let bundled_plugin_marketplace = find_bundled_plugin_marketplace(&cwd);
-    let mini_apps = bundled_plugin_marketplace
-        .as_deref()
-        .map(plugin_dev::marketplace_mini_apps)
-        .transpose()?
-        .unwrap_or_default();
     let mut host = HostCreateConfig::default();
     host.runtime.data_dir = Some(default_mahayana_home().join("runtime"));
     host.runtime.workspace_roots = vec![cwd.clone()];
@@ -727,8 +736,6 @@ fn cli_feature_host(
     host.codex_executable_path = codex_executable_path.map(Path::to_path_buf);
     host.cwd = Some(cwd);
     host.host_platform = Some(HostPlatform::Cli);
-    host.bundled_plugin_marketplace = bundled_plugin_marketplace;
-    host.mini_apps = mini_apps;
     host.inherit_installed_plugins = Some(true);
     host.use_codex_account = std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
     if let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
@@ -767,11 +774,11 @@ fn execute_feature_and_print(
     controller: &FeatureHostController,
     command: FeatureCommand,
 ) -> Result<(), String> {
-    controller.execute(command).map_err(|error| error.to_string())?;
+    controller
+        .execute(command)
+        .map_err(|error| error.to_string())?;
     let events = drain_feature_events(controller)?;
-    print_json(
-        &serde_json::to_value(events).map_err(|error| error.to_string())?,
-    )
+    print_json(&serde_json::to_value(events).map_err(|error| error.to_string())?)
 }
 
 fn connector_command(
@@ -781,7 +788,10 @@ fn connector_command(
     let request_id = feature_request_id("connector");
     let command = match command {
         ConnectorCommand::List => FeatureCommand::ConnectorList { request_id },
-        ConnectorCommand::Connect { connector_id, label } => FeatureCommand::ConnectorConnect {
+        ConnectorCommand::Connect {
+            connector_id,
+            label,
+        } => FeatureCommand::ConnectorConnect {
             request_id,
             connector_id,
             account_label: label,
@@ -818,10 +828,7 @@ fn connector_command(
     execute_feature_and_print(controller, command)
 }
 
-fn skill_command(
-    controller: &FeatureHostController,
-    command: SkillCommand,
-) -> Result<(), String> {
+fn skill_command(controller: &FeatureHostController, command: SkillCommand) -> Result<(), String> {
     let request_id = feature_request_id("skill");
     let command = match command {
         SkillCommand::List { agent_id } => FeatureCommand::SkillList {
@@ -1017,9 +1024,7 @@ fn routine_command(
                     .map_err(|error| error.to_string())?;
                 events.extend(drain_feature_events(controller)?);
             }
-            print_json(
-                &serde_json::to_value(events).map_err(|error| error.to_string())?,
-            )
+            print_json(&serde_json::to_value(events).map_err(|error| error.to_string())?)
         }
     }
 }
@@ -1658,20 +1663,12 @@ struct RuntimeHandle(u64);
 impl RuntimeHandle {
     fn create(codex_executable_path: Option<&Path>) -> Result<Self, String> {
         let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-        let bundled_plugin_marketplace = find_bundled_plugin_marketplace(&cwd);
-        let mini_apps = bundled_plugin_marketplace
-            .as_deref()
-            .map(plugin_dev::marketplace_mini_apps)
-            .transpose()?
-            .unwrap_or_default();
         let use_codex_account = std::env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1");
         let mut config = json!({
             "codexExecutablePath": codex_executable_path,
             "hostPlatform": "cli",
             "cwd": cwd,
             "workspaceRoots": [cwd],
-            "bundledPluginMarketplace": bundled_plugin_marketplace,
-            "miniApps": mini_apps,
             "useCodexAccount": use_codex_account,
         });
         if use_codex_account && let Some(codex_home) = std::env::var_os("MAHAYANA_CODEX_HOME") {
@@ -1732,28 +1729,6 @@ impl RuntimeHandle {
         let response = unsafe { take_json(mahayana_runtime_interrupt(self.0, request.as_ptr())) }?;
         unwrap_ffi(response).map(|_| ())
     }
-}
-
-fn find_bundled_plugin_marketplace(cwd: &Path) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(path) = std::env::var_os("MAHAYANA_BUNDLED_PLUGIN_MARKETPLACE") {
-        candidates.push(PathBuf::from(path));
-    }
-    candidates.push(cwd.join(".agents/plugins"));
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(bin_dir) = executable.parent()
-    {
-        candidates.push(bin_dir.join("../share/mahayana/plugins"));
-        candidates.push(bin_dir.join("share/mahayana/plugins"));
-        candidates.push(bin_dir.join("../Resources/mahayana/share/mahayana/plugins"));
-    }
-    candidates.into_iter().find_map(|candidate| {
-        candidate
-            .join("marketplace.json")
-            .is_file()
-            .then(|| candidate.canonicalize().ok())
-            .flatten()
-    })
 }
 
 impl Drop for RuntimeHandle {

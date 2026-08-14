@@ -72,7 +72,9 @@ pub enum ListenerPlatform {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AutomationTrigger {
-    Schedule { schedule: String },
+    Schedule {
+        schedule: String,
+    },
     Event {
         source: ListenerPlatform,
         event: String,
@@ -363,7 +365,9 @@ pub enum UpdateDisabledReason {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum UpdateState {
     Loading,
-    Disabled { reason: UpdateDisabledReason },
+    Disabled {
+        reason: UpdateDisabledReason,
+    },
     Checking,
     Available {
         version: String,
@@ -375,10 +379,18 @@ pub enum UpdateState {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         progress: Option<u8>,
     },
-    Staging { version: String },
-    Ready { version: String },
-    UpToDate { version: String },
-    Error { message: String },
+    Staging {
+        version: String,
+    },
+    Ready {
+        version: String,
+    },
+    UpToDate {
+        version: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,11 +555,7 @@ pub enum FeatureCommand {
     SkillList {
         #[serde(rename = "requestId")]
         request_id: String,
-        #[serde(
-            rename = "agentId",
-            default,
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
         agent_id: Option<String>,
     },
     #[serde(rename = "skill.upsert")]
@@ -911,10 +919,7 @@ pub enum HostEvent {
         bots: Vec<BotSummary>,
     },
     #[serde(rename = "bot.changed")]
-    BotChanged {
-        timestamp: String,
-        bot: BotSummary,
-    },
+    BotChanged { timestamp: String, bot: BotSummary },
     #[serde(rename = "listener.listed")]
     ListenerListed {
         timestamp: String,
