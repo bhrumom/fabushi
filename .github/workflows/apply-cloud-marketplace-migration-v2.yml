@@ -41,4 +41,6 @@ jobs:
           git add third_party/mahayana/mahayana-rs
           git diff --cached --check
           git commit -m 'migration: remove bundled plugin marketplace runtime fallback'
+          git fetch origin codex/tauri-ci-cleanup-staging
+          git rebase origin/codex/tauri-ci-cleanup-staging
           git push origin HEAD:codex/tauri-ci-cleanup-staging
