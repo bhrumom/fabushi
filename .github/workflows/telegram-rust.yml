@@ -172,3 +172,113 @@ jobs:
         run: cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }}
       - name: Clippy
         run: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package ${{ matrix.crate }} --all-targets -- -D warnings
+
+  android-runtime:
+    name: Android Rust runtime ABIs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: android-actions/setup-android@v3
+      - name: Install Android NDK and cargo-ndk
+        run: |
+          sdkmanager 'ndk;28.2.13676358'
+          cargo install cargo-ndk --locked
+      - name: Build three Android ABIs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+        run: ./fabushi/android/build_telegram_runtime.sh
+      - name: Verify runtime artifacts and ABI symbols
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+        run: |
+          nm_tool="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -path '*/bin/llvm-nm' -type f | head -1)"
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            library="fabushi/android/app/src/main/jniLibs/$abi/libmahayana_runtime.so"
+            test -f "$library"
+            for symbol in force_link create execute receive interrupt resolve_approval close free_string; do
+              "$nm_tool" -D --defined-only "$library" | grep -q "mahayana_runtime_${symbol}$"
+            done
+            "$nm_tool" -D --defined-only "$library" | grep -q "mahayana_product_execute$"
+            for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+              "$nm_tool" -D --defined-only "$library" | grep -q "fabushi_telegram_${symbol}$"
+            done
+          done
+
+  apple-runtime:
+    name: Apple Rust runtime archives
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build macOS dynamic library
+        env:
+          TARGET_BUILD_DIR: /tmp/fabushi-macos
+          FRAMEWORKS_FOLDER_PATH: Frameworks
+          CONFIGURATION: Release
+          ARCHS: arm64
+        run: ./fabushi/macos/build_telegram_runtime.sh
+      - name: Build iOS Simulator static library
+        env:
+          CONFIGURATION: Release
+          PLATFORM_NAME: iphonesimulator
+          ARCHS: arm64
+        run: ./fabushi/ios/build_telegram_runtime.sh
+      - name: Verify Apple symbols
+        run: |
+          for library in \
+            /tmp/fabushi-macos/Frameworks/libmahayana_runtime.dylib \
+            fabushi/ios/Runner/Libs/libmahayana_runtime.a; do
+            test -f "$library"
+            for symbol in force_link create execute receive interrupt resolve_approval close free_string; do
+              nm -gU "$library" | grep -q "_mahayana_runtime_${symbol}$"
+            done
+            nm -gU "$library" | grep -q "_mahayana_product_execute$"
+            for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+              nm -gU "$library" | grep -q "_fabushi_telegram_${symbol}$"
+            done
+          done
+
+  desktop-runtime:
+    name: ${{ matrix.os }} desktop runtime
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Linux shared library
+        if: runner.os == 'Linux'
+        run: ./fabushi/linux/build_telegram_runtime.sh Release /tmp/fabushi-linux
+      - name: Verify Linux symbols
+        if: runner.os == 'Linux'
+        run: |
+          test -f /tmp/fabushi-linux/libmahayana_runtime.so
+          for symbol in force_link create execute receive interrupt resolve_approval close free_string; do
+            nm -D --defined-only /tmp/fabushi-linux/libmahayana_runtime.so | grep -q "mahayana_runtime_${symbol}$"
+          done
+          nm -D --defined-only /tmp/fabushi-linux/libmahayana_runtime.so | grep -q "mahayana_product_execute$"
+          for symbol in force_link create_client create_persistent_client execute close_client free_string; do
+            nm -D --defined-only /tmp/fabushi-linux/libmahayana_runtime.so | grep -q "fabushi_telegram_${symbol}$"
+          done
+      - name: Build Windows dynamic library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./fabushi/windows/build_telegram_runtime.ps1 -Configuration Release -OutputDirectory "$env:RUNNER_TEMP/fabushi-windows"
+      - name: Verify Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path "$env:RUNNER_TEMP/fabushi-windows/mahayana_runtime.dll")) {
+            throw "Windows Mahayana Rust runtime was not produced."
+          }
