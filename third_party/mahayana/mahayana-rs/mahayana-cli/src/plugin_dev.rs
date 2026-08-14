@@ -8,6 +8,7 @@ use mahayana_miniapp_protocol::SourceKind;
 use mahayana_platform_core::HostPlatform;
 use mahayana_platform_core::canonical_json_bytes;
 use mahayana_plugin_host::LocalPlugin;
+use mahayana_product::default_mahayana_home;
 use serde_json::Value;
 use serde_json::json;
 use sha2::Digest;
@@ -893,6 +894,7 @@ fn validate_marketplace_entry(entry: &Value) -> Result<&str, String> {
         .ok_or_else(|| format!("marketplace plugin {name} requires source.path"))
 }
 
+#[cfg(test)]
 pub fn marketplace_mini_apps(marketplace_root: &Path) -> Result<Vec<Value>, String> {
     let marketplace_path = marketplace_root.join("marketplace.json");
     let marketplace: Value = serde_json::from_str(
@@ -990,6 +992,16 @@ fn sync_installed_marketplace_with_codex(
     )
 }
 
+fn mahayana_runtime_codex_home() -> PathBuf {
+    if env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1")
+        && let Some(codex_home) = env::var_os("MAHAYANA_CODEX_HOME")
+            .filter(|value| !value.is_empty())
+    {
+        return PathBuf::from(codex_home);
+    }
+    default_mahayana_home().join("codex")
+}
+
 fn run_mahayana_plugin_command(
     executable: &Path,
     repository: &Path,
@@ -998,6 +1010,7 @@ fn run_mahayana_plugin_command(
     let output = Command::new(executable)
         .args(arguments)
         .current_dir(repository)
+        .env("CODEX_HOME", mahayana_runtime_codex_home())
         .output()
         .map_err(|error| format!("failed to run mahayana {}: {error}", arguments.join(" ")))?;
     if output.status.success() {
