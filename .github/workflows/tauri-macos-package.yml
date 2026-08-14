@@ -49,17 +49,26 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v2-wdio' || 'tauri-macos-package-release-v1' }}
+          shared-key: ${{ github.event_name == 'pull_request' && 'tauri-macos-functional-debug-v3-wdio-overlay' || 'tauri-macos-package-release-v1' }}
           cache-all-crates: true
           cache-workspace-crates: true
+
+      - name: Prepare PR-only embedded WebDriver Cargo overlay
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp apps/fabushi-tauri/src-tauri/Cargo.functional-e2e.toml apps/fabushi-tauri/src-tauri/Cargo.toml
 
       - name: Build fast macOS app for PR functional testing
         if: github.event_name == 'pull_request'
         working-directory: apps/fabushi-tauri
+        env:
+          FABUSHI_TAURI_WDIO_E2E: "1"
         run: >-
           corepack pnpm dlx @tauri-apps/cli@2.11.3 build
           --debug
-          --features desktop,tauri-wdio-e2e
+          --features desktop
           --config src-tauri/tauri.functional.conf.json
 
       - name: Build release macOS app and DMG
@@ -93,7 +102,6 @@ jobs:
           mkdir -p macos-package-artifacts
           ditto -c -k --sequesterRsrc --keepParent "$app_path" macos-package-artifacts/Fabushi.app.zip
           printf '%s\n' "$GITHUB_SHA" > macos-package-artifacts/source-sha.txt
-          cp third_party/mahayana/mahayana-rs/Cargo.lock macos-package-artifacts/Cargo.lock.generated
 
           dmg_name=""
           if [ "$profile" = "release" ]; then
@@ -173,6 +181,7 @@ jobs:
               echo "- Real WKWebView/native-window E2E: runs against the downloaded .app in the downstream functional-test job"
               echo "- Browser Host journey contract: remains as the fast deterministic layer"
               echo "- Tauri command contract: rerun in the downstream functional-test job"
+              echo "- WebDriver Rust dependency: injected only by the PR Cargo overlay; absent from the product/release manifest"
             fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
