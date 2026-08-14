@@ -120,32 +120,40 @@ jobs:
         run: npm test
 
   workflow-guardrails:
-    name: Workflow guardrails
+    name: Post-Flutter migration guardrails
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - name: Checkout workflow guard inputs
+      - name: Checkout workflow inputs
         uses: actions/checkout@v5
         with:
           persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/workflows/**
-            /.github/scripts/**
-            /fabushi/web/auth-utils.js
-            /fabushi/web/migrations/**
-            /fabushi/web/schema.sql
-            /fabushi/web/schema_v2.sql
-            /fabushi/web/src/contracts/**
-            /fabushi/web/src/repositories/**
-            /fabushi/web/src/routes/**
-            /fabushi/web/src/services/database.js
-            /fabushi/web/src/use-cases/**
-            /fabushi/web/src/handlers/**
-            /fabushi/web/tests/**
-      - name: Validate release workflow guardrail
+      - name: Reject retired Flutter workflows and commands
         shell: bash
-        run: bash .github/scripts/check-publish-cd-release.sh
+        run: |
+          set -euo pipefail
+          retired=(
+            .github/workflows/deploy-flutter-web.yml
+            .github/workflows/desktop-installers.yml
+            .github/workflows/native-smoke.yml
+            .github/workflows/android-real-device-e2e.yml
+            .github/workflows/publish-cd-release.yml
+            .github/workflows/rollback-production.yml
+          )
+          for path in "${retired[@]}"; do
+            if [ -e "$path" ]; then
+              echo "Retired Flutter workflow was reintroduced: $path" >&2
+              exit 1
+            fi
+          done
+          if grep -R -n -E 'subosito/flutter-action|flutter (pub get|build|test|analyze)' .github/workflows; then
+            echo "Flutter commands are not allowed in the migrated automatic workflow set." >&2
+            exit 1
+          fi
+          echo "No Flutter Actions remain in the migrated workflow set."
 
   ci-result:
     name: CI result
@@ -166,7 +174,7 @@ jobs:
             "Frontend:${{ needs.frontend.result }}" \
             "Worker:${{ needs.worker.result }}" \
             "MCP contracts:${{ needs.mcp-contracts.result }}" \
-            "Workflow guardrails:${{ needs.workflow-guardrails.result }}"
+            "Migration guardrails:${{ needs.workflow-guardrails.result }}"
           do
             name="${pair%%:*}"
             result="${pair#*:}"
