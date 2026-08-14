@@ -8,18 +8,35 @@ import type {
 const mahayanaHostFeatures =
   journeyContract.features as ReadonlyArray<MahayanaHostFeature>;
 
+async function openLoginOptions(page: Page): Promise<void> {
+  await expect(page.getByTestId("login-gate")).toBeVisible();
+  while (await page.getByRole("button", { name: "下一步" }).isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "下一步" }).click();
+  }
+  if (await page.getByTestId("show-login-options").isVisible().catch(() => false)) {
+    await page.getByTestId("show-login-options").click();
+  }
+}
+
+async function ensureComputerPanel(page: Page): Promise<void> {
+  if (await page.getByTestId("feature-coverage").isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "大乘助手的电脑" }).click();
+  await expect(page.getByTestId("feature-coverage")).toBeVisible();
+}
+
 async function runJourneyStep(
   page: Page,
   step: MahayanaHostJourneyStep,
 ): Promise<void> {
   switch (step.action) {
     case "oauthLogin":
-      await expect(page.getByTestId("login-gate")).toBeVisible();
+      await openLoginOptions(page);
       await page.getByTestId(`oauth-${step.provider}`).click();
       await expect(page.getByTestId("login-gate")).toBeHidden();
       break;
     case "login":
-      await expect(page.getByTestId("login-gate")).toBeVisible();
+      await openLoginOptions(page);
+      await page.getByTestId("password-login-toggle").click();
       await page.getByTestId("login-username").fill(step.username);
       await page.getByTestId("login-password").fill(step.password);
       await page.getByTestId("login-submit").click();
@@ -64,7 +81,7 @@ async function runJourneyStep(
         )
         .click();
       await expect(page.getByTestId("approval-state")).toHaveText(
-        step.decision === "allow-once" ? "allowed" : "denied",
+        step.decision === "allow-once" ? "allowed-once" : "denied",
       );
       return;
     case "interruptOperation":
@@ -96,6 +113,7 @@ test("Mahayana Host 的所有声明功能可由目录驱动的用户操作完成
       for (const step of feature.steps) {
         await runJourneyStep(page, step);
       }
+      await ensureComputerPanel(page);
       await expect(page.getByTestId(`feature-result-${feature.id}`)).toHaveAttribute(
         "data-state",
         "passed",
@@ -115,6 +133,7 @@ test("所有官方应用复用同一条安装、机器人和 MiniApp 打开旅�
   ];
 
   await page.goto("/");
+  await openLoginOptions(page);
   await page.getByTestId("password-login-toggle").click();
   await page.getByTestId("login-username").fill("marketplace-fast-e2e");
   await page.getByTestId("login-password").fill("deterministic-test-password");

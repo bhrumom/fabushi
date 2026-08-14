@@ -506,10 +506,21 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     platform: "mock",
   };
 
-  constructor() {
+  constructor(options: { authenticated?: boolean } = {}) {
     this.native = isTauriMahayanaHostAvailable()
       ? new TauriMahayanaHostTransport()
       : null;
+    if (!this.native && options.authenticated) {
+      this.auth = {
+        loggedIn: true,
+        provider: "test",
+        user: {
+          id: "copyright-screenshot",
+          username: "copyright-local",
+          nickname: "本地测试用户",
+        },
+      };
+    }
   }
 
   subscribe(listener: RuntimeEventListener): () => void {

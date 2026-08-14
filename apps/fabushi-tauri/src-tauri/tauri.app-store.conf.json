@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "发布软件",
+  "identifier": "com.ombhrum.fabushi",
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": {
+      "../../../.agents/plugins": "fabushi-official"
+    },
+    "macOS": {
+      "entitlements": "AppStore.entitlements"
+    }
+  }
+}
