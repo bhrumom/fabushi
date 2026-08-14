@@ -226,15 +226,15 @@ jobs:
               echo "- Packaged app cache hit: \`${{ steps.package.outputs.cache_hit }}\`"
               echo "- Packaged app smoke: staged artifact launched successfully on the build runner"
               echo "- Real WKWebView/native-window E2E: runs against the downloaded .app in the downstream functional-test job"
-              echo "- Browser Host journey contract: remains as the fast deterministic layer"
-              echo "- Tauri command contract: rerun in the downstream functional-test job"
+              echo "- Browser Host journey contract: covered by the dedicated Host fast E2E workflow"
+              echo "- Tauri command/runtime contract: covered by the dedicated Tauri Host fast checks workflow"
               echo "- WebDriver Rust dependency: injected only by the PR Cargo overlay; absent from the product/release manifest"
             fi
             echo "- Apple upload: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
   functional-test:
-    name: Test packaged Mac app and all Host journeys
+    name: Test packaged Mac app
     needs: build-package
     runs-on: macos-15
     timeout-minutes: 45
@@ -251,22 +251,27 @@ jobs:
           path: macos-package-artifacts
 
       - name: Enable pinned pnpm through Corepack
+        if: github.event_name == 'workflow_dispatch'
         run: corepack enable
 
       - name: Install frontend dependencies
+        if: github.event_name == 'workflow_dispatch'
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Install Host E2E package
+        if: github.event_name == 'workflow_dispatch'
         working-directory: fabushi/e2e
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: npm ci
 
       - name: Verify system Chrome
+        if: github.event_name == 'workflow_dispatch'
         run: /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version
 
       - name: Run complete Host user journeys
+        if: github.event_name == 'workflow_dispatch'
         working-directory: fabushi/e2e
         run: npm run test:host-fast
 
@@ -283,7 +288,7 @@ jobs:
           executable_path="$app_path/Contents/MacOS/$executable"
           test -x "$executable_path"
           echo "FABUSHI_TAURI_APP_BINARY=$PWD/$executable_path" >> "$GITHUB_ENV"
-          echo "FABUSHI_TAURI_E2E_OUTPUT_DIR=$PWD/fabushi/tauri-e2e/.wdio-output" >> "$GITHUB_ENV"
+          echo "FABUSHI_TAURI_E2E_OUTPUT_DIR=$PWD/fabushi/tauri-e2e/wdio-output" >> "$GITHUB_ENV"
 
       - name: Set up Node for packaged Tauri WebDriver E2E
         if: github.event_name == 'pull_request'
@@ -302,12 +307,15 @@ jobs:
         run: npm test
 
       - name: Verify Tauri production wiring
+        if: github.event_name == 'workflow_dispatch'
         run: node scripts/check-tauri-production-contract.mjs
 
       - name: Set up Rust
+        if: github.event_name == 'workflow_dispatch'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Tauri Cargo cache
+        if: github.event_name == 'workflow_dispatch'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
@@ -316,6 +324,7 @@ jobs:
           cache-workspace-crates: true
 
       - name: Run Tauri command contract
+        if: github.event_name == 'workflow_dispatch'
         run: >-
           cargo test
           --manifest-path apps/fabushi-tauri/src-tauri/Cargo.toml
@@ -324,7 +333,7 @@ jobs:
           --no-default-features
           --features headless
 
-      - name: Verify packaged resources and launch app
+      - name: Verify downloaded packaged resources and launch app
         shell: bash
         run: |
           set -euo pipefail
@@ -356,7 +365,7 @@ jobs:
           path: |
             fabushi/e2e/playwright-report/host-fast
             fabushi/e2e/test-results
-            fabushi/tauri-e2e/.wdio-output
+            fabushi/tauri-e2e/wdio-output
             fabushi/tauri-e2e/package-lock.json
             ${{ runner.temp }}/fabushi-packaged-app.log
           if-no-files-found: ignore
