@@ -37,7 +37,7 @@ desktop = [
     "tauri/custom-protocol",
     "tauri/wry",
 ]
-tauri-wdio-e2e = ["dep:tauri-plugin-wdio-webdriver"]
+tauri-wdio-e2e = ["desktop", "dep:tauri-plugin-wdio-webdriver"]
 headless = []
 
 [dependencies]
