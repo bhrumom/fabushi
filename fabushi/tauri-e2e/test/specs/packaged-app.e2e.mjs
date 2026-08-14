@@ -1,19 +1,92 @@
 import assert from "node:assert/strict";
 
-const testId = (id) => browser.$(`[data-testid="${id}"]`);
+const selectorForTestId = (id) => `[data-testid="${id}"]`;
+const testId = (id) => browser.$(selectorForTestId(id));
 
-async function isDisplayed(element) {
+async function domState(selector) {
+  return browser.execute((target) => {
+    const element = document.querySelector(target);
+    if (!(element instanceof HTMLElement)) {
+      return {
+        exists: false,
+        visible: false,
+        readyState: document.readyState,
+        testIds: Array.from(document.querySelectorAll("[data-testid]"))
+          .slice(0, 40)
+          .map((candidate) => candidate.getAttribute("data-testid")),
+        bodyText: document.body?.innerText?.slice(0, 500) ?? "",
+      };
+    }
+
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      exists: true,
+      visible:
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity || "1") > 0 &&
+        rect.width > 0 &&
+        rect.height > 0,
+      readyState: document.readyState,
+      rect: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      },
+      text: element.innerText?.slice(0, 300) ?? "",
+    };
+  }, selector);
+}
+
+async function waitForVisible(selector, timeout = 20_000) {
+  let latest = null;
+  await browser.waitUntil(
+    async () => {
+      latest = await domState(selector);
+      return latest.visible;
+    },
+    {
+      timeout,
+      interval: 250,
+      timeoutMsg: `WKWebView element did not become visible: ${selector}; state=${JSON.stringify(latest)}`,
+    },
+  );
+  return browser.$(selector);
+}
+
+async function isVisible(selector) {
   try {
-    return (await element.isExisting()) && (await element.isDisplayed());
+    return (await domState(selector)).visible;
   } catch {
     return false;
   }
 }
 
 async function finishOnboarding() {
+  const nextSelector = '//button[normalize-space(.)="下一步"]';
   for (let index = 0; index < 8; index += 1) {
-    const next = await browser.$('//button[normalize-space(.)="下一步"]');
-    if (!(await isDisplayed(next))) return;
+    const next = await browser.$(nextSelector);
+    if (!(await next.isExisting())) return;
+
+    const state = await browser.execute(() => {
+      const buttons = Array.from(document.querySelectorAll("button"));
+      const button = buttons.find((candidate) => candidate.textContent?.trim() === "下一步");
+      if (!(button instanceof HTMLElement)) return { exists: false, visible: false };
+      const style = window.getComputedStyle(button);
+      const rect = button.getBoundingClientRect();
+      return {
+        exists: true,
+        visible:
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          rect.width > 0 &&
+          rect.height > 0,
+      };
+    });
+    if (!state.visible) return;
+
     await next.click();
   }
   throw new Error("Tauri onboarding did not finish within eight steps");
@@ -21,24 +94,18 @@ async function finishOnboarding() {
 
 describe("packaged Fabushi Tauri app", () => {
   it("drives the real WKWebView login controls", async () => {
-    const loginGate = await testId("login-gate");
-    await loginGate.waitForDisplayed({ timeout: 30_000 });
-
+    await waitForVisible(selectorForTestId("login-gate"));
     await finishOnboarding();
 
-    const showLoginOptions = await testId("show-login-options");
-    if (await isDisplayed(showLoginOptions)) {
-      await showLoginOptions.click();
+    if (await isVisible(selectorForTestId("show-login-options"))) {
+      await testId("show-login-options").click();
     }
 
-    const passwordToggle = await testId("password-login-toggle");
-    await passwordToggle.waitForDisplayed();
+    const passwordToggle = await waitForVisible(selectorForTestId("password-login-toggle"));
     await passwordToggle.click();
 
-    const username = await testId("login-username");
-    const password = await testId("login-password");
-    await username.waitForDisplayed();
-    await password.waitForDisplayed();
+    const username = await waitForVisible(selectorForTestId("login-username"));
+    const password = await waitForVisible(selectorForTestId("login-password"));
 
     await username.setValue("tauri-wdio-e2e");
     await password.setValue("real-wkwebview-input");
