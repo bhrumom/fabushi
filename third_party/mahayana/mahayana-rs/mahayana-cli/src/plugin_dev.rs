@@ -994,8 +994,8 @@ fn sync_installed_marketplace_with_codex(
 
 fn mahayana_runtime_codex_home() -> PathBuf {
     if env::var("MAHAYANA_USE_CODEX_ACCOUNT").as_deref() == Ok("1")
-        && let Some(codex_home) = env::var_os("MAHAYANA_CODEX_HOME")
-            .filter(|value| !value.is_empty())
+        && let Some(codex_home) =
+            env::var_os("MAHAYANA_CODEX_HOME").filter(|value| !value.is_empty())
     {
         return PathBuf::from(codex_home);
     }
