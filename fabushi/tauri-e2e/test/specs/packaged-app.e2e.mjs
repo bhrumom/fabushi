@@ -4,39 +4,44 @@ const selectorForTestId = (id) => `[data-testid="${id}"]`;
 const testId = (id) => browser.$(selectorForTestId(id));
 
 async function domState(selector) {
-  return browser.execute((target) => {
-    const element = document.querySelector(target);
-    if (!(element instanceof HTMLElement)) {
-      return {
-        exists: false,
-        visible: false,
-        readyState: document.readyState,
-        testIds: Array.from(document.querySelectorAll("[data-testid]"))
-          .slice(0, 40)
-          .map((candidate) => candidate.getAttribute("data-testid")),
-        bodyText: document.body?.innerText?.slice(0, 500) ?? "",
-      };
-    }
+  return browser.executeAsync((target, done) => {
+    try {
+      const element = document.querySelector(target);
+      if (!(element instanceof HTMLElement)) {
+        done({
+          exists: false,
+          visible: false,
+          readyState: document.readyState,
+          testIds: Array.from(document.querySelectorAll("[data-testid]"))
+            .slice(0, 40)
+            .map((candidate) => candidate.getAttribute("data-testid")),
+          bodyText: document.body?.innerText?.slice(0, 500) ?? "",
+        });
+        return;
+      }
 
-    const style = window.getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return {
-      exists: true,
-      visible:
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        Number(style.opacity || "1") > 0 &&
-        rect.width > 0 &&
-        rect.height > 0,
-      readyState: document.readyState,
-      rect: {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      },
-      text: element.innerText?.slice(0, 300) ?? "",
-    };
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      done({
+        exists: true,
+        visible:
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          Number(style.opacity || "1") > 0 &&
+          rect.width > 0 &&
+          rect.height > 0,
+        readyState: document.readyState,
+        rect: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        },
+        text: element.innerText?.slice(0, 300) ?? "",
+      });
+    } catch (error) {
+      done({ exists: false, visible: false, error: String(error) });
+    }
   }, selector);
 }
 
@@ -64,29 +69,39 @@ async function isVisible(selector) {
   }
 }
 
-async function finishOnboarding() {
-  const nextSelector = '//button[normalize-space(.)="下一步"]';
-  for (let index = 0; index < 8; index += 1) {
-    const next = await browser.$(nextSelector);
-    if (!(await next.isExisting())) return;
-
-    const state = await browser.execute(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      const button = buttons.find((candidate) => candidate.textContent?.trim() === "下一步");
-      if (!(button instanceof HTMLElement)) return { exists: false, visible: false };
+async function onboardingNextState() {
+  return browser.executeAsync((done) => {
+    try {
+      const button = Array.from(document.querySelectorAll("button")).find(
+        (candidate) => candidate.textContent?.trim() === "下一步",
+      );
+      if (!(button instanceof HTMLElement)) {
+        done({ exists: false, visible: false });
+        return;
+      }
       const style = window.getComputedStyle(button);
       const rect = button.getBoundingClientRect();
-      return {
+      done({
         exists: true,
         visible:
           style.display !== "none" &&
           style.visibility !== "hidden" &&
           rect.width > 0 &&
           rect.height > 0,
-      };
-    });
+      });
+    } catch (error) {
+      done({ exists: false, visible: false, error: String(error) });
+    }
+  });
+}
+
+async function finishOnboarding() {
+  const nextSelector = '//button[normalize-space(.)="下一步"]';
+  for (let index = 0; index < 8; index += 1) {
+    const state = await onboardingNextState();
     if (!state.visible) return;
 
+    const next = await browser.$(nextSelector);
     await next.click();
   }
   throw new Error("Tauri onboarding did not finish within eight steps");
