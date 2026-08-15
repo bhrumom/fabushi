@@ -610,14 +610,14 @@ impl PluginInstaller {
             let _ = fs::remove_dir_all(&staging);
             return Err(error);
         }
-        if let ArtifactSource::Npm { registry, .. } = &artifact.source {
-            if let Err(error) = normalize_npm_package_root(&staging).and_then(|_| {
+        if let ArtifactSource::Npm { registry, .. } = &artifact.source
+            && let Err(error) = normalize_npm_package_root(&staging).and_then(|_| {
                 ArtifactResolver::new()?.install_npm_dependencies(&staging, registry)?;
                 Ok(())
-            }) {
-                let _ = fs::remove_dir_all(&staging);
-                return Err(error);
-            }
+            })
+        {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
         }
         if let Some(entry) = &artifact.entry {
             let entry = safe_relative_path(entry)?;
@@ -1021,10 +1021,10 @@ fn npm_dependency_destination(root: &Path, package: &str) -> Result<PathBuf, Run
 
 fn select_npm_version(metadata: &NpmFullPackageMetadata, requirement: &str) -> Option<String> {
     let requirement = requirement.trim();
-    if requirement.is_empty() || requirement == "*" || requirement == "latest" {
-        if let Some(version) = metadata.dist_tags.get("latest") {
-            return Some(version.clone());
-        }
+    if (requirement.is_empty() || requirement == "*" || requirement == "latest")
+        && let Some(version) = metadata.dist_tags.get("latest")
+    {
+        return Some(version.clone());
     }
     if let Some(version) = metadata.dist_tags.get(requirement) {
         return Some(version.clone());
