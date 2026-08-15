@@ -92,6 +92,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
 
+      - id: host-source-key
+        name: Freeze Rust Host source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
       - name: Enforce canonical application architecture
         shell: bash
         run: bash .github/scripts/assert-native-electron-canonical.sh
@@ -116,7 +123,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
 
       - name: Set up Rust on Host cache miss
         if: steps.host-binary-cache.outputs.cache-hit != 'true'
@@ -139,7 +146,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
 
       - name: Hand off Linux Host binary to package job in the same run
         uses: actions/upload-artifact@v7
@@ -186,6 +193,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v5
 
+      - id: host-source-key
+        name: Freeze Rust Host source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -214,7 +228,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
 
       - name: Set up Rust on Host cache miss
         if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
@@ -237,7 +251,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
 
       - name: Build renderer once without rebuilding the Host
         working-directory: desktop
