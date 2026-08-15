@@ -26,7 +26,7 @@ type ElectronBridge = {
 
 declare global {
   interface Window {
-    fabushi?: ElectronBridge;
+    fabushi: ElectronBridge;
   }
 }
 
