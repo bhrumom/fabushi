@@ -5,6 +5,7 @@ final class FabushiUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     func testCoreControlsExposeStableAccessibilityIdentifiers() throws {
         let app = XCUIApplication()
         app.launch()

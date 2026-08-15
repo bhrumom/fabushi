@@ -2488,7 +2488,7 @@ fn install_host_functions(
                 ctx.clone(),
                 move |plugin_id: String, id: i32, delay_ms: f64, repeat: bool| {
                     let delay_ms = if delay_ms.is_finite() {
-                        delay_ms.max(0.0).min(24.0 * 60.0 * 60.0 * 1000.0)
+                        delay_ms.clamp(0.0, 24.0 * 60.0 * 60.0 * 1000.0)
                     } else {
                         0.0
                     };

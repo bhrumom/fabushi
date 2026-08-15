@@ -1,5 +1,5 @@
-//! Versioned product-level commands and events shared by React, Tauri, mobile
-//! shells, deterministic tests, and future WebAssembly hosts.
+//! Versioned product-level commands and events shared by React/Electron, native
+//! mobile shells, legacy Tauri, deterministic tests, and WebAssembly hosts.
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -26,6 +26,7 @@ pub struct HostConfig {
 #[serde(rename_all = "lowercase")]
 pub enum SurfacePlatform {
     Mock,
+    Electron,
     Tauri,
     Wasm,
     Flutter,

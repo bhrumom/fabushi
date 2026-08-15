@@ -6,7 +6,12 @@ on:
     paths:
       - 'mobile/**'
       - 'app-version.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
       - '.github/workflows/native-mobile.yml'
@@ -15,7 +20,12 @@ on:
     paths:
       - 'mobile/**'
       - 'app-version.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
       - '.github/workflows/native-mobile.yml'
@@ -114,6 +124,7 @@ jobs:
         working-directory: third_party/mahayana/mahayana-rs
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
         run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host
       - name: Android unit, lint and package
         working-directory: mobile/android

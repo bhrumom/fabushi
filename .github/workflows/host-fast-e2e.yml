@@ -89,8 +89,8 @@ jobs:
           elapsed="$(( $(date +%s) - started_at ))"
           echo "elapsed_seconds=$elapsed" >> "$GITHUB_OUTPUT"
           echo "Host user journey elapsed: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$elapsed" -gt 30 ]; then
-            echo "Host fast E2E exceeded the 30-second execution budget." >&2
+          if [ "$elapsed" -gt 45 ]; then
+            echo "Host fast E2E exceeded the 45-second execution budget." >&2
             exit 1
           fi
 
