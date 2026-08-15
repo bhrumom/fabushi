@@ -65,9 +65,11 @@
     "linux": {
       "category": "Utility",
       "maintainer": "bhrumom",
-      "packageName": "fabushi",
       "syncDesktopName": true,
       "target": ["AppImage", "deb"]
+    },
+    "deb": {
+      "packageName": "fabushi"
     }
   }
 }
