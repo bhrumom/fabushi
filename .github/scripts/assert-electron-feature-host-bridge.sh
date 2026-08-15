@@ -47,10 +47,14 @@ grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-clie
   echo "Canonical Electron renderer does not reuse the full migrated HostClient" >&2
   exit 1
 }
-grep -Fq "surface === 'host' ? <HostClient />" "$desktop_renderer" || {
-  echo "Canonical Electron renderer does not default to the migrated Agent Host surface" >&2
+grep -Fq '<HostClient />' "$desktop_renderer" || {
+  echo "Canonical Electron renderer does not render the shared Tauri/Grok HostClient" >&2
   exit 1
 }
+if grep -Eq 'PluginRuntimeApp|desktop-mode-switch|open-plugin-runtime|open-agent-host' "$desktop_renderer"; then
+  echo "Canonical Electron renderer must not wrap the shared Tauri/Grok UI in a second desktop shell" >&2
+  exit 1
+fi
 grep -Fq "cfg(not(any(target_os = \"ios\", target_os = \"android\")))" "$app_host_manifest" || {
   echo "Desktop Feature Host dependencies are not isolated from mobile app-host builds" >&2
   exit 1

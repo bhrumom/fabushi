@@ -1,4 +1,6 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import journeyContract from '../../contracts/automation/cross-platform-journeys.json' with { type: 'json' };
@@ -19,13 +21,14 @@ const officialAppIds = [
   'chatgpt-auto-confirm',
 ] as const;
 
-async function launchDesktopApp() {
+async function launchDesktopApp(appDataDir: string) {
   return electron.launch({
     ...(packagedExecutable
       ? { executablePath: packagedExecutable, args: [] }
       : { args: [appRoot] }),
     env: {
       ...process.env,
+      FABUSHI_APP_DATA: appDataDir,
       FABUSHI_FEATURE_HOST_MODE: process.env.FABUSHI_FEATURE_HOST_MODE || 'test',
       MAHAYANA_APP_HOST_BIN: process.env.MAHAYANA_APP_HOST_BIN || '',
     },
@@ -115,8 +118,9 @@ async function runOfficialApps(page: Page): Promise<void> {
     await test.step(`official app: ${appId}`, async () => {
       await page.getByTestId('open-marketplace').click();
       const installId = appId === 'global-dharma' ? 'install-miniapp' : `install-${appId}`;
-      await page.getByTestId(installId).click();
-      await expect(page.getByTestId(installId)).toBeDisabled();
+      const install = page.getByTestId(installId);
+      if (await install.isEnabled()) await install.click();
+      await expect(install).toBeDisabled();
       await page.getByRole('button', { name: '关闭插件市场' }).click();
       await expect(page.getByTestId(`agent-${appId}`)).toBeVisible();
       await page.getByTestId(`agent-${appId}`).click();
@@ -127,11 +131,13 @@ async function runOfficialApps(page: Page): Promise<void> {
 }
 
 test('desktop package drives every declared Host journey through Electron IPC and Rust', async () => {
-  const app = await launchDesktopApp();
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-electron-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
 
   try {
     const page = await app.firstWindow();
-    await expect(page.getByTestId('open-agent-host')).toBeVisible();
+    await expect(page.getByTestId('login-gate')).toBeVisible();
+    await expect(page.locator('.desktop-mode-switch')).toHaveCount(0);
 
     const security = await page.evaluate(() => ({
       nodeRequire: typeof (window as unknown as { require?: unknown }).require,
@@ -183,10 +189,10 @@ test('desktop package drives every declared Host journey through Electron IPC an
       );
     });
 
-    await page.getByTestId('open-plugin-runtime').click();
-    await expect(page.getByTestId('app-shell')).toBeVisible();
-    await expect(page.getByTestId('runtime-badge')).toContainText('Electron');
+    await expect(page.getByTestId('host-status')).toHaveText('ready');
+    await expect(page.getByTestId('messages')).toBeVisible();
   } finally {
     await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
   }
 });
