@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
-publish_release_workflow = Path('.github/workflows/publish-cd-release.yml').read_text(encoding='utf-8')
-desktop_installers_workflow = Path('.github/workflows/desktop-installers.yml').read_text(encoding='utf-8')
+publish_release_workflow = Path('.github/workflows/native-electron-release.yml').read_text(encoding='utf-8')
+desktop_installers_workflow = Path('.github/workflows/electron-desktop.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
@@ -34,12 +34,13 @@ delete_account_use_case = Path('fabushi/web/src/use-cases/delete-account.js').re
 missing = []
 
 for required in (
-    'mkdir -p release-artifact/github-scripts',
-    'cp -R .github/scripts/. release-artifact/github-scripts',
-    'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development',
-    'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production',
+    '.github/scripts/prepare-development-wrangler.py',
+    'bash ../../.github/scripts/bootstrap-development-account-d1.sh',
+    'bash ../../.github/scripts/run-wrangler-d1-migrations.sh',
+    'DB development --config wrangler.development.ci.toml',
+    'PLATFORM_DB development --config wrangler.development.ci.toml',
+    'run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB production',
     'mahayana-platform-worker/migrations',
-    '.github/cd-retry.txt)',
 ):
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')
@@ -51,9 +52,9 @@ for required in (
     'Signed native iOS IPA',
     'xcodebuild archive',
     'xcodebuild -exportArchive',
-    'cargo test -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime',
+    'mahayana-app-host-mobile',
     'app-version.json',
-    'Publish native mobile GitHub Release',
+    'Publish native Electron GitHub Release',
     'SHA256SUMS.txt',
 ):
     if required not in publish_release_workflow:
@@ -69,12 +70,12 @@ for forbidden in (
         missing.append(f'publish release workflow must not contain legacy Flutter dependency: {forbidden}')
 
 for required in (
-    'Electron desktop quality and installers',
+    'Electron desktop quality gate',
     'npm run package',
-    'playwright test',
+    'npm run test:e2e',
     'mahayana-app-host',
-    'mahayana-plugin-runtime',
-    'mahayana-js-runtime',
+    'mahayana-feature-host',
+    'mahayana-host-protocol',
 ):
     if required not in desktop_installers_workflow:
         missing.append(f'desktop installers workflow missing: {required}')
