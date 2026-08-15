@@ -1,4 +1,4 @@
-# Grok Bot 0.16.0 → Fabushi / Mahayana migration
+# Grok Bot 0.16.0 → Fabushi Electron / Mahayana migration
 
 This document is the implementation ledger for the authorized migration from
 `Grok_Bot_0.16.0.dmg`. It distinguishes source that is reused byte-for-byte
@@ -27,6 +27,40 @@ Renderer assets root:
 
 `/Users/gloriachan/Downloads/Grok_Bot_0.16.0_extracted/app/dist/renderer/assets`
 
+Recovery audit (2026-08-16):
+
+- 13 source maps were present in the packaged application.
+- 7,866 source entries were inventoried; 7,787 include `sourcesContent`.
+- 1,861 first-party Grok Bot files (28,113,052 bytes) are recoverable exactly from
+  those source maps.
+- The renderer bundle itself does not ship renderer source maps. Its original TSX
+  therefore cannot be recovered byte-for-byte; the renderer reference remains the
+  complete 6.2 MB Vite JS bundle, 544 KB CSS bundle and packaged assets.
+- Exact recovered source hashes and the Electron migration inventory live in
+  `contracts/automation/grok-bot-electron-migration.json`.
+
+## Canonical Electron UI rule
+
+The UI previously migrated into the Tauri host is **not reimplemented or copied
+into a second Electron-only shell**. `desktop/src/main.tsx` directly renders the
+same maintained `frontend/apps/web/src/app/host/host-client.tsx` used by the
+Tauri host migration. This keeps the Tauri-era Grok UI, components, styles and
+interaction code as one source of truth while Electron supplies the native IPC
+transport.
+
+The protected historical surface includes the Host workspace, workflow panel,
+Bot marks, group chat, extension studio, rich transcript, the four direct Grok
+agent utilities, six adapted recovered Grok modules, Host transport contracts
+and the desktop remote-computer peer. The standalone Tauri/web entry wrappers
+and mobile remote-control client remain preserved for compatibility, but they
+are not allowed to replace the Electron runtime path.
+
+`.github/scripts/assert-grok-bot-electron-migration.py` walks the Electron import
+graph and fails CI if any protected Tauri/Grok module falls out of the Electron
+bundle, if a byte-for-byte Grok utility drifts, if an adapted recovered module
+loses a required original export, or if Electron stops taking priority over the
+legacy Tauri bridge.
+
 ## Directly reused source
 
 These modules are copied from the recovered source and imported by the current
@@ -37,11 +71,12 @@ Host UI:
 - `frontend/apps/web/src/lib/grok-agent/formatting.js`
 - `frontend/apps/web/src/lib/grok-agent/automation-schedule.js`
 
-The renderer's lazy chunks cannot be imported directly into the Tauri renderer:
-they import hashed symbols from the original 6.2 MB Electron renderer runtime.
-Copying those chunks alone would produce an unusable UI. Their component states,
-labels, spacing and behavior are therefore being adapted into the shared React
-Host while the standalone utilities above remain direct source reuse.
+The renderer's lazy chunks cannot be treated as maintainable application source:
+they import hashed symbols from the original 6.2 MB renderer runtime. Copying
+those chunks alone would produce an opaque, tightly-coupled second application.
+Their component states, labels, spacing, assets and behavior are used as the
+reference while the shared React Host remains the maintainable Electron UI; the
+standalone utilities above remain direct source reuse.
 
 ## Implemented migration surface
 
@@ -78,10 +113,12 @@ as a second JavaScript agent runtime: the embedded Rust Codex runtime already
 owns these capabilities and the Host projects their events into the UI. This
 avoids two competing permission, session and tool-execution engines.
 
-## Remaining parity audit
+## Remaining runtime / visual parity audit
 
-The following items require live signed-in reference states or additional
-product service contracts before they can be marked complete:
+The source migration and historical Tauri UI preservation are guarded separately
+from this list. The following items still require live signed-in reference states,
+pixel/interaction validation, or additional product service contracts before
+full Grok 0.16.0 behavioral parity can be marked complete:
 
 - Event routine sources (Slack, Git, Teams, Linear, Sentry and PagerDuty) and
   their incoming event cards. Scheduled routines are implemented.
