@@ -10,7 +10,9 @@ final class FabushiUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        XCTAssertTrue(app.otherElements["app-shell"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["app-shell"].waitForExistence(timeout: 10)
+        )
         XCTAssertTrue(
             app.descendants(matching: .any)["runtime-badge"].waitForExistence(timeout: 5)
         )
