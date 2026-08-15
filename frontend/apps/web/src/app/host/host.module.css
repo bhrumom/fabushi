@@ -42,6 +42,12 @@
 .shell select {
   font: inherit;
   color: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.shell a,
+.shell [role="dialog"] {
+  -webkit-app-region: no-drag;
 }
 
 .shell button {
