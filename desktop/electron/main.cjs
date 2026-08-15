@@ -3,6 +3,9 @@ const path = require('node:path');
 const { pathToFileURL, URL } = require('node:url');
 const { MahayanaHostProcess } = require('./host-process.cjs');
 
+const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
+if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',

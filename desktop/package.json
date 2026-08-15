@@ -69,7 +69,8 @@
       "target": ["AppImage", "deb"]
     },
     "deb": {
-      "packageName": "fabushi"
+      "packageName": "fabushi",
+      "artifactName": "fabushi-${version}-${arch}.${ext}"
     }
   }
 }
