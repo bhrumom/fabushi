@@ -1,3 +1,11 @@
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use mahayana_core::RuntimeConfig;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use mahayana_feature_host::FeatureHostController;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use mahayana_host::HostCreateConfig;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use mahayana_host_protocol::{ApprovalResolution, FeatureCommand, HostConfig, HostMode, SurfacePlatform};
 use mahayana_js_runtime::{scan_package_compatibility, DeepSeekJsHost};
 use mahayana_plugin_runtime::{ExternalReleaseManifest, PermissionManager, PluginInstaller};
 use mahayana_product::MahayanaProductClient;
@@ -39,16 +47,22 @@ pub struct AppHost {
     app_data_dir: PathBuf,
     product: MahayanaProductClient,
     js: Mutex<DeepSeekJsHost>,
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    feature: FeatureHostController,
 }
 
 impl AppHost {
     pub fn new(app_data_dir: impl Into<PathBuf>) -> Result<Self, AppHostError> {
         let app_data_dir = app_data_dir.into();
         std::fs::create_dir_all(&app_data_dir).map_err(|error| AppHostError::Operation(error.to_string()))?;
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        let feature = create_feature_host(&app_data_dir)?;
         Ok(Self {
             app_data_dir,
             product: MahayanaProductClient::default(),
             js: Mutex::new(DeepSeekJsHost::new().map_err(|error| AppHostError::Operation(error.to_string()))?),
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            feature,
         })
     }
 
@@ -63,6 +77,8 @@ impl AppHost {
     fn handle(&self, method: &str, params: Value) -> Result<Value, AppHostError> {
         match method {
             "host.platform" => Ok(json!({"platform": host_platform()})),
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            method if method.starts_with("feature.") => self.handle_feature(method, params),
             "marketplace.browse" => {
                 let query = params.get("query").and_then(Value::as_str);
                 let requested_platform = params.get("platform").and_then(Value::as_str).unwrap_or_else(host_platform);
@@ -92,6 +108,83 @@ impl AppHost {
             "runtime.callTool" => self.call_runtime_tool(params),
             other => Err(AppHostError::InvalidRequest(format!("unknown method {other}"))),
         }
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn handle_feature(&self, method: &str, params: Value) -> Result<Value, AppHostError> {
+        match method {
+            "feature.info" => serde_json::to_value(self.feature.info())
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.execute" => self.feature_execute(params),
+            "feature.receive" => self.feature_receive(),
+            "feature.approval.resolve" => self.feature_resolve_approval(params),
+            "feature.interrupt" => self.feature_interrupt(params),
+            "feature.auth.status" => self.feature.auth_status()
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.auth.providers" => self.feature.auth_providers()
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.auth.passwordLogin" => self.feature_password_login(params),
+            "feature.auth.oauthStart" => self.feature_oauth_start(params),
+            "feature.auth.oauthPoll" => self.feature_oauth_poll(params),
+            "feature.auth.logout" => self.feature.logout()
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            other => Err(AppHostError::InvalidRequest(format!("unknown feature method {other}"))),
+        }
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_execute(&self, params: Value) -> Result<Value, AppHostError> {
+        let command_value = params.get("command").cloned().unwrap_or(params);
+        let command: FeatureCommand = serde_json::from_value(command_value)
+            .map_err(|error| AppHostError::InvalidRequest(format!("invalid feature command: {error}")))?;
+        let accepted = self.feature.execute(command)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        serde_json::to_value(accepted).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_receive(&self) -> Result<Value, AppHostError> {
+        let event = self.feature.receive()
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        serde_json::to_value(event).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_resolve_approval(&self, params: Value) -> Result<Value, AppHostError> {
+        let resolution_value = params.get("resolution").cloned().unwrap_or(params);
+        let resolution: ApprovalResolution = serde_json::from_value(resolution_value)
+            .map_err(|error| AppHostError::InvalidRequest(format!("invalid approval resolution: {error}")))?;
+        self.feature.resolve_approval(resolution)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        Ok(Value::Null)
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_interrupt(&self, params: Value) -> Result<Value, AppHostError> {
+        let operation_id = string_param(&params, "operationId")?;
+        self.feature.interrupt(operation_id)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        Ok(Value::Null)
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_password_login(&self, params: Value) -> Result<Value, AppHostError> {
+        let username = string_param(&params, "username")?.to_string();
+        let password = string_param(&params, "password")?.to_string();
+        self.feature.password_login(username, password)
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_oauth_start(&self, params: Value) -> Result<Value, AppHostError> {
+        self.feature.oauth_start(string_param(&params, "provider")?.to_string())
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn feature_oauth_poll(&self, params: Value) -> Result<Value, AppHostError> {
+        self.feature.oauth_poll(string_param(&params, "attemptId")?.to_string())
+            .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
     fn plugin_root(&self) -> PathBuf {
@@ -245,6 +338,33 @@ impl AppHost {
         self.js.lock().map_err(|_| AppHostError::Operation("JavaScript host lock poisoned".into()))?
             .call_tool_json(name, &arguments).map_err(|error| AppHostError::Operation(error.to_string()))
     }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, AppHostError> {
+    let root = app_data_dir.join("feature-host");
+    std::fs::create_dir_all(&root).map_err(|error| AppHostError::Operation(error.to_string()))?;
+    let host_config = HostCreateConfig {
+        runtime: RuntimeConfig {
+            data_dir: Some(root.join("runtime")),
+            ..RuntimeConfig::default()
+        },
+        product_session_path: Some(root.join("account-session.json")),
+        product_surface_state_path: Some(root.join("product-surface.json")),
+        automation_path: Some(root.join("automations.json")),
+        ..HostCreateConfig::default()
+    };
+    FeatureHostController::create_with_host_config(
+        HostConfig {
+            profile_id: "fabushi-desktop".to_string(),
+            mode: HostMode::Production,
+        },
+        // The Feature Host protocol predates the Electron shell. Tauri is the
+        // existing desktop/native surface tag; the sidecar remains shell-agnostic.
+        SurfacePlatform::Tauri,
+        host_config,
+    )
+    .map_err(|error| AppHostError::Operation(format!("feature host initialization failed: {error}")))
 }
 
 fn discover_js_entry(entry: &Option<String>, root: &Path) -> Result<PathBuf, AppHostError> {

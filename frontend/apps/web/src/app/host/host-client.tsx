@@ -47,6 +47,7 @@ import type {
   WorkflowSummary,
   WorkflowTrigger,
 } from "../../lib/mahayana-host/contracts";
+import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
 import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
@@ -1456,7 +1457,7 @@ export default function HostClient() {
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode
-        : isTauriMahayanaHostAvailable()
+        : isElectronMahayanaHostAvailable() || isTauriMahayanaHostAvailable()
           ? "production"
           : "test";
 

@@ -7,6 +7,8 @@ declare global {
       pickFile(): Promise<string | null>;
       notify(title: string, body: string): Promise<boolean>;
       openExternal(url: string): Promise<boolean>;
+      openSystemSettings(pane: 'screen-recording' | 'accessibility'): Promise<boolean>;
+      windowFocused(): Promise<boolean>;
     };
   }
 }

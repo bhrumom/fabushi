@@ -13,6 +13,17 @@ protocol.registerSchemesAsPrivileged([
 const host = new MahayanaHostProcess();
 const allowedHostMethods = new Set([
   'host.platform',
+  'feature.info',
+  'feature.execute',
+  'feature.receive',
+  'feature.approval.resolve',
+  'feature.interrupt',
+  'feature.auth.status',
+  'feature.auth.providers',
+  'feature.auth.passwordLogin',
+  'feature.auth.oauthStart',
+  'feature.auth.oauthPoll',
+  'feature.auth.logout',
   'marketplace.browse',
   'marketplace.release',
   'plugin.install',
@@ -79,6 +90,31 @@ function installIpcHandlers() {
     assertTrustedSender(event);
     await shell.openExternal(safeHttpsUrl(payload?.url));
     return true;
+  });
+
+  ipcMain.handle('fabushi:window-focused', async (event) => {
+    assertTrustedSender(event);
+    return BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
+  });
+
+  ipcMain.handle('fabushi:open-system-settings', async (event, payload) => {
+    assertTrustedSender(event);
+    const pane = String(payload?.pane || '');
+    if (!['screen-recording', 'accessibility'].includes(pane)) {
+      throw new Error(`Unsupported system settings pane: ${pane}`);
+    }
+    if (process.platform === 'darwin') {
+      const url = pane === 'screen-recording'
+        ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+        : 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+      await shell.openExternal(url);
+      return true;
+    }
+    if (process.platform === 'win32') {
+      await shell.openExternal('ms-settings:privacy');
+      return true;
+    }
+    throw new Error('System privacy settings must be opened manually on this platform.');
   });
 }
 

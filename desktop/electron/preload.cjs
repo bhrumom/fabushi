@@ -2,6 +2,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const allowedMethods = new Set([
   'host.platform',
+  'feature.info',
+  'feature.execute',
+  'feature.receive',
+  'feature.approval.resolve',
+  'feature.interrupt',
+  'feature.auth.status',
+  'feature.auth.providers',
+  'feature.auth.passwordLogin',
+  'feature.auth.oauthStart',
+  'feature.auth.oauthPoll',
+  'feature.auth.logout',
   'marketplace.browse',
   'marketplace.release',
   'plugin.install',
@@ -32,5 +43,11 @@ contextBridge.exposeInMainWorld('fabushi', Object.freeze({
   },
   openExternal(url) {
     return ipcRenderer.invoke('fabushi:open-external', { url });
+  },
+  openSystemSettings(pane) {
+    return ipcRenderer.invoke('fabushi:open-system-settings', { pane });
+  },
+  windowFocused() {
+    return ipcRenderer.invoke('fabushi:window-focused');
   },
 }));
