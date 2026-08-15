@@ -1,0 +1,16 @@
+name: Retired mobile shell guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-architecture:
+    name: Verify canonical native mobile architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reject legacy shell reactivation
+        run: bash .github/scripts/assert-native-electron-canonical.sh

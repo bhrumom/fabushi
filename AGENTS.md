@@ -2,6 +2,24 @@
 
 This repository contains the Fabushi app and website. Follow the user's request first, then these repository instructions.
 
+## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
+
+The development machine used for this repository has insufficient free storage for application builds and test runs. Build outputs, Rust/Flutter/Tauri/Android/iOS caches, test artifacts, downloaded SDK components, browser bundles, and dependency caches can exhaust the disk.
+
+These rules are mandatory for every AI agent working in this repository:
+
+- **Do not build the application locally.** Do not run commands such as `flutter build`, `cargo build`, `cargo test`, `npm run build`, `pnpm build`, `gradlew`, `xcodebuild`, `tauri build`, or other commands that compile/package the application or generate large build trees.
+- **Do not run application, integration, E2E, native, emulator, simulator, or full-suite tests locally.** If a test can compile native code, download large runtime dependencies, launch device tooling, or create large artifacts, treat it as forbidden locally.
+- **Do not install large SDKs/toolchains or regenerate native platforms locally just for verification.** This includes Android/iOS/Tauri/Flutter build preparation that materially increases disk usage.
+- **Do not delete existing build artifacts, caches, user files, or unrelated directories to make room for a build.** The safe response to low disk space is to move verification to CI, not to clean the user's machine without an explicit request.
+- **Use GitHub Actions for builds and tests.** Push/PR validation or a manually dispatched workflow is the source of truth for heavy verification.
+- **Prefer the narrowest existing workflow that matches the change.** The main `.github/workflows/ci.yml` is dispatchable and already covers Rust runtime tests, React/Next builds, Worker/E2E contract checks, frontend checks, and other repository CI. Native/mobile/installer validation has dedicated dispatchable workflows including `.github/workflows/mobile-tauri.yml`, `.github/workflows/native-smoke.yml`, `.github/workflows/android-real-device-e2e.yml`, `.github/workflows/macos-desktop-e2e.yml`, and `.github/workflows/desktop-installers.yml`.
+- If no existing workflow validates a required heavy operation, **add or extend a GitHub Actions workflow instead of running that operation locally**.
+- Local verification is limited to lightweight, non-building checks that have negligible disk impact, such as reading files, reviewing diffs, searching source text, inspecting configuration, checking formatting by inspection, or running a narrowly scoped script only when it is known not to compile/package/download large dependencies.
+- If uncertain whether a command is disk-heavy, **do not run it locally**. Use GitHub Actions or report that CI verification is required.
+
+When reporting completion, distinguish clearly between lightweight local inspection and GitHub Actions verification. Never claim a build or test passed unless the corresponding GitHub Actions run actually passed.
+
 ## Faliu Anki Card Workflow
 
 Use these instructions whenever you are asked to create, batch-generate, review, or edit memorization cards for the official website 法流 page.
@@ -85,7 +103,7 @@ When generating cards for a work or juan:
 4. Create cards with stable ids, exact answers, helpful hints, and source text for audit.
 5. Add or update the matching deck in `frontend/apps/web/src/data/faliu-anki-cards.ts`.
 6. Keep existing cards unless the user asks to replace them or they are clearly wrong.
-7. Run typecheck/build if the environment allows it.
+7. Do not run local typecheck/build/test commands when they may compile, bundle, install, or generate substantial artifacts. Use the appropriate GitHub Actions workflow for verification instead.
 
 ## Deck Size Guidance
 

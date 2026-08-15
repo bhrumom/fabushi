@@ -876,6 +876,50 @@ impl MahayanaProductClient {
         )
     }
 
+    pub fn publish_external_plugin(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        display_name: &str,
+        description: &str,
+        platforms: &[String],
+        source: &Value,
+        release_manifest: &Value,
+    ) -> Result<Value, ProductError> {
+        let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+        let version = safe_marketplace_version(version)?;
+        let platforms = platforms
+            .iter()
+            .map(|platform| {
+                if matches!(
+                    platform.as_str(),
+                    "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+                ) {
+                    Ok(platform.clone())
+                } else {
+                    Err(ProductError::InvalidParameter("platforms"))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if platforms.is_empty() {
+            return Err(ProductError::InvalidParameter("platforms"));
+        }
+        let token = self.authorization_token(&Value::Null)?;
+        self.post_json(
+            "/v1/marketplace/external-releases",
+            json!({
+                "pluginId": plugin_id,
+                "version": version,
+                "displayName": non_empty(display_name, "displayName")?,
+                "description": description,
+                "platforms": platforms,
+                "source": source,
+                "releaseManifest": release_manifest,
+            }),
+            Some(&token),
+        )
+    }
+
     pub fn wallet_balance(&self) -> Result<WalletBalance, ProductError> {
         let token = self.authorization_token(&Value::Null)?;
         decode_value(self.get_json("/v1/wallet/balance", &[], Some(&token))?)

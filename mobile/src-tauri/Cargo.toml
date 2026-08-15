@@ -1,0 +1,12 @@
+[package]
+name = "fabushi-retired-tauri-shell"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "fabushi-retired-tauri-shell"
+path = "src/main.rs"
