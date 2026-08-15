@@ -544,8 +544,14 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             "/v1/computers/:device_id/clients/:client_id/revoke",
             remote_computer_client_revoke,
         )
-        .post_async("/v1/computers/:device_id/sessions/list", remote_computer_sessions)
-        .post_async("/v1/computers/:device_id/sessions", remote_computer_session_create)
+        .post_async(
+            "/v1/computers/:device_id/sessions/list",
+            remote_computer_sessions,
+        )
+        .post_async(
+            "/v1/computers/:device_id/sessions",
+            remote_computer_session_create,
+        )
         .post_async(
             "/v1/computers/:device_id/sessions/:session_id/activate",
             remote_computer_session_activate,
@@ -650,11 +656,7 @@ fn new_remote_pairing_code() -> String {
 }
 
 fn new_remote_mobile_token() -> String {
-    format!(
-        "{}{}",
-        Uuid::new_v4().simple(),
-        Uuid::new_v4().simple()
-    )
+    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
 fn remote_label(value: &str) -> Option<String> {
@@ -671,9 +673,8 @@ fn remote_signal_kind(value: &str) -> bool {
 }
 
 fn remote_ice_servers(env: &Env) -> Vec<Value> {
-    let mut servers = vec![
-        json!({"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]}),
-    ];
+    let mut servers =
+        vec![json!({"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]})];
     if let Ok(turn_url) = env.var("REMOTE_TURN_URL") {
         let urls = turn_url
             .to_string()
@@ -777,7 +778,11 @@ async fn remote_computer_register(
         return error_response(400, "invalid_device_label", "Computer label is invalid.");
     };
     if input.device_secret.len() < 48 || input.device_secret.len() > 256 {
-        return error_response(400, "invalid_device_secret", "Computer device secret is invalid.");
+        return error_response(
+            400,
+            "invalid_device_secret",
+            "Computer device secret is invalid.",
+        );
     }
     let device_secret_hash = remote_secret_hash(&input.device_secret);
     let code = new_remote_pairing_code();
@@ -809,7 +814,11 @@ async fn remote_computer_register(
     .run()
     .await?;
     if result.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
-        return error_response(403, "device_secret_mismatch", "This computer registration is owned by another device secret.");
+        return error_response(
+            403,
+            "device_secret_mismatch",
+            "This computer registration is owned by another device secret.",
+        );
     }
     Ok(Response::from_json(&json!({
         "deviceId": input.device_id,
@@ -838,7 +847,11 @@ async fn remote_computer_heartbeat(
         return error_response(400, "invalid_device_id", "deviceId is invalid.");
     }
     if input.device_secret.len() < 48 || input.device_secret.len() > 256 {
-        return error_response(400, "invalid_device_secret", "Computer device secret is invalid.");
+        return error_response(
+            400,
+            "invalid_device_secret",
+            "Computer device secret is invalid.",
+        );
     }
     let device_secret_hash = remote_secret_hash(&input.device_secret);
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -869,7 +882,13 @@ async fn remote_computer_pair(mut request: Request, context: RouteContext<()>) -
     };
     let input: RemoteComputerPairRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_pairing", "Pairing request must be valid JSON."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_pairing",
+                "Pairing request must be valid JSON.",
+            );
+        }
     };
     let code = input.pairing_code.trim().to_ascii_uppercase();
     if code.len() != 8 || !code.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -894,7 +913,11 @@ async fn remote_computer_pair(mut request: Request, context: RouteContext<()>) -
     .first::<RemoteComputerPairRow>(None)
     .await?
     else {
-        return error_response(404, "pairing_code_not_found", "Pairing code is expired or does not belong to this account.");
+        return error_response(
+            404,
+            "pairing_code_not_found",
+            "Pairing code is expired or does not belong to this account.",
+        );
     };
     let client_id = format!("remote-client-{}", Uuid::new_v4());
     database
@@ -953,14 +976,19 @@ async fn remote_computer_clients(request: Request, context: RouteContext<()>) ->
     .results::<RemoteComputerClientRow>()?;
     let clients = rows
         .into_iter()
-        .map(|row| json!({
-            "clientId": row.client_id,
-            "label": row.label,
-            "pairedAt": row.paired_at,
-            "lastSeenAt": row.last_seen_at,
-        }))
+        .map(|row| {
+            json!({
+                "clientId": row.client_id,
+                "label": row.label,
+                "pairedAt": row.paired_at,
+                "lastSeenAt": row.last_seen_at,
+            })
+        })
         .collect::<Vec<_>>();
-    Ok(Response::from_json(&json!({"deviceId": device_id, "clients": clients}))?.with_headers(auth_headers()))
+    Ok(
+        Response::from_json(&json!({"deviceId": device_id, "clients": clients}))?
+            .with_headers(auth_headers()),
+    )
 }
 
 async fn remote_computer_client_revoke(
@@ -997,10 +1025,16 @@ async fn remote_computer_client_revoke(
             )?,
         ])
         .await?;
-    Ok(Response::from_json(&json!({"revoked": true, "clientId": client_id}))?.with_headers(auth_headers()))
+    Ok(
+        Response::from_json(&json!({"revoked": true, "clientId": client_id}))?
+            .with_headers(auth_headers()),
+    )
 }
 
-async fn remote_computer_sessions(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+async fn remote_computer_sessions(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => return error_response(401, "unauthorized", "A valid account token is required."),
@@ -1008,12 +1042,24 @@ async fn remote_computer_sessions(mut request: Request, context: RouteContext<()
     let device_id = route_identifier(&context, "device_id")?;
     let input: RemoteComputerDesktopAuthRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_device_auth", "Desktop session list requires a device secret."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_device_auth",
+                "Desktop session list requires a device secret.",
+            );
+        }
     };
     let now = now_seconds();
     let database = context.env.d1(DATABASE_BINDING)?;
-    if !remote_desktop_secret_matches(&database, &account.user_id, device_id, &input.device_secret).await? {
-        return error_response(403, "device_secret_mismatch", "Desktop device authentication failed.");
+    if !remote_desktop_secret_matches(&database, &account.user_id, device_id, &input.device_secret)
+        .await?
+    {
+        return error_response(
+            403,
+            "device_secret_mismatch",
+            "Desktop device authentication failed.",
+        );
     };
     worker::query!(
         &database,
@@ -1044,14 +1090,16 @@ async fn remote_computer_sessions(mut request: Request, context: RouteContext<()
     .results::<RemoteComputerSessionListRow>()?;
     let sessions = rows
         .into_iter()
-        .map(|row| json!({
-            "sessionId": row.session_id,
-            "clientId": row.client_id,
-            "clientLabel": row.client_label,
-            "state": row.state,
-            "createdAt": row.created_at,
-            "expiresAt": row.expires_at,
-        }))
+        .map(|row| {
+            json!({
+                "sessionId": row.session_id,
+                "clientId": row.client_id,
+                "clientLabel": row.client_label,
+                "state": row.state,
+                "createdAt": row.created_at,
+                "expiresAt": row.expires_at,
+            })
+        })
         .collect::<Vec<_>>();
     Ok(Response::from_json(&json!({
         "deviceId": device_id,
@@ -1072,7 +1120,13 @@ async fn remote_computer_session_create(
     let device_id = route_identifier(&context, "device_id")?.to_string();
     let input: RemoteComputerSessionCreateRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_control_session", "Session request must be valid JSON."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_control_session",
+                "Session request must be valid JSON.",
+            );
+        }
     };
     if !valid_relay_identifier(&input.client_id, 160) {
         return error_response(400, "invalid_client_id", "clientId is invalid.");
@@ -1091,7 +1145,11 @@ async fn remote_computer_session_create(
     .first::<RemoteComputerClientRow>(None)
     .await?;
     if client.is_none() {
-        return error_response(403, "client_not_paired", "This phone is not paired with the computer.");
+        return error_response(
+            403,
+            "client_not_paired",
+            "This phone is not paired with the computer.",
+        );
     }
     let computer = worker::query!(
         &database,
@@ -1150,7 +1208,13 @@ async fn remote_computer_session_activate(
     let session_id = route_identifier(&context, "session_id")?;
     let input: RemoteComputerDesktopAuthRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_device_auth", "Desktop session activation requires a device secret."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_device_auth",
+                "Desktop session activation requires a device secret.",
+            );
+        }
     };
     let database = context.env.d1(DATABASE_BINDING)?;
     let now = now_seconds();
@@ -1178,10 +1242,20 @@ async fn remote_computer_session_activate(
     .run()
     .await?;
     if result.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
-        return error_response(404, "control_session_not_found", "Pending control session was not found.");
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Pending control session was not found.",
+        );
     }
-    let Some(session) = load_remote_control_session(&database, &account.user_id, device_id, session_id).await? else {
-        return error_response(404, "control_session_not_found", "Control session disappeared after activation.");
+    let Some(session) =
+        load_remote_control_session(&database, &account.user_id, device_id, session_id).await?
+    else {
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Control session disappeared after activation.",
+        );
     };
     Ok(Response::from_json(&json!({
         "sessionId": session_id,
@@ -1227,9 +1301,9 @@ fn remote_session_actor_allowed(
         "desktop" => desktop_authorized,
         "mobile" => {
             client_id == Some(session.client_id.as_str())
-                && mobile_token
-                    .map(remote_secret_hash)
-                    .is_some_and(|hash| constant_time_eq(hash.as_bytes(), session.mobile_token_hash.as_bytes()))
+                && mobile_token.map(remote_secret_hash).is_some_and(|hash| {
+                    constant_time_eq(hash.as_bytes(), session.mobile_token_hash.as_bytes())
+                })
         }
         _ => false,
     }
@@ -1247,25 +1321,38 @@ async fn remote_computer_session_close(
     let session_id = route_identifier(&context, "session_id")?.to_string();
     let input: RemoteComputerSessionCloseRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_control_session", "Close request must be valid JSON."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_control_session",
+                "Close request must be valid JSON.",
+            );
+        }
     };
     if !remote_role(&input.role) {
-        return error_response(400, "invalid_control_role", "Control role must be desktop or mobile.");
+        return error_response(
+            400,
+            "invalid_control_role",
+            "Control role must be desktop or mobile.",
+        );
     }
     let database = context.env.d1(DATABASE_BINDING)?;
     let now = now_seconds();
-    let Some(session) = load_remote_control_session(&database, &account.user_id, &device_id, &session_id).await? else {
-        return error_response(404, "control_session_not_found", "Control session was not found.");
+    let Some(session) =
+        load_remote_control_session(&database, &account.user_id, &device_id, &session_id).await?
+    else {
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Control session was not found.",
+        );
     };
     let desktop_authorized = if input.role == "desktop" {
         match input.device_secret.as_deref() {
-            Some(secret) => remote_desktop_secret_matches(
-                &database,
-                &account.user_id,
-                &device_id,
-                secret,
-            )
-            .await?,
+            Some(secret) => {
+                remote_desktop_secret_matches(&database, &account.user_id, &device_id, secret)
+                    .await?
+            }
             None => false,
         }
     } else {
@@ -1279,7 +1366,11 @@ async fn remote_computer_session_close(
         desktop_authorized,
         now,
     ) {
-        return error_response(403, "control_session_forbidden", "This client cannot close the control session.");
+        return error_response(
+            403,
+            "control_session_forbidden",
+            "This client cannot close the control session.",
+        );
     }
     worker::query!(
         &database,
@@ -1291,10 +1382,16 @@ async fn remote_computer_session_close(
     )?
     .run()
     .await?;
-    Ok(Response::from_json(&json!({"sessionId": session_id, "state": "closed"}))?.with_headers(auth_headers()))
+    Ok(
+        Response::from_json(&json!({"sessionId": session_id, "state": "closed"}))?
+            .with_headers(auth_headers()),
+    )
 }
 
-async fn remote_computer_signal(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+async fn remote_computer_signal(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => return error_response(401, "unauthorized", "A valid account token is required."),
@@ -1302,7 +1399,9 @@ async fn remote_computer_signal(mut request: Request, context: RouteContext<()>)
     let device_id = route_identifier(&context, "device_id")?.to_string();
     let input: RemoteComputerSignalRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_signal", "Signal request must be valid JSON."),
+        Err(_) => {
+            return error_response(400, "invalid_signal", "Signal request must be valid JSON.");
+        }
     };
     if !valid_relay_identifier(&input.session_id, 160)
         || !remote_role(&input.sender_role)
@@ -1313,22 +1412,30 @@ async fn remote_computer_signal(mut request: Request, context: RouteContext<()>)
     let payload_json = serde_json::to_string(&input.payload)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
     if payload_json.len() > REMOTE_SIGNAL_MAX_BYTES {
-        return error_response(413, "signal_too_large", "WebRTC signal payload exceeds 256 KiB.");
+        return error_response(
+            413,
+            "signal_too_large",
+            "WebRTC signal payload exceeds 256 KiB.",
+        );
     }
     let database = context.env.d1(DATABASE_BINDING)?;
     let now = now_seconds();
-    let Some(session) = load_remote_control_session(&database, &account.user_id, &device_id, &input.session_id).await? else {
-        return error_response(404, "control_session_not_found", "Control session was not found.");
+    let Some(session) =
+        load_remote_control_session(&database, &account.user_id, &device_id, &input.session_id)
+            .await?
+    else {
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Control session was not found.",
+        );
     };
     let desktop_authorized = if input.sender_role == "desktop" {
         match input.device_secret.as_deref() {
-            Some(secret) => remote_desktop_secret_matches(
-                &database,
-                &account.user_id,
-                &device_id,
-                secret,
-            )
-            .await?,
+            Some(secret) => {
+                remote_desktop_secret_matches(&database, &account.user_id, &device_id, secret)
+                    .await?
+            }
             None => false,
         }
     } else {
@@ -1342,7 +1449,11 @@ async fn remote_computer_signal(mut request: Request, context: RouteContext<()>)
         desktop_authorized,
         now,
     ) {
-        return error_response(403, "control_session_forbidden", "This client cannot signal for the control session.");
+        return error_response(
+            403,
+            "control_session_forbidden",
+            "This client cannot signal for the control session.",
+        );
     }
     let expires_at = now + REMOTE_SIGNAL_SECONDS;
     database
@@ -1379,7 +1490,10 @@ async fn remote_computer_signal(mut request: Request, context: RouteContext<()>)
         .run()
         .await?;
     }
-    Ok(Response::from_json(&json!({"accepted": true, "expiresAt": expires_at}))?.with_headers(auth_headers()))
+    Ok(
+        Response::from_json(&json!({"accepted": true, "expiresAt": expires_at}))?
+            .with_headers(auth_headers()),
+    )
 }
 
 async fn remote_computer_signal_drain(
@@ -1393,25 +1507,39 @@ async fn remote_computer_signal_drain(
     let device_id = route_identifier(&context, "device_id")?.to_string();
     let input: RemoteComputerSignalDrainRequest = match request.json().await {
         Ok(input) => input,
-        Err(_) => return error_response(400, "invalid_signal_drain", "Signal drain must be valid JSON."),
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_signal_drain",
+                "Signal drain must be valid JSON.",
+            );
+        }
     };
     if !valid_relay_identifier(&input.session_id, 160) || !remote_role(&input.receiver_role) {
-        return error_response(400, "invalid_signal_drain", "Signal drain identifiers are invalid.");
+        return error_response(
+            400,
+            "invalid_signal_drain",
+            "Signal drain identifiers are invalid.",
+        );
     }
     let database = context.env.d1(DATABASE_BINDING)?;
     let now = now_seconds();
-    let Some(session) = load_remote_control_session(&database, &account.user_id, &device_id, &input.session_id).await? else {
-        return error_response(404, "control_session_not_found", "Control session was not found.");
+    let Some(session) =
+        load_remote_control_session(&database, &account.user_id, &device_id, &input.session_id)
+            .await?
+    else {
+        return error_response(
+            404,
+            "control_session_not_found",
+            "Control session was not found.",
+        );
     };
     let desktop_authorized = if input.receiver_role == "desktop" {
         match input.device_secret.as_deref() {
-            Some(secret) => remote_desktop_secret_matches(
-                &database,
-                &account.user_id,
-                &device_id,
-                secret,
-            )
-            .await?,
+            Some(secret) => {
+                remote_desktop_secret_matches(&database, &account.user_id, &device_id, secret)
+                    .await?
+            }
             None => false,
         }
     } else {
@@ -1425,7 +1553,11 @@ async fn remote_computer_signal_drain(
         desktop_authorized,
         now,
     ) {
-        return error_response(403, "control_session_forbidden", "This client cannot read control signals.");
+        return error_response(
+            403,
+            "control_session_forbidden",
+            "This client cannot read control signals.",
+        );
     }
     let after = input.after_signal_id.unwrap_or(0).max(0);
     let rows = worker::query!(
@@ -3711,10 +3843,9 @@ async fn marketplace_plugin_download(
         );
     }
     let mut response = Response::redirect_with_status(package_url, 307)?;
-    response.headers_mut().set(
-        "X-Mahayana-Package-Sha256",
-        &release.package_sha256,
-    )?;
+    response
+        .headers_mut()
+        .set("X-Mahayana-Package-Sha256", &release.package_sha256)?;
     response
         .headers_mut()
         .set("X-Mahayana-Package-Size", &package_size.to_string())?;
@@ -5032,18 +5163,21 @@ fn validate_external_release_manifest(
     max_artifact_bytes: usize,
 ) -> std::result::Result<(), String> {
     if manifest.get("schemaVersion").and_then(Value::as_u64) != Some(1)
-        || manifest.get("protocol").and_then(Value::as_str)
-            != Some("mahayana.external-release.v1")
+        || manifest.get("protocol").and_then(Value::as_str) != Some("mahayana.external-release.v1")
         || manifest.get("pluginId").and_then(Value::as_str) != Some(plugin_id)
         || manifest.get("version").and_then(Value::as_str) != Some(version)
     {
-        return Err("external release manifest identity/protocol does not match the request".into());
+        return Err(
+            "external release manifest identity/protocol does not match the request".into(),
+        );
     }
     let artifacts = manifest
         .get("artifacts")
         .and_then(Value::as_array)
         .filter(|artifacts| !artifacts.is_empty())
-        .ok_or_else(|| "external release manifest must contain at least one artifact".to_string())?;
+        .ok_or_else(|| {
+            "external release manifest must contain at least one artifact".to_string()
+        })?;
     let mut ids = std::collections::HashSet::new();
     let mut covered = std::collections::HashSet::new();
     for artifact in artifacts {
@@ -5061,7 +5195,9 @@ fn validate_external_release_manifest(
         }
         let sha256 = json_string(artifact, "sha256")?;
         if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err("external artifact sha256 must be a 64-character hexadecimal digest".into());
+            return Err(
+                "external artifact sha256 must be a 64-character hexadecimal digest".into(),
+            );
         }
         let size = artifact
             .get("size")

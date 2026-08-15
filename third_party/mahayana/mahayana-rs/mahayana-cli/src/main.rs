@@ -1209,7 +1209,10 @@ fn marketplace_command(command: MarketplaceCommand) -> Result<(), String> {
         } => {
             let verified = verified_marketplace_archive(&client, &plugin_id, version.as_deref())?;
             if verified.format != ArtifactFormat::TarGz {
-                return Err("Codex marketplace repository install currently requires a tar.gz CLI artifact".into());
+                return Err(
+                    "Codex marketplace repository install currently requires a tar.gz CLI artifact"
+                        .into(),
+                );
             }
             print_json(&plugin_dev::install_marketplace_bundle(
                 &repository,

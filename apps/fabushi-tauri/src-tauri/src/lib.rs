@@ -423,8 +423,12 @@ mod desktop {
         #[cfg(target_os = "macos")]
         {
             let url = match pane.as_str() {
-                "screen-recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-                "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                "screen-recording" => {
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+                }
+                "accessibility" => {
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+                }
                 _ => return Err("unsupported macOS privacy settings pane".to_string()),
             };
             return std::process::Command::new("/usr/bin/open")

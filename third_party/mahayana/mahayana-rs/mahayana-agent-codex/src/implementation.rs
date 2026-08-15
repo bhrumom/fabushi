@@ -636,7 +636,8 @@ impl CodexAgentInner {
             }
         }
         let response = self.execute_dynamic_tool(params).await;
-        self.resolve_dynamic_tool_response(request_id, response).await
+        self.resolve_dynamic_tool_response(request_id, response)
+            .await
     }
 
     async fn handle_server_request(&self, request: ServerRequest) -> Result<(), AgentError> {
@@ -2477,7 +2478,16 @@ fn executable_file(path: &Path) -> bool {
 
 fn computer_action_core_schema(include_screenshot: bool) -> Value {
     let actions = if include_screenshot {
-        json!(["screenshot", "click", "move", "drag", "type", "key", "scroll", "wait"])
+        json!([
+            "screenshot",
+            "click",
+            "move",
+            "drag",
+            "type",
+            "key",
+            "scroll",
+            "wait"
+        ])
     } else {
         json!(["click", "move", "drag", "type", "key", "scroll", "wait"])
     };
@@ -2711,7 +2721,9 @@ mod tests {
         assert!(properties.contains_key("durationMs"));
         assert!(!properties.contains_key("clickCount"));
         assert!(!properties.contains_key("waitMs"));
-        let primary = properties["action"]["enum"].as_array().expect("primary actions");
+        let primary = properties["action"]["enum"]
+            .as_array()
+            .expect("primary actions");
         assert!(primary.iter().any(|value| value == "screenshot"));
         let follow_up = &properties["then"];
         assert_eq!(follow_up["maxItems"], 9);

@@ -492,13 +492,23 @@ pub struct ComputerAction {
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub button: Option<ComputerMouseButton>,
-    #[serde(rename = "count", alias = "clickCount", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "count",
+        alias = "clickCount",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub click_count: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<ComputerScrollDirection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amount: Option<i32>,
-    #[serde(rename = "durationMs", alias = "waitMs", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "durationMs",
+        alias = "waitMs",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub wait_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -557,13 +567,20 @@ pub struct MemoryRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TrayAction {
-    OpenUrl { label: String, url: String },
+    OpenUrl {
+        label: String,
+        url: String,
+    },
     SwitchModel,
     DashboardAction {
         label: String,
         action: String,
         args: BTreeMap<String, String>,
-        #[serde(rename = "successMessage", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "successMessage",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         success_message: Option<String>,
     },
 }
@@ -1136,9 +1153,17 @@ pub enum FeatureCommand {
         description: String,
         #[serde(default)]
         title: String,
-        #[serde(rename = "avatarShape", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "avatarShape",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         avatar_shape: Option<String>,
-        #[serde(rename = "avatarColor", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "avatarColor",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         avatar_color: Option<String>,
     },
     #[serde(rename = "bot.update")]
@@ -1152,11 +1177,23 @@ pub enum FeatureCommand {
         description: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
-        #[serde(rename = "avatarShape", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "avatarShape",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         avatar_shape: Option<String>,
-        #[serde(rename = "avatarColor", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "avatarColor",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         avatar_color: Option<String>,
-        #[serde(rename = "notificationsEnabled", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "notificationsEnabled",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         notifications_enabled: Option<bool>,
     },
     #[serde(rename = "bot.clone")]
@@ -1501,7 +1538,11 @@ pub enum FeatureCommand {
         #[serde(rename = "agentId")]
         agent_id: String,
         markdown: String,
-        #[serde(rename = "fallbackName", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "fallbackName",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         fallback_name: Option<String>,
     },
     #[serde(rename = "workflow.importLiveSource")]
@@ -1511,7 +1552,11 @@ pub enum FeatureCommand {
         #[serde(rename = "agentId")]
         agent_id: String,
         source: String,
-        #[serde(rename = "fallbackName", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "fallbackName",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         fallback_name: Option<String>,
     },
     #[serde(rename = "attachment.upload")]
@@ -2251,23 +2296,22 @@ pub enum HostEvent {
         servers: Vec<Value>,
     },
     #[serde(rename = "mcp.apps")]
-    McpAppsListed {
-        timestamp: String,
-        apps: Vec<Value>,
-    },
+    McpAppsListed { timestamp: String, apps: Vec<Value> },
     #[serde(rename = "mcp.oauth")]
     McpOauthChanged {
         timestamp: String,
         server: String,
-        #[serde(rename = "authorizationUrl", default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            rename = "authorizationUrl",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
         authorization_url: Option<String>,
         #[serde(default)]
         removed: bool,
     },
     #[serde(rename = "mcp.refreshed")]
-    McpRefreshed {
-        timestamp: String,
-    },
+    McpRefreshed { timestamp: String },
     #[serde(rename = "mcp.toolResult")]
     McpToolResult {
         timestamp: String,
