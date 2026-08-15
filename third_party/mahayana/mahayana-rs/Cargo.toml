@@ -7,6 +7,7 @@ members = [
     "mahayana-agent-responses",
     "mahayana-conversation",
     "mahayana-core",
+    "mahayana-computer",
     "mahayana-feature-host",
     "mahayana-ffi",
     "mahayana-host",
@@ -66,6 +67,7 @@ mahayana-agent = { path = "mahayana-agent" }
 mahayana-agent-responses = { path = "mahayana-agent-responses" }
 mahayana-conversation = { path = "mahayana-conversation" }
 mahayana-core = { path = "mahayana-core" }
+mahayana-computer = { path = "mahayana-computer" }
 mahayana-feature-host = { path = "mahayana-feature-host", default-features = false }
 mahayana-host = { path = "mahayana-host", default-features = false }
 mahayana-host-protocol = { path = "mahayana-host-protocol" }

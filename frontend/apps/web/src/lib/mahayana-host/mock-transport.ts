@@ -1,4 +1,5 @@
 import type {
+  AgentPeerMessage,
   ApprovalResolution,
   AuthState,
   AuthProvider,
@@ -7,12 +8,15 @@ import type {
   BotSummary,
   CommandAccepted,
   ConnectorSummary,
+  GroupSummary,
   HostConfig,
   HostInfo,
   HostStatus,
   ListenerIntegrationSummary,
   ListenerPlatform,
+  MemoryRecord,
   MessageDraft,
+  ProductHostSettings,
   RuntimeCommand,
   RuntimeEvent,
   OAuthAttempt,
@@ -21,6 +25,7 @@ import type {
   SkillTeamSummary,
   TranscriptCard,
   UpdateState,
+  WorkflowSummary,
 } from "./contracts";
 import {
   isTauriMahayanaHostAvailable,
@@ -30,8 +35,16 @@ import type {
   MahayanaHostTransport,
   RuntimeEventListener,
 } from "./transport";
+import { memoryDedupeKey, memoryIdFor, normalizeMemoryContent } from "../grok-bot/memory";
+import { TrayManager } from "../grok-bot/trays";
 
 const now = () => new Date().toISOString();
+const mockComputerSnapshot = () => ({
+  capturedAtMs: Date.now(),
+  dataUrl: "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect width="100%" height="100%" fill="#15171a"/><text x="50%" y="50%" fill="#c8ccd4" font-family="system-ui" font-size="34" text-anchor="middle">This Computer · Mock Desktop</text></svg>'),
+  width: 1280,
+  height: 800,
+});
 
 const connectorTool = (id: string, name: string, description: string) => ({
   id,
@@ -184,9 +197,9 @@ const defaultSkills = (): SkillSummary[] => [
 ];
 
 const defaultBots = (): BotSummary[] => [
-  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", hidden: false, conversationId: "codex:agent:assistant" },
-  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", hidden: false, conversationId: "codex:agent:research" },
-  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", hidden: true, conversationId: "codex:agent:incident" },
+  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:assistant" },
+  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:research" },
+  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, conversationId: "codex:agent:incident" },
 ];
 
 const listenerCopy: Record<ListenerPlatform, [string, string]> = {
@@ -498,6 +511,26 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private connectors = new Map(defaultConnectors().map((connector) => [connector.id, connector]));
   private skills = new Map(defaultSkills().map((skill) => [skill.id, skill]));
   private bots = new Map(defaultBots().map((bot) => [bot.id, bot]));
+  private groups = new Map<string, GroupSummary>();
+  private peerMessages: AgentPeerMessage[] = [];
+  private memories = new Map<string, MemoryRecord[]>();
+  private trays = new TrayManager();
+  private workflows = new Map<string, WorkflowSummary>();
+  private disabledWorkflows = new Map<string, Set<string>>();
+  private attachmentData = new Map<string, { agentId: string; name: string; mimeType?: string; bytesBase64: string }>();
+  private teachRecording: { agentId: string; startedAtMs: number } | null = null;
+  private hostSettings: ProductHostSettings = {
+    notifications: true,
+    autoUpdateWhenIdle: true,
+    localExecution: true,
+    routeEgressLocally: false,
+    securityKeys: false,
+    webauthnProxyEnabled: false,
+    localToolPermission: "ask",
+    remoteControlEnabled: false,
+    aiComputerControlEnabled: true,
+    autoReviewRules: [],
+  };
   private listenerIntegrations = new Map(defaultListeners().map((integration) => [integration.platform, integration]));
   private updateState: UpdateState = { type: "upToDate", version: "0.1.0" };
   private info: HostInfo = {
@@ -976,14 +1009,606 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "bot.list":
         this.emit({ type: "bot.listed", timestamp: now(), bots: [...this.bots.values()] });
         return { requestId: command.requestId };
+      case "bot.create": {
+        const name = command.name.replace(/\s+/g, " ").trim().slice(0, 72);
+        if (!name) throw new Error("Bot name must not be empty");
+        const id = `agent-${++this.sequence}`;
+        const bot: BotSummary = {
+          id,
+          name,
+          description: (command.description ?? "").trim().slice(0, 2000),
+          title: (command.title ?? "").trim(),
+          hidden: false,
+          avatarShape: command.avatarShape?.trim() || undefined,
+          avatarColor: command.avatarColor?.trim() || undefined,
+          notificationsEnabled: true,
+          conversationId: `codex:agent:${id}`,
+        };
+        this.bots.set(bot.id, bot);
+        this.emit({ type: "bot.changed", timestamp: now(), action: "created", bot });
+        return { requestId: command.requestId };
+      }
+      case "bot.update": {
+        const current = this.bots.get(command.id);
+        if (!current) throw new Error(`Unknown bot: ${command.id}`);
+        const next: BotSummary = {
+          ...current,
+          ...(command.name === undefined ? {} : { name: command.name.replace(/\s+/g, " ").trim().slice(0, 72) }),
+          ...(command.description === undefined ? {} : { description: command.description.trim().slice(0, 2000) }),
+          ...(command.title === undefined ? {} : { title: command.title.trim() }),
+          ...(command.avatarShape === undefined ? {} : { avatarShape: command.avatarShape.trim() || undefined }),
+          ...(command.avatarColor === undefined ? {} : { avatarColor: command.avatarColor.trim() || undefined }),
+          ...(command.notificationsEnabled === undefined ? {} : { notificationsEnabled: command.notificationsEnabled }),
+        };
+        if (!next.name) throw new Error("Bot name must not be empty");
+        this.bots.set(next.id, next);
+        this.emit({ type: "bot.changed", timestamp: now(), action: "updated", bot: next });
+        return { requestId: command.requestId };
+      }
+      case "bot.clone": {
+        const source = this.bots.get(command.id);
+        if (!source) throw new Error(`Unknown bot: ${command.id}`);
+        const id = `agent-${++this.sequence}`;
+        const trimmed = source.name.trim();
+        const bot: BotSummary = {
+          ...source,
+          id,
+          name: trimmed ? `${trimmed} copy` : "copy",
+          hidden: false,
+          conversationId: `codex:agent:${id}`,
+        };
+        this.bots.set(bot.id, bot);
+        this.emit({ type: "bot.changed", timestamp: now(), action: "cloned", bot });
+        return { requestId: command.requestId };
+      }
+      case "bot.delete": {
+        if (command.id === "mahayana-assistant") throw new Error("The primary assistant cannot be deleted");
+        const bot = this.bots.get(command.id);
+        if (!bot) throw new Error(`Unknown bot: ${command.id}`);
+        this.bots.delete(command.id);
+        this.emit({ type: "bot.changed", timestamp: now(), action: "deleted", bot });
+        return { requestId: command.requestId };
+      }
       case "bot.setHidden": {
         const bot = this.bots.get(command.id);
         if (!bot) throw new Error(`Unknown bot: ${command.id}`);
         const next = { ...bot, hidden: command.hidden };
         this.bots.set(next.id, next);
-        this.emit({ type: "bot.changed", timestamp: now(), bot: next });
+        this.emit({ type: "bot.changed", timestamp: now(), action: "updated", bot: next });
         return { requestId: command.requestId };
       }
+      case "group.list":
+        this.emit({ type: "group.listed", timestamp: now(), groups: [...this.groups.values()] });
+        return { requestId: command.requestId };
+      case "group.create": {
+        const name = command.name.replace(/\s+/g, " ").trim().slice(0, 72);
+        const memberIds = [...new Set(command.memberIds)].filter((id) => this.bots.has(id));
+        if (!name) throw new Error("Group name must not be empty");
+        if (!memberIds.length) throw new Error("Group must contain at least one Bot");
+        const id = `group-${++this.sequence}`;
+        const createdAtMs = Date.now();
+        const group: GroupSummary = {
+          id,
+          name,
+          description: (command.description ?? "").trim().slice(0, 2000),
+          memberIds,
+          messages: [],
+          createdAtMs,
+          updatedAtMs: createdAtMs,
+        };
+        this.groups.set(id, group);
+        this.emit({ type: "group.changed", timestamp: now(), action: "created", group });
+        return { requestId: command.requestId };
+      }
+      case "group.update": {
+        const current = this.groups.get(command.id);
+        if (!current) throw new Error(`Unknown group: ${command.id}`);
+        const memberIds = command.memberIds === undefined
+          ? current.memberIds
+          : [...new Set(command.memberIds)].filter((id) => this.bots.has(id));
+        if (!memberIds.length) throw new Error("Group must contain at least one Bot");
+        const group: GroupSummary = {
+          ...current,
+          ...(command.name === undefined ? {} : { name: command.name.replace(/\s+/g, " ").trim().slice(0, 72) }),
+          ...(command.description === undefined ? {} : { description: command.description.trim().slice(0, 2000) }),
+          memberIds,
+          updatedAtMs: Date.now(),
+        };
+        if (!group.name) throw new Error("Group name must not be empty");
+        this.groups.set(group.id, group);
+        this.emit({ type: "group.changed", timestamp: now(), action: "updated", group });
+        return { requestId: command.requestId };
+      }
+      case "group.delete": {
+        const group = this.groups.get(command.id);
+        if (!group) throw new Error(`Unknown group: ${command.id}`);
+        this.groups.delete(command.id);
+        this.emit({ type: "group.changed", timestamp: now(), action: "deleted", group });
+        return { requestId: command.requestId };
+      }
+      case "group.send": {
+        const current = this.groups.get(command.id);
+        if (!current) throw new Error(`Unknown group: ${command.id}`);
+        const text = command.text.trim().slice(0, 8000);
+        if (!text) throw new Error("Group message must not be empty");
+        const group: GroupSummary = {
+          ...current,
+          messages: [...current.messages, {
+            id: `group-message-${++this.sequence}`,
+            speaker: { kind: "user" },
+            content: text,
+            createdAtMs: Date.now(),
+          }].slice(-500),
+          updatedAtMs: Date.now(),
+        };
+        this.groups.set(group.id, group);
+        this.emit({ type: "group.changed", timestamp: now(), action: "message", group });
+        return { requestId: command.requestId };
+      }
+      case "agent.send": {
+        const sender = this.bots.get(command.fromAgentId);
+        if (!sender) throw new Error(`Unknown sender bot: ${command.fromAgentId}`);
+        if (command.fromAgentId === command.targetId) throw new Error("An agent cannot message itself");
+        const text = command.text.trim().slice(0, 8000);
+        if (!text) throw new Error("Agent message must not be empty");
+        const target = this.bots.get(command.targetId);
+        if (target) {
+          const message: AgentPeerMessage = {
+            id: `agent-message-${++this.sequence}`,
+            fromAgentId: sender.id,
+            fromAgentName: sender.name,
+            targetId: target.id,
+            targetName: target.name,
+            text,
+            priority: command.priority === true,
+            createdAtMs: Date.now(),
+          };
+          this.peerMessages = [...this.peerMessages, message].slice(-5000);
+          this.emit({ type: "agent.peerMessage", timestamp: now(), message });
+          const operationId = `agent-background-${++this.sequence}`;
+          this.emit({ type: "agent.backgroundStarted", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: command.priority ? "agent-priority" : "agent-message" });
+          this.emit({ type: "agent.backgroundMessage", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: command.priority ? "agent-priority" : "agent-message", text: `${target.name} received the message from ${sender.name}.` });
+          this.emit({ type: "agent.backgroundFinished", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: command.priority ? "agent-priority" : "agent-message" });
+          return { requestId: command.requestId };
+        }
+        const current = this.groups.get(command.targetId);
+        if (!current) throw new Error(`Unknown agent or group: ${command.targetId}`);
+        if (!current.memberIds.includes(sender.id)) throw new Error(`Agent is not a member of group: ${command.targetId}`);
+        const group: GroupSummary = {
+          ...current,
+          messages: [...current.messages, { id: `group-message-${++this.sequence}`, speaker: { kind: "member", id: sender.id, name: sender.name }, content: text, createdAtMs: Date.now() }].slice(-500),
+          updatedAtMs: Date.now(),
+        };
+        this.groups.set(group.id, group);
+        this.emit({ type: "group.changed", timestamp: now(), action: "message", group });
+        return { requestId: command.requestId };
+      }
+      case "agent.broadcast": {
+        const targets = command.targetIds?.length
+          ? [...new Set(command.targetIds)].map((id) => this.bots.get(id)).filter((bot): bot is BotSummary => Boolean(bot))
+          : [...this.bots.values()];
+        const message = command.message.trim().slice(0, 8000);
+        if (!message) throw new Error("Broadcast message must not be empty");
+        for (const target of targets) {
+          const operationId = `broadcast-${++this.sequence}`;
+          this.emit({ type: "agent.backgroundStarted", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: "broadcast" });
+          this.emit({ type: "agent.backgroundMessage", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: "broadcast", text: `${target.name} received the broadcast.` });
+          this.emit({ type: "agent.backgroundFinished", timestamp: now(), agentId: target.id, agentName: target.name, operationId, source: "broadcast" });
+        }
+        this.emit({ type: "agent.broadcasted", timestamp: now(), result: { total: targets.length, scheduled: targets.length } });
+        return { requestId: command.requestId };
+      }
+      case "agent.peerHistory":
+        this.emit({ type: "agent.peerHistory", timestamp: now(), agentId: command.agentId, messages: this.peerMessages.filter((message) => message.fromAgentId === command.agentId || message.targetId === command.agentId).slice(-(command.limit ?? 200)) });
+        return { requestId: command.requestId };
+      case "subagent.list":
+        this.emit({ type: "subagent.listed", timestamp: now(), agentId: command.agentId, subagents: [] });
+        return { requestId: command.requestId };
+      case "asyncTask.list":
+        this.emit({ type: "asyncTask.listed", timestamp: now(), agentId: command.agentId, tasks: [] });
+        return { requestId: command.requestId };
+      case "teach.status":
+        this.emit({
+          type: "teach.changed",
+          timestamp: now(),
+          status: this.teachRecording
+            ? { state: "recording", agentId: this.teachRecording.agentId, startedAtMs: this.teachRecording.startedAtMs, maxDurationMs: 600_000 }
+            : { state: "idle", maxDurationMs: 600_000 },
+        });
+        return { requestId: command.requestId };
+      case "teach.start":
+        if (this.teachRecording && this.teachRecording.agentId !== command.agentId) throw new Error(`Teach recording is active for ${this.teachRecording.agentId}`);
+        this.teachRecording ??= { agentId: command.agentId, startedAtMs: Date.now() };
+        this.emit({ type: "teach.changed", timestamp: now(), status: { state: "recording", agentId: command.agentId, startedAtMs: this.teachRecording.startedAtMs, maxDurationMs: 600_000 } });
+        return { requestId: command.requestId };
+      case "teach.stop": {
+        const active = this.teachRecording;
+        if (active && active.agentId !== command.agentId) throw new Error(`Teach recording belongs to ${active.agentId}`);
+        this.teachRecording = null;
+        this.emit({
+          type: "teach.changed",
+          timestamp: now(),
+          status: { state: "idle", maxDurationMs: 600_000 },
+          result: active ? { agentId: command.agentId, videoPath: `/mock/agents/${command.agentId}/teach-sessions/demo.mp4`, startedAtMs: active.startedAtMs, endedAtMs: Date.now(), durationMs: Date.now() - active.startedAtMs, saved: command.save } : undefined,
+        });
+        return { requestId: command.requestId };
+      }
+      case "computer.status":
+        this.emit({
+          type: "computer.status",
+          timestamp: now(),
+          requestId: command.requestId,
+          status: {
+            platform: "mock",
+            available: true,
+            captureSupported: true,
+            inputSupported: true,
+            accessibilityGranted: true,
+            screenRecordingGranted: true,
+            localExecutionEnabled: this.hostSettings.localExecution,
+            routeEgressLocally: this.hostSettings.routeEgressLocally,
+            remoteControlEnabled: this.hostSettings.remoteControlEnabled,
+            aiControlEnabled: this.hostSettings.aiComputerControlEnabled,
+          },
+        });
+        return { requestId: command.requestId };
+      case "computer.screenshot": {
+        const snapshot = mockComputerSnapshot();
+        this.emit({ type: "computer.snapshot", timestamp: now(), requestId: command.requestId, origin: command.origin ?? "local-ui", snapshot });
+        return { requestId: command.requestId };
+      }
+      case "computer.action": {
+        const origin = command.origin ?? "local-ui";
+        const actions = [command.action, ...(command.then ?? [])];
+        if (actions.length > 10) throw new Error("At most 10 computer actions can be batched");
+        const snapshot = mockComputerSnapshot();
+        this.emit({ type: "computer.result", timestamp: now(), requestId: command.requestId, result: { origin, actionsExecuted: actions.length, snapshot } });
+        return { requestId: command.requestId };
+      }
+      case "remoteComputer.register":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "registered", data: { deviceId: command.deviceId, label: command.label, pairingCode: "AB12CD34", pairingExpiresAt: Math.floor(Date.now() / 1000) + 600 } });
+        return { requestId: command.requestId };
+      case "remoteComputer.heartbeat":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "heartbeat", data: { ok: true, lastSeenAt: Math.floor(Date.now() / 1000) } });
+        return { requestId: command.requestId };
+      case "remoteComputer.clients":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "clients", data: { deviceId: command.deviceId, clients: [] } });
+        return { requestId: command.requestId };
+      case "remoteComputer.clientRevoke":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "clientRevoked", data: { revoked: true, clientId: command.clientId } });
+        return { requestId: command.requestId };
+      case "remoteComputer.sessions":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "sessions", data: { deviceId: command.deviceId, sessions: [] } });
+        return { requestId: command.requestId };
+      case "remoteComputer.sessionActivate":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "sessionActivated", data: { sessionId: command.sessionId, clientId: "remote-client-test", expiresAt: Math.floor(Date.now() / 1000) + 7200, state: "active" } });
+        return { requestId: command.requestId };
+      case "remoteComputer.sessionClose":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "sessionClosed", data: { sessionId: command.sessionId, state: "closed" } });
+        return { requestId: command.requestId };
+      case "remoteComputer.signal":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "signal", data: { accepted: true, expiresAt: Math.floor(Date.now() / 1000) + 300 } });
+        return { requestId: command.requestId };
+      case "remoteComputer.signalDrain":
+        this.emit({ type: "remoteComputer.changed", timestamp: now(), requestId: command.requestId, action: "signals", data: { sessionId: command.sessionId, signals: [], lastSignalId: command.afterSignalId ?? 0 } });
+        return { requestId: command.requestId };
+      case "memory.list": {
+        const memories = this.memories.get(command.agentId) ?? [];
+        const limit = Math.min(command.limit ?? 1000, 1000);
+        this.emit({ type: "memory.listed", timestamp: now(), agentId: command.agentId, memories: memories.slice(0, limit), count: memories.length, location: `/mock/agents/${command.agentId}/memory` });
+        return { requestId: command.requestId };
+      }
+      case "memory.add": {
+        const content = normalizeMemoryContent(command.content);
+        const current = this.memories.get(command.agentId) ?? [];
+        const duplicate = current.some((memory) => memoryDedupeKey(memory.content) === memoryDedupeKey(content));
+        const memory = !content || duplicate ? undefined : {
+          id: memoryIdFor(content),
+          content,
+          createdAt: Date.now(),
+          kind: command.kind,
+        } satisfies MemoryRecord;
+        if (memory) this.memories.set(command.agentId, [memory, ...current]);
+        this.emit({ type: "memory.changed", timestamp: now(), agentId: command.agentId, action: memory ? "added" : "duplicate", memory });
+        return { requestId: command.requestId };
+      }
+      case "memory.remove": {
+        const current = this.memories.get(command.agentId) ?? [];
+        const next = current.filter((memory) => memory.id !== command.id);
+        this.memories.set(command.agentId, next);
+        this.emit({ type: "memory.changed", timestamp: now(), agentId: command.agentId, action: next.length === current.length ? "notFound" : "removed" });
+        return { requestId: command.requestId };
+      }
+      case "memory.clear":
+        this.memories.delete(command.agentId);
+        this.emit({ type: "memory.changed", timestamp: now(), agentId: command.agentId, action: "cleared" });
+        return { requestId: command.requestId };
+      case "tray.list":
+        this.emit({ type: "tray.listed", timestamp: now(), trays: [...this.trays.getTrays()] });
+        return { requestId: command.requestId };
+      case "tray.dismiss":
+        if (this.trays.dismiss(command.id)) {
+          this.emit({ type: "tray.changed", timestamp: now(), action: "dismissed", id: command.id });
+        }
+        return { requestId: command.requestId };
+      case "tray.clear":
+        if (this.trays.getTrays().length) {
+          this.trays.clearAll();
+          this.emit({ type: "tray.changed", timestamp: now(), action: "cleared" });
+        }
+        return { requestId: command.requestId };
+      case "tray.clearForAgent": {
+        const ids = this.trays.getTrays().filter((tray) => tray.agentId === command.agentId).map((tray) => tray.id);
+        this.trays.clearForAgent(command.agentId);
+        for (const id of ids) this.emit({ type: "tray.changed", timestamp: now(), action: "dismissed", id });
+        return { requestId: command.requestId };
+      }
+      case "workflow.list": {
+        const disabled = this.disabledWorkflows.get(command.agentId) ?? new Set<string>();
+        const workflows = [...this.workflows.values()].map((workflow) => ({
+          ...workflow,
+          isEnabledForAgent: !disabled.has(workflow.id),
+        }));
+        this.emit({ type: "workflow.listed", timestamp: now(), agentId: command.agentId, workflows });
+        return { requestId: command.requestId };
+      }
+      case "workflow.upsert": {
+        const name = command.name.replace(/\s+/g, " ").trim().slice(0, 80);
+        const body = command.body.trim().slice(0, 100_000);
+        if (!name || !body) throw new Error("Workflow name and body are required");
+        const id = command.id ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `workflow-${++this.sequence}`;
+        const previous = this.workflows.get(id);
+        const workflow: WorkflowSummary = {
+          id,
+          name,
+          description: (command.description ?? "").replace(/\s+/g, " ").trim().slice(0, 1536),
+          body,
+          trigger: command.trigger,
+          sourceRef: command.sourceRef,
+          source: command.trigger ? "automation" : "workflow",
+          publishedByCurrentUser: false,
+          isEnabledForAgent: !(this.disabledWorkflows.get(command.agentId)?.has(id) ?? false),
+          createdAt: previous?.createdAt ?? Date.now(),
+          lastRunAt: previous?.lastRunAt,
+          nextRunAt: undefined,
+          helperScripts: previous?.helperScripts ?? [],
+          filePath: command.trigger ? "" : `/mock/workflows/${id}/SKILL.md`,
+        };
+        this.workflows.set(id, workflow);
+        this.emit({ type: "workflow.changed", timestamp: now(), agentId: command.agentId, action: "saved", workflow });
+        return { requestId: command.requestId };
+      }
+      case "workflow.setEnabled": {
+        const workflow = this.workflows.get(command.id);
+        if (!workflow) throw new Error(`Unknown workflow: ${command.id}`);
+        const disabled = new Set(this.disabledWorkflows.get(command.agentId) ?? []);
+        if (command.enabled) disabled.delete(command.id);
+        else disabled.add(command.id);
+        this.disabledWorkflows.set(command.agentId, disabled);
+        const next = { ...workflow, isEnabledForAgent: command.enabled };
+        this.workflows.set(command.id, next);
+        this.emit({ type: "workflow.changed", timestamp: now(), agentId: command.agentId, action: "enabled", workflow: next, id: command.id });
+        return { requestId: command.requestId };
+      }
+      case "workflow.delete": {
+        this.workflows.delete(command.id);
+        for (const disabled of this.disabledWorkflows.values()) disabled.delete(command.id);
+        this.emit({ type: "workflow.changed", timestamp: now(), agentId: command.agentId, action: "deleted", id: command.id });
+        return { requestId: command.requestId };
+      }
+      case "workflow.run": {
+        const workflow = this.workflows.get(command.id);
+        if (!workflow) throw new Error(`Unknown workflow: ${command.id}`);
+        if (this.disabledWorkflows.get(command.agentId)?.has(command.id)) throw new Error(`Workflow is disabled: ${command.id}`);
+        this.emit({ type: "chat.message", timestamp: now(), role: "user", text: `@${workflow.name}` });
+        this.emit({ type: "chat.message", timestamp: now(), role: "assistant", text: `Running workflow: ${workflow.name}` });
+        return { requestId: command.requestId };
+      }
+      case "workflow.importMarkdown": {
+        const raw = command.markdown.trim();
+        if (!raw) throw new Error("Workflow markdown is empty");
+        const frontmatter = raw.startsWith("---\n") ? raw.slice(4, raw.indexOf("\n---", 4)) : "";
+        const body = frontmatter ? raw.slice(raw.indexOf("\n---", 4) + 4).replace(/^\n/, "").trim() : raw;
+        const frontmatterName = frontmatter.match(/^name:\s*["']?([^\n"']+)/m)?.[1]?.trim();
+        const headingName = body.match(/^#{1,6}\s+(.+)$/m)?.[1]?.replace(/[*_`#>]/g, "").trim();
+        const name = frontmatterName || command.fallbackName || headingName || "Imported workflow";
+        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `workflow-${++this.sequence}`;
+        const description = frontmatter.match(/^description:\s*["']?([^\n"']+)/m)?.[1]?.trim() ?? "";
+        const schedule = frontmatter.match(/^\s*schedule:\s*["']?([^\n"']+)/m)?.[1]?.trim();
+        const enabledRaw = frontmatter.match(/^\s*enabled:\s*(true|false)/m)?.[1];
+        const workflow: WorkflowSummary = {
+          id,
+          name: name.slice(0, 80),
+          description: description.slice(0, 1536),
+          body: body.slice(0, 100_000),
+          trigger: schedule ? { schedule, isEnabled: enabledRaw !== "false" } : undefined,
+          source: schedule ? "automation" : "workflow",
+          publishedByCurrentUser: false,
+          isEnabledForAgent: true,
+          createdAt: Date.now(),
+          helperScripts: [],
+          filePath: schedule ? "" : `/mock/workflows/${id}/SKILL.md`,
+        };
+        this.workflows.set(id, workflow);
+        this.emit({ type: "workflow.changed", timestamp: now(), agentId: command.agentId, action: "imported", workflow });
+        return { requestId: command.requestId };
+      }
+      case "workflow.importLiveSource": {
+        const source = command.source.trim();
+        if (!source) throw new Error("Live source is required");
+        const leaf = source.split("/").filter(Boolean).at(-1)?.replace(/\.(markdown|mdc|md|txt)$/i, "").replace(/[-_]/g, " ") || "Imported skill";
+        const name = (command.fallbackName || leaf).trim().slice(0, 80);
+        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `workflow-${++this.sequence}`;
+        const workflow: WorkflowSummary = {
+          id,
+          name,
+          description: `Use when the \"${name}\" skill applies; it is a live reference to ${source}.`.slice(0, 1536),
+          body: `This workflow is a live reference to the skill at \`${source}\`.\nRead that source now with your file or fetch tools and follow it as written. Do not assume its contents from this note; the source is the source of truth and may have changed since this workflow was created.`,
+          sourceRef: source,
+          source: "workflow",
+          publishedByCurrentUser: false,
+          isEnabledForAgent: true,
+          createdAt: Date.now(),
+          helperScripts: [],
+          filePath: `/mock/workflows/${id}/SKILL.md`,
+        };
+        this.workflows.set(id, workflow);
+        this.emit({ type: "workflow.changed", timestamp: now(), agentId: command.agentId, action: "imported", workflow });
+        return { requestId: command.requestId };
+      }
+      case "attachment.upload": {
+        const bytes = command.bytesBase64.trim();
+        if (!bytes) throw new Error("Attachment is empty");
+        const safeName = command.filename.replace(/[^a-zA-Z0-9._-]+/g, "-") || `file-${++this.sequence}`;
+        const path = `/mock/agents/${command.agentId}/attachments/${safeName}`;
+        this.attachmentData.set(path, {
+          agentId: command.agentId,
+          name: command.filename,
+          mimeType: command.mimeType,
+          bytesBase64: bytes,
+        });
+        const sizeBytes = Math.floor(bytes.length * 3 / 4);
+        this.emit({
+          type: "attachment.stored",
+          timestamp: now(),
+          attachment: {
+            id: `mock-attachment-${++this.sequence}`,
+            agentId: command.agentId,
+            name: command.filename,
+            path,
+            mimeType: command.mimeType,
+            sizeBytes,
+            hash: `mock-${this.sequence}`,
+          },
+        });
+        return { requestId: command.requestId };
+      }
+      case "attachment.readText": {
+        const stored = this.attachmentData.get(command.path);
+        if (!stored || stored.agentId !== command.agentId) throw new Error("Unknown attachment");
+        const raw = Uint8Array.from(atob(stored.bytesBase64), (character) => character.charCodeAt(0));
+        const text = new TextDecoder().decode(raw);
+        this.emit({
+          type: "attachment.text",
+          timestamp: now(),
+          result: {
+            path: command.path,
+            kind: "text",
+            text: text.slice(0, 64 * 1024),
+            truncated: text.length > 64 * 1024,
+            bytes: raw.byteLength,
+          },
+        });
+        return { requestId: command.requestId };
+      }
+      case "attachment.readChunk": {
+        const stored = this.attachmentData.get(command.path);
+        if (!stored || stored.agentId !== command.agentId) throw new Error("Unknown attachment");
+        this.emit({
+          type: "attachment.chunk",
+          timestamp: now(),
+          result: {
+            path: command.path,
+            bytesBase64: stored.bytesBase64,
+            totalSize: Math.floor(stored.bytesBase64.length * 3 / 4),
+            mime: stored.mimeType,
+          },
+        });
+        return { requestId: command.requestId };
+      }
+      case "attachment.readImage": {
+        const stored = this.attachmentData.get(command.path);
+        if (!stored || stored.agentId !== command.agentId) throw new Error("Unknown attachment");
+        this.emit({
+          type: "attachment.image",
+          timestamp: now(),
+          result: {
+            path: command.path,
+            dataUrl: `data:${stored.mimeType ?? "application/octet-stream"};base64,${stored.bytesBase64}`,
+          },
+        });
+        return { requestId: command.requestId };
+      }
+      case "search.messages": {
+        const query = command.query.trim().toLowerCase();
+        const limit = Math.max(1, Math.min(command.limit ?? 50, 50));
+        const matches = query
+          ? richResultsMessages()
+              .filter((message) => message.text.toLowerCase().includes(query))
+              .slice(-5)
+              .reverse()
+              .map((message) => {
+                const flat = message.text.replace(/\s+/g, " ").trim();
+                const at = flat.toLowerCase().indexOf(query);
+                const start = Math.max(0, at - 30);
+                const end = Math.min(flat.length, at + query.length + 60);
+                return {
+                  agentId: "mahayana-assistant",
+                  agentName: "大乘助手",
+                  conversationId: RICH_RESULTS_CONVERSATION_ID,
+                  entryId: message.id,
+                  role: message.role,
+                  timestampMs: message.createdAtMs,
+                  snippet: `${start ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`,
+                };
+              })
+              .slice(0, limit)
+          : [];
+        this.emit({ type: "search.messages", timestamp: now(), query, matches });
+        return { requestId: command.requestId };
+      }
+      case "search.media": {
+        const query = command.query?.trim().toLowerCase() ?? "";
+        const matches = [...this.attachmentData.entries()]
+          .filter(([, attachment]) => !query || attachment.name.toLowerCase().includes(query))
+          .slice(0, Math.max(1, Math.min(command.limit ?? 50, 50)))
+          .map(([path, attachment]) => ({
+            agentId: attachment.agentId,
+            agentName: this.bots.get(attachment.agentId)?.name ?? attachment.agentId,
+            path,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: Math.floor(attachment.bytesBase64.length * 3 / 4),
+            timestampMs: Date.now(),
+          }));
+        this.emit({ type: "search.media", timestamp: now(), query, matches });
+        return { requestId: command.requestId };
+      }
+      case "mcp.list":
+        this.emit({
+          type: "mcp.listed",
+          timestamp: now(),
+          servers: [
+            { name: "github", status: "connected", transport: "streamable_http", tools: [{ name: "search_repositories" }, { name: "get_pull_request" }] },
+            { name: "notion", status: "auth_required", transport: "streamable_http", tools: [] },
+          ],
+        });
+        return { requestId: command.requestId };
+      case "mcp.apps":
+        this.emit({ type: "mcp.apps", timestamp: now(), apps: [{ id: "github", name: "GitHub" }, { id: "notion", name: "Notion" }] });
+        return { requestId: command.requestId };
+      case "mcp.oauthLogin":
+        this.emit({ type: "mcp.oauth", timestamp: now(), server: command.server, authorizationUrl: `https://example.test/oauth/${encodeURIComponent(command.server)}`, removed: false });
+        return { requestId: command.requestId };
+      case "mcp.oauthLogout":
+        this.emit({ type: "mcp.oauth", timestamp: now(), server: command.server, removed: true });
+        return { requestId: command.requestId };
+      case "mcp.refresh":
+        this.emit({ type: "mcp.refreshed", timestamp: now() });
+        return { requestId: command.requestId };
+      case "mcp.toolCall":
+        this.emit({ type: "mcp.toolResult", timestamp: now(), server: command.server, tool: command.tool, result: { ok: true, arguments: command.arguments ?? null } });
+        return { requestId: command.requestId };
+      case "settings.get":
+        this.emit({ type: "settings.changed", timestamp: now(), settings: this.hostSettings });
+        return { requestId: command.requestId };
+      case "settings.update":
+        this.hostSettings = { ...command.settings, autoReviewRules: command.settings.autoReviewRules.slice(0, 200) };
+        this.emit({ type: "settings.changed", timestamp: now(), settings: this.hostSettings });
+        return { requestId: command.requestId };
+      case "audit.list":
+        this.emit({ type: "audit.listed", timestamp: now(), agentId: command.agentId, records: [] });
+        return { requestId: command.requestId };
       case "draft.resolve": {
         if (command.action === "send") validateDraft(command.draft);
         if (command.action === "send") {
@@ -1125,6 +1750,22 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     ) return;
     const popup = window.open(url, "fabushi-oauth", "popup,width=520,height=720");
     if (!popup) throw new Error("浏览器窗口被拦截，请允许弹出窗口后重试");
+  }
+
+  async openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<void> {
+    if (this.native) return this.native.openSystemSettings(pane);
+  }
+
+  async windowFocused(): Promise<boolean> {
+    if (this.native) return this.native.windowFocused();
+    return typeof document === "undefined" ? true : document.hasFocus();
+  }
+
+  async showNotification(title: string, body: string): Promise<void> {
+    if (this.native) return this.native.showNotification(title, body);
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") await Notification.requestPermission();
+    if (Notification.permission === "granted") new Notification(title, { body });
   }
 
   async passwordLogin(username: string, password: string): Promise<AuthState> {

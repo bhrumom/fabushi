@@ -88,6 +88,7 @@
 
 .fast-side-button,
 .fast-side-nav button,
+.fast-side-nav a,
 .fast-tool-menu button,
 .fast-card button,
 .fast-chips button,
@@ -118,6 +119,7 @@
 }
 
 .fast-side-nav button,
+.fast-side-nav a,
 .fast-tool-menu button {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -126,10 +128,13 @@
   min-height: 62px;
   border-radius: 16px;
   padding: 12px;
+  color: inherit;
   text-align: left;
+  text-decoration: none;
 }
 
 .fast-side-nav button span,
+.fast-side-nav a span,
 .fast-tool-menu button span {
   grid-row: span 2;
   font-size: 20px;
@@ -157,6 +162,7 @@
 
 .fast-side-nav button.is-active,
 .fast-side-nav button:hover,
+.fast-side-nav a:hover,
 .fast-tool-menu button.is-active,
 .fast-tool-menu button:hover,
 .fast-chips button:hover,

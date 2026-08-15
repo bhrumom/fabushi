@@ -96,6 +96,18 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
     return nativeInvoke<void>("feature_host_open_external", { url });
   }
 
+  openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<void> {
+    return nativeInvoke<void>("feature_host_open_system_settings", { pane });
+  }
+
+  windowFocused(): Promise<boolean> {
+    return nativeInvoke<boolean>("feature_host_window_focused");
+  }
+
+  showNotification(title: string, body: string): Promise<void> {
+    return nativeInvoke<void>("feature_host_show_notification", { title, body });
+  }
+
   passwordLogin(username: string, password: string): Promise<AuthState> {
     return nativeInvoke<AuthState>("feature_host_password_login", {
       username,

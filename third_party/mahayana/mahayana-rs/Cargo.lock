@@ -9179,8 +9179,10 @@ dependencies = [
  "codex-rmcp-client",
  "codex-utils-absolute-path",
  "mahayana-agent",
+ "mahayana-computer",
  "mahayana-conversation",
  "mahayana-core",
+ "mahayana-host-protocol",
  "mahayana-platform-core",
  "mahayana-plugin-host",
  "openssl-sys",
@@ -9234,6 +9236,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mahayana-computer"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "core-graphics",
+ "foreign-types 0.5.0",
+ "mahayana-host-protocol",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "mahayana-conversation"
 version = "0.1.0"
 dependencies = [
@@ -9258,13 +9273,18 @@ dependencies = [
 name = "mahayana-feature-host"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
+ "mahayana-computer",
  "mahayana-core",
  "mahayana-host",
  "mahayana-host-protocol",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
