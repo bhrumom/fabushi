@@ -1564,9 +1564,7 @@ impl MahayanaProductClient {
                 }
                 self.authorized_post(request, "/api/social/messages", body)
             }
-            "mahayana.remote.computers.list" => {
-                self.authorized_get(request, "/v1/computers", &[])
-            }
+            "mahayana.remote.computers.list" => self.authorized_get(request, "/v1/computers", &[]),
             "mahayana.remote.computer.register" => {
                 let device_id = required_identifier(request, "deviceId")?;
                 let label = required_string(request, "label")?;
@@ -1597,11 +1595,7 @@ impl MahayanaProductClient {
             }
             "mahayana.remote.computer.clients" => {
                 let device_id = required_identifier(request, "deviceId")?;
-                self.authorized_get(
-                    request,
-                    &format!("/v1/computers/{device_id}/clients"),
-                    &[],
-                )
+                self.authorized_get(request, &format!("/v1/computers/{device_id}/clients"), &[])
             }
             "mahayana.remote.computer.client.revoke" => {
                 let device_id = required_identifier(request, "deviceId")?;
@@ -1681,11 +1675,7 @@ impl MahayanaProductClient {
                 if let Some(mobile_token) = optional_string(request, "mobileToken") {
                     body["mobileToken"] = Value::String(mobile_token.to_string());
                 }
-                self.authorized_post(
-                    request,
-                    &format!("/v1/computers/{device_id}/signals"),
-                    body,
-                )
+                self.authorized_post(request, &format!("/v1/computers/{device_id}/signals"), body)
             }
             "mahayana.remote.computer.signals.drain" => {
                 let device_id = required_identifier(request, "deviceId")?;

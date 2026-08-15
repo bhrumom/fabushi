@@ -436,7 +436,12 @@ impl MahayanaRuntime {
                 client_message_id,
                 hidden,
             } => Ok(RuntimeResponse::Accepted {
-                operation_id: self.start_message(conversation_id, text, client_message_id, hidden)?,
+                operation_id: self.start_message(
+                    conversation_id,
+                    text,
+                    client_message_id,
+                    hidden,
+                )?,
             }),
             RuntimeCommand::Interrupt { operation_id } => {
                 let provider_key = lock(&self.operations)?
