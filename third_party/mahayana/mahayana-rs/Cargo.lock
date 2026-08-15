@@ -9229,7 +9229,7 @@ dependencies = [
  "mahayana-host-protocol",
  "mahayana-js-runtime",
  "mahayana-plugin-runtime",
- "mahayana-product",
+ "mahayana-platform-client",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
