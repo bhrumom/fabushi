@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, type FormEvent } from "react";
 import type { BotSummary, GroupSummary } from "../../lib/mahayana-host/contracts";
+import { parseGroupMentions } from "../../lib/grok-bot/group-chat";
 import { BotMark, type BotMarkColor, type BotMarkShape } from "./bot-mark";
 import styles from "./host.module.css";
 
@@ -63,6 +64,10 @@ export function GroupChatPanel({
   const members = useMemo(
     () => group.memberIds.map((id) => bots.find((bot) => bot.id === id)).filter((bot): bot is BotSummary => Boolean(bot)),
     [bots, group.memberIds],
+  );
+  const mentionTargets = useMemo(
+    () => parseGroupMentions(input, members.map((member) => ({ id: member.id, name: member.name }))),
+    [input, members],
   );
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -137,7 +142,12 @@ export function GroupChatPanel({
             );
           })}
         </div>
-        <form className={styles.groupComposer} onSubmit={(event) => void submit(event)}>
+        <form
+          className={styles.groupComposer}
+          onSubmit={(event) => void submit(event)}
+          data-mention-everyone={mentionTargets.isEveryone ? "true" : "false"}
+          data-mentioned-members={mentionTargets.memberIds.join(",")}
+        >
           <div className={styles.groupMentionBar}>
             <button type="button" onClick={() => setInput((current) => `${current}@everyone `)}>@everyone</button>
             {members.map((member) => (

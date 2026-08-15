@@ -59,6 +59,7 @@ import { estimateStringTokenCount } from "../../lib/grok-agent/token-estimate";
 import { buildCurrentModeStatement } from "../../lib/grok-agent/agent-mode-guidance";
 import { addLineNumbers } from "../../lib/grok-agent/formatting";
 import { normalizeSchedule } from "../../lib/grok-agent/automation-schedule";
+import { clampAgentMessage } from "../../lib/grok-bot/agent-messaging";
 import {
   SandOsNotificationDecider,
   buildNotificationContent,
@@ -1963,7 +1964,8 @@ export default function HostClient() {
 
   const sendNetworkMessage = async () => {
     if (!networkSender || !networkTargetId || !networkMessage.trim()) return;
-    const text = networkMessage;
+    const text = clampAgentMessage(networkMessage);
+    if (!text) return;
     setNetworkMessage("");
     await run(() => execute({
       type: "agent.send",
@@ -1977,7 +1979,8 @@ export default function HostClient() {
 
   const broadcastNetworkMessage = async () => {
     if (!networkMessage.trim()) return;
-    const message = networkMessage;
+    const message = clampAgentMessage(networkMessage);
+    if (!message) return;
     setNetworkMessage("");
     setLastBroadcastResult(null);
     await run(() => execute({
