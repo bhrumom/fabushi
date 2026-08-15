@@ -13,6 +13,8 @@ import React, {
 import styles from "./host.module.css";
 import type {
   AgentMode,
+  AgentPeerMessage,
+  AsyncTaskSummary,
   ApprovalRequestedEvent,
   AttachmentContext,
   AutomationSummary,
@@ -21,23 +23,46 @@ import type {
   AuthState,
   BotSummary,
   CapabilitySummary,
+  ComputerSnapshot,
+  ComputerStatus,
+  GroupSummary,
   ConnectorSummary,
   ConversationSummary,
+  ErrorTray,
   ListenerIntegrationSummary,
   ListenerPlatform,
+  MemoryKind,
+  MemoryRecord,
   MessageDraft,
+  ProductHostSettings,
   RuntimeCommand,
+  SearchMediaMatch,
+  SearchMessageMatch,
   SkillSummary,
   SkillTeamSummary,
+  SubagentSummary,
+  TeachRecordingResult,
+  TeachRecordingStatus,
   UpdateState,
+  WorkflowSummary,
+  WorkflowTrigger,
 } from "../../lib/mahayana-host/contracts";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
 import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
+import {
+  RemoteComputerDesktopController,
+  type RemoteComputerDesktopState,
+} from "../../lib/remote-computer/desktop-peer";
 import { estimateStringTokenCount } from "../../lib/grok-agent/token-estimate";
 import { buildCurrentModeStatement } from "../../lib/grok-agent/agent-mode-guidance";
 import { addLineNumbers } from "../../lib/grok-agent/formatting";
 import { normalizeSchedule } from "../../lib/grok-agent/automation-schedule";
+import {
+  SandOsNotificationDecider,
+  buildNotificationContent,
+  type SandAgentNotificationSnapshot,
+} from "../../lib/grok-bot/os-notification";
 import {
   ExtensionStudio,
   MarketplaceTabs,
@@ -48,8 +73,43 @@ import {
   TranscriptCardView,
   type TranscriptCardEntry,
 } from "./rich-transcript";
+import {
+  BotMark,
+  botMarkStateFromActivity,
+  type BotMarkColor,
+  type BotMarkShape,
+  type BotMarkState,
+} from "./bot-mark";
+import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-panel";
+import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
 const defaultMiniAppId = "global-dharma";
+const ATTACHMENT_BYTE_LIMIT = 25 * 1024 * 1024;
+const VIDEO_ATTACHMENT_BYTE_LIMIT = 200 * 1024 * 1024;
+const ATTACHMENT_TEXT_PREVIEW_BYTES = 64 * 1024;
+
+function attachmentLooksLikeVideo(name: string): boolean {
+  return /\.(?:mp4|mov|m4v|webm|mkv|avi|mpg|mpeg)$/i.test(name);
+}
+
+function attachmentLooksTextPreviewable(file: File): boolean {
+  if (file.type.startsWith("text/")) return true;
+  return /\.(?:txt|md|markdown|mdc|csv|tsv|json|jsonl|ya?ml|toml|xml|html?|css|jsx?|tsx?|py|rs|go|java|kt|swift|c|h|cpp|hpp|sh|bash|zsh|fish|log|sql|ini|conf)$/i.test(file.name);
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error(`无法读取 ${file.name}`));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const comma = result.indexOf(",");
+      if (comma < 0) reject(new Error(`无法编码 ${file.name}`));
+      else resolve(result.slice(comma + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 const marketplaceApps = [
   {
@@ -117,7 +177,7 @@ type AgentActivity = {
   status: "running" | "completed" | "failed";
 };
 
-type SettingsSection = "general" | "usage" | "updates";
+type SettingsSection = "general" | "mcp" | "usage" | "updates";
 type ThemePreference = "system" | "light" | "dark";
 
 type HostPreferences = {
@@ -127,6 +187,10 @@ type HostPreferences = {
   localExecution: boolean;
   routeEgressLocally: boolean;
   securityKeys: boolean;
+  webauthnProxyEnabled: boolean;
+  localToolPermission: "never" | "ask" | "always";
+  remoteControlEnabled: boolean;
+  aiComputerControlEnabled: boolean;
   autoReviewRules: Array<{ id: string; behavior: "allow" | "ask"; text: string }>;
 };
 
@@ -137,6 +201,10 @@ const defaultPreferences: HostPreferences = {
   localExecution: true,
   routeEgressLocally: false,
   securityKeys: false,
+  webauthnProxyEnabled: false,
+  localToolPermission: "ask",
+  remoteControlEnabled: false,
+  aiComputerControlEnabled: true,
   autoReviewRules: [],
 };
 
@@ -179,6 +247,44 @@ function automationRunLabel(automation: AutomationSummary): string {
   return automation.nextRunAtMs
     ? `下次 ${new Date(automation.nextRunAtMs).toLocaleString()}`
     : "等待调度";
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function mcpServerName(value: unknown): string {
+  const server = objectValue(value);
+  for (const key of ["name", "server", "id", "serverName", "identifier"]) {
+    if (typeof server[key] === "string" && String(server[key]).trim()) return String(server[key]);
+  }
+  return "MCP Server";
+}
+
+function mcpServerStatus(value: unknown): string {
+  const server = objectValue(value);
+  for (const key of ["status", "state", "authStatus", "connectionStatus"]) {
+    if (typeof server[key] === "string" && String(server[key]).trim()) return String(server[key]);
+  }
+  return "unknown";
+}
+
+function mcpServerTools(value: unknown): string[] {
+  const tools = objectValue(value).tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.map((tool) => {
+    if (typeof tool === "string") return tool;
+    const record = objectValue(tool);
+    return typeof record.name === "string" ? record.name : "tool";
+  });
+}
+
+function formatElapsedMs(value: number): string {
+  const seconds = Math.max(0, Math.floor(value / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function updateStateCopy(state: UpdateState): {
@@ -230,7 +336,8 @@ function Icon({
     | "attach"
     | "network"
     | "automation"
-    | "computer";
+    | "computer"
+    | "bell";
   size?: number;
 }) {
   const paths = {
@@ -246,6 +353,7 @@ function Icon({
     network: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="m10.8 7.2-4.5 8.4m6.9-8.4 4.5 8.4M7.5 18h9" /></>,
     automation: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2M5.5 5.5 3 3m15.5 2.5L21 3" /></>,
     computer: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
   };
   return (
     <svg
@@ -300,6 +408,7 @@ export default function HostClient() {
     screenshotMode === "running" ? "operation-screenshot" : null,
   );
   const [operationState, setOperationState] = useState(screenshotMode === "running" ? "running" : "idle");
+  const [chatDispatching, setChatDispatching] = useState(false);
   const [sessionState, setSessionState] = useState("active");
   const [featureStates, setFeatureStates] = useState<FeatureStates>(
     createInitialFeatureStates,
@@ -308,12 +417,40 @@ export default function HostClient() {
   const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [networkTargetId, setNetworkTargetId] = useState("");
+  const [networkMessage, setNetworkMessage] = useState("");
+  const [networkPriority, setNetworkPriority] = useState(false);
+  const [peerMessages, setPeerMessages] = useState<AgentPeerMessage[]>([]);
+  const [backgroundWorkingAgents, setBackgroundWorkingAgents] = useState<Set<string>>(() => new Set());
+  const [backgroundPreviews, setBackgroundPreviews] = useState<Record<string, { agentId: string; text: string }>>({});
+  const [lastBroadcastResult, setLastBroadcastResult] = useState<{ total: number; scheduled: number } | null>(null);
+  const [subagentAgentId, setSubagentAgentId] = useState<string | null>(null);
+  const [subagents, setSubagents] = useState<SubagentSummary[]>([]);
+  const [asyncTasks, setAsyncTasks] = useState<AsyncTaskSummary[]>([]);
+  const [teachStatus, setTeachStatus] = useState<TeachRecordingStatus>({ state: "idle", maxDurationMs: 600_000 });
+  const [teachResult, setTeachResult] = useState<TeachRecordingResult | null>(null);
+  const [teachClockMs, setTeachClockMs] = useState(() => Date.now());
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [trays, setTrays] = useState<ErrorTray[]>([]);
   const [automationOpen, setAutomationOpen] = useState(screenshotMode === "automation");
   const [computerOpen, setComputerOpen] = useState(screenshotComputerOpen);
+  const [computerStatus, setComputerStatus] = useState<ComputerStatus | null>(null);
+  const [computerSnapshot, setComputerSnapshot] = useState<ComputerSnapshot | null>(null);
+  const [computerRefreshing, setComputerRefreshing] = useState(false);
+  const [remoteDesktopState, setRemoteDesktopState] = useState<RemoteComputerDesktopState | null>(null);
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
+  const [agentName, setAgentName] = useState("");
   const [agentTitle, setAgentTitle] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
   const [agentNotifications, setAgentNotifications] = useState(true);
+  const [agentMemories, setAgentMemories] = useState<MemoryRecord[]>([]);
+  const [agentMemoryForId, setAgentMemoryForId] = useState<string | null>(null);
+  const [agentMemoryCount, setAgentMemoryCount] = useState(0);
+  const [agentMemoryLocation, setAgentMemoryLocation] = useState<string | null>(null);
+  const [agentMemoryDraft, setAgentMemoryDraft] = useState("");
+  const [agentMemoryKind, setAgentMemoryKind] = useState<MemoryKind>("profile");
+  const [agentWorkflows, setAgentWorkflows] = useState<WorkflowSummary[]>([]);
+  const [agentWorkflowForId, setAgentWorkflowForId] = useState<string | null>(null);
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
@@ -329,7 +466,17 @@ export default function HostClient() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [mcpServers, setMcpServers] = useState<unknown[]>([]);
+  const [mcpApps, setMcpApps] = useState<unknown[]>([]);
+  const [mcpToolServer, setMcpToolServer] = useState("");
+  const [mcpToolName, setMcpToolName] = useState("");
+  const [mcpToolArguments, setMcpToolArguments] = useState("{}");
+  const [mcpToolResult, setMcpToolResult] = useState("");
   const [preferences, setPreferences] = useState<HostPreferences>(defaultPreferences);
+  const [hostSettingsHydrated, setHostSettingsHydrated] = useState(false);
+  const lastHostSettingsJsonRef = useRef("");
+  const [auditRecords, setAuditRecords] = useState<unknown[]>([]);
+  const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [ruleDraft, setRuleDraft] = useState("");
   const [ruleBehavior, setRuleBehavior] = useState<"allow" | "ask">("allow");
   const [activeAgentId, setActiveAgentId] = useState("mahayana-assistant");
@@ -341,6 +488,10 @@ export default function HostClient() {
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [skillTeams, setSkillTeams] = useState<SkillTeamSummary[]>([]);
   const [bots, setBots] = useState<BotSummary[]>([]);
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [groupEditorId, setGroupEditorId] = useState<"new" | string | null>(null);
+  const [groupPreviews, setGroupPreviews] = useState<Record<string, { groupId: string; memberId: string; memberName: string; text: string }>>({});
   const [listenerIntegrations, setListenerIntegrations] = useState<ListenerIntegrationSummary[]>([]);
   const [connectingListeners, setConnectingListeners] = useState<Set<ListenerPlatform>>(
     () => new Set(),
@@ -356,6 +507,21 @@ export default function HostClient() {
   const [automationEventFilter, setAutomationEventFilter] = useState("");
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
   const [conversationSearch, setConversationSearch] = useState("");
+  const [searchMessageMatches, setSearchMessageMatches] = useState<SearchMessageMatch[]>([]);
+  const [searchMediaMatches, setSearchMediaMatches] = useState<SearchMediaMatch[]>([]);
+  const [searchPending, setSearchPending] = useState(false);
+  const searchQueryRef = useRef("");
+  const botsRef = useRef<BotSummary[]>([]);
+  const preferencesRef = useRef(preferences);
+  const activeAgentIdRef = useRef(activeAgentId);
+  const activeGroupIdRef = useRef(activeGroupId);
+  const agentWorkflowForIdRef = useRef<string | null>(null);
+  const notificationDeciderRef = useRef(new SandOsNotificationDecider());
+  const notificationSnapshotsRef = useRef(new Map<string, SandAgentNotificationSnapshot>());
+  const notificationOperationAgentsRef = useRef(new Map<string, string>());
+  const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const computerRefreshInFlightRef = useRef(false);
+  const remoteDesktopControllerRef = useRef<RemoteComputerDesktopController | null>(null);
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [selectedModel, setSelectedModel] = useState("auto");
   const [attachments, setAttachments] = useState<AttachmentContext[]>([]);
@@ -365,6 +531,50 @@ export default function HostClient() {
     contextWindow?: number;
     model: string;
   } | null>(null);
+
+  const notificationSnapshot = (
+    agentId: string,
+    patch: Partial<SandAgentNotificationSnapshot> = {},
+  ): SandAgentNotificationSnapshot => {
+    const bot = botsRef.current.find((candidate) => candidate.id === agentId);
+    const current = notificationSnapshotsRef.current.get(agentId);
+    return {
+      id: agentId,
+      name: bot?.name ?? current?.name ?? agentId,
+      isRunning: current?.isRunning ?? false,
+      awaitingReason: current?.awaitingReason ?? null,
+      lastMessageId: current?.lastMessageId ?? null,
+      lastMessagePreview: current?.lastMessagePreview ?? null,
+      notifyEnabled: preferencesRef.current.notifyOnUpdates && (bot?.notificationsEnabled ?? current?.notifyEnabled ?? true),
+      isHiddenFromSidebar: bot?.hidden ?? current?.isHiddenFromSidebar ?? false,
+      ...patch,
+    };
+  };
+
+  const queueNotificationSnapshot = (
+    agentId: string,
+    patch: Partial<SandAgentNotificationSnapshot>,
+    allowNotification: boolean,
+  ) => {
+    const snapshot = notificationSnapshot(agentId, patch);
+    notificationSnapshotsRef.current.set(agentId, snapshot);
+    notificationQueueRef.current = notificationQueueRef.current
+      .catch(() => {})
+      .then(async () => {
+        const isWindowFocused = allowNotification
+          ? await transport.windowFocused().catch(() => document.hasFocus())
+          : true;
+        const transitions = notificationDeciderRef.current.decideAgent(snapshot, {
+          isWindowFocused,
+          nowMs: Date.now(),
+        });
+        if (!allowNotification) return;
+        for (const transition of transitions) {
+          const content = buildNotificationContent(transition);
+          await transport.showNotification(content.title, content.body).catch(() => {});
+        }
+      });
+  };
 
   useEffect(() => {
     try {
@@ -378,11 +588,212 @@ export default function HostClient() {
   }, []);
 
   useEffect(() => {
+    preferencesRef.current = preferences;
     window.localStorage.setItem(
       "fabushi.host.preferences.v1",
       JSON.stringify(preferences),
     );
-  }, [preferences]);
+    if (!hostSettingsHydrated) return;
+    const settings: ProductHostSettings = {
+      notifications: preferences.notifyOnUpdates,
+      autoUpdateWhenIdle: preferences.autoUpdateWhenIdle,
+      localExecution: preferences.localExecution,
+      routeEgressLocally: preferences.routeEgressLocally,
+      securityKeys: preferences.securityKeys,
+      webauthnProxyEnabled: preferences.webauthnProxyEnabled,
+      localToolPermission: preferences.localToolPermission,
+      remoteControlEnabled: preferences.remoteControlEnabled,
+      aiComputerControlEnabled: preferences.aiComputerControlEnabled,
+      autoReviewRules: preferences.autoReviewRules,
+    };
+    const serialized = JSON.stringify(settings);
+    if (serialized === lastHostSettingsJsonRef.current) return;
+    lastHostSettingsJsonRef.current = serialized;
+    void transport.execute({
+      type: "settings.update",
+      requestId: `settings-update-${Date.now()}`,
+      settings,
+    }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [preferences, hostSettingsHydrated, transport]);
+
+  useEffect(() => {
+    const existing = remoteDesktopControllerRef.current;
+    if (
+      !hostSettingsHydrated ||
+      hostStatus !== "ready" ||
+      !auth?.loggedIn ||
+      !preferences.remoteControlEnabled
+    ) {
+      remoteDesktopControllerRef.current = null;
+      if (existing) void existing.stop();
+      setRemoteDesktopState(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new RemoteComputerDesktopController({
+      transport,
+      label: `${auth.user?.nickname || auth.user?.username || "Fabushi"} 的 Mac`,
+      onState: (state) => {
+        if (!cancelled) setRemoteDesktopState(state);
+      },
+    });
+    remoteDesktopControllerRef.current = controller;
+    const settings: ProductHostSettings = {
+      notifications: preferences.notifyOnUpdates,
+      autoUpdateWhenIdle: preferences.autoUpdateWhenIdle,
+      localExecution: preferences.localExecution,
+      routeEgressLocally: preferences.routeEgressLocally,
+      securityKeys: preferences.securityKeys,
+      webauthnProxyEnabled: preferences.webauthnProxyEnabled,
+      localToolPermission: preferences.localToolPermission,
+      remoteControlEnabled: true,
+      aiComputerControlEnabled: preferences.aiComputerControlEnabled,
+      autoReviewRules: preferences.autoReviewRules,
+    };
+    void (async () => {
+      await transport.execute({
+        type: "settings.update",
+        requestId: `remote-settings-${Date.now()}`,
+        settings,
+      });
+      if (!cancelled) await controller.start();
+    })().catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => {
+      cancelled = true;
+      if (remoteDesktopControllerRef.current === controller) {
+        remoteDesktopControllerRef.current = null;
+      }
+      void controller.stop();
+    };
+  }, [
+    auth?.loggedIn,
+    auth?.user?.nickname,
+    auth?.user?.username,
+    hostSettingsHydrated,
+    hostStatus,
+    preferences.remoteControlEnabled,
+    transport,
+  ]);
+
+  useEffect(() => {
+    botsRef.current = bots;
+  }, [bots]);
+
+  useEffect(() => {
+    activeAgentIdRef.current = activeAgentId;
+  }, [activeAgentId]);
+
+  useEffect(() => {
+    activeGroupIdRef.current = activeGroupId;
+  }, [activeGroupId]);
+
+  useEffect(() => {
+    agentWorkflowForIdRef.current = agentWorkflowForId;
+  }, [agentWorkflowForId]);
+
+  useEffect(() => {
+    if (teachStatus.state !== "recording") return;
+    setTeachClockMs(Date.now());
+    const timer = window.setInterval(() => setTeachClockMs(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [teachStatus.state, teachStatus.startedAtMs]);
+
+  useEffect(() => {
+    if (!computerOpen) return;
+    const agentId = bots.some((bot) => bot.id === activeAgentId)
+      ? activeAgentId
+      : "mahayana-assistant";
+    setSubagentAgentId(agentId);
+    const stamp = Date.now();
+    void Promise.all([
+      transport.execute({ type: "subagent.list", requestId: `subagent-list-${stamp}`, agentId }),
+      transport.execute({ type: "asyncTask.list", requestId: `async-task-list-${stamp}`, agentId }),
+      transport.execute({ type: "teach.status", requestId: `teach-status-${stamp}` }),
+      transport.execute({ type: "computer.status", requestId: `computer-status-${stamp}` }),
+    ]).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [computerOpen, activeAgentId, bots, transport]);
+
+  useEffect(() => {
+    if (!computerOpen) return;
+    let stopped = false;
+    const refreshStatus = async () => {
+      if (stopped) return;
+      try {
+        await transport.execute({ type: "computer.status", requestId: `computer-permission-status-${Date.now()}` });
+      } catch (cause) {
+        if (!stopped) setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    };
+    void refreshStatus();
+    const timer = window.setInterval(() => void refreshStatus(), 2_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [computerOpen, transport]);
+
+  useEffect(() => {
+    if (!computerOpen || !computerStatus?.captureSupported || !computerStatus.screenRecordingGranted) return;
+    let stopped = false;
+    const refresh = async () => {
+      if (stopped || computerRefreshInFlightRef.current) return;
+      computerRefreshInFlightRef.current = true;
+      setComputerRefreshing(true);
+      try {
+        await transport.execute({
+          type: "computer.screenshot",
+          requestId: `computer-snapshot-${Date.now()}`,
+          origin: "local-ui",
+        });
+      } catch (cause) {
+        if (!stopped) setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        computerRefreshInFlightRef.current = false;
+        if (!stopped) setComputerRefreshing(false);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 900);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [computerOpen, computerStatus?.captureSupported, computerStatus?.screenRecordingGranted, transport]);
+
+  useEffect(() => {
+    if (!settingsOpen || settingsSection !== "mcp") return;
+    const stamp = Date.now();
+    void Promise.all([
+      transport.execute({ type: "mcp.list", requestId: `mcp-list-${stamp}` }),
+      transport.execute({ type: "mcp.apps", requestId: `mcp-apps-${stamp}` }),
+    ]).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [settingsOpen, settingsSection, transport]);
+
+  useEffect(() => {
+    const query = conversationSearch.trim().toLowerCase();
+    searchQueryRef.current = query;
+    if (!query) {
+      setSearchMessageMatches([]);
+      setSearchMediaMatches([]);
+      setSearchPending(false);
+      return;
+    }
+    setSearchPending(true);
+    const timer = window.setTimeout(() => {
+      const stamp = Date.now();
+      void Promise.all([
+        transport.execute({ type: "search.messages", requestId: `global-message-search-${stamp}`, query, limit: 50 }),
+        transport.execute({ type: "search.media", requestId: `global-media-search-${stamp}`, query, limit: 50 }),
+      ]).catch((cause: unknown) => {
+        setSearchPending(false);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [conversationSearch, transport]);
 
   useEffect(() => {
     const pass = (featureId: MahayanaHostFeatureId) => {
@@ -399,6 +810,7 @@ export default function HostClient() {
           pass("runtime.boot");
           break;
         case "chat.message":
+          if (event.role === "assistant") setChatDispatching(false);
           setMessages((current) => {
             if (event.role === "assistant" && event.operationId) {
               const index = current.findIndex(
@@ -421,9 +833,21 @@ export default function HostClient() {
               },
             ];
           });
-          if (event.role === "assistant") pass("chat.send");
+          if (event.role === "assistant") {
+            pass("chat.send");
+            if (event.operationId) {
+              const agentId = notificationOperationAgentsRef.current.get(event.operationId) ?? activeAgentIdRef.current;
+              if (botsRef.current.some((bot) => bot.id === agentId)) {
+                queueNotificationSnapshot(agentId, {
+                  lastMessageId: event.operationId,
+                  lastMessagePreview: event.text,
+                }, false);
+              }
+            }
+          }
           break;
         case "chat.delta":
+          setChatDispatching(false);
           setMessages((current) => {
             const index = current.findIndex(
               (message) => message.operationId === event.operationId,
@@ -538,15 +962,289 @@ export default function HostClient() {
               : current.map((item, itemIndex) => itemIndex === index ? event.skill : item);
           });
           break;
-        case "bot.listed":
+        case "bot.listed": {
+          botsRef.current = event.bots;
           setBots(event.bots);
+          const baselines = event.bots.map((bot) => ({
+            id: bot.id,
+            name: bot.name,
+            isRunning: false,
+            awaitingReason: null,
+            lastMessageId: null,
+            lastMessagePreview: null,
+            notifyEnabled: preferencesRef.current.notifyOnUpdates && bot.notificationsEnabled,
+            isHiddenFromSidebar: bot.hidden,
+          } satisfies SandAgentNotificationSnapshot));
+          for (const baseline of baselines) notificationSnapshotsRef.current.set(baseline.id, baseline);
+          notificationDeciderRef.current.seedBaseline(baselines);
           break;
+        }
         case "bot.changed":
           setBots((current) => {
-            const index = current.findIndex((item) => item.id === event.bot.id);
+            const next = event.action === "deleted"
+              ? current.filter((item) => item.id !== event.bot.id)
+              : current.some((item) => item.id === event.bot.id)
+                ? current.map((item) => item.id === event.bot.id ? event.bot : item)
+                : [...current, event.bot];
+            botsRef.current = next;
+            return next;
+          });
+          if (event.action === "deleted") {
+            notificationSnapshotsRef.current.delete(event.bot.id);
+            notificationDeciderRef.current.forget(event.bot.id);
+          }
+          break;
+        case "group.listed":
+          setGroups(event.groups);
+          break;
+        case "group.changed":
+          setGroups((current) => {
+            if (event.action === "deleted") {
+              return current.filter((item) => item.id !== event.group.id);
+            }
+            const index = current.findIndex((item) => item.id === event.group.id);
             return index < 0
-              ? [...current, event.bot]
-              : current.map((item, itemIndex) => itemIndex === index ? event.bot : item);
+              ? [...current, event.group]
+              : current.map((item, itemIndex) => itemIndex === index ? event.group : item);
+          });
+          if (event.action === "deleted") {
+            setActiveGroupId((current) => current === event.group.id ? null : current);
+          }
+          if (event.action === "message" || event.action.startsWith("turnFailed:")) {
+            setGroupPreviews((current) => Object.fromEntries(
+              Object.entries(current).filter(([, preview]) => preview.groupId !== event.group.id),
+            ));
+          }
+          break;
+        case "group.delta":
+          setGroupPreviews((current) => ({
+            ...current,
+            [event.operationId]: {
+              groupId: event.groupId,
+              memberId: event.memberId,
+              memberName: event.memberName,
+              text: `${current[event.operationId]?.text ?? ""}${event.delta}`,
+            },
+          }));
+          break;
+        case "agent.peerMessage":
+          setPeerMessages((current) => [...current.filter((message) => message.id !== event.message.id), event.message].slice(-300));
+          break;
+        case "agent.peerHistory":
+          setPeerMessages(event.messages.slice(-300));
+          break;
+        case "agent.broadcasted":
+          setLastBroadcastResult(event.result);
+          break;
+        case "agent.backgroundStarted":
+          setBackgroundWorkingAgents((current) => new Set(current).add(event.agentId));
+          queueNotificationSnapshot(event.agentId, {
+            isRunning: true,
+            awaitingReason: null,
+          }, false);
+          break;
+        case "agent.backgroundDelta":
+          setBackgroundWorkingAgents((current) => new Set(current).add(event.agentId));
+          setBackgroundPreviews((current) => ({
+            ...current,
+            [event.operationId]: {
+              agentId: event.agentId,
+              text: `${current[event.operationId]?.text ?? ""}${event.delta}`,
+            },
+          }));
+          if (activeAgentIdRef.current === event.agentId && !activeGroupIdRef.current) {
+            setMessages((current) => {
+              const index = current.findIndex((message) => message.operationId === event.operationId);
+              if (index < 0) {
+                return [...current, { role: "assistant", text: event.delta, operationId: event.operationId }];
+              }
+              return current.map((message, messageIndex) => messageIndex === index
+                ? { ...message, text: `${message.text}${event.delta}` }
+                : message);
+            });
+          }
+          break;
+        case "agent.backgroundMessage":
+          setBackgroundWorkingAgents((current) => new Set(current).add(event.agentId));
+          setBackgroundPreviews((current) => ({ ...current, [event.operationId]: { agentId: event.agentId, text: event.text } }));
+          queueNotificationSnapshot(event.agentId, {
+            isRunning: true,
+            lastMessageId: event.operationId,
+            lastMessagePreview: event.text,
+          }, false);
+          if (activeAgentIdRef.current === event.agentId && !activeGroupIdRef.current) {
+            setMessages((current) => {
+              const index = current.findIndex((message) => message.operationId === event.operationId);
+              return index < 0
+                ? [...current, { role: "assistant", text: event.text, operationId: event.operationId }]
+                : current.map((message, messageIndex) => messageIndex === index ? { ...message, text: event.text } : message);
+            });
+          }
+          break;
+        case "agent.backgroundFinished":
+          setBackgroundWorkingAgents((current) => {
+            const next = new Set(current);
+            next.delete(event.agentId);
+            return next;
+          });
+          setBackgroundPreviews((current) => {
+            const next = { ...current };
+            delete next[event.operationId];
+            return next;
+          });
+          queueNotificationSnapshot(event.agentId, {
+            isRunning: false,
+          }, !event.error);
+          if (event.error) setError(`${event.agentName}: ${event.error}`);
+          break;
+        case "subagent.listed":
+          setSubagentAgentId(event.agentId);
+          setSubagents(event.subagents);
+          break;
+        case "subagent.changed":
+          if (event.subagent.parentAgentId === subagentAgentId || event.subagent.parentAgentId === activeAgentIdRef.current) {
+            setSubagentAgentId(event.subagent.parentAgentId);
+            setSubagents((current) => {
+              const index = current.findIndex((subagent) => subagent.id === event.subagent.id);
+              return index < 0
+                ? [...current, event.subagent]
+                : current.map((subagent, subagentIndex) => subagentIndex === index ? event.subagent : subagent);
+            });
+          }
+          break;
+        case "asyncTask.listed":
+        case "asyncTask.changed":
+          if (event.agentId === subagentAgentId || event.agentId === activeAgentIdRef.current) {
+            setSubagentAgentId(event.agentId);
+            setAsyncTasks(event.tasks);
+          }
+          break;
+        case "teach.changed":
+          setTeachStatus(event.status);
+          if (event.result) {
+            setTeachResult(event.result);
+            if (event.result.saved) {
+              void transport.execute({ type: "workflow.list", requestId: `teach-workflow-refresh-${Date.now()}`, agentId: event.result.agentId }).catch(() => {});
+            }
+          }
+          break;
+        case "computer.status":
+          setComputerStatus(event.status);
+          break;
+        case "computer.snapshot":
+          setComputerSnapshot(event.snapshot);
+          break;
+        case "computer.result":
+          setComputerSnapshot(event.result.snapshot);
+          break;
+        case "memory.listed":
+          setAgentMemoryForId(event.agentId);
+          setAgentMemories(event.memories);
+          setAgentMemoryCount(event.count);
+          setAgentMemoryLocation(event.location ?? null);
+          break;
+        case "memory.changed":
+          void transport.execute({
+            type: "memory.list",
+            requestId: `memory-refresh-${Date.now()}`,
+            agentId: event.agentId,
+            limit: 1000,
+          }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          break;
+        case "workflow.listed":
+          setAgentWorkflowForId(event.agentId);
+          setAgentWorkflows(event.workflows);
+          break;
+        case "workflow.changed":
+          if (event.agentId === agentWorkflowForIdRef.current) {
+            setAgentWorkflows((current) => {
+              if (event.action === "deleted" && event.id) {
+                return current.filter((workflow) => workflow.id !== event.id);
+              }
+              if (event.workflow) {
+                const index = current.findIndex((workflow) => workflow.id === event.workflow!.id && workflow.source === event.workflow!.source);
+                return index < 0
+                  ? [...current, event.workflow]
+                  : current.map((workflow, workflowIndex) => workflowIndex === index ? event.workflow! : workflow);
+              }
+              return current;
+            });
+          }
+          if (event.workflow?.source === "automation" || event.action === "deleted") {
+            void transport.execute({
+              type: "automation.list",
+              requestId: `automation-refresh-${Date.now()}`,
+            }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          }
+          break;
+        case "search.messages":
+          if (event.query === searchQueryRef.current) {
+            setSearchMessageMatches(event.matches);
+            setSearchPending(false);
+          }
+          break;
+        case "search.media":
+          if (event.query === searchQueryRef.current) {
+            setSearchMediaMatches(event.matches);
+          }
+          break;
+        case "mcp.listed":
+          setMcpServers(event.servers);
+          if (event.servers.length) setMcpToolServer((current) => current || mcpServerName(event.servers[0]));
+          break;
+        case "mcp.apps":
+          setMcpApps(event.apps);
+          break;
+        case "mcp.oauth":
+          if (event.authorizationUrl) {
+            void transport.openExternal(event.authorizationUrl).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          }
+          void transport.execute({ type: "mcp.list", requestId: `mcp-list-${Date.now()}` }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          break;
+        case "mcp.refreshed":
+          void Promise.all([
+            transport.execute({ type: "mcp.list", requestId: `mcp-list-${Date.now()}` }),
+            transport.execute({ type: "mcp.apps", requestId: `mcp-apps-${Date.now()}` }),
+          ]).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+          break;
+        case "mcp.toolResult":
+          setMcpToolResult(JSON.stringify(event.result, null, 2));
+          break;
+        case "settings.changed":
+          lastHostSettingsJsonRef.current = JSON.stringify(event.settings);
+          setHostSettingsHydrated(true);
+          setPreferences((current) => ({
+            ...current,
+            notifyOnUpdates: event.settings.notifications,
+            autoUpdateWhenIdle: event.settings.autoUpdateWhenIdle,
+            localExecution: event.settings.localExecution,
+            routeEgressLocally: event.settings.routeEgressLocally,
+            securityKeys: event.settings.securityKeys,
+            webauthnProxyEnabled: event.settings.webauthnProxyEnabled,
+            localToolPermission: event.settings.localToolPermission,
+            remoteControlEnabled: event.settings.remoteControlEnabled,
+            aiComputerControlEnabled: event.settings.aiComputerControlEnabled,
+            autoReviewRules: event.settings.autoReviewRules,
+          }));
+          break;
+        case "audit.listed":
+          setAuditAgentId(event.agentId);
+          setAuditRecords(event.records);
+          break;
+        case "tray.listed":
+          setTrays(event.trays);
+          break;
+        case "tray.changed":
+          setTrays((current) => {
+            if (event.action === "cleared") return [];
+            if (event.action === "dismissed" && event.id) return current.filter((tray) => tray.id !== event.id);
+            if (event.action === "pushed" && event.tray) {
+              const index = current.findIndex((tray) => tray.id === event.tray!.id);
+              return index < 0
+                ? [...current, event.tray]
+                : current.map((tray, trayIndex) => trayIndex === index ? event.tray! : tray);
+            }
+            return current;
           });
           break;
         case "listener.listed":
@@ -584,7 +1282,9 @@ export default function HostClient() {
           break;
         case "conversation.opened":
           setActiveConversationId(event.conversationId);
-          setActiveAgentId("mahayana-assistant");
+          setActiveAgentId(
+            botsRef.current.find((bot) => bot.conversationId === event.conversationId)?.id ?? "mahayana-assistant",
+          );
           setTranscriptCards([]);
           setMessages(
             event.messages.map((message) => ({
@@ -669,9 +1369,18 @@ export default function HostClient() {
         case "approval.requested":
           setApproval(event);
           setApprovalState("pending");
+          if (botsRef.current.some((bot) => bot.id === activeAgentIdRef.current)) {
+            queueNotificationSnapshot(activeAgentIdRef.current, {
+              isRunning: false,
+              awaitingReason: event.detail || event.reason || "Waiting for your input.",
+            }, true);
+          }
           break;
         case "approval.resolved":
           setApproval(null);
+          for (const [agentId, snapshot] of notificationSnapshotsRef.current) {
+            if (snapshot.awaitingReason) queueNotificationSnapshot(agentId, { awaitingReason: null }, false);
+          }
           setApprovalState(
             event.decision === "allow-once"
               ? "allowed-once"
@@ -681,32 +1390,54 @@ export default function HostClient() {
           );
           pass("capability.approval");
           break;
-        case "operation.started":
+        case "operation.started": {
+          setChatDispatching(false);
+          setOperationState("running");
           if (event.interruptible) {
             setActiveOperationId(event.operationId);
-            setOperationState("running");
+          }
+          const agentId = activeAgentIdRef.current;
+          if (botsRef.current.some((bot) => bot.id === agentId)) {
+            notificationOperationAgentsRef.current.set(event.operationId, agentId);
+            queueNotificationSnapshot(agentId, { isRunning: true, awaitingReason: null }, false);
           }
           break;
-        case "operation.interrupted":
+        }
+        case "operation.interrupted": {
+          setChatDispatching(false);
           setActiveOperationId(null);
           setOperationState("interrupted");
+          const agentId = notificationOperationAgentsRef.current.get(event.operationId);
+          if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, false);
+          notificationOperationAgentsRef.current.delete(event.operationId);
           pass("operation.interrupt");
           break;
-        case "operation.completed":
+        }
+        case "operation.completed": {
+          setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
           );
           setOperationState((current) =>
             current === "running" ? "completed" : current,
           );
+          const agentId = notificationOperationAgentsRef.current.get(event.operationId);
+          if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, true);
+          notificationOperationAgentsRef.current.delete(event.operationId);
           break;
-        case "operation.failed":
+        }
+        case "operation.failed": {
+          setChatDispatching(false);
           setActiveOperationId((current) =>
             current === event.operationId ? null : current,
           );
           setOperationState("failed");
+          const agentId = notificationOperationAgentsRef.current.get(event.operationId);
+          if (agentId) queueNotificationSnapshot(agentId, { isRunning: false }, false);
+          notificationOperationAgentsRef.current.delete(event.operationId);
           setError(`${event.code}: ${event.message}`);
           break;
+        }
         case "session.cleared":
           setSessionState("cleared");
           setAuth({ loggedIn: false });
@@ -756,6 +1487,18 @@ export default function HostClient() {
           transport.execute({
             type: "bot.list",
             requestId: "bot-list-initial",
+          }),
+          transport.execute({
+            type: "group.list",
+            requestId: "group-list-initial",
+          }),
+          transport.execute({
+            type: "tray.list",
+            requestId: "tray-list-initial",
+          }),
+          transport.execute({
+            type: "settings.get",
+            requestId: "settings-get-initial",
           }),
           transport.execute({
             type: "listener.list",
@@ -858,10 +1601,12 @@ export default function HostClient() {
     const text = input.trim();
     if (!text) return;
     setInput("");
+    setChatDispatching(true);
     const outgoingAttachments = attachments;
     setAttachments([]);
-    await run(() =>
-      execute({
+    setError(null);
+    try {
+      await execute({
         type: "chat.send",
         requestId: nextRequestId("chat"),
         text,
@@ -873,26 +1618,85 @@ export default function HostClient() {
         ),
         model: selectedModel === "auto" ? undefined : selectedModel,
         attachments: outgoingAttachments,
-      }),
-    );
+      });
+    } catch (cause: unknown) {
+      setChatDispatching(false);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   const attachFiles = async (files: FileList | null) => {
     if (!files?.length) return;
+    const ownerId = bots.some((bot) => bot.id === activeAgentId)
+      ? activeAgentId
+      : "mahayana-assistant";
     const next: AttachmentContext[] = [];
     for (const file of [...files].slice(0, 6)) {
-      if (file.size > 1_500_000) {
-        setError(`${file.name} 超过 1.5 MB，暂未添加`);
+      const byteLimit = attachmentLooksLikeVideo(file.name)
+        ? VIDEO_ATTACHMENT_BYTE_LIMIT
+        : ATTACHMENT_BYTE_LIMIT;
+      if (!file.size) {
+        setError(`“${file.name}” 是空文件，未添加。`);
         continue;
       }
-      next.push({
-        id: `${file.name}-${file.lastModified}-${file.size}`,
-        name: file.name,
-        mimeType: file.type || undefined,
-        text: await file.text(),
-      });
+      if (file.size > byteLimit) {
+        setError(`“${file.name}” 超过附件上限（${Math.round(byteLimit / 1024 / 1024)} MB）。`);
+        continue;
+      }
+      try {
+        let cancelStoredWait = () => {};
+        const stored = new Promise<AttachmentContext>((resolve, reject) => {
+          let unsubscribe = () => {};
+          const timeout = window.setTimeout(() => {
+            unsubscribe();
+            reject(new Error(`等待 ${file.name} 写入 Host 超时`));
+          }, 20_000);
+          cancelStoredWait = () => {
+            window.clearTimeout(timeout);
+            unsubscribe();
+          };
+          unsubscribe = transport.subscribe((event) => {
+            if (
+              event.type !== "attachment.stored" ||
+              event.attachment.agentId !== ownerId ||
+              event.attachment.name !== file.name
+            ) return;
+            cancelStoredWait();
+            resolve({
+              id: event.attachment.id,
+              name: event.attachment.name,
+              mimeType: event.attachment.mimeType,
+              path: event.attachment.path,
+              sizeBytes: event.attachment.sizeBytes,
+            });
+          });
+        });
+        try {
+          await execute({
+            type: "attachment.upload",
+            requestId: nextRequestId("attachment-upload"),
+            agentId: ownerId,
+            filename: file.name,
+            mimeType: file.type || undefined,
+            bytesBase64: await fileToBase64(file),
+          });
+        } catch (cause) {
+          cancelStoredWait();
+          void stored.catch(() => {});
+          throw cause;
+        }
+        const attachment = await stored;
+        if (attachmentLooksTextPreviewable(file)) {
+          attachment.text = await file.slice(0, ATTACHMENT_TEXT_PREVIEW_BYTES).text();
+        }
+        next.push(attachment);
+      } catch (cause: unknown) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     }
-    setAttachments((current) => [...current, ...next].slice(0, 6));
+    if (next.length) {
+      setAttachments((current) => [...current, ...next].slice(0, 6));
+    }
     if (attachmentInput.current) attachmentInput.current.value = "";
   };
 
@@ -1098,11 +1902,325 @@ export default function HostClient() {
   const visibleSidebarBots = bots.filter(
     (bot) => !bot.hidden && bot.id !== "mahayana-assistant",
   );
+  const currentRunningActivity = [...activity]
+    .reverse()
+    .find((item) => item.status === "running");
+  const activeBotState: BotMarkState = chatDispatching
+    ? "thinking"
+    : activeOperationId || operationState === "running"
+      ? botMarkStateFromActivity(currentRunningActivity)
+      : operationState === "failed" || operationState === "interrupted"
+      ? "waking"
+      : "idle";
+  const activeBotMarkId = activeAgentId || "mahayana-assistant";
+  const activeBotProfile = bots.find((bot) => bot.id === activeBotMarkId);
+  const primaryBotProfile = bots.find((bot) => bot.id === "mahayana-assistant");
+  const activeBotShape = activeBotProfile?.avatarShape as BotMarkShape | undefined;
+  const activeBotColor = activeBotProfile?.avatarColor as BotMarkColor | undefined;
+  const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
+  const editingGroup = groupEditorId && groupEditorId !== "new"
+    ? groups.find((group) => group.id === groupEditorId)
+    : undefined;
+  const activeGroupPreviews = Object.fromEntries(
+    Object.entries(groupPreviews)
+      .filter(([, preview]) => preview.groupId === activeGroupId)
+      .map(([operationId, preview]) => [operationId, {
+        memberId: preview.memberId,
+        memberName: preview.memberName,
+        text: preview.text,
+      }]),
+  );
+  const networkSender = activeBotProfile ?? primaryBotProfile;
+  const networkTargets = networkSender
+    ? [
+        ...bots.filter((bot) => bot.id !== networkSender.id),
+        ...groups
+          .filter((group) => group.memberIds.includes(networkSender.id))
+          .map((group) => ({
+            id: group.id,
+            name: group.name,
+            description: group.description || `${group.memberIds.length} 个成员`,
+            title: "Group",
+            hidden: false,
+            notificationsEnabled: false,
+          } satisfies BotSummary)),
+      ]
+    : [];
+
+  const openAgentNetwork = () => {
+    if (networkSender) {
+      setNetworkTargetId((current) => current && current !== networkSender.id ? current : networkTargets[0]?.id ?? "");
+      void run(() => execute({
+        type: "agent.peerHistory",
+        requestId: nextRequestId("peer-history"),
+        agentId: networkSender.id,
+        limit: 300,
+      }));
+    }
+    setNetworkOpen(true);
+  };
+
+  const sendNetworkMessage = async () => {
+    if (!networkSender || !networkTargetId || !networkMessage.trim()) return;
+    const text = networkMessage;
+    setNetworkMessage("");
+    await run(() => execute({
+      type: "agent.send",
+      requestId: nextRequestId("agent-send"),
+      fromAgentId: networkSender.id,
+      targetId: networkTargetId,
+      text,
+      priority: networkPriority,
+    }));
+  };
+
+  const broadcastNetworkMessage = async () => {
+    if (!networkMessage.trim()) return;
+    const message = networkMessage;
+    setNetworkMessage("");
+    setLastBroadcastResult(null);
+    await run(() => execute({
+      type: "agent.broadcast",
+      requestId: nextRequestId("agent-broadcast"),
+      message,
+    }));
+  };
+
+  const saveGroup = async (draft: { name: string; description: string; memberIds: string[] }) => {
+    if (groupEditorId && groupEditorId !== "new") {
+      await run(() => execute({
+        type: "group.update",
+        requestId: nextRequestId("group-update"),
+        id: groupEditorId,
+        ...draft,
+      }));
+    } else {
+      await run(() => execute({
+        type: "group.create",
+        requestId: nextRequestId("group-create"),
+        ...draft,
+      }));
+    }
+    setGroupEditorId(null);
+  };
+
+  const sendGroupMessage = async (text: string) => {
+    if (!activeGroup) return;
+    await run(() => execute({
+      type: "group.send",
+      requestId: nextRequestId("group-send"),
+      id: activeGroup.id,
+      text,
+    }));
+  };
+
+  const deleteActiveGroup = () => {
+    if (!activeGroup || !window.confirm(`永久删除群聊 ${activeGroup.name}？`)) return;
+    void run(() => execute({
+      type: "group.delete",
+      requestId: nextRequestId("group-delete"),
+      id: activeGroup.id,
+    }));
+  };
+
+  const openAgentSettings = () => {
+    setAgentName(activeBotProfile?.name ?? (activeAgent ? `${activeAgent.title}机器人` : "大乘助手"));
+    setAgentTitle(activeBotProfile?.title ?? "");
+    setAgentDescription(activeBotProfile?.description ?? "");
+    setAgentNotifications(activeBotProfile?.notificationsEnabled ?? true);
+    setAgentSettingsOpen(true);
+    if (activeBotProfile) {
+      setAgentMemoryForId(activeBotProfile.id);
+      void run(() => execute({
+        type: "memory.list",
+        requestId: nextRequestId("memory-list"),
+        agentId: activeBotProfile.id,
+        limit: 1000,
+      }));
+      setAgentWorkflowForId(activeBotProfile.id);
+      void run(() => execute({
+        type: "workflow.list",
+        requestId: nextRequestId("workflow-list"),
+        agentId: activeBotProfile.id,
+      }));
+      setAuditAgentId(activeBotProfile.id);
+      void run(() => execute({
+        type: "audit.list",
+        requestId: nextRequestId("audit-list"),
+        agentId: activeBotProfile.id,
+        limit: 100,
+      }));
+    }
+  };
+
+  const updateActiveBotProfile = (patch: Partial<Pick<BotSummary, "name" | "title" | "description" | "notificationsEnabled">>) => {
+    if (!activeBotProfile) return;
+    void run(() => execute({
+      type: "bot.update",
+      requestId: nextRequestId("bot-profile"),
+      id: activeBotProfile.id,
+      ...patch,
+    }));
+  };
+
+  const addAgentMemory = () => {
+    if (!activeBotProfile || !agentMemoryDraft.trim()) return;
+    const content = agentMemoryDraft;
+    setAgentMemoryDraft("");
+    void run(() => execute({
+      type: "memory.add",
+      requestId: nextRequestId("memory-add"),
+      agentId: activeBotProfile.id,
+      content,
+      kind: agentMemoryKind,
+    }));
+  };
+
+  const removeAgentMemory = (id: string) => {
+    if (!activeBotProfile) return;
+    void run(() => execute({
+      type: "memory.remove",
+      requestId: nextRequestId("memory-remove"),
+      agentId: activeBotProfile.id,
+      id,
+    }));
+  };
+
+  const clearAgentMemory = () => {
+    if (!activeBotProfile || !window.confirm(`清空 ${activeBotProfile.name} 的全部记忆？`)) return;
+    void run(() => execute({
+      type: "memory.clear",
+      requestId: nextRequestId("memory-clear"),
+      agentId: activeBotProfile.id,
+    }));
+  };
+
+  const refreshAgentWorkflows = () => {
+    if (!activeBotProfile) return;
+    setAgentWorkflowForId(activeBotProfile.id);
+    void run(() => execute({
+      type: "workflow.list",
+      requestId: nextRequestId("workflow-list"),
+      agentId: activeBotProfile.id,
+    }));
+  };
+
+  const saveAgentWorkflow = async (draft: {
+    id?: string;
+    name: string;
+    description: string;
+    body: string;
+    trigger?: WorkflowTrigger;
+    sourceRef?: string;
+  }) => {
+    if (!activeBotProfile) return;
+    await run(() => execute({
+      type: "workflow.upsert",
+      requestId: nextRequestId("workflow-upsert"),
+      agentId: activeBotProfile.id,
+      ...draft,
+    }));
+    refreshAgentWorkflows();
+  };
+
+  const setAgentWorkflowEnabled = async (id: string, enabled: boolean) => {
+    if (!activeBotProfile) return;
+    await run(() => execute({
+      type: "workflow.setEnabled",
+      requestId: nextRequestId("workflow-toggle"),
+      agentId: activeBotProfile.id,
+      id,
+      enabled,
+    }));
+    refreshAgentWorkflows();
+  };
+
+  const runAgentWorkflow = async (id: string) => {
+    if (!activeBotProfile) return;
+    setChatDispatching(true);
+    await run(() => execute({
+      type: "workflow.run",
+      requestId: nextRequestId("workflow-run"),
+      agentId: activeBotProfile.id,
+      id,
+    }));
+  };
+
+  const deleteAgentWorkflow = async (id: string) => {
+    if (!activeBotProfile) return;
+    await run(() => execute({
+      type: "workflow.delete",
+      requestId: nextRequestId("workflow-delete"),
+      agentId: activeBotProfile.id,
+      id,
+    }));
+    refreshAgentWorkflows();
+  };
+
+  const importAgentWorkflowMarkdown = async (markdown: string, fallbackName?: string) => {
+    if (!activeBotProfile) return;
+    await run(() => execute({
+      type: "workflow.importMarkdown",
+      requestId: nextRequestId("workflow-import"),
+      agentId: activeBotProfile.id,
+      markdown,
+      fallbackName,
+    }));
+    refreshAgentWorkflows();
+  };
+
+  const importAgentWorkflowLiveSource = async (source: string, fallbackName?: string) => {
+    if (!activeBotProfile) return;
+    await run(() => execute({
+      type: "workflow.importLiveSource",
+      requestId: nextRequestId("workflow-live"),
+      agentId: activeBotProfile.id,
+      source,
+      fallbackName,
+    }));
+    refreshAgentWorkflows();
+  };
+
+  const callMcpTool = async () => {
+    if (!mcpToolServer.trim() || !mcpToolName.trim()) return;
+    let argumentsValue: unknown = {};
+    try {
+      argumentsValue = mcpToolArguments.trim() ? JSON.parse(mcpToolArguments) : {};
+    } catch {
+      setError("MCP 工具参数必须是有效 JSON。");
+      return;
+    }
+    setMcpToolResult("");
+    await run(() => execute({
+      type: "mcp.toolCall",
+      requestId: nextRequestId("mcp-tool"),
+      server: mcpToolServer.trim(),
+      tool: mcpToolName.trim(),
+      arguments: argumentsValue,
+    }));
+  };
 
   const setPreference = <Key extends keyof HostPreferences>(
     key: Key,
     value: HostPreferences[Key],
   ) => setPreferences((current) => ({ ...current, [key]: value }));
+
+  const clickComputerSnapshot = (event: React.MouseEvent<HTMLImageElement>) => {
+    if (!computerSnapshot || !computerStatus?.inputSupported || !computerStatus.accessibilityGranted) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const sourceWidth = computerSnapshot.width ?? Math.round(bounds.width);
+    const sourceHeight = computerSnapshot.height ?? Math.round(bounds.height);
+    const x = Math.max(0, Math.min(sourceWidth - 1, Math.round((event.clientX - bounds.left) / bounds.width * sourceWidth)));
+    const y = Math.max(0, Math.min(sourceHeight - 1, Math.round((event.clientY - bounds.top) / bounds.height * sourceHeight)));
+    void run(() => execute({
+      type: "computer.action",
+      requestId: nextRequestId("computer-click"),
+      origin: "local-ui",
+      agentId: activeBotMarkId,
+      action: { action: "click", x, y, button: "left", count: 1, description: "User clicked the local computer preview" },
+    }));
+  };
 
   const addAutoReviewRule = () => {
     const text = ruleDraft.trim();
@@ -1188,7 +2306,11 @@ export default function HostClient() {
           </div>
           <strong>Fabushi</strong>
           <div className={styles.titleActions}>
-            <button className={styles.iconButton} type="button" aria-label="智能体网络" onClick={() => setNetworkOpen(true)}>
+            <button className={styles.iconButton} type="button" aria-label="通知与错误" data-has-trays={trays.length > 0} onClick={() => setTrayOpen((open) => !open)}>
+              <Icon name="bell" />
+              {trays.length > 0 ? <span className={styles.trayBadge}>{Math.min(trays.length, 99)}</span> : null}
+            </button>
+            <button className={styles.iconButton} type="button" aria-label="智能体网络" onClick={openAgentNetwork}>
               <Icon name="network" />
             </button>
             <button
@@ -1201,6 +2323,7 @@ export default function HostClient() {
                 setActivity([]);
                 setUsage(null);
                 setActiveConversationId(null);
+                setActiveGroupId(null);
                 setActiveAgentId("mahayana-assistant");
               }}
             >
@@ -1208,6 +2331,51 @@ export default function HostClient() {
             </button>
           </div>
         </div>
+
+        {trayOpen ? (
+          <section className={styles.trayPopover} aria-label="通知与错误">
+            <header>
+              <div><strong>通知</strong><small>{trays.length ? `${trays.length} 个需要注意` : "没有需要处理的项目"}</small></div>
+              {trays.length ? <button type="button" onClick={() => void run(() => execute({ type: "tray.clear", requestId: nextRequestId("tray-clear") }))}>全部清除</button> : null}
+            </header>
+            <div className={styles.trayList}>
+              {[...trays].reverse().map((tray) => {
+                const bot = bots.find((item) => item.id === tray.agentId);
+                return (
+                  <article key={tray.id}>
+                    <BotMark
+                      botId={tray.agentId}
+                      state="waking"
+                      size={30}
+                      shape={bot?.avatarShape as BotMarkShape | undefined}
+                      color={bot?.avatarColor as BotMarkColor | undefined}
+                      label={bot?.name || tray.agentId}
+                    />
+                    <div>
+                      <strong>{tray.title}{tray.count && tray.count > 1 ? ` ×${tray.count}` : ""}</strong>
+                      {tray.detail ? <p>{tray.detail}</p> : null}
+                      <small>{bot?.name || tray.agentId}</small>
+                      {tray.actions?.length ? (
+                        <div className={styles.trayActions}>
+                          {tray.actions.map((action, index) => (
+                            <button key={`${tray.id}-${action.kind}-${index}`} type="button" onClick={() => {
+                              if (action.kind === "open-url") window.open(action.url, "_blank", "noopener,noreferrer");
+                              if (action.kind === "switch-model") setSelectedModel("auto");
+                            }}>
+                              {action.kind === "open-url" ? action.label : action.kind === "switch-model" ? "切换模型" : action.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <button type="button" aria-label={`关闭 ${tray.title}`} onClick={() => void run(() => execute({ type: "tray.dismiss", requestId: nextRequestId("tray-dismiss"), id: tray.id }))}>×</button>
+                  </article>
+                );
+              })}
+              {!trays.length ? <p className={styles.trayEmpty}>任务失败、需要恢复的后台工作和其他错误会显示在这里。</p> : null}
+            </div>
+          </section>
+        ) : null}
 
         <label className={styles.searchBox}>
           <Icon name="search" size={16} />
@@ -1219,16 +2387,60 @@ export default function HostClient() {
           />
         </label>
 
+        {conversationSearch.trim() ? (
+          <section className={styles.globalSearchResults} aria-label="全局搜索结果">
+            <header>
+              <strong>全局搜索</strong>
+              <small>{searchPending ? "搜索中…" : `${searchMessageMatches.length} 条消息 · ${searchMediaMatches.length} 个文件`}</small>
+            </header>
+            {searchMessageMatches.length ? (
+              <div className={styles.globalSearchSection}>
+                <span>消息</span>
+                {searchMessageMatches.map((match) => (
+                  <button
+                    type="button"
+                    key={`${match.agentId}:${match.entryId}`}
+                    onClick={() => {
+                      setActiveGroupId(null);
+                      setActiveAgentId(match.agentId);
+                      void run(() => execute({
+                        type: "conversation.open",
+                        requestId: nextRequestId("search-open"),
+                        conversationId: match.conversationId,
+                      }));
+                    }}
+                  >
+                    <BotMark botId={match.agentId} size={24} className={styles.globalSearchBotMark} label={match.agentName} />
+                    <span><strong>{match.agentName}</strong><small>{match.snippet}</small></span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {searchMediaMatches.length ? (
+              <div className={styles.globalSearchSection}>
+                <span>文件</span>
+                {searchMediaMatches.map((match) => (
+                  <article key={match.path} title={match.path}>
+                    <span className={styles.globalSearchFileIcon}>⌑</span>
+                    <span><strong>{match.name}</strong><small>{match.agentName} · {Math.max(1, Math.round(match.sizeBytes / 1024))} KB</small></span>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {!searchPending && !searchMessageMatches.length && !searchMediaMatches.length ? <p>没有找到匹配的消息或文件。</p> : null}
+          </section>
+        ) : null}
+
         <nav className={styles.agentList} aria-label="智能体会话">
           <button
             className={activeAgentId === "mahayana-assistant" ? styles.agentActive : styles.agentItem}
             type="button"
-            onClick={() => setActiveAgentId("mahayana-assistant")}
+            onClick={() => { setActiveGroupId(null); setActiveAgentId("mahayana-assistant"); }}
           >
-            <span className={styles.avatar}>乘</span>
+            <BotMark botId="mahayana-assistant" state={backgroundWorkingAgents.has("mahayana-assistant") ? "working" : activeAgentId === "mahayana-assistant" && !activeGroupId ? activeBotState : "idle"} size={38} shape={primaryBotProfile?.avatarShape as BotMarkShape | undefined} color={primaryBotProfile?.avatarColor as BotMarkColor | undefined} className={styles.sidebarBotMark} label={primaryBotProfile?.name || "大乘助手"} />
             <span className={styles.agentCopy}>
               <span><strong>大乘助手</strong><time>现在</time></span>
-              <small>{operationState === "running" ? "正在工作…" : "Mahayana Runtime 已连接"}</small>
+              <small>{chatDispatching || operationState === "running" ? "正在工作…" : "Mahayana Runtime 已连接"}</small>
             </span>
           </button>
           {visibleConversations
@@ -1238,15 +2450,16 @@ export default function HostClient() {
                 key={conversation.id}
                 className={activeConversationId === conversation.id ? styles.agentActive : styles.agentItem}
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setActiveGroupId(null);
                   void run(() =>
                     execute({
                       type: "conversation.open",
                       requestId: nextRequestId("conversation"),
                       conversationId: conversation.id,
                     }),
-                  )
-                }
+                  );
+                }}
               >
                 <span className={styles.avatarAlt}>聊</span>
                 <span className={styles.agentCopy}>
@@ -1258,9 +2471,10 @@ export default function HostClient() {
           {visibleSidebarBots.map((bot) => (
             <button
               key={bot.id}
-              className={activeConversationId === bot.conversationId ? styles.agentActive : styles.agentItem}
+              className={!activeGroupId && activeConversationId === bot.conversationId ? styles.agentActive : styles.agentItem}
               type="button"
               onClick={() => {
+                setActiveGroupId(null);
                 setActiveAgentId(bot.id);
                 const existingConversation = bot.conversationId
                   ? conversations.find((conversation) => conversation.id === bot.conversationId)
@@ -1282,10 +2496,40 @@ export default function HostClient() {
                 }
               }}
             >
-              <span className={styles.avatarAlt}>{bot.name.slice(0, 1)}</span>
+              <BotMark
+                botId={bot.id}
+                state={backgroundWorkingAgents.has(bot.id) ? "working" : activeAgentId === bot.id && !activeGroupId ? activeBotState : "idle"}
+                size={38}
+                shape={bot.avatarShape as BotMarkShape | undefined}
+                color={bot.avatarColor as BotMarkColor | undefined}
+                className={styles.sidebarBotMark}
+                label={bot.name}
+              />
               <span className={styles.agentCopy}>
                 <span><strong>{bot.name}</strong></span>
-                <small>{bot.description}</small>
+                <small>{bot.title ? `${bot.title} · ` : ""}{bot.description}</small>
+              </span>
+            </button>
+          ))}
+          <div className={styles.groupListHeading}>
+            <span>群聊</span>
+            <button type="button" aria-label="新建群聊" onClick={() => setGroupEditorId("new")}>＋</button>
+          </div>
+          {groups.map((group) => (
+            <button
+              key={group.id}
+              className={activeGroupId === group.id ? styles.agentActive : styles.agentItem}
+              type="button"
+              onClick={() => {
+                setActiveGroupId(group.id);
+                setComputerOpen(false);
+                setAgentSettingsOpen(false);
+              }}
+            >
+              <GroupAvatarStack group={group} bots={bots} size={26} />
+              <span className={styles.agentCopy}>
+                <span><strong>{group.name}</strong></span>
+                <small>{group.memberIds.length} 个 Bot · {group.messages.length ? `${group.messages.length} 条消息` : "新群聊"}</small>
               </span>
             </button>
           ))}
@@ -1299,11 +2543,12 @@ export default function HostClient() {
                 className={activeAgentId === app.id ? styles.agentActive : styles.agentItem}
                 type="button"
                 onClick={() => {
+                  setActiveGroupId(null);
                   setActiveAgentId(app.id);
                   if (openedMiniApp !== app.id) openMiniApp(app.id);
                 }}
               >
-                <span className={styles.avatarAlt}>{app.glyph}</span>
+                <BotMark botId={app.id} state={activeAgentId === app.id ? activeBotState : "idle"} size={38} className={styles.sidebarBotMark} label={`${app.title}机器人`} />
                 <span className={styles.agentCopy}>
                   <span><strong>{app.title}机器人</strong></span>
                   <small>{openedMiniApp === app.id ? "应用已打开" : app.description}</small>
@@ -1343,9 +2588,21 @@ export default function HostClient() {
       </aside>
 
       <section className={styles.workspace}>
+        {activeGroup ? (
+          <GroupChatPanel
+            group={activeGroup}
+            bots={bots}
+            previews={activeGroupPreviews}
+            disabled={hostStatus !== "ready"}
+            onSend={sendGroupMessage}
+            onEdit={() => setGroupEditorId(activeGroup.id)}
+            onDelete={deleteActiveGroup}
+          />
+        ) : (
+          <>
         <header className={styles.chatHeader}>
           <div className={styles.headerIdentity}>
-            <span className={styles.headerAvatar}>{activeAgent?.glyph ?? "乘"}</span>
+            <BotMark botId={activeBotMarkId} state={activeBotState} size={22} shape={activeBotShape} color={activeBotColor} className={styles.headerBotMark} label={activeBotProfile?.name || (activeAgent ? `${activeAgent.title}机器人` : "大乘助手")} />
             <div>
               <h1>{activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}</h1>
               <p>{activeAgent ? `${activeAgent.description} · Mahayana MiniApp` : "Mahayana Rust Core · 本地优先"}</p>
@@ -1363,11 +2620,13 @@ export default function HostClient() {
           <button
             className={styles.computerButton}
             type="button"
-            aria-label="大乘助手的电脑"
+            aria-label={remoteDesktopState?.channelOpen ? "这台电脑正在被已配对手机远程控制" : "大乘助手的电脑"}
             aria-expanded={computerOpen}
+            data-remote-live={remoteDesktopState?.channelOpen ? "true" : "false"}
             onClick={() => setComputerOpen((current) => !current)}
           >
             <Icon name="computer" size={16} />
+            {remoteDesktopState?.channelOpen ? <span className={styles.remoteLiveDot} aria-hidden="true" /> : null}
           </button>
         </header>
 
@@ -1375,7 +2634,7 @@ export default function HostClient() {
 
         <div className={styles.conversation}>
           <div className={styles.welcome}>
-            <span className={styles.welcomeAvatar}>{activeAgent?.glyph ?? "乘"}</span>
+            <BotMark botId={activeBotMarkId} state={activeBotState} size={66} shape={activeBotShape} color={activeBotColor} className={styles.welcomeBotMark} label={activeBotProfile?.name || (activeAgent ? `${activeAgent.title}机器人` : "大乘助手")} />
             <h2>{activeAgent ? `${activeAgent.title}已连接` : "有什么可以帮你？"}</h2>
             <p>{activeAgent ? "可以在右侧打开应用，也可以通过大乘助手调用它的能力。" : "发送消息、运行任务，或从插件市场为助手添加能力。"}</p>
           </div>
@@ -1386,7 +2645,17 @@ export default function HostClient() {
                 data-testid={`message-${message.role}`}
                 className={message.role === "user" ? styles.userMessage : styles.assistantMessage}
               >
-                {message.role === "assistant" ? <span className={styles.messageAvatar}>乘</span> : null}
+                {message.role === "assistant" ? (
+                  <BotMark
+                    botId={activeBotMarkId}
+                    state={(chatDispatching || operationState === "running") && (!activeOperationId || !message.operationId || message.operationId === activeOperationId) ? activeBotState : "idle"}
+                    size={28}
+                    shape={activeBotShape}
+                    color={activeBotColor}
+                    className={styles.messageBotMark}
+                    label={activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}
+                  />
+                ) : null}
                 <div>
                   <strong>{message.role === "user" ? "你" : activeAgent ? `${activeAgent.title}机器人` : "大乘助手"}</strong>
                   {message.role === "assistant"
@@ -1527,27 +2796,164 @@ export default function HostClient() {
             </div>
           </form>
         </div>
+          </>
+        )}
       </section>
 
-      {computerOpen ? <aside className={styles.activityPanel}>
+      {groupEditorId ? (
+        <GroupEditor
+          group={editingGroup}
+          bots={bots}
+          onSave={saveGroup}
+          onClose={() => setGroupEditorId(null)}
+        />
+      ) : null}
+
+      {computerOpen && !activeGroup ? <aside className={styles.activityPanel}>
         <div className={styles.computerPanelHeader}>
-          {agentSettingsOpen ? <strong>设置</strong> : <button type="button" aria-label="智能体设置" onClick={() => setAgentSettingsOpen(true)}><Icon name="settings" size={15} /></button>}
+          {agentSettingsOpen ? <strong>设置</strong> : <button type="button" aria-label="智能体设置" onClick={openAgentSettings}><Icon name="settings" size={15} /></button>}
           <button type="button" aria-label="关闭电脑面板" onClick={() => setComputerOpen(false)}><Icon name="close" size={16} /></button>
         </div>
         {agentSettingsOpen ? (
           <section className={styles.agentSettingsPanel}>
             <button type="button" onClick={() => setAgentSettingsOpen(false)}>← 返回电脑与例程</button>
-            <span className={styles.agentSettingsAvatar}>乘</span>
-            <label><span>名称</span><input value="大乘助手" readOnly /></label>
-            <label><span>职衔</span><input value={agentTitle} onChange={(event) => setAgentTitle(event.target.value)} placeholder="描述这个智能体的工作" /></label>
-            <label><span>描述</span><textarea value={agentDescription} onChange={(event) => setAgentDescription(event.target.value)} placeholder="这个智能体用于什么" rows={4} /></label>
-            <label className={styles.agentNotification}><span><strong>通知</strong><small>智能体完成工作或需要输入时通知我</small></span><input type="checkbox" checked={agentNotifications} onChange={(event) => setAgentNotifications(event.target.checked)} /></label>
+            <BotMark botId={activeBotMarkId} state={activeBotState} size={66} shape={activeBotShape} color={activeBotColor} className={styles.settingsBotMark} label={activeBotProfile?.name || (activeAgent ? `${activeAgent.title}机器人` : "大乘助手")} />
+            <label><span>名称</span><input value={agentName} onChange={(event) => setAgentName(event.target.value)} onBlur={() => updateActiveBotProfile({ name: agentName })} /></label>
+            <label><span>职衔</span><input value={agentTitle} onChange={(event) => setAgentTitle(event.target.value)} onBlur={() => updateActiveBotProfile({ title: agentTitle })} placeholder="描述这个智能体的工作" /></label>
+            <label><span>描述</span><textarea value={agentDescription} onChange={(event) => setAgentDescription(event.target.value)} onBlur={() => updateActiveBotProfile({ description: agentDescription })} placeholder="这个智能体用于什么" rows={4} /></label>
+            <label className={styles.agentNotification}><span><strong>通知</strong><small>智能体完成工作或需要输入时通知我</small></span><input type="checkbox" checked={agentNotifications} onChange={(event) => { const enabled = event.target.checked; setAgentNotifications(enabled); updateActiveBotProfile({ notificationsEnabled: enabled }); }} /></label>
+            {activeBotProfile ? (
+              <section className={styles.agentMemoryPanel}>
+                <header>
+                  <div><strong>Memory</strong><small>{agentMemoryForId === activeBotProfile.id ? `${agentMemoryCount} 条持久记忆` : "正在读取…"}</small></div>
+                  {agentMemoryCount > 0 ? <button type="button" onClick={clearAgentMemory}>清空</button> : null}
+                </header>
+                <div className={styles.agentMemoryComposer}>
+                  <select value={agentMemoryKind} onChange={(event) => setAgentMemoryKind(event.target.value as MemoryKind)}>
+                    <option value="profile">Profile</option>
+                    <option value="log">Log</option>
+                  </select>
+                  <input value={agentMemoryDraft} maxLength={500} onChange={(event) => setAgentMemoryDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addAgentMemory(); } }} placeholder="记录一条持久事实…" />
+                  <button type="button" onClick={addAgentMemory} disabled={!agentMemoryDraft.trim()}>＋</button>
+                </div>
+                <div className={styles.agentMemoryList}>
+                  {agentMemories.map((memory) => (
+                    <article key={memory.id}>
+                      <span data-kind={memory.kind}>{memory.kind}</span>
+                      <p>{memory.content}</p>
+                      <button type="button" aria-label={`忘记 ${memory.content}`} onClick={() => removeAgentMemory(memory.id)}>×</button>
+                    </article>
+                  ))}
+                  {agentMemoryForId === activeBotProfile.id && !agentMemories.length ? <p className={styles.agentMemoryEmpty}>还没有记忆。Profile 会每轮带入；Log 按重要性与最近时间召回。</p> : null}
+                </div>
+                {agentMemoryLocation ? <small className={styles.agentMemoryLocation}>{agentMemoryLocation}</small> : null}
+              </section>
+            ) : null}
+            {activeBotProfile ? (
+              <AgentWorkflowPanel
+                agentId={activeBotProfile.id}
+                workflows={agentWorkflowForId === activeBotProfile.id ? agentWorkflows : []}
+                onRefresh={refreshAgentWorkflows}
+                onSave={saveAgentWorkflow}
+                onSetEnabled={setAgentWorkflowEnabled}
+                onRun={runAgentWorkflow}
+                onDelete={deleteAgentWorkflow}
+                onImportMarkdown={importAgentWorkflowMarkdown}
+                onImportLiveSource={importAgentWorkflowLiveSource}
+              />
+            ) : null}
+            {activeBotProfile ? (
+              <section className={styles.agentAuditPanel}>
+                <header>
+                  <div><strong>行动审计</strong><small>Shell、MCP 和自动审批的持久记录</small></div>
+                  <button type="button" onClick={() => void run(() => execute({ type: "audit.list", requestId: nextRequestId("audit-refresh"), agentId: activeBotProfile.id, limit: 100 }))}>刷新</button>
+                </header>
+                <div className={styles.agentAuditList}>
+                  {(auditAgentId === activeBotProfile.id ? auditRecords : []).slice(-30).reverse().map((record, index) => {
+                    const row = objectValue(record);
+                    const action = objectValue(row.action);
+                    const title = String(action.kind ?? "action");
+                    const detail = String(action.command ?? action.toolName ?? action.capability ?? action.status ?? "");
+                    return <article key={`${String(row.eventId ?? index)}-${index}`}><span>{title.slice(0, 1).toUpperCase()}</span><div><strong>{title}</strong><p>{detail || JSON.stringify(action)}</p><small>{String(row.ts ?? "")}</small></div></article>;
+                  })}
+                  {auditAgentId === activeBotProfile.id && !auditRecords.length ? <p className={styles.agentAuditEmpty}>还没有可审计的操作。</p> : null}
+                </div>
+              </section>
+            ) : null}
           </section>
         ) : (
           <>
-            <section className={styles.computerPreview}>
-              <div><span className={operationState === "running" ? styles.computerPulse : undefined} /></div>
-              <small>大乘助手的屏幕</small>
+            <section className={styles.computerPreview} data-ready={computerSnapshot ? "true" : "false"}>
+              <header>
+                <div>
+                  <strong>这台电脑</strong>
+                  <small>{computerStatus?.platform === "macos" ? "用户的 Mac" : computerStatus?.platform ?? "正在读取…"}</small>
+                </div>
+                <span data-active={remoteDesktopState?.channelOpen ? "true" : "false"}>{remoteDesktopState?.channelOpen ? "REMOTE ACTIVE" : preferences.remoteControlEnabled ? "REMOTE READY" : "REMOTE OFF"}</span>
+              </header>
+              <div className={styles.computerScreen}>
+                {computerSnapshot ? (
+                  <img
+                    src={computerSnapshot.dataUrl}
+                    alt="这台电脑的实时屏幕"
+                    draggable={false}
+                    onClick={clickComputerSnapshot}
+                    data-controllable={computerStatus?.accessibilityGranted ? "true" : "false"}
+                  />
+                ) : (
+                  <span className={computerRefreshing || operationState === "running" ? styles.computerPulse : undefined} />
+                )}
+              </div>
+              <div className={styles.computerPermissionStrip}>
+                {computerStatus?.screenRecordingGranted ? (
+                  <span data-ok="true">屏幕录制 ✓</span>
+                ) : (
+                  <button type="button" onClick={() => void transport.openSystemSettings("screen-recording").catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>授权屏幕录制</button>
+                )}
+                {computerStatus?.accessibilityGranted ? (
+                  <span data-ok="true">辅助功能 ✓</span>
+                ) : (
+                  <button type="button" onClick={() => void transport.openSystemSettings("accessibility").catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>授权辅助功能</button>
+                )}
+                <span data-ok={preferences.aiComputerControlEnabled ? "true" : "false"}>AI {preferences.aiComputerControlEnabled ? "可控制" : "已关闭"}</span>
+              </div>
+              <small>{computerSnapshot ? "点击画面即可控制本机；手机与 AI 使用同一套动作。" : computerStatus?.screenRecordingGranted === false ? "请在 macOS 隐私与安全中允许屏幕录制。" : "正在连接这台电脑的屏幕…"}</small>
+              {preferences.remoteControlEnabled ? (
+                <section className={styles.remotePairingPanel}>
+                  <header>
+                    <div>
+                      <strong>手机远程控制</strong>
+                      <small>{remoteDesktopState?.channelOpen ? "已建立端到端控制通道" : auth?.loggedIn ? "等待已配对手机连接" : "请先登录同一大乘账户"}</small>
+                    </div>
+                    {remoteDesktopState?.channelOpen ? <i data-live="true" /> : <i />}
+                  </header>
+                  {remoteDesktopState?.registration ? (
+                    <div className={styles.remotePairingCode}>
+                      <span>配对码</span>
+                      <strong>{remoteDesktopState.registration.pairingCode}</strong>
+                      <small>有效至 {new Date(remoteDesktopState.registration.pairingExpiresAt * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                      <button type="button" onClick={() => void remoteDesktopControllerRef.current?.refreshPairingCode().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>刷新</button>
+                    </div>
+                  ) : null}
+                  {remoteDesktopState?.activeSessionId ? (
+                    <div className={styles.remoteActiveSession}>
+                      <span><strong>正在远控</strong><small>{remoteDesktopState.activeClientId ?? "已配对手机"} · {remoteDesktopState.connectionState}</small></span>
+                      <button type="button" onClick={() => void remoteDesktopControllerRef.current?.disconnectActive()}>断开</button>
+                    </div>
+                  ) : null}
+                  {remoteDesktopState?.clients.length ? (
+                    <div className={styles.remoteClientList}>
+                      {remoteDesktopState.clients.map((client) => (
+                        <div key={client.clientId}>
+                          <span><strong>{client.label}</strong><small>已配对 · {new Date(client.pairedAt * 1000).toLocaleDateString()}</small></span>
+                          <button type="button" onClick={() => void remoteDesktopControllerRef.current?.revokeClient(client.clientId).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>撤销</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : auth?.loggedIn ? <p>手机打开“远程电脑”，输入上面的 8 位配对码即可绑定。</p> : null}
+                  {remoteDesktopState?.error ? <p className={styles.remoteError}>{remoteDesktopState.error}</p> : null}
+                </section>
+              ) : null}
             </section>
             <section className={styles.routineShortcut}>
               <p>例程是这个智能体按计划反复执行的任务。</p>
@@ -1597,6 +3003,95 @@ export default function HostClient() {
               <small>{usage.model} · 上下文 {Math.round(usage.totalTokens / usage.contextWindow * 100)}%</small>
             </div>
           ) : null}
+        </section>
+
+        <section className={styles.teachCard}>
+          <div className={styles.cardHeading}>
+            <div>
+              <strong>Teach</strong>
+              <small>录一次操作，保存后自动学习成 Workflow</small>
+            </div>
+            <span className={styles.teachState} data-state={teachStatus.state}>{teachStatus.state === "recording" ? "REC" : "IDLE"}</span>
+          </div>
+          {teachStatus.state === "recording" ? (
+            <div className={styles.teachRecordingBody}>
+              <div className={styles.teachTimer}>
+                <i />
+                <strong>{formatElapsedMs(Math.min(teachStatus.maxDurationMs, teachClockMs - (teachStatus.startedAtMs ?? teachClockMs)))}</strong>
+                <span>/ {formatElapsedMs(teachStatus.maxDurationMs)}</span>
+              </div>
+              <p>{teachStatus.agentId === activeBotMarkId ? "正在录制当前 Bot 的演示。" : `正在为 ${bots.find((bot) => bot.id === teachStatus.agentId)?.name ?? teachStatus.agentId} 录制。`}</p>
+              <div>
+                <button
+                  type="button"
+                  disabled={teachStatus.agentId !== activeBotMarkId}
+                  onClick={() => void run(() => execute({ type: "teach.stop", requestId: nextRequestId("teach-save"), agentId: teachStatus.agentId ?? activeBotMarkId, save: true }))}
+                >保存并学习</button>
+                <button
+                  type="button"
+                  disabled={teachStatus.agentId !== activeBotMarkId}
+                  onClick={() => void run(() => execute({ type: "teach.stop", requestId: nextRequestId("teach-cancel"), agentId: teachStatus.agentId ?? activeBotMarkId, save: false }))}
+                >取消录制</button>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.teachIdleBody}>
+              <p>开始后会录制当前屏幕，最长 10 分钟。停止并保存后，该 Bot 会在后台分析演示并生成可复用的 SKILL.md。</p>
+              <button
+                type="button"
+                onClick={() => { setTeachResult(null); void run(() => execute({ type: "teach.start", requestId: nextRequestId("teach-start"), agentId: activeBotMarkId, entryPoint: "screen_hover" })); }}
+              >开始教我操作</button>
+            </div>
+          )}
+          {teachResult ? (
+            <div className={styles.teachLastResult} data-saved={teachResult.saved}>
+              <strong>{teachResult.saved ? "演示已保存并开始学习" : "演示已丢弃"}</strong>
+              <small>{formatElapsedMs(teachResult.durationMs)}{teachResult.saved ? ` · ${teachResult.videoPath}` : ""}</small>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={styles.subagentCard}>
+          <div className={styles.cardHeading}>
+            <div>
+              <strong>Subagents</strong>
+              <small>{subagents.length ? `${subagents.length} 个子 Agent · ${asyncTasks.length} 个后台任务运行中` : "Codex 多 Agent"}</small>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const agentId = subagentAgentId ?? (bots.some((bot) => bot.id === activeAgentId) ? activeAgentId : "mahayana-assistant");
+                const stamp = Date.now();
+                void run(() => Promise.all([
+                  execute({ type: "subagent.list", requestId: `subagent-refresh-${stamp}`, agentId }),
+                  execute({ type: "asyncTask.list", requestId: `async-task-refresh-${stamp}`, agentId }),
+                ]).then(() => undefined));
+              }}
+            >刷新</button>
+          </div>
+          {asyncTasks.length ? (
+            <div className={styles.asyncTaskStrip}>
+              {asyncTasks.map((task) => (
+                <article key={task.id}>
+                  <span data-kind={task.kind}>↻</span>
+                  <div><strong>{task.label}</strong><small>{task.kind}{task.subagentType ? ` · ${task.subagentType}` : ""}</small></div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <div className={styles.subagentList}>
+            {subagents.map((subagent) => (
+              <article key={subagent.id} data-status={subagent.status}>
+                <span><i /></span>
+                <div>
+                  <strong>{subagent.title}</strong>
+                  <small>{subagent.subagentType} · {subagent.status} · {subagent.id.slice(0, 10)}</small>
+                  {subagent.detail ? <p>{subagent.detail}</p> : null}
+                </div>
+              </article>
+            ))}
+            {!subagents.length ? <p className={styles.subagentEmpty}>模型调用 spawn_agent 后，子 Agent 的身份、状态和后台任务会显示在这里。</p> : null}
+          </div>
         </section>
 
         <section className={styles.controlCard}>
@@ -1848,27 +3343,73 @@ export default function HostClient() {
             <div className={styles.networkCanvas}>
               <span className={styles.networkLine} />
               <article className={styles.networkHub}>
-                <span>乘</span><strong>大乘助手</strong><small>Agent · Codex</small>
+                <BotMark
+                  botId={networkSender?.id ?? "mahayana-assistant"}
+                  state={networkSender && backgroundWorkingAgents.has(networkSender.id) ? "working" : activeBotState}
+                  size={48}
+                  shape={networkSender?.avatarShape as BotMarkShape | undefined}
+                  color={networkSender?.avatarColor as BotMarkColor | undefined}
+                  className={styles.networkHubBotMark}
+                  label={networkSender?.name ?? "大乘助手"}
+                />
+                <strong>{networkSender?.name ?? "大乘助手"}</strong><small>当前发送方 · Agent</small>
               </article>
               <div className={styles.networkNodes}>
-                {capabilities.filter((capability) => capability.id !== "agent.mahayana").map((capability) => (
-                  <button key={capability.id} type="button" disabled={capability.availability === "unavailable"} onClick={() => {
-                    if (capability.pluginId) {
-                      setNetworkOpen(false);
-                      setMarketplaceOpen(true);
-                      setMarketplaceSearch(capability.pluginId);
-                    }
-                  }}>
-                    <span>{capability.title.slice(0, 1)}</span>
-                    <strong>{capability.title}</strong>
-                    <small>{capability.kind} · {capability.availability}</small>
+                {bots.filter((bot) => bot.id !== networkSender?.id).map((bot) => (
+                  <button
+                    key={bot.id}
+                    type="button"
+                    data-selected={networkTargetId === bot.id}
+                    onClick={() => setNetworkTargetId(bot.id)}
+                  >
+                    <BotMark botId={bot.id} state={backgroundWorkingAgents.has(bot.id) ? "working" : "idle"} size={31} shape={bot.avatarShape as BotMarkShape | undefined} color={bot.avatarColor as BotMarkColor | undefined} className={styles.networkNodeBotMark} label={bot.name} />
+                    <strong>{bot.name}</strong>
+                    <small>{backgroundWorkingAgents.has(bot.id) ? "正在后台工作" : bot.description || "Agent"}</small>
                   </button>
                 ))}
+                {networkSender ? groups.filter((group) => group.memberIds.includes(networkSender.id)).map((group) => (
+                  <button key={group.id} type="button" data-selected={networkTargetId === group.id} onClick={() => setNetworkTargetId(group.id)}>
+                    <GroupAvatarStack group={group} bots={bots} size={31} />
+                    <strong>{group.name}</strong>
+                    <small>群聊 · {group.memberIds.length} 个成员</small>
+                  </button>
+                )) : null}
               </div>
-              {capabilities.length <= 1 ? (
-                <div className={styles.networkEmpty}><Icon name="network" size={26} /><strong>还没有其他智能体</strong><p>安装几个 Bot 或插件后，网络关系会显示在这里。</p><button type="button" onClick={() => { setNetworkOpen(false); setMarketplaceOpen(true); }}>打开插件市场</button></div>
+              {!networkTargets.length ? (
+                <div className={styles.networkEmpty}><Icon name="network" size={26} /><strong>还没有其他智能体</strong><p>创建几个 Bot 后，可以让它们异步互相协作。</p><button type="button" onClick={() => { setNetworkOpen(false); setMarketplaceOpen(true); setMarketplaceSection("bots"); }}>创建 Bot</button></div>
               ) : null}
             </div>
+            <section className={styles.networkMessaging}>
+              <header>
+                <div><strong>Agent-to-Agent</strong><small>异步发送；目标 Bot 会在自己的会话中被隐藏 turn 唤醒。</small></div>
+                {lastBroadcastResult ? <em>{lastBroadcastResult.scheduled}/{lastBroadcastResult.total} 已调度</em> : null}
+              </header>
+              <div className={styles.networkComposer}>
+                <select value={networkTargetId} onChange={(event) => setNetworkTargetId(event.target.value)}>
+                  <option value="">选择目标</option>
+                  {networkTargets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
+                </select>
+                <textarea value={networkMessage} onChange={(event) => setNetworkMessage(event.target.value)} rows={3} maxLength={8000} placeholder="给另一个 Agent 或群聊发送信息…" />
+                <label><input type="checkbox" checked={networkPriority} onChange={(event) => setNetworkPriority(event.target.checked)} /><span>优先消息</span></label>
+                <div>
+                  <button type="button" disabled={!networkSender || !networkTargetId || !networkMessage.trim()} onClick={() => void sendNetworkMessage()}>发送给目标</button>
+                  <button type="button" disabled={!networkMessage.trim()} onClick={() => void broadcastNetworkMessage()}>广播给全部 Bot</button>
+                </div>
+              </div>
+              <div className={styles.peerMessageList}>
+                {peerMessages
+                  .filter((message) => !networkSender || message.fromAgentId === networkSender.id || message.targetId === networkSender.id)
+                  .slice(-20)
+                  .reverse()
+                  .map((message) => (
+                    <article key={message.id}>
+                      <span>{message.priority ? "!" : "↗"}</span>
+                      <div><strong>{message.fromAgentName} → {message.targetName}</strong><p>{message.text}</p><small>{new Date(message.createdAtMs).toLocaleString()}</small></div>
+                    </article>
+                  ))}
+                {!peerMessages.length ? <p className={styles.networkNoMessages}>还没有 Agent 间消息。</p> : null}
+              </div>
+            </section>
           </section>
         </div>
       ) : null}
@@ -1953,6 +3494,7 @@ export default function HostClient() {
               <p>设置分区</p>
               {([
                 ["general", "通用", "General"],
+                ["mcp", "MCP", "MCP Servers"],
                 ["usage", "用量与计费", "Usage & Billing"],
                 ["updates", "更新", "Updates"],
               ] as const).map(([id, label, english]) => (
@@ -1976,7 +3518,7 @@ export default function HostClient() {
                 <div>
                   <p>GROK BOT SETTINGS</p>
                   <h2 id="settings-title">
-                    {settingsSection === "general" ? "通用设置" : settingsSection === "usage" ? "用量与计费" : "Grok Bot 更新"}
+                    {settingsSection === "general" ? "通用设置" : settingsSection === "mcp" ? "MCP 与 Apps" : settingsSection === "usage" ? "用量与计费" : "Grok Bot 更新"}
                   </h2>
                 </div>
                 <button className={styles.iconButton} type="button" aria-label="关闭设置" onClick={() => setSettingsOpen(false)}>
@@ -2018,10 +3560,34 @@ export default function HostClient() {
                       onChange={(value) => setPreference("routeEgressLocally", value)}
                     />
                     <ToggleRow
+                      checked={preferences.remoteControlEnabled}
+                      label="允许已配对手机远程控制此电脑"
+                      description="默认关闭。开启后，只有当前账户明确配对的设备才能建立加密远控会话；桌面会持续显示远控状态。"
+                      onChange={(value) => setPreference("remoteControlEnabled", value)}
+                    />
+                    <ToggleRow
+                      checked={preferences.aiComputerControlEnabled}
+                      label="允许 AI 控制此电脑"
+                      description="AI 使用与手机完全相同的截图、点击、移动、拖拽、输入、按键、滚动和等待动作，并受本机工具审批规则约束。"
+                      onChange={(value) => setPreference("aiComputerControlEnabled", value)}
+                    />
+                    <ToggleRow
                       checked={preferences.securityKeys}
                       label="使用硬件安全密钥"
                       description="允许智能体请求使用连接到电脑的安全密钥，每次使用仍需确认。"
                       onChange={(value) => setPreference("securityKeys", value)}
+                    />
+                    <label className={styles.settingsRow}>
+                      <span><strong>本机工具权限</strong><small>Never 会拒绝本机命令；Ask 每次审批；Always 只对本机工具建立会话级授权。</small></span>
+                      <select value={preferences.localToolPermission} onChange={(event) => setPreference("localToolPermission", event.target.value as HostPreferences["localToolPermission"])}>
+                        <option value="never">Never</option><option value="ask">Ask</option><option value="always">Always</option>
+                      </select>
+                    </label>
+                    <ToggleRow
+                      checked={preferences.webauthnProxyEnabled}
+                      label="WebAuthn 代理"
+                      description="允许网页认证请求转交给桌面安全密钥代理；实际使用仍受审批和平台能力限制。"
+                      onChange={(value) => setPreference("webauthnProxyEnabled", value)}
                     />
                   </SettingsGroup>
 
@@ -2045,6 +3611,56 @@ export default function HostClient() {
                         ))}
                       </ul>
                     ) : <p className={styles.settingsEmpty}>尚未添加自定义规则。</p>}
+                  </SettingsGroup>
+                </div>
+              ) : settingsSection === "mcp" ? (
+                <div className={styles.settingsSections}>
+                  <SettingsGroup title="MCP Servers" description="Model Context Protocol">
+                    <div className={styles.mcpToolbar}>
+                      <p className={styles.settingsHelp}>服务器状态和 OAuth 直接来自 Mahayana/Codex Runtime。</p>
+                      <button type="button" onClick={() => void run(() => execute({ type: "mcp.refresh", requestId: nextRequestId("mcp-refresh") }))}>刷新服务器</button>
+                    </div>
+                    <div className={styles.mcpServerList}>
+                      {mcpServers.map((server, index) => {
+                        const name = mcpServerName(server);
+                        const status = mcpServerStatus(server);
+                        const tools = mcpServerTools(server);
+                        const connected = /connected|ready|authenticated|ok/i.test(status);
+                        return (
+                          <article key={`${name}-${index}`} data-state={status}>
+                            <span className={styles.mcpStatusDot} />
+                            <div><strong>{name}</strong><small>{status} · {tools.length} tools</small>{tools.length ? <p>{tools.slice(0, 8).join(" · ")}</p> : null}</div>
+                            <div>
+                              <button type="button" onClick={() => { setMcpToolServer(name); setMcpToolName(tools[0] ?? ""); }}>使用</button>
+                              <button type="button" onClick={() => void run(() => execute({ type: connected ? "mcp.oauthLogout" : "mcp.oauthLogin", requestId: nextRequestId("mcp-oauth"), server: name }))}>{connected ? "退出授权" : "OAuth 登录"}</button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                      {!mcpServers.length ? <p className={styles.settingsEmpty}>当前 Runtime 没有报告 MCP Server。</p> : null}
+                    </div>
+                  </SettingsGroup>
+
+                  <SettingsGroup title="MCP Apps" description="Connector directory">
+                    <div className={styles.mcpAppsList}>
+                      {mcpApps.map((app, index) => {
+                        const record = objectValue(app);
+                        const name = String(record.name ?? record.title ?? record.id ?? `App ${index + 1}`);
+                        const detail = String(record.description ?? record.status ?? record.id ?? "MCP App");
+                        return <article key={`${name}-${index}`}><span>{name.slice(0, 1)}</span><div><strong>{name}</strong><small>{detail}</small></div></article>;
+                      })}
+                      {!mcpApps.length ? <p className={styles.settingsEmpty}>当前账户没有可用的 MCP Apps。</p> : null}
+                    </div>
+                  </SettingsGroup>
+
+                  <SettingsGroup title="直接工具调用" description="Direct MCP tool call">
+                    <div className={styles.mcpToolForm}>
+                      <label><span>Server</span><input value={mcpToolServer} onChange={(event) => setMcpToolServer(event.target.value)} placeholder="github" /></label>
+                      <label><span>Tool</span><input value={mcpToolName} onChange={(event) => setMcpToolName(event.target.value)} placeholder="search_repositories" /></label>
+                      <label><span>Arguments (JSON)</span><textarea value={mcpToolArguments} onChange={(event) => setMcpToolArguments(event.target.value)} rows={4} /></label>
+                      <button type="button" disabled={!mcpToolServer.trim() || !mcpToolName.trim()} onClick={() => void callMcpTool()}>调用工具</button>
+                      {mcpToolResult ? <pre>{mcpToolResult}</pre> : null}
+                    </div>
                   </SettingsGroup>
                 </div>
               ) : settingsSection === "usage" ? (
@@ -2166,7 +3782,15 @@ export default function HostClient() {
               {onboardingStep === 0 ? (
                 <>
                   <h2 id="onboarding-title">认识 Fabushi</h2>
-                  <div className={styles.onboardingBot}><span /><span /></div>
+                  <BotMark
+                    botId="mahayana-assistant"
+                    state="waking"
+                    shape="blob"
+                    color="black"
+                    size={70}
+                    className={styles.onboardingBotMark}
+                    label="Fabushi Bot"
+                  />
                   <div className={styles.onboardingPrompt}><span>把任何任务交给你的智能体团队</span><i>＋</i><b>↑</b></div>
                 </>
               ) : null}
@@ -2174,9 +3798,18 @@ export default function HostClient() {
                 <>
                   <h2 id="onboarding-title">给每个 Bot 一份工作</h2>
                   <div className={styles.onboardingBots}>
-                    <div><i data-tone="red"><span /><span /></i><b>账单跟进</b></div>
-                    <div><i data-tone="cyan"><span /><span /></i><b>每周站会</b></div>
-                    <div><i data-tone="blue"><span /><span /></i><b>销售预测</b></div>
+                    <div>
+                      <BotMark botId="onboarding-billing" state="working" color="red" size={70} label="账单跟进 Bot" />
+                      <b>账单跟进</b>
+                    </div>
+                    <div>
+                      <BotMark botId="onboarding-standup" state="listening" color="cyan" size={70} label="每周站会 Bot" />
+                      <b>每周站会</b>
+                    </div>
+                    <div>
+                      <BotMark botId="onboarding-forecast" state="thinking" color="blue" size={70} label="销售预测 Bot" />
+                      <b>销售预测</b>
+                    </div>
                   </div>
                 </>
               ) : null}
