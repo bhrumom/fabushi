@@ -275,18 +275,19 @@ jobs:
           switch ('${{ matrix.target }}') {
             'mac' {
               $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi' |
-                Where-Object { $_.FullName -match '\.app[\\/]Contents[\\/]MacOS[\\/]fabushi$' } |
+                Where-Object {
+                  $normalized = $_.FullName.Replace('\', '/')
+                  $normalized -like '*.app/Contents/MacOS/fabushi'
+                } |
                 Select-Object -First 1
             }
             'win' {
-              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi.exe' |
-                Where-Object { $_.FullName -match '[\\/]win-unpacked[\\/]' } |
-                Select-Object -First 1
+              $path = Join-Path $release 'win-unpacked/fabushi.exe'
+              $candidate = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }
             }
             'linux' {
-              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi' |
-                Where-Object { $_.FullName -match '[\\/]linux-unpacked[\\/]' } |
-                Select-Object -First 1
+              $path = Join-Path $release 'linux-unpacked/fabushi'
+              $candidate = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }
             }
           }
           if (-not $candidate) {
