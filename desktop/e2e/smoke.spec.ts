@@ -136,7 +136,7 @@ test('desktop package drives every declared Host journey through Electron IPC an
 
   try {
     const page = await app.firstWindow();
-    await expect(page.getByTestId('login-gate')).toBeVisible();
+    await expect(page.getByTestId('onboarding-gate')).toBeVisible();
     await expect(page.locator('.desktop-mode-switch')).toHaveCount(0);
 
     const security = await page.evaluate(() => ({
