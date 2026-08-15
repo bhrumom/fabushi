@@ -72,7 +72,15 @@ jobs:
           packages: 'platform-tools'
       - name: Install Android 17 preview SDK/NDK
         shell: bash
-        run: sdkmanager --channel=3 'platforms;android-37' 'build-tools;37.0.0' 'ndk;28.2.13676358'
+        run: |
+          set -euo pipefail
+          sdkmanager --channel=3 'platforms;android-CinnamonBun' 'build-tools;37.0.0' 'ndk;28.2.13676358'
+          preview_platform="$ANDROID_HOME/platforms/android-CinnamonBun"
+          stable_api_path="$ANDROID_HOME/platforms/android-37"
+          test -d "$preview_platform"
+          if [ ! -e "$stable_api_path" ]; then
+            ln -s "$preview_platform" "$stable_api_path"
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
