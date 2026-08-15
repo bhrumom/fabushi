@@ -86,6 +86,7 @@ import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-pane
 import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
 const defaultMiniAppId = "global-dharma";
+const ONBOARDING_COMPLETE_KEY = "fabushi.host.onboarding-complete.v1";
 const ATTACHMENT_BYTE_LIMIT = 25 * 1024 * 1024;
 const VIDEO_ATTACHMENT_BYTE_LIMIT = 200 * 1024 * 1024;
 const ATTACHMENT_TEXT_PREVIEW_BYTES = 64 * 1024;
@@ -456,6 +457,7 @@ export default function HostClient() {
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -463,7 +465,11 @@ export default function HostClient() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [authProviders, setAuthProviders] = useState<AuthProvider[]>([]);
   const [loginOptionsOpen, setLoginOptionsOpen] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingStep, setOnboardingStep] = useState(() =>
+    screenshotMode !== null || window.localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "1"
+      ? 3
+      : 0,
+  );
   const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
@@ -1549,6 +1555,8 @@ export default function HostClient() {
           setLoginError(
             `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
           );
+        } finally {
+          setAuthResolved(true);
         }
         const stored = JSON.parse(
           window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
@@ -1571,6 +1579,7 @@ export default function HostClient() {
         }
       })
       .catch((cause: unknown) => {
+        setAuthResolved(true);
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
       });
@@ -3779,9 +3788,12 @@ export default function HostClient() {
         </div>
       ) : null}
 
-      {auth?.loggedIn === false ? (
-        <div className={styles.loginBackdrop} data-testid="login-gate">
-          {!loginOptionsOpen && onboardingStep < 3 ? (
+      {onboardingStep < 3 || !authResolved || auth?.loggedIn === false ? (
+        <div
+          className={styles.loginBackdrop}
+          data-testid={onboardingStep < 3 ? "onboarding-gate" : "login-gate"}
+        >
+          {onboardingStep < 3 ? (
             <section className={styles.onboarding} role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
               {onboardingStep === 0 ? (
                 <>
@@ -3827,9 +3839,28 @@ export default function HostClient() {
                 </>
               ) : null}
               <div className={styles.onboardingNav}>
-                <button type="button" onClick={() => setOnboardingStep((step) => Math.min(3, step + 1))}>下一步</button>
+                <button
+                  type="button"
+                  onClick={() => setOnboardingStep((step) => {
+                    const nextStep = Math.min(3, step + 1);
+                    if (nextStep === 3) {
+                      window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, "1");
+                    }
+                    return nextStep;
+                  })}
+                >
+                  下一步
+                </button>
                 {onboardingStep ? <button type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : null}
               </div>
+            </section>
+          ) : !authResolved ? (
+            <section className={styles.grokWelcome} role="status" aria-live="polite">
+              <div className={styles.grokTitle}>
+                <div className={styles.grokLogo}><span>••</span></div>
+                <h2>Fabushi</h2>
+              </div>
+              <p>正在恢复本地会话…</p>
             </section>
           ) : !loginOptionsOpen ? (
             <section className={styles.grokWelcome} role="dialog" aria-modal="true" aria-labelledby="login-title">
