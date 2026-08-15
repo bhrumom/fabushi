@@ -140,6 +140,14 @@ jobs:
           path: desktop/resources/bin
           key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
 
+      - name: Hand off Linux Host binary to package job in the same run
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-host-linux-ci
+          path: desktop/resources/bin/mahayana-app-host
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Build Electron renderer
         working-directory: desktop
         run: npm run build:renderer
@@ -187,31 +195,43 @@ jobs:
         working-directory: desktop
         run: npm ci --prefer-offline
 
+      - name: Reuse Linux Host binary from runtime smoke in the same run
+        if: matrix.target == 'linux'
+        uses: actions/download-artifact@v8
+        with:
+          name: electron-host-linux-ci
+          path: desktop/resources/bin
+
+      - name: Restore Linux Host executable permission after artifact transfer
+        if: matrix.target == 'linux'
+        run: chmod +x desktop/resources/bin/mahayana-app-host
+
       - id: host-binary-cache
         name: Restore reusable native Host binary
+        if: matrix.target != 'linux'
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
           key: electron-host-${{ runner.os }}-${{ runner.arch }}-v5-${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
 
       - name: Set up Rust on Host cache miss
-        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Rust compiler cache on Host cache miss
-        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: electron-package-ci-${{ runner.os }}-v5
 
       - name: Build and stage CI native Host on cache miss
-        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         working-directory: desktop
         run: npm run build:host:ci
 
       - name: Save reusable native Host binary immediately
-        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin

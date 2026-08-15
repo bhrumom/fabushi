@@ -25,11 +25,49 @@ final class MarketplaceModel {
     var installingPluginId: String?
     var plugins: [MarketplacePlugin] = []
     var permissionRequest: PluginPermissionRequest?
+    var featureHostSmokeStatus: String?
 
     private let host: MahayanaHost
 
     init(host: MahayanaHost) {
         self.host = host
+    }
+
+    func runFeatureHostSmokeIfRequested() async {
+        guard ProcessInfo.processInfo.environment["FABUSHI_FEATURE_HOST_SMOKE"] == "1" else { return }
+        featureHostSmokeStatus = "running"
+        do {
+            let infoResult = try await host.request(method: "feature.info")
+            guard let info = infoResult.value as? [String: Any],
+                  info["platform"] as? String == "ios",
+                  let protocolVersion = info["protocolVersion"] as? String,
+                  !protocolVersion.isEmpty
+            else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+
+            _ = try await host.request(method: "feature.auth.status")
+            _ = try await host.request(method: "feature.auth.providers")
+
+            let requestId = "ios-app-smoke"
+            let acceptedResult = try await host.request(
+                method: "feature.execute",
+                params: [
+                    "command": [
+                        "type": "automation.list",
+                        "requestId": requestId,
+                    ],
+                ]
+            )
+            guard let accepted = acceptedResult.value as? [String: Any],
+                  accepted["requestId"] as? String == requestId
+            else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            featureHostSmokeStatus = "passed"
+        } catch {
+            featureHostSmokeStatus = "failed: \(error.localizedDescription)"
+        }
     }
 
     func refresh() async {

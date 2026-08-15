@@ -224,12 +224,35 @@ jobs:
         working-directory: mobile/android
         run: ./gradlew --no-daemon --build-cache testDebugUnitTest lintDebug assembleDebug
 
+      - id: avd-cache
+        name: Restore reusable Pixel 7 emulator snapshot
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: android-avd-api35-x86_64-pixel7-v1
+
+      - name: Generate clean Pixel 7 snapshot once
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'Generated reusable Pixel 7 AVD snapshot.'
+
       - name: Emulator Compose simulated user tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_7
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: cd mobile/android && ./gradlew --no-daemon --build-cache connectedDebugAndroidTest
 

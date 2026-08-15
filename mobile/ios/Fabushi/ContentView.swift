@@ -44,6 +44,11 @@ struct ContentView: View {
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("host-status")
+
+                    if let featureHostSmokeStatus = model.featureHostSmokeStatus {
+                        Text(featureHostSmokeStatus)
+                            .accessibilityIdentifier("feature-host-smoke")
+                    }
                 }
 
                 Section("插件") {
