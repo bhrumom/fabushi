@@ -1141,7 +1141,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           ...current,
           messages: [...current.messages, {
             id: `group-message-${++this.sequence}`,
-            speaker: { kind: "user" },
+            speaker: { kind: "user" as const },
             content: text,
             createdAtMs: Date.now(),
           }].slice(-500),
@@ -1182,7 +1182,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         if (!current.memberIds.includes(sender.id)) throw new Error(`Agent is not a member of group: ${command.targetId}`);
         const group: GroupSummary = {
           ...current,
-          messages: [...current.messages, { id: `group-message-${++this.sequence}`, speaker: { kind: "member", id: sender.id, name: sender.name }, content: text, createdAtMs: Date.now() }].slice(-500),
+          messages: [...current.messages, { id: `group-message-${++this.sequence}`, speaker: { kind: "member" as const, id: sender.id, name: sender.name }, content: text, createdAtMs: Date.now() }].slice(-500),
           updatedAtMs: Date.now(),
         };
         this.groups.set(group.id, group);
@@ -1362,7 +1362,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         const name = command.name.replace(/\s+/g, " ").trim().slice(0, 80);
         const body = command.body.trim().slice(0, 100_000);
         if (!name || !body) throw new Error("Workflow name and body are required");
-        const id = command.id ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `workflow-${++this.sequence}`;
+        const id = command.id ?? (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `workflow-${++this.sequence}`);
         const previous = this.workflows.get(id);
         const workflow: WorkflowSummary = {
           id,
