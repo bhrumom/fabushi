@@ -2,6 +2,8 @@ const { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, shell,
 const path = require('node:path');
 const { pathToFileURL, URL } = require('node:url');
 const { MahayanaHostProcess } = require('./host-process.cjs');
+const { serveElectronMainEdge } = require('./grok-rpc.cjs');
+const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -14,33 +16,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const host = new MahayanaHostProcess();
-const allowedHostMethods = new Set([
-  'host.platform',
-  'feature.info',
-  'feature.execute',
-  'feature.receive',
-  'feature.approval.resolve',
-  'feature.interrupt',
-  'feature.auth.status',
-  'feature.auth.providers',
-  'feature.auth.passwordLogin',
-  'feature.auth.oauthStart',
-  'feature.auth.oauthPoll',
-  'feature.auth.logout',
-  'marketplace.browse',
-  'marketplace.release',
-  'plugin.install',
-  'plugin.active',
-  'plugin.permissions',
-  'plugin.permission.grant',
-  'plugin.permission.revoke',
-  'plugin.compatibility',
-  'plugin.uiDocument',
-  'runtime.start',
-  'runtime.stop',
-  'runtime.tools',
-  'runtime.callTool',
-]);
+const allowedHostMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));
+let mahayanaEdgeServer = null;
+let hostEventPumpStopped = false;
+let hostEventPump = null;
 
 function isTrustedRendererUrl(value) {
   try {
@@ -60,18 +39,83 @@ function assertTrustedSender(event) {
   throw new Error(`Rejected IPC sender: ${url}`);
 }
 
+function isTrustedSender(event) {
+  try {
+    assertTrustedSender(event);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeParams(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function safeHttpsUrl(value) {
   const parsed = new URL(String(value));
   if (parsed.protocol !== 'https:' || !parsed.hostname) throw new Error('Only HTTPS URLs may be opened externally.');
   return parsed.toString();
 }
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function installMahayanaEdge() {
+  const handlers = Object.fromEntries(
+    Object.keys(MAHAYANA_EDGE.methods).map((method) => [
+      method,
+      async (params) => host.request(method, normalizeParams(params)),
+    ]),
+  );
+
+  mahayanaEdgeServer = serveElectronMainEdge(ipcMain, MAHAYANA_EDGE, handlers, {
+    isTrustedSender,
+    onHandlerError(method, error) {
+      console.error(`[mahayana-edge] ${method} failed`, error);
+    },
+  });
+}
+
+function broadcastMahayanaEvent(event) {
+  if (!mahayanaEdgeServer) return;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event);
+  }
+}
+
+function startHostEventPump() {
+  if (hostEventPump) return;
+  hostEventPumpStopped = false;
+  hostEventPump = (async () => {
+    while (!hostEventPumpStopped) {
+      try {
+        const event = await host.request('feature.receive', {});
+        if (event) broadcastMahayanaEvent(event);
+        else await sleep(10);
+      } catch (error) {
+        if (hostEventPumpStopped) break;
+        console.error('[mahayana-edge] runtime event pump failed', error);
+        await sleep(100);
+      }
+    }
+  })().finally(() => {
+    hostEventPump = null;
+  });
+}
+
 function installIpcHandlers() {
+  installMahayanaEdge();
+
+  // Temporary compatibility channel for older renderer builds. Current preload
+  // routes window.fabushi.invoke through MAHAYANA_EDGE instead.
   ipcMain.handle('fabushi:host', async (event, request) => {
     assertTrustedSender(event);
     const method = String(request?.method || '');
     if (!allowedHostMethods.has(method)) throw new Error(`Host method is not allowed: ${method}`);
-    return host.request(method, request?.params && typeof request.params === 'object' ? request.params : {});
+    return host.request(method, normalizeParams(request?.params));
   });
 
   ipcMain.handle('fabushi:pick-file', async (event) => {
@@ -174,8 +218,14 @@ app.whenReady().then(() => {
   installIpcHandlers();
   host.start();
   createWindow();
+  startHostEventPump();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => host.close());
+app.on('before-quit', () => {
+  hostEventPumpStopped = true;
+  mahayanaEdgeServer?.dispose();
+  mahayanaEdgeServer = null;
+  host.close();
+});
