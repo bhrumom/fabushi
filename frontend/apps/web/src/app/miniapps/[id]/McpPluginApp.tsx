@@ -177,6 +177,8 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
   const messagesEndpoint = `${backendBase}/api/miniapps/${encodeURIComponent(pluginInstanceId)}/messages`;
   const client = useMemo(() => new McpHttpClient(endpoint), [endpoint]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const bridgePortRef = useRef<MessagePort | null>(null);
+  const bridgeNonceRef = useRef("");
   const [tools, setTools] = useState<McpTool[]>([]);
   const [uiHtml, setUiHtml] = useState("");
   const [command, setCommand] = useState("");
@@ -237,6 +239,13 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     return () => { active = false; };
   }, [messagesEndpoint, pluginInstanceId]);
 
+  const sendBridgeMessage = useCallback((payload: JsonRpcRequest | Record<string, unknown>) => {
+    const port = bridgePortRef.current;
+    const nonce = bridgeNonceRef.current;
+    if (!port || !nonce) return;
+    port.postMessage({ pluginInstanceId, nonce, payload });
+  }, [pluginInstanceId]);
+
   const callTool = useCallback(async (name: string, args: Record<string, unknown> = {}, skipApproval = false) => {
     const tool = tools.find((candidate) => candidate.name === name);
     if (!skipApproval && tool && tool.annotations?.readOnlyHint !== true) {
@@ -254,11 +263,11 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     try {
       const result = await client.request("tools/call", { name, arguments: args }) as McpToolResult;
       setOutput(JSON.stringify(result.structuredContent ?? result.content ?? result, null, 2));
-      iframeRef.current?.contentWindow?.postMessage({
+      sendBridgeMessage({
         jsonrpc: "2.0",
         method: "ui/notifications/tool-result",
         params: { name, arguments: args, result },
-      }, "*");
+      });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : `/${name} 调用失败`;
@@ -268,7 +277,7 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     } finally {
       setBusy(false);
     }
-  }, [appendTimeline, client, tools]);
+  }, [appendTimeline, client, sendBridgeMessage, tools]);
 
   const refreshTools = useCallback(async () => {
     const listed = await client.request("tools/list");
@@ -402,22 +411,73 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     };
   }, [client, contentStateEndpoint, messagesEndpoint, pluginInstanceId, refreshTools, title]);
 
-  useEffect(() => {
-    const receive = async (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const request = event.data as JsonRpcRequest;
-      if (!request || request.jsonrpc !== "2.0" || request.method !== "tools/call") return;
+  const bootstrapPluginBridge = useCallback(() => {
+    const frame = iframeRef.current?.contentWindow;
+    if (!frame) return;
+    bridgePortRef.current?.close();
+    const channel = new MessageChannel();
+    const nonce = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+    bridgeNonceRef.current = nonce;
+    bridgePortRef.current = channel.port1;
+    channel.port1.onmessage = async (event: MessageEvent) => {
+      const envelope = event.data as {
+        pluginInstanceId?: string;
+        nonce?: string;
+        payload?: JsonRpcRequest;
+      } | undefined;
+      if (
+        !envelope ||
+        envelope.pluginInstanceId !== pluginInstanceId ||
+        envelope.nonce !== bridgeNonceRef.current ||
+        !envelope.payload ||
+        envelope.payload.jsonrpc !== "2.0"
+      ) return;
+      const request = envelope.payload;
+      if (request.method !== "tools/call") {
+        sendBridgeMessage({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: { code: -32601, message: `Mini App capability not granted: ${request.method}` },
+        });
+        return;
+      }
       try {
         const params = request.params ?? {};
-        const result = await callTool(String(params.name ?? ""), (params.arguments ?? {}) as Record<string, unknown>);
-        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id: request.id, result }, "*");
+        const result = await callTool(
+          String(params.name ?? ""),
+          (params.arguments ?? {}) as Record<string, unknown>,
+        );
+        sendBridgeMessage({ jsonrpc: "2.0", id: request.id, result });
       } catch (error) {
-        iframeRef.current?.contentWindow?.postMessage({ jsonrpc: "2.0", id: request.id, error: { code: -32000, message: error instanceof Error ? error.message : "Tool 调用失败" } }, "*");
+        sendBridgeMessage({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32000,
+            message: error instanceof Error ? error.message : "Tool 调用失败",
+          },
+        });
       }
     };
-    window.addEventListener("message", receive);
-    return () => window.removeEventListener("message", receive);
-  }, [callTool]);
+    channel.port1.start();
+    // The sandboxed srcDoc iframe has an opaque origin, so the one-time port
+    // transfer must use `*`. No privileged RPC is accepted on this global
+    // channel; all later traffic is bound to the transferred MessagePort,
+    // instance id and nonce.
+    frame.postMessage({
+      type: "mahayana/bridge-init",
+      bridgeVersion: "2.0",
+      pluginInstanceId,
+      nonce,
+      grants: ["tools/call"],
+    }, "*", [channel.port2]);
+  }, [callTool, pluginInstanceId, sendBridgeMessage]);
+
+  useEffect(() => () => {
+    bridgePortRef.current?.close();
+    bridgePortRef.current = null;
+    bridgeNonceRef.current = "";
+  }, [uiHtml]);
 
   async function sendCodexFallback(text: string) {
     setBusy(true);
@@ -619,7 +679,7 @@ export default function McpPluginApp({ pluginId }: { pluginId: string }) {
     </section>
     {article && <section className="ma-card mcp-article-view"><button className="mcp-link-button" onClick={() => setArticle(null)}>返回对话</button><h2>{article.item.title}</h2><p>{article.markdown}</p></section>}
     <details className="ma-card"><summary>MCP 运行状态</summary><pre className="ma-log-box">{output}</pre><button className="mcp-link-button" onClick={() => void resetOnboarding()}>重置新手引导</button></details>
-    {uiHtml ? <iframe ref={iframeRef} className="mcp-ui-frame" sandbox="allow-scripts" srcDoc={uiHtml} title={`${title} MCP UI`} /> : <section className="ma-card">MCP UI 加载失败时仍可使用上方命令。</section>}
+    {uiHtml ? <iframe ref={iframeRef} onLoad={bootstrapPluginBridge} className="mcp-ui-frame" sandbox="allow-scripts" srcDoc={uiHtml} title={`${title} MCP UI`} /> : <section className="ma-card">MCP UI 加载失败时仍可使用上方命令。</section>}
   </main>;
 }
 

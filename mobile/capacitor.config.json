@@ -1,9 +1,5 @@
 {
-  "appId": "com.ombhrum.fabushi",
-  "appName": "全球法布施",
-  "webDir": "www",
-  "server": {
-    "url": "https://ombhrum.com",
-    "cleartext": true
-  }
+  "retired": true,
+  "replacement": "./src-tauri/tauri.conf.json",
+  "message": "Capacitor is retired. Fabushi mobile and desktop use the unified Tauri 2 + Mahayana Rust Host shell."
 }

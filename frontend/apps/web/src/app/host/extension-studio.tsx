@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Cloud,
+  Copy,
   Link2,
   Pencil,
   Plus,
@@ -24,6 +25,7 @@ import type {
   SkillSummary,
   SkillTeamSummary,
 } from "../../lib/mahayana-host/contracts";
+import { BotMark, type BotMarkColor, type BotMarkShape } from "./bot-mark";
 import styles from "./host.module.css";
 
 export type MarketplaceSection = "apps" | "connectors" | "skills" | "bots";
@@ -368,6 +370,31 @@ function SkillPanel({
   );
 }
 
+type BotDraft = {
+  id?: string;
+  name: string;
+  description: string;
+  title: string;
+  avatarShape: string;
+  avatarColor: string;
+};
+
+const emptyBotDraft: BotDraft = {
+  name: "",
+  description: "",
+  title: "",
+  avatarShape: "",
+  avatarColor: "",
+};
+
+const botShapeOptions: BotMarkShape[] = [
+  "blob", "pebble", "bean", "egg", "squircle", "tablet", "capsule", "cylinder",
+  "hex", "gem", "crystal", "wedge", "shield", "dome", "arch", "cloud", "teardrop", "leaf",
+];
+const botColorOptions: BotMarkColor[] = [
+  "black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
+];
+
 function BotPanel({
   bots,
   search,
@@ -378,46 +405,109 @@ function BotPanel({
   ExtensionStudioProps,
   "bots" | "search" | "execute" | "nextRequestId" | "run"
 >) {
+  const [draft, setDraft] = useState<BotDraft>(emptyBotDraft);
+  const [editorOpen, setEditorOpen] = useState(false);
   const visible = useMemo(
     () =>
       bots.filter((bot) =>
-        `${bot.name} ${bot.description}`.toLowerCase().includes(search.toLowerCase()),
+        `${bot.name} ${bot.title} ${bot.description}`.toLowerCase().includes(search.toLowerCase()),
       ),
     [bots, search],
   );
   const hidden = visible.filter((bot) => bot.hidden).length;
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (draft.id) {
+      await run(() =>
+        execute({
+          type: "bot.update",
+          requestId: nextRequestId("bot-update"),
+          id: draft.id!,
+          name: draft.name,
+          description: draft.description,
+          title: draft.title,
+          avatarShape: draft.avatarShape,
+          avatarColor: draft.avatarColor,
+        }),
+      );
+    } else {
+      await run(() =>
+        execute({
+          type: "bot.create",
+          requestId: nextRequestId("bot-create"),
+          name: draft.name,
+          description: draft.description,
+          title: draft.title,
+          avatarShape: draft.avatarShape || undefined,
+          avatarColor: draft.avatarColor || undefined,
+        }),
+      );
+    }
+    setDraft(emptyBotDraft);
+    setEditorOpen(false);
+  };
+
   return (
     <div className={styles.botStudio}>
       <div className={styles.skillToolbar}>
         <div>
-          <strong>Hidden Bots</strong>
-          <p>隐藏 Bot 不会出现在侧边栏，但仍保留历史会话与配置。</p>
+          <strong>Bots</strong>
+          <p>Grok Bot 0.16 profile 语义：独立名称、职衔、描述、形状、颜色和会话身份。</p>
         </div>
-        <span>{hidden} 个已隐藏</span>
+        <button type="button" onClick={() => { setDraft(emptyBotDraft); setEditorOpen(true); }}>
+          <Plus size={15} /> 新建 Bot
+        </button>
       </div>
+      {editorOpen ? (
+        <form className={styles.skillEditor} onSubmit={(event) => void save(event)}>
+          <header>
+            <div><strong>{draft.id ? "编辑 Bot" : "新建 Bot"}</strong><small>Profile 字段与 Grok Bot 0.16 保持一致。</small></div>
+            <button type="button" onClick={() => setEditorOpen(false)}>×</button>
+          </header>
+          <div className={styles.botProfilePreview}>
+            <BotMark
+              botId={draft.id || draft.name || "new-agent"}
+              state="idle"
+              size={64}
+              shape={(draft.avatarShape || undefined) as BotMarkShape | undefined}
+              color={(draft.avatarColor || undefined) as BotMarkColor | undefined}
+              label="Bot profile preview"
+            />
+          </div>
+          <label><span>名称</span><input required maxLength={72} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Agent name" /></label>
+          <label><span>职衔</span><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="例如：Researcher" /></label>
+          <label><span>描述 / Persona</span><textarea rows={4} maxLength={2000} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="这个 Bot 负责什么" /></label>
+          <label><span>Shape</span><select value={draft.avatarShape} onChange={(event) => setDraft({ ...draft, avatarShape: event.target.value })}><option value="">按 ID 自动</option>{botShapeOptions.map((shape) => <option key={shape} value={shape}>{shape}</option>)}</select></label>
+          <label><span>Color</span><select value={draft.avatarColor} onChange={(event) => setDraft({ ...draft, avatarColor: event.target.value })}><option value="">按 ID 自动</option>{botColorOptions.map((color) => <option key={color} value={color}>{color}</option>)}</select></label>
+          <footer><button type="button" onClick={() => setEditorOpen(false)}>取消</button><button type="submit">保存 Bot</button></footer>
+        </form>
+      ) : null}
+      <div className={styles.botStatusBar}><span>{visible.length} Bots</span><span>{hidden} 个已隐藏</span></div>
       <div className={styles.botList}>
         {visible.map((bot) => (
           <article key={bot.id} data-hidden={bot.hidden}>
-            <span className={styles.extensionGlyph}><Bot size={18} /></span>
-            <div><strong>{bot.name}</strong><p>{bot.description}</p><small>{bot.conversationId || bot.id}</small></div>
-            <label>
-              <span>{bot.hidden ? "已隐藏" : "显示"}</span>
-              <input
-                className={styles.switchInput}
-                type="checkbox"
-                checked={!bot.hidden}
-                onChange={(event) =>
-                  void run(() =>
-                    execute({
-                      type: "bot.setHidden",
-                      requestId: nextRequestId("bot-hidden"),
-                      id: bot.id,
-                      hidden: !event.target.checked,
-                    }),
-                  )
-                }
-              />
-            </label>
+            <BotMark
+              botId={bot.id}
+              state={bot.hidden ? "sleeping" : "idle"}
+              size={36}
+              shape={bot.avatarShape as BotMarkShape | undefined}
+              color={bot.avatarColor as BotMarkColor | undefined}
+              className={styles.extensionBotMark}
+              label={`${bot.name} Bot`}
+            />
+            <div><strong>{bot.name}</strong><p>{bot.title ? `${bot.title} · ` : ""}{bot.description || "暂无描述"}</p><small>{bot.conversationId || bot.id}</small></div>
+            <div className={styles.botActions}>
+              <button type="button" title="编辑" onClick={() => { setDraft({ id: bot.id, name: bot.name, description: bot.description, title: bot.title, avatarShape: bot.avatarShape ?? "", avatarColor: bot.avatarColor ?? "" }); setEditorOpen(true); }}><Pencil size={13} /></button>
+              <button type="button" title="复制" onClick={() => void run(() => execute({ type: "bot.clone", requestId: nextRequestId("bot-clone"), id: bot.id }))}><Copy size={13} /></button>
+              {bot.id !== "mahayana-assistant" ? <button className={styles.dangerAction} type="button" title="删除" onClick={() => { if (window.confirm(`永久删除 ${bot.name}？`)) void run(() => execute({ type: "bot.delete", requestId: nextRequestId("bot-delete"), id: bot.id })); }}><Trash2 size={13} /></button> : null}
+              <label title={bot.hidden ? "显示 Bot" : "隐藏 Bot"}>
+                <input className={styles.switchInput} type="checkbox" checked={!bot.hidden} onChange={(event) => void run(() => execute({ type: "bot.setHidden", requestId: nextRequestId("bot-hidden"), id: bot.id, hidden: !event.target.checked }))} />
+              </label>
+              <label title="通知">
+                <input className={styles.switchInput} type="checkbox" checked={bot.notificationsEnabled} onChange={(event) => void run(() => execute({ type: "bot.update", requestId: nextRequestId("bot-notifications"), id: bot.id, notificationsEnabled: event.target.checked }))} />
+              </label>
+            </div>
           </article>
         ))}
         {!visible.length ? <p className={styles.noResults}>没有匹配的 Bot。</p> : null}

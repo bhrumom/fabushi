@@ -22,6 +22,9 @@ export interface MahayanaHostTransport {
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt>;
   oauthPoll(attemptId: string): Promise<OAuthPollResult>;
   openExternal(url: string): Promise<void>;
+  openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<void>;
+  windowFocused(): Promise<boolean>;
+  showNotification(title: string, body: string): Promise<void>;
   passwordLogin(username: string, password: string): Promise<AuthState>;
   logout(): Promise<AuthState>;
   subscribe(listener: RuntimeEventListener): () => void;

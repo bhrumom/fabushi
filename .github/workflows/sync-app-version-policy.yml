@@ -66,7 +66,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/sync-app-version-policy.mjs
-            /fabushi/pubspec.yaml
+            /app-version.json
 
       - name: Set release metadata env
         shell: bash
