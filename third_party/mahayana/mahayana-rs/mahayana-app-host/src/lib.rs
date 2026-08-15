@@ -12,6 +12,21 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppHostFeatureMode {
+    Production,
+    Test,
+}
+
+impl From<AppHostFeatureMode> for HostMode {
+    fn from(value: AppHostFeatureMode) -> Self {
+        match value {
+            AppHostFeatureMode::Production => HostMode::Production,
+            AppHostFeatureMode::Test => HostMode::Test,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppHostError {
     #[error("invalid request: {0}")]
@@ -49,10 +64,18 @@ pub struct AppHost {
 
 impl AppHost {
     pub fn new(app_data_dir: impl Into<PathBuf>) -> Result<Self, AppHostError> {
+        let feature_mode = configured_feature_host_mode()?;
+        Self::new_with_feature_mode(app_data_dir, feature_mode)
+    }
+
+    pub fn new_with_feature_mode(
+        app_data_dir: impl Into<PathBuf>,
+        feature_mode: AppHostFeatureMode,
+    ) -> Result<Self, AppHostError> {
         let app_data_dir = app_data_dir.into();
         std::fs::create_dir_all(&app_data_dir)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
-        let feature = create_feature_host(&app_data_dir)?;
+        let feature = create_feature_host(&app_data_dir, feature_mode)?;
         Ok(Self {
             app_data_dir,
             product: MahayanaProductClient::default(),
@@ -465,7 +488,25 @@ impl AppHost {
     }
 }
 
-fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, AppHostError> {
+fn configured_feature_host_mode() -> Result<AppHostFeatureMode, AppHostError> {
+    match std::env::var("FABUSHI_FEATURE_HOST_MODE") {
+        Ok(value) if value.eq_ignore_ascii_case("test") => Ok(AppHostFeatureMode::Test),
+        Ok(value) if value.eq_ignore_ascii_case("production") => Ok(AppHostFeatureMode::Production),
+        Ok(value) if value.trim().is_empty() => Ok(AppHostFeatureMode::Production),
+        Ok(value) => Err(AppHostError::InvalidRequest(format!(
+            "unsupported FABUSHI_FEATURE_HOST_MODE {value:?}; expected test or production"
+        ))),
+        Err(std::env::VarError::NotPresent) => Ok(AppHostFeatureMode::Production),
+        Err(error) => Err(AppHostError::InvalidRequest(format!(
+            "invalid FABUSHI_FEATURE_HOST_MODE: {error}"
+        ))),
+    }
+}
+
+fn create_feature_host(
+    app_data_dir: &Path,
+    feature_mode: AppHostFeatureMode,
+) -> Result<FeatureHostController, AppHostError> {
     let root = app_data_dir.join("feature-host");
     std::fs::create_dir_all(&root).map_err(|error| AppHostError::Operation(error.to_string()))?;
     let host_config = HostCreateConfig {
@@ -481,7 +522,7 @@ fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, App
     FeatureHostController::create_with_host_config(
         HostConfig {
             profile_id: "default".to_string(),
-            mode: HostMode::Production,
+            mode: feature_mode.into(),
         },
         surface_platform(),
         host_config,

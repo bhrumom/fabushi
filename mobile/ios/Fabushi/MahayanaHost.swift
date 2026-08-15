@@ -22,9 +22,11 @@ final class MahayanaHost: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ombhrum.fabushi.mahayana-host", qos: .userInitiated)
     private var handle: UnsafeMutableRawPointer?
 
-    init(appDataDirectory: URL) throws {
+    init(appDataDirectory: URL, featureHostTest: Bool = false) throws {
         try FileManager.default.createDirectory(at: appDataDirectory, withIntermediateDirectories: true)
-        handle = appDataDirectory.path.withCString { mahayana_app_host_create($0) }
+        handle = appDataDirectory.path.withCString { path in
+            featureHostTest ? mahayana_app_host_create_test(path) : mahayana_app_host_create(path)
+        }
         guard handle != nil else { throw HostError.initializationFailed }
     }
 

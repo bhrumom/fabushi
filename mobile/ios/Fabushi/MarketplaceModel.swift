@@ -41,33 +41,127 @@ final class MarketplaceModel {
             guard let info = infoResult.value as? [String: Any],
                   info["platform"] as? String == "ios",
                   let protocolVersion = info["protocolVersion"] as? String,
-                  !protocolVersion.isEmpty
+                  !protocolVersion.isEmpty,
+                  (info["runtimeVersion"] as? String)?.contains("test") == true
             else {
                 throw MahayanaHost.HostError.invalidResponse
             }
 
             _ = try await host.request(method: "feature.auth.status")
-            _ = try await host.request(method: "feature.auth.providers")
-
-            let requestId = "ios-app-smoke"
-            let acceptedResult = try await host.request(
-                method: "feature.execute",
-                params: [
-                    "command": [
-                        "type": "automation.list",
-                        "requestId": requestId,
-                    ],
-                ]
-            )
-            guard let accepted = acceptedResult.value as? [String: Any],
-                  accepted["requestId"] as? String == requestId
+            let providers = try await host.request(method: "feature.auth.providers")
+            guard let providerRows = providers.value as? [[String: Any]],
+                  providerRows.contains(where: { $0["id"] as? String == "google" })
             else {
                 throw MahayanaHost.HostError.invalidResponse
             }
+
+            let oauth = try await host.request(
+                method: "feature.auth.oauthStart",
+                params: ["provider": "google"]
+            )
+            guard let oauthObject = oauth.value as? [String: Any],
+                  let attemptId = oauthObject["attemptId"] as? String
+            else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            let oauthCompleted = try await host.request(
+                method: "feature.auth.oauthPoll",
+                params: ["attemptId": attemptId]
+            )
+            guard let completedObject = oauthCompleted.value as? [String: Any],
+                  completedObject["status"] as? String == "completed"
+            else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+
+            try await executeFeatureCommand(
+                type: "chat.send",
+                requestId: "ios-chat",
+                fields: ["text": "请用一句话说明自动化测试状态"]
+            )
+            try await executeFeatureCommand(
+                type: "marketplace.install",
+                requestId: "ios-install",
+                fields: ["miniAppId": "global-dharma"]
+            )
+            try await executeFeatureCommand(
+                type: "miniapp.open",
+                requestId: "ios-open",
+                fields: ["miniAppId": "global-dharma"]
+            )
+            try await executeFeatureCommand(
+                type: "capability.request",
+                requestId: "ios-capability",
+                fields: [
+                    "miniAppId": "global-dharma",
+                    "capability": "camera",
+                    "reason": "cross-platform UI automation",
+                ]
+            )
+            let approval = try await receiveFeatureEvent(type: "approval.requested")
+            guard let approvalId = approval["approvalId"] as? String else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            _ = try await host.request(
+                method: "feature.approval.resolve",
+                params: [
+                    "resolution": [
+                        "approvalId": approvalId,
+                        "decision": "allow-once",
+                    ],
+                ]
+            )
+
+            let longTask = try await executeFeatureCommand(
+                type: "runtime.longTask",
+                requestId: "ios-long-task",
+                fields: ["label": "iOS simulated user operation"]
+            )
+            guard let operationId = longTask["operationId"] as? String else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            _ = try await host.request(
+                method: "feature.interrupt",
+                params: ["operationId": operationId]
+            )
+
+            try await executeFeatureCommand(
+                type: "session.clear",
+                requestId: "ios-session-clear"
+            )
             featureHostSmokeStatus = "passed"
         } catch {
             featureHostSmokeStatus = "failed: \(error.localizedDescription)"
         }
+    }
+
+    private func executeFeatureCommand(
+        type: String,
+        requestId: String,
+        fields: [String: Any] = [:]
+    ) async throws -> [String: Any] {
+        var command = fields
+        command["type"] = type
+        command["requestId"] = requestId
+        let result = try await host.request(
+            method: "feature.execute",
+            params: ["command": command]
+        )
+        guard let accepted = result.value as? [String: Any],
+              accepted["requestId"] as? String == requestId
+        else {
+            throw MahayanaHost.HostError.invalidResponse
+        }
+        return accepted
+    }
+
+    private func receiveFeatureEvent(type expectedType: String) async throws -> [String: Any] {
+        for _ in 0..<64 {
+            let result = try await host.request(method: "feature.receive")
+            guard let event = result.value as? [String: Any] else { continue }
+            if event["type"] as? String == expectedType { return event }
+        }
+        throw MahayanaHost.HostError.requestFailed("未收到 FeatureHost 事件 \(expectedType)")
     }
 
     func refresh() async {
