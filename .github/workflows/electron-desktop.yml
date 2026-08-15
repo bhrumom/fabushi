@@ -10,6 +10,7 @@ on:
       - 'frontend/apps/web/src/lib/grok-bot/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
       - 'frontend/packages/shared/**'
+      - 'contracts/automation/cross-platform-journeys.json'
       - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
@@ -69,10 +70,10 @@ jobs:
             if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml|Cargo\.lock|mahayana-app-host/|mahayana-app-host-desktop/|mahayana-feature-host/|mahayana-host/|mahayana-host-protocol/|mahayana-product/))'; then
               host=true
             fi
-            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|frontend/apps/web/src/app/host/|frontend/apps/web/src/lib/(grok-agent|grok-bot|mahayana-host)/|frontend/packages/shared/|\.github/scripts/assert-(native-electron-canonical|electron-feature-host-bridge)\.sh$)'; then
+            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/cross-platform-journeys\.json$|frontend/apps/web/src/app/host/|frontend/apps/web/src/lib/(grok-agent|grok-bot|mahayana-host)/|frontend/packages/shared/|\.github/scripts/assert-(native-electron-canonical|electron-feature-host-bridge)\.sh$)'; then
               renderer=true
             fi
-            if printf '%s\n' "$changed" | grep -Eq '^(desktop/(electron/|resources/|scripts/|package\.json$|package-lock\.json$)|\.github/workflows/electron-desktop\.yml$)'; then
+            if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|desktop/(electron/|resources/|scripts/|e2e/|playwright\.config\.ts$|package\.json$|package-lock\.json$)|\.github/workflows/electron-desktop\.yml$)'; then
               package=true
             fi
           fi
@@ -155,6 +156,7 @@ jobs:
       - name: Simulate a user in the Electron sandbox and real Rust Host
         working-directory: desktop
         env:
+          FABUSHI_FEATURE_HOST_MODE: test
           MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
         run: xvfb-run -a npm run test:e2e
 
@@ -246,6 +248,59 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --${{ matrix.target }}
+
+      - name: Locate runnable packaged Electron executable
+        shell: pwsh
+        run: |
+          $release = Join-Path $env:GITHUB_WORKSPACE 'desktop/release'
+          switch ('${{ matrix.target }}') {
+            'mac' {
+              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi' |
+                Where-Object { $_.FullName -match '\.app[\\/]Contents[\\/]MacOS[\\/]fabushi$' } |
+                Select-Object -First 1
+            }
+            'win' {
+              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi.exe' |
+                Where-Object { $_.FullName -match '[\\/]win-unpacked[\\/]' } |
+                Select-Object -First 1
+            }
+            'linux' {
+              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi' |
+                Where-Object { $_.FullName -match '[\\/]linux-unpacked[\\/]' } |
+                Select-Object -First 1
+            }
+          }
+          if (-not $candidate) {
+            Get-ChildItem -Path $release -Recurse | Select-Object -ExpandProperty FullName
+            throw 'electron-builder did not leave a runnable unpacked application'
+          }
+          "FABUSHI_ELECTRON_EXECUTABLE=$($candidate.FullName)" >> $env:GITHUB_ENV
+          "Packaged executable: $($candidate.FullName)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Simulate the complete user journey in packaged Linux Electron
+        if: matrix.target == 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: xvfb-run -a npm run test:e2e
+
+      - name: Simulate the complete user journey in packaged macOS or Windows Electron
+        if: matrix.target != 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: npm run test:e2e
+
+      - name: Upload packaged Electron user-journey diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-electron-${{ matrix.target }}-e2e-diagnostics
+          path: |
+            desktop/playwright-report/**
+            desktop/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Electron packages
         uses: actions/upload-artifact@v7

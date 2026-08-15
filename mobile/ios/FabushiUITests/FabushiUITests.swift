@@ -6,7 +6,7 @@ final class FabushiUITests: XCTestCase {
     }
 
     @MainActor
-    func testProductionFeatureHostBridgeInAppProcess() throws {
+    func testCompleteFeatureHostUserJourneyInAppProcess() throws {
         let app = XCUIApplication()
         app.launchEnvironment["FABUSHI_FEATURE_HOST_SMOKE"] = "1"
         app.launch()

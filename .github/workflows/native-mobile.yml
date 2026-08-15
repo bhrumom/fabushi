@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
+      - 'contracts/automation/cross-platform-journeys.json'
       - 'app-version.json'
       - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
@@ -70,7 +71,7 @@ jobs:
             if printf '%s\n' "$changed" | grep -Eq '^(mobile/ios/|app-version\.json$)'; then
               ios=true
             fi
-            if printf '%s\n' "$changed" | grep -Eq '^\.github/workflows/native-mobile\.yml$'; then
+            if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|\.github/workflows/native-mobile\.yml$)'; then
               shared=true
               android=true
               ios=true

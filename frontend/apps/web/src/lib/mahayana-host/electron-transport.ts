@@ -93,6 +93,13 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   openExternal(url: string): Promise<void> {
+    // The deterministic Rust FeatureHost test backend returns this inert URL
+    // for OAuth. Keep the full Electron -> IPC -> Rust login path in E2E
+    // without asking the runner OS to launch a browser. Production OAuth URLs
+    // still pass through the hardened Electron external-navigation bridge.
+    if (url.startsWith("about:blank#fabushi-test-oauth-")) {
+      return Promise.resolve();
+    }
     return bridge().openExternal(url).then(() => undefined);
   }
 

@@ -1,4 +1,6 @@
-use mahayana_app_host::{AppHost, HostResponse, default_app_data_dir, dispatch_json};
+use mahayana_app_host::{
+    AppHost, AppHostFeatureMode, HostResponse, default_app_data_dir, dispatch_json,
+};
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
 
@@ -19,6 +21,31 @@ pub unsafe extern "C" fn mahayana_app_host_create(app_data_dir: *const c_char) -
         )
     };
     match AppHost::new(path) {
+        Ok(host) => Box::into_raw(Box::new(host)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Creates a native app-host handle backed by the deterministic FeatureHost test mode.
+/// This is used only by explicit UI/instrumentation test harnesses; normal app
+/// creation continues to use the production mode.
+///
+/// # Safety
+/// `app_data_dir` must follow the same contract as `mahayana_app_host_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mahayana_app_host_create_test(
+    app_data_dir: *const c_char,
+) -> *mut AppHost {
+    let path = if app_data_dir.is_null() {
+        default_app_data_dir()
+    } else {
+        PathBuf::from(
+            unsafe { CStr::from_ptr(app_data_dir) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    };
+    match AppHost::new_with_feature_mode(path, AppHostFeatureMode::Test) {
         Ok(host) => Box::into_raw(Box::new(host)),
         Err(_) => std::ptr::null_mut(),
     }
@@ -119,6 +146,22 @@ mod android_jni {
             Err(_) => return 0,
         };
         match AppHost::new(path) {
+            Ok(host) => Box::into_raw(Box::new(host)) as jlong,
+            Err(_) => 0,
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_ombhrum_fabushi_core_MahayanaHost_nativeCreateTest(
+        mut env: JNIEnv,
+        _object: JObject,
+        app_data_dir: JString,
+    ) -> jlong {
+        let path = match env.get_string(&app_data_dir) {
+            Ok(value) => PathBuf::from(value.to_string_lossy().into_owned()),
+            Err(_) => return 0,
+        };
+        match AppHost::new_with_feature_mode(path, AppHostFeatureMode::Test) {
             Ok(host) => Box::into_raw(Box::new(host)) as jlong,
             Err(_) => 0,
         }
