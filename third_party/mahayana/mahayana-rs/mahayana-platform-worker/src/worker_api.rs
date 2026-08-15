@@ -120,6 +120,7 @@ struct MarketplaceReleaseMetadataRow {
 #[derive(Debug, Deserialize)]
 struct MarketplaceReleaseDownloadRow {
     deployment_url: String,
+    package_key: String,
     package_sha256: String,
     package_size: f64,
     release_status: String,
@@ -560,6 +561,10 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         )
         .get_async("/v1/marketplace/plugins", marketplace_plugins)
         .post_async("/v1/marketplace/releases", marketplace_release_publish)
+        .post_async(
+            "/v1/marketplace/external-releases",
+            marketplace_external_release_publish,
+        )
         .get_async(
             "/v1/marketplace/plugins/:plugin_id/releases/:version",
             marketplace_release_metadata,
@@ -3245,6 +3250,301 @@ async fn marketplace_release_publish(
     }))
 }
 
+async fn marketplace_external_release_publish(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    const MAX_ARTIFACT_BYTES: usize = 100 * 1024 * 1024;
+
+    let account = match authenticated_account(&request, &context.env) {
+        Ok(account) => account,
+        Err(_) => {
+            return error_response(
+                401,
+                "unauthorized",
+                "A valid Mahayana account token is required to publish marketplace releases.",
+            );
+        }
+    };
+    if !account.is_test_account
+        && !account
+            .scopes
+            .iter()
+            .any(|scope| scope == "marketplace.publish")
+    {
+        return error_response(
+            403,
+            "marketplace_publish_forbidden",
+            "The account token does not permit marketplace publishing.",
+        );
+    }
+
+    let body: Value = match request.json().await {
+        Ok(body) => body,
+        Err(_) => {
+            return error_response(
+                400,
+                "invalid_marketplace_release",
+                "The external release request must be valid JSON.",
+            );
+        }
+    };
+    let plugin_id = match body.get("pluginId").and_then(Value::as_str) {
+        Some(value) if is_identifier(value) => value.to_string(),
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_release_identifier",
+                "pluginId must be a normalized identifier.",
+            );
+        }
+    };
+    let version = match body.get("version").and_then(Value::as_str) {
+        Some(value) if is_version_identifier(value) => value.to_string(),
+        _ => {
+            return error_response(
+                400,
+                "invalid_marketplace_release_identifier",
+                "version must be a normalized version identifier.",
+            );
+        }
+    };
+    let display_name = body
+        .get("displayName")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 120)
+        .unwrap_or(&plugin_id)
+        .to_string();
+    let description = body
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| value.len() <= 2_000)
+        .unwrap_or("")
+        .to_string();
+    let platforms = match body.get("platforms").and_then(Value::as_array) {
+        Some(values) => values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
+    if platforms.is_empty()
+        || platforms.iter().any(|platform| {
+            !matches!(
+                platform.as_str(),
+                "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+            )
+        })
+    {
+        return error_response(
+            400,
+            "invalid_marketplace_platforms",
+            "platforms must contain supported Mahayana targets.",
+        );
+    }
+
+    let release_manifest = match body.get("releaseManifest") {
+        Some(value) => value.clone(),
+        None => {
+            return error_response(
+                400,
+                "invalid_marketplace_release_manifest",
+                "releaseManifest is required.",
+            );
+        }
+    };
+    if let Err(message) = validate_external_release_manifest(
+        &release_manifest,
+        &plugin_id,
+        &version,
+        &platforms,
+        MAX_ARTIFACT_BYTES,
+    ) {
+        return error_response(400, "invalid_marketplace_release_manifest", &message);
+    }
+
+    let database = context.env.d1(DATABASE_BINDING)?;
+    if let Some(existing) = worker::query!(
+        &database,
+        "SELECT publisher_user_id FROM marketplace_plugins WHERE plugin_id = ?1",
+        &plugin_id
+    )?
+    .first::<MarketplacePluginOwnerRow>(None)
+    .await?
+    {
+        if existing.publisher_user_id != account.user_id {
+            return error_response(
+                403,
+                "marketplace_plugin_owner_mismatch",
+                "The authenticated publisher does not own this plugin ID.",
+            );
+        }
+    }
+    if let Some(existing) = worker::query!(
+        &database,
+        "SELECT package_sha256 FROM plugin_releases WHERE plugin_id = ?1 AND version = ?2",
+        &plugin_id,
+        &version
+    )?
+    .first::<MarketplaceExistingReleaseRow>(None)
+    .await?
+    {
+        return error_response(
+            409,
+            "version_already_exists",
+            &format!(
+                "Release {plugin_id}@{version} is immutable and already exists with package SHA-256 {}.",
+                existing.package_sha256
+            ),
+        );
+    }
+
+    // Admission verifies every external runtime artifact at its publisher URL.
+    // The bytes are never persisted by the marketplace.
+    let artifacts = release_manifest
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .expect("validated release manifest artifacts");
+    let mut resolved_artifacts = Vec::with_capacity(artifacts.len());
+    for artifact in artifacts {
+        let resolved_url = match resolve_external_artifact_url(artifact).await {
+            Ok(url) => url,
+            Err(message) => {
+                return error_response(400, "marketplace_artifact_resolution_failed", &message);
+            }
+        };
+        let expected_size = artifact
+            .get("size")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .expect("validated artifact size");
+        let expected_sha256 = artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .expect("validated artifact sha256");
+        if let Err(message) = verify_external_artifact(
+            &resolved_url,
+            expected_sha256,
+            expected_size,
+            MAX_ARTIFACT_BYTES,
+        )
+        .await
+        {
+            return error_response(400, "marketplace_artifact_verification_failed", &message);
+        }
+        resolved_artifacts.push(resolved_url);
+    }
+
+    let primary = artifacts.first().expect("validated non-empty artifacts");
+    let package_sha256 = primary
+        .get("sha256")
+        .and_then(Value::as_str)
+        .expect("validated primary sha")
+        .to_ascii_lowercase();
+    let package_size = primary
+        .get("size")
+        .and_then(Value::as_u64)
+        .and_then(|value| i64::try_from(value).ok())
+        .expect("validated primary size");
+    let primary_url = resolved_artifacts
+        .first()
+        .expect("validated primary URL")
+        .clone();
+    let release_manifest_json = serde_json::to_string(&release_manifest)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let release_manifest_sha256 = format!("{:x}", Sha256::digest(release_manifest_json.as_bytes()));
+    let source = body
+        .get("source")
+        .cloned()
+        .unwrap_or_else(|| json!({"provider":"external","artifact": primary.get("source").cloned().unwrap_or(Value::Null)}));
+    let source_json = serde_json::to_string(&source)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let platforms_json = serde_json::to_string(&platforms)
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let now = now_seconds();
+    let release_status = if account.is_test_account {
+        "approved"
+    } else {
+        "pending"
+    };
+    let visibility = if account.is_test_account {
+        "public"
+    } else {
+        "unlisted"
+    };
+    let review_state = if account.is_test_account {
+        "approved"
+    } else {
+        "pending"
+    };
+
+    database
+        .batch(vec![
+            worker::query!(
+                &database,
+                "INSERT INTO marketplace_plugins
+                 (plugin_id, display_name, description, publisher_user_id, latest_version,
+                  visibility, review_state, created_at, updated_at, platforms_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)
+                 ON CONFLICT(plugin_id) DO UPDATE SET
+                   display_name = excluded.display_name,
+                   description = excluded.description,
+                   latest_version = excluded.latest_version,
+                   visibility = excluded.visibility,
+                   review_state = excluded.review_state,
+                   updated_at = excluded.updated_at,
+                   platforms_json = excluded.platforms_json",
+                &plugin_id,
+                &display_name,
+                &description,
+                &account.user_id,
+                &version,
+                visibility,
+                review_state,
+                now,
+                &platforms_json
+            )?,
+            worker::query!(
+                &database,
+                "INSERT INTO plugin_releases
+                 (plugin_id, version, package_key, package_sha256, package_size,
+                  tuf_target_path, published_at, deployment_url, source_json,
+                  release_manifest_json, release_manifest_sha256, release_status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                &plugin_id,
+                &version,
+                &primary_url,
+                &package_sha256,
+                package_size,
+                &format!("external/{plugin_id}/{version}"),
+                now,
+                &primary_url,
+                &source_json,
+                &release_manifest_json,
+                &release_manifest_sha256,
+                release_status
+            )?,
+        ])
+        .await?;
+
+    Response::from_json(&json!({
+        "published": true,
+        "approved": account.is_test_account,
+        "storage": "external",
+        "pluginId": plugin_id,
+        "version": version,
+        "platforms": platforms,
+        "source": source,
+        "releaseManifest": release_manifest,
+        "releaseManifestSha256": release_manifest_sha256,
+        "resolvedArtifacts": resolved_artifacts,
+        "releaseStatus": release_status,
+    }))
+}
+
 async fn marketplace_release_metadata(
     _request: Request,
     context: RouteContext<()>,
@@ -3336,7 +3636,7 @@ async fn marketplace_plugin_download(
     let database = context.env.d1(DATABASE_BINDING)?;
     let release = worker::query!(
         &database,
-        "SELECT pr.deployment_url, pr.package_sha256, pr.package_size,
+        "SELECT pr.deployment_url, pr.package_key, pr.package_sha256, pr.package_size,
                 pr.release_status, pr.revoked_at, pr.revocation_reason
          FROM plugin_releases pr
          JOIN marketplace_plugins mp ON mp.plugin_id = pr.plugin_id
@@ -3394,28 +3694,34 @@ async fn marketplace_plugin_download(
             );
         }
     };
-    let package = match fetch_verified_marketplace_package(
-        &release.deployment_url,
+    // The marketplace is a metadata/control plane, not a binary CDN. Package
+    // bytes stay on the publisher's immutable GitHub/npm/HTTPS origin. Older
+    // releases already store their externally served package URL in
+    // `package_key`, so redirecting is backward compatible while removing the
+    // Worker from the plugin data path. Clients MUST continue validating the
+    // catalogued size and SHA-256 after following this redirect.
+    let package_url = Url::parse(&release.package_key).map_err(|_| {
+        worker::Error::RustError("marketplace release package URL is invalid".into())
+    })?;
+    if package_url.scheme() != "https" || package_url.host_str().is_none() {
+        return error_response(
+            503,
+            "marketplace_package_url_invalid",
+            "The approved release does not point to a public HTTPS artifact.",
+        );
+    }
+    let mut response = Response::redirect_with_status(package_url, 307)?;
+    response.headers_mut().set(
+        "X-Mahayana-Package-Sha256",
         &release.package_sha256,
-        package_size,
-    )
-    .await
-    {
-        Ok(package) => package,
-        Err(message) => {
-            return error_response(503, "marketplace_package_unavailable", &message);
-        }
-    };
-    let headers = Headers::new();
-    headers.set("Content-Type", "application/gzip")?;
-    headers.set(
-        "Content-Disposition",
-        &format!("attachment; filename=\"{plugin_id}-{version}.tar.gz\""),
     )?;
-    headers.set("Content-Length", &package_size.to_string())?;
-    headers.set("X-Mahayana-Package-Sha256", &release.package_sha256)?;
-    headers.set("Cache-Control", "public, max-age=31536000, immutable")?;
-    Ok(Response::from_bytes(package)?.with_headers(headers))
+    response
+        .headers_mut()
+        .set("X-Mahayana-Package-Size", &package_size.to_string())?;
+    response
+        .headers_mut()
+        .set("Cache-Control", "public, max-age=300")?;
+    Ok(response)
 }
 
 async fn marketplace_release_revoke(
@@ -4716,6 +5022,252 @@ fn json_string<'a>(value: &'a Value, key: &str) -> std::result::Result<&'a str, 
 
 fn is_git_object_id(value: &str) -> bool {
     value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_external_release_manifest(
+    manifest: &Value,
+    plugin_id: &str,
+    version: &str,
+    platforms: &[String],
+    max_artifact_bytes: usize,
+) -> std::result::Result<(), String> {
+    if manifest.get("schemaVersion").and_then(Value::as_u64) != Some(1)
+        || manifest.get("protocol").and_then(Value::as_str)
+            != Some("mahayana.external-release.v1")
+        || manifest.get("pluginId").and_then(Value::as_str) != Some(plugin_id)
+        || manifest.get("version").and_then(Value::as_str) != Some(version)
+    {
+        return Err("external release manifest identity/protocol does not match the request".into());
+    }
+    let artifacts = manifest
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .filter(|artifacts| !artifacts.is_empty())
+        .ok_or_else(|| "external release manifest must contain at least one artifact".to_string())?;
+    let mut ids = std::collections::HashSet::new();
+    let mut covered = std::collections::HashSet::new();
+    for artifact in artifacts {
+        let id = json_string(artifact, "id")?;
+        if !is_identifier(id) || !ids.insert(id) {
+            return Err("external artifact ids must be unique normalized identifiers".into());
+        }
+        let runtime = json_string(artifact, "runtime")?;
+        if runtime.is_empty() || runtime.len() > 64 {
+            return Err("external artifact runtime is invalid".into());
+        }
+        let format = json_string(artifact, "format")?;
+        if !matches!(format, "tar-gz" | "zip") {
+            return Err("external artifact format must be tar-gz or zip".into());
+        }
+        let sha256 = json_string(artifact, "sha256")?;
+        if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("external artifact sha256 must be a 64-character hexadecimal digest".into());
+        }
+        let size = artifact
+            .get("size")
+            .and_then(Value::as_u64)
+            .and_then(|size| usize::try_from(size).ok())
+            .filter(|size| *size > 0 && *size <= max_artifact_bytes)
+            .ok_or_else(|| "external artifact size is invalid".to_string())?;
+        let _ = size;
+        let artifact_platforms = artifact
+            .get("platforms")
+            .and_then(Value::as_array)
+            .filter(|values| !values.is_empty())
+            .ok_or_else(|| "external artifact platforms are required".to_string())?;
+        for platform in artifact_platforms.iter().filter_map(Value::as_str) {
+            if !matches!(
+                platform,
+                "cli" | "desktop" | "mobile" | "web" | "ios" | "android"
+            ) {
+                return Err(format!("unsupported external artifact platform {platform}"));
+            }
+            covered.insert(platform.to_string());
+        }
+        validate_external_artifact_source(
+            artifact
+                .get("source")
+                .ok_or_else(|| "external artifact source is required".to_string())?,
+        )?;
+        if let Some(entry) = artifact.get("entry").and_then(Value::as_str) {
+            if entry.is_empty()
+                || entry.starts_with('/')
+                || entry.split('/').any(|part| matches!(part, "" | "." | ".."))
+            {
+                return Err("external artifact entry must be repository-relative".into());
+            }
+        }
+    }
+    if platforms.iter().any(|platform| !covered.contains(platform)) {
+        return Err("external artifacts do not cover every declared marketplace platform".into());
+    }
+    Ok(())
+}
+
+fn validate_external_artifact_source(source: &Value) -> std::result::Result<(), String> {
+    match source.get("type").and_then(Value::as_str) {
+        Some("https") => {
+            let url = json_string(source, "url")?;
+            if !is_external_https_url(url) {
+                return Err("https artifact source must be a public HTTPS URL".into());
+            }
+        }
+        Some("github-release") => {
+            let repository = json_string(source, "repository")?;
+            let parts = repository.split('/').collect::<Vec<_>>();
+            if parts.len() != 2
+                || parts.iter().any(|part| part.is_empty())
+                || repository.bytes().any(|byte| {
+                    !(byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+                })
+            {
+                return Err("GitHub release repository must be owner/name".into());
+            }
+            for key in ["tag", "asset"] {
+                let value = json_string(source, key)?;
+                if value.is_empty()
+                    || value.len() > 255
+                    || value.contains(['/', '\\', '\r', '\n'])
+                    || matches!(value, "." | "..")
+                {
+                    return Err(format!("GitHub release {key} is invalid"));
+                }
+            }
+        }
+        Some("npm") => {
+            let package = json_string(source, "package")?;
+            let version = json_string(source, "version")?;
+            if package.is_empty()
+                || package.len() > 214
+                || package.contains(char::is_whitespace)
+                || package.contains("..")
+                || version.is_empty()
+                || version.len() > 128
+            {
+                return Err("npm package/version is invalid".into());
+            }
+            if let Some(registry) = source.get("registry").and_then(Value::as_str) {
+                if !is_external_https_url(registry) {
+                    return Err("npm registry must be HTTPS".into());
+                }
+            }
+        }
+        _ => return Err("artifact source type must be https, github-release, or npm".into()),
+    }
+    Ok(())
+}
+
+fn is_external_https_url(value: &str) -> bool {
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+}
+
+async fn resolve_external_artifact_url(artifact: &Value) -> std::result::Result<String, String> {
+    let source = artifact
+        .get("source")
+        .ok_or_else(|| "artifact source is required".to_string())?;
+    validate_external_artifact_source(source)?;
+    match source.get("type").and_then(Value::as_str) {
+        Some("https") => Ok(json_string(source, "url")?.to_string()),
+        Some("github-release") => Ok(format!(
+            "https://github.com/{}/releases/download/{}/{}",
+            json_string(source, "repository")?,
+            json_string(source, "tag")?,
+            json_string(source, "asset")?
+        )),
+        Some("npm") => {
+            let package = json_string(source, "package")?;
+            let version = json_string(source, "version")?;
+            let registry = source
+                .get("registry")
+                .and_then(Value::as_str)
+                .unwrap_or("https://registry.npmjs.org");
+            let metadata_url = format!(
+                "{}/{}{}{}",
+                registry.trim_end_matches('/'),
+                package.replace('/', "%2f"),
+                "/",
+                version
+            );
+            let parsed = metadata_url
+                .parse()
+                .map_err(|error| format!("invalid npm metadata URL: {error}"))?;
+            let mut response = Fetch::Url(parsed)
+                .send()
+                .await
+                .map_err(|error| format!("failed to fetch npm package metadata: {error}"))?;
+            if !(200..300).contains(&response.status_code()) {
+                return Err(format!(
+                    "npm registry returned HTTP {}",
+                    response.status_code()
+                ));
+            }
+            let metadata: Value = response
+                .json()
+                .await
+                .map_err(|error| format!("invalid npm metadata response: {error}"))?;
+            let tarball = metadata
+                .pointer("/dist/tarball")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "npm dist.tarball is missing".to_string())?;
+            if !is_external_https_url(tarball) {
+                return Err("npm dist.tarball is not a public HTTPS URL".into());
+            }
+            Ok(tarball.to_string())
+        }
+        _ => Err("unsupported external artifact source".into()),
+    }
+}
+
+async fn verify_external_artifact(
+    url: &str,
+    expected_sha256: &str,
+    expected_size: usize,
+    max_bytes: usize,
+) -> std::result::Result<(), String> {
+    if !is_external_https_url(url) || expected_size == 0 || expected_size > max_bytes {
+        return Err("external artifact URL or size is invalid".into());
+    }
+    let parsed = url
+        .parse()
+        .map_err(|error| format!("invalid external artifact URL: {error}"))?;
+    let mut response = Fetch::Url(parsed)
+        .send()
+        .await
+        .map_err(|error| format!("failed to fetch external artifact: {error}"))?;
+    if !(200..300).contains(&response.status_code()) {
+        return Err(format!(
+            "external artifact returned HTTP {}",
+            response.status_code()
+        ));
+    }
+    if response
+        .headers()
+        .get("Content-Length")
+        .map_err(|error| error.to_string())?
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length != expected_size || length > max_bytes)
+    {
+        return Err("external artifact Content-Length does not match approved metadata".into());
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("failed to read external artifact: {error}"))?;
+    if bytes.len() != expected_size || bytes.len() > max_bytes {
+        return Err("external artifact size does not match approved metadata".into());
+    }
+    let actual_sha256 = format!("{:x}", Sha256::digest(&bytes));
+    if !actual_sha256.eq_ignore_ascii_case(expected_sha256) {
+        return Err("external artifact SHA-256 does not match approved metadata".into());
+    }
+    Ok(())
 }
 
 fn validate_github_source_identity(source: &Value) -> std::result::Result<(), String> {

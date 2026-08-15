@@ -19,16 +19,20 @@ function parseArgs(argv) {
   return args;
 }
 
-function readPubspecVersion(pubspecPath) {
-  const content = fs.readFileSync(pubspecPath, 'utf8');
-  const match = content.match(/^version:\s*([^+\s]+)\+(\d+)\s*$/m);
-  if (!match) {
-    throw new Error(`Unable to parse version from ${pubspecPath}`);
+function readAppVersion(versionMetadataPath) {
+  const config = JSON.parse(fs.readFileSync(versionMetadataPath, 'utf8'));
+  const version = String(config.version || '').trim();
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(`Unable to parse semantic version from ${versionMetadataPath}`);
   }
-  return {
-    version: match[1],
-    buildNumber: Number.parseInt(match[2], 10),
-  };
+  const configuredBuild = Number.parseInt(String(config.androidVersionCode || ''), 10);
+  const ciBuild = Number.parseInt(process.env.VERSION_BUILD_NUMBER || process.env.GITHUB_RUN_NUMBER || '', 10);
+  const buildNumber = Number.isInteger(configuredBuild) && configuredBuild > 0
+    ? configuredBuild
+    : Number.isInteger(ciBuild) && ciBuild > 0
+      ? ciBuild
+      : 1;
+  return { version, buildNumber };
 }
 
 function parseReleaseVersion(value) {
@@ -56,7 +60,7 @@ function parseReleaseVersion(value) {
   return null;
 }
 
-function resolveVersionMetadata({ pubspecPath, args }) {
+function resolveVersionMetadata({ versionMetadataPath, args }) {
   const releaseCandidates = [
     args.releaseTag,
     process.env.GITHUB_RELEASE_TAG,
@@ -73,7 +77,7 @@ function resolveVersionMetadata({ pubspecPath, args }) {
     }
   }
 
-  return readPubspecVersion(pubspecPath);
+  return readAppVersion(versionMetadataPath);
 }
 
 function normalizeBoolean(value, fallbackValue) {
@@ -166,8 +170,8 @@ async function upsertPolicy({ endpoint, token, payload }) {
 async function main() {
   const args = parseArgs(process.argv);
   const repoRoot = process.cwd();
-  const pubspecPath = path.join(repoRoot, 'fabushi', 'pubspec.yaml');
-  const { version, buildNumber } = resolveVersionMetadata({ pubspecPath, args });
+  const versionMetadataPath = path.join(repoRoot, 'app-version.json');
+  const { version, buildNumber } = resolveVersionMetadata({ versionMetadataPath, args });
 
   const endpoint =
     args.endpoint ||
