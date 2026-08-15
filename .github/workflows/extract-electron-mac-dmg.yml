@@ -1,0 +1,38 @@
+name: Extract Electron macOS DMG
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/extract-electron-mac-dmg.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  extract-dmg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download existing macOS Electron artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api /repos/${{ github.repository }}/actions/artifacts/9247608860/zip > electron-mac.zip
+
+      - name: Extract only DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dmg
+          unzip -j electron-mac.zip '*.dmg' -d dmg
+          ls -lh dmg
+
+      - name: Upload standalone DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-electron-mac-dmg
+          path: dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
