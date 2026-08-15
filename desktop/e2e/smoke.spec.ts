@@ -15,8 +15,7 @@ test('desktop boots with a sandboxed renderer and exposes only the approved brid
 
   try {
     const page = await app.firstWindow();
-    await expect(page.getByTestId('app-shell')).toBeVisible();
-    await expect(page.getByTestId('runtime-badge')).toContainText('Electron');
+    await expect(page.getByTestId('open-agent-host')).toBeVisible();
 
     const security = await page.evaluate(() => ({
       nodeRequire: typeof (window as unknown as { require?: unknown }).require,
@@ -25,7 +24,18 @@ test('desktop boots with a sandboxed renderer and exposes only the approved brid
     }));
     expect(security.nodeRequire).toBe('undefined');
     expect(security.processGlobal).toBe('undefined');
-    expect(security.bridgeKeys).toEqual(['invoke', 'notify', 'openExternal', 'pickFile']);
+    expect(security.bridgeKeys).toEqual([
+      'invoke',
+      'notify',
+      'openExternal',
+      'openSystemSettings',
+      'pickFile',
+      'windowFocused',
+    ]);
+
+    await page.getByTestId('open-plugin-runtime').click();
+    await expect(page.getByTestId('app-shell')).toBeVisible();
+    await expect(page.getByTestId('runtime-badge')).toContainText('Electron');
   } finally {
     await app.close();
   }

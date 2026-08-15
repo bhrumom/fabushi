@@ -1,20 +1,6 @@
-name: Tauri macOS package and functional tests
+name: Legacy Tauri macOS package (manual only)
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/tauri-macos-package.yml
-      - apps/fabushi-tauri/**
-      - contracts/automation/cross-platform-journeys.json
-      - fabushi/e2e/**
-      - fabushi/tauri-e2e/**
-      - frontend/apps/host/**
-      - frontend/apps/web/src/app/host/**
-      - frontend/apps/web/src/lib/mahayana-host/**
-      - frontend/packages/shared/src/mahayana-host-features.ts
-      - scripts/check-tauri-production-contract.mjs
-      - third_party/mahayana/mahayana-rs/**
   workflow_dispatch:
 
 concurrency:

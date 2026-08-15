@@ -1,0 +1,156 @@
+name: Electron desktop quality gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/lib/grok-agent/**'
+      - 'frontend/apps/web/src/lib/grok-bot/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/packages/shared/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - '.github/scripts/assert-native-electron-canonical.sh'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/workflows/electron-desktop.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/lib/grok-agent/**'
+      - 'frontend/apps/web/src/lib/grok-bot/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/packages/shared/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - '.github/scripts/assert-native-electron-canonical.sh'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/workflows/electron-desktop.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: electron-desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-smoke:
+    name: Electron Host runtime smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Enforce canonical application architecture
+        shell: bash
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
+      - name: Verify Electron Feature Host bridge contract
+        shell: bash
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: electron-desktop-host-v1
+
+      - name: Build production Mahayana app host
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo build --locked --release -p mahayana-app-host
+
+      - name: Build Electron renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Run Electron sandbox and Host smoke
+        working-directory: desktop
+        env:
+          MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/third_party/mahayana/mahayana-rs/target/release/mahayana-app-host
+        run: xvfb-run -a npm run test:e2e
+
+  package:
+    name: Package Electron (${{ matrix.label }})
+    needs: runtime-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS
+            target: mac
+          - os: windows-latest
+            label: Windows
+            target: win
+          - os: ubuntu-latest
+            label: Linux
+            target: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: electron-package-${{ runner.os }}-v1
+
+      - name: Package canonical Electron application
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run package -- --${{ matrix.target }}
+
+      - name: Upload Electron packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-electron-${{ matrix.target }}
+          path: desktop/release/**
+          if-no-files-found: error
+          retention-days: 14
