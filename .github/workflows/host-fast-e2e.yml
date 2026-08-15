@@ -56,12 +56,31 @@ jobs:
             /fabushi/e2e/**
             /contracts/automation/cross-platform-journeys.json
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Enable pinned pnpm through Corepack
         run: corepack enable
 
+      - id: pnpm-store
+        name: Restore reusable Host pnpm store
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/host-pnpm-store
+          key: host-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+
       - name: Install frontend dependencies from lockfile
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline --store-dir "$RUNNER_TEMP/host-pnpm-store"
+
+      - name: Save Host pnpm store before typecheck
+        if: steps.pnpm-store.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/host-pnpm-store
+          key: host-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
 
       - name: Strictly typecheck the standalone and Web Host boundaries
         working-directory: frontend
@@ -73,7 +92,7 @@ jobs:
         working-directory: fabushi/e2e
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Verify system Chrome is available
         run: google-chrome --version
