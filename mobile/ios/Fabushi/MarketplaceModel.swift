@@ -74,22 +74,22 @@ final class MarketplaceModel {
                 throw MahayanaHost.HostError.invalidResponse
             }
 
-            try await executeFeatureCommand(
+            _ = try await executeFeatureCommand(
                 type: "chat.send",
                 requestId: "ios-chat",
                 fields: ["text": "请用一句话说明自动化测试状态"]
             )
-            try await executeFeatureCommand(
+            _ = try await executeFeatureCommand(
                 type: "marketplace.install",
                 requestId: "ios-install",
                 fields: ["miniAppId": "global-dharma"]
             )
-            try await executeFeatureCommand(
+            _ = try await executeFeatureCommand(
                 type: "miniapp.open",
                 requestId: "ios-open",
                 fields: ["miniAppId": "global-dharma"]
             )
-            try await executeFeatureCommand(
+            _ = try await executeFeatureCommand(
                 type: "capability.request",
                 requestId: "ios-capability",
                 fields: [
@@ -125,7 +125,7 @@ final class MarketplaceModel {
                 params: ["operationId": operationId]
             )
 
-            try await executeFeatureCommand(
+            _ = try await executeFeatureCommand(
                 type: "session.clear",
                 requestId: "ios-session-clear"
             )

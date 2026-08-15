@@ -13,11 +13,12 @@ final class FabushiUITests: XCTestCase {
 
         let smoke = app.descendants(matching: .any)["feature-host-smoke"]
         XCTAssertTrue(smoke.waitForExistence(timeout: 15))
-        let passed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", "passed"),
+        let finished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "passed", "failed:"),
             object: smoke
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [passed], timeout: 90), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 90), .completed)
+        XCTAssertEqual(smoke.label, "passed", "FeatureHost smoke result: \(smoke.label)")
     }
 
     @MainActor

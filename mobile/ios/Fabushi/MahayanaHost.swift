@@ -34,13 +34,14 @@ final class MahayanaHost: @unchecked Sendable {
         if let handle { mahayana_app_host_destroy(handle) }
     }
 
+    @MainActor
     func request(method: String, params: [String: Any] = [:]) async throws -> JSONResult {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
+        let data = try JSONSerialization.data(withJSONObject: ["method": method, "params": params])
+        guard let request = String(data: data, encoding: .utf8) else { throw HostError.invalidResponse }
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self, request] in
                 do {
-                    continuation.resume(
-                        returning: JSONResult(value: try requestSync(method: method, params: params))
-                    )
+                    continuation.resume(returning: JSONResult(value: try requestSync(request)))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -48,10 +49,8 @@ final class MahayanaHost: @unchecked Sendable {
         }
     }
 
-    private func requestSync(method: String, params: [String: Any]) throws -> Any {
+    private func requestSync(_ request: String) throws -> Any {
         guard let handle else { throw HostError.initializationFailed }
-        let data = try JSONSerialization.data(withJSONObject: ["method": method, "params": params])
-        guard let request = String(data: data, encoding: .utf8) else { throw HostError.invalidResponse }
         let pointer = request.withCString { mahayana_app_host_dispatch_with_handle(handle, $0) }
         guard let pointer else { throw HostError.invalidResponse }
         defer { mahayana_app_host_free_string(pointer) }
