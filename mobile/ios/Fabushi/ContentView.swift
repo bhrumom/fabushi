@@ -18,7 +18,9 @@ struct ContentView: View {
                                 .font(.caption.bold())
                                 .accessibilityIdentifier("runtime-badge")
                         }
+                        .accessibilityElement(children: .contain)
                     }
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("app-shell")
                 }
 
@@ -40,6 +42,7 @@ struct ContentView: View {
                         if model.loading { ProgressView() }
                         Text(model.message)
                     }
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("host-status")
                 }
 

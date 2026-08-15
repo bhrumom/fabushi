@@ -27,6 +27,8 @@ pub struct HostConfig {
 pub enum SurfacePlatform {
     Mock,
     Electron,
+    Ios,
+    Android,
     Tauri,
     Wasm,
     Flutter,

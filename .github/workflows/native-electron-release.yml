@@ -10,6 +10,12 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  checks: read
+
+concurrency:
+  group: native-electron-release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 env:
   RELEASE_TAG: ${{ inputs.tag }}
@@ -30,6 +36,22 @@ jobs:
           set -euo pipefail
           git rev-parse -q --verify "refs/tags/$RELEASE_TAG"
           bash .github/scripts/assert-native-electron-canonical.sh
+      - name: Require green CI, Electron and native-mobile gates for the tagged commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          checks_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$tagged_sha/check-runs?per_page=100")"
+          for required in 'CI result' 'Electron desktop result' 'Native mobile result'; do
+            conclusion="$(printf '%s' "$checks_json" | jq -r --arg required "$required" '[.[].check_runs[] | select(.name == $required)] | last | .conclusion // "missing"')"
+            if [ "$conclusion" != "success" ]; then
+              echo "Required release gate '$required' is $conclusion for $tagged_sha." >&2
+              exit 1
+            fi
+          done
+          echo "Tagged commit $tagged_sha has all canonical platform gates green."
       - id: version
         shell: bash
         run: echo "version=$(jq -r '.version' app-version.json)" >> "$GITHUB_OUTPUT"
@@ -50,8 +72,12 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: release-electron-${{ runner.os }}-v2
       - working-directory: desktop
-        run: npm ci
+        run: npm ci --prefer-offline
       - working-directory: desktop
         run: npm run build
       - name: Playwright Electron smoke
@@ -87,8 +113,12 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: release-electron-${{ runner.os }}-v2
       - working-directory: desktop
-        run: npm ci
+        run: npm ci --prefer-offline
       - name: Package canonical Electron application
         working-directory: desktop
         env:
@@ -136,6 +166,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: release-android-v2
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Build native Rust JNI libraries
@@ -152,6 +186,8 @@ jobs:
           set -euo pipefail
           test -n "$ANDROID_KEYSTORE_BASE64"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fabushi-release.jks"
+      - name: Restore Gradle dependency and build cache
+        uses: gradle/actions/setup-gradle@v4
       - name: Build signed Android release
         working-directory: mobile/android
         env:
@@ -159,7 +195,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon bundleRelease assembleRelease -PversionName=${{ needs.verify.outputs.version }}
+        run: ./gradlew --no-daemon --build-cache bundleRelease assembleRelease -PversionName=${{ needs.verify.outputs.version }}
       - uses: actions/upload-artifact@v7
         with:
           name: android-release
@@ -182,8 +218,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: release-ios-v2
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
       - name: Build Rust static library for iOS device
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo build --release -p mahayana-app-host-mobile --target aarch64-apple-ios

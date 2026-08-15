@@ -1,6 +1,7 @@
 {
   "name": "@fabushi/desktop",
   "version": "0.1.0",
+  "desktopName": "com.ombhrum.fabushi",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -8,6 +9,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build:renderer": "tsc --noEmit && vite build",
     "build:host": "cargo build --release -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs",
+    "build:host:ci": "cargo build --profile ci -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs ci",
     "build": "npm run build:host && npm run build:renderer",
     "package": "npm run build:host && npm run build:renderer && electron-builder",
     "test:e2e": "playwright test",
@@ -32,6 +34,7 @@
   "build": {
     "appId": "com.ombhrum.fabushi",
     "productName": "全球法布施",
+    "executableName": "fabushi",
     "asar": true,
     "directories": {
       "output": "release"
@@ -58,6 +61,7 @@
     },
     "linux": {
       "category": "Utility",
+      "syncDesktopName": true,
       "target": ["AppImage", "deb"]
     }
   }

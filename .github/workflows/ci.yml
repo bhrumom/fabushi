@@ -23,8 +23,60 @@ permissions:
   pull-requests: read
 
 jobs:
+  changes:
+    name: Classify CI changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      frontend: ${{ steps.classify.outputs.frontend }}
+      worker: ${{ steps.classify.outputs.worker }}
+      mcp: ${{ steps.classify.outputs.mcp }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      electron: ${{ steps.classify.outputs.electron }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - id: classify
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_ALL" = "true" ] || [ -z "$BASE_SHA" ]; then
+            frontend=true
+            worker=true
+            mcp=true
+            workflows=true
+            electron=true
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+            printf '%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
+            frontend=false
+            worker=false
+            mcp=false
+            workflows=false
+            electron=false
+            if printf '%s\n' "$changed" | grep -Eq '^(frontend/|contracts/automation/cross-platform-journeys\.json$)'; then frontend=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^(fabushi/web/|third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/)'; then worker=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^(\.agents/plugins/|ai-backend/|frontend/packages/mcp-app-sdk/|plugins/)'; then mcp=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^\.github/workflows/'; then workflows=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^(\.github/scripts/assert-(electron-feature-host-bridge\.sh|feature-command-router-coverage\.py)$|desktop/electron/(main|preload)\.cjs$|desktop/src/main\.tsx$|frontend/apps/web/src/app/host/host-client\.tsx$|frontend/apps/web/src/lib/mahayana-host/(electron-transport|mock-transport)\.ts$|third_party/mahayana/mahayana-rs/(mahayana-app-host/|mahayana-feature-host/|mahayana-host-protocol/))'; then electron=true; fi
+          fi
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "worker=$worker" >> "$GITHUB_OUTPUT"
+          echo "mcp=$mcp" >> "$GITHUB_OUTPUT"
+          echo "workflows=$workflows" >> "$GITHUB_OUTPUT"
+          echo "electron=$electron" >> "$GITHUB_OUTPUT"
+          printf 'frontend=%s worker=%s mcp=%s workflows=%s electron=%s\n' "$frontend" "$worker" "$mcp" "$workflows" "$electron" >> "$GITHUB_STEP_SUMMARY"
+
   frontend:
     name: Frontend checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -44,8 +96,20 @@ jobs:
           node-version: 24
       - name: Enable Corepack
         run: corepack enable
+      - id: pnpm-store
+        name: Restore reusable pnpm store
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/fabushi-pnpm-store
+          key: frontend-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
       - name: Install frontend dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline --store-dir "$RUNNER_TEMP/fabushi-pnpm-store"
+      - name: Save pnpm store before compiling
+        if: steps.pnpm-store.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/fabushi-pnpm-store
+          key: frontend-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
       - name: Typecheck frontend workspace
         run: pnpm typecheck
       - name: Build official web frontend
@@ -53,6 +117,8 @@ jobs:
 
   worker:
     name: Worker checks
+    needs: changes
+    if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -90,6 +156,8 @@ jobs:
 
   mcp-contracts:
     name: MCP plugin contracts
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -112,7 +180,7 @@ jobs:
           cache: npm
           cache-dependency-path: ai-backend/package-lock.json
       - name: Install MCP contract dependencies
-        run: npm ci
+        run: npm ci --prefer-offline
       - name: Validate official MCP plugin contracts
         run: npm test
       - name: Validate shared MCP command and schema rules
@@ -121,6 +189,8 @@ jobs:
 
   workflow-guardrails:
     name: Post-Flutter migration guardrails
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -159,6 +229,8 @@ jobs:
 
   electron-feature-host-contract:
     name: Electron Feature Host contract
+    needs: changes
+    if: needs.changes.outputs.electron == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -169,6 +241,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/assert-electron-feature-host-bridge.sh
+            /.github/scripts/assert-feature-command-router-coverage.py
             /desktop/electron/main.cjs
             /desktop/electron/preload.cjs
             /desktop/src/main.tsx
@@ -177,6 +250,10 @@ jobs:
             /frontend/apps/web/src/lib/mahayana-host/mock-transport.ts
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
+            /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+      - name: Require 100 percent FeatureCommand router coverage
+        run: python3 .github/scripts/assert-feature-command-router-coverage.py
       - name: Verify Electron to Rust Feature Host bridge
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh
@@ -186,6 +263,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - changes
       - frontend
       - worker
       - mcp-contracts
@@ -193,11 +271,12 @@ jobs:
       - electron-feature-host-contract
     if: always()
     steps:
-      - name: Check required CI jobs
+      - name: Check only the required CI jobs selected by this diff
         shell: bash
         run: |
           set -euo pipefail
           for pair in \
+            "Classifier:${{ needs.changes.result }}" \
             "Frontend:${{ needs.frontend.result }}" \
             "Worker:${{ needs.worker.result }}" \
             "MCP contracts:${{ needs.mcp-contracts.result }}" \
@@ -211,4 +290,4 @@ jobs:
               exit 1
             fi
           done
-          echo "Post-Flutter migration CI checks passed."
+          echo "Diff-selected post-Flutter migration CI checks passed."

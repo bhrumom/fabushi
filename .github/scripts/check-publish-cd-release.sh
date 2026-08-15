@@ -71,14 +71,19 @@ for forbidden in (
 
 for required in (
     'Electron desktop quality gate',
-    'npm run package',
     'npm run test:e2e',
     'mahayana-app-host',
     'mahayana-feature-host',
     'mahayana-host-protocol',
 ):
     if required not in desktop_installers_workflow:
-        missing.append(f'desktop installers workflow missing: {required}')
+        missing.append(f'Electron desktop workflow missing: {required}')
+
+if not (
+    'npm run package' in desktop_installers_workflow
+    or ('npm run build:renderer' in desktop_installers_workflow and 'npx electron-builder' in desktop_installers_workflow)
+):
+    missing.append('Electron desktop workflow must package with npm run package or build:renderer + electron-builder')
 
 for forbidden in (
     'flutter build',

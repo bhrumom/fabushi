@@ -1,10 +1,6 @@
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use mahayana_core::RuntimeConfig;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use mahayana_feature_host::FeatureHostController;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use mahayana_host::HostCreateConfig;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use mahayana_host_protocol::{
     ApprovalResolution, FeatureCommand, HostConfig, HostMode, SurfacePlatform,
 };
@@ -48,7 +44,6 @@ pub struct AppHost {
     app_data_dir: PathBuf,
     product: MahayanaProductClient,
     js: Mutex<DeepSeekJsHost>,
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     feature: FeatureHostController,
 }
 
@@ -57,7 +52,6 @@ impl AppHost {
         let app_data_dir = app_data_dir.into();
         std::fs::create_dir_all(&app_data_dir)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         let feature = create_feature_host(&app_data_dir)?;
         Ok(Self {
             app_data_dir,
@@ -66,7 +60,6 @@ impl AppHost {
                 DeepSeekJsHost::new()
                     .map_err(|error| AppHostError::Operation(error.to_string()))?,
             ),
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             feature,
         })
     }
@@ -92,7 +85,6 @@ impl AppHost {
     fn handle(&self, method: &str, params: Value) -> Result<Value, AppHostError> {
         match method {
             "host.platform" => Ok(json!({"platform": host_platform()})),
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             method if method.starts_with("feature.") => self.handle_feature(method, params),
             "marketplace.browse" => {
                 let query = params.get("query").and_then(Value::as_str);
@@ -132,7 +124,6 @@ impl AppHost {
         }
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn handle_feature(&self, method: &str, params: Value) -> Result<Value, AppHostError> {
         match method {
             "feature.info" => serde_json::to_value(self.feature.info())
@@ -162,7 +153,6 @@ impl AppHost {
         }
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_execute(&self, params: Value) -> Result<Value, AppHostError> {
         let command_value = params.get("command").cloned().unwrap_or(params);
         let command: FeatureCommand = serde_json::from_value(command_value).map_err(|error| {
@@ -175,7 +165,6 @@ impl AppHost {
         serde_json::to_value(accepted).map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_receive(&self) -> Result<Value, AppHostError> {
         let event = self
             .feature
@@ -184,7 +173,6 @@ impl AppHost {
         serde_json::to_value(event).map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_resolve_approval(&self, params: Value) -> Result<Value, AppHostError> {
         let resolution_value = params.get("resolution").cloned().unwrap_or(params);
         let resolution: ApprovalResolution =
@@ -197,7 +185,6 @@ impl AppHost {
         Ok(Value::Null)
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_interrupt(&self, params: Value) -> Result<Value, AppHostError> {
         let operation_id = string_param(&params, "operationId")?;
         self.feature
@@ -206,7 +193,6 @@ impl AppHost {
         Ok(Value::Null)
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_password_login(&self, params: Value) -> Result<Value, AppHostError> {
         let username = string_param(&params, "username")?.to_string();
         let password = string_param(&params, "password")?.to_string();
@@ -215,14 +201,12 @@ impl AppHost {
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_oauth_start(&self, params: Value) -> Result<Value, AppHostError> {
         self.feature
             .oauth_start(string_param(&params, "provider")?.to_string())
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn feature_oauth_poll(&self, params: Value) -> Result<Value, AppHostError> {
         self.feature
             .oauth_poll(string_param(&params, "attemptId")?.to_string())
@@ -481,7 +465,6 @@ impl AppHost {
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, AppHostError> {
     let root = app_data_dir.join("feature-host");
     std::fs::create_dir_all(&root).map_err(|error| AppHostError::Operation(error.to_string()))?;
@@ -500,7 +483,7 @@ fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, App
             profile_id: "default".to_string(),
             mode: HostMode::Production,
         },
-        SurfacePlatform::Electron,
+        surface_platform(),
         host_config,
     )
     .map_err(|error| {
@@ -544,6 +527,16 @@ fn string_param<'a>(params: &'a Value, name: &str) -> Result<&'a str, AppHostErr
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AppHostError::InvalidRequest(format!("{name} is required")))
+}
+
+fn surface_platform() -> SurfacePlatform {
+    if cfg!(target_os = "ios") {
+        SurfacePlatform::Ios
+    } else if cfg!(target_os = "android") {
+        SurfacePlatform::Android
+    } else {
+        SurfacePlatform::Electron
+    }
 }
 
 pub fn host_platform() -> &'static str {
