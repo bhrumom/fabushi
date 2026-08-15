@@ -100,7 +100,7 @@ impl AppHost {
                 let requested_platform = params
                     .get("platform")
                     .and_then(Value::as_str)
-                    .unwrap_or_else(host_platform);
+                    .unwrap_or(host_platform());
                 let marketplace_platform = match requested_platform {
                     "ios" | "android" => "mobile",
                     other => other,
@@ -253,7 +253,7 @@ impl AppHost {
         let platform = params
             .get("platform")
             .and_then(Value::as_str)
-            .unwrap_or_else(host_platform);
+            .unwrap_or(host_platform());
         let preferred: &[&str] = match platform {
             "ios" | "android" | "mobile" => &[
                 "deepseek-js",

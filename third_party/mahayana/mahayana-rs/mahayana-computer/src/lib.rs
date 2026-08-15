@@ -5,6 +5,7 @@
 //! policy, and audit decisions; this crate only executes already-authorized
 //! actions on the machine where Fabushi is installed.
 
+#[cfg(target_os = "macos")]
 use base64::Engine as _;
 use mahayana_host_protocol::COMPUTER_MAX_ACTIONS_PER_CALL;
 use mahayana_host_protocol::COMPUTER_MAX_WAIT_MS;
@@ -20,10 +21,14 @@ use std::sync::Mutex;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
+#[cfg(target_os = "macos")]
 use std::time::SystemTime;
+#[cfg(target_os = "macos")]
 use std::time::UNIX_EPOCH;
 
+#[cfg(target_os = "macos")]
 const FINAL_SCREEN_SETTLE_MS: u64 = 250;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +164,7 @@ pub fn execute(
         }
     }
 
+    #[cfg(target_os = "macos")]
     let ai_epoch = USER_OVERRIDE_EPOCH.load(Ordering::SeqCst);
     if origin != ComputerControlOrigin::Ai {
         // Bump before waiting on the desktop mutex so a human request can stop
@@ -199,6 +205,7 @@ pub fn execute(
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ensure_ai_not_preempted(epoch: u64) -> Result<(), ComputerError> {
     if USER_OVERRIDE_EPOCH.load(Ordering::SeqCst) != epoch {
         Err(ComputerError::Preempted)
@@ -207,6 +214,7 @@ fn ensure_ai_not_preempted(epoch: u64) -> Result<(), ComputerError> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ai_wait_with_preemption(wait_ms: u64, epoch: u64) -> Result<(), ComputerError> {
     let mut remaining = wait_ms;
     while remaining > 0 {
@@ -286,6 +294,7 @@ pub fn validate_action(action: &ComputerAction) -> Result<(), ComputerError> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
