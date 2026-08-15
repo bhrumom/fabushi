@@ -67,9 +67,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - name: Install Android SDK/NDK
+      - name: Install Android 17 preview SDK/NDK
         shell: bash
-        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+        run: sdkmanager --channel=3 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
