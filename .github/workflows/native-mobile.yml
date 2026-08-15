@@ -66,10 +66,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
       - name: Install Android 17 preview SDK/NDK
         shell: bash
-        run: sdkmanager --channel=3 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+        run: sdkmanager --channel=3 'platforms;android-37' 'build-tools;37.0.0' 'ndk;28.2.13676358'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
