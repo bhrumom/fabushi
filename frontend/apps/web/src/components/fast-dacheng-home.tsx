@@ -58,6 +58,11 @@ export function FastDachengHome() {
           ✦ 新对话
         </button>
         <nav className="fast-side-nav" aria-label="快捷功能">
+          <a className="fast-remote-computer-link" href={siteHref("/remote-computer")}>
+            <span>⌘</span>
+            <strong>远程电脑</strong>
+            <small>手机控制我的 Mac</small>
+          </a>
           {toolEntries.map((item) => (
             <button
               key={item.id}

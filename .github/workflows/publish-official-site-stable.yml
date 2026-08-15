@@ -34,7 +34,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/scripts/sync-app-version-policy.mjs
-            /fabushi/pubspec.yaml
+            /app-version.json
 
       - name: Set up Node.js for Wrangler
         uses: actions/setup-node@v6

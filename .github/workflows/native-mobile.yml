@@ -1,0 +1,160 @@
+name: Native mobile quality gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'app-version.json'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
+      - '.github/workflows/native-mobile.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'app-version.json'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
+      - '.github/workflows/native-mobile.yml'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: native-mobile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust-contract:
+    name: Shared Rust host contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+      - name: Format shared host
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime -- --check
+      - name: Lint shared host
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo clippy -p mahayana-app-host --all-targets -- -D warnings
+      - name: Test shared host dependencies
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime
+
+  android:
+    name: Android Compose gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK/NDK
+        shell: bash
+        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build Rust JNI libraries
+        working-directory: third_party/mahayana/mahayana-rs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host
+      - name: Android unit, lint and package
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Emulator Compose UI tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: cd mobile/android && ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Upload Android reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-native-reports
+          path: |
+            mobile/android/app/build/reports/**
+            mobile/android/app/build/outputs/apk/debug/*.apk
+            mobile/android/app/build/outputs/androidTest-results/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios:
+    name: iOS SwiftUI gate
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build Rust static library for simulator
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo build --release -p mahayana-app-host --target aarch64-apple-ios-sim
+      - name: Stage Rust library
+        shell: bash
+        run: |
+          mkdir -p mobile/ios/Frameworks
+          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/release/libmahayana_app_host.a mobile/ios/Frameworks/
+      - name: Generate Xcode project
+        working-directory: mobile/ios
+        run: xcodegen generate
+      - name: Select an available iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime in d.values() for x in runtime if x.get("isAvailable") and x.get("name", "").startswith("iPhone")))')"
+          test -n "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: SwiftUI unit and UI tests
+        working-directory: mobile/ios
+        run: >-
+          xcodebuild test
+          -project Fabushi.xcodeproj
+          -scheme Fabushi
+          -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
+          CODE_SIGNING_ALLOWED=NO
+          -resultBundlePath "$RUNNER_TEMP/FabushiTests.xcresult"
+      - name: Upload iOS result bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-xcresult
+          path: ${{ runner.temp }}/FabushiTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14

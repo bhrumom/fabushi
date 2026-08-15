@@ -34,69 +34,59 @@ delete_account_use_case = Path('fabushi/web/src/use-cases/delete-account.js').re
 missing = []
 
 for required in (
-    'mkdir -p ../release-artifact/github-scripts',
-    'cp -R ../.github/scripts/. ../release-artifact/github-scripts',
+    'mkdir -p release-artifact/github-scripts',
+    'cp -R .github/scripts/. release-artifact/github-scripts',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB development',
     'run: bash ../../github-scripts/run-wrangler-d1-migrations.sh DB production',
+    'mahayana-platform-worker/migrations',
     '.github/cd-retry.txt)',
-    'explicit CD retry marker changed: $path',
 ):
     if required not in deploy_workflow:
         missing.append(f'deploy workflow missing: {required}')
 
 for required in (
-    'Check CD artifacts for source metadata',
-    'steps.cd-artifacts.outputs.has_artifacts == \'true\'',
-    'Checkout source for change detection',
-    'sparse-checkout-cone-mode: false',
-    'sparse-checkout: |\n            /.github/**',
-    'mobile_reasons=()',
-    'non_mobile_reasons=()',
-    'frontend/*)',
-    'official site input does not require mobile install packages',
-    'Worker/API input does not require mobile install packages',
-    'CI/CD guardrail input does not require mobile install packages',
-    'PR label explicitly requests fresh install packages',
-    'force[- ]?mobile[- ]?release|mobile[- ]?release|build[- ]?mobile[- ]?package|build[- ]?app[- ]?package',
-    '.agents/plugins/*)',
-    'independent plugin input does not require mobile install packages: $path',
-    '.github/cd-retry.txt)',
-    'explicit CD retry marker changed: $path',
-    'package release workflow changed without mobile app input: $path',
-    'Android package build when Android or shared Flutter app inputs changed, or an explicit PR label requests it',
-    'iOS package build when iOS or shared Flutter app inputs changed, or an explicit PR label requests it',
-    'This workflow publishes install packages after the main production CD workflow succeeds and the change detector finds mobile app package inputs.',
-    'Capture app screenshots',
-    'if: ${{ false }}',
-    'Official site screenshots are now maintained manually in frontend/apps/web/public/product.',
+    'Signed native Android APK/AAB',
+    'bundleRelease assembleRelease',
+    'cargo ndk -t arm64-v8a',
+    'Signed native iOS IPA',
+    'xcodebuild archive',
+    'xcodebuild -exportArchive',
+    'cargo test -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime',
+    'app-version.json',
+    'Publish native mobile GitHub Release',
+    'SHA256SUMS.txt',
 ):
     if required not in publish_release_workflow:
         missing.append(f'publish release workflow missing: {required}')
 
 for forbidden in (
-    "      - .agents/plugins/**",
-):
-    if forbidden in desktop_installers_workflow:
-        missing.append(f'desktop installers workflow must not trigger for independent plugin changes: {forbidden.strip()}')
-
-for forbidden in (
-    '      - name: Checkout source for change detection\n        uses: actions/checkout@v5\n        with:\n          ref: ${{ steps.source.outputs.source_sha }}\n          fetch-depth: 0\n\n      - name: Detect changed mobile package targets',
-    '- Android package build only when Android-specific or shared mobile code changes',
-    '- iOS package build only when iOS-specific or shared mobile code changes',
-    '- This workflow publishes install packages only after the main production CD workflow succeeds and mobile package inputs changed.',
-    'runtime/API/account-impacting input changed',
-    'PR metadata indicates account/auth/user/payment behavior needs fresh install packages',
-    '(account|auth|login|logout|profile|user[ -]?id|membership|subscription|payment|billing|identity|credential|token|session|force[- ]?mobile[- ]?release|mobile[- ]?release|账号|账户|登录|用户|会员|支付)',
-    'release or deployment pipeline changed',
-    'bundled official plugin input changed: $path',
-    'package release workflow changed; validate Android and iOS release package paths: $path',
-    'Android package build when Android, shared app, release pipeline, or account/API runtime inputs changed',
-    'iOS package build when iOS, shared app, release pipeline, or account/API runtime inputs changed',
-    '      - name: Download product screenshots\n        if: needs.capture-screenshots.result == \'success\'\n        uses: actions/download-artifact@v5\n        with:',
-    '          name: release-product-screenshots\n          path: release-screenshots\n          if-no-files-found: warn',
+    'flutter build',
+    'flutter pub get',
+    'subosito/flutter-action',
+    'fabushi/pubspec.yaml',
 ):
     if forbidden in publish_release_workflow:
-        missing.append(f'publish release workflow should not contain: {forbidden}')
+        missing.append(f'publish release workflow must not contain legacy Flutter dependency: {forbidden}')
+
+for required in (
+    'Electron desktop quality and installers',
+    'npm run package',
+    'playwright test',
+    'mahayana-app-host',
+    'mahayana-plugin-runtime',
+    'mahayana-js-runtime',
+):
+    if required not in desktop_installers_workflow:
+        missing.append(f'desktop installers workflow missing: {required}')
+
+for forbidden in (
+    'flutter build',
+    'flutter pub get',
+    'subosito/flutter-action',
+    'fabushi/pubspec.yaml',
+):
+    if forbidden in desktop_installers_workflow:
+        missing.append(f'desktop installers workflow must not contain legacy Flutter dependency: {forbidden}')
 
 for required in (
     'env?.DB?.prepare',

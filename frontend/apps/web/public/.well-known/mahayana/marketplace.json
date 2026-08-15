@@ -95,6 +95,14 @@
       "description": "从任意公开文章链接归档同一公众号公开可访问的文章",
       "homepage": "https://fabushi.ombhrum.com/miniapps/wechat-article-downloader/",
       "platforms": ["cli", "desktop"]
+    },
+    {
+      "id": "xhttp-split",
+      "version": "0.2.0+codex.20260811090326",
+      "title": "XHTTP 上下行分离",
+      "description": "登录云平台并通过 SSH 一键搭建、验证 Cloudflare + CloudFront XHTTP 分离线路",
+      "homepage": "https://fabushi.ombhrum.com/miniapps/xhttp-split/",
+      "platforms": ["cli", "desktop"]
     }
   ],
   "artifacts": {

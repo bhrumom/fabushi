@@ -157,6 +157,30 @@ jobs:
           fi
           echo "No Flutter Actions remain in the migrated workflow set."
 
+  electron-feature-host-contract:
+    name: Electron Feature Host contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Electron Feature Host bridge inputs
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/scripts/assert-electron-feature-host-bridge.sh
+            /desktop/electron/main.cjs
+            /desktop/electron/preload.cjs
+            /desktop/src/main.tsx
+            /frontend/apps/web/src/app/host/host-client.tsx
+            /frontend/apps/web/src/lib/mahayana-host/electron-transport.ts
+            /frontend/apps/web/src/lib/mahayana-host/mock-transport.ts
+            /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
+            /third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs
+      - name: Verify Electron to Rust Feature Host bridge
+        shell: bash
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+
   ci-result:
     name: CI result
     runs-on: ubuntu-latest
@@ -166,6 +190,7 @@ jobs:
       - worker
       - mcp-contracts
       - workflow-guardrails
+      - electron-feature-host-contract
     if: always()
     steps:
       - name: Check required CI jobs
@@ -176,7 +201,8 @@ jobs:
             "Frontend:${{ needs.frontend.result }}" \
             "Worker:${{ needs.worker.result }}" \
             "MCP contracts:${{ needs.mcp-contracts.result }}" \
-            "Migration guardrails:${{ needs.workflow-guardrails.result }}"
+            "Migration guardrails:${{ needs.workflow-guardrails.result }}" \
+            "Electron Feature Host:${{ needs.electron-feature-host-contract.result }}"
           do
             name="${pair%%:*}"
             result="${pair#*:}"

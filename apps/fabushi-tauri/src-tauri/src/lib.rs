@@ -347,6 +347,58 @@ mod desktop {
     }
 
     #[tauri::command]
+    fn feature_host_window_focused(app: AppHandle) -> bool {
+        app.webview_windows()
+            .values()
+            .any(|window| window.is_focused().unwrap_or(false))
+    }
+
+    #[tauri::command]
+    fn feature_host_show_notification(title: String, body: String) -> Result<(), String> {
+        let title = title.trim();
+        let body = body.trim();
+        if title.is_empty() || title.chars().count() > 256 || body.chars().count() > 2048 {
+            return Err("notification title/body is invalid".to_string());
+        }
+        if title.contains('\0') || body.contains('\0') {
+            return Err("notification text contains a NUL character".to_string());
+        }
+
+        #[cfg(target_os = "macos")]
+        let status = std::process::Command::new("osascript")
+            .env("FABUSHI_NOTIFICATION_TITLE", title)
+            .env("FABUSHI_NOTIFICATION_BODY", body)
+            .args([
+                "-e",
+                "display notification (system attribute \"FABUSHI_NOTIFICATION_BODY\") with title (system attribute \"FABUSHI_NOTIFICATION_TITLE\")",
+            ])
+            .status();
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let status = std::process::Command::new("notify-send")
+            .args([title, body])
+            .status();
+
+        #[cfg(target_os = "windows")]
+        let status = std::process::Command::new("powershell")
+            .env("FABUSHI_NOTIFICATION_TITLE", title)
+            .env("FABUSHI_NOTIFICATION_BODY", body)
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null; $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; $xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text></text><text></text></binding></visual></toast>'); $nodes=$xml.GetElementsByTagName('text'); $nodes.Item(0).AppendChild($xml.CreateTextNode($env:FABUSHI_NOTIFICATION_TITLE)) > $null; $nodes.Item(1).AppendChild($xml.CreateTextNode($env:FABUSHI_NOTIFICATION_BODY)) > $null; $toast=[Windows.UI.Notifications.ToastNotification]::new($xml); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Fabushi').Show($toast)"#,
+            ])
+            .status();
+
+        status
+            .map_err(|error| format!("show system notification: {error}"))?
+            .success()
+            .then_some(())
+            .ok_or_else(|| "system notification command failed".to_string())
+    }
+
+    #[tauri::command]
     fn feature_host_open_external(url: String) -> Result<(), String> {
         if !url.starts_with("https://") || url.len() > 4096 || url.chars().any(char::is_control) {
             return Err("Fabushi only opens validated HTTPS login URLs".to_string());
@@ -364,6 +416,30 @@ mod desktop {
             .success()
             .then_some(())
             .ok_or_else(|| "system browser rejected the login URL".to_string())
+    }
+
+    #[tauri::command]
+    fn feature_host_open_system_settings(pane: String) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            let url = match pane.as_str() {
+                "screen-recording" => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+                "accessibility" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                _ => return Err("unsupported macOS privacy settings pane".to_string()),
+            };
+            return std::process::Command::new("/usr/bin/open")
+                .arg(url)
+                .status()
+                .map_err(|error| format!("open macOS privacy settings: {error}"))?
+                .success()
+                .then_some(())
+                .ok_or_else(|| "macOS privacy settings could not be opened".to_string());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = pane;
+            Err("system privacy settings shortcut is currently available on macOS only".to_string())
+        }
     }
 
     #[tauri::command]
@@ -418,7 +494,10 @@ mod desktop {
                 feature_host_auth_providers,
                 feature_host_oauth_start,
                 feature_host_oauth_poll,
+                feature_host_window_focused,
+                feature_host_show_notification,
                 feature_host_open_external,
+                feature_host_open_system_settings,
                 feature_host_logout,
                 feature_host_receive,
                 feature_host_resolve_approval,
