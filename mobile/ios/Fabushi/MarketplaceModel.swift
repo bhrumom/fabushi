@@ -40,7 +40,7 @@ final class MarketplaceModel {
                 method: "marketplace.browse",
                 params: ["query": query.isEmpty ? NSNull() : query, "platform": "ios"]
             )
-            let object = result as? [String: Any]
+            let object = result.value as? [String: Any]
             let rows = object?["plugins"] as? [[String: Any]] ?? []
             plugins = rows.compactMap { item in
                 guard let id = item["pluginId"] as? String, !id.isEmpty else { return nil }
@@ -69,14 +69,14 @@ final class MarketplaceModel {
                 method: "marketplace.release",
                 params: ["pluginId": plugin.pluginId, "version": version]
             )
-            guard let release = (metadata as? [String: Any])?["releaseManifest"] as? [String: Any] else {
+            guard let release = (metadata.value as? [String: Any])?["releaseManifest"] as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
             let installed = try await host.request(
                 method: "plugin.install",
                 params: ["release": release, "platform": "ios"]
             )
-            guard let object = installed as? [String: Any] else {
+            guard let object = installed.value as? [String: Any] else {
                 throw MahayanaHost.HostError.invalidResponse
             }
             let pluginId = object["pluginId"] as? String ?? plugin.pluginId
@@ -137,7 +137,7 @@ final class MarketplaceModel {
                 method: "plugin.compatibility",
                 params: ["pluginId": pluginId]
             )
-            guard let object = compatibility as? [String: Any], object["portableCompatible"] as? Bool == true else {
+            guard let object = compatibility.value as? [String: Any], object["portableCompatible"] as? Bool == true else {
                 throw MahayanaHost.HostError.requestFailed("插件不满足移动端 portable runtime 约束")
             }
             _ = try await host.request(

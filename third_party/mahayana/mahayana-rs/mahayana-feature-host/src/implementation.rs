@@ -1608,7 +1608,7 @@ impl FeatureHostController {
                 operation_id: operation_id.clone(),
                 source: "teach-recording".into(),
             });
-            return Ok(Some(operation_id));
+            Ok(Some(operation_id))
         }
         #[cfg(not(feature = "production"))]
         Ok(None)
@@ -2058,7 +2058,7 @@ impl FeatureHostController {
                 operation_id: operation_id.clone(),
                 source: source.to_string(),
             });
-            return Ok(Some(operation_id));
+            Ok(Some(operation_id))
         }
         #[cfg(not(feature = "production"))]
         Err(FeatureHostError::ProductionUnavailable)
@@ -3333,7 +3333,7 @@ impl FeatureHostController {
                                 per_agent += 1;
                             }
                         }
-                        matches.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+                        matches.sort_by_key(|item| std::cmp::Reverse(item.timestamp_ms));
                         matches.truncate(limit);
                     }
                 }
@@ -3361,7 +3361,7 @@ impl FeatureHostController {
                         );
                     }
                 }
-                matches.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+                matches.sort_by_key(|item| std::cmp::Reverse(item.timestamp_ms));
                 matches.truncate(limit);
                 self.state()?
                     .events
@@ -8558,20 +8558,20 @@ fn yaml_key(name: &str) -> serde_yaml::Value {
 }
 
 fn yaml_string(data: &serde_yaml::Mapping, name: &str) -> Option<String> {
-    data.get(&yaml_key(name))
+    data.get(yaml_key(name))
         .and_then(serde_yaml::Value::as_str)
         .map(str::to_string)
 }
 
 fn read_workflow_trigger(data: &serde_yaml::Mapping) -> Option<WorkflowTrigger> {
-    let trigger = data.get(&yaml_key("trigger"))?.as_mapping()?;
-    let raw_schedule = trigger.get(&yaml_key("schedule"))?.as_str()?;
+    let trigger = data.get(yaml_key("trigger"))?.as_mapping()?;
+    let raw_schedule = trigger.get(yaml_key("schedule"))?.as_str()?;
     let schedule = normalize_automation_schedule(raw_schedule).ok()?;
     if schedule.is_empty() {
         return None;
     }
     let is_enabled = trigger
-        .get(&yaml_key("enabled"))
+        .get(yaml_key("enabled"))
         .and_then(serde_yaml::Value::as_bool)
         .unwrap_or(true);
     Some(WorkflowTrigger {
@@ -8582,12 +8582,12 @@ fn read_workflow_trigger(data: &serde_yaml::Mapping) -> Option<WorkflowTrigger> 
 
 fn read_workflow_source_ref(data: &serde_yaml::Mapping) -> Option<String> {
     let nested = data
-        .get(&yaml_key("metadata"))
+        .get(yaml_key("metadata"))
         .and_then(serde_yaml::Value::as_mapping)
-        .and_then(|metadata| metadata.get(&yaml_key("source")))
+        .and_then(|metadata| metadata.get(yaml_key("source")))
         .and_then(serde_yaml::Value::as_str);
     let raw = nested.or_else(|| {
-        data.get(&yaml_key("source"))
+        data.get(yaml_key("source"))
             .and_then(serde_yaml::Value::as_str)
     })?;
     let trimmed = raw.trim();
@@ -8642,16 +8642,16 @@ fn serialize_workflow_file(
         serde_yaml::Value::String(name.to_string()),
     );
     if description.is_empty() {
-        data.remove(&yaml_key("description"));
+        data.remove(yaml_key("description"));
     } else {
         data.insert(
             yaml_key("description"),
             serde_yaml::Value::String(description.to_string()),
         );
     }
-    let legacy_source = data.remove(&yaml_key("source"));
+    let legacy_source = data.remove(yaml_key("source"));
     let mut metadata = data
-        .get(&yaml_key("metadata"))
+        .get(yaml_key("metadata"))
         .and_then(serde_yaml::Value::as_mapping)
         .cloned()
         .unwrap_or_default();
@@ -8659,7 +8659,7 @@ fn serialize_workflow_file(
         .map(str::to_string)
         .or_else(|| {
             metadata
-                .get(&yaml_key("source"))
+                .get(yaml_key("source"))
                 .and_then(serde_yaml::Value::as_str)
                 .map(str::to_string)
         })
@@ -8667,10 +8667,10 @@ fn serialize_workflow_file(
     if let Some(source) = next_source.filter(|source| !source.is_empty()) {
         metadata.insert(yaml_key("source"), serde_yaml::Value::String(source));
     } else {
-        metadata.remove(&yaml_key("source"));
+        metadata.remove(yaml_key("source"));
     }
     if metadata.is_empty() {
-        data.remove(&yaml_key("metadata"));
+        data.remove(yaml_key("metadata"));
     } else {
         data.insert(yaml_key("metadata"), serde_yaml::Value::Mapping(metadata));
     }
@@ -8728,8 +8728,7 @@ fn derive_workflow_name_from_markdown(body: &str) -> Option<String> {
 fn derive_workflow_name_from_source(source: &str) -> String {
     let raw = source
         .split('/')
-        .filter(|segment| !segment.is_empty())
-        .next_back()
+        .rfind(|segment| !segment.is_empty())
         .unwrap_or("Imported skill");
     let raw = [".markdown", ".mdc", ".md", ".txt"]
         .iter()
@@ -8896,7 +8895,7 @@ fn load_workflow_summary(
     };
     let disable_model_invocation = parsed
         .data
-        .get(&yaml_key("disable-model-invocation"))
+        .get(yaml_key("disable-model-invocation"))
         .and_then(serde_yaml::Value::as_bool);
     let next_run_at = parsed
         .trigger
