@@ -87,16 +87,59 @@ jobs:
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
           node tests/profile.test.js
-      - name: Apply development D1 migrations
+          python3 ../../.github/scripts/prepare-development-wrangler.py --self-test
+          bash -n ../../.github/scripts/bootstrap-development-account-d1.sh
+      - name: Resolve isolated development D1 bindings
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
-        run: bash ../../.github/scripts/run-wrangler-d1-migrations.sh DB development
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ../../.github/scripts/prepare-development-wrangler.py \
+            wrangler.toml wrangler.development.ci.toml
+          ! grep -q 'YOUR_DEV_DATABASE_ID' wrangler.development.ci.toml
+          grep -q 'database_name = "search_database_dev"' wrangler.development.ci.toml
+          grep -q 'database_name = "mahayana-platform-development"' wrangler.development.ci.toml
+      - name: Validate staging Worker configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        run: >-
+          npx --yes wrangler@latest deploy
+          --config wrangler.development.ci.toml
+          --env development
+          --dry-run
+          --outdir /tmp/fabushi-staging-worker
+      - name: Bootstrap development account D1 when empty
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        run: >-
+          bash ../../.github/scripts/bootstrap-development-account-d1.sh
+          wrangler.development.ci.toml development
+      - name: Apply remaining development account D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        run: >-
+          bash ../../.github/scripts/run-wrangler-d1-migrations.sh
+          DB development --config wrangler.development.ci.toml
+      - name: Apply development marketplace D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        run: >-
+          bash ../../.github/scripts/run-wrangler-d1-migrations.sh
+          PLATFORM_DB development --config wrangler.development.ci.toml
       - name: Deploy staging Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
-        run: npx --yes wrangler@latest deploy --env development
+        run: >-
+          npx --yes wrangler@latest deploy
+          --config wrangler.development.ci.toml
+          --env development
 
   staging-e2e:
     name: Staging API E2E and smoke gate
