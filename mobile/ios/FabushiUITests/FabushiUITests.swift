@@ -11,8 +11,12 @@ final class FabushiUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.otherElements["app-shell"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["runtime-badge"].exists)
-        XCTAssertTrue(app.staticTexts["host-status"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["runtime-badge"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["host-status"].waitForExistence(timeout: 5)
+        )
 
         let search = app.textFields["marketplace-search"]
         XCTAssertTrue(search.exists)

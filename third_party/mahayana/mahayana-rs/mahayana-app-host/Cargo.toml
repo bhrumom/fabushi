@@ -6,8 +6,7 @@ license.workspace = true
 autobins = false
 
 [lib]
-crate-type = ["rlib", "cdylib", "staticlib"]
-
+crate-type = ["rlib"]
 
 [dependencies]
 mahayana-js-runtime.workspace = true
@@ -22,6 +21,3 @@ mahayana-core.workspace = true
 mahayana-feature-host = { workspace = true, features = ["desktop-full"] }
 mahayana-host.workspace = true
 mahayana-host-protocol.workspace = true
-
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"

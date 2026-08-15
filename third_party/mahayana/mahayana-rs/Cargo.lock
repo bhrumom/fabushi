@@ -9222,7 +9222,6 @@ dependencies = [
 name = "mahayana-app-host"
 version = "0.1.0"
 dependencies = [
- "jni 0.21.1",
  "mahayana-core",
  "mahayana-feature-host",
  "mahayana-host",
@@ -9240,6 +9239,15 @@ name = "mahayana-app-host-desktop"
 version = "0.1.0"
 dependencies = [
  "mahayana-app-host",
+]
+
+[[package]]
+name = "mahayana-app-host-mobile"
+version = "0.1.0"
+dependencies = [
+ "jni 0.21.1",
+ "mahayana-app-host",
+ "serde_json",
 ]
 
 [[package]]

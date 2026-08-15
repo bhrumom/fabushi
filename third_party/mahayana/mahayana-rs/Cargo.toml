@@ -7,6 +7,7 @@ members = [
     "mahayana-agent-responses",
     "mahayana-app-host",
     "mahayana-app-host-desktop",
+    "mahayana-app-host-mobile",
     "mahayana-conversation",
     "mahayana-core",
     "mahayana-computer",
