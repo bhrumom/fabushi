@@ -18,6 +18,7 @@ import type {
 
 type ElectronBridge = {
   invoke<T>(method: string, params?: Record<string, unknown>): Promise<T>;
+  subscribe?(listener: RuntimeEventListener): () => void;
   notify(title: string, body: string): Promise<boolean | void>;
   openExternal(url: string): Promise<boolean | void>;
   openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<boolean | void>;
@@ -27,6 +28,7 @@ type ElectronBridge = {
 declare global {
   interface Window {
     fabushi: ElectronBridge;
+    mahayana?: Pick<ElectronBridge, "invoke" | "subscribe">;
   }
 }
 
@@ -51,6 +53,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   private readonly listeners = new Set<RuntimeEventListener>();
   private closed = false;
   private pumping = false;
+  private unsubscribeBridge: (() => void) | null = null;
 
   subscribe(listener: RuntimeEventListener): () => void {
     this.listeners.add(listener);
@@ -60,7 +63,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   async initialize(_config: HostConfig): Promise<HostInfo> {
     const info = await bridge().invoke<HostInfo>("feature.info");
     this.closed = false;
-    this.startEventPump();
+    this.attachRuntimeEvents();
     return info;
   }
 
@@ -125,6 +128,27 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.unsubscribeBridge?.();
+    this.unsubscribeBridge = null;
+  }
+
+  private dispatchEvent(event: RuntimeEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+
+  private attachRuntimeEvents(): void {
+    this.unsubscribeBridge?.();
+    this.unsubscribeBridge = null;
+
+    const electronBridge = bridge();
+    if (typeof electronBridge.subscribe === "function") {
+      this.unsubscribeBridge = electronBridge.subscribe((event) => this.dispatchEvent(event));
+      return;
+    }
+
+    // Compatibility fallback for older Tauri/Electron bundles which have not
+    // yet adopted the Grok-style edge event channel.
+    this.startEventPump();
   }
 
   private startEventPump(): void {
@@ -138,11 +162,8 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
       while (!this.closed) {
         try {
           const event = await bridge().invoke<RuntimeEvent | null>("feature.receive");
-          if (event) {
-            for (const listener of this.listeners) listener(event);
-          } else {
-            await idle(10);
-          }
+          if (event) this.dispatchEvent(event);
+          else await idle(10);
         } catch (error) {
           if (this.closed) break;
           console.error("Electron Mahayana Host event pump failed", error);
