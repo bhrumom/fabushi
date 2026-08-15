@@ -198,7 +198,23 @@ jobs:
           '''
           Path(sys.argv[2]).write_text(script, encoding="utf-8")
           PY
-          artifact_worker="mahayana-artifact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Legacy marketplace E2E used a new Worker name for every immutable
+          # plugin version and eventually exhausted the account's script quota.
+          # Remove only this test suite's stale Workers, then reuse one stable
+          # artifact-host name so future runs do not leak Cloudflare resources.
+          workers_api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$workers_api" > "$RUNNER_TEMP/workers-before-cleanup.json"
+          jq -r '.result[].id // empty | select(test("^(mahayana-market-hello-|mahayana-artifact-)"))' \
+            "$RUNNER_TEMP/workers-before-cleanup.json" \
+            | while IFS= read -r stale_worker; do
+                curl --fail --silent --show-error \
+                  --request DELETE \
+                  --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                  "$workers_api/$stale_worker" >/dev/null
+              done
+          artifact_worker="mahayana-marketplace-artifact-e2e"
           npx --yes wrangler@4 deploy "$RUNNER_TEMP/artifact-worker.mjs" \
             --name "$artifact_worker" --compatibility-date 2026-08-15 \
             2>&1 | tee "$RUNNER_TEMP/artifact-deploy.log"
@@ -535,6 +551,7 @@ jobs:
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
             ${{ runner.temp }}/artifact-deploy.log
+            ${{ runner.temp }}/workers-before-cleanup.json
             ${{ runner.temp }}/source-plugin.tar.gz
             ${{ runner.temp }}/served-plugin.tar.gz
             ${{ runner.temp }}/publish.log

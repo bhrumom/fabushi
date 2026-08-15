@@ -9236,6 +9236,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mahayana-app-host-desktop"
+version = "0.1.0"
+dependencies = [
+ "mahayana-app-host",
+]
+
+[[package]]
 name = "mahayana-cli"
 version = "0.1.0"
 dependencies = [

@@ -498,12 +498,10 @@ fn create_feature_host(app_data_dir: &Path) -> Result<FeatureHostController, App
     };
     FeatureHostController::create_with_host_config(
         HostConfig {
-            profile_id: "fabushi-desktop".to_string(),
+            profile_id: "default".to_string(),
             mode: HostMode::Production,
         },
-        // The Feature Host protocol predates the Electron shell. Tauri is the
-        // existing desktop/native surface tag; the sidecar remains shell-agnostic.
-        SurfacePlatform::Tauri,
+        SurfacePlatform::Electron,
         host_config,
     )
     .map_err(|error| {

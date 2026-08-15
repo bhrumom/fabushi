@@ -10,9 +10,11 @@ on:
       - 'frontend/apps/web/src/lib/grok-bot/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
       - 'frontend/packages/shared/**'
+      - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
@@ -29,9 +31,11 @@ on:
       - 'frontend/apps/web/src/lib/grok-bot/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
       - 'frontend/packages/shared/**'
+      - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
@@ -87,7 +91,7 @@ jobs:
 
       - name: Build production Mahayana app host
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo build --locked --release -p mahayana-app-host --bin mahayana-app-host
+        run: cargo build --locked --release -p mahayana-app-host-desktop --bin mahayana-app-host
 
       - name: Build Electron renderer
         working-directory: desktop

@@ -3,13 +3,11 @@ name = "mahayana-app-host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autobins = false
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
 
-[[bin]]
-name = "mahayana-app-host"
-path = "src/main.rs"
 
 [dependencies]
 mahayana-js-runtime.workspace = true
