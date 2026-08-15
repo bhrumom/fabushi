@@ -87,7 +87,7 @@ jobs:
 
       - name: Build production Mahayana app host
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo build --locked --release -p mahayana-app-host
+        run: cargo build --locked --release -p mahayana-app-host --bin mahayana-app-host
 
       - name: Build Electron renderer
         working-directory: desktop

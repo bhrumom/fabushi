@@ -1,6 +1,10 @@
 import Foundation
 
 final class MahayanaHost: @unchecked Sendable {
+    struct JSONResult: @unchecked Sendable {
+        let value: Any
+    }
+
     enum HostError: LocalizedError {
         case initializationFailed
         case invalidResponse
@@ -28,11 +32,13 @@ final class MahayanaHost: @unchecked Sendable {
         if let handle { mahayana_app_host_destroy(handle) }
     }
 
-    func request(method: String, params: [String: Any] = [:]) async throws -> Any {
+    func request(method: String, params: [String: Any] = [:]) async throws -> JSONResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 do {
-                    continuation.resume(returning: try requestSync(method: method, params: params))
+                    continuation.resume(
+                        returning: JSONResult(value: try requestSync(method: method, params: params))
+                    )
                 } catch {
                     continuation.resume(throwing: error)
                 }
