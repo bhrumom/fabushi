@@ -95,8 +95,9 @@ export function GroupChatPanel({
         </div>
         <div className={styles.groupMessages} aria-live="polite">
           {group.messages.map((message) => {
-            const member = message.speaker.kind === "member"
-              ? bots.find((bot) => bot.id === message.speaker.id)
+            const speaker = message.speaker;
+            const member = speaker.kind === "member"
+              ? bots.find((bot) => bot.id === speaker.id)
               : undefined;
             return (
               <article key={message.id} data-speaker={message.speaker.kind}>
