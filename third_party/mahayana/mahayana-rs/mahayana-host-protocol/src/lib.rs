@@ -418,18 +418,13 @@ pub struct TeachRecordingResult {
 pub const COMPUTER_MAX_WAIT_MS: u64 = 30_000;
 pub const COMPUTER_MAX_ACTIONS_PER_CALL: usize = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ComputerControlOrigin {
+    #[default]
     LocalUi,
     RemoteMobile,
     Ai,
-}
-
-impl Default for ComputerControlOrigin {
-    fn default() -> Self {
-        Self::LocalUi
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
