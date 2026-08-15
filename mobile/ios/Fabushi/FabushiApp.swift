@@ -17,7 +17,10 @@ struct FabushiApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
-                .task { await model.refresh() }
+                .task {
+                    await model.runFeatureHostSmokeIfRequested()
+                    await model.refresh()
+                }
         }
     }
 }

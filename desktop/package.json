@@ -1,6 +1,9 @@
 {
   "name": "@fabushi/desktop",
   "version": "0.1.0",
+  "description": "全球法布施 Electron desktop client",
+  "homepage": "https://fabushi.ombhrum.com/",
+  "author": "bhrumom",
   "desktopName": "com.ombhrum.fabushi",
   "private": true,
   "type": "module",
@@ -61,6 +64,8 @@
     },
     "linux": {
       "category": "Utility",
+      "maintainer": "bhrumom",
+      "packageName": "fabushi",
       "syncDesktopName": true,
       "target": ["AppImage", "deb"]
     }

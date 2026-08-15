@@ -6,6 +6,21 @@ final class FabushiUITests: XCTestCase {
     }
 
     @MainActor
+    func testProductionFeatureHostBridgeInAppProcess() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["FABUSHI_FEATURE_HOST_SMOKE"] = "1"
+        app.launch()
+
+        let smoke = app.descendants(matching: .any)["feature-host-smoke"]
+        XCTAssertTrue(smoke.waitForExistence(timeout: 15))
+        let passed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "passed"),
+            object: smoke
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [passed], timeout: 90), .completed)
+    }
+
+    @MainActor
     func testCoreControlsExposeStableAccessibilityIdentifiers() throws {
         let app = XCUIApplication()
         app.launch()
