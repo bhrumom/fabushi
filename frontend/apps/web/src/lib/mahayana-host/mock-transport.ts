@@ -28,6 +28,10 @@ import type {
   WorkflowSummary,
 } from "./contracts";
 import {
+  ElectronMahayanaHostTransport,
+  isElectronMahayanaHostAvailable,
+} from "./electron-transport";
+import {
   isTauriMahayanaHostAvailable,
   TauriMahayanaHostTransport,
 } from "./tauri-transport";
@@ -495,9 +499,9 @@ const richResultsCards = (): TranscriptCard[] => {
  * Deterministic browser transport used by fast UI tests.
  *
  * The historical class name is retained so existing pages need no migration
- * churn. Inside a native Tauri window it automatically delegates every method
- * to the real Rust feature Host; only an ordinary browser uses the in-memory
- * implementation below.
+ * churn. Inside a native Electron or Tauri window it automatically delegates
+ * every method to the real Rust feature Host; only an ordinary browser uses
+ * the in-memory implementation below.
  */
 export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private readonly native: MahayanaHostTransport | null;
@@ -540,9 +544,11 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   };
 
   constructor(options: { authenticated?: boolean } = {}) {
-    this.native = isTauriMahayanaHostAvailable()
-      ? new TauriMahayanaHostTransport()
-      : null;
+    this.native = isElectronMahayanaHostAvailable()
+      ? new ElectronMahayanaHostTransport()
+      : isTauriMahayanaHostAvailable()
+        ? new TauriMahayanaHostTransport()
+        : null;
     if (!this.native && options.authenticated) {
       this.auth = {
         loggedIn: true,

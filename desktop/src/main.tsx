@@ -1,5 +1,6 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import HostClient from '../../frontend/apps/web/src/app/host/host-client';
 import './styles.css';
 
 type MarketplacePlugin = {
@@ -50,7 +51,7 @@ function compatibilityBlockers(report: CompatibilityReport): string[] {
   ];
 }
 
-function App() {
+function PluginRuntimeApp() {
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('Mahayana Rust Host 正在启动');
@@ -220,6 +221,35 @@ function App() {
         </section>
       )}
     </main>
+  );
+}
+
+function App() {
+  const [surface, setSurface] = useState<'host' | 'plugins'>('host');
+  return (
+    <div className="desktop-root">
+      <nav className="desktop-mode-switch" aria-label="桌面功能区">
+        <button
+          type="button"
+          className={surface === 'host' ? 'active' : ''}
+          onClick={() => setSurface('host')}
+          data-testid="open-agent-host"
+        >
+          Agent Host
+        </button>
+        <button
+          type="button"
+          className={surface === 'plugins' ? 'active' : ''}
+          onClick={() => setSurface('plugins')}
+          data-testid="open-plugin-runtime"
+        >
+          插件 Runtime
+        </button>
+      </nav>
+      <section className="desktop-surface" data-surface={surface}>
+        {surface === 'host' ? <HostClient /> : <PluginRuntimeApp />}
+      </section>
+    </div>
   );
 }
 

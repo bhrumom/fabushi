@@ -9219,6 +9219,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mahayana-app-host"
+version = "0.1.0"
+dependencies = [
+ "jni",
+ "mahayana-core",
+ "mahayana-feature-host",
+ "mahayana-host",
+ "mahayana-host-protocol",
+ "mahayana-js-runtime",
+ "mahayana-plugin-runtime",
+ "mahayana-product",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "mahayana-cli"
 version = "0.1.0"
 dependencies = [
