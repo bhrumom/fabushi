@@ -74,12 +74,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --channel=3 'platforms;android-CinnamonBun' 'build-tools;37.0.0' 'ndk;28.2.13676358'
-          preview_platform="$ANDROID_HOME/platforms/android-CinnamonBun"
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /platforms;android-(37([.]0)?|CinnamonBun)/ {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1);
+              print $1;
+              exit;
+            }
+          ')"
+          if [ -z "$platform_package" ]; then
+            printf '%s\n' "$available_packages" | grep -E 'platforms;android-|Cinnamon|37[.]0' || true
+            echo 'Android 17 / API 37 preview platform is not published in this runner SDK repository.' >&2
+            exit 1
+          fi
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /build-tools;37[.]/ {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1);
+              print $1;
+              exit;
+            }
+          ')"
+          test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package" 'ndk;28.2.13676358'
           stable_api_path="$ANDROID_HOME/platforms/android-37"
-          test -d "$preview_platform"
           if [ ! -e "$stable_api_path" ]; then
-            ln -s "$preview_platform" "$stable_api_path"
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$stable_api_path"
           fi
       - uses: dtolnay/rust-toolchain@stable
         with:
