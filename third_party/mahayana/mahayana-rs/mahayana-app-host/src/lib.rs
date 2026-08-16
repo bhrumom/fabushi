@@ -175,6 +175,7 @@ impl AppHost {
                 .map_err(|error| AppHostError::Operation(error.to_string())),
             "feature.auth.browserPoll" => self.feature_browser_login_poll(params),
             "feature.auth.browserCancel" => self.feature_browser_login_cancel(params),
+            "feature.auth.browserReopen" => self.feature_browser_login_reopen(params),
             "feature.auth.oauthStart" => self.feature_oauth_start(params),
             "feature.auth.oauthPoll" => self.feature_oauth_poll(params),
             "feature.auth.logout" => self
@@ -232,6 +233,12 @@ impl AppHost {
         let password = string_param(&params, "password")?.to_string();
         self.feature
             .password_login(username, password)
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn feature_browser_login_reopen(&self, params: Value) -> Result<Value, AppHostError> {
+        self.feature
+            .browser_login_reopen(string_param(&params, "attemptId")?.to_string())
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 

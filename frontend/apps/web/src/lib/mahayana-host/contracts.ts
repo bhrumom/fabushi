@@ -46,6 +46,13 @@ export interface BrowserLoginPollResult {
   auth?: AuthState;
 }
 
+export interface BrowserLoginReopenResult {
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
+  attemptId?: string;
+  loginUrl?: string;
+  pollAfterMs?: number;
+}
+
 export interface OAuthAttempt {
   attemptId: string;
   provider: AuthProviderId;

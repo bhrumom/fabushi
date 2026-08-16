@@ -243,7 +243,7 @@ struct PasswordLoginRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct BrowserLoginCancelRequest {
+struct BrowserLoginProofRequest {
     poll_secret: String,
 }
 
@@ -259,6 +259,7 @@ struct BrowserLoginStartRequest {
 #[derive(Debug, Deserialize)]
 struct BrowserAttemptStatusRow {
     status: String,
+    expires_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -556,6 +557,10 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async(
             "/api/auth/browser/attempts/:attempt_id/cancel",
             browser_login_cancel,
+        )
+        .post_async(
+            "/api/auth/browser/attempts/:attempt_id/reopen",
+            browser_login_reopen,
         )
         .get_async("/api/auth/oauth/providers", oauth_providers)
         .post_async("/api/auth/oauth/start", oauth_start)
@@ -2341,12 +2346,72 @@ async fn browser_login_password(
     browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt_id))
 }
 
+async fn browser_login_reopen(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    let attempt_id = route_identifier(&context, "attempt_id")?;
+    let reopen: BrowserLoginProofRequest = match request.json().await {
+        Ok(reopen) => reopen,
+        Err(_) => return error_response(400, "invalid_browser_reopen", "登录恢复请求无效"),
+    };
+    let expected = browser_poll_secret(&context.env, attempt_id)?;
+    if reopen.poll_secret.is_empty() || !constant_time_text_eq(&reopen.poll_secret, &expected) {
+        return error_response(403, "browser_reopen_forbidden", "登录会话验证失败，请重新开始");
+    }
+    let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
+    let current = worker::query!(
+        &database,
+        "SELECT status, expires_at FROM account_oauth_attempts WHERE attempt_id = ?1 LIMIT 1",
+        attempt_id
+    )?
+    .first::<BrowserAttemptStatusRow>(None)
+    .await?;
+    let Some(current) = current else {
+        return error_response(404, "oauth_attempt_missing", "登录链接不存在或已失效");
+    };
+    if current.status == "pending" && current.expires_at <= now_epoch_seconds() {
+        worker::query!(
+            &database,
+            "UPDATE account_oauth_attempts SET status = 'expired', session_json = NULL WHERE attempt_id = ?1 AND status = 'pending'",
+            attempt_id
+        )?
+        .run()
+        .await?;
+        return Response::from_json(&json!({"status": "expired"}));
+    }
+    if current.status != "pending" {
+        return Response::from_json(&json!({"status": current.status}));
+    }
+    let ticket = format!("fbt_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    let state_hash = browser_ticket_hash(&ticket);
+    let code_verifier = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    worker::query!(
+        &database,
+        "UPDATE account_oauth_attempts
+         SET provider = 'portal', state_hash = ?1, code_verifier = ?2, session_json = NULL
+         WHERE attempt_id = ?3 AND status = 'pending'",
+        &state_hash,
+        &code_verifier,
+        attempt_id
+    )?
+    .run()
+    .await?;
+    let login_url = browser_portal_url(&context.env, attempt_id, &ticket)?;
+    Response::from_json(&json!({
+        "status": "pending",
+        "attemptId": attempt_id,
+        "loginUrl": login_url.as_str(),
+        "pollAfterMs": 750,
+    }))
+}
+
 async fn browser_login_cancel(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
     let attempt_id = route_identifier(&context, "attempt_id")?;
-    let cancel: BrowserLoginCancelRequest = match request.json().await {
+    let cancel: BrowserLoginProofRequest = match request.json().await {
         Ok(cancel) => cancel,
         Err(_) => return error_response(400, "invalid_browser_cancel", "登录取消请求无效"),
     };
@@ -2357,7 +2422,7 @@ async fn browser_login_cancel(
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     let current = worker::query!(
         &database,
-        "SELECT status FROM account_oauth_attempts WHERE attempt_id = ?1 LIMIT 1",
+        "SELECT status, expires_at FROM account_oauth_attempts WHERE attempt_id = ?1 LIMIT 1",
         attempt_id
     )?
     .first::<BrowserAttemptStatusRow>(None)
@@ -2366,6 +2431,20 @@ async fn browser_login_cancel(
         .as_ref()
         .map(|row| row.status.as_str())
         .unwrap_or("missing");
+    if status == "pending"
+        && current
+            .as_ref()
+            .is_some_and(|row| row.expires_at <= now_epoch_seconds())
+    {
+        worker::query!(
+            &database,
+            "UPDATE account_oauth_attempts SET status = 'expired', session_json = NULL WHERE attempt_id = ?1 AND status = 'pending'",
+            attempt_id
+        )?
+        .run()
+        .await?;
+        return Response::from_json(&json!({"status": "expired"}));
+    }
     if status == "pending" {
         worker::query!(
             &database,

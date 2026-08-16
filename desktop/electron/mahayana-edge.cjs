@@ -15,6 +15,7 @@ const methodNames = [
   'feature.auth.browserStart',
   'feature.auth.browserPoll',
   'feature.auth.browserCancel',
+  'feature.auth.browserReopen',
   'feature.auth.oauthStart',
   'feature.auth.oauthPoll',
   'feature.auth.logout',

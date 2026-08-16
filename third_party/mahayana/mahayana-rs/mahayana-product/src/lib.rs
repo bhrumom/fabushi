@@ -1519,6 +1519,7 @@ impl MahayanaProductClient {
             "mahayana.auth.browser.start" => self.browser_login_start(request),
             "mahayana.auth.browser.poll" => self.browser_login_poll(request),
             "mahayana.auth.browser.cancel" => self.browser_login_cancel(request),
+            "mahayana.auth.browser.reopen" => self.browser_login_reopen(request),
             "mahayana.auth.oauth.providers" => self.oauth_providers(),
             "mahayana.auth.oauth.start" => self.oauth_start(request),
             "mahayana.auth.oauth.poll" => self.oauth_poll(request),
@@ -1834,6 +1835,18 @@ impl MahayanaProductClient {
             object.remove("pollSecret");
         }
         Ok(response)
+    }
+
+    fn browser_login_reopen(&self, request: &Value) -> Result<Value, ProductError> {
+        let attempt_id = required_identifier(request, "attemptId")?;
+        let poll_secret = self
+            .load_browser_login_poll_secret(&attempt_id)?
+            .ok_or(ProductError::SessionExpired)?;
+        self.post_json(
+            &format!("/api/auth/browser/attempts/{attempt_id}/reopen"),
+            json!({"pollSecret": poll_secret}),
+            None,
+        )
     }
 
     fn browser_login_cancel(&self, request: &Value) -> Result<Value, ProductError> {
