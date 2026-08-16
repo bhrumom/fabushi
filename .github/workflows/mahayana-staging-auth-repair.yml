@@ -37,6 +37,23 @@ jobs:
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured." >&2; exit 1; }
           [ -n "${TEST_ACCOUNT_TOKEN:-}" ] || { echo "Mahayana test account token is not configured." >&2; exit 1; }
 
+      - id: email-sending-domain
+        name: Inspect Cloudflare Email Sending domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
+          zones="$(curl --fail --silent --show-error "${auth[@]}" "$api/zones?name=ombhrum.com&account.id=$CLOUDFLARE_ACCOUNT_ID")"
+          zone_id="$(jq -er '.result[] | select(.name == "ombhrum.com") | .id' <<<"$zones" | head -n 1)"
+          [ -n "$zone_id" ] || { echo 'ombhrum.com is not visible to the deployment token.' >&2; exit 1; }
+          sending="$(curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/email/sending/subdomains")"
+          jq -e '.success == true' <<<"$sending" >/dev/null
+          summary="$(jq -c '[.result[] | {name, enabled, tag, return_path_domain}]' <<<"$sending")"
+          echo "Email Sending subdomains: $summary"
+          enabled="$(jq -r '[.result[] | select((.name == "ombhrum.com" or .name == "*.ombhrum.com") and .enabled == true)] | length > 0' <<<"$sending")"
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
