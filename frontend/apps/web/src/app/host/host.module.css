@@ -4774,3 +4774,240 @@
   .widgetGalleryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nativeUtilityDialog form > footer { align-items: stretch; flex-direction: column; }
 }
+
+.networkTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 2%);
+}
+
+.networkTabs button {
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgb(252 252 252 / 58%);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.networkTabs button[data-active="true"] {
+  border-color: rgb(142 113 255 / 38%);
+  background: rgb(117 92 242 / 14%);
+  color: #f6f1ff;
+}
+
+.sharedRoomsPanel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.sharedRoomsPanel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sharedRoomsPanel > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.sharedRoomsPanel > header strong { font-size: 11px; }
+.sharedRoomsPanel > header small { color: rgb(252 252 252 / 48%); font-size: 7px; }
+
+.sharedRoomsPanel button,
+.sharedRoomsForms button,
+.sharedRoomActions button,
+.sharedJoinRequests button,
+.sharedInviteResult button {
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 6%);
+  color: inherit;
+  font-size: 7px;
+  font-weight: 650;
+}
+
+.sharedRoomsPanel button { padding: 7px 10px; }
+.sharedRoomsPanel button:disabled { opacity: .45; }
+
+.sharedRoomsForms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sharedRoomsForms form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 3%);
+}
+
+.sharedRoomsForms label {
+  display: grid;
+  gap: 5px;
+}
+
+.sharedRoomsForms label span {
+  color: rgb(252 252 252 / 50%);
+  font-size: 7px;
+}
+
+.sharedRoomsForms input {
+  min-width: 0;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 22%);
+  color: inherit;
+  padding: 8px 9px;
+  font: inherit;
+  font-size: 8px;
+  outline: none;
+}
+
+.sharedRoomsForms input:focus { border-color: rgb(142 113 255 / 58%); }
+
+.sharedRoomsError {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgb(220 67 78 / 35%);
+  border-radius: 9px;
+  background: rgb(220 67 78 / 8%);
+  color: #e8747d;
+  font-size: 8px;
+}
+
+.sharedInviteResult {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgb(117 92 242 / 28%);
+  border-radius: 10px;
+  background: rgb(117 92 242 / 7%);
+}
+
+.sharedInviteResult > span {
+  grid-column: 1 / -1;
+  color: rgb(252 252 252 / 52%);
+  font-size: 7px;
+}
+
+.sharedInviteResult code {
+  overflow: hidden;
+  color: #c8b8ff;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharedRoomList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.sharedRoomList > article {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 3%);
+}
+
+.sharedRoomList > article > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sharedRoomList > article > header > div { display: grid; gap: 3px; min-width: 0; }
+.sharedRoomList > article > header strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.sharedRoomList > article > header small { color: rgb(252 252 252 / 45%); font-size: 6.5px; }
+.sharedRoomList > article > header > span {
+  border-radius: 999px;
+  padding: 3px 5px;
+  background: rgb(255 255 255 / 6%);
+  color: rgb(252 252 252 / 50%);
+  font-size: 5.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.sharedRoomList > article > header > span[data-scope="fabushi-platform"] {
+  background: rgb(64 190 132 / 12%);
+  color: #7be0ac;
+}
+
+.sharedRoomList > article > p {
+  margin: 0;
+  overflow: hidden;
+  color: rgb(252 252 252 / 56%);
+  font-size: 7px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharedTyping { color: #9f8cff; font-size: 6.5px; }
+.sharedRoomActions { display: flex; flex-wrap: wrap; gap: 5px; }
+.sharedRoomActions button { padding: 5px 7px; }
+
+.sharedRoomsEmpty {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px;
+  border: 1px dashed rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  color: rgb(252 252 252 / 52%);
+  text-align: center;
+}
+.sharedRoomsEmpty strong { font-size: 9px; color: #f5f5f5; }
+.sharedRoomsEmpty p { margin: 0; font-size: 7px; }
+
+.sharedJoinRequests {
+  display: grid;
+  gap: 7px;
+  padding-top: 4px;
+}
+.sharedJoinRequests h3 { margin: 0; font-size: 8px; }
+.sharedJoinRequests article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 2%);
+}
+.sharedJoinRequests article > div:first-child { display: grid; gap: 2px; }
+.sharedJoinRequests strong { font-size: 8px; }
+.sharedJoinRequests small { color: rgb(252 252 252 / 45%); font-size: 6.5px; }
+.sharedJoinRequests article > div:last-child { display: flex; gap: 5px; }
+.sharedJoinRequests button { padding: 5px 7px; }
+
+@media (max-width: 720px) {
+  .sharedRoomsForms,
+  .sharedRoomList { grid-template-columns: 1fr; }
+}
