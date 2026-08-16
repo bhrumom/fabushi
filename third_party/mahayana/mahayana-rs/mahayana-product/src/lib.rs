@@ -2323,7 +2323,9 @@ impl MahayanaProductClient {
         poll_secret: &str,
     ) -> Result<(), ProductError> {
         if poll_secret.len() < 32 || poll_secret.len() > 256 {
-            return Err(ProductError::Response("browser login poll secret is invalid".into()));
+            return Err(ProductError::Response(
+                "browser login poll secret is invalid".into(),
+            ));
         }
         let name = browser_login_poll_secret_name(attempt_id)?;
         self.managed_secrets

@@ -108,7 +108,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -172,7 +171,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
@@ -191,7 +192,6 @@ async fn feature_host_oauth_poll(
 ) -> Result<Value, String> {
     state.oauth_poll(attempt_id)
 }
-
 
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
@@ -260,7 +260,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -324,7 +323,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
@@ -344,7 +345,6 @@ async fn feature_host_browser_login_poll(
     state.browser_login_poll(attempt_id)
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -412,7 +412,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -476,7 +475,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
@@ -496,7 +497,6 @@ async fn feature_host_oauth_poll(
     state.oauth_poll(attempt_id)
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -564,7 +564,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -628,7 +627,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
@@ -648,7 +649,6 @@ async fn feature_host_browser_login_reopen(
     state.browser_login_reopen(attempt_id)
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -716,7 +716,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -780,7 +779,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
@@ -800,7 +801,6 @@ async fn feature_host_oauth_poll(
     state.oauth_poll(attempt_id)
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -868,7 +868,6 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
-
 #[tauri::command]
 fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
     state.initialize(config)
@@ -932,7 +931,9 @@ async fn feature_host_password_login(
 }
 
 #[tauri::command]
-async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+async fn feature_host_browser_login_start(
+    state: State<'_, FeatureHostState>,
+) -> Result<Value, String> {
     state.browser_login_start()
 }
 
