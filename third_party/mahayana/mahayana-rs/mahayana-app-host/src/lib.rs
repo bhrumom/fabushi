@@ -169,6 +169,11 @@ impl AppHost {
                 .auth_providers()
                 .map_err(|error| AppHostError::Operation(error.to_string())),
             "feature.auth.passwordLogin" => self.feature_password_login(params),
+            "feature.auth.browserStart" => self
+                .feature
+                .browser_login_start()
+                .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.auth.browserPoll" => self.feature_browser_login_poll(params),
             "feature.auth.oauthStart" => self.feature_oauth_start(params),
             "feature.auth.oauthPoll" => self.feature_oauth_poll(params),
             "feature.auth.logout" => self
@@ -226,6 +231,12 @@ impl AppHost {
         let password = string_param(&params, "password")?.to_string();
         self.feature
             .password_login(username, password)
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn feature_browser_login_poll(&self, params: Value) -> Result<Value, AppHostError> {
+        self.feature
+            .browser_login_poll(string_param(&params, "attemptId")?.to_string())
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 

@@ -1516,6 +1516,8 @@ impl MahayanaProductClient {
             "mahayana.auth.status" => self.auth_status(request),
             "mahayana.auth.session.restore" => self.restore_session(),
             "mahayana.auth.password.login" => self.password_login(request),
+            "mahayana.auth.browser.start" => self.browser_login_start(request),
+            "mahayana.auth.browser.poll" => self.browser_login_poll(request),
             "mahayana.auth.oauth.providers" => self.oauth_providers(),
             "mahayana.auth.oauth.start" => self.oauth_start(request),
             "mahayana.auth.oauth.poll" => self.oauth_poll(request),
@@ -1798,10 +1800,7 @@ impl MahayanaProductClient {
         )
     }
 
-    fn oauth_poll(&self, request: &Value) -> Result<Value, ProductError> {
-        let attempt_id = required_identifier(request, "attemptId")?;
-        let response =
-            self.get_json(&format!("/api/auth/oauth/attempts/{attempt_id}"), &[], None)?;
+    fn finish_polled_login(&self, response: Value) -> Result<Value, ProductError> {
         if response.get("status").and_then(Value::as_str) != Some("completed") {
             return Ok(response);
         }
@@ -1809,12 +1808,59 @@ impl MahayanaProductClient {
         let provider = response
             .get("provider")
             .and_then(Value::as_str)
-            .unwrap_or("oauth");
+            .unwrap_or("browser");
         self.store_login_response(session, provider)?;
         Ok(json!({
             "status": "completed",
+            "provider": provider,
             "auth": typed_session(session.clone(), provider, true)?,
         }))
+    }
+
+    fn browser_login_start(&self, request: &Value) -> Result<Value, ProductError> {
+        let mut response = self.post_json(
+            "/api/auth/browser/start",
+            json!({
+                "platform": optional_string(request, "platform").unwrap_or("desktop"),
+                "deviceId": optional_string(request, "deviceId"),
+            }),
+            None,
+        )?;
+        let attempt_id = required_identifier(&response, "attemptId")?.to_string();
+        let poll_secret = required_string(&response, "pollSecret")?.to_string();
+        self.save_browser_login_poll_secret(&attempt_id, &poll_secret)?;
+        if let Some(object) = response.as_object_mut() {
+            object.remove("pollSecret");
+        }
+        Ok(response)
+    }
+
+    fn browser_login_poll(&self, request: &Value) -> Result<Value, ProductError> {
+        let attempt_id = required_identifier(request, "attemptId")?;
+        let poll_secret = self
+            .load_browser_login_poll_secret(attempt_id)?
+            .ok_or(ProductError::SessionExpired)?;
+        let response = self.get_json(
+            &format!("/api/auth/browser/attempts/{attempt_id}"),
+            &[("pollSecret", poll_secret.as_str())],
+            None,
+        )?;
+        let terminal = matches!(
+            response.get("status").and_then(Value::as_str),
+            Some("completed" | "expired" | "cancelled")
+        );
+        let result = self.finish_polled_login(response);
+        if terminal {
+            let _ = self.remove_browser_login_poll_secret(attempt_id);
+        }
+        result
+    }
+
+    fn oauth_poll(&self, request: &Value) -> Result<Value, ProductError> {
+        let attempt_id = required_identifier(request, "attemptId")?;
+        let response =
+            self.get_json(&format!("/api/auth/oauth/attempts/{attempt_id}"), &[], None)?;
+        self.finish_polled_login(response)
     }
 
     fn register(&self, request: &Value) -> Result<Value, ProductError> {
@@ -2237,6 +2283,38 @@ impl MahayanaProductClient {
         Ok(None)
     }
 
+    fn save_browser_login_poll_secret(
+        &self,
+        attempt_id: &str,
+        poll_secret: &str,
+    ) -> Result<(), ProductError> {
+        if poll_secret.len() < 32 || poll_secret.len() > 256 {
+            return Err(ProductError::Response("browser login poll secret is invalid".into()));
+        }
+        let name = browser_login_poll_secret_name(attempt_id)?;
+        self.managed_secrets
+            .set(&SecretScope::Global, &name, poll_secret)
+            .map_err(secrets_error)
+    }
+
+    fn load_browser_login_poll_secret(
+        &self,
+        attempt_id: &str,
+    ) -> Result<Option<String>, ProductError> {
+        let name = browser_login_poll_secret_name(attempt_id)?;
+        self.managed_secrets
+            .get(&SecretScope::Global, &name)
+            .map_err(secrets_error)
+    }
+
+    fn remove_browser_login_poll_secret(&self, attempt_id: &str) -> Result<(), ProductError> {
+        let name = browser_login_poll_secret_name(attempt_id)?;
+        self.managed_secrets
+            .delete(&SecretScope::Global, &name)
+            .map(|_| ())
+            .map_err(secrets_error)
+    }
+
     fn save_session(&self, session: &Value) -> Result<(), ProductError> {
         let name = account_session_secret_name()?;
         let contents = serde_json::to_string(session)
@@ -2522,6 +2600,11 @@ fn safe_test_account_token(value: &str) -> Result<&str, ProductError> {
     } else {
         Err(ProductError::InvalidParameter("testAccountToken"))
     }
+}
+
+fn browser_login_poll_secret_name(attempt_id: &str) -> Result<SecretName, ProductError> {
+    let attempt_id = safe_path_identifier(attempt_id, "attemptId")?;
+    managed_secret_name(&format!("browser-login-poll:{attempt_id}"))
 }
 
 fn account_session_secret_name() -> Result<SecretName, ProductError> {

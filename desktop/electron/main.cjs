@@ -50,6 +50,20 @@ function parseFabushiDeepLink(candidate) {
     const agentId = String(pathParts[0] ?? url.searchParams.get('id') ?? '').trim().slice(0, 200);
     return agentId ? { version: 1, route: 'agent', agentId, source: 'protocol', canonicalUrl: `fabushi://agent/${encodeURIComponent(agentId)}` } : null;
   }
+  if (hostName === 'auth' && pathParts[0] === 'complete') {
+    const attemptId = String(url.searchParams.get('attemptId') ?? '').trim();
+    const status = String(url.searchParams.get('status') ?? 'completed').trim().toLowerCase();
+    if (!/^[A-Za-z0-9_-]{8,96}$/.test(attemptId) || !['completed', 'cancelled'].includes(status)) return null;
+    return {
+      version: 1,
+      route: 'auth',
+      action: 'complete',
+      attemptId,
+      status,
+      source: 'protocol',
+      canonicalUrl: `fabushi://auth/complete?attemptId=${encodeURIComponent(attemptId)}&status=${status}`,
+    };
+  }
   if (hostName === 'settings') {
     const section = String(pathParts[0] ?? url.searchParams.get('section') ?? 'general').trim();
     if (!['general', 'mcp', 'usage', 'updates'].includes(section)) return null;

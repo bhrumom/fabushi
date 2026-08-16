@@ -12,6 +12,8 @@ const methodNames = [
   'feature.auth.status',
   'feature.auth.providers',
   'feature.auth.passwordLogin',
+  'feature.auth.browserStart',
+  'feature.auth.browserPoll',
   'feature.auth.oauthStart',
   'feature.auth.oauthPoll',
   'feature.auth.logout',

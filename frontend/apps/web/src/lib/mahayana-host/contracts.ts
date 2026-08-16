@@ -33,6 +33,19 @@ export interface AuthProvider {
   enabled: boolean;
 }
 
+export interface BrowserLoginAttempt {
+  attemptId: string;
+  loginUrl: string;
+  expiresAt?: number;
+  pollAfterMs?: number;
+}
+
+export interface BrowserLoginPollResult {
+  status: "pending" | "completed" | "expired" | "cancelled";
+  provider?: string;
+  auth?: AuthState;
+}
+
 export interface OAuthAttempt {
   attemptId: string;
   provider: AuthProviderId;
