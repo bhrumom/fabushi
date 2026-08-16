@@ -58,7 +58,7 @@ required = {
     'staging browser origin': (worker_config, 'AUTH_PUBLIC_BASE_URL = "https://mahayana-platform.bhrumom.workers.dev"'),
     'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
     'staging auth repair applies account auth migrations': (staging_auth_repair, 'd1 migrations apply ACCOUNT_DB --remote'),
-    'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login broker lifecycle'),
+    'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login, registration, and Alipay broker lifecycle'),
     'browser registration code route': (worker, '/api/auth/browser/register/code'),
     'browser registration submit route': (worker, '/api/auth/browser/register'),
     'browser login/register UI tabs': (worker, 'aria-label=\"账号模式\"'),
