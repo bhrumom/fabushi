@@ -18,6 +18,7 @@ const methodNames = [
   'marketplace.browse',
   'marketplace.release',
   'plugin.install',
+  'plugin.uninstall',
   'plugin.active',
   'plugin.permissions',
   'plugin.permission.grant',

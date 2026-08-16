@@ -675,6 +675,16 @@ impl PluginInstaller {
             .map(Some)
             .map_err(|error| RuntimeError::InvalidRelease(error.to_string()))
     }
+
+    pub fn uninstall(&self, plugin_id: &str) -> Result<bool, RuntimeError> {
+        validate_identifier(plugin_id, "pluginId")?;
+        let plugin_root = self.root.join(plugin_id);
+        if !plugin_root.exists() {
+            return Ok(false);
+        }
+        fs::remove_dir_all(plugin_root).map_err(RuntimeError::Io)?;
+        Ok(true)
+    }
 }
 
 /// Owns cleanup callbacks for one plugin instance. Every runtime adapter
@@ -1412,6 +1422,12 @@ impl PermissionManager {
         self.persist()
     }
 
+    pub fn remove_plugin(&mut self, plugin_id: &str) -> Result<bool, RuntimeError> {
+        let removed = self.store.grants.remove(plugin_id).is_some();
+        self.persist()?;
+        Ok(removed)
+    }
+
     pub fn retain_requested(
         &mut self,
         plugin_id: &str,
@@ -1596,6 +1612,41 @@ mod tests {
     }
 
     #[test]
+    fn uninstall_removes_plugin_root_and_is_idempotent() {
+        let archive = tar_gz(&[("plugin.json", br#"{"ok":true}"#)]);
+        let digest = format!("{:x}", Sha256::digest(&archive));
+        let artifact = ReleaseArtifact {
+            id: "desktop-web".into(),
+            runtime: "local-web".into(),
+            platforms: vec!["linux".into()],
+            source: ArtifactSource::Https {
+                url: "https://example.com/plugin.tar.gz".into(),
+            },
+            sha256: digest,
+            size: archive.len() as u64,
+            format: ArtifactFormat::TarGz,
+            entry: Some("./plugin.json".into()),
+        };
+        let release = ExternalReleaseManifest {
+            schema_version: 1,
+            protocol: "mahayana.external-release.v1".into(),
+            plugin_id: "cleanup-plugin".into(),
+            version: "1.0.0".into(),
+            permissions: vec!["network".into()],
+            artifacts: vec![artifact.clone()],
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let installer = PluginInstaller::new(temp.path()).unwrap();
+        installer
+            .install_verified_bytes(&release, &artifact, &archive)
+            .unwrap();
+        assert!(temp.path().join("cleanup-plugin/active.json").is_file());
+        assert!(installer.uninstall("cleanup-plugin").unwrap());
+        assert!(!temp.path().join("cleanup-plugin").exists());
+        assert!(!installer.uninstall("cleanup-plugin").unwrap());
+    }
+
+    #[test]
     fn permission_manager_persists_only_declared_grants() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("permissions.json");
@@ -1620,6 +1671,20 @@ mod tests {
             .retain_requested("sample-plugin", &["storage.local".to_string()])
             .unwrap();
         assert!(manager.grants_for("sample-plugin").is_empty());
+    }
+
+    #[test]
+    fn permission_manager_removes_all_grants_for_uninstalled_plugin() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("permissions.json");
+        let mut manager = PermissionManager::load(&path).unwrap();
+        manager
+            .grant("cleanup-plugin", &["network".into()], "network")
+            .unwrap();
+        assert_eq!(manager.grants_for("cleanup-plugin"), vec!["network".to_string()]);
+        assert!(manager.remove_plugin("cleanup-plugin").unwrap());
+        assert!(manager.grants_for("cleanup-plugin").is_empty());
+        assert!(!manager.remove_plugin("cleanup-plugin").unwrap());
     }
 
     #[test]

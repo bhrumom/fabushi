@@ -1,11 +1,13 @@
-const { app, BrowserWindow, dialog, ipcMain, net, nativeTheme, Notification, protocol, shell, session } = require('electron');
+const { app, autoUpdater, BrowserWindow, dialog, ipcMain, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL, URL } = require('node:url');
 const { MahayanaHostProcess } = require('./host-process.cjs');
 const { serveMainEdge } = require('./edge-ipc.cjs');
 const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
 const { NATIVE_EDGE } = require('./native-edge.cjs');
+const { createNativeCapabilityHandlers } = require('./native-capability-handlers.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -70,6 +72,16 @@ function nativeStatePath() {
 }
 
 let nativeStateWrite = Promise.resolve();
+
+function applyStartupNativePreferences() {
+  try {
+    const raw = fsSync.readFileSync(nativeStatePath(), 'utf8');
+    const state = JSON.parse(raw);
+    if (state?.preferences?.hardwareAccelerationEnabled === false) app.disableHardwareAcceleration();
+  } catch (error) {
+    if (error?.code !== 'ENOENT') console.warn('[native-edge] unable to apply startup preferences', error);
+  }
+}
 
 async function readNativeState() {
   try {
@@ -338,6 +350,21 @@ function installNativeEdge() {
     },
   };
 
+  Object.assign(handlers, createNativeCapabilityHandlers({
+    app,
+    autoUpdater,
+    dialog,
+    net,
+    nativeTheme,
+    safeStorage,
+    shell,
+    host,
+    readNativeState,
+    mutateNativeState,
+    windowForEvent,
+    broadcastNativeEvent,
+  }));
+
   nativeEdgeServer = serveMainEdge(ipcMain, NATIVE_EDGE, handlers, {
     isTrustedSender,
     onHandlerError(method, error) {
@@ -362,7 +389,25 @@ function installMahayanaEdge() {
   });
 }
 
+function noteRuntimeUsage(event) {
+  if (!event || event.type !== 'usage.updated') return;
+  const totalTokens = Math.max(0, Number(event.totalTokens ?? 0));
+  const item = { timestampMs: Date.now(), totalTokens };
+  void mutateNativeState((state) => {
+    const previous = Array.isArray(state.usageEvents) ? state.usageEvents : [];
+    const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
+    const usageEvents = [...previous.filter((entry) => Number(entry.timestampMs) >= cutoff), item].slice(-5000);
+    return {
+      ...state,
+      usageEvents,
+      usageLifetimeTokens: Number(state.usageLifetimeTokens ?? 0) + totalTokens,
+      usageUpdatedAtMs: item.timestampMs,
+    };
+  }).catch((error) => console.error('[native-edge] failed to persist usage telemetry', error));
+}
+
 function broadcastMahayanaEvent(event) {
+  noteRuntimeUsage(event);
   if (!mahayanaEdgeServer) return;
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
@@ -488,6 +533,34 @@ function createWindow() {
   }
 }
 
+function installAutoUpdaterEvents() {
+  if (!autoUpdater?.on) return;
+  autoUpdater.on('checking-for-update', () => {
+    void mutateNativeState((state) => ({ ...state, updateStatus: { type: 'checking', version: app.getVersion() } }));
+    broadcastNativeEvent('update-status', { type: 'checking', version: app.getVersion() });
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    const status = { type: 'upToDate', version: info?.version ?? app.getVersion() };
+    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
+    broadcastNativeEvent('update-status', status);
+  });
+  autoUpdater.on('update-available', (info) => {
+    const status = { type: 'downloading', version: info?.version ?? null };
+    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
+    broadcastNativeEvent('update-status', status);
+  });
+  autoUpdater.on('update-downloaded', (_event, _notes, version) => {
+    const status = { type: 'ready', version: version ?? null };
+    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
+    broadcastNativeEvent('update-status', status);
+  });
+  autoUpdater.on('error', (error) => {
+    const status = { type: 'error', message: error instanceof Error ? error.message : String(error) };
+    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
+    broadcastNativeEvent('update-status', status);
+  });
+}
+
 function installAppProtocol() {
   const distRoot = path.resolve(__dirname, '..', 'dist');
   protocol.handle('app', (request) => {
@@ -501,8 +574,11 @@ function installAppProtocol() {
   });
 }
 
+applyStartupNativePreferences();
+
 app.whenReady().then(() => {
   installAppProtocol();
+  installAutoUpdaterEvents();
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   installIpcHandlers();
   host.start();

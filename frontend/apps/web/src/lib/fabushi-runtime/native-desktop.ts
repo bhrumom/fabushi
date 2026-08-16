@@ -1,4 +1,27 @@
-export type NativeDesktopEvent = "window-state" | "theme-changed";
+export type NativeDesktopEvent =
+  | "mcp-auth-completed"
+  | "focus-agent"
+  | "deep-link"
+  | "compute-migration"
+  | "dev-compute-rebuild"
+  | "open-feedback"
+  | "open-about"
+  | "widget-gallery"
+  | "force-onboarding"
+  | "account-auth-changed"
+  | "experiments-changed"
+  | "window-state"
+  | "zoom-factor-changed"
+  | "update-computer-dispatched"
+  | "remote-desktop-user-presence"
+  | "dev-compute-pull-progress"
+  | "egress-tunnel-changed"
+  | "egress-tunnel-status-changed"
+  | "webauthn-proxy-changed"
+  | "skip-onboarding"
+  | "theme-changed"
+  | "update-status"
+;
 
 export interface NativeDesktopBridge {
   invoke<T>(method: string, params?: Record<string, unknown>): Promise<T>;
