@@ -2,6 +2,11 @@ name: Mahayana staging auth repair
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - grok-bot-latest-source-fusion
+    paths:
+      - .github/workflows/mahayana-staging-auth-repair.yml
 
 permissions:
   contents: read
