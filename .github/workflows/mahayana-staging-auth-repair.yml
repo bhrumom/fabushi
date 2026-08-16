@@ -38,20 +38,24 @@ jobs:
           [ -n "${TEST_ACCOUNT_TOKEN:-}" ] || { echo "Mahayana test account token is not configured." >&2; exit 1; }
 
       - id: email-sending-domain
-        name: Inspect Cloudflare Email Sending domain
+        name: Inspect public Email Sending DNS
         shell: bash
         run: |
           set -euo pipefail
-          api='https://api.cloudflare.com/client/v4'
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json')
-          zones="$(curl --fail --silent --show-error "${auth[@]}" "$api/zones?name=ombhrum.com&account.id=$CLOUDFLARE_ACCOUNT_ID")"
-          zone_id="$(jq -er '.result[] | select(.name == "ombhrum.com") | .id' <<<"$zones" | head -n 1)"
-          [ -n "$zone_id" ] || { echo 'ombhrum.com is not visible to the deployment token.' >&2; exit 1; }
-          sending="$(curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/email/sending/subdomains")"
-          jq -e '.success == true' <<<"$sending" >/dev/null
-          summary="$(jq -c '[.result[] | {name, enabled, tag, return_path_domain}]' <<<"$sending")"
-          echo "Email Sending subdomains: $summary"
-          enabled="$(jq -r '[.result[] | select((.name == "ombhrum.com" or .name == "*.ombhrum.com") and .enabled == true)] | length > 0' <<<"$sending")"
+          dns='https://cloudflare-dns.com/dns-query'
+          query_dns() {
+            curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode "name=$1" --data-urlencode "type=$2" "$dns"
+          }
+          mx="$(query_dns cf-bounce.ombhrum.com MX)"
+          spf="$(query_dns cf-bounce.ombhrum.com TXT)"
+          dkim="$(query_dns cf-bounce._domainkey.ombhrum.com TXT)"
+          enabled=false
+          if jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | test("mx\.cloudflare\.net"; "i"))' <<<"$mx" >/dev/null \
+            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null \
+            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null; then
+            enabled=true
+          fi
+          echo "Cloudflare Email Sending public DNS ready: $enabled"
           echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
