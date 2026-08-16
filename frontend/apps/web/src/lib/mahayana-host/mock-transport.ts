@@ -39,8 +39,8 @@ import type {
   MahayanaHostTransport,
   RuntimeEventListener,
 } from "./transport";
-import { memoryDedupeKey, memoryIdFor, normalizeMemoryContent } from "../grok-bot/memory";
-import { TrayManager } from "../grok-bot/trays";
+import { makeMemoryId, memoryDedupeKey, normalizeMemoryContent } from "../fabushi-runtime/memory-store";
+import { ErrorTrayQueue } from "../fabushi-runtime/error-trays";
 
 const now = () => new Date().toISOString();
 const mockComputerSnapshot = () => ({
@@ -201,9 +201,9 @@ const defaultSkills = (): SkillSummary[] => [
 ];
 
 const defaultBots = (): BotSummary[] => [
-  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:assistant" },
-  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:research" },
-  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, conversationId: "codex:agent:incident" },
+  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:assistant" },
+  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:research" },
+  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:incident" },
 ];
 
 const listenerCopy: Record<ListenerPlatform, [string, string]> = {
@@ -518,7 +518,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private groups = new Map<string, GroupSummary>();
   private peerMessages: AgentPeerMessage[] = [];
   private memories = new Map<string, MemoryRecord[]>();
-  private trays = new TrayManager();
+  private trays = new ErrorTrayQueue();
   private workflows = new Map<string, WorkflowSummary>();
   private disabledWorkflows = new Map<string, Set<string>>();
   private attachmentData = new Map<string, { agentId: string; name: string; mimeType?: string; bytesBase64: string }>();
@@ -1028,6 +1028,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           avatarShape: command.avatarShape?.trim() || undefined,
           avatarColor: command.avatarColor?.trim() || undefined,
           notificationsEnabled: true,
+          notifyOnUpdates: true,
+          unread: false,
           conversationId: `codex:agent:${id}`,
         };
         this.bots.set(bot.id, bot);
@@ -1042,9 +1044,12 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           ...(command.name === undefined ? {} : { name: command.name.replace(/\s+/g, " ").trim().slice(0, 72) }),
           ...(command.description === undefined ? {} : { description: command.description.trim().slice(0, 2000) }),
           ...(command.title === undefined ? {} : { title: command.title.trim() }),
+          ...(command.avatar === undefined ? {} : { avatar: command.avatar.trim() || undefined }),
           ...(command.avatarShape === undefined ? {} : { avatarShape: command.avatarShape.trim() || undefined }),
           ...(command.avatarColor === undefined ? {} : { avatarColor: command.avatarColor.trim() || undefined }),
           ...(command.notificationsEnabled === undefined ? {} : { notificationsEnabled: command.notificationsEnabled }),
+          ...(command.notifyOnUpdates === undefined ? {} : { notifyOnUpdates: command.notifyOnUpdates }),
+          ...(command.unread === undefined ? {} : { unread: command.unread }),
         };
         if (!next.name) throw new Error("Bot name must not be empty");
         this.bots.set(next.id, next);
@@ -1061,6 +1066,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           id,
           name: trimmed ? `${trimmed} copy` : "copy",
           hidden: false,
+          unread: false,
           conversationId: `codex:agent:${id}`,
         };
         this.bots.set(bot.id, bot);
@@ -1309,7 +1315,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         const current = this.memories.get(command.agentId) ?? [];
         const duplicate = current.some((memory) => memoryDedupeKey(memory.content) === memoryDedupeKey(content));
         const memory = !content || duplicate ? undefined : {
-          id: memoryIdFor(content),
+          id: makeMemoryId(content),
           content,
           createdAt: Date.now(),
           kind: command.kind,

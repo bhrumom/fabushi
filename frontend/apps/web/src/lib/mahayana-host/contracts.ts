@@ -187,6 +187,8 @@ export interface BotSummary {
   avatarShape?: string;
   avatarColor?: string;
   notificationsEnabled: boolean;
+  notifyOnUpdates: boolean;
+  unread: boolean;
   conversationId?: string;
 }
 
@@ -620,6 +622,7 @@ export type RuntimeCommand =
       name: string;
       description?: string;
       title?: string;
+      avatar?: string;
       avatarShape?: string;
       avatarColor?: string;
     })
@@ -629,9 +632,12 @@ export type RuntimeCommand =
       name?: string;
       description?: string;
       title?: string;
+      avatar?: string;
       avatarShape?: string;
       avatarColor?: string;
       notificationsEnabled?: boolean;
+      notifyOnUpdates?: boolean;
+      unread?: boolean;
     })
   | (CommandBase & { type: "bot.clone"; id: string })
   | (CommandBase & { type: "bot.delete"; id: string })

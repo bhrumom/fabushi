@@ -1,6 +1,6 @@
 'use strict';
 
-const { defineEdge } = require('./grok-rpc.cjs');
+const { defineEdge } = require('./edge-ipc.cjs');
 
 const methodNames = [
   'host.platform',

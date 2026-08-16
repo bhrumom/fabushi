@@ -1,1 +1,0 @@
-import{c as n,u as r,j as c}from"./index-CphCyQnY.js";import{SettingsModal as l}from"./index-d9mfdYoh.js";import"./scroll-pane-CIBX4DSV.js";function u(o){const t=n.c(3),{params:s}=o,i=r();let e;return t[0]!==s.section||t[1]!==i?(e=c.jsx(l,{...i,initialSection:s.section,isOpen:!0}),t[0]=s.section,t[1]=i,t[2]=e):e=t[2],e}export{u as default};

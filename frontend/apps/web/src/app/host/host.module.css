@@ -1092,7 +1092,7 @@
   background: #030303;
 }
 
-.grokWelcome {
+.fabushiWelcome {
   width: min(520px, 100%);
   display: grid;
   justify-items: center;
@@ -1178,7 +1178,7 @@
 .onboardingNav button { padding: 10px; border-radius: 999px; background: #fff; color: #171717; }
 .onboardingNav button + button { background: #171717; color: #ddd; }
 
-.grokWelcome::before {
+.fabushiWelcome::before {
   position: fixed;
   inset: 0;
   z-index: -1;
@@ -1187,14 +1187,14 @@
   pointer-events: none;
 }
 
-.grokTitle {
+.fabushiTitle {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 22px;
 }
 
-.grokLogo {
+.fabushiLogo {
   width: 58px;
   height: 66px;
   display: grid;
@@ -1204,7 +1204,7 @@
   transform: rotate(-7deg);
 }
 
-.grokLogo span {
+.fabushiLogo span {
   color: #050505;
   font-size: 18px;
   font-weight: 950;
@@ -1212,14 +1212,14 @@
   transform: translate(3px, -7px) rotate(7deg);
 }
 
-.grokTitle h2 {
+.fabushiTitle h2 {
   margin: 0;
   font-size: clamp(45px, 7vw, 62px);
   font-weight: 430;
   letter-spacing: -.045em;
 }
 
-.grokWelcome p {
+.fabushiWelcome p {
   max-width: 350px;
   margin: 42px 0 34px;
   color: #f4f4f4;
@@ -1227,7 +1227,7 @@
   line-height: 1.35;
 }
 
-.grokWelcome > button {
+.fabushiWelcome > button {
   min-width: 132px;
   padding: 11px 24px;
   border: 1px solid #737373;
@@ -1238,12 +1238,12 @@
   font-size: 16px;
 }
 
-.grokWelcome > button:hover {
+.fabushiWelcome > button:hover {
   border-color: #aaa;
   background: #202020;
 }
 
-.grokWelcome > button span {
+.fabushiWelcome > button span {
   margin-left: 6px;
 }
 
@@ -2456,7 +2456,7 @@
   border: 0;
 }
 
-/* Grok Bot 0.16 workspace geometry, captured from the running reference app. */
+/* Fabushi desktop workspace geometry. */
 .sidebar {
   width: 280px;
   min-width: 240px;
@@ -4048,7 +4048,7 @@
   }
 }
 
-/* Grok Bot 0.16 mark host. Motion is driven by grok-bot-mark-engine.tsx. */
+/* Fabushi agent mark host. */
 .botMark {
   --bot-mark-size: 38px;
   position: relative;
@@ -4082,7 +4082,7 @@
 .extensionBotMark { margin: 0; }
 .onboardingBotMark { margin-bottom: 32px; }
 
-/* Grok-style multi-agent group chat. */
+/* Multi-agent group chat. */
 .groupListHeading {
   display: flex;
   align-items: center;

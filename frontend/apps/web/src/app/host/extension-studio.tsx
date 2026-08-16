@@ -453,7 +453,7 @@ function BotPanel({
       <div className={styles.skillToolbar}>
         <div>
           <strong>Bots</strong>
-          <p>Grok Bot 0.16 profile 语义：独立名称、职衔、描述、形状、颜色和会话身份。</p>
+          <p>Fabushi 智能体支持独立名称、职衔、描述、形状、颜色和会话身份。</p>
         </div>
         <button type="button" onClick={() => { setDraft(emptyBotDraft); setEditorOpen(true); }}>
           <Plus size={15} /> 新建 Bot
@@ -462,7 +462,7 @@ function BotPanel({
       {editorOpen ? (
         <form className={styles.skillEditor} onSubmit={(event) => void save(event)}>
           <header>
-            <div><strong>{draft.id ? "编辑 Bot" : "新建 Bot"}</strong><small>Profile 字段与 Grok Bot 0.16 保持一致。</small></div>
+            <div><strong>{draft.id ? "编辑 Bot" : "新建 Bot"}</strong><small>Profile 字段会作为 Fabushi 智能体的持久身份配置。</small></div>
             <button type="button" onClick={() => setEditorOpen(false)}>×</button>
           </header>
           <div className={styles.botProfilePreview}>

@@ -111,7 +111,7 @@ impl Default for ProductSurfaceState {
             listeners: default_surface_listeners(),
             // The desktop bundle currently has no signed updater endpoint or
             // updater plugin. Report the same explicit disabled state used by
-            // recovered Grok Bot lab/unpackaged builds instead of pretending a
+            // recovered unpackaged development builds instead of pretending a
             // network update check succeeded.
             update_state: UpdateState::Disabled {
                 reason: UpdateDisabledReason::NotPackaged,
@@ -339,6 +339,8 @@ fn default_surface_bots() -> Vec<BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:assistant".into()),
         },
         BotSummary {
@@ -351,6 +353,8 @@ fn default_surface_bots() -> Vec<BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:research".into()),
         },
         BotSummary {
@@ -363,6 +367,8 @@ fn default_surface_bots() -> Vec<BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:incident".into()),
         },
     ]

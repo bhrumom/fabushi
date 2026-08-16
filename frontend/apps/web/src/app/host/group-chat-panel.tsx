@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, type FormEvent } from "react";
 import type { BotSummary, GroupSummary } from "../../lib/mahayana-host/contracts";
-import { parseGroupMentions } from "../../lib/grok-bot/group-chat";
+import { parseGroupMentions } from "../../lib/fabushi-runtime/group-mentions";
 import { BotMark, type BotMarkColor, type BotMarkShape } from "./bot-mark";
 import styles from "./host.module.css";
 

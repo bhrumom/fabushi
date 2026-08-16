@@ -1040,6 +1040,7 @@ impl FeatureHostController {
                 name,
                 description,
                 title,
+                avatar,
                 avatar_shape,
                 avatar_color,
                 ..
@@ -1057,10 +1058,12 @@ impl FeatureHostController {
                     description: clamp_block(&description, 2000),
                     title: title.trim().to_string(),
                     hidden: false,
-                    avatar: None,
+                    avatar: sanitize_avatar_data_url(avatar)?,
                     avatar_shape: clean_optional_string(avatar_shape),
                     avatar_color: clean_optional_string(avatar_color),
                     notifications_enabled: true,
+                    notify_on_updates: true,
+                    unread: false,
                     conversation_id: Some(format!("codex:agent:{id}")),
                 };
                 state.bots.insert(id, bot.clone());
@@ -1071,9 +1074,12 @@ impl FeatureHostController {
                 name,
                 description,
                 title,
+                avatar,
                 avatar_shape,
                 avatar_color,
                 notifications_enabled,
+                notify_on_updates,
+                unread,
                 ..
             } => {
                 let bot = state
@@ -1095,6 +1101,9 @@ impl FeatureHostController {
                 if let Some(title) = title {
                     bot.title = title.trim().to_string();
                 }
+                if avatar.is_some() {
+                    bot.avatar = sanitize_avatar_data_url(avatar)?;
+                }
                 if avatar_shape.is_some() {
                     bot.avatar_shape = clean_optional_string(avatar_shape);
                 }
@@ -1103,6 +1112,12 @@ impl FeatureHostController {
                 }
                 if let Some(enabled) = notifications_enabled {
                     bot.notifications_enabled = enabled;
+                }
+                if let Some(enabled) = notify_on_updates {
+                    bot.notify_on_updates = enabled;
+                }
+                if let Some(unread) = unread {
+                    bot.unread = unread;
                 }
                 ("updated", bot.clone())
             }
@@ -1124,6 +1139,8 @@ impl FeatureHostController {
                     avatar_shape: source.avatar_shape,
                     avatar_color: source.avatar_color,
                     notifications_enabled: source.notifications_enabled,
+                    notify_on_updates: source.notify_on_updates,
+                    unread: false,
                     conversation_id: Some(format!("codex:agent:{new_id}")),
                 };
                 state.bots.insert(new_id, bot.clone());
@@ -5095,7 +5112,7 @@ impl FeatureHostController {
                 context_sections.push(format!("[Available workflows]\n{workflow_catalog}"));
             }
             context_sections.push(turn_prompt);
-            let runtime_text = format!("[SAND_HIDDEN_PROMPT]\n{}", context_sections.join("\n\n"));
+            let runtime_text = format!("[MAHAYANA_HIDDEN_CONTEXT]\n{}", context_sections.join("\n\n"));
             (
                 GroupOperationContext {
                     run_id: run.run_id,
@@ -7386,6 +7403,8 @@ fn default_bots() -> BTreeMap<String, BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:assistant".into()),
         },
         BotSummary {
@@ -7398,6 +7417,8 @@ fn default_bots() -> BTreeMap<String, BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:research".into()),
         },
         BotSummary {
@@ -7410,6 +7431,8 @@ fn default_bots() -> BTreeMap<String, BotSummary> {
             avatar_shape: None,
             avatar_color: None,
             notifications_enabled: true,
+            notify_on_updates: true,
+            unread: false,
             conversation_id: Some("codex:agent:incident".into()),
         },
     ]
@@ -7690,7 +7713,7 @@ fn required(value: String, name: &str) -> Result<String, FeatureHostError> {
     }
 }
 
-// Grok Bot 0.16 shared text-shaping/profile semantics.
+// Shared Fabushi text-shaping and profile semantics.
 fn clamp_line(raw: &str, max_length: usize) -> String {
     raw.split_whitespace()
         .collect::<Vec<_>>()
@@ -8006,6 +8029,40 @@ fn clean_optional_string(value: Option<String>) -> Option<String> {
         let value = value.trim().to_string();
         (!value.is_empty()).then_some(value)
     })
+}
+
+fn sanitize_avatar_data_url(value: Option<String>) -> Result<Option<String>, FeatureHostError> {
+    const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let (header, payload) = value.split_once(',').ok_or_else(|| {
+        FeatureHostError::Contract("avatar must be a base64 image data URL".into())
+    })?;
+    if !matches!(
+        header,
+        "data:image/png;base64"
+            | "data:image/jpeg;base64"
+            | "data:image/webp;base64"
+            | "data:image/gif;base64"
+    ) {
+        return Err(FeatureHostError::Contract(
+            "avatar format must be PNG, JPEG, WebP, or GIF".into(),
+        ));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|_| FeatureHostError::Contract("avatar base64 payload is invalid".into()))?;
+    if bytes.is_empty() || bytes.len() > MAX_AVATAR_BYTES {
+        return Err(FeatureHostError::Contract(format!(
+            "avatar must be between 1 byte and {MAX_AVATAR_BYTES} bytes"
+        )));
+    }
+    Ok(Some(value.to_string()))
 }
 
 fn clone_agent_display_name(name: &str) -> String {
@@ -9592,7 +9649,7 @@ fn update_subagents_from_activity(
     }
 
     // A generic provider may report a subagent activity without a receiver id.
-    // Do not fabricate a durable identity from the operation id; Grok's roster
+    // Do not fabricate a durable identity from the operation id; the agent roster
     // only contains actual subagent ids.
     let _ = operation_id;
     changed
@@ -10368,7 +10425,7 @@ mod tests {
     }
 
     #[test]
-    fn group_chat_matches_grok_mentions_round_order_and_pass_rules() {
+    fn group_chat_handles_mentions_round_order_and_pass_rules() {
         let bots = BTreeMap::from([
             (
                 "research-bot".into(),
@@ -10382,6 +10439,8 @@ mod tests {
                     avatar_shape: None,
                     avatar_color: None,
                     notifications_enabled: true,
+                    notify_on_updates: true,
+                    unread: false,
                     conversation_id: Some("codex:agent:research".into()),
                 },
             ),
@@ -10397,6 +10456,8 @@ mod tests {
                     avatar_shape: None,
                     avatar_color: None,
                     notifications_enabled: true,
+                    notify_on_updates: true,
+                    unread: false,
                     conversation_id: Some("codex:agent:incident".into()),
                 },
             ),
@@ -10489,7 +10550,7 @@ mod tests {
     }
 
     #[test]
-    fn trays_match_grok_dedupe_count_and_twenty_item_cap() {
+    fn trays_preserve_dedupe_count_and_twenty_item_cap() {
         let controller = controller();
         drain(&controller);
         {
@@ -10552,7 +10613,7 @@ mod tests {
     }
 
     #[test]
-    fn memory_store_matches_grok_id_format_dedupe_and_markdown_layout() {
+    fn memory_store_preserves_id_dedupe_and_markdown_layout() {
         assert_eq!(memory_id_for("hello"), "aaf4c61ddcc5e8a2");
         let controller = controller();
         drain(&controller);
@@ -10626,7 +10687,7 @@ mod tests {
     }
 
     #[test]
-    fn automation_schedule_supports_the_recovered_grok_grammar() {
+    fn automation_schedule_supports_supported_schedule_grammar() {
         let base = 1_750_000_000_000_i64;
         assert_eq!(parse_every_interval_ms("@every 5m"), Some(300_000));
         assert_eq!(next_automation_run("@every 5m", base), Some(base + 300_000));
@@ -11053,7 +11114,7 @@ mod tests {
     }
 
     #[test]
-    fn attachment_store_matches_grok_limits_content_addressing_and_scoped_reads() {
+    fn attachment_store_enforces_limits_content_addressing_and_scoped_reads() {
         let controller = controller();
         drain(&controller);
         let content = b"hello attachment\nsecond line\n";
@@ -11143,6 +11204,7 @@ mod tests {
                 name: "Research".into(),
                 description: "Research teammate".into(),
                 title: "Researcher".into(),
+                avatar: None,
                 avatar_shape: None,
                 avatar_color: None,
             })

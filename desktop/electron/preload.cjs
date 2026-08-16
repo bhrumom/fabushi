@@ -1,8 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { createElectronRendererEdgeClient } = require('./grok-rpc.cjs');
+const { createRendererEdge } = require('./edge-ipc.cjs');
 const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
+const { NATIVE_EDGE } = require('./native-edge.cjs');
 
-const edgeClient = createElectronRendererEdgeClient(ipcRenderer, MAHAYANA_EDGE);
+const edgeClient = createRendererEdge(ipcRenderer, MAHAYANA_EDGE);
+const nativeEdgeClient = createRendererEdge(ipcRenderer, NATIVE_EDGE);
 const allowedMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));
 
 const mahayana = Object.freeze({
@@ -21,9 +23,20 @@ const mahayana = Object.freeze({
 
 contextBridge.exposeInMainWorld('mahayana', mahayana);
 
+contextBridge.exposeInMainWorld('fabushiNative', Object.freeze({
+  invoke(method, params = {}) {
+    const spec = NATIVE_EDGE.methods[method];
+    if (!spec) return Promise.reject(new Error(`Native method is not allowed: ${method}`));
+    return spec.args === 'none' ? nativeEdgeClient[method]() : nativeEdgeClient[method](params);
+  },
+  subscribe(listeners) {
+    return nativeEdgeClient.subscribe(listeners);
+  },
+}));
+
 contextBridge.exposeInMainWorld('fabushi', Object.freeze({
-  // Compatibility facade. Existing HostClient code keeps working while all
-  // Mahayana calls now travel through Grok's edge/envelope IPC semantics.
+  // Compatibility facade for the current HostClient while the UI migrates
+  // feature-by-feature to the explicit Mahayana and native desktop edges.
   invoke(method, params = {}) {
     return mahayana.invoke(method, params);
   },
