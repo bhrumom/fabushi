@@ -13,6 +13,8 @@ export interface WidgetResponseRecord {
 export interface WidgetDismissalRecord {
   readonly kind: "dismissal";
   readonly widgetId: string;
+  readonly agentId?: string | null;
+  readonly conversationId?: string | null;
   readonly reason: string | null;
   readonly createdAtMs: number;
 }
@@ -86,12 +88,19 @@ export class FabushiWidgetInteractionStore {
     return record;
   }
 
-  dismiss(input: { widgetId: string; reason?: string | null }): WidgetDismissalRecord {
+  dismiss(input: {
+    widgetId: string;
+    agentId?: string | null;
+    conversationId?: string | null;
+    reason?: string | null;
+  }): WidgetDismissalRecord {
     const widgetId = input.widgetId.trim();
     if (!widgetId) throw new Error("Widget ID is required");
     const record: WidgetDismissalRecord = {
       kind: "dismissal",
       widgetId,
+      agentId: input.agentId?.trim() || null,
+      conversationId: input.conversationId?.trim() || null,
       reason: input.reason?.replace(/\s+/gu, " ").trim().slice(0, 500) || null,
       createdAtMs: Date.now(),
     };
