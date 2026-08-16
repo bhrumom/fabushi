@@ -61,6 +61,19 @@ function includesSearch(value: string | undefined, query: string): boolean {
   return normalizedSearch(value ?? "").includes(query);
 }
 
+function connectorIdForListener(platform: ListenerPlatform): string | null {
+  switch (platform) {
+    case "slack": return "slack";
+    case "github": return "github";
+    case "git": return "git";
+    case "teams": return "teams";
+    case "linear": return "linear";
+    case "sentry": return "sentry";
+    case "pagerduty": return "pagerduty";
+    default: return null;
+  }
+}
+
 export class MahayanaCoordinator {
   private readonly listeners = new Set<RuntimeEventListener>();
   private readonly pending = new Set<PendingEvent>();
@@ -325,6 +338,10 @@ export class MahayanaCoordinator {
     return this.execute({ type: "bot.setHidden", requestId: this.requestId("agent-hidden"), id, hidden });
   }
 
+  setAgentHiddenFromSidebar(id: string, hidden: boolean): Promise<CommandAccepted> {
+    return this.setAgentHidden(id, hidden);
+  }
+
   setAgentAvatarBytes(id: string, bytes: Uint8Array, mimeType = "image/png"): Promise<CommandAccepted> {
     if (!new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]).has(mimeType)) {
       throw new Error(`Unsupported avatar MIME type: ${mimeType}`);
@@ -435,9 +452,9 @@ export class MahayanaCoordinator {
     return event.group;
   }
 
-  async listAutomations(): Promise<AutomationSummary[]> {
+  async listAutomations(agentId?: string): Promise<AutomationSummary[]> {
     const event = await this.request(
-      { type: "automation.list", requestId: this.requestId("automations-list") },
+      { type: "automation.list", requestId: this.requestId("automations-list"), agentId },
       (candidate): candidate is RuntimeEventOf<"automation.listed"> => candidate.type === "automation.listed",
     );
     return event.automations;
@@ -445,6 +462,7 @@ export class MahayanaCoordinator {
 
   upsertAutomation(input: {
     id?: string;
+    agentId?: string;
     name: string;
     prompt: string;
     schedule: string;
@@ -454,16 +472,51 @@ export class MahayanaCoordinator {
     return this.execute({ type: "automation.upsert", requestId: this.requestId("automation-upsert"), ...input });
   }
 
-  setAutomationEnabled(id: string, enabled: boolean): Promise<CommandAccepted> {
-    return this.execute({ type: "automation.setEnabled", requestId: this.requestId("automation-enabled"), id, enabled });
+  setAutomationEnabled(id: string, enabled: boolean, agentId?: string): Promise<CommandAccepted> {
+    return this.execute({ type: "automation.setEnabled", requestId: this.requestId("automation-enabled"), id, agentId, enabled });
   }
 
-  deleteAutomation(id: string): Promise<CommandAccepted> {
-    return this.execute({ type: "automation.delete", requestId: this.requestId("automation-delete"), id });
+  deleteAutomation(id: string, agentId?: string): Promise<CommandAccepted> {
+    return this.execute({ type: "automation.delete", requestId: this.requestId("automation-delete"), id, agentId });
   }
 
-  runAutomationNow(id: string): Promise<CommandAccepted> {
-    return this.execute({ type: "automation.run", requestId: this.requestId("automation-run"), id });
+  runAutomationNow(id: string, agentId?: string): Promise<CommandAccepted> {
+    return this.execute({ type: "automation.run", requestId: this.requestId("automation-run"), id, agentId });
+  }
+
+  getAgentAutomations(agentId: string): Promise<AutomationSummary[]> {
+    return this.listAutomations(agentId);
+  }
+
+  createAgentAutomation(
+    agentId: string,
+    input: Omit<Extract<RuntimeCommand, { type: "automation.upsert" }>, "type" | "requestId" | "id" | "agentId">,
+  ): Promise<CommandAccepted> {
+    return this.upsertAutomation({ ...input, agentId });
+  }
+
+  updateAgentAutomation(
+    agentId: string,
+    id: string,
+    input: Omit<Extract<RuntimeCommand, { type: "automation.upsert" }>, "type" | "requestId" | "id" | "agentId">,
+  ): Promise<CommandAccepted> {
+    return this.upsertAutomation({ ...input, id, agentId });
+  }
+
+  setAgentAutomationEnabled(agentId: string, id: string, enabled: boolean): Promise<CommandAccepted> {
+    return this.setAutomationEnabled(id, enabled, agentId);
+  }
+
+  deleteAgentAutomation(agentId: string, id: string): Promise<CommandAccepted> {
+    return this.deleteAutomation(id, agentId);
+  }
+
+  runAgentAutomationNow(agentId: string, id: string): Promise<CommandAccepted> {
+    return this.runAutomationNow(id, agentId);
+  }
+
+  listAllAutomations(): Promise<AutomationSummary[]> {
+    return this.listAutomations();
   }
 
   async listWorkflows(agentId: string): Promise<WorkflowSummary[]> {
@@ -473,6 +526,10 @@ export class MahayanaCoordinator {
         candidate.type === "workflow.listed" && candidate.agentId === agentId,
     );
     return event.workflows;
+  }
+
+  getAgentWorkflows(agentId: string): Promise<WorkflowSummary[]> {
+    return this.listWorkflows(agentId);
   }
 
   async upsertWorkflow(input: {
@@ -494,16 +551,51 @@ export class MahayanaCoordinator {
     return event.workflow;
   }
 
+  createAgentWorkflow(input: {
+    agentId: string;
+    name: string;
+    description?: string;
+    body: string;
+    trigger?: WorkflowTrigger;
+    sourceRef?: string;
+  }): Promise<WorkflowSummary | undefined> {
+    return this.upsertWorkflow(input);
+  }
+
+  updateAgentWorkflow(input: {
+    agentId: string;
+    id: string;
+    name: string;
+    description?: string;
+    body: string;
+    trigger?: WorkflowTrigger;
+    sourceRef?: string;
+  }): Promise<WorkflowSummary | undefined> {
+    return this.upsertWorkflow(input);
+  }
+
   setWorkflowEnabled(agentId: string, id: string, enabled: boolean): Promise<CommandAccepted> {
     return this.execute({ type: "workflow.setEnabled", requestId: this.requestId("workflow-enabled"), agentId, id, enabled });
+  }
+
+  setAgentWorkflowEnabled(agentId: string, id: string, enabled: boolean): Promise<CommandAccepted> {
+    return this.setWorkflowEnabled(agentId, id, enabled);
   }
 
   deleteWorkflow(agentId: string, id: string): Promise<CommandAccepted> {
     return this.execute({ type: "workflow.delete", requestId: this.requestId("workflow-delete"), agentId, id });
   }
 
+  deleteAgentWorkflow(agentId: string, id: string): Promise<CommandAccepted> {
+    return this.deleteWorkflow(agentId, id);
+  }
+
   runWorkflowNow(agentId: string, id: string): Promise<CommandAccepted> {
     return this.execute({ type: "workflow.run", requestId: this.requestId("workflow-run"), agentId, id });
+  }
+
+  runAgentWorkflowNow(agentId: string, id: string): Promise<CommandAccepted> {
+    return this.runWorkflowNow(agentId, id);
   }
 
   importWorkflowText(agentId: string, markdown: string, fallbackName?: string): Promise<CommandAccepted> {
@@ -516,6 +608,10 @@ export class MahayanaCoordinator {
     });
   }
 
+  importAgentWorkflowText(agentId: string, markdown: string, fallbackName?: string): Promise<CommandAccepted> {
+    return this.importWorkflowText(agentId, markdown, fallbackName);
+  }
+
   importWorkflowUrl(agentId: string, source: string, fallbackName?: string): Promise<CommandAccepted> {
     return this.execute({
       type: "workflow.importLiveSource",
@@ -526,12 +622,20 @@ export class MahayanaCoordinator {
     });
   }
 
+  importAgentWorkflowUrl(agentId: string, source: string, fallbackName?: string): Promise<CommandAccepted> {
+    return this.importWorkflowUrl(agentId, source, fallbackName);
+  }
+
   async listSkills(agentId?: string): Promise<{ skills: SkillSummary[]; teams: SkillTeamSummary[] }> {
     const event = await this.request(
       { type: "skill.list", requestId: this.requestId("skills-list"), agentId },
       (candidate): candidate is RuntimeEventOf<"skill.listed"> => candidate.type === "skill.listed",
     );
     return { skills: event.skills, teams: event.teams };
+  }
+
+  async skillsCatalog(agentId?: string): Promise<SkillSummary[]> {
+    return (await this.listSkills(agentId)).skills;
   }
 
   publishSkill(id: string, teamId: string): Promise<CommandAccepted> {
@@ -555,6 +659,10 @@ export class MahayanaCoordinator {
     return event.subagents;
   }
 
+  getSubagents(agentId: string): Promise<SubagentSummary[]> {
+    return this.listSubagents(agentId);
+  }
+
   async listAsyncTasks(agentId: string): Promise<AsyncTaskSummary[]> {
     const event = await this.request(
       { type: "asyncTask.list", requestId: this.requestId("tasks-list"), agentId },
@@ -564,12 +672,20 @@ export class MahayanaCoordinator {
     return event.tasks;
   }
 
+  getAsyncTasks(agentId: string): Promise<AsyncTaskSummary[]> {
+    return this.listAsyncTasks(agentId);
+  }
+
   async getTeachStatus(): Promise<{ status: TeachRecordingStatus; result?: TeachRecordingResult }> {
     const event = await this.request(
       { type: "teach.status", requestId: this.requestId("teach-status") },
       (candidate): candidate is RuntimeEventOf<"teach.changed"> => candidate.type === "teach.changed",
     );
     return { status: event.status, result: event.result };
+  }
+
+  getTeachRecordingStatus(): Promise<{ status: TeachRecordingStatus; result?: TeachRecordingResult }> {
+    return this.getTeachStatus();
   }
 
   startTeachRecording(agentId: string, entryPoint: TeachEntryPoint): Promise<CommandAccepted> {
@@ -588,6 +704,10 @@ export class MahayanaCoordinator {
     return event.trays;
   }
 
+  getTrays(): Promise<ErrorTray[]> {
+    return this.listTrays();
+  }
+
   dismissTray(id: string): Promise<CommandAccepted> {
     return this.execute({ type: "tray.dismiss", requestId: this.requestId("tray-dismiss"), id });
   }
@@ -604,6 +724,10 @@ export class MahayanaCoordinator {
     return event.integrations;
   }
 
+  getListenerIntegrations(): Promise<ListenerIntegrationSummary[]> {
+    return this.listListenerIntegrations();
+  }
+
   getAgentChannels(_agentId?: string): Promise<ListenerIntegrationSummary[]> {
     return this.listListenerIntegrations();
   }
@@ -612,8 +736,37 @@ export class MahayanaCoordinator {
     return this.execute({ type: "listener.connect", requestId: this.requestId("channel-connect"), platform });
   }
 
+  async getListenerConnectUrl(platform: ListenerPlatform): Promise<string | null> {
+    const connectorId = connectorIdForListener(platform);
+    type ConnectOutcome =
+      | RuntimeEventOf<"listener.changed">
+      | RuntimeEventOf<"connector.changed">
+      | RuntimeEventOf<"connector.oauthRequested">;
+    const event = await this.request<ConnectOutcome>(
+      { type: "listener.connect", requestId: this.requestId("listener-connect-url"), platform },
+      (candidate): candidate is ConnectOutcome => {
+        if (candidate.type === "listener.changed") return candidate.integration.platform === platform;
+        if (!connectorId) return false;
+        if (candidate.type === "connector.changed") return candidate.connector.id === connectorId;
+        return candidate.type === "connector.oauthRequested" && candidate.connectorId === connectorId;
+      },
+    );
+    return event.type === "connector.oauthRequested" ? event.authorizationUrl : null;
+  }
+
   refreshChannel(platform: ListenerPlatform): Promise<CommandAccepted> {
     return this.connectChannel(platform);
+  }
+
+  async disconnectChannel(platform: ListenerPlatform): Promise<ListenerIntegrationSummary> {
+    const event = await this.request(
+      { type: "listener.disconnect", requestId: this.requestId("channel-disconnect"), platform },
+      (candidate): candidate is RuntimeEventOf<"listener.changed"> =>
+        candidate.type === "listener.changed"
+        && candidate.integration.platform === platform
+        && candidate.integration.isConnected === false,
+    );
+    return event.integration;
   }
 
   async getSettings(): Promise<ProductHostSettings> {

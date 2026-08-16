@@ -558,19 +558,20 @@ export type RuntimeCommand =
   | (CommandBase & { type: "conversation.list"; query?: string })
   | (CommandBase & { type: "conversation.open"; conversationId: string })
   | (CommandBase & { type: "capability.list"; query?: string })
-  | (CommandBase & { type: "automation.list" })
+  | (CommandBase & { type: "automation.list"; agentId?: string })
   | (CommandBase & {
       type: "automation.upsert";
       id?: string;
+      agentId?: string;
       name: string;
       prompt: string;
       schedule: string;
       trigger?: AutomationTrigger;
       enabled?: boolean;
     })
-  | (CommandBase & { type: "automation.setEnabled"; id: string; enabled: boolean })
-  | (CommandBase & { type: "automation.delete"; id: string })
-  | (CommandBase & { type: "automation.run"; id: string })
+  | (CommandBase & { type: "automation.setEnabled"; id: string; agentId?: string; enabled: boolean })
+  | (CommandBase & { type: "automation.delete"; id: string; agentId?: string })
+  | (CommandBase & { type: "automation.run"; id: string; agentId?: string })
   | (CommandBase & { type: "marketplace.install"; miniAppId: string })
   | (CommandBase & { type: "miniapp.open"; miniAppId: string })
   | (CommandBase & {
@@ -729,6 +730,7 @@ export type RuntimeCommand =
     })
   | (CommandBase & { type: "listener.list" })
   | (CommandBase & { type: "listener.connect"; platform: ListenerPlatform })
+  | (CommandBase & { type: "listener.disconnect"; platform: ListenerPlatform })
   | (CommandBase & { type: "update.status" })
   | (CommandBase & { type: "update.check" })
   | (CommandBase & { type: "update.install" })
@@ -765,6 +767,7 @@ export interface CapabilitySummary {
 
 export interface AutomationSummary {
   id: string;
+  agentId?: string;
   name: string;
   prompt: string;
   schedule: string;

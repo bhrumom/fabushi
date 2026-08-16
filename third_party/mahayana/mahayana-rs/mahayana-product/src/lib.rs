@@ -1471,6 +1471,18 @@ impl MahayanaProductClient {
                 changed = true;
                 json!({"integration": integration})
             }
+            FeatureCommand::ListenerDisconnect { platform, .. } => {
+                let integration = state
+                    .listeners
+                    .iter_mut()
+                    .find(|integration| integration.platform == platform)
+                    .ok_or_else(|| ProductError::State("unsupported listener platform".into()))?;
+                integration.is_connected = false;
+                integration.account_label = None;
+                integration.error = None;
+                changed = true;
+                json!({"integration": integration})
+            }
             FeatureCommand::UpdateStatus { .. } => json!({"state": state.update_state}),
             FeatureCommand::UpdateCheck { .. } => json!({"state": state.update_state}),
             FeatureCommand::UpdateInstall { .. } => {

@@ -794,11 +794,16 @@ impl FeatureHostController {
     ) -> Result<CommandAccepted, FeatureHostError> {
         let request_id = command.request_id().to_string();
         match command {
-            FeatureCommand::AutomationList { .. } => {
+            FeatureCommand::AutomationList { agent_id, .. } => {
                 let mut automations = self
                     .state()?
                     .automations
                     .values()
+                    .filter(|automation| {
+                        agent_id.as_ref().is_none_or(|agent_id| {
+                            automation.agent_id.as_deref() == Some(agent_id.as_str())
+                        })
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 automations.sort_by_key(|item| item.created_at_ms);
@@ -813,6 +818,7 @@ impl FeatureHostController {
             }
             FeatureCommand::AutomationUpsert {
                 id,
+                agent_id,
                 name,
                 prompt,
                 schedule,
@@ -854,21 +860,36 @@ impl FeatureHostController {
                         state.sequence += 1;
                         format!("routine-{}-{}", now, state.sequence)
                     });
-                let action = if state.automations.contains_key(&id) {
-                    "updated"
-                } else {
-                    "created"
+                let previous = state.automations.get(&id).cloned();
+                let requested_agent_id = match agent_id {
+                    Some(agent_id) => Some(required(agent_id, "automation agent id")?),
+                    None => None,
                 };
-                let previous = state.automations.get(&id);
+                if let Some(agent_id) = requested_agent_id.as_deref() {
+                    if !state.bots.contains_key(agent_id) {
+                        return Err(FeatureHostError::Contract(format!(
+                            "unknown automation agent: {agent_id}"
+                        )));
+                    }
+                }
+                if let (Some(previous), Some(agent_id)) =
+                    (previous.as_ref(), requested_agent_id.as_deref())
+                {
+                    ensure_automation_agent_scope(previous, Some(agent_id))?;
+                }
+                let resolved_agent_id = requested_agent_id
+                    .or_else(|| previous.as_ref().and_then(|item| item.agent_id.clone()));
+                let action = if previous.is_some() { "updated" } else { "created" };
                 let automation = AutomationSummary {
                     id: id.clone(),
+                    agent_id: resolved_agent_id,
                     name,
                     prompt,
                     schedule: schedule.clone(),
                     trigger: Some(trigger.clone()),
                     enabled,
-                    created_at_ms: previous.map_or(now, |item| item.created_at_ms),
-                    last_run_at_ms: previous.and_then(|item| item.last_run_at_ms),
+                    created_at_ms: previous.as_ref().map_or(now, |item| item.created_at_ms),
+                    last_run_at_ms: previous.as_ref().and_then(|item| item.last_run_at_ms),
                     next_run_at_ms: automation_next_run(&trigger, &schedule, enabled, now),
                 };
                 state.automations.insert(id, automation.clone());
@@ -883,11 +904,17 @@ impl FeatureHostController {
                     operation_id: None,
                 })
             }
-            FeatureCommand::AutomationSetEnabled { id, enabled, .. } => {
+            FeatureCommand::AutomationSetEnabled {
+                id,
+                agent_id,
+                enabled,
+                ..
+            } => {
                 let mut state = self.state()?;
                 let automation = state.automations.get_mut(&id).ok_or_else(|| {
                     FeatureHostError::Contract(format!("unknown automation: {id}"))
                 })?;
+                ensure_automation_agent_scope(automation, agent_id.as_deref())?;
                 automation.enabled = enabled;
                 let trigger =
                     automation
@@ -910,11 +937,13 @@ impl FeatureHostController {
                     operation_id: None,
                 })
             }
-            FeatureCommand::AutomationDelete { id, .. } => {
+            FeatureCommand::AutomationDelete { id, agent_id, .. } => {
                 let mut state = self.state()?;
-                let automation = state.automations.remove(&id).ok_or_else(|| {
+                let existing = state.automations.get(&id).ok_or_else(|| {
                     FeatureHostError::Contract(format!("unknown automation: {id}"))
                 })?;
+                ensure_automation_agent_scope(existing, agent_id.as_deref())?;
+                let automation = state.automations.remove(&id).expect("automation checked above");
                 self.persist_automations(&state.automations)?;
                 state.events.push_back(HostEvent::AutomationChanged {
                     timestamp: timestamp(),
@@ -926,13 +955,14 @@ impl FeatureHostController {
                     operation_id: None,
                 })
             }
-            FeatureCommand::AutomationRun { id, .. } => {
+            FeatureCommand::AutomationRun { id, agent_id, .. } => {
                 let automation =
                     {
                         let mut state = self.state()?;
                         let automation = state.automations.get_mut(&id).ok_or_else(|| {
                             FeatureHostError::Contract(format!("unknown automation: {id}"))
                         })?;
+                        ensure_automation_agent_scope(automation, agent_id.as_deref())?;
                         let now = now_millis();
                         automation.last_run_at_ms = Some(now);
                         let trigger = automation.trigger.clone().unwrap_or_else(|| {
@@ -996,11 +1026,15 @@ impl FeatureHostController {
                     "[自动化例程：{}]{}\n这是用户保存的 standing instruction。请立即执行并报告结果。\n\n{}",
                     automation.name, trigger_context, automation.prompt
                 );
+                let target_agent_id = automation
+                    .agent_id
+                    .clone()
+                    .unwrap_or_else(|| "mahayana-assistant".into());
                 match self.config.mode {
                     HostMode::Test => self.execute_test(FeatureCommand::ChatSend {
                         request_id,
                         text,
-                        agent_id: Some("mahayana-assistant".into()),
+                        agent_id: Some(target_agent_id.clone()),
                         conversation_id: None,
                         mode: AgentMode::Agent,
                         mode_statement: None,
@@ -1012,7 +1046,7 @@ impl FeatureHostController {
                         return self.production_chat(
                             request_id,
                             text,
-                            Some("mahayana-assistant".into()),
+                            Some(target_agent_id),
                             None,
                             AgentMode::Agent,
                             None,
@@ -2719,6 +2753,12 @@ impl FeatureHostController {
                     state
                         .automations
                         .values()
+                        .filter(|automation| {
+                            automation
+                                .agent_id
+                                .as_deref()
+                                .is_none_or(|owner| owner == agent_id.as_str())
+                        })
                         .map(workflow_from_automation)
                         .collect::<Vec<_>>()
                 };
@@ -2756,6 +2796,7 @@ impl FeatureHostController {
                             .and_then(|automation| automation.last_run_at_ms);
                         let automation = AutomationSummary {
                             id: automation_id.clone(),
+                            agent_id: Some(agent_id.clone()),
                             name: clamp_workflow_name(&name),
                             prompt: clamp_workflow_body(&body),
                             schedule: trigger.schedule.clone(),
@@ -2792,6 +2833,9 @@ impl FeatureHostController {
                     if let Some(existing_id) = id.as_deref() {
                         let removed_automation = {
                             let mut state = self.state()?;
+                            if let Some(existing) = state.automations.get(existing_id) {
+                                ensure_automation_agent_scope(existing, Some(agent_id.as_str()))?;
+                            }
                             let removed = state.automations.remove(existing_id).is_some();
                             if removed {
                                 self.persist_automations(&state.automations)?;
@@ -2826,6 +2870,7 @@ impl FeatureHostController {
                 let automation = {
                     let mut state = self.state()?;
                     if let Some(automation) = state.automations.get_mut(&id) {
+                        ensure_automation_agent_scope(automation, Some(agent_id.as_str()))?;
                         automation.enabled = enabled;
                         automation.next_run_at_ms = if enabled {
                             next_automation_run(&automation.schedule, now_millis())
@@ -2856,6 +2901,9 @@ impl FeatureHostController {
             FeatureCommand::WorkflowDelete { id, .. } => {
                 let removed_automation = {
                     let mut state = self.state()?;
+                    if let Some(existing) = state.automations.get(&id) {
+                        ensure_automation_agent_scope(existing, Some(agent_id.as_str()))?;
+                    }
                     let removed = state.automations.remove(&id).is_some();
                     if removed {
                         self.persist_automations(&state.automations)?;
@@ -2882,7 +2930,11 @@ impl FeatureHostController {
             FeatureCommand::WorkflowRun { id, .. } => {
                 if self.state()?.automations.contains_key(&id) {
                     return self
-                        .execute_automation(FeatureCommand::AutomationRun { request_id, id });
+                        .execute_automation(FeatureCommand::AutomationRun {
+                            request_id,
+                            id,
+                            agent_id: Some(agent_id),
+                        });
                 }
                 let workflow = load_workflow_summary(workflow_root, agent_root, &agent_id, &id)
                     .ok_or_else(|| FeatureHostError::Contract(format!("unknown workflow: {id}")))?;
@@ -3013,6 +3065,7 @@ impl FeatureHostController {
                     let id = slugify_workflow_name(&name);
                     let automation = AutomationSummary {
                         id: id.clone(),
+                        agent_id: Some(agent_id.clone()),
                         name: name.clone(),
                         prompt: parsed.body.clone(),
                         schedule: trigger.schedule.clone(),
@@ -4080,6 +4133,33 @@ impl FeatureHostController {
                     }
                 }
             }
+            FeatureCommand::ListenerDisconnect { platform, .. } => {
+                let integration = state.listeners.get_mut(&platform).ok_or_else(|| {
+                    FeatureHostError::Contract(format!(
+                        "unsupported listener platform: {platform:?}"
+                    ))
+                })?;
+                integration.is_connected = false;
+                integration.account_label = None;
+                integration.error = None;
+                let integration = integration.clone();
+                state.events.push_back(HostEvent::ListenerChanged {
+                    timestamp: timestamp(),
+                    integration,
+                });
+                if let Some(connector_id) = connector_for_listener_platform(platform) {
+                    if let Some(connector) = state.connectors.get_mut(connector_id) {
+                        connector.status = ConnectorStatus::Disconnected;
+                        connector.accounts.clear();
+                        let connector = connector.clone();
+                        state.events.push_back(HostEvent::ConnectorChanged {
+                            timestamp: timestamp(),
+                            action: "disconnected".into(),
+                            connector,
+                        });
+                    }
+                }
+            }
             FeatureCommand::UpdateStatus { .. } => {
                 let update_state = state.update_state.clone();
                 state.events.push_back(HostEvent::UpdateChanged {
@@ -4455,8 +4535,6 @@ impl FeatureHostController {
                 let (connectors, _) = self.production_connector_snapshot()?;
                 for integration in &mut integrations {
                     if integration.platform == ListenerPlatform::Git {
-                        integration.is_connected = true;
-                        integration.account_label = Some("Local repository".into());
                         continue;
                     }
                     if let Some(connector_id) =
@@ -4514,6 +4592,70 @@ impl FeatureHostController {
                     account_label: None,
                 };
                 self.execute_live_product_surface_production(&synthetic)?;
+                Ok(Some(CommandAccepted {
+                    request_id,
+                    operation_id: None,
+                }))
+            }
+            FeatureCommand::ListenerDisconnect { platform, .. } => {
+                if *platform != ListenerPlatform::Git {
+                    let connector_id = connector_for_listener_platform(*platform).ok_or_else(|| {
+                        FeatureHostError::Contract(format!(
+                            "no connector exists for listener platform {platform:?}"
+                        ))
+                    })?;
+                    let (connectors, live) = self.production_connector_snapshot()?;
+                    let accounts = connectors
+                        .iter()
+                        .find(|connector| connector.id == connector_id)
+                        .map(|connector| connector.accounts.clone())
+                        .unwrap_or_default();
+                    if accounts.is_empty() {
+                        if let Some(projection) = live.get(connector_id) {
+                            if projection.status == Some(ConnectorStatus::Connected) {
+                                if let Some(server) = projection.server_name.clone() {
+                                    match self
+                                        .runtime()?
+                                        .execute(RuntimeCommand::McpOauthLogout { server })?
+                                    {
+                                        RuntimeResponse::McpOauth { .. } => {}
+                                        other => {
+                                            return Err(unexpected_response(
+                                                "mahayana.mcp.oauth.logout",
+                                                other,
+                                            ));
+                                        }
+                                    }
+                                    self.emit_connector_snapshot_change(connector_id, "removed")?;
+                                }
+                            }
+                        }
+                    } else {
+                        for account in accounts {
+                            let synthetic = FeatureCommand::ConnectorRemoveAccount {
+                                request_id: format!("{request_id}:{}", account.id),
+                                connector_id: connector_id.into(),
+                                account_id: account.id,
+                            };
+                            self.execute_live_product_surface_production(&synthetic)?;
+                        }
+                    }
+                }
+                let payload = serde_json::to_value(command).map_err(|error| {
+                    FeatureHostError::Contract(format!("encode listener.disconnect: {error}"))
+                })?;
+                let response = self
+                    .runtime()?
+                    .product_execute("mahayana.listener.disconnect", &payload)?;
+                let integration = decode_product_field(
+                    response,
+                    "integration",
+                    "mahayana.listener.disconnect",
+                )?;
+                self.state()?.events.push_back(HostEvent::ListenerChanged {
+                    timestamp: timestamp(),
+                    integration,
+                });
                 Ok(Some(CommandAccepted {
                     request_id,
                     operation_id: None,
@@ -4697,7 +4839,8 @@ impl FeatureHostController {
                     integrations,
                 });
             }
-            FeatureCommand::ListenerConnect { .. } => {
+            FeatureCommand::ListenerConnect { .. }
+            | FeatureCommand::ListenerDisconnect { .. } => {
                 let integration = decode_product_field(response, "integration", method)?;
                 state.events.push_back(HostEvent::ListenerChanged {
                     timestamp: timestamp(),
@@ -4807,12 +4950,16 @@ impl FeatureHostController {
                 automation.prompt
             );
             let request_id = format!("listener-{}-{}", automation.id, now_millis());
+            let target_agent_id = automation
+                .agent_id
+                .clone()
+                .unwrap_or_else(|| "mahayana-assistant".into());
             match self.config.mode {
                 HostMode::Test => {
                     self.execute_test(FeatureCommand::ChatSend {
                         request_id,
                         text,
-                        agent_id: Some("mahayana-assistant".into()),
+                        agent_id: Some(target_agent_id.clone()),
                         conversation_id: None,
                         mode: AgentMode::Agent,
                         mode_statement: None,
@@ -4826,7 +4973,7 @@ impl FeatureHostController {
                         self.production_chat(
                             request_id,
                             text,
-                            Some("mahayana-assistant".into()),
+                            Some(target_agent_id),
                             None,
                             AgentMode::Agent,
                             None,
@@ -4862,11 +5009,12 @@ impl FeatureHostController {
             .find(|automation| {
                 automation.enabled && automation.next_run_at_ms.is_some_and(|next| next <= now)
             })
-            .map(|automation| automation.id.clone());
-        if let Some(id) = due {
+            .map(|automation| (automation.id.clone(), automation.agent_id.clone()));
+        if let Some((id, agent_id)) = due {
             let _ = self.execute_automation(FeatureCommand::AutomationRun {
                 request_id: format!("scheduled-{id}-{now}"),
                 id,
+                agent_id,
             })?;
         }
         Ok(())
@@ -6671,6 +6819,7 @@ fn is_product_surface_command(command: &FeatureCommand) -> bool {
             | FeatureCommand::SecretProvide { .. }
             | FeatureCommand::ListenerList { .. }
             | FeatureCommand::ListenerConnect { .. }
+            | FeatureCommand::ListenerDisconnect { .. }
             | FeatureCommand::UpdateStatus { .. }
             | FeatureCommand::UpdateCheck { .. }
             | FeatureCommand::UpdateInstall { .. }
@@ -7569,6 +7718,7 @@ fn product_surface_method(command: &FeatureCommand) -> &'static str {
         FeatureCommand::SecretProvide { .. } => "mahayana.secret.provide",
         FeatureCommand::ListenerList { .. } => "mahayana.listener.list",
         FeatureCommand::ListenerConnect { .. } => "mahayana.listener.connect",
+        FeatureCommand::ListenerDisconnect { .. } => "mahayana.listener.disconnect",
         FeatureCommand::UpdateStatus { .. } => "mahayana.update.status",
         FeatureCommand::UpdateCheck { .. } => "mahayana.update.check",
         FeatureCommand::UpdateInstall { .. } => "mahayana.update.install",
@@ -8126,6 +8276,22 @@ fn is_safe_automation_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn ensure_automation_agent_scope(
+    automation: &AutomationSummary,
+    agent_id: Option<&str>,
+) -> Result<(), FeatureHostError> {
+    let Some(agent_id) = agent_id else {
+        return Ok(());
+    };
+    if automation.agent_id.as_deref() == Some(agent_id) {
+        return Ok(());
+    }
+    Err(FeatureHostError::Contract(format!(
+        "automation {} does not belong to agent {agent_id}",
+        automation.id
+    )))
 }
 
 const MEMORY_PROFILE_HEADER: &str = "# About the user\n\n<!-- Enduring facts: who the user is, how to address them, lasting preferences.\n     Kept in mind every turn. Safe to read, grep, and edit.\n     One fact per line, as \"- (YYYY-MM-DD) <fact>\". -->\n";
@@ -10704,6 +10870,7 @@ mod tests {
             .execute(FeatureCommand::AutomationUpsert {
                 request_id: "automation-create".into(),
                 id: Some("morning-review".into()),
+                agent_id: None,
                 name: "晨间复盘".into(),
                 prompt: "总结昨天的进展并给出今天的三个行动。".into(),
                 schedule: "@daily".into(),
@@ -10722,6 +10889,7 @@ mod tests {
         controller
             .execute(FeatureCommand::AutomationList {
                 request_id: "automation-list".into(),
+                agent_id: None,
             })
             .expect("list automations");
         assert!(drain(&controller).into_iter().any(|event| matches!(
@@ -10734,6 +10902,7 @@ mod tests {
             .execute(FeatureCommand::AutomationSetEnabled {
                 request_id: "automation-pause".into(),
                 id: "morning-review".into(),
+                agent_id: None,
                 enabled: false,
             })
             .expect("pause automation");
@@ -10747,6 +10916,7 @@ mod tests {
             .execute(FeatureCommand::AutomationRun {
                 request_id: "automation-run".into(),
                 id: "morning-review".into(),
+                agent_id: None,
             })
             .expect("run automation");
         let kinds = drain(&controller)
@@ -10760,12 +10930,90 @@ mod tests {
             .execute(FeatureCommand::AutomationDelete {
                 request_id: "automation-delete".into(),
                 id: "morning-review".into(),
+                agent_id: None,
             })
             .expect("delete automation");
         assert!(drain(&controller).into_iter().any(|event| matches!(
             event,
             HostEvent::AutomationChanged { action, .. } if action == "deleted"
         )));
+    }
+
+    #[test]
+    fn automation_agent_scope_filters_routes_and_blocks_cross_agent_mutation() {
+        let controller = controller();
+        drain(&controller);
+
+        for (id, agent_id, name) in [
+            ("research-digest", "research-bot", "Research digest"),
+            ("incident-digest", "incident-bot", "Incident digest"),
+        ] {
+            controller
+                .execute(FeatureCommand::AutomationUpsert {
+                    request_id: format!("create-{id}"),
+                    id: Some(id.into()),
+                    agent_id: Some(agent_id.into()),
+                    name: name.into(),
+                    prompt: format!("Run the {name} task."),
+                    schedule: "@daily".into(),
+                    trigger: Some(AutomationTrigger::Schedule {
+                        schedule: "@daily".into(),
+                    }),
+                    enabled: true,
+                })
+                .expect("create agent automation");
+            drain(&controller);
+        }
+
+        controller
+            .execute(FeatureCommand::AutomationList {
+                request_id: "research-list".into(),
+                agent_id: Some("research-bot".into()),
+            })
+            .expect("list research automations");
+        assert!(drain(&controller).into_iter().any(|event| matches!(
+            event,
+            HostEvent::AutomationListed { automations, .. }
+                if automations.len() == 1
+                    && automations[0].id == "research-digest"
+                    && automations[0].agent_id.as_deref() == Some("research-bot")
+        )));
+
+        let error = controller
+            .execute(FeatureCommand::AutomationSetEnabled {
+                request_id: "wrong-owner-pause".into(),
+                id: "research-digest".into(),
+                agent_id: Some("incident-bot".into()),
+                enabled: false,
+            })
+            .expect_err("cross-agent automation mutation must be rejected");
+        assert!(error
+            .to_string()
+            .contains("does not belong to agent incident-bot"));
+
+        controller
+            .execute(FeatureCommand::AutomationRun {
+                request_id: "research-run".into(),
+                id: "research-digest".into(),
+                agent_id: Some("research-bot".into()),
+            })
+            .expect("run research automation");
+        assert!(drain(&controller).into_iter().any(|event| matches!(
+            event,
+            HostEvent::ChatMessage { role: MessageRole::Assistant, text, .. }
+                if text.starts_with("research-bot机器人收到：")
+        )));
+
+        let error = controller
+            .execute(FeatureCommand::AutomationDelete {
+                request_id: "wrong-owner-delete".into(),
+                id: "research-digest".into(),
+                agent_id: Some("incident-bot".into()),
+            })
+            .expect_err("cross-agent automation deletion must be rejected");
+        assert!(error
+            .to_string()
+            .contains("does not belong to agent incident-bot"));
     }
 
     #[test]
@@ -10913,6 +11161,7 @@ mod tests {
             .execute(FeatureCommand::AutomationUpsert {
                 request_id: "event-routine-create".into(),
                 id: Some("regression-triage".into()),
+                agent_id: None,
                 name: "Regression triage".into(),
                 prompt: "Inspect the regression and summarize impact.".into(),
                 schedule: "event:sentry:issue.regressed".into(),
@@ -10994,6 +11243,7 @@ mod tests {
             "weekly-review".into(),
             AutomationSummary {
                 id: "weekly-review".into(),
+                agent_id: None,
                 name: "每周复盘".into(),
                 prompt: "整理本周工作。".into(),
                 schedule: "@weekly".into(),
