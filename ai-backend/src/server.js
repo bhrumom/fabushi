@@ -2897,6 +2897,38 @@ app.post(
 );
 
 app.get(
+  '/api/agent/runs/:runId',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, {});
+    const run = statements.getAgentRun.get(req.params.runId, user.userId);
+    if (!run) {
+      return jsonResponse(res, 404, { success: false, message: 'run not found' });
+    }
+    return jsonResponse(res, 200, {
+      success: true,
+      run: {
+        id: run.id,
+        conversationId: run.conversation_id,
+        messageId: run.message_id,
+        providerRunId: run.openclaw_run_id || null,
+        status: run.status,
+        mode: run.mode,
+        provider: run.provider,
+        model: run.model || null,
+        inputTokens: Number(run.input_tokens || 0),
+        outputTokens: Number(run.output_tokens || 0),
+        toolCallCount: Number(run.tool_call_count || 0),
+        startedAt: run.started_at,
+        completedAt: run.completed_at || null,
+        failedAt: run.failed_at || null,
+        errorCode: run.error_code || null,
+        errorMessage: run.error_message || null,
+      },
+    });
+  }),
+);
+
+app.get(
   '/api/agent/runs/:runId/events',
   asyncHandler(async (req, res) => {
     const user = await resolveUser(req, {});

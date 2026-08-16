@@ -1,4 +1,4 @@
-const { app, autoUpdater, BrowserWindow, dialog, ipcMain, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
+const { app, autoUpdater, BrowserWindow, dialog, ipcMain, Menu, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -25,6 +25,114 @@ let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let hostEventPumpStopped = false;
 let hostEventPump = null;
+
+const DEEP_LINK_PROTOCOL = 'fabushi:';
+const DEEP_LINK_PENDING_LIMIT = 32;
+const DEEP_LINK_DEDUPE_MS = 5_000;
+
+function focusMainWindow() {
+  if (!app.isReady()) return;
+  const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function parseFabushiDeepLink(candidate) {
+  if (typeof candidate !== 'string' || !candidate.toLowerCase().startsWith(DEEP_LINK_PROTOCOL)) return null;
+  let url;
+  try { url = new URL(candidate); } catch { return null; }
+  if (url.protocol !== DEEP_LINK_PROTOCOL || url.username || url.password || url.port) return null;
+  const hostName = url.hostname.toLowerCase();
+  const pathParts = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
+  if (hostName === 'agent') {
+    const agentId = String(pathParts[0] ?? url.searchParams.get('id') ?? '').trim().slice(0, 200);
+    return agentId ? { version: 1, route: 'agent', agentId, source: 'protocol', canonicalUrl: `fabushi://agent/${encodeURIComponent(agentId)}` } : null;
+  }
+  if (hostName === 'settings') {
+    const section = String(pathParts[0] ?? url.searchParams.get('section') ?? 'general').trim();
+    if (!['general', 'mcp', 'usage', 'updates'].includes(section)) return null;
+    return { version: 1, route: 'settings', section, source: 'protocol', canonicalUrl: `fabushi://settings/${section}` };
+  }
+  if (hostName === 'feedback') return { version: 1, route: 'feedback', source: 'protocol', canonicalUrl: 'fabushi://feedback' };
+  if (hostName === 'about') return { version: 1, route: 'about', source: 'protocol', canonicalUrl: 'fabushi://about' };
+  if (hostName === 'widgets') return { version: 1, route: 'widgets', source: 'protocol', canonicalUrl: 'fabushi://widgets' };
+  if (hostName === 'onboarding') {
+    const action = pathParts[0] === 'skip' ? 'skip' : 'start';
+    return { version: 1, route: 'onboarding', action, source: 'protocol', canonicalUrl: `fabushi://onboarding/${action}` };
+  }
+  return null;
+}
+
+class FabushiDeepLinkRouter {
+  constructor() {
+    this.ready = false;
+    this.pending = [];
+    this.recent = new Map();
+  }
+
+  handle(candidate, source) {
+    const parsed = parseFabushiDeepLink(candidate);
+    if (!parsed) return false;
+    parsed.source = source;
+    const now = Date.now();
+    for (const [key, acceptedAt] of this.recent) {
+      if (now - acceptedAt > DEEP_LINK_DEDUPE_MS) this.recent.delete(key);
+    }
+    if (this.recent.has(parsed.canonicalUrl) || this.pending.some((entry) => entry.canonicalUrl === parsed.canonicalUrl)) return false;
+    this.recent.set(parsed.canonicalUrl, now);
+    focusMainWindow();
+    if (!this.ready) {
+      if (this.pending.length >= DEEP_LINK_PENDING_LIMIT) this.pending.shift();
+      this.pending.push(parsed);
+      return true;
+    }
+    this.dispatch(parsed);
+    return true;
+  }
+
+  handleArgv(argv, source) {
+    for (const value of Array.isArray(argv) ? argv : []) this.handle(value, source);
+  }
+
+  markReady() {
+    this.ready = true;
+    const pending = this.pending.splice(0);
+    for (const entry of pending) this.dispatch(entry);
+    return { ready: true, flushed: pending.length };
+  }
+
+  markNotReady() {
+    this.ready = false;
+  }
+
+  dispatch(link) {
+    broadcastNativeEvent('deep-link', link);
+    if (link.route === 'agent') broadcastNativeEvent('focus-agent', { agentId: link.agentId, source: link.source });
+    if (link.route === 'feedback') broadcastNativeEvent('open-feedback', { source: link.source });
+    if (link.route === 'about') broadcastNativeEvent('open-about', { source: link.source });
+    if (link.route === 'widgets') broadcastNativeEvent('widget-gallery', { source: link.source });
+    if (link.route === 'onboarding' && link.action === 'skip') broadcastNativeEvent('skip-onboarding', { source: link.source });
+    if (link.route === 'onboarding' && link.action !== 'skip') broadcastNativeEvent('force-onboarding', { source: link.source });
+  }
+}
+
+const deepLinkRouter = new FabushiDeepLinkRouter();
+const primaryInstance = !app.isPackaged || app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+
+if (primaryInstance) {
+  app.on('second-instance', (_event, argv) => {
+    if (!argv.some((value) => typeof value === 'string' && value.toLowerCase().startsWith(DEEP_LINK_PROTOCOL))) focusMainWindow();
+    deepLinkRouter.handleArgv(argv, 'second-instance');
+  });
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    deepLinkRouter.handle(url, 'open-url');
+  });
+  deepLinkRouter.handleArgv(process.argv, 'initial-argv');
+}
 
 function isTrustedRendererUrl(value) {
   try {
@@ -363,6 +471,7 @@ function installNativeEdge() {
     mutateNativeState,
     windowForEvent,
     broadcastNativeEvent,
+    markDeepLinksReady: () => deepLinkRouter.markReady(),
   }));
 
   nativeEdgeServer = serveMainEdge(ipcMain, NATIVE_EDGE, handlers, {
@@ -408,6 +517,12 @@ function noteRuntimeUsage(event) {
 
 function broadcastMahayanaEvent(event) {
   noteRuntimeUsage(event);
+  if (event?.type === 'remoteComputer.changed') {
+    broadcastNativeEvent('remote-desktop-user-presence', { action: event.action, data: event.data ?? null });
+  }
+  if (event?.type === 'mcp.oauth' && !event.removed && !event.authorizationUrl) {
+    broadcastNativeEvent('mcp-auth-completed', { server: event.server, completedAtMs: Date.now() });
+  }
   if (!mahayanaEdgeServer) return;
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
@@ -524,7 +639,18 @@ function createWindow() {
   for (const eventName of ['focus', 'blur', 'minimize', 'restore', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) {
     win.on(eventName, publishWindowState);
   }
-  win.once('ready-to-show', () => { win.show(); publishWindowState(); });
+  win.webContents.on('zoom-changed', () => {
+    broadcastNativeEvent('zoom-factor-changed', { factor: win.webContents.getZoomFactor() });
+  });
+  win.once('ready-to-show', () => {
+    win.show();
+    publishWindowState();
+    broadcastNativeEvent('zoom-factor-changed', { factor: win.webContents.getZoomFactor() });
+    void readNativeState().then((state) => {
+      const migration = state.preferences?.computeMigrationStatus ?? { required: false, status: 'complete', provider: 'mahayana' };
+      broadcastNativeEvent('compute-migration', migration);
+    }).catch(() => undefined);
+  });
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void win.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -561,6 +687,63 @@ function installAutoUpdaterEvents() {
   });
 }
 
+function installApplicationMenu() {
+  const send = (eventName, payload = {}) => broadcastNativeEvent(eventName, { ...payload, source: 'menu' });
+  const appMenu = process.platform === 'darwin'
+    ? [{
+        label: app.name,
+        submenu: [
+          { label: '关于 Fabushi', click: () => send('open-about') },
+          { type: 'separator' },
+          { label: '发送反馈', click: () => send('open-feedback') },
+          { label: 'Widget Gallery', click: () => send('widget-gallery') },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      }]
+    : [];
+  const template = [
+    ...appMenu,
+    {
+      label: 'Fabushi',
+      submenu: [
+        { label: '重新开始引导', click: () => send('force-onboarding') },
+        { label: '跳过引导', click: () => send('skip-onboarding') },
+        { type: 'separator' },
+        { label: '发送反馈', click: () => send('open-feedback') },
+        { label: '关于', click: () => send('open-about') },
+      ],
+    },
+    {
+      label: '查看',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: '工具',
+      submenu: [
+        { label: 'Widget Gallery', click: () => send('widget-gallery') },
+        { label: '设置', accelerator: 'CmdOrCtrl+,', click: () => deepLinkRouter.dispatch({ version: 1, route: 'settings', section: 'general', source: 'menu', canonicalUrl: 'fabushi://settings/general' }) },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function installAppProtocol() {
   const distRoot = path.resolve(__dirname, '..', 'dist');
   protocol.handle('app', (request) => {
@@ -578,7 +761,9 @@ applyStartupNativePreferences();
 
 app.whenReady().then(() => {
   installAppProtocol();
+  installApplicationMenu();
   installAutoUpdaterEvents();
+  if (primaryInstance && app.isPackaged) app.setAsDefaultProtocolClient('fabushi');
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   installIpcHandlers();
   host.start();
@@ -587,7 +772,7 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { deepLinkRouter.markNotReady(); if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => {
   hostEventPumpStopped = true;
   mahayanaEdgeServer?.dispose();

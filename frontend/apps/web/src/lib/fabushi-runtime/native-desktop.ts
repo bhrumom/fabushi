@@ -39,6 +39,44 @@ export function nativeDesktopBridge(): NativeDesktopBridge | null {
   return typeof window.fabushiNative?.invoke === "function" ? window.fabushiNative : null;
 }
 
+
+export interface NativeDeepLink {
+  readonly version: 1;
+  readonly route: "agent" | "settings" | "feedback" | "about" | "widgets" | "onboarding";
+  readonly source?: string;
+  readonly canonicalUrl?: string;
+  readonly agentId?: string;
+  readonly section?: "general" | "mcp" | "usage" | "updates";
+  readonly action?: "start" | "skip";
+}
+
+export interface NativeDesktopEnvironment {
+  readonly platform: string;
+  readonly arch: string;
+  readonly appVersion: string;
+  readonly electronVersion: string;
+  readonly packaged: boolean;
+}
+
+export function invokeNativeDesktop<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  const bridge = nativeDesktopBridge();
+  return bridge
+    ? bridge.invoke<T>(method, params)
+    : Promise.reject(new Error("Native desktop bridge is unavailable."));
+}
+
+export function subscribeNativeDesktopEvents(
+  listeners: Partial<Record<NativeDesktopEvent, (payload: unknown) => void>>,
+): () => void {
+  return nativeDesktopBridge()?.subscribe(listeners) ?? (() => undefined);
+}
+
+export function markNativeDeepLinksReady(): void {
+  const bridge = nativeDesktopBridge();
+  if (!bridge) return;
+  void bridge.invoke("markDeepLinksReady").catch(() => undefined);
+}
+
 export async function nativeOnboardingSeen(): Promise<boolean | null> {
   const bridge = nativeDesktopBridge();
   if (!bridge) return null;
