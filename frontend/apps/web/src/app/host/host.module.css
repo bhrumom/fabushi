@@ -5490,3 +5490,909 @@
   .loginOrbitDot,
   .loginLoadingRail i { animation: none !important; }
 }
+
+/* Living Fabushi marks: asynchronous breathing and state ambience stay in CSS
+   so lists of agents do not require per-frame JavaScript. */
+.botMark {
+  isolation: isolate;
+  --bot-mark-breathe-duration: 5200ms;
+  --bot-mark-motion-delay: -900ms;
+}
+
+.botMark > svg {
+  position: relative;
+  z-index: 2;
+  transform-origin: 50% 54%;
+  animation: botMarkBreathe var(--bot-mark-breathe-duration) cubic-bezier(.46, 0, .54, 1) var(--bot-mark-motion-delay) infinite;
+  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 12%));
+}
+
+.botMarkAura,
+.botMarkAuraSecondary,
+.botMarkParticles {
+  position: absolute;
+  inset: 4%;
+  z-index: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.botMarkAura {
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  opacity: 0;
+  transform: scale(.82) rotate(-7deg);
+}
+
+.botMarkAuraSecondary {
+  inset: 13%;
+  background: color-mix(in srgb, var(--fg) 15%, transparent);
+  filter: blur(calc(var(--bot-mark-size) * .14));
+  opacity: .16;
+  transform: scale(.72);
+  animation: botMarkGlow var(--bot-mark-breathe-duration) ease-in-out var(--bot-mark-motion-delay) infinite;
+}
+
+.botMarkParticles { inset: -10%; z-index: 1; }
+.botMarkParticles i {
+  position: absolute;
+  width: max(2px, calc(var(--bot-mark-size) * .045));
+  height: max(2px, calc(var(--bot-mark-size) * .045));
+  border-radius: 50%;
+  background: var(--fg);
+  opacity: 0;
+  box-shadow: 0 0 calc(var(--bot-mark-size) * .18) color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.botMarkParticles i:nth-child(1) { top: 8%; left: 49%; }
+.botMarkParticles i:nth-child(2) { right: 5%; top: 56%; }
+.botMarkParticles i:nth-child(3) { bottom: 6%; left: 21%; }
+
+.botMark[data-accent="orbit"] .botMarkAura {
+  opacity: .38;
+  border-style: dashed;
+  animation: botMarkOrbit var(--bot-mark-orbit-duration) linear var(--bot-mark-motion-delay) infinite;
+}
+.botMark[data-accent="orbit"] .botMarkParticles i {
+  opacity: .55;
+  animation: botMarkParticleOrbit var(--bot-mark-orbit-duration) linear var(--bot-mark-motion-delay) infinite;
+}
+.botMark[data-accent="orbit"] .botMarkParticles i:nth-child(2) { animation-delay: calc(var(--bot-mark-motion-delay) - 1.1s); }
+.botMark[data-accent="orbit"] .botMarkParticles i:nth-child(3) { animation-delay: calc(var(--bot-mark-motion-delay) - 2.2s); }
+
+.botMark[data-accent="pulse"] .botMarkAura {
+  opacity: .24;
+  animation: botMarkPulse var(--bot-mark-pulse-duration) ease-in-out var(--bot-mark-motion-delay) infinite;
+}
+.botMark[data-accent="pulse"] .botMarkParticles i:nth-child(1) {
+  opacity: .34;
+  animation: botMarkThinkSpark 1.8s ease-in-out var(--bot-mark-motion-delay) infinite;
+}
+
+.botMark[data-accent="alert"] .botMarkAura {
+  opacity: .52;
+  border-color: rgb(255 92 111 / 48%);
+  animation: botMarkAlert 1.1s ease-in-out infinite;
+}
+.botMark[data-accent="alert"] .botMarkAuraSecondary {
+  background: rgb(255 75 96 / 18%);
+  opacity: .36;
+}
+
+.botMark[data-agent-state="happy"] .botMarkParticles i,
+.botMark[data-agent-state="celebrate"] .botMarkParticles i,
+.botMark[data-agent-state="excited"] .botMarkParticles i {
+  opacity: .48;
+  animation: botMarkJoy 2.3s ease-in-out var(--bot-mark-motion-delay) infinite;
+}
+.botMark[data-agent-state="happy"] .botMarkParticles i:nth-child(2),
+.botMark[data-agent-state="celebrate"] .botMarkParticles i:nth-child(2),
+.botMark[data-agent-state="excited"] .botMarkParticles i:nth-child(2) { animation-delay: -0.7s; }
+.botMark[data-agent-state="happy"] .botMarkParticles i:nth-child(3),
+.botMark[data-agent-state="celebrate"] .botMarkParticles i:nth-child(3),
+.botMark[data-agent-state="excited"] .botMarkParticles i:nth-child(3) { animation-delay: -1.4s; }
+
+.botMark[data-agent-state="listening"] > svg,
+.botMark[data-agent-state="dictating"] > svg,
+.botMark[data-agent-state="humming"] > svg {
+  animation-name: botMarkListen;
+}
+
+.botMark[data-agent-state="sleeping"] > svg,
+.botMark[data-agent-state="drowsy"] > svg {
+  animation-name: botMarkSleep;
+  animation-duration: var(--bot-mark-sleep-duration);
+}
+
+.botMark[data-agent-state="writing"] > svg,
+.botMark[data-agent-state="sending"] > svg,
+.botMark[data-agent-state="receiving"] > svg {
+  animation-name: botMarkTask;
+  animation-duration: var(--bot-mark-task-duration);
+}
+
+.botMark[data-paused="true"] > svg,
+.botMark[data-paused="true"] .botMarkAura,
+.botMark[data-paused="true"] .botMarkAuraSecondary,
+.botMark[data-paused="true"] .botMarkParticles i {
+  animation-play-state: paused !important;
+}
+
+@keyframes botMarkBreathe {
+  0%, 100% { transform: translateY(0) rotate(-.35deg) scale(1); }
+  34% { transform: translateY(-.9%) rotate(.65deg) scale(1.012, .995); }
+  68% { transform: translateY(.45%) rotate(-.12deg) scale(.996, 1.01); }
+}
+@keyframes botMarkListen {
+  0%, 100% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-1.1%) scale(1.008, 1.018); }
+  70% { transform: translateY(.6%) scale(1.018, .992); }
+}
+@keyframes botMarkSleep {
+  0%, 100% { transform: translateY(.8%) rotate(-.5deg) scale(1.01, .985); }
+  50% { transform: translateY(-.3%) rotate(.35deg) scale(.995, 1.01); }
+}
+@keyframes botMarkTask {
+  0%, 100% { transform: translateX(0) rotate(-.3deg) scale(1); }
+  50% { transform: translateX(1.2%) rotate(.45deg) scale(1.008, .998); }
+}
+@keyframes botMarkGlow {
+  0%, 100% { transform: scale(.7); opacity: .09; }
+  50% { transform: scale(.94); opacity: .24; }
+}
+@keyframes botMarkOrbit { to { transform: scale(.92) rotate(353deg); } }
+@keyframes botMarkPulse {
+  0%, 100% { transform: scale(.82); opacity: .1; }
+  50% { transform: scale(1.06); opacity: .36; }
+}
+@keyframes botMarkAlert {
+  0%, 100% { transform: scale(.9); opacity: .22; }
+  50% { transform: scale(1.08); opacity: .64; }
+}
+@keyframes botMarkParticleOrbit {
+  0% { transform: rotate(0deg) translateY(calc(var(--bot-mark-size) * -.06)) scale(.75); }
+  50% { opacity: .2; }
+  100% { transform: rotate(360deg) translateY(calc(var(--bot-mark-size) * -.06)) scale(1); }
+}
+@keyframes botMarkThinkSpark {
+  0%, 100% { transform: translate(0, 2px) scale(.55); opacity: .08; }
+  45% { transform: translate(3px, -3px) scale(1.1); opacity: .46; }
+}
+@keyframes botMarkJoy {
+  0%, 100% { transform: translateY(2px) scale(.55); opacity: .05; }
+  45% { transform: translateY(-7px) scale(1); opacity: .58; }
+  70% { opacity: .18; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .botMark > svg,
+  .botMarkAura,
+  .botMarkAuraSecondary,
+  .botMarkParticles i {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Fabushi 2026 interaction layer
+   A final cascade layer that unifies the mature feature surfaces without
+   rewriting their layout contracts. Dark surfaces use soft depth rather than
+   hard gray blocks; light mode retains the same hierarchy.
+   -------------------------------------------------------------------------- */
+.shell {
+  --app: #070708;
+  --panel: #0d0d0f;
+  --card: #151518;
+  --raised: #202024;
+  --raised-hover: #29292e;
+  --inset: #101012;
+  --line: rgb(255 255 255 / 8%);
+  --muted: rgb(248 248 244 / 56%);
+  --faint: rgb(248 248 244 / 34%);
+  --accent: #8a78ef;
+  --accent-soft: rgb(138 120 239 / 12%);
+  --success: #67d5a3;
+  --danger: #f07786;
+  --surface-shadow: 0 28px 90px rgb(0 0 0 / 38%);
+  background:
+    radial-gradient(circle at 76% -10%, rgb(112 89 222 / 7%), transparent 34%),
+    var(--app);
+  font-feature-settings: "ss01" 1, "cv11" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell[data-theme="light"] {
+  --app: #f6f6f3;
+  --panel: #ecece8;
+  --card: #fff;
+  --raised: #e4e4df;
+  --raised-hover: #d9d9d3;
+  --inset: #f0f0ed;
+  --line: rgb(19 19 18 / 9%);
+  --muted: rgb(20 20 18 / 58%);
+  --faint: rgb(20 20 18 / 38%);
+  --accent: #6654c7;
+  --accent-soft: rgb(102 84 199 / 9%);
+  --surface-shadow: 0 28px 72px rgb(45 42 35 / 12%);
+}
+
+.sidebar {
+  width: 296px;
+  min-width: 268px;
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 2.2%), transparent 14%),
+    var(--panel);
+}
+
+.titlebar {
+  height: 58px;
+  padding: 8px 11px 0;
+}
+
+.titleBrand {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.titleBrand strong {
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: .015em;
+}
+
+.titleBrandMark {
+  flex: 0 0 auto;
+  opacity: .94;
+}
+
+.iconButton {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+}
+.iconButton:hover {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 5%);
+  color: inherit;
+  transform: translateY(-1px);
+}
+
+.searchBox {
+  min-height: 36px;
+  margin: 8px 10px 13px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 3.5%);
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.searchBox:focus-within {
+  border-color: rgb(146 128 239 / 38%);
+  background: rgb(255 255 255 / 5%);
+  box-shadow: 0 0 0 3px rgb(126 103 229 / 7%);
+}
+
+.agentList {
+  padding: 0 8px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 9%) transparent;
+}
+
+.agentActive,
+.agentItem {
+  min-height: 49px;
+  gap: 10px;
+  margin: 1px 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.agentItem:hover {
+  border-color: rgb(255 255 255 / 5%);
+  background: rgb(255 255 255 / 3.5%);
+  transform: translateX(1px);
+}
+.agentActive {
+  border-color: rgb(255 255 255 / 7%);
+  background:
+    linear-gradient(90deg, rgb(129 106 235 / 10%), transparent 68%),
+    rgb(255 255 255 / 4.5%);
+  box-shadow: inset 2px 0 rgb(143 124 239 / 48%);
+}
+.agentCopy strong { font-size: 12px; font-weight: 640; }
+.agentCopy time,
+.agentCopy small { font-size: 9px; }
+.agentCopy time { color: var(--faint); }
+
+.sidebarFooter {
+  padding: 9px 9px 11px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, transparent, rgb(0 0 0 / 8%));
+}
+.footerButton,
+.profileButton {
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+}
+.footerButton:hover,
+.profileButton:hover {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 4%);
+}
+.profileButton {
+  margin-top: 5px;
+  background: rgb(255 255 255 / 2.5%);
+}
+.footerButton span,
+.profileButton > span:not(.profileAvatar) { font-size: 11px; }
+
+.profileAvatarLiving {
+  overflow: visible;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.profileAvatarLiving img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 48% 52% 46% 54% / 52% 47% 53% 48%;
+  object-fit: cover;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 20%);
+}
+
+.workspace {
+  position: relative;
+  background:
+    radial-gradient(circle at 50% -12%, rgb(116 91 216 / 8%), transparent 34%),
+    linear-gradient(180deg, rgb(255 255 255 / .8%), transparent 20%),
+    var(--app);
+}
+.workspace::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: .15;
+  background-image: radial-gradient(circle, rgb(255 255 255 / 9%) .55px, transparent .75px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, #000, transparent 38%);
+}
+.workspace > * { position: relative; z-index: 1; }
+
+.chatHeader {
+  height: 70px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--app) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+.headerIdentity { gap: 9px; }
+.headerIdentity h1 { font-size: 13px; font-weight: 660; letter-spacing: -.012em; }
+.headerIdentity p { margin-top: 2px; font-size: 9px; color: var(--faint); }
+.runtimeStatus {
+  padding: 5px 9px;
+  border-color: var(--line);
+  background: rgb(255 255 255 / 2.5%);
+  font-size: 8px;
+}
+
+.conversation {
+  min-height: 0;
+  padding: 26px clamp(20px, 5vw, 76px) 20px;
+}
+
+.messages {
+  width: min(820px, 100%);
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+  padding: 4px 4px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 8%) transparent;
+}
+
+.userMessage,
+.assistantMessage {
+  gap: 11px;
+  margin: 17px 0;
+}
+.userMessage > div {
+  max-width: min(74%, 640px);
+  padding: 10px 13px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 15px 15px 5px 15px;
+  background: rgb(255 255 255 / 8%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
+}
+.assistantMessage > div {
+  max-width: min(86%, 700px);
+  padding: 3px 0 0;
+}
+.userMessage strong,
+.assistantMessage strong {
+  margin-bottom: 5px;
+  color: var(--faint);
+  font-size: 8px;
+  font-weight: 650;
+}
+.userMessage p,
+.assistantMessage p {
+  font-size: 12px;
+  line-height: 1.67;
+}
+
+.composer {
+  width: min(820px, 100%);
+  gap: 7px;
+  margin: 14px auto 0;
+  padding: 11px 12px 10px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 19px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 2%)),
+    color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 22px 55px rgb(0 0 0 / 26%), inset 0 1px rgb(255 255 255 / 3%);
+  backdrop-filter: blur(18px) saturate(125%);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.composer:focus-within {
+  border-color: rgb(142 121 238 / 34%);
+  box-shadow: 0 24px 65px rgb(0 0 0 / 30%), 0 0 0 3px rgb(130 107 228 / 6%);
+  transform: translateY(-1px);
+}
+.composer textarea {
+  min-height: 45px;
+  padding: 2px 2px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.composerToolbar { gap: 5px; }
+.composer .toolButton {
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.composer .toolButton:hover {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 4%);
+}
+.composer .sendButton {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #efefeb;
+  box-shadow: 0 5px 16px rgb(0 0 0 / 25%);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.composer .sendButton:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.025);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 31%);
+}
+
+.backdrop {
+  background: rgb(0 0 0 / 58%);
+  backdrop-filter: blur(14px) saturate(110%);
+}
+
+.settingsDialog,
+.networkDialog,
+.automationDialog,
+.marketplace,
+.nativeUtilityDialog,
+.accountDialog {
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 3.5%), transparent 26%),
+    #111113;
+  box-shadow: var(--surface-shadow), inset 0 1px rgb(255 255 255 / 3%);
+}
+.settingsDialog { border-radius: 26px; }
+.settingsNav {
+  border-right: 1px solid var(--line);
+  background: rgb(0 0 0 / 11%);
+}
+.settingsNav > button {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.settingsNav > button:hover,
+.settingsNav > .settingsNavActive {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 4%);
+}
+.settingsContent > header,
+.networkDialog > header,
+.automationDialog > header,
+.marketplace > header,
+.nativeUtilityDialog > header {
+  border-bottom-color: var(--line);
+}
+
+/* Onboarding becomes a compact product narrative instead of a demo gallery. */
+.onboarding {
+  width: min(880px, calc(100vw - 40px));
+  min-height: min(680px, calc(100vh - 42px));
+  padding: 26px 32px 30px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 12% 0%, rgb(135 109 245 / 9%), transparent 28%),
+    linear-gradient(145deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 1%)),
+    #0d0d0e;
+  box-shadow: 0 52px 130px rgb(0 0 0 / 52%);
+}
+.onboardingHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+}
+.onboardingBrand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: rgb(247 247 244 / 78%);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+.onboardingProgress { display: flex; gap: 6px; }
+.onboardingProgress i {
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 9%);
+  transition: width .22s ease, background .22s ease;
+}
+.onboardingProgress i[data-active="true"] {
+  width: 34px;
+  background: #8977e5;
+}
+.onboardingStage {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 26px 26px 12px;
+  text-align: center;
+}
+.onboardingMarkStage {
+  position: relative;
+  width: 158px;
+  height: 146px;
+  display: grid;
+  place-items: center;
+  margin: -4px 0 6px;
+}
+.onboardingMarkStage > span {
+  position: absolute;
+  inset: 10px 3px 4px;
+  z-index: -1;
+  border: 1px solid rgb(157 139 246 / 13%);
+  border-radius: 48% 52% 55% 45% / 52% 46% 54% 48%;
+  animation: onboardingHalo 7s linear infinite;
+}
+.onboardingBotMark { margin: 0; filter: drop-shadow(0 24px 42px rgb(0 0 0 / 28%)); }
+.onboardingEyebrow {
+  margin: 0 0 12px;
+  color: #9484e9;
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: .18em;
+}
+.onboarding h2 {
+  max-width: 660px;
+  margin: 0;
+  color: #f4f4f0;
+  font-size: clamp(30px, 4.5vw, 46px);
+  font-weight: 450;
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+.onboardingLead {
+  max-width: 560px;
+  margin: 17px 0 24px;
+  color: rgb(244 244 240 / 53%);
+  font-size: 12px;
+  line-height: 1.72;
+}
+.onboardingPrompt {
+  width: min(500px, 100%);
+  height: auto;
+  min-height: 74px;
+  margin-top: 5px;
+  padding: 17px 58px 34px 17px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 4%);
+  color: rgb(244 244 240 / 68%);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: left;
+  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
+}
+.onboardingPrompt i { background: rgb(255 255 255 / 5%); color: var(--faint); }
+.onboardingPrompt b { background: #efefeb; color: #101010; }
+.onboardingBots {
+  width: min(720px, 100%);
+  height: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.onboardingBots > article {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 22px 13px 15px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 2.8%);
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+.onboardingBots > article:hover {
+  transform: translateY(-3px);
+  border-color: rgb(143 123 237 / 24%);
+  background: rgb(255 255 255 / 4.5%);
+}
+.onboardingBots article > div { display: grid; gap: 4px; }
+.onboardingBots b { padding: 0; background: transparent; font-size: 11px; font-weight: 670; }
+.onboardingBots small { color: var(--faint); font-size: 7px; }
+.onboardingBots em {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgb(137 117 229 / 8%);
+  color: #a899ee;
+  font-size: 6.5px;
+  font-style: normal;
+}
+.onboardingSearch {
+  width: min(460px, 100%);
+  min-height: 40px;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  background: rgb(255 255 255 / 3%);
+}
+.onboardingTools {
+  width: min(690px, 100%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.onboardingTools button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border-color: var(--line);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 2.4%);
+  color: inherit;
+}
+.onboardingTools button:hover { background: rgb(255 255 255 / 4.5%); }
+.onboardingTools button span {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #ecece9;
+  color: #161616;
+  font-size: 11px;
+}
+.onboardingTools button span[data-tone="1"] { background: #dfd5ff; color: #4e378a; }
+.onboardingTools button span[data-tone="2"] { background: #d3eef2; color: #255e69; }
+.onboardingTools button span[data-tone="3"] { background: #f3dfcf; color: #8a4e2c; }
+.onboardingTools button b { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.onboardingTools button small { color: var(--faint); font-size: 6px; }
+.onboardingNav {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+}
+.onboardingNav > span { width: 80px; }
+.onboardingNav .onboardingBack,
+.onboardingNav .onboardingNext {
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.onboardingNav .onboardingBack {
+  min-width: 80px;
+  border: 1px solid var(--line);
+  background: rgb(255 255 255 / 3%);
+  color: var(--muted);
+}
+.onboardingNav .onboardingNext {
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 11px 0 15px;
+  background: #efefeb;
+  color: #111;
+}
+.onboardingNav .onboardingNext b {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #151515;
+  color: #fff;
+}
+
+/* Account is an identity/security surface rather than a plain logout popup. */
+.accountDialog {
+  width: min(640px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+}
+.accountDialog > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 27px 28px 23px;
+  border-bottom: 1px solid var(--line);
+  background: radial-gradient(circle at 5% 0%, rgb(135 111 239 / 10%), transparent 38%);
+}
+.accountAvatarStage {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: grid;
+  place-items: center;
+}
+.accountAvatarStage > img {
+  width: 82px;
+  height: 82px;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 47% 53% 49% 51% / 53% 45% 55% 47%;
+  object-fit: cover;
+  box-shadow: 0 16px 32px rgb(0 0 0 / 27%);
+}
+.accountAvatarStage > i {
+  position: absolute;
+  inset: 3px;
+  z-index: -1;
+  border: 1px solid rgb(147 128 238 / 17%);
+  border-radius: 53% 47% 45% 55% / 48% 55% 45% 52%;
+  animation: accountAvatarOrbit 9s linear infinite;
+}
+.accountIdentity { min-width: 0; }
+.accountIdentity p { margin: 0 0 7px; color: #9383e8; font-size: 7px; font-weight: 820; letter-spacing: .17em; }
+.accountIdentity h2 { margin: 0; overflow: hidden; font-size: 23px; font-weight: 540; letter-spacing: -.03em; text-overflow: ellipsis; white-space: nowrap; }
+.accountIdentity span { display: block; margin-top: 6px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.accountSessionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 18px 20px 8px;
+}
+.accountSessionGrid article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 2.5%);
+}
+.accountSessionGrid span { color: var(--faint); font-size: 6.5px; }
+.accountSessionGrid strong { overflow: hidden; font-size: 8.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.accountSessionGrid small { color: var(--faint); font-size: 6.3px; line-height: 1.45; }
+.accountSecurityNote {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(104 210 164 / 14%);
+  border-radius: 12px;
+  background: rgb(71 177 134 / 5%);
+  color: rgb(223 244 235 / 60%);
+  font-size: 7px;
+  line-height: 1.5;
+}
+.accountSecurityNote i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #68d5a5;
+  box-shadow: 0 0 0 5px rgb(104 213 165 / 7%);
+}
+.accountDialog > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 18px 20px 20px;
+}
+.accountDialog > footer button {
+  min-height: 39px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 3.5%);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 650;
+}
+.accountDialog > footer .accountLogout { color: #ef8c97; }
+
+.shell[data-theme="light"] .sidebar,
+.shell[data-theme="light"] .chatHeader,
+.shell[data-theme="light"] .composer,
+.shell[data-theme="light"] .settingsDialog,
+.shell[data-theme="light"] .networkDialog,
+.shell[data-theme="light"] .automationDialog,
+.shell[data-theme="light"] .marketplace,
+.shell[data-theme="light"] .nativeUtilityDialog,
+.shell[data-theme="light"] .accountDialog {
+  background-color: color-mix(in srgb, var(--card) 94%, transparent);
+}
+.shell[data-theme="light"] .agentActive {
+  background: linear-gradient(90deg, rgb(103 84 202 / 9%), transparent 70%), rgb(0 0 0 / 3%);
+  box-shadow: inset 2px 0 rgb(105 85 202 / 38%);
+}
+.shell[data-theme="light"] .userMessage > div { background: rgb(28 28 25 / 7%); }
+.shell[data-theme="light"] .composer .sendButton { background: #1b1b1a; color: #fff; }
+
+@keyframes onboardingHalo { to { transform: rotate(360deg); } }
+@keyframes accountAvatarOrbit { to { transform: rotate(-360deg); } }
+
+@media (max-width: 820px) {
+  .sidebar { width: 264px; min-width: 238px; }
+  .onboarding { min-height: calc(100vh - 24px); padding: 22px; border-radius: 24px; }
+  .onboardingStage { padding-inline: 4px; }
+  .onboardingBots { grid-template-columns: 1fr; max-width: 460px; }
+  .onboardingBots > article { grid-template-columns: auto minmax(0, 1fr) auto; justify-items: start; align-items: center; padding: 12px; }
+  .onboardingBots article > div { text-align: left; }
+  .onboardingTools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accountSessionGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .sidebar { width: 226px; min-width: 210px; }
+  .conversation { padding-inline: 14px; }
+  .chatHeader { padding-inline: 14px; }
+  .onboarding { width: 100%; min-height: 100vh; border: 0; border-radius: 0; }
+  .onboarding h2 { font-size: 31px; }
+  .onboardingTools { grid-template-columns: 1fr; }
+  .accountDialog > header { grid-template-columns: 1fr auto; }
+  .accountAvatarStage { grid-column: 1 / -1; justify-self: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentActive,
+  .agentItem,
+  .composer,
+  .iconButton,
+  .onboardingProgress i,
+  .onboardingBots > article,
+  .onboardingMarkStage > span,
+  .accountAvatarStage > i {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

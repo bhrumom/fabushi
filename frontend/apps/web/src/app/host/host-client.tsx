@@ -497,6 +497,7 @@ export default function HostClient() {
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [authResolved, setAuthResolved] = useState(false);
+  const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [browserLoginAttempt, setBrowserLoginAttempt] = useState<BrowserLoginAttempt | null>(null);
@@ -719,7 +720,7 @@ export default function HostClient() {
     let cancelled = false;
     let timer: number | null = null;
     const schedule = (delayMs: number) => {
-      if (!cancelled) timer = setTimeout(() => void refresh(), delayMs);
+      if (!cancelled) timer = window.setTimeout(() => void refresh(), delayMs);
     };
     const refresh = async () => {
       try {
@@ -737,7 +738,7 @@ export default function HostClient() {
     schedule(5_000);
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      if (timer) window.clearTimeout(timer);
     };
   }, [cloudAgentInfo?.id, cloudAgentInfo?.runId, cloudAgentInfo?.status]);
 
@@ -1927,10 +1928,26 @@ export default function HostClient() {
   };
 
   useEffect(() => {
+    if (!auth?.loggedIn) {
+      setAccountAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void invokeNativeDesktop<{ avatar?: string | null; displayName?: string | null }>("getAccountAvatar")
+      .then((profile) => {
+        if (!cancelled) setAccountAvatarUrl(profile?.avatar?.trim() || null);
+      })
+      .catch(() => {
+        if (!cancelled) setAccountAvatarUrl(auth.user?.avatar?.trim() || null);
+      });
+    return () => { cancelled = true; };
+  }, [auth?.loggedIn, auth?.user?.avatar]);
+
+  useEffect(() => {
     const attempt = browserLoginAttempt;
     if (!attempt) return undefined;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
     const pollDelay = Math.max(150, Math.min(2_000, attempt.pollAfterMs ?? 750));
     const schedule = (delay = pollDelay) => {
       if (!cancelled) timer = window.setTimeout(() => void poll(), delay);
@@ -2075,7 +2092,9 @@ export default function HostClient() {
       ? undefined
       : marketplaceApps.find((app) => app.id === activeAgentId);
   const displayName =
-    auth?.user?.nickname || auth?.user?.username || "大乘用户";
+    auth?.user?.nickname || auth?.user?.username || "Fabushi 用户";
+  const accountAvatar = accountAvatarUrl || auth?.user?.avatar?.trim() || null;
+  const accountProvider = auth?.provider?.trim() || "browser";
   const attachmentTokens = attachments.reduce(
     (total, attachment) => total + estimateTextTokens(attachment.text ?? ""),
     0,
@@ -2764,7 +2783,10 @@ export default function HostClient() {
             <span />
             <span />
           </div>
-          <strong>Fabushi</strong>
+          <div className={styles.titleBrand}>
+            <BotMark botId="fabushi-brand" state={operationState === "running" ? "working" : "idle"} size={21} color="black" className={styles.titleBrandMark} />
+            <strong>Fabushi</strong>
+          </div>
           <div className={styles.titleActions}>
             <button className={styles.iconButton} type="button" aria-label="通知与错误" data-has-trays={trays.length > 0} onClick={() => setTrayOpen((open) => !open)}>
               <Icon name="bell" />
@@ -3038,9 +3060,11 @@ export default function HostClient() {
             className={styles.profileButton}
             data-testid="account-menu"
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setAccountOpen(true)}
           >
-            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
+            <span className={`${styles.profileAvatar} ${styles.profileAvatarLiving}`}>
+              {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth?.user?.id ?? displayName}`} state="idle" size={29} color="violet" label={displayName} />}
+            </span>
             <span>{displayName}</span>
             <Icon name="settings" size={17} />
           </button>
@@ -4061,8 +4085,10 @@ export default function HostClient() {
           >
             <aside className={styles.settingsNav}>
               <div className={styles.settingsBrand}>
-                <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
-                <div><strong>{displayName}</strong><small>{auth?.user?.email || auth?.provider || "本地账户"}</small></div>
+                <span className={`${styles.profileAvatar} ${styles.profileAvatarLiving}`}>
+                  {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth?.user?.id ?? displayName}`} state="idle" size={30} color="violet" label={displayName} />}
+                </span>
+                <div><strong>{displayName}</strong><small>{auth?.user?.email || `${accountProvider} · 安全会话`}</small></div>
               </div>
               <p>设置分区</p>
               {([
@@ -4478,51 +4504,62 @@ export default function HostClient() {
         >
           {onboardingStep < 3 ? (
             <section className={styles.onboarding} role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-              {onboardingStep === 0 ? (
-                <>
-                  <h2 id="onboarding-title">认识 Fabushi</h2>
-                  <BotMark
-                    botId="mahayana-assistant"
-                    state="waking"
-                    shape="blob"
-                    color="black"
-                    size={70}
-                    className={styles.onboardingBotMark}
-                    label="Fabushi Bot"
-                  />
-                  <div className={styles.onboardingPrompt}><span>把任何任务交给你的智能体团队</span><i>＋</i><b>↑</b></div>
-                </>
-              ) : null}
-              {onboardingStep === 1 ? (
-                <>
-                  <h2 id="onboarding-title">给每个 Bot 一份工作</h2>
-                  <div className={styles.onboardingBots}>
-                    <div>
-                      <BotMark botId="onboarding-billing" state="working" color="red" size={70} label="账单跟进 Bot" />
-                      <b>账单跟进</b>
+              <header className={styles.onboardingHeader}>
+                <div className={styles.onboardingBrand}><BotMark botId="fabushi-onboarding" state={onboardingStep === 0 ? "waking" : onboardingStep === 1 ? "working" : "listening"} size={30} color="black" /><span>FABUSHI</span></div>
+                <div className={styles.onboardingProgress} aria-label={`引导第 ${onboardingStep + 1} 步，共 3 步`}>
+                  {[0, 1, 2].map((step) => <i key={step} data-active={step <= onboardingStep} />)}
+                </div>
+              </header>
+              <div className={styles.onboardingStage} data-step={onboardingStep}>
+                {onboardingStep === 0 ? (
+                  <>
+                    <div className={styles.onboardingMarkStage}>
+                      <BotMark botId="mahayana-assistant" state="waking" shape="blob" color="black" size={112} followPointer emphasis className={styles.onboardingBotMark} label="Fabushi 助手" />
+                      <span aria-hidden="true" />
                     </div>
-                    <div>
-                      <BotMark botId="onboarding-standup" state="listening" color="cyan" size={70} label="每周站会 Bot" />
-                      <b>每周站会</b>
+                    <p className={styles.onboardingEyebrow}>YOUR AGENT WORKSPACE</p>
+                    <h2 id="onboarding-title">不是聊天窗口。<br />是一支会继续工作的团队。</h2>
+                    <p className={styles.onboardingLead}>把目标交给 Fabushi。智能体会拆解任务、调用工具、持续执行，并在需要你决定时回来找你。</p>
+                    <div className={styles.onboardingPrompt}><span>“整理今天的客户反馈，找出最值得修的三个问题”</span><i>＋</i><b>↑</b></div>
+                  </>
+                ) : null}
+                {onboardingStep === 1 ? (
+                  <>
+                    <p className={styles.onboardingEyebrow}>SPECIALIZED AGENTS</p>
+                    <h2 id="onboarding-title">每个 Bot 都有自己的工作、记忆和节奏。</h2>
+                    <p className={styles.onboardingLead}>不用把所有上下文塞给一个助手。让不同智能体长期负责不同领域，它们会在同一个工作空间协作。</p>
+                    <div className={styles.onboardingBots}>
+                      <article>
+                        <BotMark botId="onboarding-billing" state="working" color="red" size={74} label="账单跟进 Bot" />
+                        <div><b>账单跟进</b><small>核对 · 催办 · 汇总</small></div><em>执行中</em>
+                      </article>
+                      <article>
+                        <BotMark botId="onboarding-standup" state="listening" color="cyan" size={74} label="团队站会 Bot" />
+                        <div><b>团队站会</b><small>收集 · 提炼 · 跟进</small></div><em>监听中</em>
+                      </article>
+                      <article>
+                        <BotMark botId="onboarding-forecast" state="thinking" color="blue" size={74} label="销售预测 Bot" />
+                        <div><b>销售预测</b><small>研究 · 推理 · 更新</small></div><em>思考中</em>
+                      </article>
                     </div>
-                    <div>
-                      <BotMark botId="onboarding-forecast" state="thinking" color="blue" size={70} label="销售预测 Bot" />
-                      <b>销售预测</b>
+                  </>
+                ) : null}
+                {onboardingStep === 2 ? (
+                  <>
+                    <p className={styles.onboardingEyebrow}>CONNECT YOUR WORK</p>
+                    <h2 id="onboarding-title">工具留在原位，Fabushi 去那里工作。</h2>
+                    <p className={styles.onboardingLead}>连接器可以稍后配置。这里先告诉 Fabushi 你每天在哪些系统里工作。</p>
+                    <label className={styles.onboardingSearch}><Icon name="search" size={15} /><input aria-label="搜索工作工具" placeholder="搜索工具" /></label>
+                    <div className={styles.onboardingTools}>
+                      {["Workspace", "Slack", "Notion", "Salesforce", "Microsoft 365", "LinkedIn", "Zoom", "GitHub", "Jira", "Figma", "HubSpot", "Canva"].map((tool, index) => <button type="button" key={tool}><span data-tone={index % 4}>{tool.slice(0, 1)}</span><b>{tool}</b><small>稍后连接</small></button>)}
                     </div>
-                  </div>
-                </>
-              ) : null}
-              {onboardingStep === 2 ? (
-                <>
-                  <h2 id="onboarding-title">你每天使用哪些工具？</h2>
-                  <label className={styles.onboardingSearch}><Icon name="search" size={15} /><input placeholder="搜索" /></label>
-                  <div className={styles.onboardingTools}>
-                    {["Workspace", "Slack", "Notion", "Salesforce", "Microsoft 365", "LinkedIn", "Zoom", "GitHub", "Jira", "Figma", "HubSpot", "Canva"].map((tool) => <button type="button" key={tool}><span>{tool.slice(0, 1)}</span>{tool}</button>)}
-                  </div>
-                </>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
               <div className={styles.onboardingNav}>
+                {onboardingStep ? <button className={styles.onboardingBack} type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : <span />}
                 <button
+                  className={styles.onboardingNext}
                   type="button"
                   onClick={() => setOnboardingStep((step) => {
                     const nextStep = Math.min(3, step + 1);
@@ -4533,9 +4570,8 @@ export default function HostClient() {
                     return nextStep;
                   })}
                 >
-                  下一步
+                  <span>{onboardingStep === 2 ? "开始使用 Fabushi" : "继续"}</span><b>→</b>
                 </button>
-                {onboardingStep ? <button type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : null}
               </div>
             </section>
           ) : !authResolved ? (
@@ -4591,13 +4627,29 @@ export default function HostClient() {
 
       {accountOpen && auth?.loggedIn ? (
         <div className={styles.backdrop} onMouseDown={() => setAccountOpen(false)}>
-          <section className={styles.accountDialog} onMouseDown={(event) => event.stopPropagation()}>
-            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
-            <h2>{displayName}</h2>
-            <p>{auth.user?.email || auth.user?.username || auth.provider}</p>
-            <button data-testid="logout" type="button" onClick={() => void logout()}>
-              退出登录
-            </button>
+          <section className={styles.accountDialog} role="dialog" aria-modal="true" aria-labelledby="account-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div className={styles.accountAvatarStage}>
+                {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth.user?.id ?? displayName}`} state="happy" size={88} color="violet" followPointer emphasis label={displayName} />}
+                <i aria-hidden="true" />
+              </div>
+              <div className={styles.accountIdentity}>
+                <p>FABUSHI ACCOUNT</p>
+                <h2 id="account-title">{displayName}</h2>
+                <span>{auth.user?.email || auth.user?.username || "已登录"}</span>
+              </div>
+              <button className={styles.iconButton} type="button" aria-label="关闭账户" onClick={() => setAccountOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.accountSessionGrid}>
+              <article><span>登录方式</span><strong>{accountProvider}</strong><small>Browser Account Portal</small></article>
+              <article><span>会话</span><strong>本机安全存储</strong><small>renderer 不持有 refresh token</small></article>
+              <article><span>工作空间</span><strong>已同步</strong><small>账户资料与协作状态</small></article>
+            </div>
+            <div className={styles.accountSecurityNote}><i /><span>登录授权发生在系统浏览器；Fabushi 桌面只领取一次性会话结果。</span></div>
+            <footer>
+              <button type="button" onClick={() => { setAccountOpen(false); setSettingsOpen(true); setSettingsSection("general"); }}>账户设置</button>
+              <button className={styles.accountLogout} data-testid="logout" type="button" onClick={() => void logout()}>退出登录</button>
+            </footer>
           </section>
         </div>
       ) : null}

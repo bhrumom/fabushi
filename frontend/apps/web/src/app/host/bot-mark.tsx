@@ -240,6 +240,21 @@ function stateAccent(state: BotMarkState): "none" | "orbit" | "pulse" | "alert" 
   return "none";
 }
 
+function canBlink(state: BotMarkState): boolean {
+  return !["sleeping", "powering-down", "loading", "progress", "radar"].includes(state);
+}
+
+function markRhythm(botId: string) {
+  const seed = hashIdentity(`rhythm:${botId}`);
+  return {
+    fastMs: 520 + (seed % 310),
+    slowMs: 760 + ((seed >>> 5) % 520),
+    blinkMs: 2_900 + ((seed >>> 9) % 3_600),
+    breatheMs: 4_200 + ((seed >>> 13) % 2_700),
+    delayMs: -((seed >>> 17) % 3_000),
+  };
+}
+
 export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   {
     botId,
@@ -269,14 +284,21 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
 ) {
   const wrapperRef = useRef<HTMLSpanElement | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blinkResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gradientId = useId().replace(/:/g, "");
+  const clipId = `${gradientId}-clip`;
+  const glowId = `${gradientId}-glow`;
   const [gaze, setGaze] = useState<GazePoint>({ x: 0, y: 0 });
   const [phase, setPhase] = useState(false);
+  const [blinking, setBlinking] = useState(false);
   const [spinDegrees, setSpinDegrees] = useState(0);
   const [impulse, setImpulse] = useState<"none" | "bounce" | "burst">("none");
   const shape = shapeOverride ?? botMarkShape(botId);
   const color = colorOverride ?? botMarkColorId(botId);
   const colorValue = COLOR_VALUES[color];
+  const rhythm = useMemo(() => markRhythm(botId), [botId]);
 
   const triggerImpulse = useCallback((kind: "bounce" | "burst") => {
     if (resetTimer.current) clearTimeout(resetTimer.current);
@@ -298,6 +320,9 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
 
   useEffect(() => () => {
     if (resetTimer.current) clearTimeout(resetTimer.current);
+    if (phaseTimer.current) clearTimeout(phaseTimer.current);
+    if (blinkTimer.current) clearTimeout(blinkTimer.current);
+    if (blinkResetTimer.current) clearTimeout(blinkResetTimer.current);
   }, []);
 
   useEffect(() => {
@@ -306,9 +331,48 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
 
   useEffect(() => {
     if (paused) return undefined;
-    const interval = setInterval(() => setPhase((value) => !value), 620);
-    return () => clearInterval(interval);
-  }, [paused]);
+    let disposed = false;
+    const tick = (nextPhase: boolean) => {
+      if (disposed) return;
+      setPhase(nextPhase);
+      phaseTimer.current = setTimeout(
+        () => tick(!nextPhase),
+        nextPhase ? rhythm.fastMs : rhythm.slowMs,
+      );
+    };
+    phaseTimer.current = setTimeout(() => tick(true), Math.max(120, rhythm.fastMs / 2));
+    return () => {
+      disposed = true;
+      if (phaseTimer.current) clearTimeout(phaseTimer.current);
+    };
+  }, [paused, rhythm.fastMs, rhythm.slowMs]);
+
+  useEffect(() => {
+    if (paused || !canBlink(state)) {
+      setBlinking(false);
+      return undefined;
+    }
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return undefined;
+    }
+    let disposed = false;
+    const blink = () => {
+      if (disposed || document.visibilityState === "hidden") {
+        blinkTimer.current = setTimeout(blink, rhythm.blinkMs);
+        return;
+      }
+      setBlinking(true);
+      blinkResetTimer.current = setTimeout(() => setBlinking(false), 105);
+      const jitter = (hashIdentity(`${botId}:${Date.now() >> 12}`) % 1_200) - 600;
+      blinkTimer.current = setTimeout(blink, Math.max(1_800, rhythm.blinkMs + jitter));
+    };
+    blinkTimer.current = setTimeout(blink, rhythm.blinkMs);
+    return () => {
+      disposed = true;
+      if (blinkTimer.current) clearTimeout(blinkTimer.current);
+      if (blinkResetTimer.current) clearTimeout(blinkResetTimer.current);
+    };
+  }, [botId, paused, rhythm.blinkMs, state]);
 
   const updateGaze = useCallback((point: GazePoint | null) => {
     const element = wrapperRef.current;
@@ -317,7 +381,13 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       return;
     }
     const rect = element.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) setGaze(gazeVectorForRect(rect, point));
+    if (rect.width > 0 && rect.height > 0) {
+      const next = gazeVectorForRect(rect, point);
+      setGaze((current) => ({
+        x: current.x + (next.x - current.x) * 0.42,
+        y: current.y + (next.y - current.y) * 0.42,
+      }));
+    }
   }, []);
 
   useEffect(() => {
@@ -343,7 +413,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   const faceScale = Math.max(0.7, Math.min(1.35, (faceTune?.size ?? 1) * eyeScale));
   const eyeGap = 16 * (faceTune?.gap ?? 1);
   const eyeWidth = expression.width * (faceTune?.eyeWidth ?? 1) * faceScale;
-  const eyeHeight = expression.height * (faceTune?.eyeHeight ?? 1) * (faceTune?.height ?? 1) * faceScale;
+  const eyeHeight = (blinking ? 1.15 : expression.height) * (faceTune?.eyeHeight ?? 1) * (faceTune?.height ?? 1) * faceScale;
   const eyeY = expression.y + gaze.y * 2.4;
   const leftX = 50 - eyeGap / 2 + gaze.x * 2.8;
   const rightX = 50 + eyeGap / 2 + gaze.x * 2.8;
@@ -358,6 +428,12 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     "--bot-mark-size": `${size}px`,
     "--fg": `light-dark(${colorValue.light}, ${colorValue.dark})`,
     "--bg": eyeColor ?? "var(--bot-mark-eye-color, var(--app, #0b0b0b))",
+    "--bot-mark-breathe-duration": `${rhythm.breatheMs}ms`,
+    "--bot-mark-orbit-duration": `${Math.round(rhythm.breatheMs * 1.45)}ms`,
+    "--bot-mark-pulse-duration": `${Math.round(rhythm.breatheMs * 0.72)}ms`,
+    "--bot-mark-sleep-duration": `${Math.round(rhythm.breatheMs * 1.3)}ms`,
+    "--bot-mark-task-duration": `${Math.round(rhythm.breatheMs * 0.62)}ms`,
+    "--bot-mark-motion-delay": `${rhythm.delayMs}ms`,
   } as CSSProperties;
 
   const transform = useMemo(
@@ -374,13 +450,24 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-paused={paused || undefined}
       data-shape={shape}
       data-color={color}
+      data-blinking={blinking || undefined}
+      data-accent={accent}
       style={style}
       aria-label={label}
       aria-hidden={label ? undefined : true}
       role={label ? "img" : undefined}
     >
+      <span className={styles.botMarkAura} aria-hidden="true" />
+      <span className={styles.botMarkAuraSecondary} aria-hidden="true" />
+      <span className={styles.botMarkParticles} aria-hidden="true"><i /><i /><i /></span>
       <svg viewBox="0 0 100 100" focusable="false" aria-hidden="true">
         <defs>
+          <clipPath id={clipId}><path d={SHAPE_PATHS[shape]} /></clipPath>
+          <radialGradient id={glowId} cx="30%" cy="22%" r="70%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
+            <stop offset="34%" stopColor="#ffffff" stopOpacity="0.09" />
+            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+          </radialGradient>
           {inkGradient ? (
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1" gradientTransform={`rotate(${inkGradient.angle ?? 45} .5 .5)`}>
               <stop offset={`${inkGradient.fromPos ?? 0}%`} stopColor={inkGradient.from} />
@@ -400,8 +487,10 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
             strokeDasharray={accent === "orbit" ? "7 6" : undefined}
           />
         ) : null}
-        <g style={{ transition: "transform 240ms cubic-bezier(.2,.8,.2,1)" }} transform={transform}>
+        <g style={{ transition: "transform 260ms cubic-bezier(.2,.8,.2,1)" }} transform={transform}>
+          <path d={SHAPE_PATHS[shape]} fill="var(--fg)" opacity="0.13" transform="translate(2 3) scale(.985)" />
           <path d={SHAPE_PATHS[shape]} fill={fill} />
+          <ellipse cx="32" cy="25" rx="30" ry="23" fill={`url(#${glowId})`} clipPath={`url(#${clipId})`} opacity={emphasis ? 0.72 : 0.42} />
           {eyeTopology ? (
             <path
               d={`M${leftX + eyeWidth / 2 + 2} ${eyeY} Q50 ${eyeY + (state === "curious" ? -3 : 1)} ${rightX - eyeWidth / 2 - 2} ${eyeY}`}
@@ -422,6 +511,8 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
           </g>
           {state === "curious" ? <circle cx="50" cy="68" r="2.2" fill="var(--bg)" opacity="0.65" /> : null}
           {state === "happy" || state === "laughing" ? <path d="M39 65Q50 73 61 65" fill="none" stroke="var(--bg)" strokeWidth="2.4" strokeLinecap="round" /> : null}
+          {state === "shy" ? <g fill="#ff7d9c" opacity="0.45"><circle cx="31" cy="60" r="2.7" /><circle cx="69" cy="60" r="2.7" /></g> : null}
+          {state === "thinking" ? <circle cx="70" cy="31" r="2.2" fill="var(--bg)" opacity={phase ? 0.48 : 0.18} /> : null}
         </g>
         {badgeColor ? <circle cx="82" cy="80" r="7" fill={badgeColor} stroke="var(--bg)" strokeWidth="2" /> : null}
       </svg>
