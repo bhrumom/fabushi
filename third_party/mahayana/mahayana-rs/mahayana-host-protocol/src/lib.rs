@@ -986,6 +986,8 @@ pub enum FeatureCommand {
     AutomationList {
         #[serde(rename = "requestId")]
         request_id: String,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
     },
     #[serde(rename = "automation.upsert")]
     AutomationUpsert {
@@ -993,6 +995,8 @@ pub enum FeatureCommand {
         request_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
         name: String,
         prompt: String,
         schedule: String,
@@ -1006,6 +1010,8 @@ pub enum FeatureCommand {
         #[serde(rename = "requestId")]
         request_id: String,
         id: String,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
         enabled: bool,
     },
     #[serde(rename = "automation.delete")]
@@ -1013,12 +1019,16 @@ pub enum FeatureCommand {
         #[serde(rename = "requestId")]
         request_id: String,
         id: String,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
     },
     #[serde(rename = "automation.run")]
     AutomationRun {
         #[serde(rename = "requestId")]
         request_id: String,
         id: String,
+        #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
     },
     #[serde(rename = "marketplace.install")]
     MarketplaceInstall {
@@ -1710,6 +1720,12 @@ pub enum FeatureCommand {
         request_id: String,
         platform: ListenerPlatform,
     },
+    #[serde(rename = "listener.disconnect")]
+    ListenerDisconnect {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        platform: ListenerPlatform,
+    },
     #[serde(rename = "update.status")]
     UpdateStatus {
         #[serde(rename = "requestId")]
@@ -1745,7 +1761,7 @@ impl FeatureCommand {
             | Self::ConversationList { request_id, .. }
             | Self::ConversationOpen { request_id, .. }
             | Self::CapabilityList { request_id, .. }
-            | Self::AutomationList { request_id }
+            | Self::AutomationList { request_id, .. }
             | Self::AutomationUpsert { request_id, .. }
             | Self::AutomationSetEnabled { request_id, .. }
             | Self::AutomationDelete { request_id, .. }
@@ -1829,6 +1845,7 @@ impl FeatureCommand {
             | Self::SecretProvide { request_id, .. }
             | Self::ListenerList { request_id }
             | Self::ListenerConnect { request_id, .. }
+            | Self::ListenerDisconnect { request_id, .. }
             | Self::UpdateStatus { request_id }
             | Self::UpdateCheck { request_id }
             | Self::UpdateInstall { request_id }
@@ -1906,6 +1923,8 @@ pub struct CapabilitySummary {
 #[serde(rename_all = "camelCase")]
 pub struct AutomationSummary {
     pub id: String,
+    #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
     pub name: String,
     pub prompt: String,
     pub schedule: String,
@@ -2647,6 +2666,7 @@ mod tests {
             timestamp: "0".into(),
             automations: vec![AutomationSummary {
                 id: "daily-review".into(),
+                agent_id: None,
                 name: "Daily review".into(),
                 prompt: "Summarize progress".into(),
                 schedule: "@daily".into(),

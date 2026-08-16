@@ -657,14 +657,23 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         this.emit({
           type: "automation.listed",
           timestamp: now(),
-          automations: [...this.automations.values()],
+          automations: [...this.automations.values()].filter((automation) =>
+            command.agentId ? automation.agentId === command.agentId : true,
+          ),
         });
         return { requestId: command.requestId };
       case "automation.upsert": {
         const previous = command.id ? this.automations.get(command.id) : undefined;
+        if (command.agentId && !this.bots.has(command.agentId)) {
+          throw new Error(`Unknown automation agent: ${command.agentId}`);
+        }
+        if (previous && command.agentId && previous.agentId !== command.agentId) {
+          throw new Error(`Automation ${previous.id} does not belong to agent ${command.agentId}`);
+        }
         const id = command.id ?? this.nextId("routine");
         const automation = {
           id,
+          agentId: command.agentId ?? previous?.agentId,
           name: command.name,
           prompt: command.prompt,
           schedule: command.schedule,
@@ -681,6 +690,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.setEnabled": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         const next = {
           ...automation,
           enabled: command.enabled,
@@ -696,6 +708,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.delete": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         this.automations.delete(command.id);
         this.emit({ type: "automation.changed", timestamp: now(), action: "deleted", automation });
         return { requestId: command.requestId };
@@ -703,6 +718,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.run": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         const next = { ...automation, lastRunAtMs: Date.now() };
         this.automations.set(command.id, next);
         this.emit({ type: "automation.changed", timestamp: now(), action: "running", automation: next });
@@ -1665,6 +1683,20 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           const connected: ConnectorSummary = { ...connector, status: "connected" };
           this.connectors.set(connected.id, connected);
           this.emit({ type: "connector.changed", timestamp: now(), action: "connected", connector: connected });
+        }
+        return { requestId: command.requestId };
+      }
+      case "listener.disconnect": {
+        const integration = this.listenerIntegrations.get(command.platform);
+        if (!integration) throw new Error(`Unsupported listener: ${command.platform}`);
+        const next = { ...integration, isConnected: false, accountLabel: undefined, error: undefined };
+        this.listenerIntegrations.set(command.platform, next);
+        this.emit({ type: "listener.changed", timestamp: now(), integration: next });
+        const connector = this.connectors.get(connectorForPlatform(command.platform));
+        if (connector) {
+          const disconnected: ConnectorSummary = { ...connector, status: "disconnected", accounts: [] };
+          this.connectors.set(disconnected.id, disconnected);
+          this.emit({ type: "connector.changed", timestamp: now(), action: "disconnected", connector: disconnected });
         }
         return { requestId: command.requestId };
       }
