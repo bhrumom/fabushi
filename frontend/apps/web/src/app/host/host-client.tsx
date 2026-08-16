@@ -1922,10 +1922,24 @@ export default function HostClient() {
   };
 
   const reopenBrowserLogin = async () => {
-    const url = browserLoginAttempt?.loginUrl;
-    if (!url) return;
+    const attempt = browserLoginAttempt;
+    if (!attempt) return;
     try {
-      await transport.openExternal(url);
+      const reopened = await transport.browserLoginReopen(attempt.attemptId);
+      if (reopened.status !== "pending") {
+        setBrowserLoginWakeNonce((value) => value + 1);
+        return;
+      }
+      const loginUrl = reopened.loginUrl?.trim();
+      if (!loginUrl) throw new Error("账号服务没有返回新的登录地址");
+      setBrowserLoginAttempt((current) => current?.attemptId === attempt.attemptId
+        ? {
+            ...current,
+            loginUrl,
+            pollAfterMs: reopened.pollAfterMs ?? current.pollAfterMs,
+          }
+        : current);
+      await transport.openExternal(loginUrl);
       setLoginError(null);
       setBrowserLoginWakeNonce((value) => value + 1);
     } catch (cause: unknown) {
@@ -4874,7 +4888,7 @@ export default function HostClient() {
               </div>
               {loginError ? <output className={styles.loginInlineStatus} role="status">{loginError}</output> : null}
               <div className={styles.browserLoginActions}>
-                <button data-testid="browser-login-reopen" type="button" disabled={!browserLoginAttempt.loginUrl} onClick={() => void reopenBrowserLogin()}>重新打开浏览器</button>
+                <button data-testid="browser-login-reopen" type="button" onClick={() => void reopenBrowserLogin()}>重新打开浏览器</button>
                 <button data-testid="browser-login-cancel" type="button" onClick={() => void cancelBrowserLogin()}>取消等待</button>
               </div>
               <small className={styles.loginPrivacyNote}>Deep link 只携带 attempt ID，不包含 access token、refresh token 或密码。</small>

@@ -4,6 +4,7 @@ import type {
   AuthState,
   BrowserLoginAttempt,
   BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   AuthProvider,
   AuthProviderId,
   AutomationSummary,
@@ -1811,6 +1812,17 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     };
     this.browserLoginAttempt = null;
     return { status: "completed", provider: "browser", auth: this.auth };
+  }
+
+  async browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
+    if (this.native) return this.native.browserLoginReopen(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) throw new Error("Browser login attempt expired");
+    this.browserLoginAttempt = {
+      ...this.browserLoginAttempt,
+      loginUrl: "about:blank#fabushi-test-browser-login",
+      pollAfterMs: 120,
+    };
+    return { ...this.browserLoginAttempt, status: "pending" };
   }
 
   async browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {

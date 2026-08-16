@@ -563,6 +563,30 @@ impl FeatureHostController {
         }
     }
 
+    pub fn browser_login_reopen(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => Ok(json!({
+                "status": "pending",
+                "attemptId": attempt_id,
+                "loginUrl": "about:blank#fabushi-test-browser-login",
+                "pollAfterMs": 120,
+            })),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.reopen",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
     pub fn browser_login_cancel(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
         let attempt_id = required(attempt_id, "attemptId")?;
         match self.config.mode {
@@ -11669,6 +11693,23 @@ mod tests {
         assert!(completed["auth"].get("accessToken").is_none());
         assert!(completed["auth"].get("refreshToken").is_none());
         assert_eq!(controller.auth_status().unwrap()["loggedIn"], true);
+
+        let reopened_controller = controller();
+        let reopened_attempt = reopened_controller
+            .browser_login_start()
+            .expect("start reopenable browser login");
+        let reopened = reopened_controller
+            .browser_login_reopen(
+                reopened_attempt["attemptId"]
+                    .as_str()
+                    .expect("reopen attempt id")
+                    .to_string(),
+            )
+            .expect("reopen browser login");
+        assert_eq!(reopened["status"], "pending");
+        assert_eq!(reopened["attemptId"], reopened_attempt["attemptId"]);
+        assert_eq!(reopened["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert!(reopened.get("pollSecret").is_none());
 
         let cancelled_controller = controller();
         let cancelled_attempt = cancelled_controller

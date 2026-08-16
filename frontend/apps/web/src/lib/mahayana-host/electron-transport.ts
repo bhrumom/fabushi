@@ -5,6 +5,7 @@ import type {
   AuthState,
   BrowserLoginAttempt,
   BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   CommandAccepted,
   HostConfig,
   HostInfo,
@@ -101,6 +102,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
 
   browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
     return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserCancel", { attemptId });
+  }
+
+  browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
+    return bridge().invoke<BrowserLoginReopenResult>("feature.auth.browserReopen", { attemptId });
   }
 
   passwordLogin(username: string, password: string): Promise<AuthState> {
