@@ -26,6 +26,7 @@ const NATIVE_EVENTS = new Set([
   'zoom-factor-changed',
   'update-computer-dispatched',
   'offline-asr-progress',
+  'open-offline-asr',
   'remote-desktop-user-presence',
   'dev-compute-pull-progress',
   'egress-tunnel-changed',

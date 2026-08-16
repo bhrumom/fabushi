@@ -112,6 +112,8 @@ jobs:
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
       - name: Verify native desktop edge parity
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Reject native capability stubs
+        run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify offline ASR provider contracts
         run: node --test desktop/electron/offline-asr.test.cjs
 
@@ -260,6 +262,10 @@ jobs:
         with:
           path: desktop/resources/bin
           key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+
+      - name: Build pinned offline ASR engine
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/build-offline-asr-engine.mjs
 
       - name: Build renderer once without rebuilding the Host
         working-directory: desktop

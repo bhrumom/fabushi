@@ -51,22 +51,37 @@
       {
         "from": "resources/bin",
         "to": "bin"
+      },
+      {
+        "from": "resources/asr",
+        "to": "asr",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
       "category": "public.app-category.lifestyle",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
       "category": "Utility",
       "maintainer": "bhrumom",
       "syncDesktopName": true,
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     },
     "deb": {
       "packageName": "fabushi",

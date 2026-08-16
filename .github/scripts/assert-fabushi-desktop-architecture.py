@@ -85,3 +85,9 @@ for relative, snippets in REQUIRED_SNIPPETS.items():
             fail(f"{relative} is missing required capability marker: {snippet}")
 
 print("Fabushi desktop architecture guard passed")
+
+from pathlib import Path as _FabushiPath
+_asr_manifest = _FabushiPath("desktop/electron/offline-asr-engine.json")
+_asr_builder = _FabushiPath(".github/scripts/build-offline-asr-engine.mjs")
+if not _asr_manifest.is_file() or not _asr_builder.is_file():
+    raise SystemExit("desktop architecture gate: pinned offline ASR engine manifest/build script is missing")

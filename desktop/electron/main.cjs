@@ -737,6 +737,7 @@ function installApplicationMenu() {
       label: '工具',
       submenu: [
         { label: 'Widget Gallery', click: () => send('widget-gallery') },
+        { label: 'Offline ASR', click: () => broadcastNativeEvent('open-offline-asr', { source: 'menu' }) },
         { label: '设置', accelerator: 'CmdOrCtrl+,', click: () => deepLinkRouter.dispatch({ version: 1, route: 'settings', section: 'general', source: 'menu', canonicalUrl: 'fabushi://settings/general' }) },
       ],
     },
