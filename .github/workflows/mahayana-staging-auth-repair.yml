@@ -1,0 +1,117 @@
+name: Mahayana staging auth repair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  REPAIR_SOURCE_SHA: 64c409586d81262b2f1901c6645d033c1a494e5f
+  MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
+  PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+
+jobs:
+  repair-staging-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+      TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+
+    steps:
+      - name: Checkout pinned repair source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPAIR_SOURCE_SHA }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify pinned source
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$REPAIR_SOURCE_SHA"
+
+      - name: Require deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo "Cloudflare API token is not configured." >&2; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured." >&2; exit 1; }
+          [ -n "${TEST_ACCOUNT_TOKEN:-}" ] || { echo "Mahayana test account token is not configured." >&2; exit 1; }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-staging-auth-repair
+          cache-bin: true
+          cache-on-failure: true
+
+      - name: Check deployable platform Worker
+        shell: bash
+        run: cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
+
+      - name: Install Cloudflare Worker build tool
+        run: cargo install worker-build --locked
+
+      - name: Capture account D1 recovery bookmark
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: npx --yes wrangler@4 d1 time-travel info ACCOUNT_DB --json | tee "$RUNNER_TEMP/account-db-recovery-bookmark.json"
+
+      - name: Upload account D1 recovery bookmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-account-db-recovery-bookmark
+          path: ${{ runner.temp }}/account-db-recovery-bookmark.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Apply account authentication migrations
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: printf 'y\n' | npx --yes wrangler@4 d1 migrations apply ACCOUNT_DB --remote
+
+      - name: Deploy Mahayana staging Worker
+        id: platform
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy 2>&1 | tee "$RUNNER_TEMP/platform-deploy.log"
+          platform_url="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' "$RUNNER_TEMP/platform-deploy.log" | tail -n 1 | sed 's/[),;]$//')"
+          [ -n "$platform_url" ] || { echo "Wrangler did not report a workers.dev URL." >&2; exit 1; }
+          echo "url=$platform_url" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Worker test account secret
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: printf '%s' "$TEST_ACCOUNT_TOKEN" | npx --yes wrangler@4 secret put TEST_ACCOUNT_TOKEN
+
+      - name: Verify browser login broker lifecycle
+        shell: bash
+        env:
+          PLATFORM_URL: ${{ steps.platform.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | jq -e '.ok == true' >/dev/null
+          start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors -H 'content-type: application/json' --data '{"platform":"desktop"}' "$PLATFORM_URL/api/auth/browser/start")"
+          attempt_id="$(jq -er '.attemptId' <<<"$start")"
+          poll_secret="$(jq -er '.pollSecret' <<<"$start")"
+          login_url="$(jq -er '.loginUrl' <<<"$start")"
+          case "$login_url" in
+            "$PLATFORM_URL/api/auth/browser/portal"*) ;;
+            *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
+          esac
+          curl --fail --silent --show-error -H 'content-type: application/json' --data "$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')" "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id/cancel" | jq -e '.status == "cancelled"' >/dev/null
