@@ -51,20 +51,28 @@ import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electro
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
 import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
+import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
 import {
   RemoteComputerDesktopController,
   type RemoteComputerDesktopState,
 } from "../../lib/remote-computer/desktop-peer";
-import { estimateStringTokenCount } from "../../lib/grok-agent/token-estimate";
-import { buildCurrentModeStatement } from "../../lib/grok-agent/agent-mode-guidance";
-import { addLineNumbers } from "../../lib/grok-agent/formatting";
-import { normalizeSchedule } from "../../lib/grok-agent/automation-schedule";
-import { clampAgentMessage } from "../../lib/grok-bot/agent-messaging";
 import {
-  SandOsNotificationDecider,
-  buildNotificationContent,
-  type SandAgentNotificationSnapshot,
-} from "../../lib/grok-bot/os-notification";
+  buildModeTransitionNote,
+  clampAgentMessage,
+  estimateTextTokens,
+  formatNumberedLines,
+  normalizeAutomationSchedule,
+} from "../../lib/fabushi-runtime/agent-utils";
+import {
+  AgentNotificationPolicy,
+  buildAgentNotification,
+  type AgentNotificationSnapshot,
+} from "../../lib/fabushi-runtime/agent-notifications";
+import {
+  nativeOnboardingSeen,
+  rememberNativeOnboarding,
+  syncNativeTheme,
+} from "../../lib/fabushi-runtime/native-desktop";
 import {
   ExtensionStudio,
   MarketplaceTabs,
@@ -383,6 +391,7 @@ export default function HostClient() {
     () => new MockMahayanaHostTransport({ authenticated: screenshotMode !== null }),
     [screenshotMode],
   );
+  const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [hostStatus, setHostStatus] = useState("initializing");
@@ -470,6 +479,14 @@ export default function HostClient() {
       ? 3
       : 0,
   );
+  useEffect(() => {
+    let cancelled = false;
+    void nativeOnboardingSeen().then((seen) => {
+      if (!cancelled && seen === true) setOnboardingStep(3);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
@@ -524,8 +541,8 @@ export default function HostClient() {
   const activeAgentIdRef = useRef(activeAgentId);
   const activeGroupIdRef = useRef(activeGroupId);
   const agentWorkflowForIdRef = useRef<string | null>(null);
-  const notificationDeciderRef = useRef(new SandOsNotificationDecider());
-  const notificationSnapshotsRef = useRef(new Map<string, SandAgentNotificationSnapshot>());
+  const notificationDeciderRef = useRef(new AgentNotificationPolicy());
+  const notificationSnapshotsRef = useRef(new Map<string, AgentNotificationSnapshot>());
   const notificationOperationAgentsRef = useRef(new Map<string, string>());
   const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const computerRefreshInFlightRef = useRef(false);
@@ -542,8 +559,8 @@ export default function HostClient() {
 
   const notificationSnapshot = (
     agentId: string,
-    patch: Partial<SandAgentNotificationSnapshot> = {},
-  ): SandAgentNotificationSnapshot => {
+    patch: Partial<AgentNotificationSnapshot> = {},
+  ): AgentNotificationSnapshot => {
     const bot = botsRef.current.find((candidate) => candidate.id === agentId);
     const current = notificationSnapshotsRef.current.get(agentId);
     return {
@@ -553,7 +570,10 @@ export default function HostClient() {
       awaitingReason: current?.awaitingReason ?? null,
       lastMessageId: current?.lastMessageId ?? null,
       lastMessagePreview: current?.lastMessagePreview ?? null,
-      notifyEnabled: preferencesRef.current.notifyOnUpdates && (bot?.notificationsEnabled ?? current?.notifyEnabled ?? true),
+      notifyEnabled:
+        preferencesRef.current.notifyOnUpdates
+        && (bot?.notificationsEnabled ?? current?.notifyEnabled ?? true)
+        && (bot?.notifyOnUpdates ?? true),
       isHiddenFromSidebar: bot?.hidden ?? current?.isHiddenFromSidebar ?? false,
       ...patch,
     };
@@ -561,7 +581,7 @@ export default function HostClient() {
 
   const queueNotificationSnapshot = (
     agentId: string,
-    patch: Partial<SandAgentNotificationSnapshot>,
+    patch: Partial<AgentNotificationSnapshot>,
     allowNotification: boolean,
   ) => {
     const snapshot = notificationSnapshot(agentId, patch);
@@ -572,13 +592,13 @@ export default function HostClient() {
         const isWindowFocused = allowNotification
           ? await transport.windowFocused().catch(() => document.hasFocus())
           : true;
-        const transitions = notificationDeciderRef.current.decideAgent(snapshot, {
+        const transitions = notificationDeciderRef.current.evaluate(snapshot, {
           isWindowFocused,
           nowMs: Date.now(),
         });
         if (!allowNotification) return;
         for (const transition of transitions) {
-          const content = buildNotificationContent(transition);
+          const content = buildAgentNotification(transition);
           await transport.showNotification(content.title, content.body).catch(() => {});
         }
       });
@@ -601,6 +621,7 @@ export default function HostClient() {
       "fabushi.host.preferences.v1",
       JSON.stringify(preferences),
     );
+    syncNativeTheme(preferences.theme);
     if (!hostSettingsHydrated) return;
     const settings: ProductHostSettings = {
       notifications: preferences.notifyOnUpdates,
@@ -791,17 +812,21 @@ export default function HostClient() {
     }
     setSearchPending(true);
     const timer = window.setTimeout(() => {
-      const stamp = Date.now();
       void Promise.all([
-        transport.execute({ type: "search.messages", requestId: `global-message-search-${stamp}`, query, limit: 50 }),
-        transport.execute({ type: "search.media", requestId: `global-media-search-${stamp}`, query, limit: 50 }),
-      ]).catch((cause: unknown) => {
+        coordinator.searchMessages(query, 50),
+        coordinator.searchMedia(query, 50),
+      ]).then(([messageMatches, mediaMatches]) => {
+        if (searchQueryRef.current !== query) return;
+        setSearchMessageMatches(messageMatches);
+        setSearchMediaMatches(mediaMatches);
+        setSearchPending(false);
+      }).catch((cause: unknown) => {
         setSearchPending(false);
         setError(cause instanceof Error ? cause.message : String(cause));
       });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [conversationSearch, transport]);
+  }, [conversationSearch, coordinator]);
 
   useEffect(() => {
     const pass = (featureId: MahayanaHostFeatureId) => {
@@ -811,7 +836,7 @@ export default function HostClient() {
       }));
     };
 
-    const unsubscribe = transport.subscribe((event) => {
+    const unsubscribe = coordinator.subscribe((event) => {
       switch (event.type) {
         case "host.ready":
           setHostStatus("ready");
@@ -982,9 +1007,9 @@ export default function HostClient() {
             lastMessagePreview: null,
             notifyEnabled: preferencesRef.current.notifyOnUpdates && bot.notificationsEnabled,
             isHiddenFromSidebar: bot.hidden,
-          } satisfies SandAgentNotificationSnapshot));
+          } satisfies AgentNotificationSnapshot));
           for (const baseline of baselines) notificationSnapshotsRef.current.set(baseline.id, baseline);
-          notificationDeciderRef.current.seedBaseline(baselines);
+          notificationDeciderRef.current.seed(baselines);
           break;
         }
         case "bot.changed":
@@ -999,7 +1024,7 @@ export default function HostClient() {
           });
           if (event.action === "deleted") {
             notificationSnapshotsRef.current.delete(event.bot.id);
-            notificationDeciderRef.current.forget(event.bot.id);
+            notificationDeciderRef.current.forgetAgent(event.bot.id);
           }
           break;
         case "group.listed":
@@ -1479,39 +1504,21 @@ export default function HostClient() {
           type: "capability.list",
           requestId: "capability-list-initial",
         });
-        await transport.execute({
-          type: "automation.list",
-          requestId: "automation-list-initial",
-        });
+        await coordinator.listAutomations();
         await Promise.all([
           transport.execute({
             type: "connector.list",
             requestId: "connector-list-initial",
           }),
-          transport.execute({
-            type: "skill.list",
-            requestId: "skill-list-initial",
-          }),
-          transport.execute({
-            type: "bot.list",
-            requestId: "bot-list-initial",
-          }),
-          transport.execute({
-            type: "group.list",
-            requestId: "group-list-initial",
-          }),
-          transport.execute({
-            type: "tray.list",
-            requestId: "tray-list-initial",
-          }),
+          coordinator.listSkills(),
+          coordinator.listAgents(),
+          coordinator.listGroups(),
+          coordinator.listTrays(),
           transport.execute({
             type: "settings.get",
             requestId: "settings-get-initial",
           }),
-          transport.execute({
-            type: "listener.list",
-            requestId: "listener-list-initial",
-          }),
+          coordinator.listListenerIntegrations(),
           transport.execute({
             type: "update.status",
             requestId: "update-status-initial",
@@ -1588,7 +1595,7 @@ export default function HostClient() {
       unsubscribe();
       void transport.close();
     };
-  }, [transport]);
+  }, [transport, coordinator]);
 
   const nextRequestId = (prefix: string) => {
     requestSequence.current += 1;
@@ -1605,7 +1612,7 @@ export default function HostClient() {
     }
   };
 
-  const execute = (command: RuntimeCommand) => transport.execute(command);
+  const execute = (command: RuntimeCommand) => coordinator.execute(command);
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1624,7 +1631,7 @@ export default function HostClient() {
         agentId: activeAgentId,
         conversationId: activeConversationId ?? undefined,
         mode: agentMode,
-        modeStatement: buildCurrentModeStatement(
+        modeStatement: buildModeTransitionNote(
           agentMode === "ask" ? "chat" : agentMode,
         ),
         model: selectedModel === "auto" ? undefined : selectedModel,
@@ -1666,7 +1673,7 @@ export default function HostClient() {
             window.clearTimeout(timeout);
             unsubscribe();
           };
-          unsubscribe = transport.subscribe((event) => {
+          unsubscribe = coordinator.subscribe((event) => {
             if (
               event.type !== "attachment.stored" ||
               event.attachment.agentId !== ownerId ||
@@ -1870,7 +1877,7 @@ export default function HostClient() {
   const displayName =
     auth?.user?.nickname || auth?.user?.username || "大乘用户";
   const attachmentTokens = attachments.reduce(
-    (total, attachment) => total + estimateStringTokenCount(attachment.text ?? ""),
+    (total, attachment) => total + estimateTextTokens(attachment.text ?? ""),
     0,
   );
   const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
@@ -1954,6 +1961,8 @@ export default function HostClient() {
             title: "Group",
             hidden: false,
             notificationsEnabled: false,
+            notifyOnUpdates: false,
+            unread: false,
           } satisfies BotSummary)),
       ]
     : [];
@@ -2290,7 +2299,7 @@ export default function HostClient() {
         }
       : {
           kind: "schedule" as const,
-          schedule: normalizeSchedule(automationSchedule),
+          schedule: normalizeAutomationSchedule(automationSchedule),
         };
     await run(() => execute({
       type: "automation.upsert",
@@ -3000,7 +3009,7 @@ export default function HostClient() {
                     {item.detail ? (
                       <details>
                         <summary>{item.kind === "shell" ? "查看终端输出" : "查看详情"}</summary>
-                        <pre>{item.kind === "shell" ? addLineNumbers({ gpt5CodexCatN: true }, item.detail, 1) : item.detail}</pre>
+                        <pre>{item.kind === "shell" ? formatNumberedLines({ compact: true }, item.detail, 1) : item.detail}</pre>
                       </details>
                     ) : null}
                   </div>
@@ -3529,9 +3538,9 @@ export default function HostClient() {
             <div className={styles.settingsContent}>
               <header>
                 <div>
-                  <p>GROK BOT SETTINGS</p>
+                  <p>FABUSHI AGENT SETTINGS</p>
                   <h2 id="settings-title">
-                    {settingsSection === "general" ? "通用设置" : settingsSection === "mcp" ? "MCP 与 Apps" : settingsSection === "usage" ? "用量与计费" : "Grok Bot 更新"}
+                    {settingsSection === "general" ? "通用设置" : settingsSection === "mcp" ? "MCP 与 Apps" : settingsSection === "usage" ? "用量与计费" : "全球法布施更新"}
                   </h2>
                 </div>
                 <button className={styles.iconButton} type="button" aria-label="关闭设置" onClick={() => setSettingsOpen(false)}>
@@ -3692,7 +3701,7 @@ export default function HostClient() {
                 </div>
               ) : (
                 <div className={styles.settingsSections}>
-                  <SettingsGroup title="Grok Bot 更新" description="Updates">
+                  <SettingsGroup title="全球法布施更新" description="Updates">
                     <div className={styles.updateCard} data-state={updateState.type}>
                       <span className={styles.updateIcon}>{updateState.type === "error" ? "!" : updateState.type === "checking" || updateState.type === "downloading" || updateState.type === "staging" ? "↻" : "✓"}</span>
                       <div><strong>{updateCopy.title}</strong><small>{updateCopy.detail}</small></div>
@@ -3845,6 +3854,7 @@ export default function HostClient() {
                     const nextStep = Math.min(3, step + 1);
                     if (nextStep === 3) {
                       window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, "1");
+                      rememberNativeOnboarding();
                     }
                     return nextStep;
                   })}
@@ -3855,17 +3865,17 @@ export default function HostClient() {
               </div>
             </section>
           ) : !authResolved ? (
-            <section className={styles.grokWelcome} role="status" aria-live="polite">
-              <div className={styles.grokTitle}>
-                <div className={styles.grokLogo}><span>••</span></div>
+            <section className={styles.fabushiWelcome} role="status" aria-live="polite">
+              <div className={styles.fabushiTitle}>
+                <div className={styles.fabushiLogo}><span>••</span></div>
                 <h2>Fabushi</h2>
               </div>
               <p>正在恢复本地会话…</p>
             </section>
           ) : !loginOptionsOpen ? (
-            <section className={styles.grokWelcome} role="dialog" aria-modal="true" aria-labelledby="login-title">
-              <div className={styles.grokTitle}>
-                <div className={styles.grokLogo}><span>••</span></div>
+            <section className={styles.fabushiWelcome} role="dialog" aria-modal="true" aria-labelledby="login-title">
+              <div className={styles.fabushiTitle}>
+                <div className={styles.fabushiLogo}><span>••</span></div>
                 <h2 id="login-title">Fabushi</h2>
               </div>
               <p>一支始终在线、可以真正完成工作的智能体团队。</p>

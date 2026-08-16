@@ -6,12 +6,10 @@ on:
     paths:
       - 'desktop/**'
       - 'frontend/apps/web/src/app/host/**'
-      - 'frontend/apps/web/src/lib/grok-agent/**'
-      - 'frontend/apps/web/src/lib/grok-bot/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/**'
       - 'frontend/apps/web/src/lib/mahayana-host/**'
       - 'frontend/packages/shared/**'
       - 'contracts/automation/cross-platform-journeys.json'
-      - 'contracts/automation/grok-bot-electron-migration.json'
       - 'third_party/mahayana/codex-rs/**'
       - 'third_party/mahayana/mahayana-rs/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/Cargo.lock'
@@ -23,7 +21,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - '.github/scripts/assert-native-electron-canonical.sh'
       - '.github/scripts/assert-electron-feature-host-bridge.sh'
-      - '.github/scripts/assert-grok-bot-electron-migration.py'
+      - '.github/scripts/assert-fabushi-desktop-architecture.py'
       - '.github/workflows/electron-desktop.yml'
   push:
     branches: [main]
@@ -72,7 +70,7 @@ jobs:
             if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml|Cargo\.lock|mahayana-app-host/|mahayana-app-host-desktop/|mahayana-feature-host/|mahayana-host/|mahayana-host-protocol/|mahayana-product/))'; then
               host=true
             fi
-            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/(cross-platform-journeys|grok-bot-electron-migration)\.json$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(grok-agent|grok-bot|mahayana-host|remote-computer)/|frontend/packages/shared/|\.github/scripts/(assert-native-electron-canonical\.sh|assert-electron-feature-host-bridge\.sh|assert-grok-bot-electron-migration\.py)$)'; then
+            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/cross-platform-journeys\.json$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|frontend/packages/shared/|\.github/scripts/(assert-native-electron-canonical\.sh|assert-electron-feature-host-bridge\.sh|assert-fabushi-desktop-architecture\.py)$)'; then
               renderer=true
             fi
             if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|desktop/(electron/|resources/|scripts/|e2e/|playwright\.config\.ts$|package\.json$|package-lock\.json$)|\.github/workflows/electron-desktop\.yml$)'; then
@@ -109,8 +107,8 @@ jobs:
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh
 
-      - name: Protect every Grok Bot module previously migrated through Tauri
-        run: python3 .github/scripts/assert-grok-bot-electron-migration.py
+      - name: Guard the Fabushi desktop architecture
+        run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

@@ -2714,7 +2714,7 @@ mod tests {
     }
 
     #[test]
-    fn computer_tool_schema_matches_grok_batching_and_field_names() {
+    fn computer_tool_schema_preserves_batching_and_field_names() {
         let schema = computer_tool_schema();
         let properties = schema["properties"].as_object().expect("properties");
         assert!(properties.contains_key("count"));

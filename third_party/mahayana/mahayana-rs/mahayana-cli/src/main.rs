@@ -101,7 +101,7 @@ enum CliCommand {
         #[command(subcommand)]
         command: CapabilityCommand,
     },
-    /// 管理 Grok Bot 兼容的连接器账户与工具。
+    /// 管理 Fabushi 连接器账户与工具。
     Connector {
         #[command(subcommand)]
         command: ConnectorCommand,

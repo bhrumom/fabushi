@@ -805,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn grok_action_limits_are_enforced_without_touching_the_desktop() {
+    fn action_limits_are_enforced_without_touching_the_desktop() {
         let mut wait = action(ComputerActionKind::Wait);
         wait.wait_ms = Some(COMPUTER_MAX_WAIT_MS + 1);
         assert!(validate_action(&wait).is_err());
@@ -821,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn grok_follow_up_sequence_rejects_screenshot_before_touching_the_desktop() {
+    fn follow_up_sequence_rejects_screenshot_before_touching_the_desktop() {
         let primary = action(ComputerActionKind::Click);
         let follow_up = action(ComputerActionKind::Screenshot);
         let error = execute(&[primary, follow_up], ComputerControlOrigin::LocalUi)

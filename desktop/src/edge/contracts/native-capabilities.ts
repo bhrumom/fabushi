@@ -1,9 +1,8 @@
-import { defineEdge } from '../rpc';
+import { defineEdge } from '../ipc';
 
-// Recovered from Grok Bot 0.20.0 canonical/dist/electron-preload/preload.cjs.
-// Keep this manifest aligned with the canonical production bundle while the
-// implementations are restored into Fabushi/Mahayana behind the same edge.
-export const GROK_MAIN_METHODS = {
+// Desktop-only capability catalog. Product/account specifics are intentionally
+// normalized here so Mahayana can remain provider-agnostic.
+export const NATIVE_DESKTOP_METHODS = {
   openExternal: { args: 'object' },
   submitFeedback: { args: 'object' },
   getDesktopEnvironment: { args: 'none' },
@@ -28,7 +27,7 @@ export const GROK_MAIN_METHODS = {
   setUpdateTrack: { args: 'object' },
   quitAndInstallUpdate: { args: 'object' },
   setAutoUpdateWhenIdleOptIn: { args: 'object' },
-  getBoxMigrationStatus: { args: 'none' },
+  getComputeMigrationStatus: { args: 'none' },
   markDeepLinksReady: { args: 'none' },
   getOnboardingSeen: { args: 'none' },
   setOnboardingSeen: { args: 'object' },
@@ -70,41 +69,41 @@ export const GROK_MAIN_METHODS = {
   setHostSidebarSections: { args: 'object' },
   getAvailableModels: { args: 'none' },
   transcribeAudio: { args: 'object' },
-  getCursorAuthStatus: { args: 'none' },
-  loginCursor: { args: 'none' },
-  cancelCursorLogin: { args: 'none' },
-  logoutCursor: { args: 'none' },
-  updateCursorAccountName: { args: 'object' },
-  getCursorAvatar: { args: 'none' },
-  getCursorWeeklyUsage: { args: 'none' },
-  getCursorUsageSummary: { args: 'none' },
-  getCursorPrReviewPreferences: { args: 'none' },
-  getCursorPrivacyModeEnabled: { args: 'none' },
-  getSandAccess: { args: 'none' },
-  getSandAccessFresh: { args: 'none' },
-  invokeCursorDashboardAction: { args: 'object' },
-  cancelCursorSandTrial: { args: 'none' },
+  getAccountAuthStatus: { args: 'none' },
+  loginAccount: { args: 'none' },
+  cancelAccountLogin: { args: 'none' },
+  logoutAccount: { args: 'none' },
+  updateAccountName: { args: 'object' },
+  getAccountAvatar: { args: 'none' },
+  getWeeklyUsage: { args: 'none' },
+  getUsageSummary: { args: 'none' },
+  getReviewPreferences: { args: 'none' },
+  getPrivacyModeEnabled: { args: 'none' },
+  getRuntimeAccess: { args: 'none' },
+  refreshRuntimeAccess: { args: 'none' },
+  invokeAccountDashboardAction: { args: 'object' },
+  cancelRuntimeTrial: { args: 'none' },
   reportAgentLoad: { args: 'object' },
   reportAccessBlocked: { args: 'object' },
   reportAgentsUnreachable: { args: 'object' },
   reportRecoveryAction: { args: 'object' },
   reportRebuildLifecycle: { args: 'object' },
   reportReconciliation: { args: 'object' },
-  reportBoxVisibility: { args: 'object' },
+  reportComputeVisibility: { args: 'object' },
   reportSendLatency: { args: 'object' },
   reportSendAck: { args: 'object' },
   reportReactionAck: { args: 'object' },
   reportRenderTtfr: { args: 'object' },
   reportRenderStream: { args: 'object' },
-  reportVncSession: { args: 'object' },
-  reportVncLiveness: { args: 'object' },
+  reportRemoteDesktopSession: { args: 'object' },
+  reportRemoteDesktopLiveness: { args: 'object' },
   reportOpenComputer: { args: 'object' },
   reportUpdatePrompt: { args: 'object' },
   reportSigninGate: { args: 'object' },
   reportOnboardingStep: { args: 'object' },
   reportClientFailure: { args: 'object' },
   reportHeapMetrics: { args: 'object' },
-  noteSentryConversation: { args: 'object' },
+  noteConversationForDiagnostics: { args: 'object' },
   openCloudAgent: { args: 'object' },
   getLinkMetadata: { args: 'object' },
   listSecrets: { args: 'none' },
@@ -132,27 +131,27 @@ export const GROK_MAIN_METHODS = {
   listMcpServerTools: { args: 'object' },
   toggleMcpToolDisabled: { args: 'object' },
   devRestart: { args: 'none' },
-  attachProdBoxStatus: { args: 'none' },
-  setAttachProdBoxEnabled: { args: 'object' },
+  getProductionComputeAttachmentStatus: { args: 'none' },
+  setProductionComputeAttachmentEnabled: { args: 'object' },
 } as const;
 
-export const GROK_MAIN_EVENTS = [
+export const NATIVE_DESKTOP_EVENTS = [
   'mcp-auth-completed',
   'focus-agent',
   'deep-link',
-  'box-migration',
-  'dev-box-rebuild',
+  'compute-migration',
+  'dev-compute-rebuild',
   'open-feedback',
   'open-about',
   'widget-gallery',
   'force-onboarding',
-  'cursor-auth-changed',
+  'account-auth-changed',
   'experiments-changed',
   'window-state',
   'zoom-factor-changed',
   'update-computer-dispatched',
-  'vnc-user-presence',
-  'dev-box-pull-progress',
+  'remote-desktop-user-presence',
+  'dev-compute-pull-progress',
   'egress-tunnel-changed',
   'egress-tunnel-status-changed',
   'webauthn-proxy-changed',
@@ -161,7 +160,11 @@ export const GROK_MAIN_EVENTS = [
   'update-status',
 ] as const;
 
-export const GROK_MAIN_EDGE = defineEdge('main', GROK_MAIN_METHODS, GROK_MAIN_EVENTS);
+export const NATIVE_DESKTOP_EDGE = defineEdge(
+  'native-desktop',
+  NATIVE_DESKTOP_METHODS,
+  NATIVE_DESKTOP_EVENTS,
+);
 
-export type GrokMainMethod = keyof typeof GROK_MAIN_METHODS;
-export type GrokMainEvent = (typeof GROK_MAIN_EVENTS)[number];
+export type NativeDesktopMethod = keyof typeof NATIVE_DESKTOP_METHODS;
+export type NativeDesktopEvent = (typeof NATIVE_DESKTOP_EVENTS)[number];

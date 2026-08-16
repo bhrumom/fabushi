@@ -147,7 +147,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     }
 
     // Compatibility fallback for older Tauri/Electron bundles which have not
-    // yet adopted the Grok-style edge event channel.
+    // yet adopted the native edge event channel.
     this.startEventPump();
   }
 

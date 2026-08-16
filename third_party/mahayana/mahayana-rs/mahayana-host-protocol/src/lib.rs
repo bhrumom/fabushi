@@ -263,6 +263,10 @@ pub struct BotSummary {
     pub avatar_color: Option<String>,
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notify_on_updates: bool,
+    #[serde(default)]
+    pub unread: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
 }
@@ -467,7 +471,7 @@ pub struct ComputerPoint {
     pub y: i32,
 }
 
-/// Grok-compatible computer action envelope. Fields intentionally stay flat so
+/// Stable computer-action envelope. Fields intentionally stay flat so
 /// the exact same payload can be produced by the model tool, desktop UI, and a
 /// paired phone without translation-specific semantics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1151,6 +1155,8 @@ pub enum FeatureCommand {
         description: String,
         #[serde(default)]
         title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        avatar: Option<String>,
         #[serde(
             rename = "avatarShape",
             default,
@@ -1175,6 +1181,8 @@ pub enum FeatureCommand {
         description: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        avatar: Option<String>,
         #[serde(
             rename = "avatarShape",
             default,
@@ -1193,6 +1201,14 @@ pub enum FeatureCommand {
             skip_serializing_if = "Option::is_none"
         )]
         notifications_enabled: Option<bool>,
+        #[serde(
+            rename = "notifyOnUpdates",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        notify_on_updates: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unread: Option<bool>,
     },
     #[serde(rename = "bot.clone")]
     BotClone {

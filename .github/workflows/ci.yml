@@ -60,11 +60,11 @@ jobs:
             mcp=false
             workflows=false
             electron=false
-            if printf '%s\n' "$changed" | grep -Eq '^(frontend/|contracts/automation/(cross-platform-journeys|grok-bot-electron-migration)\.json$)'; then frontend=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^(frontend/|contracts/automation/cross-platform-journeys\.json$)'; then frontend=true; fi
             if printf '%s\n' "$changed" | grep -Eq '^(fabushi/web/|third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/)'; then worker=true; fi
             if printf '%s\n' "$changed" | grep -Eq '^(\.agents/plugins/|ai-backend/|frontend/packages/mcp-app-sdk/|plugins/)'; then mcp=true; fi
             if printf '%s\n' "$changed" | grep -Eq '^\.github/workflows/'; then workflows=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(\.github/scripts/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-grok-bot-electron-migration\.py)$|contracts/automation/grok-bot-electron-migration\.json$|desktop/electron/(main|preload)\.cjs$|desktop/src/main\.tsx$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(grok-agent|grok-bot|mahayana-host|remote-computer)/|third_party/mahayana/mahayana-rs/(mahayana-app-host/|mahayana-computer/|mahayana-feature-host/|mahayana-host-protocol/))'; then electron=true; fi
+            if printf '%s\n' "$changed" | grep -Eq '^(\.github/scripts/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py)$|desktop/electron/|desktop/src/|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|third_party/mahayana/mahayana-rs/(mahayana-agent-codex/|mahayana-app-host/|mahayana-computer/|mahayana-feature-host/|mahayana-host-protocol/))'; then electron=true; fi
           fi
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
           echo "worker=$worker" >> "$GITHUB_OUTPUT"
@@ -242,16 +242,14 @@ jobs:
           sparse-checkout: |
             /.github/scripts/assert-electron-feature-host-bridge.sh
             /.github/scripts/assert-feature-command-router-coverage.py
-            /.github/scripts/assert-grok-bot-electron-migration.py
-            /contracts/automation/grok-bot-electron-migration.json
-            /desktop/electron/main.cjs
-            /desktop/electron/preload.cjs
+            /.github/scripts/assert-fabushi-desktop-architecture.py
+            /desktop/electron/**
+            /desktop/src/edge/**
             /desktop/src/main.tsx
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**
             /frontend/apps/web/src/app/remote-computer/**
-            /frontend/apps/web/src/lib/grok-agent/**
-            /frontend/apps/web/src/lib/grok-bot/**
+            /frontend/apps/web/src/lib/fabushi-runtime/**
             /frontend/apps/web/src/lib/mahayana-host/**
             /frontend/apps/web/src/lib/remote-computer/**
             /third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml
@@ -263,8 +261,8 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
       - name: Require 100 percent FeatureCommand router coverage
         run: python3 .github/scripts/assert-feature-command-router-coverage.py
-      - name: Protect the complete Tauri/Grok migration surface
-        run: python3 .github/scripts/assert-grok-bot-electron-migration.py
+      - name: Guard the Fabushi desktop architecture
+        run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
       - name: Verify Electron to Rust Feature Host bridge
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh
