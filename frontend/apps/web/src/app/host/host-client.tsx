@@ -69,6 +69,10 @@ import {
   type AgentNotificationSnapshot,
 } from "../../lib/fabushi-runtime/agent-notifications";
 import type { CloudAgentInfo } from "../../lib/fabushi-runtime/capability-provider";
+import type {
+  SharingState,
+  SharedRoomInvite,
+} from "../../lib/fabushi-runtime/collaboration";
 import {
   invokeNativeDesktop,
   markNativeDeepLinksReady,
@@ -435,10 +439,17 @@ export default function HostClient() {
   const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [networkView, setNetworkView] = useState<"agents" | "rooms">("agents");
   const [networkTargetId, setNetworkTargetId] = useState("");
   const [networkMessage, setNetworkMessage] = useState("");
   const [networkPriority, setNetworkPriority] = useState(false);
   const [peerMessages, setPeerMessages] = useState<AgentPeerMessage[]>([]);
+  const [sharingState, setSharingState] = useState<SharingState>({ scope: "local-device", rooms: [], joinRequests: [] });
+  const [sharingBusy, setSharingBusy] = useState(false);
+  const [sharingError, setSharingError] = useState<string | null>(null);
+  const [sharedRoomName, setSharedRoomName] = useState("");
+  const [sharedInviteToken, setSharedInviteToken] = useState("");
+  const [lastSharedInvite, setLastSharedInvite] = useState<SharedRoomInvite | null>(null);
   const [backgroundWorkingAgents, setBackgroundWorkingAgents] = useState<Set<string>>(() => new Set());
   const [backgroundPreviews, setBackgroundPreviews] = useState<Record<string, { agentId: string; text: string }>>({});
   const [lastBroadcastResult, setLastBroadcastResult] = useState<{ total: number; scheduled: number } | null>(null);
@@ -492,6 +503,30 @@ export default function HostClient() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!networkOpen) return;
+    let cancelled = false;
+    const applyState = (state: SharingState) => {
+      if (!cancelled) {
+        setSharingState(state);
+        setSharingError(null);
+      }
+    };
+    void coordinator.getSharingState()
+      .then(applyState)
+      .catch((error) => { if (!cancelled) setSharingError(error instanceof Error ? error.message : String(error)); });
+    const unsubscribe = coordinator.subscribeCollaboration((event) => {
+      if (event.type === "state.changed") applyState(event.state);
+      if (event.type === "typing.changed") {
+        void coordinator.getSharingState().then(applyState).catch(() => undefined);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [coordinator, networkOpen]);
 
   const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -2098,6 +2133,86 @@ export default function HostClient() {
     }));
   };
 
+  const refreshSharingState = async () => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const createSharedRoomForActiveAgent = async () => {
+    const name = sharedRoomName.trim();
+    if (!name || !activeAgentId || sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await coordinator.createSharedRoom(name, [activeAgentId], activeAgentId);
+      setSharedRoomName("");
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const joinSharedRoomFromInvite = async () => {
+    const token = sharedInviteToken.trim();
+    if (!token || !activeAgentId || sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await coordinator.joinSharedRoom(token, activeAgentId, activeBotProfile?.name ?? activeAgentId);
+      setSharedInviteToken("");
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const createSharedInvite = async (roomId: string) => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      const invite = await coordinator.createRoomInvite(roomId);
+      setLastSharedInvite(invite);
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const mutateSharedRoom = async (action: () => Promise<unknown>) => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await action();
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const pulseSharedRoomTyping = (roomId: string) => {
+    if (!activeAgentId) return;
+    void coordinator.setSharedRoomTyping(roomId, activeAgentId, true)
+      .then(() => setTimeout(() => { void coordinator.setSharedRoomTyping(roomId, activeAgentId, false); }, 1_500))
+      .catch((error) => setSharingError(error instanceof Error ? error.message : String(error)));
+  };
+
   const broadcastNetworkMessage = async () => {
     if (!networkMessage.trim()) return;
     const message = clampAgentMessage(networkMessage);
@@ -3541,6 +3656,12 @@ export default function HostClient() {
               <div><p>AGENT NETWORK</p><h2 id="network-title">智能体网络</h2><span>查看 Agents、Bots、插件和联系人之间的能力关系。</span></div>
               <button className={styles.iconButton} type="button" aria-label="关闭智能体网络" onClick={() => setNetworkOpen(false)}><Icon name="close" /></button>
             </header>
+            <nav className={styles.networkTabs} aria-label="智能体网络视图">
+              <button type="button" data-active={networkView === "agents"} onClick={() => setNetworkView("agents")}>Agent Network</button>
+              <button type="button" data-active={networkView === "rooms"} onClick={() => setNetworkView("rooms")}>Shared Rooms</button>
+            </nav>
+            {networkView === "agents" ? (
+              <>
             <div className={styles.networkCanvas}>
               <span className={styles.networkLine} />
               <article className={styles.networkHub}>
@@ -3611,6 +3732,72 @@ export default function HostClient() {
                 {!peerMessages.length ? <p className={styles.networkNoMessages}>还没有 Agent 间消息。</p> : null}
               </div>
             </section>
+              </>
+            ) : (
+              <section className={styles.sharedRoomsPanel} aria-label="共享房间">
+                <header>
+                  <div>
+                    <strong>跨设备共享房间</strong>
+                    <small>{sharingState.scope === "fabushi-platform" ? "Fabushi Platform · 已持久化" : "本机离线模式 · 网络恢复后可切回平台"}</small>
+                  </div>
+                  <button type="button" disabled={sharingBusy} onClick={() => void refreshSharingState()}>{sharingBusy ? "同步中…" : "刷新"}</button>
+                </header>
+                {sharingError ? <p className={styles.sharedRoomsError}>{sharingError}</p> : null}
+                <div className={styles.sharedRoomsForms}>
+                  <form onSubmit={(event) => { event.preventDefault(); void createSharedRoomForActiveAgent(); }}>
+                    <label><span>创建共享房间</span><input value={sharedRoomName} onChange={(event) => setSharedRoomName(event.target.value)} maxLength={96} placeholder="例如：发布协作室" /></label>
+                    <button type="submit" disabled={sharingBusy || !sharedRoomName.trim()}>用当前 Agent 创建</button>
+                  </form>
+                  <form onSubmit={(event) => { event.preventDefault(); void joinSharedRoomFromInvite(); }}>
+                    <label><span>加入邀请码</span><input value={sharedInviteToken} onChange={(event) => setSharedInviteToken(event.target.value)} maxLength={1000} placeholder="fabushi_…" /></label>
+                    <button type="submit" disabled={sharingBusy || !sharedInviteToken.trim()}>申请加入</button>
+                  </form>
+                </div>
+                {lastSharedInvite ? (
+                  <div className={styles.sharedInviteResult}>
+                    <span>邀请码 · {new Date(lastSharedInvite.expiresAtMs).toLocaleString()} 前有效</span>
+                    <code>{lastSharedInvite.token}</code>
+                    <button type="button" onClick={() => void navigator.clipboard?.writeText(lastSharedInvite.token)}>复制</button>
+                  </div>
+                ) : null}
+                <div className={styles.sharedRoomList}>
+                  {sharingState.rooms.map((room) => {
+                    const ownAgentIds = room.ownAgentIds ?? room.memberAgentIds.filter((id) => bots.some((bot) => bot.id === id) || id === "mahayana-assistant");
+                    const activeIsOwnMember = ownAgentIds.includes(activeAgentId);
+                    const typing = (sharingState.typing ?? []).filter((entry) => entry.roomId === room.id && entry.isTyping);
+                    return (
+                      <article key={room.id}>
+                        <header>
+                          <div><strong>{room.name}</strong><small>{room.memberCount ?? room.memberAgentIds.length} 个成员 · {room.isOwner ? "你创建的" : "已加入"}</small></div>
+                          <span data-scope={room.scope}>{room.scope === "fabushi-platform" ? "CLOUD" : "LOCAL"}</span>
+                        </header>
+                        <p>{room.memberAgentIds.slice(0, 8).join(" · ") || "暂无成员"}</p>
+                        {typing.length ? <small className={styles.sharedTyping}>{typing.map((entry) => entry.participantId).join("、")} 正在输入…</small> : null}
+                        <div className={styles.sharedRoomActions}>
+                          <button type="button" disabled={sharingBusy} onClick={() => void createSharedInvite(room.id)}>邀请</button>
+                          {!activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.addOwnAgentToSharedRoom(room.id, activeAgentId))}>加入当前 Agent</button> : null}
+                          {activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => pulseSharedRoomTyping(room.id)}>输入状态</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length > 1 ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.removeOwnAgentFromSharedRoom(room.id, activeAgentId))}>移除当前 Agent</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length <= 1 ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.leaveSharedRoom(room.id, activeAgentId))}>离开房间</button> : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {!sharingState.rooms.length ? <div className={styles.sharedRoomsEmpty}><Icon name="network" /><strong>还没有共享房间</strong><p>创建一个房间，或用邀请码把当前 Agent 加入别人的房间。</p></div> : null}
+                </div>
+                {sharingState.joinRequests.some((request) => request.status === "pending") ? (
+                  <section className={styles.sharedJoinRequests}>
+                    <h3>加入请求</h3>
+                    {sharingState.joinRequests.filter((request) => request.status === "pending").map((request) => (
+                      <article key={request.id}>
+                        <div><strong>{request.displayName}</strong><small>{request.agentId} · {request.isOwnRequest ? "等待房主审批" : "请求加入"}</small></div>
+                        {!request.isOwnRequest ? <div><button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.respondToRoomJoinRequest(request.id, true))}>接受</button><button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.respondToRoomJoinRequest(request.id, false))}>拒绝</button></div> : null}
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
+              </section>
+            )}
           </section>
         </div>
       ) : null}
