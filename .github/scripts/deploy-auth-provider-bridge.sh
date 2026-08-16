@@ -14,91 +14,80 @@ command -v openssl >/dev/null
 
 secret_names() {
   local environment="$1"
-  (
-    cd "$LEGACY_DIR"
-    npx --yes "wrangler@${WRANGLER_VERSION}" secret list --env "$environment" --format json \
-      | jq -r '.[].name' \
-      | sort -u
-  )
+  (cd "$LEGACY_DIR" && npx --yes "wrangler@${WRANGLER_VERSION}" secret list --env "$environment" --format json | jq -r '.[].name' | sort -u)
 }
-
-contains_name() {
-  local names="$1"
-  local expected="$2"
-  grep -Fxq "$expected" <<<"$names"
-}
-
-score_environment() {
-  local names="$1"
-  local score=0
-  contains_name "$names" ALIPAY_PRIVATE_KEY && score=$((score + 4)) || true
-  contains_name "$names" RESEND_API_KEY && score=$((score + 2)) || true
-  printf '%s' "$score"
+contains_name() { grep -Fxq "$2" <<<"$1"; }
+env_url() {
+  case "$1" in
+    development) printf '%s' 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' ;;
+    production) printf '%s' 'https://api.ombhrum.com' ;;
+    *) return 1 ;;
+  esac
 }
 
 printf '%s\n' 'Inspecting legacy Worker secret names only; secret values are never read.'
 dev_names="$(secret_names development)"
 prod_names="$(secret_names production)"
-dev_score="$(score_environment "$dev_names")"
-prod_score="$(score_environment "$prod_names")"
+dev_alipay=false; dev_email=false; prod_alipay=false; prod_email=false
+contains_name "$dev_names" ALIPAY_PRIVATE_KEY && dev_alipay=true || true
+contains_name "$dev_names" RESEND_API_KEY && dev_email=true || true
+contains_name "$prod_names" ALIPAY_PRIVATE_KEY && prod_alipay=true || true
+contains_name "$prod_names" RESEND_API_KEY && prod_email=true || true
+printf 'Legacy capability names: development(Alipay=%s,email=%s) production(Alipay=%s,email=%s)\n' "$dev_alipay" "$dev_email" "$prod_alipay" "$prod_email"
 
-if (( dev_score == 0 && prod_score == 0 )); then
-  echo 'Neither legacy Worker environment has the existing Alipay/registration provider secrets.' >&2
-  exit 20
+if [[ "$dev_alipay" == true ]]; then alipay_env=development
+elif [[ "$prod_alipay" == true ]]; then alipay_env=production
+else echo 'No deployed legacy Worker has ALIPAY_PRIVATE_KEY; refusing fake Alipay rollout.' >&2; exit 21
+fi
+if [[ "$dev_email" == true ]]; then email_env=development
+elif [[ "$prod_email" == true ]]; then email_env=production
+else email_env=''
 fi
 
-if (( dev_score >= prod_score )); then
-  bridge_env=development
-  bridge_url='https://fabushi-flutter-web-dev.bhrumom.workers.dev'
-  bridge_names="$dev_names"
-else
-  bridge_env=production
-  bridge_url='https://api.ombhrum.com'
-  bridge_names="$prod_names"
-fi
-
-if ! contains_name "$bridge_names" ALIPAY_PRIVATE_KEY; then
-  echo "Selected legacy environment $bridge_env does not have ALIPAY_PRIVATE_KEY; refusing fake Alipay rollout." >&2
-  exit 21
-fi
-
-alipay_ready=true
+alipay_url="$(env_url "$alipay_env")"
+email_url=''
 email_ready=false
-contains_name "$bridge_names" RESEND_API_KEY && email_ready=true || true
-printf 'Selected deployed identity bridge: %s (Alipay=%s, registration email=%s)\n' "$bridge_env" "$alipay_ready" "$email_ready"
+if [[ -n "$email_env" ]]; then email_url="$(env_url "$email_env")"; email_ready=true; fi
+printf 'Selected deployed identity bridges: Alipay=%s email=%s\n' "$alipay_env" "${email_env:-unavailable}"
 
 bridge_secret="$(openssl rand -base64 48 | tr -d '\n')"
 echo "::add-mask::$bridge_secret"
 
-# The legacy bridge code is deployed separately through the protected main production pipeline.
-# This repair step only rotates a dedicated server-to-server proof and tells both deployed Workers
-# where the other side lives. Values never enter the repository or browser-visible responses.
-(
-  cd "$LEGACY_DIR"
-  printf '%s' "$bridge_secret" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_SECRET --env "$bridge_env" >/dev/null
-  printf '%s' "$PLATFORM_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_RETURN_BASE --env "$bridge_env" >/dev/null
-)
+selected_envs=("$alipay_env")
+if [[ -n "$email_env" && "$email_env" != "$alipay_env" ]]; then selected_envs+=("$email_env"); fi
+for environment in "${selected_envs[@]}"; do
+  (
+    cd "$LEGACY_DIR"
+    printf '%s' "$bridge_secret" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_SECRET --env "$environment" >/dev/null
+    printf '%s' "$PLATFORM_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_RETURN_BASE --env "$environment" >/dev/null
+  )
+done
 (
   cd "$PLATFORM_DIR"
   printf '%s' "$bridge_secret" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_SECRET >/dev/null
-  printf '%s' "$bridge_url" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_URL >/dev/null
+  printf '%s' "$alipay_url" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_URL >/dev/null
+  if [[ -n "$email_url" ]]; then
+    printf '%s' "$email_url" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_REGISTRATION_BRIDGE_URL >/dev/null
+  else
+    npx --yes "wrangler@${WRANGLER_VERSION}" secret delete AUTH_REGISTRATION_BRIDGE_URL >/dev/null 2>&1 || true
+  fi
 )
 
-capabilities="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 \
-  -H "X-Fabushi-Auth-Bridge: $bridge_secret" \
-  "$bridge_url/api/internal/auth-provider/capabilities")"
-jq -e '.ok == true and .alipay == true' <<<"$capabilities" >/dev/null
+alipay_caps="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 -H "X-Fabushi-Auth-Bridge: $bridge_secret" "$alipay_url/api/internal/auth-provider/capabilities")"
+jq -e '.ok == true and .alipay == true' <<<"$alipay_caps" >/dev/null
 if [[ "$email_ready" == true ]]; then
-  jq -e '.email == true' <<<"$capabilities" >/dev/null
+  email_caps="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 -H "X-Fabushi-Auth-Bridge: $bridge_secret" "$email_url/api/internal/auth-provider/capabilities")"
+  jq -e '.ok == true and .email == true' <<<"$email_caps" >/dev/null
 fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
-    echo "bridge_env=$bridge_env"
-    echo "bridge_url=$bridge_url"
-    echo "alipay_ready=$alipay_ready"
+    echo "bridge_env=$alipay_env"
+    echo "bridge_url=$alipay_url"
+    echo "email_bridge_env=${email_env:-}"
+    echo "email_bridge_url=$email_url"
+    echo "alipay_ready=true"
     echo "email_ready=$email_ready"
   } >>"$GITHUB_OUTPUT"
 fi
-
-printf 'Identity bridge proof configured: %s (Alipay=%s, registration email=%s)\n' "$bridge_url" "$alipay_ready" "$email_ready"
+printf 'Identity bridge proof configured: Alipay=%s registration-email=%s\n' "$alipay_url" "${email_url:-unavailable}"

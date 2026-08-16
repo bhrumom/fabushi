@@ -210,7 +210,10 @@ pub(crate) async fn provider_available(env: &Env, provider: &str) -> bool {
 }
 
 pub(crate) async fn registration_email_available(env: &Env) -> bool {
-    bridge_capabilities(env)
+    let Ok(base) = registration_bridge_url(env) else {
+        return false;
+    };
+    bridge_capabilities_at(env, &base)
         .await
         .map(|capabilities| capabilities.email)
         .unwrap_or(false)
@@ -300,8 +303,10 @@ pub(crate) async fn complete_provider(
 
 pub(crate) async fn send_registration_code(env: &Env, email: &str, code: &str) -> Result<()> {
     let payload = json!({"email": email, "code": code});
-    let mut response = bridge_fetch(
+    let base = registration_bridge_url(env)?;
+    let mut response = bridge_fetch_at(
         env,
+        &base,
         "/api/internal/auth-provider/email/send-registration-code",
         Method::Post,
         Some(payload.to_string()),
@@ -322,8 +327,14 @@ pub(crate) async fn send_registration_code(env: &Env, email: &str, code: &str) -
 }
 
 async fn bridge_capabilities(env: &Env) -> Result<BridgeCapabilities> {
-    let mut response = bridge_fetch(
+    let base = bridge_url(env)?;
+    bridge_capabilities_at(env, &base).await
+}
+
+async fn bridge_capabilities_at(env: &Env, base: &str) -> Result<BridgeCapabilities> {
+    let mut response = bridge_fetch_at(
         env,
+        base,
         "/api/internal/auth-provider/capabilities",
         Method::Get,
         None,
@@ -339,8 +350,10 @@ async fn bridge_capabilities(env: &Env) -> Result<BridgeCapabilities> {
 
 async fn alipay_bridge_exchange(env: &Env, code: &str) -> Result<ProviderIdentityProfile> {
     let payload = json!({"authCode": code});
-    let mut response = bridge_fetch(
+    let base = bridge_url(env)?;
+    let mut response = bridge_fetch_at(
         env,
+        &base,
         "/api/internal/auth-provider/alipay/exchange",
         Method::Post,
         Some(payload.to_string()),
@@ -369,13 +382,13 @@ async fn alipay_bridge_exchange(env: &Env, code: &str) -> Result<ProviderIdentit
     })
 }
 
-async fn bridge_fetch(
+async fn bridge_fetch_at(
     env: &Env,
+    base: &str,
     path: &str,
     method: Method,
     body: Option<String>,
 ) -> Result<worker::Response> {
-    let base = bridge_url(env)?;
     let secret = required_secret(env, "AUTH_PROVIDER_BRIDGE_SECRET")
         .ok_or_else(|| worker::Error::RustError("identity bridge secret unavailable".into()))?;
     let headers = Headers::new();
@@ -397,6 +410,13 @@ fn bridge_url(env: &Env) -> Result<String> {
     env_text(env, "AUTH_PROVIDER_BRIDGE_URL")
         .map(|value| value.trim_end_matches('/').to_string())
         .ok_or_else(|| worker::Error::RustError("identity bridge URL unavailable".into()))
+}
+
+fn registration_bridge_url(env: &Env) -> Result<String> {
+    env_text(env, "AUTH_REGISTRATION_BRIDGE_URL")
+        .or_else(|| env_text(env, "AUTH_PROVIDER_BRIDGE_URL"))
+        .map(|value| value.trim_end_matches('/').to_string())
+        .ok_or_else(|| worker::Error::RustError("registration bridge URL unavailable".into()))
 }
 
 async fn oauth_exchange_standard(
