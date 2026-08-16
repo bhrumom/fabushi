@@ -29,6 +29,13 @@ bindings = config.get('env', {}).get(environment, {}).get('send_email', [])
 print('true' if any(binding.get('name') == 'EMAIL' for binding in bindings) else 'false')
 PYTOML
 }
+email_sending_dns_ready() {
+  local mx spf dkim
+  mx="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce.ombhrum.com' --data-urlencode 'type=MX' 'https://cloudflare-dns.com/dns-query')"
+  spf="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce.ombhrum.com' --data-urlencode 'type=TXT' 'https://cloudflare-dns.com/dns-query')"
+  dkim="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce._domainkey.ombhrum.com' --data-urlencode 'type=TXT' 'https://cloudflare-dns.com/dns-query')"
+  jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | test("mx\.cloudflare\.net"; "i"))' <<<"$mx" >/dev/null     && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null     && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null
+}
 env_url() {
   case "$1" in
     development) printf '%s' 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' ;;
@@ -41,13 +48,19 @@ printf '%s\n' 'Inspecting legacy Worker secret names only; secret values are nev
 dev_names="$(secret_names development)"
 prod_names="$(secret_names production)"
 dev_alipay=false; prod_alipay=false
-dev_email="$(has_email_binding development)"
-prod_email="$(has_email_binding production)"
+dev_binding="$(has_email_binding development)"
+prod_binding="$(has_email_binding production)"
+dev_resend=false; prod_resend=false
 contains_name "$dev_names" ALIPAY_PRIVATE_KEY && dev_alipay=true || true
-contains_name "$dev_names" RESEND_API_KEY && dev_email=true || true
+contains_name "$dev_names" RESEND_API_KEY && dev_resend=true || true
 contains_name "$prod_names" ALIPAY_PRIVATE_KEY && prod_alipay=true || true
-contains_name "$prod_names" RESEND_API_KEY && prod_email=true || true
-printf 'Legacy capability names: development(Alipay=%s,email=%s) production(Alipay=%s,email=%s)\n' "$dev_alipay" "$dev_email" "$prod_alipay" "$prod_email"
+contains_name "$prod_names" RESEND_API_KEY && prod_resend=true || true
+sending_dns_ready=false
+email_sending_dns_ready && sending_dns_ready=true || true
+dev_email=false; prod_email=false
+[[ "$dev_resend" == true || ("$dev_binding" == true && "$sending_dns_ready" == true) ]] && dev_email=true || true
+[[ "$prod_resend" == true || ("$prod_binding" == true && "$sending_dns_ready" == true) ]] && prod_email=true || true
+printf 'Legacy capabilities: development(Alipay=%s,email-binding=%s,Resend=%s) production(Alipay=%s,email-binding=%s,Resend=%s) sending-dns=%s\n' "$dev_alipay" "$dev_binding" "$dev_resend" "$prod_alipay" "$prod_binding" "$prod_resend" "$sending_dns_ready"
 
 if [[ "$dev_alipay" == true ]]; then alipay_env=development
 elif [[ "$prod_alipay" == true ]]; then alipay_env=production
@@ -75,6 +88,14 @@ for environment in "${selected_envs[@]}"; do
     printf '%s' "$bridge_secret" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_SECRET --env "$environment" >/dev/null
     printf '%s' "$PLATFORM_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_PROVIDER_BRIDGE_RETURN_BASE --env "$environment" >/dev/null
   )
+done
+for environment in development production; do
+  binding="$(has_email_binding "$environment")"
+  names="$dev_names"; ready="$dev_email"
+  [[ "$environment" == production ]] && { names="$prod_names"; ready="$prod_email"; }
+  if [[ "$binding" == true ]] || contains_name "$names" RESEND_API_KEY; then
+    (cd "$LEGACY_DIR" && printf '%s' "$ready" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put AUTH_REGISTRATION_EMAIL_READY --env "$environment" >/dev/null)
+  fi
 done
 (
   cd "$PLATFORM_DIR"
