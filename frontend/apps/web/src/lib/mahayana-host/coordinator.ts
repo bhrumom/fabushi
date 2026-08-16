@@ -143,19 +143,40 @@ export class MahayanaCoordinator {
     prompt?: string | null;
   }): Promise<WidgetResponseRecord> {
     const record = this.widgets.respond(input);
-    const prompt = input.prompt?.trim();
-    if (record.agentId && prompt) {
-      await this.sendPrompt({
-        text: prompt,
+    if (record.agentId) {
+      await this.execute({
+        type: "widget.respond",
+        requestId: this.requestId("widget-respond"),
+        widgetId: record.widgetId,
         agentId: record.agentId,
-        conversationId: record.conversationId ?? undefined,
+        ...(record.conversationId ? { conversationId: record.conversationId } : {}),
+        ...(record.actionId ? { actionId: record.actionId } : {}),
+        ...(record.value !== null ? { value: record.value } : {}),
       });
+    } else if (input.prompt?.trim()) {
+      throw new Error("Widget prompt routing requires an agent ID");
     }
     return record;
   }
 
-  dismissWidget(input: { widgetId: string; reason?: string | null }): WidgetDismissalRecord {
-    return this.widgets.dismiss(input);
+  async dismissWidget(input: {
+    widgetId: string;
+    agentId?: string | null;
+    conversationId?: string | null;
+    reason?: string | null;
+  }): Promise<WidgetDismissalRecord> {
+    const record = this.widgets.dismiss(input);
+    if (record.agentId) {
+      await this.execute({
+        type: "widget.dismiss",
+        requestId: this.requestId("widget-dismiss"),
+        widgetId: record.widgetId,
+        agentId: record.agentId,
+        ...(record.conversationId ? { conversationId: record.conversationId } : {}),
+        ...(record.reason ? { reason: record.reason } : {}),
+      });
+    }
+    return record;
   }
 
   kickstartAgent(agentId: string, prompt = "Continue from your current task and report meaningful progress."): Promise<CommandAccepted> {
