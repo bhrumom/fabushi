@@ -515,11 +515,6 @@ export default function HostClient() {
   }, []);
 
   useEffect(() => {
-    if (!networkOpen || networkView !== "workspace") return;
-    void refreshWorkspaceState();
-  }, [networkOpen, networkView, activeAgentId]);
-
-  useEffect(() => {
     if (!networkOpen) return;
     let cancelled = false;
     const applyState = (state: SharingState) => {
@@ -577,6 +572,12 @@ export default function HostClient() {
   const [ruleDraft, setRuleDraft] = useState("");
   const [ruleBehavior, setRuleBehavior] = useState<"allow" | "ask">("allow");
   const [activeAgentId, setActiveAgentId] = useState("mahayana-assistant");
+
+  useEffect(() => {
+    if (!networkOpen || networkView !== "workspace") return;
+    void refreshWorkspaceState();
+  }, [networkOpen, networkView, activeAgentId]);
+
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilitySummary[]>([]);
@@ -716,7 +717,7 @@ export default function HostClient() {
     const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
     if (!runId || ["finished", "error", "expired"].includes(cloudAgentInfo?.status ?? "unknown")) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
     const schedule = (delayMs: number) => {
       if (!cancelled) timer = setTimeout(() => void refresh(), delayMs);
     };

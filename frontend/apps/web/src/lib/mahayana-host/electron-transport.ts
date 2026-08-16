@@ -3,6 +3,8 @@ import type {
   AuthProvider,
   AuthProviderId,
   AuthState,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
   CommandAccepted,
   HostConfig,
   HostInfo,

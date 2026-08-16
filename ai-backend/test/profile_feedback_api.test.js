@@ -91,7 +91,11 @@ async function requestJson(baseUrl, route, { method = 'GET', headers, body } = {
 
 test('profile and feedback APIs are user scoped and validate avatar payloads', async () => {
   await withBackend(async ({ baseUrl, sqlitePath }) => {
-    const avatar = `data:image/png;base64,${Buffer.from('fake-png-bytes').toString('base64')}`;
+    const avatarBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('fabushi-test-avatar'),
+    ]);
+    const avatar = `data:image/png;base64,${avatarBytes.toString('base64')}`;
     let result = await requestJson(baseUrl, '/api/account/profile', {
       method: 'PATCH',
       headers: ownerHeaders(),
