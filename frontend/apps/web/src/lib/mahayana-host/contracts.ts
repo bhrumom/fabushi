@@ -745,6 +745,21 @@ export type RuntimeCommand =
       secretRequestId: string;
       value: string;
     })
+  | (CommandBase & {
+      type: "widget.respond";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      actionId?: string;
+      value?: unknown;
+    })
+  | (CommandBase & {
+      type: "widget.dismiss";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      reason?: string;
+    })
   | (CommandBase & { type: "listener.list" })
   | (CommandBase & { type: "listener.connect"; platform: ListenerPlatform })
   | (CommandBase & { type: "listener.disconnect"; platform: ListenerPlatform })

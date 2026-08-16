@@ -246,6 +246,11 @@ jobs:
             /.github/scripts/assert-electron-feature-host-bridge.sh
             /.github/scripts/assert-feature-command-router-coverage.py
             /.github/scripts/assert-fabushi-desktop-architecture.py
+            /.github/scripts/assert-native-capability-semantics.py
+            /.github/scripts/assert-auth-entry-flow.py
+            /.github/scripts/build-offline-asr-engine.mjs
+            /desktop/electron/offline-asr-engine.json
+            /desktop/electron/offline-asr.cjs
             /.github/scripts/assert-native-desktop-edge-parity.py
             /desktop/electron/**
             /desktop/src/edge/**
