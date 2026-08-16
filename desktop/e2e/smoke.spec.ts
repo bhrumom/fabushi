@@ -37,7 +37,7 @@ async function launchDesktopApp(appDataDir: string) {
 
 async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId('onboarding-gate').isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: '下一步' }).click();
+    await page.getByTestId('onboarding-next').click();
   }
   await expect(page.getByTestId('login-gate')).toBeVisible();
   await page.getByTestId('browser-login-start').click();
@@ -57,7 +57,7 @@ async function runJourneyStep(page: Page, step: MahayanaHostJourneyStep): Promis
       await completeBrowserLogin(page);
       return;
     case 'expectReady':
-      await expect(page.getByTestId('host-status')).toHaveText('ready');
+      await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
       return;
     case 'sendChat':
       await page.getByTestId('chat-input').fill(step.text);
@@ -190,7 +190,7 @@ test('desktop package drives every declared Host journey through Electron IPC an
       );
     });
 
-    await expect(page.getByTestId('host-status')).toHaveText('ready');
+    await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
     await expect(page.getByTestId('messages')).toBeVisible();
   } finally {
     await app.close();
