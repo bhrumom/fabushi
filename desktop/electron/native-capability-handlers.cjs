@@ -1,5 +1,7 @@
 'use strict';
 
+const { inspectOfflineAsr, downloadOfflineAsrModel, transcribeOfflineAudio } = require('./offline-asr.cjs');
+
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -592,13 +594,83 @@ function createNativeCapabilityHandlers(deps) {
       return [...new Set([...remote, ...configured, ...defaults])];
     },
 
+    async getOfflineAsrStatus() {
+      const state = await readNativeState();
+      const config = state.offlineAsrModel ?? {};
+      return inspectOfflineAsr({ app, resourcesPath: process.resourcesPath, config });
+    },
+
+    async configureOfflineAsrModel(params) {
+      const modelUrl = cleanString(params.modelUrl, 4096);
+      const sha256 = cleanString(params.sha256, 128).toLowerCase();
+      if (modelUrl && new URL(modelUrl).protocol !== 'https:') {
+        throw new Error('Offline ASR model URL must use HTTPS.');
+      }
+      if (modelUrl && !/^[0-9a-f]{64}$/.test(sha256)) {
+        throw new Error('Offline ASR model downloads require a verified SHA-256 digest.');
+      }
+      if (sha256 && !/^[0-9a-f]{64}$/.test(sha256)) {
+        throw new Error('Offline ASR model SHA-256 must be a 64-character hexadecimal digest.');
+      }
+      const config = {
+        ...(modelUrl ? { modelUrl } : {}),
+        ...(sha256 ? { sha256 } : {}),
+        updatedAtMs: Date.now(),
+      };
+      await mutateNativeState((state) => ({ ...state, offlineAsrModel: config }));
+      return inspectOfflineAsr({ app, resourcesPath: process.resourcesPath, config });
+    },
+
+    async downloadOfflineAsrModel(params) {
+      const state = await readNativeState();
+      const config = {
+        ...(state.offlineAsrModel ?? {}),
+        ...(params.modelUrl ? { modelUrl: cleanString(params.modelUrl, 4096) } : {}),
+        ...(params.sha256 ? { sha256: cleanString(params.sha256, 128).toLowerCase() } : {}),
+      };
+      const status = await downloadOfflineAsrModel({
+        app,
+        net,
+        resourcesPath: process.resourcesPath,
+        config,
+        onProgress: (progress) => broadcastNativeEvent('offline-asr-progress', {
+          phase: 'model-download',
+          ...progress,
+        }),
+      });
+      await mutateNativeState((current) => ({ ...current, offlineAsrModel: config }));
+      broadcastNativeEvent('offline-asr-progress', { phase: 'ready', progress: 1, status });
+      return status;
+    },
+
     async transcribeAudio(params) {
-      const tools = await host.request('runtime.tools', {}).catch(() => []);
-      const tool = (Array.isArray(tools) ? tools : []).find((item) => /transcrib|speech.*text|audio.*text/i.test(String(item?.name ?? item)));
-      if (!tool) return { available: false, reason: 'No local transcription runtime tool is installed.' };
-      const name = typeof tool === 'string' ? tool : tool.name;
-      const result = await host.request('runtime.callTool', { name, arguments: params });
-      return { available: true, tool: name, result };
+      const inventory = await host.request('runtime.tools', {}).catch(() => null);
+      const tools = Array.isArray(inventory?.tools) ? inventory.tools : Array.isArray(inventory) ? inventory : [];
+      const transcriber = tools.find((tool) => /transcrib|speech.?to.?text|audio.?to.?text/i.test(String(tool?.name ?? tool?.id ?? '')));
+      if (transcriber) {
+        const toolName = cleanString(transcriber.name ?? transcriber.id, 240);
+        if (toolName) {
+          try {
+            return await host.request('runtime.call', { tool: toolName, input: params });
+          } catch (error) {
+            console.warn('[native-edge] runtime transcriber failed; trying offline ASR', error);
+          }
+        }
+      }
+      const state = await readNativeState();
+      broadcastNativeEvent('offline-asr-progress', { phase: 'transcribing', progress: 0 });
+      const result = await transcribeOfflineAudio({
+        app,
+        resourcesPath: process.resourcesPath,
+        config: state.offlineAsrModel ?? {},
+        params,
+      });
+      broadcastNativeEvent('offline-asr-progress', {
+        phase: result.available ? 'complete' : 'unavailable',
+        progress: result.available ? 1 : 0,
+        result,
+      });
+      return result;
     },
 
     async getAccountAuthStatus() {

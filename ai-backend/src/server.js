@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import https from 'node:https';
+import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -160,6 +163,25 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_agent_runs_status_started
     ON agent_runs (status, started_at DESC);
+
+  CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id TEXT PRIMARY KEY,
+    display_name TEXT,
+    avatar_data_url TEXT,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS product_feedback (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    message TEXT NOT NULL,
+    context_json TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_product_feedback_user_created
+    ON product_feedback (user_id, created_at DESC);
 
   CREATE TABLE IF NOT EXISTS collaboration_rooms (
     id TEXT PRIMARY KEY,
@@ -340,6 +362,23 @@ const statements = {
       error_code = @errorCode,
       error_message = @errorMessage
     WHERE id = @id AND user_id = @userId
+  `),
+  getUserProfile: db.prepare(`
+    SELECT user_id AS userId, display_name AS displayName, avatar_data_url AS avatarDataUrl,
+      updated_at AS updatedAt
+    FROM user_profiles WHERE user_id = ? LIMIT 1
+  `),
+  upsertUserProfile: db.prepare(`
+    INSERT INTO user_profiles (user_id, display_name, avatar_data_url, updated_at)
+    VALUES (@userId, @displayName, @avatarDataUrl, @updatedAt)
+    ON CONFLICT(user_id)
+    DO UPDATE SET display_name = excluded.display_name,
+      avatar_data_url = excluded.avatar_data_url,
+      updated_at = excluded.updated_at
+  `),
+  insertProductFeedback: db.prepare(`
+    INSERT INTO product_feedback (id, user_id, category, message, context_json, created_at)
+    VALUES (@id, @userId, @category, @message, @contextJson, @createdAt)
   `),
   insertCollaborationRoom: db.prepare(`
     INSERT INTO collaboration_rooms (id, owner_user_id, name, owner_agent_id, created_at, updated_at)
@@ -579,6 +618,195 @@ function sha256(value) {
 function safeUserText(value, fallback = '') {
   if (typeof value !== 'string') return fallback;
   return value.replace(/\u0000/g, '').trim();
+}
+
+const EGRESS_MAX_REQUEST_BYTES = 5 * 1024 * 1024;
+const EGRESS_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+const EGRESS_TIMEOUT_MS = 30_000;
+const EGRESS_MAX_REDIRECTS = 5;
+const EGRESS_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const EGRESS_REQUEST_HEADERS = new Set(['accept', 'accept-language', 'content-type', 'if-none-match', 'if-modified-since', 'user-agent']);
+const EGRESS_RESPONSE_HEADERS = new Set(['content-type', 'content-length', 'etag', 'last-modified', 'cache-control', 'location']);
+
+function ipv4Number(address) {
+  const parts = address.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0;
+}
+
+function ipv4InCidr(address, network, bits) {
+  const value = ipv4Number(address);
+  const base = ipv4Number(network);
+  if (value === null || base === null) return false;
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (value & mask) === (base & mask);
+}
+
+function isPrivateOrReservedAddress(address) {
+  const family = net.isIP(address);
+  if (family === 4) {
+    return [
+      ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+      ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
+      ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
+      ['224.0.0.0', 4], ['240.0.0.0', 4],
+    ].some(([network, bits]) => ipv4InCidr(address, network, bits));
+  }
+  if (family === 6) {
+    const normalized = address.toLowerCase();
+    if (normalized === '::' || normalized === '::1') return true;
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+    if (/^fe[89ab]/.test(normalized)) return true;
+    if (normalized.startsWith('ff')) return true;
+    if (normalized.startsWith('2001:db8:') || normalized === '2001:db8::') return true;
+    if (normalized.startsWith('::ffff:')) {
+      return isPrivateOrReservedAddress(normalized.slice('::ffff:'.length));
+    }
+  }
+  return family === 0;
+}
+
+async function resolvePublicEgressAddress(hostname) {
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  const publicAddresses = addresses.filter((entry) => !isPrivateOrReservedAddress(entry.address));
+  if (!addresses.length || publicAddresses.length !== addresses.length) {
+    throw Object.assign(new Error('egress target resolves to a private or reserved network'), { statusCode: 400 });
+  }
+  return publicAddresses[0];
+}
+
+function normalizeEgressUrl(value) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    throw Object.assign(new Error('invalid egress URL'), { statusCode: 400 });
+  }
+  if (url.protocol !== 'https:') {
+    throw Object.assign(new Error('egress relay only supports HTTPS URLs'), { statusCode: 400 });
+  }
+  if (url.username || url.password) {
+    throw Object.assign(new Error('egress URLs must not contain credentials'), { statusCode: 400 });
+  }
+  if (url.port && url.port !== '443') {
+    throw Object.assign(new Error('egress relay only supports HTTPS port 443'), { statusCode: 400 });
+  }
+  return url;
+}
+
+function normalizeEgressHeaders(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const headers = {};
+  for (const [rawName, rawValue] of Object.entries(value)) {
+    const name = String(rawName).toLowerCase();
+    if (!EGRESS_REQUEST_HEADERS.has(name)) continue;
+    const content = String(rawValue ?? '').replace(/[\r\n]/g, ' ').trim().slice(0, 4096);
+    if (content) headers[name] = content;
+  }
+  return headers;
+}
+
+async function performManagedEgress({ url, method, headers, body, redirects = 0 }) {
+  if (redirects > EGRESS_MAX_REDIRECTS) {
+    throw Object.assign(new Error('egress redirect limit exceeded'), { statusCode: 502 });
+  }
+  const target = normalizeEgressUrl(url);
+  const resolved = await resolvePublicEgressAddress(target.hostname);
+  const requestBody = body == null ? null : Buffer.from(String(body), 'base64');
+  if (requestBody && requestBody.length > EGRESS_MAX_REQUEST_BYTES) {
+    throw Object.assign(new Error('egress request body exceeds 5 MiB'), { statusCode: 413 });
+  }
+  const safeMethod = String(method || 'GET').toUpperCase();
+  if (!EGRESS_METHODS.has(safeMethod)) {
+    throw Object.assign(new Error('egress HTTP method is not allowed'), { statusCode: 400 });
+  }
+  const safeHeaders = normalizeEgressHeaders(headers);
+  if (requestBody) safeHeaders['content-length'] = String(requestBody.length);
+  const agent = new https.Agent({
+    keepAlive: false,
+    lookup(_hostname, _options, callback) {
+      callback(null, resolved.address, resolved.family);
+    },
+  });
+  const response = await new Promise((resolve, reject) => {
+    const request = https.request(target, {
+      method: safeMethod,
+      headers: safeHeaders,
+      agent,
+      timeout: EGRESS_TIMEOUT_MS,
+    }, (upstream) => {
+      const chunks = [];
+      let total = 0;
+      upstream.on('data', (chunk) => {
+        total += chunk.length;
+        if (total > EGRESS_MAX_RESPONSE_BYTES) {
+          upstream.destroy(new Error('egress response exceeds 10 MiB'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      upstream.once('error', reject);
+      upstream.once('end', () => resolve({
+        status: upstream.statusCode || 502,
+        headers: upstream.headers,
+        body: Buffer.concat(chunks),
+      }));
+    });
+    request.once('timeout', () => request.destroy(new Error('egress request timed out')));
+    request.once('error', reject);
+    if (requestBody) request.write(requestBody);
+    request.end();
+  }).finally(() => agent.destroy());
+  if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.location) {
+    const nextUrl = new URL(String(response.headers.location), target).toString();
+    const nextMethod = response.status === 303 ? 'GET' : safeMethod;
+    return performManagedEgress({
+      url: nextUrl,
+      method: nextMethod,
+      headers: safeHeaders,
+      body: nextMethod === 'GET' || nextMethod === 'HEAD' ? null : body,
+      redirects: redirects + 1,
+    });
+  }
+  const responseHeaders = {};
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (!EGRESS_RESPONSE_HEADERS.has(name.toLowerCase()) || value == null) continue;
+    responseHeaders[name.toLowerCase()] = Array.isArray(value) ? value.join(', ') : String(value);
+  }
+  return {
+    status: response.status,
+    headers: responseHeaders,
+    bodyBase64: response.body.toString('base64'),
+    bytes: response.body.length,
+    finalUrl: target.toString(),
+  };
+}
+
+function normalizeProfileAvatar(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const avatar = String(value);
+  const match = avatar.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw Object.assign(new Error('avatar must be PNG, JPEG or WebP data URL'), { statusCode: 400 });
+  const bytes = Buffer.from(match[2], 'base64');
+  if (bytes.length === 0 || bytes.length > 2 * 1024 * 1024) {
+    throw Object.assign(new Error('avatar must be between 1 byte and 2 MiB'), { statusCode: 400 });
+  }
+  const kind = match[1];
+  const validMagic = kind === 'png'
+    ? bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    : kind === 'jpeg'
+      ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+  if (!validMagic) {
+    throw Object.assign(new Error('avatar image signature does not match its declared type'), { statusCode: 400 });
+  }
+  return `data:image/${kind};base64,${bytes.toString('base64')}`;
+}
+
+function boundedFeedbackContext(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const json = JSON.stringify(value);
+  return json.length <= 20_000 ? json : JSON.stringify({ truncated: true });
 }
 
 function collaborationInviteHash(token) {
@@ -3108,6 +3336,117 @@ app.post(
     } finally {
       activeAgentRuns.delete(runId);
     }
+  }),
+);
+
+app.get(
+  '/api/egress/status',
+  asyncHandler(async (req, res) => {
+    await resolveUser(req, {});
+    return jsonResponse(res, 200, {
+      success: true,
+      egress: {
+        available: true,
+        enabled: true,
+        provider: 'fabushi-platform-https-relay',
+        transport: 'https-relay',
+        agentEnabled: false,
+        maxRequestBytes: EGRESS_MAX_REQUEST_BYTES,
+        maxResponseBytes: EGRESS_MAX_RESPONSE_BYTES,
+      },
+    });
+  }),
+);
+
+app.post(
+  '/api/egress/fetch',
+  asyncHandler(async (req, res) => {
+    await resolveUser(req, req.body || {});
+    try {
+      const result = await performManagedEgress({
+        url: req.body?.url,
+        method: req.body?.method,
+        headers: req.body?.headers,
+        body: req.body?.bodyBase64 ?? null,
+      });
+      return jsonResponse(res, 200, { success: true, response: result });
+    } catch (error) {
+      return jsonResponse(res, error.statusCode || 502, {
+        success: false,
+        message: safeUserText(error.message, 'egress request failed').slice(0, 1000),
+      });
+    }
+  }),
+);
+
+app.get(
+  '/api/account/profile',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, {});
+    const profile = statements.getUserProfile.get(user.userId) || null;
+    return jsonResponse(res, 200, {
+      success: true,
+      profile: profile || {
+        userId: user.userId,
+        displayName: null,
+        avatarDataUrl: null,
+        updatedAt: null,
+      },
+    });
+  }),
+);
+
+app.patch(
+  '/api/account/profile',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, req.body || {});
+    const previous = statements.getUserProfile.get(user.userId) || {};
+    const displayName = req.body?.displayName === undefined
+      ? previous.displayName || null
+      : safeUserText(req.body.displayName).replace(/\s+/g, ' ').trim().slice(0, 96) || null;
+    let avatarDataUrl = previous.avatarDataUrl || null;
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'avatarDataUrl')) {
+      try {
+        avatarDataUrl = normalizeProfileAvatar(req.body.avatarDataUrl);
+      } catch (error) {
+        return jsonResponse(res, error.statusCode || 400, { success: false, message: error.message });
+      }
+    }
+    const updatedAt = nowIso();
+    statements.upsertUserProfile.run({
+      userId: user.userId,
+      displayName,
+      avatarDataUrl,
+      updatedAt,
+    });
+    return jsonResponse(res, 200, {
+      success: true,
+      profile: statements.getUserProfile.get(user.userId),
+    });
+  }),
+);
+
+app.post(
+  '/api/feedback',
+  asyncHandler(async (req, res) => {
+    const user = await resolveUser(req, req.body || {});
+    const category = safeUserText(req.body?.category, 'product').replace(/\s+/g, ' ').trim().slice(0, 48) || 'product';
+    const message = safeUserText(req.body?.message).trim().slice(0, 12_000);
+    if (!message) return jsonResponse(res, 400, { success: false, message: 'feedback message is required' });
+    const feedbackId = `feedback-${crypto.randomUUID()}`;
+    const createdAt = nowIso();
+    statements.insertProductFeedback.run({
+      id: feedbackId,
+      userId: user.userId,
+      category,
+      message,
+      contextJson: boundedFeedbackContext(req.body?.context),
+      createdAt,
+    });
+    return jsonResponse(res, 201, {
+      success: true,
+      feedback: { id: feedbackId, category, createdAt },
+    });
   }),
 );
 

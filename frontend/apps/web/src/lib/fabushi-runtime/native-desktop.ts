@@ -15,6 +15,8 @@ export type NativeDesktopEvent =
   | "window-state"
   | "zoom-factor-changed"
   | "update-computer-dispatched"
+  | "offline-asr-progress"
+  | "open-offline-asr"
   | "remote-desktop-user-presence"
   | "dev-compute-pull-progress"
   | "egress-tunnel-changed"
@@ -95,6 +97,28 @@ export function syncNativeTheme(preference: "system" | "light" | "dark"): void {
   const bridge = nativeDesktopBridge();
   if (!bridge) return;
   void bridge.invoke("setThemePreference", { preference }).catch(() => undefined);
+}
+
+export interface NativeOfflineAsrStatus {
+  readonly available: boolean;
+  readonly engine: string;
+  readonly binaryPath: string | null;
+  readonly modelPath: string | null;
+  readonly modelUrlConfigured: boolean;
+  readonly modelUrl?: string | null;
+  readonly expectedSha256?: string | null;
+  readonly expectedSizeBytes?: number | null;
+  readonly modelSha256: string | null;
+  readonly modelVerified: boolean;
+  readonly missing: readonly string[];
+}
+
+export interface NativeOfflineAsrProgress {
+  readonly phase: "model-download" | "ready" | "transcribing" | "complete" | "unavailable";
+  readonly downloadedBytes?: number;
+  readonly totalBytes?: number | null;
+  readonly progress?: number;
+  readonly status?: NativeOfflineAsrStatus;
 }
 
 export interface NativeDiskAuditEntry {
