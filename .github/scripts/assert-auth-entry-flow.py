@@ -12,13 +12,18 @@ mahayana_host = Path('third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs'
 worker_config = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/wrangler.toml').read_text(encoding='utf-8')
 account_status_migration = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0003_oauth_attempt_failed_status.sql').read_text(encoding='utf-8')
 staging_auth_repair = Path('.github/workflows/mahayana-staging-auth-repair.yml').read_text(encoding='utf-8')
+identity_auth = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/identity_auth.rs').read_text(encoding='utf-8')
+registration_schema = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0004_email_registration_challenges.sql').read_text(encoding='utf-8')
+legacy_bridge = Path('fabushi/web/src/handlers/auth-provider-bridge.js').read_text(encoding='utf-8')
+legacy_alipay = Path('fabushi/web/alipay-login-functions.js').read_text(encoding='utf-8')
+bridge_deploy = Path('.github/scripts/deploy-auth-provider-bridge.sh').read_text(encoding='utf-8')
 
 required = {
     'worker browser start route': (worker, '/api/auth/browser/start'),
     'worker browser portal route': (worker, '/api/auth/browser/portal'),
     'worker browser password route': (worker, '/api/auth/browser/password'),
     'worker one-time attempt poll': (worker, '/api/auth/browser/attempts/:attempt_id'),
-    'worker PKCE challenge': (worker, 'code_challenge_method'),
+    'provider PKCE challenge': (identity_auth, 'code_challenge_method'),
     'worker safe return scheme': (worker, 'fabushi://auth/complete?attemptId='),
     'product browser start': (product, 'mahayana.auth.browser.start'),
     'product browser poll': (product, 'mahayana.auth.browser.poll'),
@@ -54,6 +59,27 @@ required = {
     'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
     'staging auth repair applies account auth migrations': (staging_auth_repair, 'd1 migrations apply ACCOUNT_DB --remote'),
     'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login broker lifecycle'),
+    'browser registration code route': (worker, '/api/auth/browser/register/code'),
+    'browser registration submit route': (worker, '/api/auth/browser/register'),
+    'browser login/register UI tabs': (worker, 'aria-label=\"账号模式\"'),
+    'provider registry includes Apple': (identity_auth, '"apple"'),
+    'provider registry includes Alipay': (identity_auth, '"alipay"'),
+    'provider registry includes Cloudflare': (identity_auth, '"cloudflare"'),
+    'Apple uses form post': (identity_auth, 'response_mode'),
+    'Apple requests id token': (identity_auth, 'code id_token'),
+    'Apple validates JWKS': (identity_auth, 'DecodingKey::from_jwk'),
+    'Apple validates issuer': (identity_auth, 'validation.set_issuer'),
+    'Apple validates audience': (identity_auth, 'validation.set_audience'),
+    'Apple validates nonce': (identity_auth, 'Apple identity nonce mismatch'),
+    'GitHub verified email lookup': (identity_auth, 'https://api.github.com/user/emails'),
+    'Cloudflare identity-only scope': (identity_auth, 'user-details.read'),
+    'registration stores only code hash': (registration_schema, 'code_hash TEXT NOT NULL'),
+    'registration failed-attempt limiter': (registration_schema, 'failed_attempts INTEGER NOT NULL'),
+    'Alipay bridge requires server proof': (legacy_bridge, 'X-Fabushi-Auth-Bridge'),
+    'Alipay bridge rejects mock identity': (legacy_bridge, 'identity.isMock'),
+    'legacy Alipay callback returns browser state to Rust': (legacy_alipay, 'AUTH_PROVIDER_BRIDGE_RETURN_BASE'),
+    'bridge deploy only lists secret names': (bridge_deploy, 'secret list --env'),
+    'bridge deploy masks generated proof': (bridge_deploy, '::add-mask::'),
 }
 for label, (text, marker) in required.items():
     if marker not in text:
@@ -102,3 +128,9 @@ for path, text in rust_bridges:
             raise SystemExit(f'auth entry gate: Tauri/native browser auth bridge missing {command}: {path}')
 if rust_bridges:
     print(f'Tauri/native browser auth bridge coverage: {len(rust_bridges)} source(s).')
+
+for forbidden in ['dangerous_insecure_decode', 'decode_payload', 'identityToken.split']:
+    if forbidden in identity_auth:
+        raise SystemExit(f'auth entry gate: insecure Apple token handling returned: {forbidden}')
+if 'code TEXT NOT NULL' in registration_schema:
+    raise SystemExit('auth entry gate: registration verification code must never be persisted in plaintext')

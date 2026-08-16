@@ -4,6 +4,15 @@ use crate::auth::new_password_salt;
 use crate::auth::new_refresh_token;
 use crate::auth::verify_argon2id;
 use crate::auth::verify_pbkdf2_sha256;
+use crate::identity_auth::IdentityProviderConfig as OAuthProviderConfig;
+use crate::identity_auth::PROVIDER_ORDER;
+use crate::identity_auth::ProviderIdentityProfile as OAuthIdentityProfile;
+use crate::identity_auth::build_authorization_url;
+use crate::identity_auth::complete_provider;
+use crate::identity_auth::configured_provider;
+use crate::identity_auth::provider_available;
+use crate::identity_auth::registration_email_available;
+use crate::identity_auth::send_registration_code;
 use base64::Engine;
 use jsonwebtoken::Algorithm;
 use jsonwebtoken::DecodingKey;
@@ -41,10 +50,8 @@ use worker::Delay;
 use worker::Env;
 use worker::Fetch;
 use worker::FormEntry;
-use worker::Headers;
 use worker::Method;
 use worker::Request;
-use worker::RequestInit;
 use worker::Response;
 use worker::Result;
 use worker::RouteContext;
@@ -302,28 +309,6 @@ struct OAuthAttemptRow {
     delivered_at: Option<i64>,
 }
 
-struct OAuthProviderConfig {
-    id: &'static str,
-    display_name: &'static str,
-    issuer: &'static str,
-    authorization_endpoint: &'static str,
-    token_endpoint: &'static str,
-    userinfo_endpoint: &'static str,
-    scopes: &'static str,
-    client_id: String,
-    client_secret: String,
-}
-
-#[derive(Debug)]
-struct OAuthIdentityProfile {
-    issuer: String,
-    subject: String,
-    email: Option<String>,
-    email_verified: bool,
-    display_name: Option<String>,
-    avatar_url: Option<String>,
-}
-
 #[derive(Debug, Deserialize)]
 struct OAuthIdentityRow {
     user_id: String,
@@ -332,6 +317,16 @@ struct OAuthIdentityRow {
 #[derive(Debug, Deserialize)]
 struct MaxUserIdRow {
     max_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegistrationChallengeRow {
+    attempt_id: String,
+    code_hash: String,
+    sent_at: i64,
+    expires_at: i64,
+    failed_attempts: i64,
+    consumed_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -553,6 +548,8 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .get_async("/api/auth/browser/portal", browser_login_portal)
         .get_async("/api/auth/browser/authorize", browser_login_authorize)
         .post_async("/api/auth/browser/password", browser_login_password)
+        .post_async("/api/auth/browser/register/code", browser_registration_code)
+        .post_async("/api/auth/browser/register", browser_registration_complete)
         .get_async("/api/auth/browser/attempts/:attempt_id", browser_login_poll)
         .post_async(
             "/api/auth/browser/attempts/:attempt_id/cancel",
@@ -565,6 +562,7 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .get_async("/api/auth/oauth/providers", oauth_providers)
         .post_async("/api/auth/oauth/start", oauth_start)
         .get_async("/api/auth/oauth/callback", oauth_callback)
+        .post_async("/api/auth/oauth/callback", oauth_callback)
         .get_async("/api/auth/oauth/attempts/:attempt_id", oauth_poll)
         .post_async("/api/auth/refresh", refresh_access_token)
         .get_async("/api/auth/user-info", account_user_info)
@@ -2085,7 +2083,7 @@ fn browser_html_response(html: String) -> Result<Response> {
     headers.set("X-Content-Type-Options", "nosniff")?;
     headers.set(
         "Content-Security-Policy",
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     )?;
     Ok(response)
 }
@@ -2119,56 +2117,158 @@ async fn browser_attempt_for_ticket(
     Ok(Some(row))
 }
 
-fn browser_provider_buttons(env: &Env, attempt_id: &str, ticket: &str) -> Result<String> {
+async fn browser_provider_buttons(
+    env: &Env,
+    attempt_id: &str,
+    ticket: &str,
+    mode: &str,
+) -> Result<String> {
     let mut output = String::new();
-    for provider_id in ["google", "microsoft", "github"] {
+    for provider_id in PROVIDER_ORDER {
         let Some(provider) = oauth_provider(env, provider_id) else {
             continue;
         };
+        if !provider_available(env, provider_id).await {
+            continue;
+        }
         let url = browser_authorize_url(env, attempt_id, ticket, provider.id)?;
         let glyph = match provider.id {
+            "apple" => "A",
+            "alipay" => "支",
             "google" => "G",
-            "microsoft" => "⊞",
-            "github" => "⌘",
+            "microsoft" => "M",
+            "github" => "GH",
+            "cloudflare" => "CF",
             _ => "•",
         };
+        let verb = if mode == "register" {
+            "注册"
+        } else {
+            "继续"
+        };
         output.push_str(&format!(
-            r#"<a class="provider" href="{}"><span class="provider-icon" data-provider="{}">{}</span><span>使用 {} 继续</span><b>↗</b></a>"#,
+            r#"<a class="provider" href="{}" data-provider="{}"><span class="provider-icon">{}</span><span>使用 {} {}</span><span class="arrow">›</span></a>"#,
             html_escape(url.as_str()),
             html_escape(provider.id),
             glyph,
             html_escape(provider.display_name),
+            verb,
         ));
     }
     Ok(output)
 }
 
-fn browser_portal_page(
+async fn browser_portal_page(
     env: &Env,
     attempt_id: &str,
     ticket: &str,
+    mode: &str,
     message: Option<&str>,
 ) -> Result<Response> {
-    let providers = browser_provider_buttons(env, attempt_id, ticket)?;
+    let mode = if mode == "register" {
+        "register"
+    } else {
+        "login"
+    };
+    let providers = browser_provider_buttons(env, attempt_id, ticket, mode).await?;
+    let registration_enabled = registration_email_available(env).await;
     let message = message
         .filter(|message| !message.trim().is_empty())
         .map(|message| {
             format!(
-                r#"<p class="form-error" role="alert">{}</p>"#,
+                r#"<p class="form-message error" role="alert">{}</p>"#,
                 html_escape(message)
             )
         })
         .unwrap_or_default();
+    let login_href = format!(
+        "/api/auth/browser/portal?attemptId={}&ticket={}&mode=login",
+        html_escape(attempt_id),
+        html_escape(ticket),
+    );
+    let register_href = format!(
+        "/api/auth/browser/portal?attemptId={}&ticket={}&mode=register",
+        html_escape(attempt_id),
+        html_escape(ticket),
+    );
+    let account_form = if mode == "register" {
+        if registration_enabled {
+            format!(
+                r#"<form id="register-form" method="post" action="/api/auth/browser/register" autocomplete="on">
+<input type="hidden" name="attemptId" value="{attempt_id}"><input type="hidden" name="ticket" value="{ticket}">{message}
+<label>用户名<input name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]+" placeholder="3–32 位字母、数字、_ 或 -"></label>
+<label>邮箱<div class="code-row"><input id="register-email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com"><button id="send-code" class="code-button" type="button">发送验证码</button></div></label>
+<p id="code-status" class="form-message" aria-live="polite"></p>
+<label>验证码<input name="verificationCode" inputmode="numeric" autocomplete="one-time-code" required minlength="6" maxlength="6" pattern="[0-9]{{6}}" placeholder="6 位验证码"></label>
+<label>密码<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="1024" placeholder="至少 8 位"></label>
+<label>确认密码<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="1024" placeholder="再次输入密码"></label>
+<button class="primary" type="submit">创建 Fabushi 账号</button></form>"#,
+                attempt_id = html_escape(attempt_id),
+                ticket = html_escape(ticket),
+                message = message,
+            )
+        } else {
+            format!(
+                r#"{message}<div class="disabled-note">邮箱注册当前未配置邮件服务。你仍可使用上方已启用的身份提供方创建账号。</div>"#,
+                message = message,
+            )
+        }
+    } else {
+        format!(
+            r#"<form method="post" action="/api/auth/browser/password" autocomplete="on"><input type="hidden" name="attemptId" value="{attempt_id}"><input type="hidden" name="ticket" value="{ticket}">{message}<label>账号、邮箱或手机号<input name="username" autocomplete="username" required maxlength="160" placeholder="you@example.com"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="输入密码"></label><button class="primary" type="submit">登录</button></form>"#,
+            attempt_id = html_escape(attempt_id),
+            ticket = html_escape(ticket),
+            message = message,
+        )
+    };
+    let heading = if mode == "register" {
+        "创建 Fabushi 账号"
+    } else {
+        "登录 Fabushi"
+    };
+    let sub = if mode == "register" {
+        "一个账号即可在桌面、移动端和浏览器之间保持同一身份。"
+    } else {
+        "使用 Fabushi 账号，或选择你已经在使用的身份提供方。"
+    };
+    let script = if mode == "register" && registration_enabled {
+        r#"<script>
+const button=document.getElementById('send-code');
+const status=document.getElementById('code-status');
+const form=document.getElementById('register-form');
+button?.addEventListener('click',async()=>{
+ const email=document.getElementById('register-email')?.value?.trim();
+ if(!email){status.textContent='请先填写邮箱';return;}
+ button.disabled=true;status.textContent='正在发送…';
+ const body=new URLSearchParams({attemptId:form.elements.attemptId.value,ticket:form.elements.ticket.value,email});
+ try{
+  const response=await fetch('/api/auth/browser/register/code',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded;charset=UTF-8'},body});
+  const result=await response.json();
+  if(!response.ok) throw new Error(result?.error?.message||result?.message||'验证码发送失败');
+  status.textContent='验证码已发送，请检查邮箱';
+  let seconds=60;button.textContent=`${seconds}s 后重发`;
+  const timer=setInterval(()=>{seconds-=1;if(seconds<=0){clearInterval(timer);button.disabled=false;button.textContent='重新发送';}else{button.textContent=`${seconds}s 后重发`; }},1000);
+ }catch(error){button.disabled=false;button.textContent='发送验证码';status.textContent=error.message||'验证码发送失败';}
+});
+form?.addEventListener('submit',(event)=>{if(form.elements.password.value!==form.elements.confirmPassword.value){event.preventDefault();status.textContent='两次输入的密码不一致';form.elements.confirmPassword.focus();}});
+</script>"#
+    } else {
+        ""
+    };
     let html = format!(
-        r#"<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 Fabushi</title>
+        r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{heading}</title>
 <style>
-*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#070707;color:#f7f7f5;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}body{{min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(circle at 50% 16%,rgba(126,102,255,.11),transparent 30%),radial-gradient(circle at 18% 82%,rgba(37,181,158,.06),transparent 27%),#070707}}.shell{{width:min(960px,100%);display:grid;grid-template-columns:minmax(280px,.9fr) minmax(340px,1.1fr);overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:32px;background:rgba(17,17,17,.9);box-shadow:0 42px 120px rgba(0,0,0,.58)}}.hero{{position:relative;min-height:650px;padding:48px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.005))}}.hero:before,.hero:after{{content:"";position:absolute;border-radius:999px;filter:blur(1px);pointer-events:none}}.hero:before{{width:280px;height:280px;right:-100px;top:-100px;background:rgba(123,96,255,.09)}}.hero:after{{width:160px;height:160px;left:-70px;bottom:70px;background:rgba(42,196,163,.05)}}.brand{{display:flex;align-items:center;gap:14px;font-size:13px;font-weight:760;letter-spacing:.16em}}.mark{{position:relative;width:62px;height:68px;display:grid;place-items:center;border-radius:52% 48% 56% 44% / 48% 56% 44% 52%;background:#f7f7f3;color:#0b0b0b;box-shadow:0 18px 55px rgba(255,255,255,.08);animation:breathe 4.8s cubic-bezier(.45,0,.55,1) infinite}}.mark:before,.mark:after{{content:"";width:7px;height:9px;position:absolute;top:29px;border-radius:999px;background:#0d0d0d;animation:blink 6.2s ease-in-out infinite}}.mark:before{{left:20px}}.mark:after{{right:20px;animation-delay:.05s}}.hero-copy{{position:relative;z-index:1}}.eyebrow{{margin:0 0 16px;color:#9285e9;font-size:11px;font-weight:800;letter-spacing:.15em}}h1{{max-width:370px;margin:0;font-size:clamp(36px,5vw,58px);font-weight:470;line-height:1.02;letter-spacing:-.05em}}.hero-copy>p:last-child{{max-width:360px;margin:24px 0 0;color:#979797;font-size:15px;line-height:1.7}}.trust{{display:flex;gap:10px;align-items:center;color:#737373;font-size:11px}}.trust i{{width:8px;height:8px;border-radius:50%;background:#72d7ad;box-shadow:0 0 0 5px rgba(114,215,173,.08)}}.panel{{padding:48px;display:flex;flex-direction:column;justify-content:center;background:#111}}.panel h2{{margin:0;font-size:25px;font-weight:560;letter-spacing:-.025em}}.panel>.sub{{margin:10px 0 30px;color:#818181;font-size:13px;line-height:1.6}}.providers{{display:grid;gap:10px}}.provider{{min-height:54px;display:grid;grid-template-columns:32px 1fr 20px;align-items:center;gap:12px;padding:0 16px;border:1px solid rgba(255,255,255,.1);border-radius:15px;background:#181818;color:#f3f3f3;text-decoration:none;font-size:13px;font-weight:650;transition:transform .18s ease,border-color .18s ease,background .18s ease}}.provider:hover{{transform:translateY(-1px);border-color:rgba(159,143,255,.45);background:#1d1d1d}}.provider b{{color:#666;font-weight:500}}.provider-icon{{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;background:#f4f4f2;color:#111;font-weight:900}}.provider-icon[data-provider="google"]{{color:#4285f4}}.provider-icon[data-provider="microsoft"]{{color:#1675d1}}.divider{{display:flex;align-items:center;gap:12px;margin:24px 0;color:#616161;font-size:10px}}.divider:before,.divider:after{{content:"";height:1px;flex:1;background:rgba(255,255,255,.08)}}form{{display:grid;gap:12px}}label{{display:grid;gap:7px;color:#8e8e8e;font-size:11px;font-weight:650}}input{{width:100%;height:48px;padding:0 14px;border:1px solid rgba(255,255,255,.1);border-radius:13px;outline:none;background:#0d0d0d;color:#f7f7f5;font:inherit}}input:focus{{border-color:rgba(146,129,255,.68);box-shadow:0 0 0 3px rgba(113,91,233,.12)}}button{{height:49px;margin-top:3px;border:0;border-radius:13px;background:#f0f0ed;color:#111;font:inherit;font-size:13px;font-weight:780;cursor:pointer;transition:transform .16s ease,background .16s ease}}button:hover{{transform:translateY(-1px);background:#fff}}.form-error{{margin:0;padding:10px 12px;border:1px solid rgba(255,100,117,.25);border-radius:11px;background:rgba(255,100,117,.07);color:#ff9ca8;font-size:11px;line-height:1.45}}.fine{{margin:20px 0 0;color:#5e5e5e;font-size:10px;line-height:1.65;text-align:center}}@keyframes breathe{{0%,100%{{transform:rotate(-3deg) scale(1)}}42%{{transform:rotate(2deg) scale(1.035)}}70%{{transform:rotate(-1deg) scale(.992)}}}}@keyframes blink{{0%,45%,48%,100%{{transform:scaleY(1)}}46%,47%{{transform:scaleY(.12)}}}}@media(max-width:760px){{body{{padding:0}}.shell{{min-height:100vh;grid-template-columns:1fr;border:0;border-radius:0}}.hero{{min-height:250px;padding:30px 26px}}.hero-copy h1{{font-size:34px}}.hero-copy>p:last-child{{display:none}}.trust{{display:none}}.panel{{padding:30px 26px 42px}}}}@media(prefers-reduced-motion:reduce){{*,*:before,*:after{{animation:none!important;transition:none!important}}}}
-</style></head><body><main class="shell"><section class="hero"><div class="brand"><span class="mark" aria-hidden="true"></span><span>FABUSHI</span></div><div class="hero-copy"><p class="eyebrow">ACCOUNT PORTAL</p><h1>登录发生在浏览器，工作留在桌面。</h1><p>选择你习惯的身份方式。授权凭据只由 Fabushi Platform 处理，桌面应用只领取一次性会话结果。</p></div><div class="trust"><i></i><span>PKCE · one-time delivery · no token in deep link</span></div></section><section class="panel"><h2>继续使用 Fabushi</h2><p class="sub">选择一个已配置的身份提供方，或使用你的 Fabushi 账号。</p><div class="providers">{providers}</div><div class="divider"><span>FABUSHI ACCOUNT</span></div><form method="post" action="/api/auth/browser/password" autocomplete="on"><input type="hidden" name="attemptId" value="{attempt_id}"><input type="hidden" name="ticket" value="{ticket}">{message}<label>账号、邮箱或手机号<input name="username" autocomplete="username" required maxlength="160" placeholder="you@example.com"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="输入密码"></label><button type="submit">使用 Fabushi 账号继续</button></form><p class="fine">继续即表示你同意服务条款与隐私政策。登录完成后，本页面会安全地把你带回桌面应用。</p></section></main></body></html>"#,
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#08080a;color:#f6f6f4;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}body{{min-height:100vh;display:grid;place-items:center;padding:32px 18px;background:radial-gradient(circle at 50% -12%,rgba(127,103,255,.14),transparent 34%),#08080a}}.auth{{width:min(430px,100%);padding:32px;border:1px solid rgba(255,255,255,.09);border-radius:24px;background:rgba(18,18,21,.96);box-shadow:0 28px 90px rgba(0,0,0,.44)}}.brand{{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:28px;font-size:12px;font-weight:800;letter-spacing:.16em}}.mark{{position:relative;width:34px;height:38px;border-radius:52% 48% 56% 44% / 48% 56% 44% 52%;background:#f5f5f1;animation:breathe 4.8s ease-in-out infinite}}.mark:before,.mark:after{{content:"";position:absolute;top:16px;width:4px;height:6px;border-radius:99px;background:#111;animation:blink 6s ease-in-out infinite}}.mark:before{{left:10px}}.mark:after{{right:10px}}h1{{margin:0;text-align:center;font-size:25px;font-weight:620;letter-spacing:-.035em}}.sub{{margin:10px auto 24px;max-width:330px;color:#8f8f96;text-align:center;font-size:13px;line-height:1.55}}.tabs{{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:22px;padding:4px;border-radius:12px;background:#0d0d10}}.tab{{height:36px;display:grid;place-items:center;border-radius:9px;color:#818188;text-decoration:none;font-size:12px;font-weight:700}}.tab.active{{background:#202024;color:#f5f5f3;box-shadow:0 1px 0 rgba(255,255,255,.06) inset}}form{{display:grid;gap:13px}}label{{display:grid;gap:7px;color:#a1a1a7;font-size:11px;font-weight:650}}input{{width:100%;height:48px;padding:0 13px;border:1px solid rgba(255,255,255,.1);border-radius:11px;outline:none;background:#0c0c0f;color:#f7f7f5;font:inherit;font-size:13px}}input:focus{{border-color:rgba(151,134,255,.7);box-shadow:0 0 0 3px rgba(121,99,244,.12)}}button,.provider{{font:inherit}}.primary{{height:49px;border:0;border-radius:11px;background:#f2f2ef;color:#111;font-size:13px;font-weight:800;cursor:pointer}}.primary:hover{{background:#fff}}.divider{{display:flex;align-items:center;gap:12px;margin:22px 0;color:#5f5f67;font-size:10px;text-transform:uppercase;letter-spacing:.08em}}.divider:before,.divider:after{{content:"";height:1px;flex:1;background:rgba(255,255,255,.08)}}.providers{{display:grid;gap:9px}}.provider{{height:50px;display:grid;grid-template-columns:34px 1fr 16px;align-items:center;gap:10px;padding:0 13px;border:1px solid rgba(255,255,255,.1);border-radius:11px;background:#17171a;color:#efefed;text-decoration:none;font-size:13px;font-weight:650;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.provider:hover{{transform:translateY(-1px);border-color:rgba(150,134,255,.42);background:#1c1c20}}.provider-icon{{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#f2f2ef;color:#111;font-size:10px;font-weight:900}}.provider[data-provider="alipay"] .provider-icon{{color:#1677ff}}.provider[data-provider="google"] .provider-icon{{color:#4285f4}}.provider[data-provider="microsoft"] .provider-icon{{color:#2563eb}}.provider[data-provider="github"] .provider-icon{{font-size:8px}}.provider[data-provider="cloudflare"] .provider-icon{{color:#f48120;font-size:8px}}.arrow{{color:#616169;font-size:20px;font-weight:300}}.code-row{{display:grid;grid-template-columns:1fr auto;gap:8px}}.code-button{{min-width:98px;height:48px;border:1px solid rgba(255,255,255,.11);border-radius:11px;background:#1a1a1e;color:#e8e8e5;font-size:11px;font-weight:750;cursor:pointer}}.code-button:disabled{{opacity:.55;cursor:default}}.form-message{{min-height:0;margin:0;color:#8e8e95;font-size:11px;line-height:1.45}}.form-message:empty{{display:none}}.form-message.error{{padding:9px 11px;border:1px solid rgba(255,103,120,.24);border-radius:9px;background:rgba(255,103,120,.07);color:#ff9ca8}}.disabled-note{{padding:13px;border:1px solid rgba(255,255,255,.08);border-radius:11px;background:#111114;color:#85858c;font-size:12px;line-height:1.55}}.fine{{margin:22px 0 0;color:#5d5d64;font-size:10px;line-height:1.6;text-align:center}}.security{{display:flex;justify-content:center;gap:6px;margin-top:11px;color:#686870;font-size:10px}}.security i{{width:6px;height:6px;margin-top:4px;border-radius:50%;background:#70c8a5}}@keyframes breathe{{0%,100%{{transform:rotate(-2deg) scale(1)}}50%{{transform:rotate(2deg) scale(1.04)}}}}@keyframes blink{{0%,46%,49%,100%{{transform:scaleY(1)}}47%,48%{{transform:scaleY(.12)}}}}@media(max-width:520px){{body{{padding:0;background:#0e0e11}}.auth{{min-height:100vh;padding:26px 22px;border:0;border-radius:0;box-shadow:none}}}}@media(prefers-reduced-motion:reduce){{*,*:before,*:after{{animation:none!important;transition:none!important}}}}
+</style></head><body><main class="auth"><div class="brand"><span class="mark" aria-hidden="true"></span><span>FABUSHI</span></div><h1>{heading}</h1><p class="sub">{sub}</p><nav class="tabs" aria-label="账号模式"><a class="tab {login_active}" href="{login_href}">登录</a><a class="tab {register_active}" href="{register_href}">注册</a></nav>{account_form}<div class="divider"><span>或</span></div><div class="providers">{providers}</div><p class="fine">继续即表示你同意服务条款与隐私政策。身份提供方仅用于登录所需的最小权限；连接其它服务能力时会再次单独请求授权。</p><div class="security"><i></i><span>一次性 state · PKCE / nonce · 无 token deep link</span></div></main>{script}</body></html>"#,
+        heading = html_escape(heading),
+        sub = html_escape(sub),
+        login_active = if mode == "login" { "active" } else { "" },
+        register_active = if mode == "register" { "active" } else { "" },
+        login_href = login_href,
+        register_href = register_href,
+        account_form = account_form,
         providers = providers,
-        attempt_id = html_escape(attempt_id),
-        ticket = html_escape(ticket),
-        message = message,
+        script = script,
     );
     browser_html_response(html)
 }
@@ -2236,6 +2336,11 @@ async fn browser_login_portal(request: Request, context: RouteContext<()>) -> Re
         .get("ticket")
         .map(|value| value.as_ref())
         .unwrap_or_default();
+    let mode = query
+        .get("mode")
+        .map(|value| value.as_ref())
+        .filter(|value| *value == "register")
+        .unwrap_or("login");
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     if browser_attempt_for_ticket(&database, attempt_id, ticket)
         .await?
@@ -2243,7 +2348,7 @@ async fn browser_login_portal(request: Request, context: RouteContext<()>) -> Re
     {
         return browser_result_page(false, "登录页面已失效，请返回 Fabushi 重试", None);
     }
-    browser_portal_page(&context.env, attempt_id, ticket, None)
+    browser_portal_page(&context.env, attempt_id, ticket, mode, None).await
 }
 
 async fn browser_login_authorize(request: Request, context: RouteContext<()>) -> Result<Response> {
@@ -2268,15 +2373,39 @@ async fn browser_login_authorize(request: Request, context: RouteContext<()>) ->
             &context.env,
             attempt_id,
             ticket,
+            "login",
             Some("该登录方式当前不可用，请选择其他方式"),
-        );
+        )
+        .await;
     };
+    if !provider_available(&context.env, provider.id).await {
+        return browser_portal_page(
+            &context.env,
+            attempt_id,
+            ticket,
+            "login",
+            Some("该登录方式尚未完成服务端配置，请选择其他方式"),
+        )
+        .await;
+    }
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     let Some(attempt) = browser_attempt_for_ticket(&database, attempt_id, ticket).await? else {
         return browser_result_page(false, "登录页面已失效，请返回 Fabushi 重试", None);
     };
     let state = format!("fbs_{}", Uuid::new_v4().simple());
     let state_hash = format!("{:x}", Sha256::digest(state.as_bytes()));
+    let callback = format!(
+        "{}/api/auth/oauth/callback",
+        auth_public_base_url(&context.env)?
+    );
+    let authorization_url = build_authorization_url(
+        &context.env,
+        &provider,
+        &state,
+        &callback,
+        &attempt.code_verifier,
+    )
+    .await?;
     worker::query!(
         &database,
         "UPDATE account_oauth_attempts SET provider = ?1, state_hash = ?2
@@ -2287,28 +2416,6 @@ async fn browser_login_authorize(request: Request, context: RouteContext<()>) ->
     )?
     .run()
     .await?;
-    let callback = format!(
-        "{}/api/auth/oauth/callback",
-        auth_public_base_url(&context.env)?
-    );
-    let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(Sha256::digest(attempt.code_verifier.as_bytes()));
-    let mut authorization_url = Url::parse(provider.authorization_endpoint)
-        .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    authorization_url
-        .query_pairs_mut()
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("redirect_uri", &callback)
-        .append_pair("response_type", "code")
-        .append_pair("scope", provider.scopes)
-        .append_pair("state", &state)
-        .append_pair("code_challenge", &code_challenge)
-        .append_pair("code_challenge_method", "S256");
-    if provider.id != "github" {
-        authorization_url
-            .query_pairs_mut()
-            .append_pair("prompt", "select_account");
-    }
     Response::redirect_with_status(authorization_url, 302)
 }
 
@@ -2343,8 +2450,10 @@ async fn browser_login_password(
                 &context.env,
                 &attempt_id,
                 &ticket,
+                "login",
                 Some(rejection.message),
-            );
+            )
+            .await;
         }
     };
     let now = now_seconds();
@@ -2360,6 +2469,359 @@ async fn browser_login_password(
     .run()
     .await?;
     browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt_id))
+}
+
+fn normalize_registration_email(value: &str) -> Option<String> {
+    let email = value.trim().to_ascii_lowercase();
+    if email.is_empty() || email.len() > 254 || email.bytes().any(|byte| byte.is_ascii_whitespace())
+    {
+        return None;
+    }
+    let (local, domain) = email.split_once('@')?;
+    if local.is_empty()
+        || domain.is_empty()
+        || !domain.contains('.')
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+    {
+        return None;
+    }
+    Some(email)
+}
+
+fn valid_registration_username(value: &str) -> bool {
+    (3..=32).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn registration_code_hash(env: &Env, attempt_id: &str, email: &str, code: &str) -> Result<String> {
+    let key = env.secret("ACCESS_TOKEN_PRIVATE_KEY_PEM")?.to_string();
+    let material = format!("fabushi-registration-code:v1:{attempt_id}:{email}:{code}:{key}");
+    Ok(format!("{:x}", Sha256::digest(material.as_bytes())))
+}
+
+fn new_registration_code() -> String {
+    let bytes = Uuid::new_v4().into_bytes();
+    let value = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % 1_000_000;
+    format!("{value:06}")
+}
+
+async fn browser_registration_code(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    let form = request.form_data().await?;
+    let field = |name: &str| -> String {
+        match form.get(name) {
+            Some(FormEntry::Field(value)) => value,
+            _ => String::new(),
+        }
+    };
+    let attempt_id = field("attemptId");
+    let ticket = field("ticket");
+    let Some(email) = normalize_registration_email(&field("email")) else {
+        return error_response(400, "invalid_registration_email", "请输入有效邮箱");
+    };
+    if !registration_email_available(&context.env).await {
+        return error_response(503, "registration_email_unavailable", "邮箱注册暂不可用");
+    }
+    let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
+    if browser_attempt_for_ticket(&database, &attempt_id, &ticket)
+        .await?
+        .is_none()
+    {
+        return error_response(410, "browser_attempt_expired", "注册页面已失效，请重新开始");
+    }
+    if lookup_login_user(&database, &email).await?.is_some() {
+        return error_response(409, "registration_email_exists", "该邮箱已注册，请直接登录");
+    }
+    let existing = worker::query!(
+        &database,
+        "SELECT attempt_id, code_hash, sent_at, expires_at, failed_attempts, consumed_at
+         FROM account_email_challenges WHERE email = ?1 AND purpose = 'register' LIMIT 1",
+        &email
+    )?
+    .first::<RegistrationChallengeRow>(None)
+    .await?;
+    let now = now_seconds();
+    if let Some(existing) = existing
+        && existing.sent_at + 60 > now
+    {
+        return error_response(
+            429,
+            "registration_code_rate_limited",
+            "验证码发送过于频繁，请稍后再试",
+        );
+    }
+    let code = new_registration_code();
+    let code_hash = registration_code_hash(&context.env, &attempt_id, &email, &code)?;
+    let challenge_id = Uuid::new_v4().to_string();
+    let expires_at = now + 10 * 60;
+    worker::query!(
+        &database,
+        "INSERT INTO account_email_challenges
+         (challenge_id, attempt_id, email, purpose, code_hash, sent_at, expires_at, failed_attempts, consumed_at)
+         VALUES (?1, ?2, ?3, 'register', ?4, ?5, ?6, 0, NULL)
+         ON CONFLICT(email, purpose) DO UPDATE SET
+           challenge_id = excluded.challenge_id,
+           attempt_id = excluded.attempt_id,
+           code_hash = excluded.code_hash,
+           sent_at = excluded.sent_at,
+           expires_at = excluded.expires_at,
+           failed_attempts = 0,
+           consumed_at = NULL",
+        &challenge_id,
+        &attempt_id,
+        &email,
+        &code_hash,
+        now,
+        expires_at
+    )?
+    .run()
+    .await?;
+    if send_registration_code(&context.env, &email, &code)
+        .await
+        .is_err()
+    {
+        worker::query!(
+            &database,
+            "DELETE FROM account_email_challenges WHERE challenge_id = ?1",
+            &challenge_id
+        )?
+        .run()
+        .await?;
+        return error_response(
+            502,
+            "registration_email_failed",
+            "验证码发送失败，请稍后重试",
+        );
+    }
+    Ok(Response::from_json(&json!({
+        "ok": true,
+        "expiresAt": expires_at,
+        "resendAfter": now + 60,
+    }))?
+    .with_headers(auth_headers()))
+}
+
+async fn browser_registration_complete(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    let form = request.form_data().await?;
+    let field = |name: &str| -> String {
+        match form.get(name) {
+            Some(FormEntry::Field(value)) => value,
+            _ => String::new(),
+        }
+    };
+    let attempt_id = field("attemptId");
+    let ticket = field("ticket");
+    let username = field("username").trim().to_string();
+    let Some(email) = normalize_registration_email(&field("email")) else {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("请输入有效邮箱"),
+        )
+        .await;
+    };
+    let verification_code = field("verificationCode");
+    let password = field("password");
+    let confirm_password = field("confirmPassword");
+    let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
+    let Some(attempt) = browser_attempt_for_ticket(&database, &attempt_id, &ticket).await? else {
+        return browser_result_page(false, "注册页面已失效，请返回 Fabushi 重试", None);
+    };
+    if !valid_registration_username(&username) {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("用户名需为 3–32 位字母、数字、下划线或连字符"),
+        )
+        .await;
+    }
+    if password.len() < 8 || password.len() > 1024 {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("密码至少 8 位"),
+        )
+        .await;
+    }
+    if password != confirm_password {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("两次输入的密码不一致"),
+        )
+        .await;
+    }
+    if verification_code.len() != 6 || !verification_code.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("验证码格式无效"),
+        )
+        .await;
+    }
+    let challenge = worker::query!(
+        &database,
+        "SELECT attempt_id, code_hash, sent_at, expires_at, failed_attempts, consumed_at
+         FROM account_email_challenges WHERE email = ?1 AND purpose = 'register' LIMIT 1",
+        &email
+    )?
+    .first::<RegistrationChallengeRow>(None)
+    .await?;
+    let now = now_seconds();
+    let Some(challenge) = challenge else {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("请先发送邮箱验证码"),
+        )
+        .await;
+    };
+    if challenge.attempt_id != attempt_id
+        || challenge.consumed_at.is_some()
+        || challenge.expires_at <= now
+        || challenge.failed_attempts >= 5
+    {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("验证码已失效，请重新发送"),
+        )
+        .await;
+    }
+    let expected_hash =
+        registration_code_hash(&context.env, &attempt_id, &email, &verification_code)?;
+    if !constant_time_text_eq(&expected_hash, &challenge.code_hash) {
+        worker::query!(
+            &database,
+            "UPDATE account_email_challenges SET failed_attempts = failed_attempts + 1
+             WHERE email = ?1 AND purpose = 'register' AND attempt_id = ?2",
+            &email,
+            &attempt_id
+        )?
+        .run()
+        .await?;
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("验证码不正确"),
+        )
+        .await;
+    }
+    if lookup_login_user(&database, &username).await?.is_some() {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("该用户名已被使用"),
+        )
+        .await;
+    }
+    if lookup_login_user(&database, &email).await?.is_some() {
+        return browser_portal_page(
+            &context.env,
+            &attempt_id,
+            &ticket,
+            "register",
+            Some("该邮箱已注册，请直接登录"),
+        )
+        .await;
+    }
+    let max = worker::query!(&database, "SELECT MAX(id) AS max_id FROM users")
+        .first::<MaxUserIdRow>(None)
+        .await?
+        .and_then(|row| row.max_id)
+        .unwrap_or(10_000);
+    let id = max + 1;
+    let password_phc = hash_password_argon2id(&password, &new_password_salt())
+        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let created_at = Date::now().to_string();
+    database
+        .batch(vec![
+            worker::query!(
+                &database,
+                "INSERT INTO users
+                 (id, user_no, username, email, password_hash, salt, iterations, algo,
+                  email_verified, membership_type, created_at)
+                 VALUES (?1, ?1, ?2, ?3, '', '', 0, 'argon2id', 1, 'trial', ?4)",
+                id,
+                &username,
+                &email,
+                &created_at
+            )?,
+            worker::query!(
+                &database,
+                "INSERT INTO account_password_credentials (user_id, password_phc, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?3)",
+                id.to_string(),
+                &password_phc,
+                now
+            )?,
+            worker::query!(
+                &database,
+                "INSERT INTO email_username_mapping (email, username, user_id) VALUES (?1, ?2, ?3)",
+                &email,
+                &username,
+                id
+            )?,
+            worker::query!(
+                &database,
+                "UPDATE account_email_challenges SET consumed_at = ?1
+                 WHERE email = ?2 AND purpose = 'register' AND attempt_id = ?3 AND consumed_at IS NULL",
+                now,
+                &email,
+                &attempt_id
+            )?,
+        ])
+        .await?;
+    let user = lookup_account_user_by_id(&database, &id.to_string())
+        .await?
+        .ok_or_else(|| worker::Error::RustError("registered account missing".into()))?;
+    let session = create_account_session_value(
+        &database,
+        &context.env,
+        &user,
+        &attempt.device_id,
+        "registration_succeeded",
+    )
+    .await?;
+    worker::query!(
+        &database,
+        "UPDATE account_oauth_attempts
+         SET provider = 'password', status = 'completed', session_json = ?1, completed_at = ?2
+         WHERE attempt_id = ?3 AND provider = 'portal' AND status = 'pending'",
+        session.to_string(),
+        now,
+        &attempt_id
+    )?
+    .run()
+    .await?;
+    browser_result_page(true, "注册完成，正在返回 Fabushi", Some(&attempt_id))
 }
 
 async fn browser_login_reopen(mut request: Request, context: RouteContext<()>) -> Result<Response> {
@@ -2500,78 +2962,24 @@ async fn browser_login_poll(request: Request, context: RouteContext<()>) -> Resu
 }
 
 fn oauth_provider(env: &Env, provider: &str) -> Option<OAuthProviderConfig> {
-    let (
-        id,
-        display_name,
-        issuer,
-        authorization_endpoint,
-        token_endpoint,
-        userinfo_endpoint,
-        scopes,
-    ) = match provider {
-        "google" => (
-            "google",
-            "Google",
-            "https://accounts.google.com",
-            "https://accounts.google.com/o/oauth2/v2/auth",
-            "https://oauth2.googleapis.com/token",
-            "https://openidconnect.googleapis.com/v1/userinfo",
-            "openid email profile",
-        ),
-        "microsoft" => (
-            "microsoft",
-            "Microsoft",
-            "https://login.microsoftonline.com/common/v2.0",
-            "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-            "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-            "https://graph.microsoft.com/oidc/userinfo",
-            "openid email profile",
-        ),
-        "github" => (
-            "github",
-            "GitHub",
-            "https://github.com",
-            "https://github.com/login/oauth/authorize",
-            "https://github.com/login/oauth/access_token",
-            "https://api.github.com/user",
-            "read:user user:email",
-        ),
-        _ => return None,
-    };
-    let prefix = provider.to_ascii_uppercase();
-    let client_id = env
-        .secret(&format!("OAUTH_{prefix}_CLIENT_ID"))
-        .ok()?
-        .to_string();
-    let client_secret = env
-        .secret(&format!("OAUTH_{prefix}_CLIENT_SECRET"))
-        .ok()?
-        .to_string();
-    Some(OAuthProviderConfig {
-        id,
-        display_name,
-        issuer,
-        authorization_endpoint,
-        token_endpoint,
-        userinfo_endpoint,
-        scopes,
-        client_id,
-        client_secret,
-    })
+    configured_provider(env, provider)
 }
 
 async fn oauth_providers(_request: Request, context: RouteContext<()>) -> Result<Response> {
-    let providers = ["google", "microsoft", "github"]
-        .into_iter()
-        .filter_map(|id| oauth_provider(&context.env, id))
-        .map(|provider| {
-            json!({
-                "id": provider.id,
-                "displayName": provider.display_name,
-                "enabled": true,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut providers = Vec::new();
+    for id in PROVIDER_ORDER {
+        let Some(provider) = oauth_provider(&context.env, id) else {
+            continue;
+        };
+        if !provider_available(&context.env, id).await {
+            continue;
+        }
+        providers.push(json!({
+            "id": provider.id,
+            "displayName": provider.display_name,
+            "enabled": true,
+        }));
+    }
     Ok(Response::from_json(&json!({"providers": providers}))?.with_headers(auth_headers()))
 }
 
@@ -2580,9 +2988,13 @@ async fn oauth_start(mut request: Request, context: RouteContext<()>) -> Result<
         Ok(start) => start,
         Err(_) => return error_response(400, "invalid_oauth_request", "provider is required"),
     };
-    let Some(provider) = oauth_provider(&context.env, start.provider.trim()) else {
+    let provider_id = start.provider.trim();
+    let Some(provider) = oauth_provider(&context.env, provider_id) else {
         return error_response(400, "oauth_provider_unavailable", "该登录方式尚未配置");
     };
+    if !provider_available(&context.env, provider.id).await {
+        return error_response(503, "oauth_provider_unavailable", "该登录方式当前不可用");
+    }
     if let Some(platform) = start.platform.as_deref()
         && !matches!(
             platform,
@@ -2593,37 +3005,17 @@ async fn oauth_start(mut request: Request, context: RouteContext<()>) -> Result<
     }
     let device_id = normalize_device_id(start.device_id.as_deref())?;
     let attempt_id = Uuid::new_v4().to_string();
-    let state = format!("mos_{}", Uuid::new_v4().simple());
+    let state = format!("fbs_{}", Uuid::new_v4().simple());
     let state_hash = format!("{:x}", Sha256::digest(state.as_bytes()));
     let code_verifier = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-    let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(Sha256::digest(code_verifier.as_bytes()));
     let now = now_seconds();
     let expires_at = now + OAUTH_ATTEMPT_SECONDS;
     let callback = format!(
         "{}/api/auth/oauth/callback",
-        context
-            .env
-            .var("AUTH_PUBLIC_BASE_URL")?
-            .to_string()
-            .trim_end_matches('/')
+        auth_public_base_url(&context.env)?
     );
-    let mut authorization_url = Url::parse(provider.authorization_endpoint)
-        .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    authorization_url
-        .query_pairs_mut()
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("redirect_uri", &callback)
-        .append_pair("response_type", "code")
-        .append_pair("scope", provider.scopes)
-        .append_pair("state", &state)
-        .append_pair("code_challenge", &code_challenge)
-        .append_pair("code_challenge_method", "S256");
-    if provider.id != "github" {
-        authorization_url
-            .query_pairs_mut()
-            .append_pair("prompt", "select_account");
-    }
+    let authorization_url =
+        build_authorization_url(&context.env, &provider, &state, &callback, &code_verifier).await?;
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     worker::query!(
         &database,
@@ -2701,12 +3093,29 @@ async fn oauth_poll(_request: Request, context: RouteContext<()>) -> Result<Resp
     }))
 }
 
-async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<Response> {
-    let url = request.url()?;
-    let query = url
-        .query_pairs()
-        .collect::<std::collections::HashMap<_, _>>();
-    let Some(state) = query.get("state").map(|value| value.as_ref()) else {
+async fn oauth_callback(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+    let mut fields = std::collections::HashMap::<String, String>::new();
+    if request.method() == Method::Post {
+        let form = request.form_data().await?;
+        for name in [
+            "state",
+            "code",
+            "auth_code",
+            "error",
+            "error_description",
+            "id_token",
+            "user",
+        ] {
+            if let Some(FormEntry::Field(value)) = form.get(name) {
+                fields.insert(name.to_string(), value);
+            }
+        }
+    } else {
+        for (key, value) in request.url()?.query_pairs() {
+            fields.insert(key.into_owned(), value.into_owned());
+        }
+    }
+    let Some(state) = fields.get("state").map(String::as_str) else {
         return browser_result_page(false, "登录状态缺失，请返回应用重试", None);
     };
     let state_hash = format!("{:x}", Sha256::digest(state.as_bytes()));
@@ -2729,7 +3138,7 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
             Some(&attempt.attempt_id),
         );
     }
-    if query.contains_key("error") {
+    if fields.contains_key("error") {
         worker::query!(
             &database,
             "UPDATE account_oauth_attempts SET status = 'cancelled' WHERE attempt_id = ?1",
@@ -2739,7 +3148,11 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
         .await?;
         return browser_cancelled_page("登录已取消，正在返回 Fabushi", Some(&attempt.attempt_id));
     }
-    let Some(code) = query.get("code").map(|value| value.as_ref()) else {
+    let code = fields
+        .get("code")
+        .or_else(|| fields.get("auth_code"))
+        .map(String::as_str);
+    let Some(code) = code else {
         worker::query!(
             &database,
             "UPDATE account_oauth_attempts SET status = 'failed' WHERE attempt_id = ?1 AND status = 'pending'",
@@ -2765,15 +3178,35 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
     };
     let callback = format!(
         "{}/api/auth/oauth/callback",
-        context
-            .env
-            .var("AUTH_PUBLIC_BASE_URL")?
-            .to_string()
-            .trim_end_matches('/')
+        auth_public_base_url(&context.env)?
     );
-    let access_token =
-        oauth_exchange_code(&provider, code, &callback, &attempt.code_verifier).await?;
-    let profile = oauth_fetch_profile(&provider, &access_token).await?;
+    let profile = match complete_provider(
+        &context.env,
+        &provider,
+        code,
+        &callback,
+        &attempt.code_verifier,
+        fields.get("id_token").map(String::as_str),
+        fields.get("user").map(String::as_str),
+    )
+    .await
+    {
+        Ok(profile) => profile,
+        Err(_) => {
+            worker::query!(
+                &database,
+                "UPDATE account_oauth_attempts SET status = 'failed' WHERE attempt_id = ?1 AND status = 'pending'",
+                &attempt.attempt_id
+            )?
+            .run()
+            .await?;
+            return browser_result_page(
+                false,
+                "身份验证失败，请返回 Fabushi 重试",
+                Some(&attempt.attempt_id),
+            );
+        }
+    };
     let user = oauth_resolve_user(&database, &provider, &profile).await?;
     let session = create_account_session_value(
         &database,
@@ -2800,118 +3233,6 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
         "登录完成，正在返回 Fabushi",
         Some(&attempt.attempt_id),
     )
-}
-
-async fn oauth_exchange_code(
-    provider: &OAuthProviderConfig,
-    code: &str,
-    callback: &str,
-    code_verifier: &str,
-) -> Result<String> {
-    let body = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("client_secret", &provider.client_secret)
-        .append_pair("code", code)
-        .append_pair("redirect_uri", callback)
-        .append_pair("grant_type", "authorization_code")
-        .append_pair("code_verifier", code_verifier)
-        .finish();
-    let headers = Headers::new();
-    headers.set("Content-Type", "application/x-www-form-urlencoded")?;
-    headers.set("Accept", "application/json")?;
-    let mut init = RequestInit::new();
-    init.with_method(Method::Post)
-        .with_headers(headers)
-        .with_body(Some(wasm_bindgen::JsValue::from_str(&body)));
-    let outbound = Request::new_with_init(provider.token_endpoint, &init)?;
-    let mut response = Fetch::Request(outbound).send().await?;
-    if !(200..300).contains(&response.status_code()) {
-        return Err(worker::Error::RustError(
-            "OAuth token exchange failed".into(),
-        ));
-    }
-    let token: Value = response.json().await?;
-    token
-        .get("access_token")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| worker::Error::RustError("OAuth access token missing".into()))
-}
-
-async fn oauth_fetch_json(url: &str, access_token: &str) -> Result<Value> {
-    let mut request = Request::new(url, Method::Get)?;
-    request
-        .headers_mut()?
-        .set("Authorization", &format!("Bearer {access_token}"))?;
-    request.headers_mut()?.set("Accept", "application/json")?;
-    request
-        .headers_mut()?
-        .set("User-Agent", "Fabushi-Auth-Broker")?;
-    let mut response = Fetch::Request(request).send().await?;
-    if !(200..300).contains(&response.status_code()) {
-        return Err(worker::Error::RustError(
-            "OAuth profile request failed".into(),
-        ));
-    }
-    response.json().await
-}
-
-async fn oauth_fetch_profile(
-    provider: &OAuthProviderConfig,
-    access_token: &str,
-) -> Result<OAuthIdentityProfile> {
-    let profile = oauth_fetch_json(provider.userinfo_endpoint, access_token).await?;
-    let subject = profile
-        .get("sub")
-        .or_else(|| profile.get("id"))
-        .and_then(|value| {
-            value
-                .as_str()
-                .map(str::to_string)
-                .or_else(|| value.as_i64().map(|id| id.to_string()))
-        })
-        .ok_or_else(|| worker::Error::RustError("OAuth subject missing".into()))?;
-    let mut email = profile
-        .get("email")
-        .or_else(|| profile.get("mail"))
-        .or_else(|| profile.get("userPrincipalName"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let mut email_verified = profile
-        .get("email_verified")
-        .and_then(Value::as_bool)
-        .unwrap_or(provider.id == "microsoft");
-    if provider.id == "github" {
-        let emails = oauth_fetch_json("https://api.github.com/user/emails", access_token).await?;
-        if let Some(primary) = emails.as_array().and_then(|items| {
-            items.iter().find(|item| {
-                item.get("primary").and_then(Value::as_bool) == Some(true)
-                    && item.get("verified").and_then(Value::as_bool) == Some(true)
-            })
-        }) {
-            email = primary
-                .get("email")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            email_verified = email.is_some();
-        }
-    }
-    Ok(OAuthIdentityProfile {
-        issuer: provider.issuer.to_string(),
-        subject,
-        email,
-        email_verified,
-        display_name: profile
-            .get("name")
-            .or_else(|| profile.get("login"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        avatar_url: profile
-            .get("picture")
-            .or_else(|| profile.get("avatar_url"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
 }
 
 async fn oauth_resolve_user(
@@ -2946,19 +3267,28 @@ async fn oauth_resolve_user(
         .await?;
         identity.user_id
     } else {
-        if !profile.email_verified {
-            return Err(worker::Error::RustError(
-                "OAuth provider did not return a verified email".into(),
-            ));
-        }
-        let email = profile
-            .email
-            .as_deref()
-            .ok_or_else(|| worker::Error::RustError("OAuth email missing".into()))?;
-        let existing = lookup_login_user(database, email).await?;
-        let user_id = if let Some(user) = existing {
+        let legacy_user_id = lookup_legacy_provider_user(database, provider, profile).await?;
+        let verified_email = profile
+            .email_verified
+            .then(|| profile.email.as_deref())
+            .flatten()
+            .filter(|email| !email.trim().is_empty());
+        let existing_by_email = if let Some(email) = verified_email {
+            lookup_login_user(database, email).await?
+        } else {
+            None
+        };
+        let user_id = if let Some(user_id) = legacy_user_id {
+            user_id
+        } else if let Some(user) = existing_by_email {
             user.id.to_string()
         } else {
+            let subject_only_allowed = matches!(provider.id, "alipay" | "microsoft");
+            if verified_email.is_none() && !subject_only_allowed {
+                return Err(worker::Error::RustError(
+                    "identity provider did not return a verified email".into(),
+                ));
+            }
             let max = worker::query!(database, "SELECT MAX(id) AS max_id FROM users")
                 .first::<MaxUserIdRow>(None)
                 .await?
@@ -2977,32 +3307,37 @@ async fn oauth_resolve_user(
                 subject_slug,
                 &Uuid::new_v4().simple().to_string()[..6]
             );
+            let synthetic_email = synthetic_identity_email(provider.id, &profile.subject);
+            let account_email = verified_email.unwrap_or(&synthetic_email);
             let created_at = Date::now().to_string();
             worker::query!(
                 database,
                 "INSERT INTO users
                  (id, user_no, username, email, nickname, avatar, password_hash, salt,
                   iterations, algo, email_verified, membership_type, created_at)
-                 VALUES (?1, ?1, ?2, ?3, ?4, ?5, '', '', 0, '', 1, 'trial', ?6)",
+                 VALUES (?1, ?1, ?2, ?3, ?4, ?5, '', '', 0, '', ?6, 'trial', ?7)",
                 id,
                 &username,
-                email,
+                account_email,
                 &profile.display_name,
                 &profile.avatar_url,
+                i64::from(verified_email.is_some()),
                 &created_at
             )?
             .run()
             .await?;
-            worker::query!(
-                database,
-                "INSERT OR IGNORE INTO email_username_mapping (email, username, user_id)
-                 VALUES (?1, ?2, ?3)",
-                email,
-                &username,
-                id
-            )?
-            .run()
-            .await?;
+            if let Some(email) = verified_email {
+                worker::query!(
+                    database,
+                    "INSERT OR IGNORE INTO email_username_mapping (email, username, user_id)
+                     VALUES (?1, ?2, ?3)",
+                    email,
+                    &username,
+                    id
+                )?
+                .run()
+                .await?;
+            }
             id.to_string()
         };
         worker::query!(
@@ -3010,13 +3345,14 @@ async fn oauth_resolve_user(
             "INSERT INTO account_identities
              (identity_id, user_id, provider, issuer, subject, email, email_verified,
               display_name, avatar_url, created_at, last_login_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?9)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
             Uuid::new_v4().to_string(),
             &user_id,
             provider.id,
             &profile.issuer,
             &profile.subject,
             &profile.email,
+            i64::from(profile.email_verified),
             &profile.display_name,
             &profile.avatar_url,
             now
@@ -3025,9 +3361,114 @@ async fn oauth_resolve_user(
         .await?;
         user_id
     };
+    sync_legacy_provider_identity(database, &user_id, provider, profile).await?;
     lookup_account_user_by_id(database, &user_id)
         .await?
         .ok_or_else(|| worker::Error::RustError("OAuth account missing".into()))
+}
+
+async fn lookup_legacy_provider_user(
+    database: &worker::D1Database,
+    provider: &OAuthProviderConfig,
+    profile: &OAuthIdentityProfile,
+) -> Result<Option<String>> {
+    if provider.id == "apple" {
+        return worker::query!(
+            database,
+            "SELECT CAST(id AS TEXT) AS user_id FROM users WHERE apple_user_id = ?1 LIMIT 1",
+            &profile.subject
+        )?
+        .first::<OAuthIdentityRow>(None)
+        .await
+        .map(|row| row.map(|row| row.user_id));
+    }
+    if provider.id != "alipay" {
+        return Ok(None);
+    }
+    let mut subjects = vec![profile.subject.as_str()];
+    if let Some(legacy) = profile.legacy_subject.as_deref()
+        && !legacy.is_empty()
+        && legacy != profile.subject
+    {
+        subjects.push(legacy);
+    }
+    for subject in subjects {
+        if let Some(row) = worker::query!(
+            database,
+            "SELECT CAST(id AS TEXT) AS user_id FROM users WHERE alipay_user_id = ?1 LIMIT 1",
+            subject
+        )?
+        .first::<OAuthIdentityRow>(None)
+        .await?
+        {
+            return Ok(Some(row.user_id));
+        }
+        if let Some(row) = worker::query!(
+            database,
+            "SELECT CAST(user_id AS TEXT) AS user_id FROM alipay_bindings
+             WHERE alipay_user_id = ?1 AND user_id IS NOT NULL LIMIT 1",
+            subject
+        )?
+        .first::<OAuthIdentityRow>(None)
+        .await?
+        {
+            return Ok(Some(row.user_id));
+        }
+    }
+    Ok(None)
+}
+
+async fn sync_legacy_provider_identity(
+    database: &worker::D1Database,
+    user_id: &str,
+    provider: &OAuthProviderConfig,
+    profile: &OAuthIdentityProfile,
+) -> Result<()> {
+    if provider.id == "apple" {
+        worker::query!(
+            database,
+            "UPDATE users SET apple_user_id = COALESCE(apple_user_id, ?1) WHERE CAST(id AS TEXT) = ?2",
+            &profile.subject,
+            user_id
+        )?
+        .run()
+        .await?;
+    } else if provider.id == "alipay" {
+        worker::query!(
+            database,
+            "UPDATE users SET alipay_user_id = COALESCE(alipay_user_id, ?1),
+             alipay_nickname = COALESCE(?2, alipay_nickname),
+             alipay_avatar = COALESCE(?3, alipay_avatar),
+             alipay_bound_at = COALESCE(alipay_bound_at, ?4)
+             WHERE CAST(id AS TEXT) = ?5",
+            &profile.subject,
+            &profile.display_name,
+            &profile.avatar_url,
+            Date::now().to_string(),
+            user_id
+        )?
+        .run()
+        .await?;
+        worker::query!(
+            database,
+            "INSERT OR IGNORE INTO alipay_bindings (alipay_user_id, user_id, bound_at)
+             VALUES (?1, CAST(?2 AS INTEGER), ?3)",
+            &profile.subject,
+            user_id,
+            Date::now().to_string()
+        )?
+        .run()
+        .await?;
+    }
+    Ok(())
+}
+
+fn synthetic_identity_email(provider: &str, subject: &str) -> String {
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(format!("{provider}:{subject}").as_bytes())
+    );
+    format!("{provider}+{}@identity.fabushi.invalid", &digest[..32])
 }
 
 async fn create_account_session_value(
