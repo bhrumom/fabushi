@@ -2370,7 +2370,7 @@ async fn browser_login_reopen(
     let Some(current) = current else {
         return error_response(404, "oauth_attempt_missing", "登录链接不存在或已失效");
     };
-    if current.status == "pending" && current.expires_at <= now_epoch_seconds() {
+    if current.status == "pending" && current.expires_at <= now_seconds() {
         worker::query!(
             &database,
             "UPDATE account_oauth_attempts SET status = 'expired', session_json = NULL WHERE attempt_id = ?1 AND status = 'pending'",
@@ -2434,7 +2434,7 @@ async fn browser_login_cancel(
     if status == "pending"
         && current
             .as_ref()
-            .is_some_and(|row| row.expires_at <= now_epoch_seconds())
+            .is_some_and(|row| row.expires_at <= now_seconds())
     {
         worker::query!(
             &database,
