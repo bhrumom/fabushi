@@ -3,6 +3,7 @@ set -euo pipefail
 
 main="desktop/electron/main.cjs"
 preload="desktop/electron/preload.cjs"
+edge="desktop/electron/mahayana-edge.cjs"
 app_host="third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs"
 electron_transport="frontend/apps/web/src/lib/mahayana-host/electron-transport.ts"
 mock_transport="frontend/apps/web/src/lib/mahayana-host/mock-transport.ts"
@@ -25,11 +26,51 @@ methods=(
 )
 
 for method in "${methods[@]}"; do
-  grep -Fq "'$method'" "$main" || { echo "Electron main whitelist missing $method" >&2; exit 1; }
-  grep -Fq "'$method'" "$preload" || { echo "Electron preload whitelist missing $method" >&2; exit 1; }
+  grep -Fq "'$method'" "$edge" || { echo "Mahayana edge descriptor missing $method" >&2; exit 1; }
   grep -Fq "\"$method\"" "$app_host" || { echo "Rust app host dispatch missing $method" >&2; exit 1; }
   grep -Fq "\"$method\"" "$electron_transport" || { echo "Electron frontend transport missing $method" >&2; exit 1; }
 done
+
+grep -Fq "defineEdge('mahayana-host'" "$edge" || { echo "Mahayana edge descriptor is not declared" >&2; exit 1; }
+grep -Fq "['runtime-event']" "$edge" || { echo "Mahayana runtime-event declaration is missing" >&2; exit 1; }
+
+grep -Fq 'const allowedHostMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));' "$main" || {
+  echo "Electron main does not derive its compatibility allowlist from MAHAYANA_EDGE" >&2
+  exit 1
+}
+grep -Fq 'Object.keys(MAHAYANA_EDGE.methods).map((method)' "$main" || {
+  echo "Electron main does not derive edge handlers from MAHAYANA_EDGE" >&2
+  exit 1
+}
+grep -Fq 'serveMainEdge(ipcMain, MAHAYANA_EDGE, handlers' "$main" || {
+  echo "Electron main does not serve MAHAYANA_EDGE through the shared edge runtime" >&2
+  exit 1
+}
+grep -Fq "host.request('feature.receive', {})" "$main" || {
+  echo "Electron main runtime event pump is missing" >&2
+  exit 1
+}
+grep -Fq "mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event)" "$main" || {
+  echo "Electron main runtime event push is missing" >&2
+  exit 1
+}
+
+grep -Fq 'createRendererEdge(ipcRenderer, MAHAYANA_EDGE)' "$preload" || {
+  echo "Electron preload does not create the Mahayana renderer edge" >&2
+  exit 1
+}
+grep -Fq 'const allowedMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));' "$preload" || {
+  echo "Electron preload does not derive its allowlist from MAHAYANA_EDGE" >&2
+  exit 1
+}
+grep -Fq "contextBridge.exposeInMainWorld('mahayana', mahayana)" "$preload" || {
+  echo "Electron preload does not expose the Mahayana bridge" >&2
+  exit 1
+}
+grep -Fq "return edgeClient.subscribe({ 'runtime-event': listener });" "$preload" || {
+  echo "Electron preload runtime-event subscription is missing" >&2
+  exit 1
+}
 
 grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || {
   echo "Browser host selector does not delegate to Electron transport" >&2
@@ -44,7 +85,7 @@ grep -Fq "ipcMain.handle('fabushi:open-system-settings'" "$main" || { echo "syst
 grep -Fq 'openSystemSettings(pane)' "$preload" || { echo "system settings preload bridge missing" >&2; exit 1; }
 grep -Fq 'windowFocused()' "$preload" || { echo "window focus preload bridge missing" >&2; exit 1; }
 grep -Fq "import HostClient from '../../frontend/apps/web/src/app/host/host-client'" "$desktop_renderer" || {
-  echo "Canonical Electron renderer does not reuse the full migrated HostClient" >&2
+  echo "Canonical Electron renderer does not reuse the shared HostClient" >&2
   exit 1
 }
 grep -Fq '<HostClient />' "$desktop_renderer" || {
