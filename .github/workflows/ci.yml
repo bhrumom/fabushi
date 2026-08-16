@@ -249,6 +249,7 @@ jobs:
             /.github/scripts/assert-native-capability-semantics.py
             /.github/scripts/assert-auth-entry-flow.py
             /.github/scripts/assert-bot-mark-motion.py
+            /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
             /desktop/electron/offline-asr-engine.json
             /desktop/electron/offline-asr.cjs
@@ -281,6 +282,8 @@ jobs:
         run: python3 .github/scripts/assert-auth-entry-flow.py
       - name: Verify living BotMark motion contracts
         run: python3 .github/scripts/assert-bot-mark-motion.py
+      - name: Verify product UI capability surfaces
+        run: python3 .github/scripts/assert-product-ui-contracts.py
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify offline ASR provider contracts
