@@ -71,7 +71,7 @@ export function AgentWorkflowPanel({
   }) => Promise<void> | void;
   onSetEnabled: (id: string, enabled: boolean) => Promise<void> | void;
   onRun: (id: string) => Promise<void> | void;
-  onDelete: (id: string) => Promise<void> | void;
+  onDelete: (id: string, name: string) => Promise<void> | void;
   onImportMarkdown: (markdown: string, fallbackName?: string) => Promise<void> | void;
   onImportLiveSource: (source: string, fallbackName?: string) => Promise<void> | void;
 }) {
@@ -178,7 +178,7 @@ export function AgentWorkflowPanel({
               </label>
               <button type="button" disabled={!workflow.isEnabledForAgent} onClick={() => void onRun(workflow.id)}>运行</button>
               <button type="button" onClick={() => { setDraft(draftFromWorkflow(workflow)); setEditorOpen(true); }}>编辑</button>
-              <button type="button" className={styles.dangerAction} onClick={() => { if (window.confirm(`删除 Workflow ${workflow.name}？`)) void onDelete(workflow.id); }}>删除</button>
+              <button type="button" className={styles.dangerAction} onClick={() => void onDelete(workflow.id, workflow.name)}>删除</button>
             </div>
           </article>
         ))}

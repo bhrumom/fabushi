@@ -16,10 +16,34 @@ required_host = [
     'className={styles.onboardingMarkStage}',
     'className={styles.accountAvatarStage}',
     'onClick={() => openMiniApp(app.id)}',
+    'onDelete={deleteAgentWorkflow}',
+    'onDeleteBot={confirmBotDelete}',
+    'confirmRemoveAgentFromSharedRoom',
+    'confirmLeaveSharedRoom',
+    'data-testid="confirm-dialog"',
+    'const hasManagedModal = Boolean(',
+    "document.addEventListener('keydown', handleKeyDown, true)",
+    "if (event.key === 'Tab')",
+    "if (event.key !== 'Escape') return",
 ]
 for marker in required_host:
     if marker not in host:
         raise SystemExit(f'product UI gate: missing required user-facing path: {marker}')
+
+
+host_ui_files = [
+    Path('frontend/apps/web/src/app/host/host-client.tsx'),
+    Path('frontend/apps/web/src/app/host/agent-workflow-panel.tsx'),
+    Path('frontend/apps/web/src/app/host/extension-studio.tsx'),
+]
+for host_ui_file in host_ui_files:
+    if not host_ui_file.is_file():
+        raise SystemExit(f'product UI gate: required host UI source is missing: {host_ui_file}')
+for host_ui_file in host_ui_files:
+    if 'window.confirm(' in host_ui_file.read_text(encoding='utf-8'):
+        raise SystemExit(
+            f'product UI gate: system confirmation dialogs must not replace Fabushi confirmation surfaces: {host_ui_file}'
+        )
 
 # The historical stylesheet once permanently hid the marketplace Open button.
 # The final cascade must explicitly restore it.
@@ -37,6 +61,7 @@ required_styles = [
     '.trayPopover',
     '.computerPanel',
     '.cloudRunGrid',
+    '.confirmDialog',
 ]
 for marker in required_styles:
     if marker not in styles:

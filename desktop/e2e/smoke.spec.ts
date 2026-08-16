@@ -171,6 +171,16 @@ test('desktop package drives every declared Host journey through Electron IPC an
 
     await runOfficialApps(page);
 
+    await test.step('Fabushi modal keyboard focus returns to the account trigger', async () => {
+      const accountTrigger = page.getByTestId('account-menu');
+      await accountTrigger.focus();
+      await accountTrigger.click();
+      await expect(page.getByTestId('logout')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('logout')).toBeHidden();
+      await expect(accountTrigger).toBeFocused();
+    });
+
     await test.step(`${sessionClearFeature!.id}: ${sessionClearFeature!.label}`, async () => {
       for (const step of sessionClearFeature!.steps) await runJourneyStep(page, step);
       await ensureComputerPanel(page);

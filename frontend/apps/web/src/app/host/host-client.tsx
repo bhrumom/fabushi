@@ -399,6 +399,14 @@ function Icon({
   );
 }
 
+interface ConfirmAction {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone: "danger" | "warning";
+  action: () => void | Promise<void>;
+}
+
 export default function HostClient() {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
@@ -442,6 +450,10 @@ export default function HostClient() {
     createInitialFeatureStates,
   );
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const overlayReturnFocusRef = useRef<HTMLElement | null>(null);
+  const overlayWasOpenRef = useRef(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
@@ -2020,6 +2032,137 @@ export default function HostClient() {
     });
   };
 
+  const hasManagedModal = Boolean(
+    confirmAction ||
+    approval ||
+    browserLoginAttempt ||
+    accountOpen ||
+    feedbackOpen ||
+    aboutOpen ||
+    widgetGalleryOpen ||
+    offlineAsrOpen ||
+    cloudAgentInfo ||
+    settingsOpen ||
+    automationOpen ||
+    networkOpen ||
+    marketplaceOpen ||
+    agentSettingsOpen
+  );
+
+  useEffect(() => {
+    if (!hasManagedModal) {
+      if (overlayWasOpenRef.current) {
+        overlayWasOpenRef.current = false;
+        const returnTarget = overlayReturnFocusRef.current;
+        overlayReturnFocusRef.current = null;
+        window.requestAnimationFrame(() => {
+          if (returnTarget?.isConnected) {
+            returnTarget.focus({ preventScroll: true });
+            return;
+          }
+          const browserLoginButton = document.querySelector<HTMLElement>('[data-testid="browser-login-start"]');
+          browserLoginButton?.focus({ preventScroll: true });
+        });
+      }
+      return undefined;
+    }
+
+    if (!overlayWasOpenRef.current) {
+      const activeElement = document.activeElement;
+      overlayReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+      overlayWasOpenRef.current = true;
+    }
+
+    const visibleDialogs = () => Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+    ).filter((dialog) => dialog.getClientRects().length > 0);
+    const topDialog = () => {
+      const dialogs = visibleDialogs();
+      return dialogs.length ? dialogs[dialogs.length - 1] : null;
+    };
+    const focusableWithin = (dialog: HTMLElement) => Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true');
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const dialog = topDialog();
+      if (!dialog || dialog.contains(document.activeElement)) return;
+      const focusable = focusableWithin(dialog);
+      (focusable[0] ?? dialog).focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const dialog = topDialog();
+      if (!dialog) return;
+      if (event.key === 'Tab') {
+        const focusable = focusableWithin(dialog);
+        if (!focusable.length) {
+          event.preventDefault();
+          dialog.focus({ preventScroll: true });
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (event.shiftKey && (active === first || !dialog.contains(active))) {
+          event.preventDefault();
+          last.focus({ preventScroll: true });
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus({ preventScroll: true });
+        }
+        return;
+      }
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (confirmAction) {
+        if (!confirmBusy) setConfirmAction(null);
+        return;
+      }
+      // Approval is an explicit security decision; Escape must never silently
+      // deny or dismiss it.
+      if (approval) return;
+      if (accountOpen) return void setAccountOpen(false);
+      if (widgetGalleryOpen) return void setWidgetGalleryOpen(false);
+      if (aboutOpen) return void setAboutOpen(false);
+      if (feedbackOpen) return void setFeedbackOpen(false);
+      if (cloudAgentInfo) return void setCloudAgentInfo(null);
+      if (offlineAsrOpen) return void setOfflineAsrOpen(false);
+      if (settingsOpen) return void setSettingsOpen(false);
+      if (automationOpen) return void setAutomationOpen(false);
+      if (networkOpen) return void setNetworkOpen(false);
+      if (marketplaceOpen) return void setMarketplaceOpen(false);
+      if (agentSettingsOpen) return void setAgentSettingsOpen(false);
+      if (browserLoginAttempt) void cancelBrowserLogin();
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [
+    hasManagedModal,
+    confirmAction,
+    confirmBusy,
+    approval,
+    browserLoginAttempt?.attemptId,
+    accountOpen,
+    feedbackOpen,
+    aboutOpen,
+    widgetGalleryOpen,
+    offlineAsrOpen,
+    cloudAgentInfo,
+    settingsOpen,
+    automationOpen,
+    networkOpen,
+    marketplaceOpen,
+    agentSettingsOpen,
+  ]);
+
   const installMiniApp = (miniAppId: string) => {
     setBusyMiniApp(miniAppId);
     void run(() =>
@@ -2232,6 +2375,25 @@ export default function HostClient() {
     }));
   };
 
+  const requestConfirmation = (confirmation: ConfirmAction) => {
+    setConfirmBusy(false);
+    setConfirmAction(confirmation);
+  };
+
+  const executeConfirmedAction = async () => {
+    const confirmation = confirmAction;
+    if (!confirmation || confirmBusy) return;
+    setConfirmBusy(true);
+    try {
+      await confirmation.action();
+      setConfirmAction(null);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
   const refreshWorkspaceState = async () => {
     if (!activeAgentId || workspaceBusy) return;
     setWorkspaceBusy(true);
@@ -2271,19 +2433,25 @@ export default function HostClient() {
     }
   };
 
-  const handBackActiveWorkspace = async () => {
+  const handBackActiveWorkspace = () => {
     if (!activeAgentId || workspaceBusy) return;
-    setWorkspaceBusy(true);
-    try {
-      const box = await coordinator.handBackForeverBox(activeAgentId);
-      setWorkspaceStatus(box);
-      setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
-      setWorkspaceError(null);
-    } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setWorkspaceBusy(false);
-    }
+    requestConfirmation({
+      title: "归档并释放 Workspace？",
+      message: "当前 Workspace 会移动到可恢复归档区并退出活跃状态。已保存的 Box secrets 不会写入明文，也不会被这个动作删除。",
+      confirmLabel: "归档并释放",
+      tone: "warning",
+      action: async () => {
+        setWorkspaceBusy(true);
+        try {
+          const box = await coordinator.handBackForeverBox(activeAgentId);
+          setWorkspaceStatus(box);
+          setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
+          setWorkspaceError(null);
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      },
+    });
   };
 
   const refreshSharingState = async () => {
@@ -2359,6 +2527,30 @@ export default function HostClient() {
     }
   };
 
+  const confirmRemoveAgentFromSharedRoom = (roomId: string, roomName: string) => {
+    if (!activeAgentId || sharingBusy) return;
+    const agentId = activeAgentId;
+    requestConfirmation({
+      title: `从「${roomName}」移除当前 Agent？`,
+      message: "只会移除当前 Agent 在这个共享房间里的成员关系；房间、其他成员和本机 Agent 本身都会保留。",
+      confirmLabel: "移除当前 Agent",
+      tone: "warning",
+      action: () => mutateSharedRoom(() => coordinator.removeOwnAgentFromSharedRoom(roomId, agentId)),
+    });
+  };
+
+  const confirmLeaveSharedRoom = (roomId: string, roomName: string) => {
+    if (!activeAgentId || sharingBusy) return;
+    const agentId = activeAgentId;
+    requestConfirmation({
+      title: `离开共享房间「${roomName}」？`,
+      message: "当前 Agent 的最后一个本方成员关系会被移除。之后需要新的邀请码或房主审批才能重新加入。",
+      confirmLabel: "离开房间",
+      tone: "warning",
+      action: () => mutateSharedRoom(() => coordinator.leaveSharedRoom(roomId, agentId)),
+    });
+  };
+
   const pulseSharedRoomTyping = (roomId: string) => {
     if (!activeAgentId) return;
     void coordinator.setSharedRoomTyping(roomId, activeAgentId, true)
@@ -2408,12 +2600,20 @@ export default function HostClient() {
   };
 
   const deleteActiveGroup = () => {
-    if (!activeGroup || !window.confirm(`永久删除群聊 ${activeGroup.name}？`)) return;
-    void run(() => execute({
-      type: "group.delete",
-      requestId: nextRequestId("group-delete"),
-      id: activeGroup.id,
-    }));
+    if (!activeGroup) return;
+    const groupId = activeGroup.id;
+    const groupName = activeGroup.name;
+    requestConfirmation({
+      title: `删除群聊「${groupName}」？`,
+      message: "这个群聊及其本地上下文会从当前工作空间移除。这个操作不能从群聊列表直接撤销。",
+      confirmLabel: "永久删除",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "group.delete",
+        requestId: nextRequestId("group-delete"),
+        id: groupId,
+      })),
+    });
   };
 
   const openAgentSettings = () => {
@@ -2480,12 +2680,20 @@ export default function HostClient() {
   };
 
   const clearAgentMemory = () => {
-    if (!activeBotProfile || !window.confirm(`清空 ${activeBotProfile.name} 的全部记忆？`)) return;
-    void run(() => execute({
-      type: "memory.clear",
-      requestId: nextRequestId("memory-clear"),
-      agentId: activeBotProfile.id,
-    }));
+    if (!activeBotProfile) return;
+    const agentId = activeBotProfile.id;
+    const name = activeBotProfile.name;
+    requestConfirmation({
+      title: `清空 ${name} 的全部记忆？`,
+      message: "这会删除这个 Agent 的持久记忆条目。对话记录和工作流不会被这个动作删除。",
+      confirmLabel: "清空记忆",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "memory.clear",
+        requestId: nextRequestId("memory-clear"),
+        agentId,
+      })),
+    });
   };
 
   const refreshAgentWorkflows = () => {
@@ -2539,15 +2747,24 @@ export default function HostClient() {
     }));
   };
 
-  const deleteAgentWorkflow = async (id: string) => {
+  const deleteAgentWorkflow = (id: string, workflowName: string) => {
     if (!activeBotProfile) return;
-    await run(() => execute({
-      type: "workflow.delete",
-      requestId: nextRequestId("workflow-delete"),
-      agentId: activeBotProfile.id,
-      id,
-    }));
-    refreshAgentWorkflows();
+    const agentId = activeBotProfile.id;
+    requestConfirmation({
+      title: `删除 Workflow「${workflowName}」？`,
+      message: "这个可复用工作流会从当前 Agent 的工作流目录移除；关联的历史审计记录不会被改写。",
+      confirmLabel: "删除 Workflow",
+      tone: "danger",
+      action: async () => {
+        await run(() => execute({
+          type: "workflow.delete",
+          requestId: nextRequestId("workflow-delete"),
+          agentId,
+          id,
+        }));
+        refreshAgentWorkflows();
+      },
+    });
   };
 
   const importAgentWorkflowMarkdown = async (markdown: string, fallbackName?: string) => {
@@ -2754,19 +2971,53 @@ export default function HostClient() {
     }
   }
 
-  async function cancelCloudRun() {
+  const confirmBotDelete = (bot: BotSummary) => {
+    requestConfirmation({
+      title: `永久删除 Bot「${bot.name}」？`,
+      message: "这个 Bot 的独立身份、配置和会话关联会从 Fabushi 工作空间移除。主助手不会受这个操作影响。",
+      confirmLabel: "永久删除 Bot",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "bot.delete",
+        requestId: nextRequestId("bot-delete"),
+        id: bot.id,
+      })),
+    });
+  };
+
+  const confirmAutomationDelete = (id: string, name: string) => {
+    requestConfirmation({
+      title: `删除例程「${name}」？`,
+      message: "这个自动化例程会停止触发，并从当前 Agent 的例程列表移除。",
+      confirmLabel: "删除例程",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "automation.delete",
+        requestId: nextRequestId("automation-delete"),
+        id,
+      })),
+    });
+  };
+
+  function cancelCloudRun() {
     const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
     if (!runId || cloudAgentActionPending) return;
-    setCloudAgentActionPending(true);
-    try {
-      const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("cancelCloudAgent", { bcId: runId });
-      if (result?.info) setCloudAgentInfo(result.info);
-      setCloudAgentFailure(null);
-    } catch (error) {
-      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
-    } finally {
-      setCloudAgentActionPending(false);
-    }
+    requestConfirmation({
+      title: "取消这个 Cloud Run？",
+      message: "正在执行的云端任务会收到取消请求。已经产生的工具调用或外部副作用不会被自动回滚。",
+      confirmLabel: "取消运行",
+      tone: "warning",
+      action: async () => {
+        setCloudAgentActionPending(true);
+        try {
+          const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("cancelCloudAgent", { bcId: runId });
+          if (result?.info) setCloudAgentInfo(result.info);
+          setCloudAgentFailure(null);
+        } finally {
+          setCloudAgentActionPending(false);
+        }
+      },
+    });
   }
 
   async function submitDesktopFeedback(event: FormEvent<HTMLFormElement>) {
@@ -3837,6 +4088,7 @@ export default function HostClient() {
                 execute={execute}
                 nextRequestId={nextRequestId}
                 run={run}
+                onDeleteBot={confirmBotDelete}
               />
             )}
           </section>
@@ -3972,8 +4224,8 @@ export default function HostClient() {
                           <button type="button" disabled={sharingBusy} onClick={() => void createSharedInvite(room.id)}>邀请</button>
                           {!activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.addOwnAgentToSharedRoom(room.id, activeAgentId))}>加入当前 Agent</button> : null}
                           {activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => pulseSharedRoomTyping(room.id)}>输入状态</button> : null}
-                          {activeIsOwnMember && ownAgentIds.length > 1 ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.removeOwnAgentFromSharedRoom(room.id, activeAgentId))}>移除当前 Agent</button> : null}
-                          {activeIsOwnMember && ownAgentIds.length <= 1 ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.leaveSharedRoom(room.id, activeAgentId))}>离开房间</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length > 1 ? <button type="button" disabled={sharingBusy} onClick={() => confirmRemoveAgentFromSharedRoom(room.id, room.name)}>移除当前 Agent</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length <= 1 ? <button type="button" disabled={sharingBusy} onClick={() => confirmLeaveSharedRoom(room.id, room.name)}>离开房间</button> : null}
                         </div>
                       </article>
                     );
@@ -4046,7 +4298,7 @@ export default function HostClient() {
                       <button type="button" onClick={() => void run(() => execute({ type: "automation.run", requestId: nextRequestId("automation-run"), id: automation.id }))}>运行</button>
                       <button type="button" onClick={() => void run(() => execute({ type: "automation.setEnabled", requestId: nextRequestId("automation-toggle"), id: automation.id, enabled: !automation.enabled }))}>{automation.enabled ? "暂停" : "恢复"}</button>
                       <button type="button" onClick={() => editAutomation(automation)}>编辑</button>
-                      <button type="button" onClick={() => void run(() => execute({ type: "automation.delete", requestId: nextRequestId("automation-delete"), id: automation.id }))}>删除</button>
+                      <button type="button" onClick={() => confirmAutomationDelete(automation.id, automation.name)}>删除</button>
                     </div>
                   </article>
                 ))}
@@ -4328,7 +4580,7 @@ export default function HostClient() {
 
       {approval ? (
         <div className={styles.backdrop}>
-          <section className={styles.approvalDialog} role="dialog" aria-modal="true" aria-labelledby="approval-title">
+          <section className={styles.approvalDialog} role="dialog" aria-modal="true" aria-labelledby="approval-title" tabIndex={-1}>
             <span className={styles.approvalIcon}><Icon name="shield" size={24} /></span>
             <h2 id="approval-title">
               {approval.kind === "command"
@@ -4667,6 +4919,47 @@ export default function HostClient() {
             <footer>
               <button type="button" onClick={() => { setAccountOpen(false); setSettingsOpen(true); setSettingsSection("general"); }}>账户设置</button>
               <button className={styles.accountLogout} data-testid="logout" type="button" onClick={() => void logout()}>退出登录</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {confirmAction ? (
+        <div className={`${styles.backdrop} ${styles.confirmBackdrop}`} onMouseDown={() => { if (!confirmBusy) setConfirmAction(null); }}>
+          <section
+            className={styles.confirmDialog}
+            data-tone={confirmAction.tone}
+            data-testid="confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-action-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={styles.confirmMarkStage}>
+              <BotMark
+                botId={`confirm-${confirmAction.tone}`}
+                state={confirmAction.tone === "danger" ? "alerting" : "thinking"}
+                size={82}
+                color={confirmAction.tone === "danger" ? "red" : "violet"}
+                emphasis
+                label={confirmAction.tone === "danger" ? "危险操作确认" : "操作确认"}
+              />
+              <i aria-hidden="true" />
+            </div>
+            <p className={styles.confirmEyebrow}>CONFIRM ACTION</p>
+            <h2 id="confirm-action-title">{confirmAction.title}</h2>
+            <p>{confirmAction.message}</p>
+            <footer>
+              <button type="button" disabled={confirmBusy} onClick={() => setConfirmAction(null)}>返回</button>
+              <button
+                type="button"
+                data-tone={confirmAction.tone}
+                disabled={confirmBusy}
+                onClick={() => void executeConfirmedAction()}
+              >
+                {confirmBusy ? "处理中…" : confirmAction.confirmLabel}
+              </button>
             </footer>
           </section>
         </div>

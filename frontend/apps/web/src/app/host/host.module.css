@@ -6722,3 +6722,136 @@
   .marketplace,
   .automationDialog { width: calc(100vw - 18px); height: calc(100vh - 18px); max-height: none; border-radius: 18px; }
 }
+
+/* Fabushi confirmation layer: contextual, keyboard-safe and visually native. */
+.confirmBackdrop {
+  z-index: 120;
+  background: rgb(0 0 0 / 68%);
+  backdrop-filter: blur(18px) saturate(108%);
+}
+
+.confirmDialog {
+  width: min(470px, calc(100vw - 32px));
+  display: grid;
+  justify-items: center;
+  padding: 32px 30px 26px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 26px;
+  outline: none;
+  background:
+    radial-gradient(circle at 50% -8%, rgb(135 111 239 / 12%), transparent 36%),
+    linear-gradient(145deg, rgb(255 255 255 / 4%), transparent 34%),
+    #111113;
+  box-shadow: 0 42px 115px rgb(0 0 0 / 58%), inset 0 1px rgb(255 255 255 / 4%);
+  text-align: center;
+}
+
+.confirmDialog[data-tone="danger"] {
+  background:
+    radial-gradient(circle at 50% -8%, rgb(232 82 102 / 10%), transparent 36%),
+    linear-gradient(145deg, rgb(255 255 255 / 4%), transparent 34%),
+    #111113;
+}
+
+.confirmMarkStage {
+  position: relative;
+  width: 108px;
+  height: 100px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 9px;
+}
+
+.confirmMarkStage > i {
+  position: absolute;
+  inset: 6px;
+  z-index: -1;
+  border: 1px solid rgb(150 130 239 / 17%);
+  border-radius: 47% 53% 56% 44% / 54% 45% 55% 46%;
+  animation: confirmOrbit 8s linear infinite;
+}
+
+.confirmDialog[data-tone="danger"] .confirmMarkStage > i {
+  border-color: rgb(238 100 116 / 22%);
+}
+
+.confirmEyebrow {
+  margin: 0 0 10px;
+  color: #9788e8;
+  font-size: 7.5px;
+  font-weight: 840;
+  letter-spacing: .18em;
+}
+
+.confirmDialog[data-tone="danger"] .confirmEyebrow { color: #e58b97; }
+
+.confirmDialog h2 {
+  max-width: 390px;
+  margin: 0;
+  color: #f4f4f0;
+  font-size: 22px;
+  font-weight: 560;
+  line-height: 1.18;
+  letter-spacing: -.03em;
+}
+
+.confirmDialog > p:not(.confirmEyebrow) {
+  max-width: 390px;
+  margin: 13px 0 0;
+  color: rgb(244 244 240 / 54%);
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.confirmDialog footer {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.confirmDialog footer button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 700;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.confirmDialog footer button:hover:not(:disabled) { transform: translateY(-1px); }
+.confirmDialog footer button:disabled { opacity: .45; }
+.confirmDialog footer button[data-tone="warning"] {
+  border-color: rgb(150 130 239 / 18%);
+  background: #ecece8;
+  color: #111;
+}
+.confirmDialog footer button[data-tone="danger"] {
+  border-color: rgb(239 112 126 / 24%);
+  background: #ef8b98;
+  color: #16080a;
+}
+
+.shell[data-theme="light"] .confirmDialog {
+  background:
+    radial-gradient(circle at 50% -8%, rgb(106 85 202 / 8%), transparent 36%),
+    #fff;
+  box-shadow: 0 36px 90px rgb(47 42 35 / 18%);
+}
+.shell[data-theme="light"] .confirmDialog h2 { color: #171716; }
+.shell[data-theme="light"] .confirmDialog > p:not(.confirmEyebrow) { color: rgb(23 23 22 / 58%); }
+
+@keyframes confirmOrbit { to { transform: rotate(360deg); } }
+
+@media (max-width: 520px) {
+  .confirmDialog { padding: 28px 20px 20px; border-radius: 22px; }
+  .confirmDialog footer { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirmMarkStage > i,
+  .confirmDialog footer button { animation: none !important; transition: none !important; }
+}
