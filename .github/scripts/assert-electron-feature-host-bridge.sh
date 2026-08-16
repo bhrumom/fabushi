@@ -55,20 +55,28 @@ grep -Fq "mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event)" "$ma
   exit 1
 }
 
-grep -Fq 'createRendererEdge(ipcRenderer, MAHAYANA_EDGE)' "$preload" || {
-  echo "Electron preload does not create the Mahayana renderer edge" >&2
+if grep -Eq "require\(['\"]\./" "$preload"; then
+  echo "Electron sandbox preload must not require local modules" >&2
+  exit 1
+fi
+grep -Fq "const MAHAYANA_EDGE = 'mahayana-host';" "$preload" || {
+  echo "Electron preload Mahayana edge name is missing" >&2
   exit 1
 }
-grep -Fq 'const allowedMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));' "$preload" || {
-  echo "Electron preload does not derive its allowlist from MAHAYANA_EDGE" >&2
+grep -Fq 'return `fabushi-edge:${edge}:call:${method}`;' "$preload" || {
+  echo "Electron preload edge call-channel construction is missing" >&2
   exit 1
 }
 grep -Fq "contextBridge.exposeInMainWorld('mahayana', mahayana)" "$preload" || {
   echo "Electron preload does not expose the Mahayana bridge" >&2
   exit 1
 }
-grep -Fq "return edgeClient.subscribe({ 'runtime-event': listener });" "$preload" || {
+grep -Fq 'return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);' "$preload" || {
   echo "Electron preload runtime-event subscription is missing" >&2
+  exit 1
+}
+grep -Fq "contextBridge.exposeInMainWorld('fabushiNative'" "$preload" || {
+  echo "Electron preload native desktop bridge is missing" >&2
   exit 1
 }
 

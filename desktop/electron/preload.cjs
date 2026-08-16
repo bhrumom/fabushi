@@ -1,23 +1,53 @@
-const { contextBridge, ipcRenderer } = require('electron');
-const { createRendererEdge } = require('./edge-ipc.cjs');
-const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
-const { NATIVE_EDGE } = require('./native-edge.cjs');
+'use strict';
 
-const edgeClient = createRendererEdge(ipcRenderer, MAHAYANA_EDGE);
-const nativeEdgeClient = createRendererEdge(ipcRenderer, NATIVE_EDGE);
-const allowedMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));
+// Electron sandboxed preloads may only require Electron and a small set of
+// built-ins. Keep this file self-contained; the main process remains the
+// authority that validates the registered edge/method allowlists.
+const { contextBridge, ipcRenderer } = require('electron');
+
+const MAHAYANA_EDGE = 'mahayana-host';
+const NATIVE_EDGE = 'native-desktop';
+const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
+const NATIVE_EVENTS = new Set(['window-state', 'theme-changed']);
+
+function callChannel(edge, method) {
+  return `fabushi-edge:${edge}:call:${method}`;
+}
+
+function eventChannel(edge, eventName) {
+  return `fabushi-edge:${edge}:event:${eventName}`;
+}
+
+function failureMessage(failure) {
+  if (!failure || typeof failure !== 'object') return 'Native edge call failed.';
+  const code = typeof failure.code === 'string' ? failure.code : 'bridge/invoke-failed';
+  const detail = typeof failure.detail === 'string' ? failure.detail : 'Native edge call failed.';
+  return `${code}: ${detail}`;
+}
+
+async function invokeEdge(edge, method, params = {}) {
+  const reply = await ipcRenderer.invoke(callChannel(edge, method), params ?? {});
+  if (!reply || typeof reply !== 'object' || typeof reply.ok !== 'boolean') {
+    throw new Error('bridge/invoke-failed: Native edge returned an invalid reply.');
+  }
+  if (reply.ok) return reply.value;
+  throw new Error(failureMessage(reply.failure));
+}
+
+function subscribeEdge(edge, eventName, listener) {
+  if (typeof listener !== 'function') return () => {};
+  const channel = eventChannel(edge, eventName);
+  const forward = (_event, payload) => listener(payload);
+  ipcRenderer.on(channel, forward);
+  return () => ipcRenderer.off(channel, forward);
+}
 
 const mahayana = Object.freeze({
   invoke(method, params = {}) {
-    if (!allowedMethods.has(method)) {
-      return Promise.reject(new Error(`Host method is not allowed: ${method}`));
-    }
-    const spec = MAHAYANA_EDGE.methods[method];
-    return spec.args === 'none' ? edgeClient[method]() : edgeClient[method](params);
+    return invokeEdge(MAHAYANA_EDGE, method, params);
   },
   subscribe(listener) {
-    if (typeof listener !== 'function') return () => {};
-    return edgeClient.subscribe({ 'runtime-event': listener });
+    return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);
   },
 });
 
@@ -25,18 +55,22 @@ contextBridge.exposeInMainWorld('mahayana', mahayana);
 
 contextBridge.exposeInMainWorld('fabushiNative', Object.freeze({
   invoke(method, params = {}) {
-    const spec = NATIVE_EDGE.methods[method];
-    if (!spec) return Promise.reject(new Error(`Native method is not allowed: ${method}`));
-    return spec.args === 'none' ? nativeEdgeClient[method]() : nativeEdgeClient[method](params);
+    return invokeEdge(NATIVE_EDGE, method, params);
   },
-  subscribe(listeners) {
-    return nativeEdgeClient.subscribe(listeners);
+  subscribe(listeners = {}) {
+    if (!listeners || typeof listeners !== 'object') return () => {};
+    const cleanup = [];
+    for (const eventName of NATIVE_EVENTS) {
+      const listener = listeners[eventName];
+      if (typeof listener === 'function') cleanup.push(subscribeEdge(NATIVE_EDGE, eventName, listener));
+    }
+    return () => cleanup.splice(0).forEach((dispose) => dispose());
   },
 }));
 
 contextBridge.exposeInMainWorld('fabushi', Object.freeze({
-  // Compatibility facade for the current HostClient while the UI migrates
-  // feature-by-feature to the explicit Mahayana and native desktop edges.
+  // Compatibility facade while HostClient call sites migrate to the explicit
+  // Mahayana and native desktop bridges.
   invoke(method, params = {}) {
     return mahayana.invoke(method, params);
   },
