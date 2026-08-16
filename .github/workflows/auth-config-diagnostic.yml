@@ -26,6 +26,10 @@ jobs:
       HAS_SECRET_APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID != '' }}
       HAS_SECRET_APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID != '' }}
       HAS_SECRET_APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_TOKEN: ${{ secrets.AUTH_SYSTEM_MAIL_TOKEN != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_ENABLED: ${{ secrets.AUTH_SYSTEM_MAIL_ENABLED != '' }}
+      AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL }}
       HAS_VAR_OAUTH_APPLE_CLIENT_ID: ${{ vars.OAUTH_APPLE_CLIENT_ID != '' }}
       HAS_VAR_APPLE_SERVICES_ID: ${{ vars.APPLE_SERVICES_ID != '' }}
       HAS_VAR_APPLE_SERVICE_ID: ${{ vars.APPLE_SERVICE_ID != '' }}
@@ -56,33 +60,18 @@ jobs:
           echo 'mahayana-platform secret names:'
           npx --yes wrangler@4 secret list --format json | jq -r '.[].name' | sort
 
-      - name: Inspect Email Sending API and public DNS
+      - name: Inspect self-hosted bhrum2 mail boundary
         shell: bash
         run: |
           set -euo pipefail
-          api='https://api.cloudflare.com/client/v4'
-          zone_json="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/zones?name=ombhrum.com")"
-          zone_id="$(jq -er '.result[0].id' <<<"$zone_json")"
-          body="$RUNNER_TEMP/email-sending.json"
-          status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/zones/$zone_id/email/sending/subdomains")"
-          echo "Email Sending API HTTP status: $status"
-          if [ "$status" = 200 ]; then
-            jq -c '{success, domains:[.result[]? | {name, enabled}]}' "$body"
-          else
-            jq -c '{success, errors:[.errors[]? | {code, message}]}' "$body" || true
+          if [ -z "${AUTH_SYSTEM_MAIL_URL:-}" ]; then
+            echo 'Self-hosted mail URL is not configured.'
+            exit 0
           fi
-
-          dns='https://cloudflare-dns.com/dns-query'
-          query_dns() {
-            curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode "name=$1" --data-urlencode "type=$2" "$dns"
-          }
-          mx="$(query_dns cf-bounce.ombhrum.com MX)"
-          spf="$(query_dns cf-bounce.ombhrum.com TXT)"
-          dkim="$(query_dns cf-bounce._domainkey.ombhrum.com TXT)"
-          ready=false
-          if jq -e '.Status == 0 and any(.Answer[]?; ((.data // "") | ascii_downcase | contains("mx.cloudflare.net")))' <<<"$mx" >/dev/null \
-            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null \
-            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null; then
-            ready=true
-          fi
-          echo "Email Sending public DNS ready: $ready"
+          body="$RUNNER_TEMP/self-host-mail-boundary.json"
+          status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data '{"email":"probe@example.com","subject":"probe","text":"probe"}' \
+            "$AUTH_SYSTEM_MAIL_URL")"
+          echo "Self-hosted mail unauthenticated HTTP status: $status"
+          [ "$status" = 401 ] || { cat "$body"; exit 1; }

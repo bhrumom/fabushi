@@ -37,27 +37,6 @@ jobs:
           [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo "Cloudflare account id is not configured." >&2; exit 1; }
           [ -n "${TEST_ACCOUNT_TOKEN:-}" ] || { echo "Mahayana test account token is not configured." >&2; exit 1; }
 
-      - id: email-sending-domain
-        name: Inspect public Email Sending DNS
-        shell: bash
-        run: |
-          set -euo pipefail
-          dns='https://cloudflare-dns.com/dns-query'
-          query_dns() {
-            curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode "name=$1" --data-urlencode "type=$2" "$dns"
-          }
-          mx="$(query_dns cf-bounce.ombhrum.com MX)"
-          spf="$(query_dns cf-bounce.ombhrum.com TXT)"
-          dkim="$(query_dns cf-bounce._domainkey.ombhrum.com TXT)"
-          enabled=false
-          if jq -e '.Status == 0 and any(.Answer[]?; ((.data // "") | ascii_downcase | contains("mx.cloudflare.net")))' <<<"$mx" >/dev/null \
-            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null \
-            && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null; then
-            enabled=true
-          fi
-          echo "Cloudflare Email Sending public DNS ready: $enabled"
-          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
