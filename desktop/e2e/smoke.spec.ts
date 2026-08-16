@@ -152,6 +152,7 @@ test('desktop package drives every declared Host journey through Electron IPC an
       'openExternal',
       'openSystemSettings',
       'pickFile',
+      'subscribe',
       'windowFocused',
     ]);
 

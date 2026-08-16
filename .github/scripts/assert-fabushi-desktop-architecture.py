@@ -40,8 +40,10 @@ REQUIRED_SNIPPETS = {
     ),
     "desktop/electron/preload.cjs": (
         "fabushiNative",
-        "nativeEdgeClient",
-        "mahayana",
+        "invokeEdge",
+        "mahayana-host",
+        "native-desktop",
+        "runtime-event",
     ),
     "frontend/apps/web/src/lib/mahayana-host/coordinator.ts": (
         "class MahayanaCoordinator",
