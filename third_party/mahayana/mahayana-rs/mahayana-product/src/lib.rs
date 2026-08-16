@@ -1839,9 +1839,9 @@ impl MahayanaProductClient {
 
     fn browser_login_reopen(&self, request: &Value) -> Result<Value, ProductError> {
         let attempt_id = required_identifier(request, "attemptId")?;
-        let poll_secret = self
-            .load_browser_login_poll_secret(&attempt_id)?
-            .ok_or(ProductError::SessionExpired)?;
+        let Some(poll_secret) = self.load_browser_login_poll_secret(&attempt_id)? else {
+            return Ok(json!({"status": "expired"}));
+        };
         self.post_json(
             &format!("/api/auth/browser/attempts/{attempt_id}/reopen"),
             json!({"pollSecret": poll_secret}),
@@ -1851,9 +1851,9 @@ impl MahayanaProductClient {
 
     fn browser_login_cancel(&self, request: &Value) -> Result<Value, ProductError> {
         let attempt_id = required_identifier(request, "attemptId")?;
-        let poll_secret = self
-            .load_browser_login_poll_secret(&attempt_id)?
-            .ok_or(ProductError::SessionExpired)?;
+        let Some(poll_secret) = self.load_browser_login_poll_secret(&attempt_id)? else {
+            return Ok(json!({"status": "expired"}));
+        };
         let response = self.post_json(
             &format!("/api/auth/browser/attempts/{attempt_id}/cancel"),
             json!({"pollSecret": poll_secret}),
@@ -1871,9 +1871,9 @@ impl MahayanaProductClient {
 
     fn browser_login_poll(&self, request: &Value) -> Result<Value, ProductError> {
         let attempt_id = required_identifier(request, "attemptId")?;
-        let poll_secret = self
-            .load_browser_login_poll_secret(&attempt_id)?
-            .ok_or(ProductError::SessionExpired)?;
+        let Some(poll_secret) = self.load_browser_login_poll_secret(&attempt_id)? else {
+            return Ok(json!({"status": "expired"}));
+        };
         let response = self.get_json(
             &format!("/api/auth/browser/attempts/{attempt_id}"),
             &[("pollSecret", poll_secret.as_str())],
