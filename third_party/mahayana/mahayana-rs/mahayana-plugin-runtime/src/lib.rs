@@ -1681,7 +1681,10 @@ mod tests {
         manager
             .grant("cleanup-plugin", &["network".into()], "network")
             .unwrap();
-        assert_eq!(manager.grants_for("cleanup-plugin"), vec!["network".to_string()]);
+        assert_eq!(
+            manager.grants_for("cleanup-plugin"),
+            vec!["network".to_string()]
+        );
         assert!(manager.remove_plugin("cleanup-plugin").unwrap());
         assert!(manager.grants_for("cleanup-plugin").is_empty());
         assert!(!manager.remove_plugin("cleanup-plugin").unwrap());

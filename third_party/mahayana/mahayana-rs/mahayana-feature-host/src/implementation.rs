@@ -986,7 +986,11 @@ impl FeatureHostController {
                 }
                 let resolved_agent_id = requested_agent_id
                     .or_else(|| previous.as_ref().and_then(|item| item.agent_id.clone()));
-                let action = if previous.is_some() { "updated" } else { "created" };
+                let action = if previous.is_some() {
+                    "updated"
+                } else {
+                    "created"
+                };
                 let automation = AutomationSummary {
                     id: id.clone(),
                     agent_id: resolved_agent_id,
@@ -1050,7 +1054,10 @@ impl FeatureHostController {
                     FeatureHostError::Contract(format!("unknown automation: {id}"))
                 })?;
                 ensure_automation_agent_scope(existing, agent_id.as_deref())?;
-                let automation = state.automations.remove(&id).expect("automation checked above");
+                let automation = state
+                    .automations
+                    .remove(&id)
+                    .expect("automation checked above");
                 self.persist_automations(&state.automations)?;
                 state.events.push_back(HostEvent::AutomationChanged {
                     timestamp: timestamp(),
@@ -3036,12 +3043,11 @@ impl FeatureHostController {
             }
             FeatureCommand::WorkflowRun { id, .. } => {
                 if self.state()?.automations.contains_key(&id) {
-                    return self
-                        .execute_automation(FeatureCommand::AutomationRun {
-                            request_id,
-                            id,
-                            agent_id: Some(agent_id),
-                        });
+                    return self.execute_automation(FeatureCommand::AutomationRun {
+                        request_id,
+                        id,
+                        agent_id: Some(agent_id),
+                    });
                 }
                 let workflow = load_workflow_summary(workflow_root, agent_root, &agent_id, &id)
                     .ok_or_else(|| FeatureHostError::Contract(format!("unknown workflow: {id}")))?;
@@ -3674,10 +3680,9 @@ impl FeatureHostController {
                 if self.config.mode == HostMode::Production {
                     #[cfg(feature = "production")]
                     {
-                        let removed = match self
-                            .runtime()?
-                            .execute(RuntimeCommand::McpRemove { server: server.clone() })?
-                        {
+                        let removed = match self.runtime()?.execute(RuntimeCommand::McpRemove {
+                            server: server.clone(),
+                        })? {
                             RuntimeResponse::McpRemoved { removed, .. } => removed,
                             other => return Err(unexpected_response("mcp.remove", other)),
                         };
@@ -3703,12 +3708,16 @@ impl FeatureHostController {
                 let instructions = clamp_block(&instructions, 20_000);
                 if self.config.mode == HostMode::Production {
                     #[cfg(feature = "production")]
-                    match self.runtime()?.execute(RuntimeCommand::McpSetCustomInstructions {
-                        server: server.clone(),
-                        instructions,
-                    })? {
+                    match self
+                        .runtime()?
+                        .execute(RuntimeCommand::McpSetCustomInstructions {
+                            server: server.clone(),
+                            instructions,
+                        })? {
                         RuntimeResponse::McpCustomInstructionsUpdated { .. } => {}
-                        other => return Err(unexpected_response("mcp.setCustomInstructions", other)),
+                        other => {
+                            return Err(unexpected_response("mcp.setCustomInstructions", other));
+                        }
                     }
                     #[cfg(not(feature = "production"))]
                     return Err(FeatureHostError::ProductionUnavailable);
@@ -3727,11 +3736,13 @@ impl FeatureHostController {
                 let tool = required(tool, "MCP tool")?;
                 if self.config.mode == HostMode::Production {
                     #[cfg(feature = "production")]
-                    match self.runtime()?.execute(RuntimeCommand::McpSetToolDisabled {
-                        server: server.clone(),
-                        tool,
-                        disabled,
-                    })? {
+                    match self
+                        .runtime()?
+                        .execute(RuntimeCommand::McpSetToolDisabled {
+                            server: server.clone(),
+                            tool,
+                            disabled,
+                        })? {
                         RuntimeResponse::McpToolDisabledUpdated { .. } => {}
                         other => return Err(unexpected_response("mcp.setToolDisabled", other)),
                     }
@@ -4779,11 +4790,12 @@ impl FeatureHostController {
             }
             FeatureCommand::ListenerDisconnect { platform, .. } => {
                 if *platform != ListenerPlatform::Git {
-                    let connector_id = connector_for_listener_platform(*platform).ok_or_else(|| {
-                        FeatureHostError::Contract(format!(
-                            "no connector exists for listener platform {platform:?}"
-                        ))
-                    })?;
+                    let connector_id =
+                        connector_for_listener_platform(*platform).ok_or_else(|| {
+                            FeatureHostError::Contract(format!(
+                                "no connector exists for listener platform {platform:?}"
+                            ))
+                        })?;
                     let (connectors, live) = self.production_connector_snapshot()?;
                     let accounts = connectors
                         .iter()
@@ -4827,11 +4839,8 @@ impl FeatureHostController {
                 let response = self
                     .runtime()?
                     .product_execute("mahayana.listener.disconnect", &payload)?;
-                let integration = decode_product_field(
-                    response,
-                    "integration",
-                    "mahayana.listener.disconnect",
-                )?;
+                let integration =
+                    decode_product_field(response, "integration", "mahayana.listener.disconnect")?;
                 self.state()?.events.push_back(HostEvent::ListenerChanged {
                     timestamp: timestamp(),
                     integration,
@@ -5019,8 +5028,7 @@ impl FeatureHostController {
                     integrations,
                 });
             }
-            FeatureCommand::ListenerConnect { .. }
-            | FeatureCommand::ListenerDisconnect { .. } => {
+            FeatureCommand::ListenerConnect { .. } | FeatureCommand::ListenerDisconnect { .. } => {
                 let integration = decode_product_field(response, "integration", method)?;
                 state.events.push_back(HostEvent::ListenerChanged {
                     timestamp: timestamp(),
@@ -5440,7 +5448,10 @@ impl FeatureHostController {
                 context_sections.push(format!("[Available workflows]\n{workflow_catalog}"));
             }
             context_sections.push(turn_prompt);
-            let runtime_text = format!("[MAHAYANA_HIDDEN_CONTEXT]\n{}", context_sections.join("\n\n"));
+            let runtime_text = format!(
+                "[MAHAYANA_HIDDEN_CONTEXT]\n{}",
+                context_sections.join("\n\n")
+            );
             (
                 GroupOperationContext {
                     run_id: run.run_id,
@@ -6352,7 +6363,10 @@ impl FeatureHostController {
 
     #[cfg(feature = "production")]
     fn mcp_instruction_context(&self) -> Result<Option<String>, FeatureHostError> {
-        let instructions = match self.runtime()?.execute(RuntimeCommand::McpCustomInstructions)? {
+        let instructions = match self
+            .runtime()?
+            .execute(RuntimeCommand::McpCustomInstructions)?
+        {
             RuntimeResponse::McpCustomInstructions { instructions } => instructions,
             other => return Err(unexpected_response("mcp.customInstructions", other)),
         };
@@ -6441,10 +6455,12 @@ impl FeatureHostController {
         let mut runtime_text =
             compose_agent_input(&text, mode, mode_statement.as_deref(), &attachments);
         if let Some(mcp_context) = self.mcp_instruction_context()? {
-            runtime_text = format!("{mcp_context}
+            runtime_text = format!(
+                "{mcp_context}
 
 [Current turn]
-{runtime_text}");
+{runtime_text}"
+            );
         }
         let memory_agent_id = agent_id.as_deref().unwrap_or("mahayana-assistant");
         if is_safe_memory_agent_id(memory_agent_id) {
@@ -8505,10 +8521,12 @@ These are user-configured rules for the named connector. Apply them whenever usi
         if remaining == 0 {
             break;
         }
-        let block = format!("
+        let block = format!(
+            "
 Connector: {server}
 {instruction}
-");
+"
+        );
         context.push_str(&clamp_block(&block, remaining));
     }
     Some(context)
@@ -11244,9 +11262,11 @@ mod tests {
                 enabled: false,
             })
             .expect_err("cross-agent automation mutation must be rejected");
-        assert!(error
-            .to_string()
-            .contains("does not belong to agent incident-bot"));
+        assert!(
+            error
+                .to_string()
+                .contains("does not belong to agent incident-bot")
+        );
 
         controller
             .execute(FeatureCommand::AutomationRun {
@@ -11268,9 +11288,11 @@ mod tests {
                 agent_id: Some("incident-bot".into()),
             })
             .expect_err("cross-agent automation deletion must be rejected");
-        assert!(error
-            .to_string()
-            .contains("does not belong to agent incident-bot"));
+        assert!(
+            error
+                .to_string()
+                .contains("does not belong to agent incident-bot")
+        );
     }
 
     #[test]
@@ -11283,7 +11305,10 @@ mod tests {
             cloud_task_resource_id(Some(&json!({"metadata": {"runId": "cloud-run-2"}}))).as_deref(),
             Some("cloud-run-2")
         );
-        assert_eq!(cloud_task_resource_id(Some(&json!({"id": "generic-step-id"}))), None);
+        assert_eq!(
+            cloud_task_resource_id(Some(&json!({"id": "generic-step-id"}))),
+            None
+        );
         assert_eq!(cloud_task_resource_id(Some(&json!({"runId": "   "}))), None);
     }
 
@@ -11322,7 +11347,9 @@ mod tests {
         ]);
         let context = render_mcp_instruction_context(&instructions).expect("MCP context");
         assert!(context.starts_with("[MCP connector operating instructions]"));
-        assert!(context.find("Connector: alpha").unwrap() < context.find("Connector: zeta").unwrap());
+        assert!(
+            context.find("Connector: alpha").unwrap() < context.find("Connector: zeta").unwrap()
+        );
         assert!(!context.contains("Connector: empty"));
         assert!(context.len() < 16_000);
     }
@@ -11337,10 +11364,11 @@ mod tests {
                 server: "docs".into(),
             })
             .expect("remove MCP server in test mode");
-        assert!(drain(&controller).into_iter().any(|event| matches!(
-            event,
-            HostEvent::McpRefreshed { .. }
-        )));
+        assert!(
+            drain(&controller)
+                .into_iter()
+                .any(|event| matches!(event, HostEvent::McpRefreshed { .. }))
+        );
     }
 
     #[test]
@@ -11675,7 +11703,10 @@ mod tests {
             .browser_login_start()
             .expect("start browser login");
         assert_eq!(attempt["attemptId"], "test-browser-login");
-        assert_eq!(attempt["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert_eq!(
+            attempt["loginUrl"],
+            "about:blank#fabushi-test-browser-login"
+        );
         assert!(attempt.get("accessToken").is_none());
         assert!(attempt.get("refreshToken").is_none());
         assert!(attempt.get("password").is_none());
@@ -11708,7 +11739,10 @@ mod tests {
             .expect("reopen browser login");
         assert_eq!(reopened["status"], "pending");
         assert_eq!(reopened["attemptId"], reopened_attempt["attemptId"]);
-        assert_eq!(reopened["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert_eq!(
+            reopened["loginUrl"],
+            "about:blank#fabushi-test-browser-login"
+        );
         assert!(reopened.get("pollSecret").is_none());
 
         let cancelled_controller = controller();
@@ -11724,7 +11758,10 @@ mod tests {
             )
             .expect("cancel browser login");
         assert_eq!(cancelled["status"], "cancelled");
-        assert_eq!(cancelled_controller.auth_status().unwrap()["loggedIn"], false);
+        assert_eq!(
+            cancelled_controller.auth_status().unwrap()["loggedIn"],
+            false
+        );
     }
 
     #[test]

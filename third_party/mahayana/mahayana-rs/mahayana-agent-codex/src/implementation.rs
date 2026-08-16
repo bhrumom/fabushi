@@ -59,8 +59,8 @@ use codex_core::McpManager;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::edit::ConfigEditsBuilder;
-use codex_core::config::load_global_mcp_servers;
 use codex_core::config::find_codex_home;
+use codex_core::config::load_global_mcp_servers;
 use codex_core::plugin_workbench::mcp_app_orchestration_profile;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::loader::load_plugin_mcp_servers;
@@ -1657,14 +1657,15 @@ fn load_mcp_custom_instructions(codex_home: &Path) -> Result<HashMap<String, Str
         Err(error) => {
             return Err(AgentError::Backend(format!(
                 "failed to read MCP custom instructions: {error}"
-            )))
+            )));
         }
     };
-    let mut instructions = serde_json::from_str::<HashMap<String, String>>(&contents)
-        .map_err(|error| AgentError::Backend(format!("invalid MCP custom instructions: {error}")))?;
-    instructions.retain(|server, instruction| {
-        !server.trim().is_empty() && !instruction.trim().is_empty()
-    });
+    let mut instructions =
+        serde_json::from_str::<HashMap<String, String>>(&contents).map_err(|error| {
+            AgentError::Backend(format!("invalid MCP custom instructions: {error}"))
+        })?;
+    instructions
+        .retain(|server, instruction| !server.trim().is_empty() && !instruction.trim().is_empty());
     Ok(instructions)
 }
 
@@ -1677,8 +1678,9 @@ fn save_mcp_custom_instructions(
     })?;
     let path = mcp_custom_instructions_path(codex_home);
     let temporary = path.with_extension("json.tmp");
-    let serialized = serde_json::to_vec_pretty(instructions)
-        .map_err(|error| AgentError::Backend(format!("serialize MCP custom instructions: {error}")))?;
+    let serialized = serde_json::to_vec_pretty(instructions).map_err(|error| {
+        AgentError::Backend(format!("serialize MCP custom instructions: {error}"))
+    })?;
     std::fs::write(&temporary, serialized)
         .map_err(|error| AgentError::Backend(format!("write MCP custom instructions: {error}")))?;
     std::fs::rename(&temporary, &path)
@@ -1967,7 +1969,9 @@ impl AgentBackend for CodexAgentBackend {
         let server = server.trim();
         let tool = tool.trim();
         if server.is_empty() || server.len() > 200 || tool.is_empty() || tool.len() > 240 {
-            return Err(AgentError::Backend("invalid MCP server or tool name".into()));
+            return Err(AgentError::Backend(
+                "invalid MCP server or tool name".into(),
+            ));
         }
         let codex_home = self.inner.config.codex_home.to_path_buf();
         let mut servers = load_global_mcp_servers(&codex_home)
@@ -1993,7 +1997,9 @@ impl AgentBackend for CodexAgentBackend {
             .replace_mcp_servers(&servers)
             .apply()
             .await
-            .map_err(|error| AgentError::Backend(format!("failed to persist MCP tool filter: {error}")))?;
+            .map_err(|error| {
+                AgentError::Backend(format!("failed to persist MCP tool filter: {error}"))
+            })?;
         self.refresh_mcp_servers().await?;
         Ok(disabled_tools)
     }
@@ -2016,7 +2022,9 @@ impl AgentBackend for CodexAgentBackend {
             .replace_mcp_servers(&servers)
             .apply()
             .await
-            .map_err(|error| AgentError::Backend(format!("failed to persist MCP removal: {error}")))?;
+            .map_err(|error| {
+                AgentError::Backend(format!("failed to persist MCP removal: {error}"))
+            })?;
         if let McpServerTransportConfig::StreamableHttp { url, .. } = &removed_config.transport {
             let _ = delete_oauth_tokens(
                 server,

@@ -413,7 +413,10 @@ impl MahayanaRuntime {
                     .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
                 Ok(RuntimeResponse::McpCustomInstructions { instructions })
             }
-            RuntimeCommand::McpSetCustomInstructions { server, instructions } => {
+            RuntimeCommand::McpSetCustomInstructions {
+                server,
+                instructions,
+            } => {
                 let backend = self.agent_backend.as_ref().ok_or_else(|| {
                     RuntimeError::AgentBackend("no agent backend is available".into())
                 })?;
@@ -422,7 +425,11 @@ impl MahayanaRuntime {
                     .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
                 Ok(RuntimeResponse::McpCustomInstructionsUpdated { server })
             }
-            RuntimeCommand::McpSetToolDisabled { server, tool, disabled } => {
+            RuntimeCommand::McpSetToolDisabled {
+                server,
+                tool,
+                disabled,
+            } => {
                 let backend = self.agent_backend.as_ref().ok_or_else(|| {
                     RuntimeError::AgentBackend("no agent backend is available".into())
                 })?;
@@ -430,7 +437,10 @@ impl MahayanaRuntime {
                     .async_runtime
                     .block_on(backend.set_mcp_tool_disabled(&server, &tool, disabled))
                     .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
-                Ok(RuntimeResponse::McpToolDisabledUpdated { server, disabled_tools })
+                Ok(RuntimeResponse::McpToolDisabledUpdated {
+                    server,
+                    disabled_tools,
+                })
             }
             RuntimeCommand::McpRefresh => {
                 let backend = self.agent_backend.as_ref().ok_or_else(|| {

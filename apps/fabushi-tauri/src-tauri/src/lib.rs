@@ -330,7 +330,6 @@ mod desktop {
         state.auth_providers()
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -423,7 +422,6 @@ mod desktop {
         state.oauth_poll(attempt_id)
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -499,7 +497,6 @@ mod desktop {
     ) -> Result<Value, String> {
         state.auth_providers()
     }
-
 
     #[tauri::command]
     fn host_initialize(
@@ -593,7 +590,6 @@ mod desktop {
         state.browser_login_poll(attempt_id)
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -669,7 +665,6 @@ mod desktop {
     ) -> Result<Value, String> {
         state.auth_providers()
     }
-
 
     #[tauri::command]
     fn host_initialize(
@@ -763,7 +758,6 @@ mod desktop {
         state.oauth_poll(attempt_id)
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -839,7 +833,6 @@ mod desktop {
     ) -> Result<Value, String> {
         state.auth_providers()
     }
-
 
     #[tauri::command]
     fn host_initialize(
@@ -933,7 +926,6 @@ mod desktop {
         state.browser_login_reopen(attempt_id)
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -1009,7 +1001,6 @@ mod desktop {
     ) -> Result<Value, String> {
         state.auth_providers()
     }
-
 
     #[tauri::command]
     fn host_initialize(
@@ -1103,7 +1094,6 @@ mod desktop {
         state.oauth_poll(attempt_id)
     }
 
-
     #[tauri::command]
     fn host_initialize(
         state: State<'_, HostState>,
@@ -1179,7 +1169,6 @@ mod desktop {
     ) -> Result<Value, String> {
         state.auth_providers()
     }
-
 
     #[tauri::command]
     fn host_initialize(
@@ -1425,10 +1414,10 @@ mod desktop {
                 feature_host_auth_providers,
                 feature_host_oauth_start,
                 feature_host_oauth_poll,
-            feature_host_browser_login_start,
-            feature_host_browser_login_poll,
-            feature_host_browser_login_cancel,
-            feature_host_browser_login_reopen,
+                feature_host_browser_login_start,
+                feature_host_browser_login_poll,
+                feature_host_browser_login_cancel,
+                feature_host_browser_login_reopen,
                 feature_host_window_focused,
                 feature_host_show_notification,
                 feature_host_open_external,
