@@ -767,6 +767,8 @@ impl FeatureHostController {
                 | FeatureCommand::McpOauthLogin { .. }
                 | FeatureCommand::McpOauthLogout { .. }
                 | FeatureCommand::McpRemove { .. }
+                | FeatureCommand::McpSetCustomInstructions { .. }
+                | FeatureCommand::McpSetToolDisabled { .. }
                 | FeatureCommand::McpRefresh { .. }
                 | FeatureCommand::McpToolCall { .. }
         ) {
@@ -3588,6 +3590,54 @@ impl FeatureHostController {
                     timestamp: timestamp(),
                 });
             }
+            FeatureCommand::McpSetCustomInstructions {
+                server,
+                instructions,
+                ..
+            } => {
+                let server = required(server, "MCP server")?;
+                let instructions = clamp_block(&instructions, 20_000);
+                if self.config.mode == HostMode::Production {
+                    #[cfg(feature = "production")]
+                    match self.runtime()?.execute(RuntimeCommand::McpSetCustomInstructions {
+                        server: server.clone(),
+                        instructions,
+                    })? {
+                        RuntimeResponse::McpCustomInstructionsUpdated { .. } => {}
+                        other => return Err(unexpected_response("mcp.setCustomInstructions", other)),
+                    }
+                    #[cfg(not(feature = "production"))]
+                    return Err(FeatureHostError::ProductionUnavailable);
+                }
+                self.state()?.events.push_back(HostEvent::McpRefreshed {
+                    timestamp: timestamp(),
+                });
+            }
+            FeatureCommand::McpSetToolDisabled {
+                server,
+                tool,
+                disabled,
+                ..
+            } => {
+                let server = required(server, "MCP server")?;
+                let tool = required(tool, "MCP tool")?;
+                if self.config.mode == HostMode::Production {
+                    #[cfg(feature = "production")]
+                    match self.runtime()?.execute(RuntimeCommand::McpSetToolDisabled {
+                        server: server.clone(),
+                        tool,
+                        disabled,
+                    })? {
+                        RuntimeResponse::McpToolDisabledUpdated { .. } => {}
+                        other => return Err(unexpected_response("mcp.setToolDisabled", other)),
+                    }
+                    #[cfg(not(feature = "production"))]
+                    return Err(FeatureHostError::ProductionUnavailable);
+                }
+                self.state()?.events.push_back(HostEvent::McpRefreshed {
+                    timestamp: timestamp(),
+                });
+            }
             FeatureCommand::McpRefresh { .. } => {
                 if self.config.mode == HostMode::Production {
                     #[cfg(feature = "production")]
@@ -6197,6 +6247,15 @@ impl FeatureHostController {
     }
 
     #[cfg(feature = "production")]
+    fn mcp_instruction_context(&self) -> Result<Option<String>, FeatureHostError> {
+        let instructions = match self.runtime()?.execute(RuntimeCommand::McpCustomInstructions)? {
+            RuntimeResponse::McpCustomInstructions { instructions } => instructions,
+            other => return Err(unexpected_response("mcp.customInstructions", other)),
+        };
+        Ok(render_mcp_instruction_context(&instructions))
+    }
+
+    #[cfg(feature = "production")]
     fn production_chat(
         &self,
         request_id: String,
@@ -6277,6 +6336,12 @@ impl FeatureHostController {
         };
         let mut runtime_text =
             compose_agent_input(&text, mode, mode_statement.as_deref(), &attachments);
+        if let Some(mcp_context) = self.mcp_instruction_context()? {
+            runtime_text = format!("{mcp_context}
+
+[Current turn]
+{runtime_text}");
+        }
         let memory_agent_id = agent_id.as_deref().unwrap_or("mahayana-assistant");
         if is_safe_memory_agent_id(memory_agent_id) {
             if let Some(root) = self.memory_root_path.as_deref() {
@@ -8308,6 +8373,41 @@ fn is_safe_automation_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn render_mcp_instruction_context(
+    instructions: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let mut entries = instructions
+        .iter()
+        .filter_map(|(server, instruction)| {
+            let server = clamp_line(server, 200);
+            let instruction = clamp_block(instruction, 4_000);
+            (!server.is_empty() && !instruction.is_empty()).then_some((server, instruction))
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries.truncate(16);
+    if entries.is_empty() {
+        return None;
+    }
+    let mut context = String::from(
+        "[MCP connector operating instructions]
+These are user-configured rules for the named connector. Apply them whenever using tools from that connector. They are runtime context, not user message text.
+",
+    );
+    for (server, instruction) in entries {
+        let remaining = 14_000usize.saturating_sub(context.chars().count());
+        if remaining == 0 {
+            break;
+        }
+        let block = format!("
+Connector: {server}
+{instruction}
+");
+        context.push_str(&clamp_block(&block, remaining));
+    }
+    Some(context)
 }
 
 fn cloud_task_resource_id(metadata: Option<&Value>) -> Option<String> {
@@ -11081,6 +11181,46 @@ mod tests {
         );
         assert_eq!(cloud_task_resource_id(Some(&json!({"id": "generic-step-id"}))), None);
         assert_eq!(cloud_task_resource_id(Some(&json!({"runId": "   "}))), None);
+    }
+
+    #[test]
+    fn mcp_settings_use_refresh_event_contract_in_test_mode() {
+        let controller = controller();
+        drain(&controller);
+        controller
+            .execute(FeatureCommand::McpSetCustomInstructions {
+                request_id: "mcp-instructions-test".into(),
+                server: "docs".into(),
+                instructions: "Prefer source links.".into(),
+            })
+            .expect("set MCP custom instructions in test mode");
+        controller
+            .execute(FeatureCommand::McpSetToolDisabled {
+                request_id: "mcp-tool-disable-test".into(),
+                server: "docs".into(),
+                tool: "delete_page".into(),
+                disabled: true,
+            })
+            .expect("disable MCP tool in test mode");
+        let refreshed = drain(&controller)
+            .into_iter()
+            .filter(|event| matches!(event, HostEvent::McpRefreshed { .. }))
+            .count();
+        assert_eq!(refreshed, 2);
+    }
+
+    #[test]
+    fn mcp_instruction_context_is_sorted_bounded_and_hidden() {
+        let instructions = std::collections::HashMap::from([
+            ("zeta".into(), "Use read-only operations.".into()),
+            ("alpha".into(), "Always include source links.".into()),
+            ("empty".into(), "   ".into()),
+        ]);
+        let context = render_mcp_instruction_context(&instructions).expect("MCP context");
+        assert!(context.starts_with("[MCP connector operating instructions]"));
+        assert!(context.find("Connector: alpha").unwrap() < context.find("Connector: zeta").unwrap());
+        assert!(!context.contains("Connector: empty"));
+        assert!(context.len() < 16_000);
     }
 
     #[test]

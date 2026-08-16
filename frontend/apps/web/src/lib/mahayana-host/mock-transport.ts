@@ -1626,6 +1626,10 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "mcp.remove":
         this.emit({ type: "mcp.refreshed", timestamp: now() });
         return { requestId: command.requestId };
+      case "mcp.setCustomInstructions":
+      case "mcp.setToolDisabled":
+        this.emit({ type: "mcp.refreshed", timestamp: now() });
+        return { requestId: command.requestId };
       case "mcp.refresh":
         this.emit({ type: "mcp.refreshed", timestamp: now() });
         return { requestId: command.requestId };

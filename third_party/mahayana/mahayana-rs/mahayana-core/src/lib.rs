@@ -250,6 +250,12 @@ pub enum RuntimeCommand {
     McpOauthLogout { server: String },
     #[serde(rename = "mahayana.mcp.remove")]
     McpRemove { server: String },
+    #[serde(rename = "mahayana.mcp.customInstructions")]
+    McpCustomInstructions,
+    #[serde(rename = "mahayana.mcp.setCustomInstructions")]
+    McpSetCustomInstructions { server: String, instructions: String },
+    #[serde(rename = "mahayana.mcp.setToolDisabled")]
+    McpSetToolDisabled { server: String, tool: String, disabled: bool },
     #[serde(rename = "mahayana.mcp.refresh")]
     McpRefresh,
     #[serde(rename = "mahayana.mcp.tool.call")]
@@ -356,6 +362,12 @@ pub enum RuntimeResponse {
     },
     #[serde(rename = "mahayana.mcp.removed")]
     McpRemoved { server: String, removed: bool },
+    #[serde(rename = "mahayana.mcp.customInstructions")]
+    McpCustomInstructions { instructions: HashMap<String, String> },
+    #[serde(rename = "mahayana.mcp.customInstructionsUpdated")]
+    McpCustomInstructionsUpdated { server: String },
+    #[serde(rename = "mahayana.mcp.toolDisabledUpdated")]
+    McpToolDisabledUpdated { server: String, disabled_tools: Vec<String> },
     #[serde(rename = "mahayana.mcp.refreshed")]
     McpRefreshed,
     #[serde(rename = "mahayana.mcp.tool.result")]

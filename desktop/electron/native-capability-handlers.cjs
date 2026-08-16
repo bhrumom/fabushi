@@ -1115,7 +1115,14 @@ function createNativeCapabilityHandlers(deps) {
         host.request('runtime.tools', {}).catch(() => []),
         installedPluginPointers(),
       ]);
-      return { available: true, tools: Array.isArray(tools) ? tools : [], plugins };
+      const state = await readNativeState();
+      return {
+        available: true,
+        tools: Array.isArray(tools) ? tools : [],
+        plugins,
+        customInstructions: state.mcpCustomInstructions ?? {},
+        disabledTools: state.mcpDisabledTools ?? {},
+      };
     },
 
     getEffectivePlugins() {
@@ -1200,10 +1207,20 @@ function createNativeCapabilityHandlers(deps) {
     async setMcpCustomInstructions(params) {
       const server = cleanString(params.server ?? params.name, 200);
       const instructions = cleanString(params.instructions, 20000);
-      const state = await readNativeState();
-      const all = { ...(state.mcpCustomInstructions ?? {}), [server]: instructions };
-      await mutateNativeState((current) => ({ ...current, mcpCustomInstructions: all }));
-      return { server, instructions };
+      if (!server) throw new Error('MCP server name is required.');
+      const accepted = await featureExecute({
+        type: 'mcp.setCustomInstructions',
+        requestId: requestId('mcp-instructions'),
+        server,
+        instructions,
+      });
+      await mutateNativeState((current) => {
+        const all = { ...(current.mcpCustomInstructions ?? {}) };
+        if (instructions) all[server] = instructions;
+        else delete all[server];
+        return { ...current, mcpCustomInstructions: all };
+      });
+      return { server, instructions, accepted };
     },
 
     async listMcpServerTools(params) {
@@ -1214,14 +1231,24 @@ function createNativeCapabilityHandlers(deps) {
 
     async toggleMcpToolDisabled(params) {
       const server = cleanString(params.server ?? params.pluginId, 200);
-      const tool = cleanString(params.tool ?? params.toolId, 200);
+      const tool = cleanString(params.tool ?? params.toolId, 240);
       const disabled = params.disabled === true;
+      if (!server || !tool) throw new Error('MCP server and tool are required.');
+      const accepted = await featureExecute({
+        type: 'mcp.setToolDisabled',
+        requestId: requestId('mcp-tool-disabled'),
+        server,
+        tool,
+        disabled,
+      });
       const key = `${server}:${tool}`;
-      await mutateNativeState((state) => ({
-        ...state,
-        mcpDisabledTools: { ...(state.mcpDisabledTools ?? {}), [key]: disabled },
-      }));
-      return { server, tool, disabled };
+      await mutateNativeState((state) => {
+        const next = { ...(state.mcpDisabledTools ?? {}) };
+        if (disabled) next[key] = true;
+        else delete next[key];
+        return { ...state, mcpDisabledTools: next };
+      });
+      return { server, tool, disabled, accepted };
     },
 
     devRestart() {
