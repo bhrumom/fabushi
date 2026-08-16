@@ -50,7 +50,7 @@ jobs:
           spf="$(query_dns cf-bounce.ombhrum.com TXT)"
           dkim="$(query_dns cf-bounce._domainkey.ombhrum.com TXT)"
           enabled=false
-          if jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | test("mx\.cloudflare\.net"; "i"))' <<<"$mx" >/dev/null \
+          if jq -e '.Status == 0 and any(.Answer[]?; ((.data // "") | ascii_downcase | contains("mx.cloudflare.net")))' <<<"$mx" >/dev/null \
             && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null \
             && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null; then
             enabled=true
