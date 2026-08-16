@@ -7,6 +7,11 @@ product = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs').r
 feature = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs').read_text(encoding='utf-8')
 app_host = Path('third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs').read_text(encoding='utf-8')
 main = Path('desktop/electron/main.cjs').read_text(encoding='utf-8')
+host_process = Path('desktop/electron/host-process.cjs').read_text(encoding='utf-8')
+mahayana_host = Path('third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs').read_text(encoding='utf-8')
+worker_config = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/wrangler.toml').read_text(encoding='utf-8')
+account_status_migration = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0003_oauth_attempt_failed_status.sql').read_text(encoding='utf-8')
+cloud_e2e = Path('.github/workflows/mahayana-cloud-marketplace-e2e.yml').read_text(encoding='utf-8')
 
 required = {
     'worker browser start route': (worker, '/api/auth/browser/start'),
@@ -42,6 +47,13 @@ required = {
     'renderer browser poll': (host, 'transport.browserLoginPoll(attempt.attemptId)'),
     'renderer single browser CTA': (host, 'data-testid="browser-login-start"'),
     'feature browser credential-boundary regression': (feature, 'deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary'),
+    'desktop defaults to Rust staging Product API': (host_process, "DEFAULT_DESKTOP_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev'"),
+    'desktop forwards Product API override to Host': (host_process, 'MAHAYANA_API_BASE_URL:'),
+    'Mahayana Host honors Product API override with explicit state paths': (mahayana_host, 'env::var("MAHAYANA_API_BASE_URL")'),
+    'staging browser origin': (worker_config, 'AUTH_PUBLIC_BASE_URL = "https://mahayana-platform.bhrumom.workers.dev"'),
+    'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
+    'cloud E2E applies account auth migrations': (cloud_e2e, 'd1 migrations apply ACCOUNT_DB --remote'),
+    'cloud E2E verifies browser broker': (cloud_e2e, 'Verify browser login broker lifecycle'),
 }
 for label, (text, marker) in required.items():
     if marker not in text:
