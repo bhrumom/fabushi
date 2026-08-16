@@ -26,6 +26,21 @@ import type {
 } from "./contracts";
 import type { MahayanaHostTransport, RuntimeEventListener } from "./transport";
 import {
+  FabushiWidgetInteractionStore,
+  type WidgetDismissalRecord,
+  type WidgetResponseRecord,
+} from "../fabushi-runtime/widget-interactions";
+import {
+  FabushiCapabilityProvider,
+  type BoxSecretsStatus,
+  type CloudAgentInfo,
+  type ForeverBoxStatus,
+} from "../fabushi-runtime/capability-provider";
+import {
+  requestNativeDiskSaverAudit,
+  type NativeDiskAudit,
+} from "../fabushi-runtime/native-desktop";
+import {
   LocalCollaborationProvider,
   type CollaborationEvent,
   type SharedRoomInvite,
@@ -81,6 +96,8 @@ export class MahayanaCoordinator {
   private readonly receipts = new Map<string, CommandAccepted>();
   private readonly interactions = new FabushiInteractionStore();
   private readonly collaboration = new LocalCollaborationProvider();
+  private readonly widgets = new FabushiWidgetInteractionStore();
+  private readonly capabilityProvider = new FabushiCapabilityProvider();
   private sequence = 0;
   private disposed = false;
 
@@ -109,6 +126,42 @@ export class MahayanaCoordinator {
     return this.receipts.get(requestId) ?? null;
   }
 
+  async respondToWidget(input: {
+    widgetId: string;
+    actionId?: string | null;
+    value?: unknown;
+    agentId?: string | null;
+    conversationId?: string | null;
+    prompt?: string | null;
+  }): Promise<WidgetResponseRecord> {
+    const record = this.widgets.respond(input);
+    const prompt = input.prompt?.trim();
+    if (record.agentId && prompt) {
+      await this.sendPrompt({
+        text: prompt,
+        agentId: record.agentId,
+        conversationId: record.conversationId ?? undefined,
+      });
+    }
+    return record;
+  }
+
+  dismissWidget(input: { widgetId: string; reason?: string | null }): WidgetDismissalRecord {
+    return this.widgets.dismiss(input);
+  }
+
+  kickstartAgent(agentId: string, prompt = "Continue from your current task and report meaningful progress."): Promise<CommandAccepted> {
+    const cleanAgentId = agentId.trim();
+    if (!cleanAgentId) throw new Error("Agent ID is required");
+    const text = prompt.trim();
+    if (!text) throw new Error("Kickstart prompt is required");
+    return this.sendPrompt({ text, agentId: cleanAgentId });
+  }
+
+  requestDiskSaverAudit(): Promise<NativeDiskAudit | null> {
+    return requestNativeDiskSaverAudit();
+  }
+
   reactToMessage(input: {
     conversationId: string;
     messageId: string;
@@ -133,6 +186,44 @@ export class MahayanaCoordinator {
 
   feedbackFor(messageId: string): FeedbackRecord | null {
     return this.interactions.feedbackFor(messageId);
+  }
+
+  async getCloudAgentInfo(agentId: string): Promise<CloudAgentInfo> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.getCloudAgentInfo(agentId);
+  }
+
+  async getForeverBoxStatus(agentId: string): Promise<ForeverBoxStatus> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.getForeverBoxStatus(agentId);
+  }
+
+  async ensureForeverBox(agentId: string): Promise<ForeverBoxStatus> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.ensureForeverBox(agentId);
+  }
+
+  async handBackForeverBox(agentId: string): Promise<ForeverBoxStatus> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.handBackForeverBox(agentId);
+  }
+
+  async getBoxSecretsStatus(agentId: string): Promise<BoxSecretsStatus> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.getBoxSecretsStatus(agentId);
+  }
+
+  async isAgentNetworkEnabled(agentId: string): Promise<boolean> {
+    await this.requireAgent(agentId);
+    return this.capabilityProvider.isAgentNetworkEnabled(agentId);
+  }
+
+  isGlobalSearchEnabled(): boolean {
+    return this.capabilityProvider.isGlobalSearchEnabled();
+  }
+
+  isEgressTunnelAvailable(): boolean {
+    return this.capabilityProvider.isEgressTunnelAvailable();
   }
 
   getSharingState(agentId?: string): SharingState {
@@ -638,6 +729,60 @@ export class MahayanaCoordinator {
     return (await this.listSkills(agentId)).skills;
   }
 
+  async portAgentLocalSkills(agentId: string): Promise<{
+    agentId: string;
+    exportedAtMs: number;
+    skills: SkillSummary[];
+  }> {
+    await this.requireAgent(agentId);
+    const { skills } = await this.listSkills(agentId);
+    return {
+      agentId,
+      exportedAtMs: Date.now(),
+      skills: skills.filter((skill) => skill.ownerAgentId === agentId && skill.source === "private"),
+    };
+  }
+
+  async syncPluginSkills(agentId?: string): Promise<{
+    attempted: number;
+    accepted: number;
+    skipped: number;
+  }> {
+    const { skills } = await this.listSkills(agentId);
+    const candidates = skills.filter(
+      (skill) => skill.source !== "private" && skill.publishState === "out_of_sync",
+    );
+    const results = await Promise.allSettled(
+      candidates.map((skill) => this.resyncPublishedSkill(skill.id)),
+    );
+    const accepted = results.filter((result) => result.status === "fulfilled").length;
+    return { attempted: candidates.length, accepted, skipped: skills.length - candidates.length };
+  }
+
+  async getPluginSyncStatus(agentId?: string): Promise<{
+    total: number;
+    synced: number;
+    outOfSync: number;
+    privateSkills: number;
+  }> {
+    const { skills } = await this.listSkills(agentId);
+    return {
+      total: skills.length,
+      synced: skills.filter((skill) => skill.publishState === "synced").length,
+      outOfSync: skills.filter((skill) => skill.publishState === "out_of_sync").length,
+      privateSkills: skills.filter((skill) => skill.source === "private").length,
+    };
+  }
+
+  async getSkillPublishTargets(): Promise<Array<{
+    id: string;
+    name: string;
+    kind: "team";
+  }>> {
+    const { teams } = await this.listSkills();
+    return teams.map((team) => ({ id: team.id, name: team.name, kind: "team" as const }));
+  }
+
   publishSkill(id: string, teamId: string): Promise<CommandAccepted> {
     return this.execute({ type: "skill.publish", requestId: this.requestId("skill-publish"), id, teamId });
   }
@@ -811,6 +956,14 @@ export class MahayanaCoordinator {
     const cause = new Error("Mahayana coordinator disposed");
     for (const pending of [...this.pending]) pending.reject(cause);
     this.pending.clear();
+  }
+
+  private async requireAgent(agentId: string): Promise<BotSummary> {
+    const clean = agentId.trim();
+    if (!clean) throw new Error("Agent ID is required");
+    const agent = (await this.listAgents()).find((candidate) => candidate.id === clean);
+    if (!agent) throw new Error(`Unknown agent: ${clean}`);
+    return agent;
   }
 
   private ensureTransportSubscription(): void {
