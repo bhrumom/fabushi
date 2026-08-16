@@ -715,6 +715,8 @@ export type RuntimeCommand =
   | (CommandBase & { type: "mcp.oauthLogin"; server: string })
   | (CommandBase & { type: "mcp.oauthLogout"; server: string })
   | (CommandBase & { type: "mcp.remove"; server: string })
+  | (CommandBase & { type: "mcp.setCustomInstructions"; server: string; instructions: string })
+  | (CommandBase & { type: "mcp.setToolDisabled"; server: string; tool: string; disabled: boolean })
   | (CommandBase & { type: "mcp.refresh" })
   | (CommandBase & { type: "mcp.toolCall"; server: string; tool: string; arguments?: unknown })
   | (CommandBase & { type: "settings.get" })

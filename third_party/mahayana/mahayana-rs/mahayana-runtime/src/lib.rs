@@ -403,6 +403,35 @@ impl MahayanaRuntime {
                     .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
                 Ok(RuntimeResponse::McpRemoved { server, removed })
             }
+            RuntimeCommand::McpCustomInstructions => {
+                let backend = self.agent_backend.as_ref().ok_or_else(|| {
+                    RuntimeError::AgentBackend("no agent backend is available".into())
+                })?;
+                let instructions = self
+                    .async_runtime
+                    .block_on(backend.mcp_custom_instructions())
+                    .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
+                Ok(RuntimeResponse::McpCustomInstructions { instructions })
+            }
+            RuntimeCommand::McpSetCustomInstructions { server, instructions } => {
+                let backend = self.agent_backend.as_ref().ok_or_else(|| {
+                    RuntimeError::AgentBackend("no agent backend is available".into())
+                })?;
+                self.async_runtime
+                    .block_on(backend.set_mcp_custom_instructions(&server, &instructions))
+                    .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
+                Ok(RuntimeResponse::McpCustomInstructionsUpdated { server })
+            }
+            RuntimeCommand::McpSetToolDisabled { server, tool, disabled } => {
+                let backend = self.agent_backend.as_ref().ok_or_else(|| {
+                    RuntimeError::AgentBackend("no agent backend is available".into())
+                })?;
+                let disabled_tools = self
+                    .async_runtime
+                    .block_on(backend.set_mcp_tool_disabled(&server, &tool, disabled))
+                    .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
+                Ok(RuntimeResponse::McpToolDisabledUpdated { server, disabled_tools })
+            }
             RuntimeCommand::McpRefresh => {
                 let backend = self.agent_backend.as_ref().ok_or_else(|| {
                     RuntimeError::AgentBackend("no agent backend is available".into())

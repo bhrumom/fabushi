@@ -1668,6 +1668,21 @@ pub enum FeatureCommand {
         request_id: String,
         server: String,
     },
+    #[serde(rename = "mcp.setCustomInstructions")]
+    McpSetCustomInstructions {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        server: String,
+        instructions: String,
+    },
+    #[serde(rename = "mcp.setToolDisabled")]
+    McpSetToolDisabled {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        server: String,
+        tool: String,
+        disabled: bool,
+    },
     #[serde(rename = "mcp.refresh")]
     McpRefresh {
         #[serde(rename = "requestId")]
@@ -1845,6 +1860,8 @@ impl FeatureCommand {
             | Self::McpOauthLogin { request_id, .. }
             | Self::McpOauthLogout { request_id, .. }
             | Self::McpRemove { request_id, .. }
+            | Self::McpSetCustomInstructions { request_id, .. }
+            | Self::McpSetToolDisabled { request_id, .. }
             | Self::McpRefresh { request_id }
             | Self::McpToolCall { request_id, .. }
             | Self::SettingsGet { request_id }
