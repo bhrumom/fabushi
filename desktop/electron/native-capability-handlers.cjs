@@ -269,14 +269,58 @@ function createNativeCapabilityHandlers(deps) {
     },
 
     async getEgressTunnelStatus() {
-      const provider = process.env.FABUSHI_EGRESS_TUNNEL_URL?.trim() || null;
-      const enabled = provider ? await getPreference('egressTunnelEnabled', false) === true : false;
-      return {
-        available: Boolean(provider),
-        enabled,
-        state: !provider ? 'unavailable' : enabled ? 'connected' : 'disabled',
-        reason: provider ? null : 'No managed egress tunnel provider is configured.',
-      };
+      const configuredUrl = cleanString(process.env.FABUSHI_EGRESS_TUNNEL_URL, 4096);
+      if (configuredUrl) {
+        let parsed;
+        try { parsed = new URL(configuredUrl); } catch { parsed = null; }
+        if (parsed?.protocol === 'https:') {
+          return {
+            available: true,
+            enabled: true,
+            provider: 'configured-https-tunnel',
+            transport: 'https',
+            url: parsed.origin,
+            agentEnabled: String(process.env.FABUSHI_EGRESS_AGENT_ENABLED ?? '').toLowerCase() === 'true',
+          };
+        }
+      }
+      try {
+        const result = await platformRequest('GET', '/api/egress/status');
+        return result?.egress ?? {
+          available: false,
+          enabled: false,
+          provider: null,
+          transport: null,
+          agentEnabled: false,
+          reason: 'Fabushi Platform returned no egress status.',
+        };
+      } catch (error) {
+        return {
+          available: false,
+          enabled: false,
+          provider: null,
+          transport: null,
+          agentEnabled: false,
+          reason: error instanceof Error ? cleanString(error.message, 1000) : 'Fabushi Platform egress is unavailable.',
+        };
+      }
+    },
+
+    async egressFetch(params) {
+      const url = cleanString(params.url, 4096);
+      if (!url) throw new Error('Egress URL is required.');
+      const method = cleanString(params.method, 16).toUpperCase() || 'GET';
+      const headers = params.headers && typeof params.headers === 'object' && !Array.isArray(params.headers)
+        ? params.headers
+        : {};
+      let bodyBase64 = cleanString(params.bodyBase64, 8 * 1024 * 1024);
+      if (!bodyBase64 && typeof params.body === 'string') {
+        bodyBase64 = Buffer.from(params.body, 'utf8').toString('base64');
+      }
+      const result = await platformRequest('POST', '/api/egress/fetch', {
+        body: { url, method, headers, bodyBase64: bodyBase64 || null },
+      });
+      return result?.response ?? null;
     },
 
     async getWebauthnProxyEnabled() {
@@ -1042,7 +1086,7 @@ function createNativeCapabilityHandlers(deps) {
       const agentId = cleanString(params.agentId, 200);
       if (!agentId) throw new Error('Agent ID is required.');
       const status = await this.getEgressTunnelStatus();
-      return status.available === true && status.enabled === true;
+      return status.agentEnabled === true;
     },
 
     async getCloudAgentInfo(params) {
