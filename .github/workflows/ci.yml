@@ -248,6 +248,7 @@ jobs:
             /.github/scripts/assert-fabushi-desktop-architecture.py
             /.github/scripts/assert-native-capability-semantics.py
             /.github/scripts/assert-auth-entry-flow.py
+            /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/build-offline-asr-engine.mjs
             /desktop/electron/offline-asr-engine.json
             /desktop/electron/offline-asr.cjs
@@ -268,6 +269,8 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/Cargo.toml
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
+            /third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
       - name: Require 100 percent FeatureCommand router coverage
         run: python3 .github/scripts/assert-feature-command-router-coverage.py
       - name: Guard the Fabushi desktop architecture
@@ -276,6 +279,8 @@ jobs:
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
       - name: Verify browser-first account login
         run: python3 .github/scripts/assert-auth-entry-flow.py
+      - name: Verify living BotMark motion contracts
+        run: python3 .github/scripts/assert-bot-mark-motion.py
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify offline ASR provider contracts

@@ -56,8 +56,8 @@ function configuredBinary(resourcesPath) {
 function modelConfig(app, config = {}) {
   const explicitPath = cleanString(process.env.FABUSHI_ASR_MODEL_PATH, 4096);
   const modelDir = path.join(app.getPath('userData'), 'models', 'asr');
-  const configuredUrl = cleanString(config.modelUrl ?? process.env.FABUSHI_ASR_MODEL_URL ?? ASR_MANIFEST.defaultModel?.url, 4096);
-  const configuredSha = cleanString(config.sha256 ?? process.env.FABUSHI_ASR_MODEL_SHA256 ?? ASR_MANIFEST.defaultModel?.sha256, 128).toLowerCase();
+  const configuredUrl = cleanString(config.modelUrl ?? process.env.FABUSHI_ASR_MODEL_URL ?? (explicitPath ? null : ASR_MANIFEST.defaultModel?.url), 4096);
+  const configuredSha = cleanString(config.sha256 ?? process.env.FABUSHI_ASR_MODEL_SHA256 ?? (explicitPath ? null : ASR_MANIFEST.defaultModel?.sha256), 128).toLowerCase();
   const filename = configuredUrl
     ? path.basename(new URL(configuredUrl).pathname) || 'model.bin'
     : 'model.bin';
