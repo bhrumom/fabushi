@@ -183,6 +183,9 @@ jobs:
         run: npm ci --prefer-offline
       - name: Validate official MCP plugin contracts
         run: npm test
+      - name: Validate platform API isolation and SSRF contracts
+        working-directory: ai-backend
+        run: npm run test:platform-api
       - name: Validate shared MCP command and schema rules
         working-directory: frontend/packages/mcp-app-sdk
         run: npm test
@@ -266,6 +269,8 @@ jobs:
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
       - name: Verify native desktop edge parity
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Verify offline ASR provider contracts
+        run: node --test desktop/electron/offline-asr.test.cjs
       - name: Verify Electron to Rust Feature Host bridge
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh

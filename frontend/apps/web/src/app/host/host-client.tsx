@@ -68,7 +68,11 @@ import {
   buildAgentNotification,
   type AgentNotificationSnapshot,
 } from "../../lib/fabushi-runtime/agent-notifications";
-import type { CloudAgentInfo } from "../../lib/fabushi-runtime/capability-provider";
+import type {
+  BoxSecretsStatus,
+  CloudAgentInfo,
+  ForeverBoxStatus,
+} from "../../lib/fabushi-runtime/capability-provider";
 import type {
   SharingState,
   SharedRoomInvite,
@@ -82,6 +86,9 @@ import {
   syncNativeTheme,
   type NativeDeepLink,
   type NativeDesktopEnvironment,
+  type NativeDiskAudit,
+  type NativeOfflineAsrProgress,
+  type NativeOfflineAsrStatus,
 } from "../../lib/fabushi-runtime/native-desktop";
 import {
   ExtensionStudio,
@@ -439,7 +446,7 @@ export default function HostClient() {
   const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
-  const [networkView, setNetworkView] = useState<"agents" | "rooms">("agents");
+  const [networkView, setNetworkView] = useState<"agents" | "rooms" | "workspace">("agents");
   const [networkTargetId, setNetworkTargetId] = useState("");
   const [networkMessage, setNetworkMessage] = useState("");
   const [networkPriority, setNetworkPriority] = useState(false);
@@ -450,6 +457,13 @@ export default function HostClient() {
   const [sharedRoomName, setSharedRoomName] = useState("");
   const [sharedInviteToken, setSharedInviteToken] = useState("");
   const [lastSharedInvite, setLastSharedInvite] = useState<SharedRoomInvite | null>(null);
+  const [workspaceStatus, setWorkspaceStatus] = useState<ForeverBoxStatus | null>(null);
+  const [workspaceSecrets, setWorkspaceSecrets] = useState<BoxSecretsStatus | null>(null);
+  const [workspaceDiskAudit, setWorkspaceDiskAudit] = useState<NativeDiskAudit | null>(null);
+  const [workspaceEgressAvailable, setWorkspaceEgressAvailable] = useState(false);
+  const [workspaceAgentNetworkEnabled, setWorkspaceAgentNetworkEnabled] = useState(false);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [backgroundWorkingAgents, setBackgroundWorkingAgents] = useState<Set<string>>(() => new Set());
   const [backgroundPreviews, setBackgroundPreviews] = useState<Record<string, { agentId: string; text: string }>>({});
   const [lastBroadcastResult, setLastBroadcastResult] = useState<{ total: number; scheduled: number } | null>(null);
@@ -505,6 +519,11 @@ export default function HostClient() {
   }, []);
 
   useEffect(() => {
+    if (!networkOpen || networkView !== "workspace") return;
+    void refreshWorkspaceState();
+  }, [networkOpen, networkView, activeAgentId]);
+
+  useEffect(() => {
     if (!networkOpen) return;
     let cancelled = false;
     const applyState = (state: SharingState) => {
@@ -539,6 +558,13 @@ export default function HostClient() {
   const [aboutEnvironment, setAboutEnvironment] = useState<NativeDesktopEnvironment | null>(null);
   const [widgetGalleryOpen, setWidgetGalleryOpen] = useState(false);
   const [nativeZoomFactor, setNativeZoomFactor] = useState(1);
+  const [offlineAsrOpen, setOfflineAsrOpen] = useState(false);
+  const [offlineAsrStatus, setOfflineAsrStatus] = useState<NativeOfflineAsrStatus | null>(null);
+  const [offlineAsrModelUrl, setOfflineAsrModelUrl] = useState("");
+  const [offlineAsrSha256, setOfflineAsrSha256] = useState("");
+  const [offlineAsrProgress, setOfflineAsrProgress] = useState<NativeOfflineAsrProgress | null>(null);
+  const [offlineAsrBusy, setOfflineAsrBusy] = useState(false);
+  const [offlineAsrError, setOfflineAsrError] = useState<string | null>(null);
   const [cloudAgentInfo, setCloudAgentInfo] = useState<CloudAgentInfo | null>(null);
   const [cloudAgentFailure, setCloudAgentFailure] = useState<string | null>(null);
   const [cloudAgentActionPending, setCloudAgentActionPending] = useState(false);
@@ -607,6 +633,13 @@ export default function HostClient() {
         setCloudAgentFailure(null);
         setCloudAgentInfo(info);
       },
+      "open-offline-asr": () => {
+        setOfflineAsrError(null);
+        setOfflineAsrOpen(true);
+      },
+      "offline-asr-progress": (payload) => {
+        setOfflineAsrProgress(payload as NativeOfflineAsrProgress);
+      },
       "focus-agent": (payload) => {
         const agentId = typeof payload === "object" && payload !== null && "agentId" in payload
           ? String((payload as { agentId?: unknown }).agentId ?? "").trim()
@@ -656,6 +689,24 @@ export default function HostClient() {
       .catch(() => { if (!cancelled) setAboutEnvironment(null); });
     return () => { cancelled = true; };
   }, [aboutOpen]);
+
+  useEffect(() => {
+    if (!offlineAsrOpen) return;
+    let cancelled = false;
+    void invokeNativeDesktop<NativeOfflineAsrStatus>("getOfflineAsrStatus")
+      .then((status) => {
+        if (!cancelled) {
+          setOfflineAsrStatus(status);
+          setOfflineAsrModelUrl((current) => current || status.modelUrl || "");
+          setOfflineAsrSha256((current) => current || status.expectedSha256 || "");
+          setOfflineAsrError(null);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setOfflineAsrError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { cancelled = true; };
+  }, [offlineAsrOpen]);
 
   useEffect(() => {
     const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
@@ -2133,6 +2184,60 @@ export default function HostClient() {
     }));
   };
 
+  const refreshWorkspaceState = async () => {
+    if (!activeAgentId || workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const [box, secrets, audit, egressAvailable, agentNetworkEnabled] = await Promise.all([
+        coordinator.getForeverBoxStatus(activeAgentId),
+        coordinator.getBoxSecretsStatus(activeAgentId),
+        coordinator.requestDiskSaverAudit(),
+        coordinator.isEgressTunnelAvailable(),
+        coordinator.isAgentNetworkEnabled(activeAgentId),
+      ]);
+      setWorkspaceStatus(box);
+      setWorkspaceSecrets(secrets);
+      setWorkspaceDiskAudit(audit);
+      setWorkspaceEgressAvailable(egressAvailable);
+      setWorkspaceAgentNetworkEnabled(agentNetworkEnabled);
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
+  const ensureActiveWorkspace = async () => {
+    if (!activeAgentId || workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const box = await coordinator.ensureForeverBox(activeAgentId);
+      setWorkspaceStatus(box);
+      setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
+  const handBackActiveWorkspace = async () => {
+    if (!activeAgentId || workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const box = await coordinator.handBackForeverBox(activeAgentId);
+      setWorkspaceStatus(box);
+      setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
   const refreshSharingState = async () => {
     if (sharingBusy) return;
     setSharingBusy(true);
@@ -2534,6 +2639,42 @@ export default function HostClient() {
     }));
     resetAutomationDraft();
   };
+
+  async function configureOfflineAsr() {
+    if (offlineAsrBusy) return;
+    setOfflineAsrBusy(true);
+    setOfflineAsrError(null);
+    try {
+      const status = await invokeNativeDesktop<NativeOfflineAsrStatus>("configureOfflineAsrModel", {
+        modelUrl: offlineAsrModelUrl.trim(),
+        sha256: offlineAsrSha256.trim().toLowerCase(),
+      });
+      setOfflineAsrStatus(status);
+    } catch (error) {
+      setOfflineAsrError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOfflineAsrBusy(false);
+    }
+  }
+
+  async function downloadOfflineAsr() {
+    const modelUrl = offlineAsrModelUrl.trim();
+    const sha256 = offlineAsrSha256.trim().toLowerCase();
+    if (!modelUrl || !sha256 || offlineAsrBusy) return;
+    setOfflineAsrBusy(true);
+    setOfflineAsrError(null);
+    setOfflineAsrProgress({ phase: "model-download", downloadedBytes: 0, totalBytes: null });
+    try {
+      await invokeNativeDesktop<NativeOfflineAsrStatus>("configureOfflineAsrModel", { modelUrl, sha256 });
+      const status = await invokeNativeDesktop<NativeOfflineAsrStatus>("downloadOfflineAsrModel", { modelUrl, sha256 });
+      setOfflineAsrStatus(status);
+      setOfflineAsrProgress({ phase: "ready", progress: 1, status });
+    } catch (error) {
+      setOfflineAsrError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOfflineAsrBusy(false);
+    }
+  }
 
   async function openCloudRun(runId: string) {
     const id = runId.trim();
@@ -3659,6 +3800,7 @@ export default function HostClient() {
             <nav className={styles.networkTabs} aria-label="智能体网络视图">
               <button type="button" data-active={networkView === "agents"} onClick={() => setNetworkView("agents")}>Agent Network</button>
               <button type="button" data-active={networkView === "rooms"} onClick={() => setNetworkView("rooms")}>Shared Rooms</button>
+              <button type="button" data-active={networkView === "workspace"} onClick={() => setNetworkView("workspace")}>Workspace</button>
             </nav>
             {networkView === "agents" ? (
               <>
@@ -3733,7 +3875,7 @@ export default function HostClient() {
               </div>
             </section>
               </>
-            ) : (
+            ) : networkView === "rooms" ? (
               <section className={styles.sharedRoomsPanel} aria-label="共享房间">
                 <header>
                   <div>
@@ -3796,6 +3938,38 @@ export default function HostClient() {
                     ))}
                   </section>
                 ) : null}
+              </section>
+            ) : (
+              <section className={styles.workspacePanel} aria-label="Agent workspace">
+                <header>
+                  <div>
+                    <strong>{activeBotProfile?.name ?? activeAgentId} · Workspace</strong>
+                    <small>持久工作区、密钥状态、managed egress 与存储审计</small>
+                  </div>
+                  <button type="button" disabled={workspaceBusy} onClick={() => void refreshWorkspaceState()}>{workspaceBusy ? "检查中…" : "刷新"}</button>
+                </header>
+                {workspaceError ? <p className={styles.sharedRoomsError}>{workspaceError}</p> : null}
+                <div className={styles.workspaceStatusGrid}>
+                  <article><span>Workspace</span><strong>{workspaceStatus?.status ?? "unknown"}</strong><small>{workspaceStatus?.provider ?? "尚未配置"}</small></article>
+                  <article><span>Box secrets</span><strong>{workspaceSecrets?.secretCount ?? 0}</strong><small>{workspaceSecrets?.configured ? "已加密保存" : "暂无 Box secret"}</small></article>
+                  <article><span>Egress relay</span><strong>{workspaceEgressAvailable ? "available" : "unavailable"}</strong><small>Fabushi managed HTTPS relay</small></article>
+                  <article><span>Agent network</span><strong>{workspaceAgentNetworkEnabled ? "enabled" : "not routed"}</strong><small>只有 runtime 真接入 relay 才会启用</small></article>
+                </div>
+                <div className={styles.workspaceActions}>
+                  {workspaceStatus?.status !== "ready" ? <button type="button" disabled={workspaceBusy} onClick={() => void ensureActiveWorkspace()}>创建持久 Workspace</button> : null}
+                  {workspaceStatus?.status === "ready" ? <button type="button" disabled={workspaceBusy} onClick={() => void handBackActiveWorkspace()}>归档并释放 Workspace</button> : null}
+                  <button type="button" disabled={workspaceBusy} onClick={() => void refreshWorkspaceState()}>重新审计磁盘</button>
+                </div>
+                {workspaceStatus?.boxId ? <code className={styles.workspaceBoxId}>{workspaceStatus.boxId}</code> : null}
+                <section className={styles.workspaceDiskAudit}>
+                  <header><strong>桌面存储审计</strong><small>{workspaceDiskAudit ? `${Math.round(workspaceDiskAudit.totalBytes / 1024 / 1024)} MiB 总占用 · ${Math.round(workspaceDiskAudit.reclaimableBytes / 1024 / 1024)} MiB 保守可回收` : "尚未审计"}</small></header>
+                  <div>
+                    {(workspaceDiskAudit?.entries ?? []).slice(0, 8).map((entry) => (
+                      <article key={entry.name}><span>{entry.name}</span><strong>{Math.max(0, Math.round(entry.bytes / 1024 / 1024))} MiB</strong><small>{entry.reclaimable ? "cache/log/temp" : "保留"}</small></article>
+                    ))}
+                    {workspaceDiskAudit?.truncated ? <p>目录过大，审计达到安全扫描上限；结果是保守估计。</p> : null}
+                  </div>
+                </section>
               </section>
             )}
           </section>
@@ -4159,6 +4333,44 @@ export default function HostClient() {
                 本会话始终允许
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {offlineAsrOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setOfflineAsrOpen(false)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.offlineAsrDialog}`} role="dialog" aria-modal="true" aria-labelledby="offline-asr-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <small>FABUSHI OFFLINE ASR</small>
+                <h2 id="offline-asr-title">离线语音转写</h2>
+                <p>优先使用 Mahayana runtime 转写工具；本页配置 whisper.cpp 离线兜底。</p>
+              </div>
+              <button type="button" className={styles.iconButton} aria-label="关闭离线语音转写" onClick={() => setOfflineAsrOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.offlineAsrStatusGrid}>
+              <div><span>本地引擎</span><strong>{offlineAsrStatus?.binaryPath ? "已就绪" : "未部署"}</strong></div>
+              <div><span>模型</span><strong>{offlineAsrStatus?.modelPath ? "已缓存" : "未下载"}</strong></div>
+              <div><span>完整性</span><strong>{offlineAsrStatus?.modelVerified ? "SHA-256 已验证" : "待验证"}</strong></div>
+              <div><span>可用状态</span><strong>{offlineAsrStatus?.available ? "离线可用" : "等待组件"}</strong></div>
+            </div>
+            {offlineAsrStatus?.missing?.length ? <p className={styles.offlineAsrHint}>缺少：{offlineAsrStatus.missing.join(" · ")}</p> : null}
+            <div className={styles.offlineAsrConfig}>
+              <label><span>模型 HTTPS URL</span><input value={offlineAsrModelUrl} onChange={(event) => setOfflineAsrModelUrl(event.target.value)} placeholder="https://…/model.bin" /></label>
+              <label><span>SHA-256</span><input value={offlineAsrSha256} onChange={(event) => setOfflineAsrSha256(event.target.value)} maxLength={64} spellCheck={false} placeholder="64 位十六进制摘要" /></label>
+            </div>
+            {offlineAsrProgress?.phase === "model-download" ? (
+              <div className={styles.offlineAsrProgress}>
+                <span>下载模型</span>
+                <progress max={offlineAsrProgress.totalBytes ?? 1} value={offlineAsrProgress.downloadedBytes ?? 0} />
+                <small>{offlineAsrProgress.downloadedBytes ? `${Math.round(offlineAsrProgress.downloadedBytes / 1024 / 1024)} MiB` : "准备中"}</small>
+              </div>
+            ) : null}
+            {offlineAsrError ? <p className={styles.offlineAsrError}>{offlineAsrError}</p> : null}
+            <footer className={styles.cloudRunActions}>
+              <button type="button" disabled={offlineAsrBusy} onClick={() => void configureOfflineAsr()}>保存配置</button>
+              <button type="button" disabled={offlineAsrBusy || !offlineAsrModelUrl.trim() || !/^[0-9a-fA-F]{64}$/.test(offlineAsrSha256.trim())} onClick={() => void downloadOfflineAsr()}>{offlineAsrBusy ? "处理中…" : "下载并校验模型"}</button>
+            </footer>
           </section>
         </div>
       ) : null}

@@ -5011,3 +5011,187 @@
   .sharedRoomsForms,
   .sharedRoomList { grid-template-columns: 1fr; }
 }
+
+.offlineAsrDialog { width: min(660px, calc(100vw - 36px)); }
+
+.offlineAsrStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  background: var(--line);
+}
+
+.offlineAsrStatusGrid > div {
+  display: grid;
+  gap: 5px;
+  min-height: 62px;
+  padding: 13px 16px;
+  background: var(--panel);
+}
+
+.offlineAsrStatusGrid span,
+.offlineAsrConfig span {
+  color: var(--faint);
+  font-size: 7px;
+}
+
+.offlineAsrStatusGrid strong { font-size: 9px; }
+
+.offlineAsrConfig {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 0;
+}
+
+.offlineAsrConfig label { display: grid; gap: 6px; }
+.offlineAsrConfig input {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--raised);
+  color: inherit;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 8px;
+  outline: none;
+}
+.offlineAsrConfig input:focus { border-color: var(--accent); }
+
+.offlineAsrHint,
+.offlineAsrError {
+  margin: 13px 18px 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  font-size: 7.5px;
+  line-height: 1.45;
+}
+.offlineAsrHint {
+  border: 1px solid rgb(142 113 255 / 28%);
+  background: rgb(117 92 242 / 7%);
+  color: #c8b8ff;
+}
+.offlineAsrError {
+  border: 1px solid rgb(220 67 78 / 35%);
+  background: rgb(220 67 78 / 8%);
+  color: #e8747d;
+}
+
+.offlineAsrProgress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 18px 0;
+  color: var(--muted);
+  font-size: 7px;
+}
+.offlineAsrProgress progress { width: 100%; accent-color: var(--accent); }
+.offlineAsrProgress small { color: var(--faint); font-size: 6.5px; }
+
+@media (max-width: 680px) {
+  .offlineAsrStatusGrid { grid-template-columns: 1fr; }
+}
+
+.workspacePanel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.workspacePanel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workspacePanel > header > div { display: grid; gap: 3px; }
+.workspacePanel > header strong { font-size: 11px; }
+.workspacePanel > header small { color: rgb(252 252 252 / 48%); font-size: 7px; }
+.workspacePanel button {
+  padding: 7px 10px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 6%);
+  color: inherit;
+  font-size: 7px;
+  font-weight: 650;
+}
+.workspacePanel button:disabled { opacity: .45; }
+
+.workspaceStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.workspaceStatusGrid article {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 3%);
+}
+.workspaceStatusGrid span { color: rgb(252 252 252 / 42%); font-size: 6.5px; }
+.workspaceStatusGrid strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.workspaceStatusGrid small { color: rgb(252 252 252 / 47%); font-size: 6.25px; line-height: 1.35; }
+
+.workspaceActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.workspaceBoxId {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid rgb(117 92 242 / 25%);
+  border-radius: 8px;
+  background: rgb(117 92 242 / 7%);
+  color: #c8b8ff;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceDiskAudit {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+.workspaceDiskAudit > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workspaceDiskAudit > header strong { font-size: 8px; }
+.workspaceDiskAudit > header small { color: rgb(252 252 252 / 45%); font-size: 6.5px; }
+.workspaceDiskAudit > div { display: grid; gap: 4px; }
+.workspaceDiskAudit article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 2.5%);
+}
+.workspaceDiskAudit article span { overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.workspaceDiskAudit article strong { font-size: 7px; font-variant-numeric: tabular-nums; }
+.workspaceDiskAudit article small { color: rgb(252 252 252 / 42%); font-size: 6px; }
+.workspaceDiskAudit p { margin: 4px 0 0; color: #c8b8ff; font-size: 6.5px; }
+
+@media (max-width: 900px) {
+  .workspaceStatusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .workspaceStatusGrid { grid-template-columns: 1fr; }
+  .workspaceDiskAudit > header { align-items: flex-start; flex-direction: column; }
+}

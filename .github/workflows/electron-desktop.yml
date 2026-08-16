@@ -112,6 +112,8 @@ jobs:
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
       - name: Verify native desktop edge parity
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Verify offline ASR provider contracts
+        run: node --test desktop/electron/offline-asr.test.cjs
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
