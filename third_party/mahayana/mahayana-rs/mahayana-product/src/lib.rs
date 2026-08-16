@@ -1518,6 +1518,7 @@ impl MahayanaProductClient {
             "mahayana.auth.password.login" => self.password_login(request),
             "mahayana.auth.browser.start" => self.browser_login_start(request),
             "mahayana.auth.browser.poll" => self.browser_login_poll(request),
+            "mahayana.auth.browser.cancel" => self.browser_login_cancel(request),
             "mahayana.auth.oauth.providers" => self.oauth_providers(),
             "mahayana.auth.oauth.start" => self.oauth_start(request),
             "mahayana.auth.oauth.poll" => self.oauth_poll(request),
@@ -1835,6 +1836,26 @@ impl MahayanaProductClient {
         Ok(response)
     }
 
+    fn browser_login_cancel(&self, request: &Value) -> Result<Value, ProductError> {
+        let attempt_id = required_identifier(request, "attemptId")?;
+        let poll_secret = self
+            .load_browser_login_poll_secret(attempt_id)?
+            .ok_or(ProductError::SessionExpired)?;
+        let response = self.post_json(
+            &format!("/api/auth/browser/attempts/{attempt_id}/cancel"),
+            json!({"pollSecret": poll_secret}),
+            None,
+        )?;
+        let terminal = matches!(
+            response.get("status").and_then(Value::as_str),
+            Some("cancelled" | "expired" | "failed")
+        );
+        if terminal {
+            let _ = self.remove_browser_login_poll_secret(attempt_id);
+        }
+        Ok(response)
+    }
+
     fn browser_login_poll(&self, request: &Value) -> Result<Value, ProductError> {
         let attempt_id = required_identifier(request, "attemptId")?;
         let poll_secret = self
@@ -1847,7 +1868,7 @@ impl MahayanaProductClient {
         )?;
         let terminal = matches!(
             response.get("status").and_then(Value::as_str),
-            Some("completed" | "expired" | "cancelled")
+            Some("completed" | "expired" | "cancelled" | "failed")
         );
         let result = self.finish_polled_login(response);
         if terminal {

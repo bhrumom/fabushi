@@ -241,6 +241,12 @@ struct PasswordLoginRequest {
     device_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BrowserLoginCancelRequest {
+    poll_secret: String,
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BrowserLoginStartRequest {
@@ -248,6 +254,11 @@ struct BrowserLoginStartRequest {
     device_id: Option<String>,
     #[serde(default)]
     platform: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowserAttemptStatusRow {
+    status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -542,6 +553,10 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .get_async("/api/auth/browser/authorize", browser_login_authorize)
         .post_async("/api/auth/browser/password", browser_login_password)
         .get_async("/api/auth/browser/attempts/:attempt_id", browser_login_poll)
+        .post_async(
+            "/api/auth/browser/attempts/:attempt_id/cancel",
+            browser_login_cancel,
+        )
         .get_async("/api/auth/oauth/providers", oauth_providers)
         .post_async("/api/auth/oauth/start", oauth_start)
         .get_async("/api/auth/oauth/callback", oauth_callback)
@@ -2326,6 +2341,49 @@ async fn browser_login_password(
     browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt_id))
 }
 
+async fn browser_login_cancel(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
+    let attempt_id = route_identifier(&context, "attempt_id")?;
+    let cancel: BrowserLoginCancelRequest = match request.json().await {
+        Ok(cancel) => cancel,
+        Err(_) => return error_response(400, "invalid_browser_cancel", "登录取消请求无效"),
+    };
+    let expected = browser_poll_secret(&context.env, attempt_id)?;
+    if cancel.poll_secret.is_empty() || !constant_time_text_eq(&cancel.poll_secret, &expected) {
+        return error_response(403, "browser_cancel_forbidden", "登录会话验证失败，请重新开始");
+    }
+    let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
+    let current = worker::query!(
+        &database,
+        "SELECT status FROM account_oauth_attempts WHERE attempt_id = ?1 LIMIT 1",
+        attempt_id
+    )?
+    .first::<BrowserAttemptStatusRow>(None)
+    .await?;
+    let status = current
+        .as_ref()
+        .map(|row| row.status.as_str())
+        .unwrap_or("missing");
+    if status == "pending" {
+        worker::query!(
+            &database,
+            "UPDATE account_oauth_attempts
+             SET status = 'cancelled', session_json = NULL
+             WHERE attempt_id = ?1 AND status = 'pending'",
+            attempt_id
+        )?
+        .run()
+        .await?;
+        return Response::from_json(&json!({"status": "cancelled"}));
+    }
+    if status == "missing" {
+        return error_response(404, "oauth_attempt_missing", "登录链接不存在或已失效");
+    }
+    Response::from_json(&json!({"status": status}))
+}
+
 async fn browser_login_poll(request: Request, context: RouteContext<()>) -> Result<Response> {
     let attempt_id = route_identifier(&context, "attempt_id")?;
     let url = request.url()?;
@@ -2574,12 +2632,26 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
         )?
         .run()
         .await?;
-        return browser_result_page(false, "登录已取消，正在返回 Fabushi", Some(&attempt.attempt_id));
+        return browser_cancelled_page("登录已取消，正在返回 Fabushi", Some(&attempt.attempt_id));
     }
     let Some(code) = query.get("code").map(|value| value.as_ref()) else {
+        worker::query!(
+            &database,
+            "UPDATE account_oauth_attempts SET status = 'failed' WHERE attempt_id = ?1 AND status = 'pending'",
+            &attempt.attempt_id
+        )?
+        .run()
+        .await?;
         return browser_result_page(false, "授权码缺失，请返回应用重试", Some(&attempt.attempt_id));
     };
     let Some(provider) = oauth_provider(&context.env, &attempt.provider) else {
+        worker::query!(
+            &database,
+            "UPDATE account_oauth_attempts SET status = 'failed' WHERE attempt_id = ?1 AND status = 'pending'",
+            &attempt.attempt_id
+        )?
+        .run()
+        .await?;
         return browser_result_page(false, "该登录方式当前不可用", Some(&attempt.attempt_id));
     };
     let callback = format!(
@@ -2916,12 +2988,29 @@ async fn create_account_session_value(
     }))
 }
 
+fn browser_cancelled_page(message: &str, attempt_id: Option<&str>) -> Result<Response> {
+    browser_result_page_with_status("cancelled", false, message, attempt_id)
+}
+
 fn browser_result_page(
     success: bool,
     message: &str,
     attempt_id: Option<&str>,
 ) -> Result<Response> {
-    let status = if success { "completed" } else { "cancelled" };
+    browser_result_page_with_status(
+        if success { "completed" } else { "failed" },
+        success,
+        message,
+        attempt_id,
+    )
+}
+
+fn browser_result_page_with_status(
+    status: &str,
+    success: bool,
+    message: &str,
+    attempt_id: Option<&str>,
+) -> Result<Response> {
     let deep_link = attempt_id.map(|attempt_id| {
         format!(
             "fabushi://auth/complete?attemptId={attempt_id}&status={status}"

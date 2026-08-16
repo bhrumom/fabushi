@@ -563,6 +563,25 @@ impl FeatureHostController {
         }
     }
 
+    pub fn browser_login_cancel(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => Ok(json!({"status": "cancelled"})),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.cancel",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
     pub fn browser_login_poll(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
         let attempt_id = required(attempt_id, "attemptId")?;
         match self.config.mode {
@@ -11650,6 +11669,21 @@ mod tests {
         assert!(completed["auth"].get("accessToken").is_none());
         assert!(completed["auth"].get("refreshToken").is_none());
         assert_eq!(controller.auth_status().unwrap()["loggedIn"], true);
+
+        let cancelled_controller = controller();
+        let cancelled_attempt = cancelled_controller
+            .browser_login_start()
+            .expect("start cancellable browser login");
+        let cancelled = cancelled_controller
+            .browser_login_cancel(
+                cancelled_attempt["attemptId"]
+                    .as_str()
+                    .expect("cancel attempt id")
+                    .to_string(),
+            )
+            .expect("cancel browser login");
+        assert_eq!(cancelled["status"], "cancelled");
+        assert_eq!(cancelled_controller.auth_status().unwrap()["loggedIn"], false);
     }
 
     #[test]

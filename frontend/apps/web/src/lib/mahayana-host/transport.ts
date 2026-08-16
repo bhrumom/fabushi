@@ -23,6 +23,7 @@ export interface MahayanaHostTransport {
   authProviders(): Promise<AuthProvider[]>;
   browserLoginStart(): Promise<BrowserLoginAttempt>;
   browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult>;
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult>;
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt>;
   oauthPoll(attemptId: string): Promise<OAuthPollResult>;
   openExternal(url: string): Promise<void>;

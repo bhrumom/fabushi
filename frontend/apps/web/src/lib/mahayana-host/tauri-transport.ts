@@ -94,6 +94,10 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
     return nativeInvoke<BrowserLoginPollResult>("feature_host_browser_login_poll", { attemptId });
   }
 
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    return nativeInvoke<BrowserLoginPollResult>("feature_host_browser_login_cancel", { attemptId });
+  }
+
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt> {
     return nativeInvoke<OAuthAttempt>("feature_host_oauth_start", { provider });
   }
