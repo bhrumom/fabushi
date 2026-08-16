@@ -49,6 +49,15 @@ jobs:
           env | grep '^HAS_SECRET_' | sort
           printf '%s\n' 'Apple repository variable presence (values are never printed):'
           env | grep '^HAS_VAR_' | sort
+          if [ "$HAS_SECRET_OAUTH_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_OAUTH_APPLE_CLIENT_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_SERVICES_ID" = true ] || [ "$HAS_VAR_APPLE_SERVICES_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_SERVICE_ID" = true ] || [ "$HAS_VAR_APPLE_SERVICE_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_APPLE_CLIENT_ID" = true ] \
+            || [ "$HAS_SECRET_SIGN_IN_WITH_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_SIGN_IN_WITH_APPLE_CLIENT_ID" = true ]; then
+            echo 'Apple browser Services ID source: configured'
+          else
+            echo 'Apple browser Services ID source: missing'
+          fi
 
       - name: Inspect deployed Mahayana Worker secret names
         shell: bash
