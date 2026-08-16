@@ -1921,10 +1921,22 @@ export default function HostClient() {
     }
   };
 
-  const cancelBrowserLogin = () => {
-    setBrowserLoginAttempt(null);
-    setLoginBusy(false);
+  const cancelBrowserLogin = async () => {
+    const attempt = browserLoginAttempt;
+    if (!attempt) return;
     setLoginError(null);
+    try {
+      const result = await transport.browserLoginCancel(attempt.attemptId);
+      if (result.status === "completed") {
+        setBrowserLoginWakeNonce((value) => value + 1);
+        return;
+      }
+      setBrowserLoginAttempt(null);
+      setLoginBusy(false);
+      setLoginError(result.status === "failed" ? "登录流程已失败，请重新开始" : null);
+    } catch (cause: unknown) {
+      setLoginError(`取消登录失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    }
   };
 
   useEffect(() => {
@@ -1971,10 +1983,16 @@ export default function HostClient() {
           setLoginError(null);
           return;
         }
-        if (result.status === "expired" || result.status === "cancelled") {
+        if (result.status === "expired" || result.status === "cancelled" || result.status === "failed") {
           setBrowserLoginAttempt(null);
           setLoginBusy(false);
-          setLoginError(result.status === "cancelled" ? "登录已取消" : "登录链接已过期，请重新开始");
+          setLoginError(
+            result.status === "cancelled"
+              ? "登录已取消"
+              : result.status === "failed"
+                ? "登录流程未完成，请重新开始"
+                : "登录链接已过期，请重新开始",
+          );
           return;
         }
         setLoginError(null);
@@ -4599,7 +4617,7 @@ export default function HostClient() {
               {loginError ? <output className={styles.loginInlineStatus} role="status">{loginError}</output> : null}
               <div className={styles.browserLoginActions}>
                 <button data-testid="browser-login-reopen" type="button" disabled={!browserLoginAttempt.loginUrl} onClick={() => void reopenBrowserLogin()}>重新打开浏览器</button>
-                <button data-testid="browser-login-cancel" type="button" onClick={cancelBrowserLogin}>取消等待</button>
+                <button data-testid="browser-login-cancel" type="button" onClick={() => void cancelBrowserLogin()}>取消等待</button>
               </div>
               <small className={styles.loginPrivacyNote}>Deep link 只携带 attempt ID，不包含 access token、refresh token 或密码。</small>
             </section>

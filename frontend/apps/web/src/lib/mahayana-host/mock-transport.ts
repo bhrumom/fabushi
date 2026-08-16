@@ -1813,6 +1813,13 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     return { status: "completed", provider: "browser", auth: this.auth };
   }
 
+  async browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    if (this.native) return this.native.browserLoginCancel(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) return { status: "expired" };
+    this.browserLoginAttempt = null;
+    return { status: "cancelled" };
+  }
+
   async authProviders(): Promise<AuthProvider[]> {
     if (this.native) return this.native.authProviders();
     return [

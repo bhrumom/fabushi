@@ -53,7 +53,7 @@ function parseFabushiDeepLink(candidate) {
   if (hostName === 'auth' && pathParts[0] === 'complete') {
     const attemptId = String(url.searchParams.get('attemptId') ?? '').trim();
     const status = String(url.searchParams.get('status') ?? 'completed').trim().toLowerCase();
-    if (!/^[A-Za-z0-9_-]{8,96}$/.test(attemptId) || !['completed', 'cancelled'].includes(status)) return null;
+    if (!/^[A-Za-z0-9_-]{8,96}$/.test(attemptId) || !['completed', 'cancelled', 'failed'].includes(status)) return null;
     return {
       version: 1,
       route: 'auth',

@@ -53,7 +53,7 @@ export interface NativeDeepLink {
   readonly section?: "general" | "mcp" | "usage" | "updates";
   readonly action?: "start" | "skip" | "complete";
   readonly attemptId?: string;
-  readonly status?: "completed" | "cancelled";
+  readonly status?: "completed" | "cancelled" | "failed";
 }
 
 export interface NativeDesktopEnvironment {

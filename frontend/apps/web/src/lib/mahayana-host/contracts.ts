@@ -41,7 +41,7 @@ export interface BrowserLoginAttempt {
 }
 
 export interface BrowserLoginPollResult {
-  status: "pending" | "completed" | "expired" | "cancelled";
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
   provider?: string;
   auth?: AuthState;
 }
@@ -54,7 +54,7 @@ export interface OAuthAttempt {
 }
 
 export interface OAuthPollResult {
-  status: "pending" | "completed" | "expired" | "cancelled";
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
   auth?: AuthState;
 }
 
@@ -772,6 +772,17 @@ export type RuntimeCommand =
 export interface CommandAccepted {
   requestId: string;
   operationId?: string;
+}
+
+export interface WidgetInteractionSummary {
+  widgetId: string;
+  agentId: string;
+  conversationId?: string;
+  actionId?: string;
+  value?: unknown;
+  status: "responded" | "dismissed";
+  reason?: string;
+  createdAtMs: number;
 }
 
 export interface ConversationSummary {

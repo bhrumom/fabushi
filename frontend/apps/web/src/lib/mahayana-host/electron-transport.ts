@@ -99,6 +99,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserPoll", { attemptId });
   }
 
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserCancel", { attemptId });
+  }
+
   passwordLogin(username: string, password: string): Promise<AuthState> {
     return bridge().invoke<AuthState>("feature.auth.passwordLogin", { username, password });
   }
