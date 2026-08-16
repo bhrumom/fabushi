@@ -108,6 +108,74 @@ async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Resu
     state.auth_providers()
 }
 
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
 #[tauri::command]
 async fn feature_host_oauth_start(
     state: State<'_, FeatureHostState>,
@@ -122,6 +190,766 @@ async fn feature_host_oauth_poll(
     attempt_id: String,
 ) -> Result<Value, String> {
     state.oauth_poll(attempt_id)
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_providers()
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
+#[tauri::command]
+async fn feature_host_oauth_start(
+    state: State<'_, FeatureHostState>,
+    provider: String,
+) -> Result<Value, String> {
+    state.oauth_start(provider)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_poll(
+    state: State<'_, FeatureHostState>,
+    attempt_id: String,
+) -> Result<Value, String> {
+    state.browser_login_poll(attempt_id)
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_providers()
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
+#[tauri::command]
+async fn feature_host_oauth_start(
+    state: State<'_, FeatureHostState>,
+    provider: String,
+) -> Result<Value, String> {
+    state.oauth_start(provider)
+}
+
+#[tauri::command]
+async fn feature_host_oauth_poll(
+    state: State<'_, FeatureHostState>,
+    attempt_id: String,
+) -> Result<Value, String> {
+    state.oauth_poll(attempt_id)
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_providers()
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
+#[tauri::command]
+async fn feature_host_oauth_start(
+    state: State<'_, FeatureHostState>,
+    provider: String,
+) -> Result<Value, String> {
+    state.oauth_start(provider)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_reopen(
+    state: State<'_, FeatureHostState>,
+    attempt_id: String,
+) -> Result<Value, String> {
+    state.browser_login_reopen(attempt_id)
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_providers()
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
+#[tauri::command]
+async fn feature_host_oauth_start(
+    state: State<'_, FeatureHostState>,
+    provider: String,
+) -> Result<Value, String> {
+    state.oauth_start(provider)
+}
+
+#[tauri::command]
+async fn feature_host_oauth_poll(
+    state: State<'_, FeatureHostState>,
+    attempt_id: String,
+) -> Result<Value, String> {
+    state.oauth_poll(attempt_id)
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_auth_providers(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_providers()
+}
+
+
+#[tauri::command]
+fn host_initialize(state: State<'_, HostState>, config: Option<Value>) -> Result<Value, String> {
+    state.initialize(config)
+}
+
+#[tauri::command]
+fn host_execute(state: State<'_, HostState>, command: Value) -> Result<Value, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+fn host_receive(state: State<'_, HostState>, timeout_ms: Option<u64>) -> Result<Value, String> {
+    state.receive(timeout_ms.unwrap_or(25))
+}
+
+#[tauri::command]
+fn host_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    state.snapshot()
+}
+
+#[tauri::command]
+fn host_close(state: State<'_, HostState>) -> Result<Value, String> {
+    state.close()
+}
+
+#[tauri::command]
+fn feature_host_initialize(
+    app: AppHandle,
+    state: State<'_, FeatureHostState>,
+    config: HostConfig,
+) -> Result<HostInfo, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("resolve Fabushi app data directory: {error}"))?;
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("create Fabushi app data directory: {error}"))?;
+    state.initialize_with_host_config(config, host_config_for_root(root))
+}
+
+#[tauri::command]
+fn feature_host_execute(
+    state: State<'_, FeatureHostState>,
+    command: FeatureCommand,
+) -> Result<CommandAccepted, String> {
+    state.execute(command)
+}
+
+#[tauri::command]
+async fn feature_host_auth_status(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.auth_status()
+}
+
+#[tauri::command]
+async fn feature_host_password_login(
+    state: State<'_, FeatureHostState>,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    state.password_login(username, password)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_start(state: State<'_, FeatureHostState>) -> Result<Value, String> {
+    state.browser_login_start()
+}
+
+#[tauri::command]
+async fn feature_host_oauth_start(
+    state: State<'_, FeatureHostState>,
+    provider: String,
+) -> Result<Value, String> {
+    state.oauth_start(provider)
+}
+
+#[tauri::command]
+async fn feature_host_browser_login_cancel(
+    state: State<'_, FeatureHostState>,
+    attempt_id: String,
+) -> Result<Value, String> {
+    state.browser_login_cancel(attempt_id)
 }
 
 #[tauri::command]
@@ -197,6 +1025,10 @@ pub fn run() {
             feature_host_auth_providers,
             feature_host_oauth_start,
             feature_host_oauth_poll,
+            feature_host_browser_login_start,
+            feature_host_browser_login_poll,
+            feature_host_browser_login_cancel,
+            feature_host_browser_login_reopen,
             feature_host_open_external,
             feature_host_logout,
             feature_host_receive,

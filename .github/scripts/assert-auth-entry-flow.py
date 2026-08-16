@@ -66,3 +66,27 @@ for secret_name in ['accessToken', 'refreshToken', 'password', 'codeVerifier']:
         raise SystemExit(f'auth entry gate: secret-like field leaked into auth deep link: {secret_name}')
 
 print('Browser auth entry gate passed: provider selection and credentials stay in the browser portal.')
+
+# Cross-runtime parity: every checked-out Rust bridge that exposes the legacy
+# OAuth command must expose the full browser-first lifecycle too.
+rust_bridges = []
+for path in Path('.').rglob('*.rs'):
+    if any(part in {'.git', 'target', 'node_modules'} for part in path.parts):
+        continue
+    try:
+        text = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        continue
+    if 'feature_host_oauth_start' in text:
+        rust_bridges.append((path, text))
+for path, text in rust_bridges:
+    for command in [
+        'feature_host_browser_login_start',
+        'feature_host_browser_login_poll',
+        'feature_host_browser_login_cancel',
+        'feature_host_browser_login_reopen',
+    ]:
+        if command not in text:
+            raise SystemExit(f'auth entry gate: Tauri/native browser auth bridge missing {command}: {path}')
+if rust_bridges:
+    print(f'Tauri/native browser auth bridge coverage: {len(rust_bridges)} source(s).')

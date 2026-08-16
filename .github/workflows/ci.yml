@@ -248,6 +248,8 @@ jobs:
             /.github/scripts/assert-fabushi-desktop-architecture.py
             /.github/scripts/assert-native-capability-semantics.py
             /.github/scripts/assert-auth-entry-flow.py
+            /apps/fabushi-tauri/src-tauri/src/lib.rs
+            /apps/fabushi-tauri/src-tauri/src/e2e.rs
             /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
