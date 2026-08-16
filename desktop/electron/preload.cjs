@@ -11,6 +11,7 @@ const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
 const NATIVE_EVENTS = new Set([
   'mcp-auth-completed',
   'focus-agent',
+  'cloud-agent-open',
   'deep-link',
   'compute-migration',
   'dev-compute-rebuild',

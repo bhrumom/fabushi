@@ -1,6 +1,7 @@
 export type NativeDesktopEvent =
   | "mcp-auth-completed"
   | "focus-agent"
+  | "cloud-agent-open"
   | "deep-link"
   | "compute-migration"
   | "dev-compute-rebuild"

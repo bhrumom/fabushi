@@ -106,6 +106,7 @@ export const NATIVE_DESKTOP_METHODS = {
   noteConversationForDiagnostics: { args: 'object' },
   openCloudAgent: { args: 'object' },
   getCloudAgentInfo: { args: 'object' },
+  cancelCloudAgent: { args: 'object' },
   getLinkMetadata: { args: 'object' },
   listSecrets: { args: 'none' },
   revealSecret: { args: 'object' },
@@ -140,6 +141,7 @@ export const NATIVE_DESKTOP_METHODS = {
 export const NATIVE_DESKTOP_EVENTS = [
   'mcp-auth-completed',
   'focus-agent',
+  'cloud-agent-open',
   'deep-link',
   'compute-migration',
   'dev-compute-rebuild',

@@ -393,6 +393,16 @@ impl MahayanaRuntime {
                     removed,
                 })
             }
+            RuntimeCommand::McpRemove { server } => {
+                let backend = self.agent_backend.as_ref().ok_or_else(|| {
+                    RuntimeError::AgentBackend("no agent backend is available".into())
+                })?;
+                let removed = self
+                    .async_runtime
+                    .block_on(backend.remove_mcp_server(&server))
+                    .map_err(|error| RuntimeError::AgentBackend(error.to_string()))?;
+                Ok(RuntimeResponse::McpRemoved { server, removed })
+            }
             RuntimeCommand::McpRefresh => {
                 let backend = self.agent_backend.as_ref().ok_or_else(|| {
                     RuntimeError::AgentBackend("no agent backend is available".into())

@@ -727,7 +727,7 @@
   gap: 4px;
   margin-top: 10px;
 }
-.asyncTaskStrip article {
+.asyncTaskStrip .asyncTaskCard {
   display: grid;
   grid-template-columns: 25px minmax(0, 1fr);
   gap: 7px;
@@ -736,7 +736,7 @@
   border-radius: 8px;
   background: rgb(117 92 242 / 8%);
 }
-.asyncTaskStrip article > span {
+.asyncTaskStrip .asyncTaskCard > span {
   width: 25px;
   height: 25px;
   display: grid;
@@ -750,6 +750,18 @@
 .asyncTaskStrip small { display: block; }
 .asyncTaskStrip strong { font-size: 8px; }
 .asyncTaskStrip small { margin-top: 2px; color: var(--muted); font-size: 6px; }
+.asyncTaskStrip button.asyncTaskCard {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.asyncTaskStrip button.asyncTaskCard:hover,
+.asyncTaskStrip button.asyncTaskCard:focus-visible {
+  outline: 1px solid rgb(117 92 242 / 42%);
+  background: rgb(117 92 242 / 14%);
+}
 
 .subagentList {
   display: grid;
@@ -4713,8 +4725,52 @@
 .widgetGalleryGrid article strong { font-size: 8px; text-transform: capitalize; }
 .widgetGalleryGrid article small { color: var(--faint); font-size: 7px; }
 
+.cloudRunDialog { width: min(680px, calc(100vw - 36px)); }
+.cloudRunGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  background: var(--line);
+}
+.cloudRunGrid > div {
+  display: grid;
+  gap: 5px;
+  min-height: 66px;
+  padding: 14px 16px;
+  background: var(--panel);
+}
+.cloudRunGrid span { color: var(--faint); font-size: 7px; }
+.cloudRunGrid strong { font-size: 9px; overflow-wrap: anywhere; }
+.cloudRunError {
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(220 67 78 / 35%);
+  border-radius: 9px;
+  background: rgb(220 67 78 / 8%);
+  color: #e8747d;
+  font-size: 8px;
+  line-height: 1.45;
+}
+.cloudRunActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 18px 18px;
+}
+.cloudRunActions button {
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: inherit;
+  font-size: 8px;
+}
+.cloudRunActions button:disabled { opacity: .45; }
+
 @media (max-width: 680px) {
-  .aboutGrid { grid-template-columns: 1fr; }
+  .aboutGrid,
+  .cloudRunGrid { grid-template-columns: 1fr; }
   .widgetGalleryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nativeUtilityDialog form > footer { align-items: stretch; flex-direction: column; }
 }

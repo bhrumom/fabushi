@@ -68,6 +68,7 @@ import {
   buildAgentNotification,
   type AgentNotificationSnapshot,
 } from "../../lib/fabushi-runtime/agent-notifications";
+import type { CloudAgentInfo } from "../../lib/fabushi-runtime/capability-provider";
 import {
   invokeNativeDesktop,
   markNativeDeepLinksReady,
@@ -503,6 +504,9 @@ export default function HostClient() {
   const [aboutEnvironment, setAboutEnvironment] = useState<NativeDesktopEnvironment | null>(null);
   const [widgetGalleryOpen, setWidgetGalleryOpen] = useState(false);
   const [nativeZoomFactor, setNativeZoomFactor] = useState(1);
+  const [cloudAgentInfo, setCloudAgentInfo] = useState<CloudAgentInfo | null>(null);
+  const [cloudAgentFailure, setCloudAgentFailure] = useState<string | null>(null);
+  const [cloudAgentActionPending, setCloudAgentActionPending] = useState(false);
   const [mcpServers, setMcpServers] = useState<unknown[]>([]);
   const [mcpApps, setMcpApps] = useState<unknown[]>([]);
   const [mcpToolServer, setMcpToolServer] = useState("");
@@ -562,6 +566,12 @@ export default function HostClient() {
 
   useEffect(() => {
     const unsubscribe = subscribeNativeDesktopEvents({
+      "cloud-agent-open": (payload) => {
+        const info = payload as CloudAgentInfo;
+        if (!info?.id) return;
+        setCloudAgentFailure(null);
+        setCloudAgentInfo(info);
+      },
       "focus-agent": (payload) => {
         const agentId = typeof payload === "object" && payload !== null && "agentId" in payload
           ? String((payload as { agentId?: unknown }).agentId ?? "").trim()
@@ -611,6 +621,34 @@ export default function HostClient() {
       .catch(() => { if (!cancelled) setAboutEnvironment(null); });
     return () => { cancelled = true; };
   }, [aboutOpen]);
+
+  useEffect(() => {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || ["finished", "error", "expired"].includes(cloudAgentInfo?.status ?? "unknown")) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = (delayMs: number) => {
+      if (!cancelled) timer = setTimeout(() => void refresh(), delayMs);
+    };
+    const refresh = async () => {
+      try {
+        const info = await invokeNativeDesktop<CloudAgentInfo>("getCloudAgentInfo", { bcId: runId, includeFiles: false });
+        if (cancelled) return;
+        setCloudAgentFailure(null);
+        setCloudAgentInfo(info);
+        if (!["finished", "error", "expired"].includes(info.status)) schedule(5_000);
+      } catch (error) {
+        if (cancelled) return;
+        setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+        schedule(60_000);
+      }
+    };
+    schedule(5_000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [cloudAgentInfo?.id, cloudAgentInfo?.runId, cloudAgentInfo?.status]);
 
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [selectedModel, setSelectedModel] = useState("auto");
@@ -2382,6 +2420,51 @@ export default function HostClient() {
     resetAutomationDraft();
   };
 
+  async function openCloudRun(runId: string) {
+    const id = runId.trim();
+    if (!id || cloudAgentActionPending) return;
+    setCloudAgentActionPending(true);
+    setCloudAgentFailure(null);
+    try {
+      const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("openCloudAgent", { bcId: id });
+      if (result?.info) setCloudAgentInfo(result.info);
+    } catch (error) {
+      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCloudAgentActionPending(false);
+    }
+  }
+
+  async function refreshCloudRun() {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || cloudAgentActionPending) return;
+    setCloudAgentActionPending(true);
+    try {
+      const info = await invokeNativeDesktop<CloudAgentInfo>("getCloudAgentInfo", { bcId: runId, includeFiles: false });
+      setCloudAgentFailure(null);
+      setCloudAgentInfo(info);
+    } catch (error) {
+      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCloudAgentActionPending(false);
+    }
+  }
+
+  async function cancelCloudRun() {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || cloudAgentActionPending) return;
+    setCloudAgentActionPending(true);
+    try {
+      const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("cancelCloudAgent", { bcId: runId });
+      if (result?.info) setCloudAgentInfo(result.info);
+      setCloudAgentFailure(null);
+    } catch (error) {
+      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCloudAgentActionPending(false);
+    }
+  }
+
   async function submitDesktopFeedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const message = feedbackText.trim();
@@ -3181,12 +3264,20 @@ export default function HostClient() {
           </div>
           {asyncTasks.length ? (
             <div className={styles.asyncTaskStrip}>
-              {asyncTasks.map((task) => (
-                <article key={task.id}>
-                  <span data-kind={task.kind}>↻</span>
-                  <div><strong>{task.label}</strong><small>{task.kind}{task.subagentType ? ` · ${task.subagentType}` : ""}</small></div>
-                </article>
-              ))}
+              {asyncTasks.map((task) => {
+                const cloudRunId = task.kind === "cloud-agent" ? task.resourceId : undefined;
+                const content = (
+                  <>
+                    <span data-kind={task.kind}>↻</span>
+                    <div><strong>{task.label}</strong><small>{task.kind}{task.subagentType ? ` · ${task.subagentType}` : ""}{cloudRunId ? " · 打开 Cloud Run" : ""}</small></div>
+                  </>
+                );
+                return cloudRunId ? (
+                  <button className={styles.asyncTaskCard} key={task.id} type="button" onClick={() => void openCloudRun(cloudRunId)}>{content}</button>
+                ) : (
+                  <article className={styles.asyncTaskCard} key={task.id}>{content}</article>
+                );
+              })}
             </div>
           ) : null}
           <div className={styles.subagentList}>
@@ -3881,6 +3972,34 @@ export default function HostClient() {
                 本会话始终允许
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {cloudAgentInfo ? (
+        <div className={styles.backdrop} onMouseDown={() => setCloudAgentInfo(null)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.cloudRunDialog}`} role="dialog" aria-modal="true" aria-labelledby="cloud-run-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <small>FABUSHI CLOUD RUN</small>
+                <h2 id="cloud-run-title">{cloudAgentInfo.name ?? `Cloud run ${cloudAgentInfo.id.slice(-8)}`}</h2>
+                <p>{cloudAgentInfo.provider ?? "unknown provider"} · {cloudAgentInfo.status}</p>
+              </div>
+              <button type="button" className={styles.iconButton} aria-label="关闭 Cloud Run" onClick={() => setCloudAgentInfo(null)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.cloudRunGrid}>
+              <div><span>Run ID</span><strong>{cloudAgentInfo.runId ?? cloudAgentInfo.id}</strong></div>
+              <div><span>模型</span><strong>{cloudAgentInfo.model ?? "自动"}</strong></div>
+              <div><span>输入 Tokens</span><strong>{cloudAgentInfo.inputTokens ?? 0}</strong></div>
+              <div><span>输出 Tokens</span><strong>{cloudAgentInfo.outputTokens ?? 0}</strong></div>
+              <div><span>工具调用</span><strong>{cloudAgentInfo.toolCallCount ?? 0}</strong></div>
+              <div><span>开始时间</span><strong>{cloudAgentInfo.startedAt ? new Date(cloudAgentInfo.startedAt).toLocaleString() : "—"}</strong></div>
+            </div>
+            {cloudAgentInfo.errorMessage || cloudAgentFailure ? <p className={styles.cloudRunError}>{cloudAgentInfo.errorMessage ?? cloudAgentFailure}</p> : null}
+            <footer className={styles.cloudRunActions}>
+              <button type="button" disabled={cloudAgentActionPending} onClick={() => void refreshCloudRun()}>刷新状态</button>
+              {!(["finished", "error", "expired"] as string[]).includes(cloudAgentInfo.status) ? <button type="button" disabled={cloudAgentActionPending} onClick={() => void cancelCloudRun()}>取消运行</button> : null}
+            </footer>
           </section>
         </div>
       ) : null}

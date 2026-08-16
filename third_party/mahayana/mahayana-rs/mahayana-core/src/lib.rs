@@ -248,6 +248,8 @@ pub enum RuntimeCommand {
     McpOauthLogin { server: String },
     #[serde(rename = "mahayana.mcp.oauth.logout")]
     McpOauthLogout { server: String },
+    #[serde(rename = "mahayana.mcp.remove")]
+    McpRemove { server: String },
     #[serde(rename = "mahayana.mcp.refresh")]
     McpRefresh,
     #[serde(rename = "mahayana.mcp.tool.call")]
@@ -352,6 +354,8 @@ pub enum RuntimeResponse {
         #[serde(default)]
         removed: bool,
     },
+    #[serde(rename = "mahayana.mcp.removed")]
+    McpRemoved { server: String, removed: bool },
     #[serde(rename = "mahayana.mcp.refreshed")]
     McpRefreshed,
     #[serde(rename = "mahayana.mcp.tool.result")]

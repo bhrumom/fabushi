@@ -775,7 +775,22 @@ function createNativeCapabilityHandlers(deps) {
       };
     },
 
+    async cancelCloudAgent(params) {
+      const runId = cleanString(params.bcId ?? params.runId ?? params.id, 240);
+      if (!runId) throw new Error('Cloud run ID is required.');
+      const result = await platformRequest('POST', `/api/agent/runs/${encodeURIComponent(runId)}/cancel`, { body: {} });
+      const info = await this.getCloudAgentInfo({ bcId: runId }).catch(() => null);
+      if (info) broadcastNativeEvent('cloud-agent-open', info);
+      return { cancelled: result?.success !== false, runId, result, info };
+    },
+
     async openCloudAgent(params) {
+      const runId = cleanString(params.bcId ?? params.runId ?? params.id, 240);
+      if (runId) {
+        const info = await this.getCloudAgentInfo({ ...params, bcId: runId });
+        broadcastNativeEvent('cloud-agent-open', info);
+        return { opened: true, provider: 'fabushi-platform', info };
+      }
       const url = cleanString(params.url, 4096);
       if (url) {
         const parsed = new URL(url);
@@ -913,7 +928,7 @@ function createNativeCapabilityHandlers(deps) {
     async removeMcpServer(params) {
       const server = cleanString(params.server ?? params.name, 200);
       if (!server) throw new Error('MCP server name is required.');
-      const accepted = await featureExecute({ type: 'mcp.oauthLogout', requestId: requestId('mcp-remove'), server });
+      const accepted = await featureExecute({ type: 'mcp.remove', requestId: requestId('mcp-remove'), server });
       return { removed: true, server, accepted };
     },
 

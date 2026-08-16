@@ -1623,6 +1623,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "mcp.oauthLogout":
         this.emit({ type: "mcp.oauth", timestamp: now(), server: command.server, removed: true });
         return { requestId: command.requestId };
+      case "mcp.remove":
+        this.emit({ type: "mcp.refreshed", timestamp: now() });
+        return { requestId: command.requestId };
       case "mcp.refresh":
         this.emit({ type: "mcp.refreshed", timestamp: now() });
         return { requestId: command.requestId };
