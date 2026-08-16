@@ -63,6 +63,13 @@ jobs:
       - name: Install Cloudflare Worker build tool
         run: cargo install worker-build --locked
 
+      - id: identity-bridge
+        name: Configure deployed identity bridge
+        shell: bash
+        env:
+          PLATFORM_URL: https://mahayana-platform.bhrumom.workers.dev
+        run: bash .github/scripts/deploy-auth-provider-bridge.sh
+
       - name: Capture account D1 recovery bookmark
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
         shell: bash
@@ -105,12 +112,17 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | jq -e '.ok == true' >/dev/null
 
-      - name: Verify browser login broker lifecycle
+      - name: Verify browser login, registration, and Alipay broker lifecycle
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.platform.outputs.url }}
+          BRIDGE_URL: ${{ steps.identity-bridge.outputs.bridge_url }}
+          REGISTRATION_EMAIL_READY: ${{ steps.identity-bridge.outputs.email_ready }}
         run: |
           set -euo pipefail
+          providers="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 "$PLATFORM_URL/api/auth/oauth/providers")"
+          jq -e '.providers | map(.id) | index("alipay") != null' <<<"$providers" >/dev/null
+
           start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors \
             -H 'content-type: application/json' \
             --data '{"platform":"desktop"}' \
@@ -122,6 +134,36 @@ jobs:
             "$PLATFORM_URL/api/auth/browser/portal"*) ;;
             *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
           esac
+
+          portal_html="$(curl --fail --silent --show-error "$login_url")"
+          grep -F 'aria-label="账号模式"' <<<"$portal_html" >/dev/null
+          grep -F 'data-provider="alipay"' <<<"$portal_html" >/dev/null
+          register_url="${login_url}&mode=register"
+          register_html="$(curl --fail --silent --show-error "$register_url")"
+          grep -F '>注册</a>' <<<"$register_html" >/dev/null
+          if [ "$REGISTRATION_EMAIL_READY" = true ]; then
+            grep -F 'id="register-form"' <<<"$register_html" >/dev/null
+            grep -F '发送验证码' <<<"$register_html" >/dev/null
+          else
+            grep -F '邮箱注册当前未配置邮件服务' <<<"$register_html" >/dev/null
+          fi
+
+          authorize_url="$(node -e 'const login=new URL(process.argv[1]); const base=process.argv[2].replace(/\/$/, ""); const out=new URL(base + "/api/auth/browser/authorize"); out.searchParams.set("attemptId", login.searchParams.get("attemptId")); out.searchParams.set("ticket", login.searchParams.get("ticket")); out.searchParams.set("provider", "alipay"); process.stdout.write(out.toString());' "$login_url" "$PLATFORM_URL")"
+          first_headers="$RUNNER_TEMP/alipay-rust-redirect.headers"
+          first_status="$(curl --silent --show-error --output /dev/null --dump-header "$first_headers" --write-out '%{http_code}' "$authorize_url")"
+          [ "$first_status" = 302 ] || { echo "Rust Alipay authorize returned HTTP $first_status" >&2; exit 1; }
+          bridge_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/\r$/,""); print substr($0,11)}' "$first_headers" | tail -n 1)"
+          case "$bridge_location" in
+            "$BRIDGE_URL/api/internal/auth-provider/alipay/authorize"*) ;;
+            *) echo "Rust Alipay authorize escaped identity bridge: $bridge_location" >&2; exit 1 ;;
+          esac
+
+          second_headers="$RUNNER_TEMP/alipay-provider-redirect.headers"
+          second_status="$(curl --silent --show-error --output /dev/null --dump-header "$second_headers" --write-out '%{http_code}' "$bridge_location")"
+          [ "$second_status" = 302 ] || { echo "Identity bridge returned HTTP $second_status" >&2; exit 1; }
+          alipay_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/\r$/,""); print substr($0,11)}' "$second_headers" | tail -n 1)"
+          node -e 'const u=new URL(process.argv[1]); if (u.protocol !== "https:" || u.hostname !== "openauth.alipay.com" || u.pathname !== "/oauth2/publicAppAuthorize.htm") throw new Error(`unexpected Alipay authorization URL: ${u}`); if (u.searchParams.get("scope") !== "auth_user") throw new Error("Alipay authorization scope is not auth_user"); if (!/^fbs_[a-f0-9]{32}$/i.test(u.searchParams.get("state") || "")) throw new Error("Alipay authorization state is not a bounded Fabushi browser state");' "$alipay_location"
+
           curl --fail --silent --show-error \
             -H 'content-type: application/json' \
             --data "$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')" \
