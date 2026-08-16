@@ -10,6 +10,7 @@ REQUIRED_FILES = (
     "desktop/electron/edge-ipc.cjs",
     "desktop/electron/mahayana-edge.cjs",
     "desktop/electron/native-edge.cjs",
+    "desktop/electron/native-capability-handlers.cjs",
     "desktop/electron/main.cjs",
     "desktop/electron/preload.cjs",
     "desktop/src/edge/ipc.ts",
@@ -22,6 +23,7 @@ REQUIRED_FILES = (
     "frontend/apps/web/src/lib/fabushi-runtime/collaboration.ts",
     "frontend/apps/web/src/lib/fabushi-runtime/interactions.ts",
     "frontend/apps/web/src/lib/fabushi-runtime/native-desktop.ts",
+    ".github/scripts/assert-native-desktop-edge-parity.py",
 )
 
 REQUIRED_SNIPPETS = {

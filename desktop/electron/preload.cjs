@@ -8,7 +8,30 @@ const { contextBridge, ipcRenderer } = require('electron');
 const MAHAYANA_EDGE = 'mahayana-host';
 const NATIVE_EDGE = 'native-desktop';
 const MAHAYANA_RUNTIME_EVENT = 'runtime-event';
-const NATIVE_EVENTS = new Set(['window-state', 'theme-changed']);
+const NATIVE_EVENTS = new Set([
+  'mcp-auth-completed',
+  'focus-agent',
+  'deep-link',
+  'compute-migration',
+  'dev-compute-rebuild',
+  'open-feedback',
+  'open-about',
+  'widget-gallery',
+  'force-onboarding',
+  'account-auth-changed',
+  'experiments-changed',
+  'window-state',
+  'zoom-factor-changed',
+  'update-computer-dispatched',
+  'remote-desktop-user-presence',
+  'dev-compute-pull-progress',
+  'egress-tunnel-changed',
+  'egress-tunnel-status-changed',
+  'webauthn-proxy-changed',
+  'skip-onboarding',
+  'theme-changed',
+  'update-status',
+]);
 
 function callChannel(edge, method) {
   return `fabushi-edge:${edge}:call:${method}`;

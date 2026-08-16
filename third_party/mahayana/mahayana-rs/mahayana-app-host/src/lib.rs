@@ -131,6 +131,7 @@ impl AppHost {
                     .map_err(|error| AppHostError::Operation(error.to_string()))
             }
             "plugin.install" => self.install_plugin(params),
+            "plugin.uninstall" => self.uninstall_plugin(params),
             "plugin.active" => self.active_plugin(params),
             "plugin.permissions" => self.plugin_permissions(params),
             "plugin.permission.grant" => self.set_permission(params, true),
@@ -293,6 +294,26 @@ impl AppHost {
             })
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn uninstall_plugin(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
+        if let Ok(mut host) = self.js.lock() {
+            let _ = host.disable_plugin(plugin_id);
+        }
+        let removed = self
+            .installer()?
+            .uninstall(plugin_id)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        let permissions_removed = PermissionManager::load(self.permission_store())
+            .map_err(|error| AppHostError::Operation(error.to_string()))?
+            .remove_plugin(plugin_id)
+            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        Ok(json!({
+            "pluginId": plugin_id,
+            "removed": removed,
+            "permissionsRemoved": permissions_removed
+        }))
     }
 
     fn active_plugin(&self, params: Value) -> Result<Value, AppHostError> {

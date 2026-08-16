@@ -22,6 +22,7 @@ on:
       - '.github/scripts/assert-native-electron-canonical.sh'
       - '.github/scripts/assert-electron-feature-host-bridge.sh'
       - '.github/scripts/assert-fabushi-desktop-architecture.py'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
       - '.github/workflows/electron-desktop.yml'
   push:
     branches: [main]
@@ -70,7 +71,7 @@ jobs:
             if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml|Cargo\.lock|mahayana-app-host/|mahayana-app-host-desktop/|mahayana-feature-host/|mahayana-host/|mahayana-host-protocol/|mahayana-product/))'; then
               host=true
             fi
-            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/cross-platform-journeys\.json$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|frontend/packages/shared/|\.github/scripts/(assert-native-electron-canonical\.sh|assert-electron-feature-host-bridge\.sh|assert-fabushi-desktop-architecture\.py)$)'; then
+            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/cross-platform-journeys\.json$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|frontend/packages/shared/|\.github/scripts/(assert-native-electron-canonical\.sh|assert-electron-feature-host-bridge\.sh|assert-fabushi-desktop-architecture\.py|assert-native-desktop-edge-parity\.py)$)'; then
               renderer=true
             fi
             if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|desktop/(electron/|resources/|scripts/|e2e/|playwright\.config\.ts$|package\.json$|package-lock\.json$)|\.github/workflows/electron-desktop\.yml$)'; then
@@ -109,6 +110,8 @@ jobs:
 
       - name: Guard the Fabushi desktop architecture
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
+      - name: Verify native desktop edge parity
+        run: python3 .github/scripts/assert-native-desktop-edge-parity.py
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
