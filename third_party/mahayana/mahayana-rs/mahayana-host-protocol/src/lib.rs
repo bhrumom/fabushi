@@ -377,6 +377,8 @@ pub struct AsyncTaskSummary {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_id: Option<String>,
 }
 
 pub const TEACH_MAX_DURATION_MS: i64 = 10 * 60 * 1000;
@@ -1660,6 +1662,12 @@ pub enum FeatureCommand {
         request_id: String,
         server: String,
     },
+    #[serde(rename = "mcp.remove")]
+    McpRemove {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        server: String,
+    },
     #[serde(rename = "mcp.refresh")]
     McpRefresh {
         #[serde(rename = "requestId")]
@@ -1836,6 +1844,7 @@ impl FeatureCommand {
             | Self::McpApps { request_id }
             | Self::McpOauthLogin { request_id, .. }
             | Self::McpOauthLogout { request_id, .. }
+            | Self::McpRemove { request_id, .. }
             | Self::McpRefresh { request_id }
             | Self::McpToolCall { request_id, .. }
             | Self::SettingsGet { request_id }
@@ -2605,6 +2614,19 @@ mod tests {
             serde_json::to_value(command).expect("encode command")["type"],
             "capability.request"
         );
+    }
+
+    #[test]
+    fn mcp_remove_command_round_trips_with_request_id() {
+        let command: FeatureCommand = serde_json::from_str(
+            r#"{"type":"mcp.remove","requestId":"mcp-remove-1","server":"docs"}"#,
+        )
+        .expect("decode MCP remove command");
+        assert_eq!(command.request_id(), "mcp-remove-1");
+        assert!(matches!(
+            command,
+            FeatureCommand::McpRemove { server, .. } if server == "docs"
+        ));
     }
 
     #[test]

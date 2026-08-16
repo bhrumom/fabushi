@@ -58,6 +58,8 @@ use codex_config::McpServerTransportConfig;
 use codex_core::McpManager;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
+use codex_core::config::edit::ConfigEditsBuilder;
+use codex_core::config::load_global_mcp_servers;
 use codex_core::config::find_codex_home;
 use codex_core::plugin_workbench::mcp_app_orchestration_profile;
 use codex_core_plugins::PluginsManager;
@@ -1885,6 +1887,37 @@ impl AgentBackend for CodexAgentBackend {
         .map_err(|error| {
             AgentError::Backend(format!("failed to delete OAuth credentials: {error}"))
         })
+    }
+
+    async fn remove_mcp_server(&self, server: &str) -> Result<bool, AgentError> {
+        let server = server.trim();
+        if server.is_empty() {
+            return Err(AgentError::Backend(
+                "MCP server name must not be empty".into(),
+            ));
+        }
+        let codex_home = self.inner.config.codex_home.to_path_buf();
+        let mut servers = load_global_mcp_servers(&codex_home)
+            .await
+            .map_err(|error| AgentError::Backend(format!("failed to load MCP servers: {error}")))?;
+        let Some(removed_config) = servers.remove(server) else {
+            return Ok(false);
+        };
+        ConfigEditsBuilder::new(&codex_home)
+            .replace_mcp_servers(&servers)
+            .apply()
+            .await
+            .map_err(|error| AgentError::Backend(format!("failed to persist MCP removal: {error}")))?;
+        if let McpServerTransportConfig::StreamableHttp { url, .. } = &removed_config.transport {
+            let _ = delete_oauth_tokens(
+                server,
+                url,
+                self.inner.config.mcp_oauth_credentials_store_mode,
+                self.inner.config.auth_keyring_backend_kind(),
+            );
+        }
+        self.refresh_mcp_servers().await?;
+        Ok(true)
     }
 
     async fn refresh_mcp_servers(&self) -> Result<(), AgentError> {

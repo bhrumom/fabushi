@@ -163,6 +163,14 @@ pub trait AgentBackend: Send + Sync {
         ))
     }
 
+    /// Removes a user-managed MCP server configuration. Plugin-provided or
+    /// otherwise read-only servers must return false rather than mutating their source.
+    async fn remove_mcp_server(&self, _server: &str) -> Result<bool, AgentError> {
+        Err(AgentError::Unavailable(
+            "this agent backend does not support MCP configuration removal".into(),
+        ))
+    }
+
     /// Reloads configured MCP servers after credentials or plugin state change.
     async fn refresh_mcp_servers(&self) -> Result<(), AgentError> {
         Err(AgentError::Unavailable(

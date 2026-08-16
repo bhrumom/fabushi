@@ -766,6 +766,7 @@ impl FeatureHostController {
                 | FeatureCommand::McpApps { .. }
                 | FeatureCommand::McpOauthLogin { .. }
                 | FeatureCommand::McpOauthLogout { .. }
+                | FeatureCommand::McpRemove { .. }
                 | FeatureCommand::McpRefresh { .. }
                 | FeatureCommand::McpToolCall { .. }
         ) {
@@ -3562,6 +3563,31 @@ impl FeatureHostController {
                     });
                 }
             }
+            FeatureCommand::McpRemove { server, .. } => {
+                let server = required(server, "MCP server")?;
+                if self.config.mode == HostMode::Production {
+                    #[cfg(feature = "production")]
+                    {
+                        let removed = match self
+                            .runtime()?
+                            .execute(RuntimeCommand::McpRemove { server: server.clone() })?
+                        {
+                            RuntimeResponse::McpRemoved { removed, .. } => removed,
+                            other => return Err(unexpected_response("mcp.remove", other)),
+                        };
+                        if !removed {
+                            return Err(FeatureHostError::Contract(format!(
+                                "MCP server is not a user-managed configuration: {server}"
+                            )));
+                        }
+                    }
+                    #[cfg(not(feature = "production"))]
+                    return Err(FeatureHostError::ProductionUnavailable);
+                }
+                self.state()?.events.push_back(HostEvent::McpRefreshed {
+                    timestamp: timestamp(),
+                });
+            }
             FeatureCommand::McpRefresh { .. } => {
                 if self.config.mode == HostMode::Production {
                     #[cfg(feature = "production")]
@@ -5737,6 +5763,11 @@ impl FeatureHostController {
                     } else {
                         AsyncTaskKind::Shell
                     };
+                    let resource_id = if task_kind == AsyncTaskKind::CloudAgent {
+                        cloud_task_resource_id(metadata.as_ref())
+                    } else {
+                        None
+                    };
                     let mut state = self.state()?;
                     if status == RuntimeActivityStatus::Running {
                         state.async_tasks.insert(
@@ -5750,6 +5781,7 @@ impl FeatureHostController {
                                 started_at_ms: now_millis(),
                                 detail: detail.clone(),
                                 subagent_type: None,
+                                resource_id: resource_id.clone(),
                             },
                         );
                     } else {
@@ -8278,6 +8310,26 @@ fn is_safe_automation_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+fn cloud_task_resource_id(metadata: Option<&Value>) -> Option<String> {
+    let object = metadata?.as_object()?;
+    for key in ["bcId", "runId", "run_id", "cloudRunId", "cloud_run_id"] {
+        if let Some(value) = object.get(key).and_then(Value::as_str) {
+            let value = value.trim();
+            if !value.is_empty() && value.len() <= 240 {
+                return Some(value.to_string());
+            }
+        }
+    }
+    for key in ["run", "cloud", "metadata"] {
+        if let Some(nested) = object.get(key) {
+            if let Some(value) = cloud_task_resource_id(Some(nested)) {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
 fn ensure_automation_agent_scope(
     automation: &AutomationSummary,
     agent_id: Option<&str>,
@@ -9807,6 +9859,7 @@ fn update_subagents_from_activity(
                     started_at_ms: subagent.started_at_ms,
                     detail: subagent.detail.clone(),
                     subagent_type: Some(subagent.subagent_type.clone()),
+                    resource_id: None,
                 },
             );
         } else {
@@ -11014,6 +11067,36 @@ mod tests {
         assert!(error
             .to_string()
             .contains("does not belong to agent incident-bot"));
+    }
+
+    #[test]
+    fn cloud_task_resource_id_only_accepts_structured_run_keys() {
+        assert_eq!(
+            cloud_task_resource_id(Some(&json!({"bcId": "cloud-run-1"}))).as_deref(),
+            Some("cloud-run-1")
+        );
+        assert_eq!(
+            cloud_task_resource_id(Some(&json!({"metadata": {"runId": "cloud-run-2"}}))).as_deref(),
+            Some("cloud-run-2")
+        );
+        assert_eq!(cloud_task_resource_id(Some(&json!({"id": "generic-step-id"}))), None);
+        assert_eq!(cloud_task_resource_id(Some(&json!({"runId": "   "}))), None);
+    }
+
+    #[test]
+    fn mcp_remove_uses_refresh_event_contract_in_test_mode() {
+        let controller = controller();
+        drain(&controller);
+        controller
+            .execute(FeatureCommand::McpRemove {
+                request_id: "mcp-remove-test".into(),
+                server: "docs".into(),
+            })
+            .expect("remove MCP server in test mode");
+        assert!(drain(&controller).into_iter().any(|event| matches!(
+            event,
+            HostEvent::McpRefreshed { .. }
+        )));
     }
 
     #[test]

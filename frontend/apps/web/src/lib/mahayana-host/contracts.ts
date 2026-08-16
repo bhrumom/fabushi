@@ -251,6 +251,7 @@ export interface AsyncTaskSummary {
   startedAtMs: number;
   detail?: string;
   subagentType?: string;
+  resourceId?: string;
 }
 
 export type TeachEntryPoint = "screen_hover" | "composer_menu" | "fullscreen_title_bar";
@@ -713,6 +714,7 @@ export type RuntimeCommand =
   | (CommandBase & { type: "mcp.apps" })
   | (CommandBase & { type: "mcp.oauthLogin"; server: string })
   | (CommandBase & { type: "mcp.oauthLogout"; server: string })
+  | (CommandBase & { type: "mcp.remove"; server: string })
   | (CommandBase & { type: "mcp.refresh" })
   | (CommandBase & { type: "mcp.toolCall"; server: string; tool: string; arguments?: unknown })
   | (CommandBase & { type: "settings.get" })

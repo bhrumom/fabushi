@@ -106,6 +106,7 @@ const methods = {
   noteConversationForDiagnostics: { args: 'object' },
   openCloudAgent: { args: 'object' },
   getCloudAgentInfo: { args: 'object' },
+  cancelCloudAgent: { args: 'object' },
   getLinkMetadata: { args: 'object' },
   listSecrets: { args: 'none' },
   revealSecret: { args: 'object' },
@@ -140,6 +141,7 @@ const methods = {
 const NATIVE_EDGE = defineEdge('native-desktop', methods, [
   'mcp-auth-completed',
   'focus-agent',
+  'cloud-agent-open',
   'deep-link',
   'compute-migration',
   'dev-compute-rebuild',
