@@ -840,6 +840,7 @@ export type RuntimeEvent =
       error?: string;
     })
   | (EventBase & { type: "secret.provided"; secretRequestId: string })
+  | (EventBase & { type: "widget.changed"; interaction: WidgetInteractionSummary })
   | (EventBase & {
       type: "conversation.listed";
       conversations: ConversationSummary[];
