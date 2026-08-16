@@ -186,7 +186,7 @@ function createNativeCapabilityHandlers(deps) {
   }
 
   async function installedPluginPointers() {
-    const catalog = await host.request('marketplace.browse', { query: '', platform: process.platform }).catch(() => []);
+    const catalog = await host.request('marketplace.browse', { query: '', platform: 'desktop' }).catch(() => []);
     const entries = Array.isArray(catalog) ? catalog : Array.isArray(catalog?.plugins) ? catalog.plugins : [];
     const pointers = [];
     for (const entry of entries.slice(0, 200)) {
@@ -1246,12 +1246,12 @@ function createNativeCapabilityHandlers(deps) {
     },
 
     async getMcpCatalog() {
-      const catalog = await host.request('marketplace.browse', { query: 'mcp', platform: process.platform });
+      const catalog = await host.request('marketplace.browse', { query: 'mcp', platform: 'desktop' });
       return Array.isArray(catalog) ? catalog : catalog?.plugins ?? catalog;
     },
 
     async getMcpTeamPopularity() {
-      const catalog = await host.request('marketplace.browse', { query: 'mcp', platform: process.platform }).catch(() => []);
+      const catalog = await host.request('marketplace.browse', { query: 'mcp', platform: 'desktop' }).catch(() => []);
       const entries = Array.isArray(catalog) ? catalog : Array.isArray(catalog?.plugins) ? catalog.plugins : [];
       const items = entries
         .map((item) => ({
@@ -1268,7 +1268,7 @@ function createNativeCapabilityHandlers(deps) {
 
     async getMcpPluginLogo(params) {
       const pluginId = cleanString(params.pluginId ?? params.id, 200);
-      const catalog = await host.request('marketplace.browse', { query: pluginId, platform: process.platform }).catch(() => []);
+      const catalog = await host.request('marketplace.browse', { query: pluginId, platform: 'desktop' }).catch(() => []);
       const entries = Array.isArray(catalog) ? catalog : catalog?.plugins ?? [];
       const match = entries.find((item) => cleanString(item?.id ?? item?.pluginId, 200) === pluginId) ?? entries[0];
       return match?.logo ?? match?.icon ?? null;

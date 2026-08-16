@@ -45,4 +45,13 @@ for method in methods:
     ):
         raise SystemExit(f'native semantic gate: {method} is a static object stub')
 
+
+# Marketplace APIs classify clients by product surface (desktop/mobile/web/cli),
+# not by the Node OS strings (darwin/win32/linux). Passing process.platform
+# silently emptied several catalog surfaces because most callers swallowed the
+# resulting ProductError.
+native_provider_text = Path('desktop/electron/native-capability-handlers.cjs').read_text(encoding='utf-8')
+if re.search(r"marketplace\.browse[^\n]*platform:\s*process\.platform", native_provider_text):
+    raise SystemExit('native semantic gate: marketplace browse must use the product platform desktop, not process.platform')
+
 print(f'Native capability semantics gate passed for {len(methods)} methods.')
