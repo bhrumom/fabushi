@@ -750,7 +750,7 @@ export class MahayanaCoordinator {
   }> {
     const { skills } = await this.listSkills(agentId);
     const candidates = skills.filter(
-      (skill) => skill.source !== "private" && skill.publishState === "out_of_sync",
+      (skill) => skill.source !== "private" && skill.publishState === "published",
     );
     const results = await Promise.allSettled(
       candidates.map((skill) => this.resyncPublishedSkill(skill.id)),
@@ -769,7 +769,7 @@ export class MahayanaCoordinator {
     return {
       total: skills.length,
       synced: skills.filter((skill) => skill.publishState === "synced").length,
-      outOfSync: skills.filter((skill) => skill.publishState === "out_of_sync").length,
+      outOfSync: skills.filter((skill) => skill.publishState === "published").length,
       privateSkills: skills.filter((skill) => skill.source === "private").length,
     };
   }

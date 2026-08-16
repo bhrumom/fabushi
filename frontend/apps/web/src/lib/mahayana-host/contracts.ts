@@ -838,7 +838,7 @@ export type RuntimeEvent =
   | (EventBase & { type: "connector.listed"; connectors: ConnectorSummary[] })
   | (EventBase & {
       type: "connector.changed";
-      action: "connected" | "updated" | "removed" | "toolChanged" | "failed";
+      action: "connected" | "disconnected" | "updated" | "removed" | "toolChanged" | "failed";
       connector: ConnectorSummary;
     })
   | (EventBase & {
