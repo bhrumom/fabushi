@@ -64,6 +64,16 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     const info = await bridge().invoke<HostInfo>("feature.info");
     this.closed = false;
     this.attachRuntimeEvents();
+    // The main process owns the long-lived event pump and may observe the
+    // one-shot host.ready event before the renderer subscribes. A successful
+    // feature.info handshake proves the Host is ready, so replay that state
+    // locally after the push subscription is attached. A later native
+    // host.ready event is harmless because readiness updates are idempotent.
+    this.dispatchEvent({
+      type: "host.ready",
+      timestamp: new Date().toISOString(),
+      info,
+    });
     return info;
   }
 
