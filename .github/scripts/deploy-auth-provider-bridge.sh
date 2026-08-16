@@ -34,7 +34,9 @@ email_sending_dns_ready() {
   mx="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce.ombhrum.com' --data-urlencode 'type=MX' 'https://cloudflare-dns.com/dns-query')"
   spf="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce.ombhrum.com' --data-urlencode 'type=TXT' 'https://cloudflare-dns.com/dns-query')"
   dkim="$(curl --fail --silent --show-error -H 'accept: application/dns-json' --get --data-urlencode 'name=cf-bounce._domainkey.ombhrum.com' --data-urlencode 'type=TXT' 'https://cloudflare-dns.com/dns-query')"
-  jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | test("mx\.cloudflare\.net"; "i"))' <<<"$mx" >/dev/null     && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null     && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null
+  jq -e '.Status == 0 and any(.Answer[]?; ((.data // "") | ascii_downcase | contains("mx.cloudflare.net")))' <<<"$mx" >/dev/null \
+    && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("include:_spf.mx.cloudflare.net"))' <<<"$spf" >/dev/null \
+    && jq -e '.Status == 0 and any(.Answer[]?; (.data // "") | contains("v=DKIM1"))' <<<"$dkim" >/dev/null
 }
 env_url() {
   case "$1" in
