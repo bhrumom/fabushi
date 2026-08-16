@@ -211,35 +211,66 @@ export class MahayanaCoordinator {
 
   async getForeverBoxStatus(agentId: string): Promise<ForeverBoxStatus> {
     await this.requireAgent(agentId);
-    return this.capabilityProvider.getForeverBoxStatus(agentId);
+    try {
+      return await invokeNativeDesktop<ForeverBoxStatus>("getForeverBoxStatus", { agentId });
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.getForeverBoxStatus(agentId);
+    }
   }
 
   async ensureForeverBox(agentId: string): Promise<ForeverBoxStatus> {
     await this.requireAgent(agentId);
-    return this.capabilityProvider.ensureForeverBox(agentId);
+    try {
+      return await invokeNativeDesktop<ForeverBoxStatus>("ensureForeverBox", { agentId });
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.ensureForeverBox(agentId);
+    }
   }
 
   async handBackForeverBox(agentId: string): Promise<ForeverBoxStatus> {
     await this.requireAgent(agentId);
-    return this.capabilityProvider.handBackForeverBox(agentId);
+    try {
+      return await invokeNativeDesktop<ForeverBoxStatus>("handBackForeverBox", { agentId });
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.handBackForeverBox(agentId);
+    }
   }
 
   async getBoxSecretsStatus(agentId: string): Promise<BoxSecretsStatus> {
     await this.requireAgent(agentId);
-    return this.capabilityProvider.getBoxSecretsStatus(agentId);
+    try {
+      return await invokeNativeDesktop<BoxSecretsStatus>("getBoxSecretsStatus", { agentId });
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.getBoxSecretsStatus(agentId);
+    }
   }
 
   async isAgentNetworkEnabled(agentId: string): Promise<boolean> {
     await this.requireAgent(agentId);
-    return this.capabilityProvider.isAgentNetworkEnabled(agentId);
+    try {
+      return await invokeNativeDesktop<boolean>("isAgentNetworkEnabled", { agentId });
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.isAgentNetworkEnabled(agentId);
+    }
   }
 
   isGlobalSearchEnabled(): boolean {
     return this.capabilityProvider.isGlobalSearchEnabled();
   }
 
-  isEgressTunnelAvailable(): boolean {
-    return this.capabilityProvider.isEgressTunnelAvailable();
+  async isEgressTunnelAvailable(): Promise<boolean> {
+    try {
+      const status = await invokeNativeDesktop<{ available?: boolean }>("getEgressTunnelStatus");
+      return status.available === true;
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.capabilityProvider.isEgressTunnelAvailable();
+    }
   }
 
   async getSharingState(agentId?: string): Promise<SharingState> {
