@@ -4847,8 +4847,9 @@ export default function HostClient() {
                 ) : null}
               </div>
               <div className={styles.onboardingNav}>
-                {onboardingStep ? <button className={styles.onboardingBack} type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : <span />}
+                {onboardingStep ? <button data-testid="onboarding-back" className={styles.onboardingBack} type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : <span />}
                 <button
+                  data-testid="onboarding-next"
                   className={styles.onboardingNext}
                   type="button"
                   onClick={() => setOnboardingStep((step) => {

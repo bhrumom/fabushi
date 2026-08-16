@@ -6948,11 +6948,11 @@
 
 /* Reachability recovery: these controls were historically hidden by compact
    layout rules even though their underlying features are fully functional. */
-.titleActions > button:first-child {
+.titleActions > .iconButton:first-child {
   display: inline-grid;
 }
 
-.sidebarFooter > button:first-child {
+.sidebarFooter > .footerButton:first-child {
   display: flex;
 }
 

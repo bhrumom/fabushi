@@ -14,6 +14,8 @@ required_host = [
     'onboardingStep === 1',
     'onboardingStep === 2',
     'className={styles.onboardingMarkStage}',
+    'data-testid="onboarding-next"',
+    'data-testid="onboarding-back"',
     'className={styles.accountAvatarStage}',
     'onClick={() => openMiniApp(app.id)}',
     'onDelete={deleteAgentWorkflow}',
@@ -50,9 +52,11 @@ for host_ui_file in host_ui_files:
 open_button_rule = '.marketRow button:nth-of-type(2) { display: inline-flex; }'
 runtime_status_rule = ".runtimeStatus {\n  display: inline-flex;"
 composer_select_rule = ".composerToolbar select {\n  display: block;"
-notification_rule = ".titleActions > button:first-child {\n  display: inline-grid;"
-automation_rule = ".sidebarFooter > button:first-child {\n  display: flex;"
+notification_rule = ".titleActions > .iconButton:first-child {\n  display: inline-grid;"
+automation_rule = ".sidebarFooter > .footerButton:first-child {\n  display: flex;"
 activity_header_rule = ".activityHeader {\n  display: flex;"
+weak_notification_rule = ".titleActions > button:first-child {\n  display: inline-grid;"
+weak_automation_rule = ".sidebarFooter > button:first-child {\n  display: flex;"
 agent_run_rule = ".agentRunCard {\n  display: block;"
 if runtime_status_rule not in styles:
     raise SystemExit('product UI gate: runtime Host status is still hidden')
@@ -60,8 +64,12 @@ if composer_select_rule not in styles:
     raise SystemExit('product UI gate: composer mode/model selectors are still hidden')
 if notification_rule not in styles:
     raise SystemExit('product UI gate: notification/error tray entry is still hidden')
+if weak_notification_rule in styles and notification_rule not in styles:
+    raise SystemExit('product UI gate: notification restore selector is too weak to override the historical hide rule')
 if automation_rule not in styles:
     raise SystemExit('product UI gate: automation entry is still hidden')
+if weak_automation_rule in styles and automation_rule not in styles:
+    raise SystemExit('product UI gate: automation restore selector is too weak to override the historical hide rule')
 if activity_header_rule not in styles or agent_run_rule not in styles:
     raise SystemExit('product UI gate: agent activity observability is still hidden')
 if styles.rfind(open_button_rule) < styles.rfind('.marketRow button:nth-of-type(2) { display: none; }'):
