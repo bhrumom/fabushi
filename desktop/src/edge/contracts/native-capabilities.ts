@@ -114,6 +114,7 @@ export const NATIVE_DESKTOP_METHODS = {
   writeClientPersistence: { args: 'object' },
   removeClientPersistence: { args: 'object' },
   listClientPersistenceKeys: { args: 'object' },
+  requestDiskSaverAudit: { args: 'none' },
   migrateClientPersistence: { args: 'object' },
   getMcpState: { args: 'none' },
   getEffectivePlugins: { args: 'none' },

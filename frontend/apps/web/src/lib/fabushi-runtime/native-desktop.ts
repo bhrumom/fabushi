@@ -33,3 +33,25 @@ export function syncNativeTheme(preference: "system" | "light" | "dark"): void {
   if (!bridge) return;
   void bridge.invoke("setThemePreference", { preference }).catch(() => undefined);
 }
+
+export interface NativeDiskAuditEntry {
+  readonly name: string;
+  readonly bytes: number;
+  readonly reclaimable: boolean;
+}
+
+export interface NativeDiskAudit {
+  readonly root: string;
+  readonly totalBytes: number;
+  readonly reclaimableBytes: number;
+  readonly scannedNodes: number;
+  readonly truncated: boolean;
+  readonly scannedAtMs: number;
+  readonly entries: readonly NativeDiskAuditEntry[];
+}
+
+export async function requestNativeDiskSaverAudit(): Promise<NativeDiskAudit | null> {
+  const bridge = nativeDesktopBridge();
+  if (!bridge) return null;
+  return bridge.invoke<NativeDiskAudit>("requestDiskSaverAudit").catch(() => null);
+}

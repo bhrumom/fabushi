@@ -23,6 +23,7 @@ const methods = {
   writeClientPersistence: { args: 'object' },
   removeClientPersistence: { args: 'object' },
   listClientPersistenceKeys: { args: 'object' },
+  requestDiskSaverAudit: { args: 'none' },
 };
 
 const NATIVE_EDGE = defineEdge('native-desktop', methods, [

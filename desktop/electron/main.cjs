@@ -103,6 +103,84 @@ function persistenceKey(value) {
   return key;
 }
 
+const DISK_AUDIT_MAX_NODES = 50_000;
+const DISK_AUDIT_MAX_DEPTH = 12;
+const RECLAIMABLE_TOP_LEVEL_NAMES = new Set([
+  'cache',
+  'code cache',
+  'gpucache',
+  'logs',
+  'temp',
+  'tmp',
+]);
+
+async function measureDiskEntry(target, state, depth = 0) {
+  if (state.scannedNodes >= DISK_AUDIT_MAX_NODES || depth > DISK_AUDIT_MAX_DEPTH) {
+    state.truncated = true;
+    return 0;
+  }
+  state.scannedNodes += 1;
+  let stat;
+  try {
+    stat = await fs.lstat(target);
+  } catch {
+    return 0;
+  }
+  if (stat.isSymbolicLink()) return 0;
+  if (stat.isFile()) return Math.max(0, Number(stat.size) || 0);
+  if (!stat.isDirectory()) return 0;
+  let children;
+  try {
+    children = await fs.readdir(target, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let bytes = 0;
+  for (const child of children) {
+    if (state.scannedNodes >= DISK_AUDIT_MAX_NODES) {
+      state.truncated = true;
+      break;
+    }
+    bytes += await measureDiskEntry(path.join(target, child.name), state, depth + 1);
+  }
+  return bytes;
+}
+
+async function auditUserDataStorage() {
+  const root = app.getPath('userData');
+  const state = { scannedNodes: 0, truncated: false };
+  let topLevel = [];
+  try {
+    topLevel = await fs.readdir(root, { withFileTypes: true });
+  } catch (error) {
+    throw new Error(`Unable to inspect desktop storage: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const entries = [];
+  for (const item of topLevel) {
+    const bytes = await measureDiskEntry(path.join(root, item.name), state, 0);
+    entries.push({
+      name: item.name,
+      bytes,
+      reclaimable: RECLAIMABLE_TOP_LEVEL_NAMES.has(item.name.trim().toLowerCase()),
+    });
+  }
+  entries.sort((left, right) => right.bytes - left.bytes || left.name.localeCompare(right.name));
+  const totalBytes = entries.reduce((total, entry) => total + entry.bytes, 0);
+  const reclaimableBytes = entries.reduce(
+    (total, entry) => total + (entry.reclaimable ? entry.bytes : 0),
+    0,
+  );
+  return {
+    root,
+    totalBytes,
+    reclaimableBytes,
+    scannedNodes: state.scannedNodes,
+    truncated: state.truncated,
+    scannedAtMs: Date.now(),
+    entries: entries.slice(0, 50),
+  };
+}
+
 function windowForEvent(event) {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) throw new Error('Renderer window is unavailable.');
@@ -254,6 +332,9 @@ function installNativeEdge() {
       const prefix = params.prefix == null ? '' : String(params.prefix);
       const state = await readNativeState();
       return Object.keys(state.clientPersistence ?? {}).filter((key) => key.startsWith(prefix)).sort();
+    },
+    requestDiskSaverAudit() {
+      return auditUserDataStorage();
     },
   };
 
