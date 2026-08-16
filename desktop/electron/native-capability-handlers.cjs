@@ -735,6 +735,118 @@ function createNativeCapabilityHandlers(deps) {
     reportHeapMetrics(params) { return report('heap-metrics', params); },
     noteConversationForDiagnostics(params) { return report('conversation-diagnostics', params); },
 
+    async getSharingState(params) {
+      const result = await platformRequest('GET', '/api/collaboration/state');
+      const state = result?.state ?? { scope: 'fabushi-platform', rooms: [], joinRequests: [], typing: [], fetchedAtMs: Date.now() };
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) return state;
+      const rooms = Array.isArray(state.rooms) ? state.rooms.filter((room) => Array.isArray(room.memberAgentIds) && room.memberAgentIds.includes(agentId)) : [];
+      const roomIds = new Set(rooms.map((room) => room.id));
+      return {
+        ...state,
+        rooms,
+        joinRequests: Array.isArray(state.joinRequests) ? state.joinRequests.filter((request) => roomIds.has(request.roomId) || request.agentId === agentId) : [],
+        typing: Array.isArray(state.typing) ? state.typing.filter((entry) => roomIds.has(entry.roomId)) : [],
+      };
+    },
+
+    async createRoomFromAgent(params) {
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) throw new Error('Agent ID is required.');
+      const result = await platformRequest('POST', '/api/collaboration/rooms', {
+        body: {
+          name: cleanString(params.name, 96) || 'Fabushi shared room',
+          ownerAgentId: agentId,
+          memberAgentIds: [agentId],
+        },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'room-created', room: result?.room ?? null });
+      return result?.room ?? null;
+    },
+
+    async createSharedRoom(params) {
+      const memberAgentIds = Array.isArray(params.memberAgentIds)
+        ? params.memberAgentIds.map((value) => cleanString(value, 200)).filter(Boolean).slice(0, 100)
+        : [];
+      const result = await platformRequest('POST', '/api/collaboration/rooms', {
+        body: {
+          name: cleanString(params.name, 96),
+          ownerAgentId: cleanString(params.ownerAgentId, 200) || null,
+          memberAgentIds,
+        },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'room-created', room: result?.room ?? null });
+      return result?.room ?? null;
+    },
+
+    async createRoomInvite(params) {
+      const roomId = cleanString(params.roomId, 240);
+      if (!roomId) throw new Error('Room ID is required.');
+      const result = await platformRequest('POST', `/api/collaboration/rooms/${encodeURIComponent(roomId)}/invites`, { body: {} });
+      return result?.invite ?? null;
+    },
+
+    async joinSharedRoom(params) {
+      const token = cleanString(params.token, 1000);
+      const agentId = cleanString(params.agentId, 200);
+      if (!token || !agentId) throw new Error('Invite token and agent ID are required.');
+      const result = await platformRequest('POST', `/api/collaboration/invites/${encodeURIComponent(token)}/join`, {
+        body: { agentId, displayName: cleanString(params.displayName, 96) || agentId },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'join-requested', request: result?.request ?? null });
+      return result?.request ?? null;
+    },
+
+    async respondToRoomJoinRequest(params) {
+      const requestId = cleanString(params.requestId, 240);
+      if (!requestId) throw new Error('Join request ID is required.');
+      const result = await platformRequest('POST', `/api/collaboration/join-requests/${encodeURIComponent(requestId)}/respond`, {
+        body: { accept: params.accept === true },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'join-resolved', request: result?.request ?? null, room: result?.room ?? null });
+      return result?.request ?? null;
+    },
+
+    async addOwnAgentToSharedRoom(params) {
+      const roomId = cleanString(params.roomId, 240);
+      const agentId = cleanString(params.agentId, 200);
+      if (!roomId || !agentId) throw new Error('Room ID and agent ID are required.');
+      const result = await platformRequest('POST', `/api/collaboration/rooms/${encodeURIComponent(roomId)}/members`, {
+        body: { agentId, displayName: cleanString(params.displayName, 96) || agentId },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'member-added', room: result?.room ?? null });
+      return result?.room ?? null;
+    },
+
+    async removeOwnAgentFromSharedRoom(params) {
+      const roomId = cleanString(params.roomId, 240);
+      const agentId = cleanString(params.agentId, 200);
+      if (!roomId || !agentId) throw new Error('Room ID and agent ID are required.');
+      const result = await platformRequest('DELETE', `/api/collaboration/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(agentId)}`);
+      broadcastNativeEvent('shared-room-changed', { action: 'member-removed', room: result?.room ?? null });
+      return result?.room ?? null;
+    },
+
+    async setSharedRoomTyping(params) {
+      const roomId = cleanString(params.roomId, 240);
+      const participantId = cleanString(params.participantId, 200);
+      if (!roomId || !participantId) throw new Error('Room ID and participant ID are required.');
+      const result = await platformRequest('POST', `/api/collaboration/rooms/${encodeURIComponent(roomId)}/typing`, {
+        body: { participantId, isTyping: params.isTyping === true },
+      });
+      broadcastNativeEvent('shared-room-changed', { action: 'typing', typing: result?.typing ?? null });
+      return result?.typing ?? null;
+    },
+
+    async leaveSharedRoom(params) {
+      const roomId = cleanString(params.roomId, 240);
+      const agentId = cleanString(params.agentId, 200);
+      if (!roomId || !agentId) throw new Error('Room ID and agent ID are required.');
+      const result = await platformRequest('POST', `/api/collaboration/rooms/${encodeURIComponent(roomId)}/leave`, { body: { agentId } });
+      broadcastNativeEvent('shared-room-changed', { action: 'left', roomId, agentId, room: result?.room ?? null });
+      return result?.room ?? null;
+    },
+
     async getCloudAgentInfo(params) {
       const runId = cleanString(params.bcId ?? params.runId ?? params.id, 240);
       if (!runId) throw new Error('Cloud run ID is required.');

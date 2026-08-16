@@ -1,4 +1,6 @@
-export type CollaborationScope = "local-device";
+import { invokeNativeDesktop, subscribeNativeDesktopEvents } from "./native-desktop";
+
+export type CollaborationScope = "local-device" | "fabushi-platform";
 
 export interface SharedRoomSummary {
   readonly id: string;
@@ -8,6 +10,9 @@ export interface SharedRoomSummary {
   readonly scope: CollaborationScope;
   readonly createdAtMs: number;
   readonly updatedAtMs: number;
+  readonly ownAgentIds?: readonly string[];
+  readonly memberCount?: number;
+  readonly isOwner?: boolean;
 }
 
 export interface SharedRoomInvite {
@@ -23,12 +28,23 @@ export interface SharedRoomJoinRequest {
   readonly displayName: string;
   readonly status: "pending" | "accepted" | "rejected";
   readonly createdAtMs: number;
+  readonly resolvedAtMs?: number;
+  readonly isOwnRequest?: boolean;
+}
+
+export interface SharedRoomTypingState {
+  readonly roomId: string;
+  readonly participantId: string;
+  readonly isTyping: boolean;
+  readonly updatedAtMs: number;
 }
 
 export interface SharingState {
   readonly scope: CollaborationScope;
   readonly rooms: readonly SharedRoomSummary[];
   readonly joinRequests: readonly SharedRoomJoinRequest[];
+  readonly typing?: readonly SharedRoomTypingState[];
+  readonly fetchedAtMs?: number;
 }
 
 export type CollaborationEvent =
@@ -134,6 +150,204 @@ function saveState(state: StoredState): void {
     storage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // Collaboration remains usable in-memory when persistence is unavailable.
+  }
+}
+
+function isPlatformRoom(value: unknown): value is SharedRoomSummary {
+  if (!value || typeof value !== "object") return false;
+  const room = value as Partial<SharedRoomSummary>;
+  return Boolean(
+    typeof room.id === "string"
+    && typeof room.name === "string"
+    && (room.ownerAgentId === null || typeof room.ownerAgentId === "string")
+    && Array.isArray(room.memberAgentIds)
+    && room.memberAgentIds.every((agentId) => typeof agentId === "string")
+    && room.scope === "fabushi-platform"
+    && Number.isFinite(room.createdAtMs)
+    && Number.isFinite(room.updatedAtMs),
+  );
+}
+
+function normalizePlatformState(value: unknown): SharingState {
+  const candidate = value && typeof value === "object" ? value as Partial<SharingState> : {};
+  const rooms = Array.isArray(candidate.rooms) ? candidate.rooms.filter(isPlatformRoom) : [];
+  const roomIds = new Set(rooms.map((room) => room.id));
+  const joinRequests = Array.isArray(candidate.joinRequests)
+    ? candidate.joinRequests.filter((request): request is SharedRoomJoinRequest => Boolean(
+        request
+        && typeof request.id === "string"
+        && typeof request.roomId === "string"
+        && typeof request.agentId === "string"
+        && typeof request.displayName === "string"
+        && ["pending", "accepted", "rejected"].includes(request.status)
+        && Number.isFinite(request.createdAtMs),
+      ))
+    : [];
+  const typing = Array.isArray(candidate.typing)
+    ? candidate.typing.filter((entry): entry is SharedRoomTypingState => Boolean(
+        entry
+        && typeof entry.roomId === "string"
+        && roomIds.has(entry.roomId)
+        && typeof entry.participantId === "string"
+        && typeof entry.isTyping === "boolean"
+        && Number.isFinite(entry.updatedAtMs),
+      ))
+    : [];
+  return {
+    scope: "fabushi-platform",
+    rooms,
+    joinRequests,
+    typing,
+    fetchedAtMs: typeof candidate.fetchedAtMs === "number" && Number.isFinite(candidate.fetchedAtMs)
+      ? candidate.fetchedAtMs
+      : Date.now(),
+  };
+}
+
+export class PlatformCollaborationProvider {
+  private state: SharingState = {
+    scope: "fabushi-platform",
+    rooms: [],
+    joinRequests: [],
+    typing: [],
+    fetchedAtMs: 0,
+  };
+  private readonly listeners = new Set<(event: CollaborationEvent) => void>();
+  private nativeUnsubscribe: (() => void) | null = null;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshPromise: Promise<SharingState> | null = null;
+  private closed = false;
+
+  snapshot(agentId?: string): SharingState {
+    if (!agentId) return this.state;
+    const rooms = this.state.rooms.filter((room) => room.memberAgentIds.includes(agentId));
+    const roomIds = new Set(rooms.map((room) => room.id));
+    return {
+      ...this.state,
+      rooms,
+      joinRequests: this.state.joinRequests.filter((request) => roomIds.has(request.roomId) || request.agentId === agentId),
+      typing: this.state.typing?.filter((entry) => roomIds.has(entry.roomId)),
+    };
+  }
+
+  async refresh(agentId?: string): Promise<SharingState> {
+    if (this.closed) throw new Error("Platform collaboration provider is closed");
+    if (!this.refreshPromise) {
+      this.refreshPromise = invokeNativeDesktop<SharingState>("getSharingState", {})
+        .then((state) => {
+          const next = normalizePlatformState(state);
+          this.applyState(next);
+          return next;
+        })
+        .finally(() => { this.refreshPromise = null; });
+    }
+    await this.refreshPromise;
+    return this.snapshot(agentId);
+  }
+
+  createRoomFromAgent(agentId: string, name?: string): Promise<SharedRoomSummary> {
+    return this.mutate<SharedRoomSummary>("createRoomFromAgent", { agentId, name });
+  }
+
+  createSharedRoom(name: string, memberAgentIds: readonly string[], ownerAgentId: string | null = null): Promise<SharedRoomSummary> {
+    return this.mutate<SharedRoomSummary>("createSharedRoom", { name, memberAgentIds: [...memberAgentIds], ownerAgentId });
+  }
+
+  createRoomInvite(roomId: string): Promise<SharedRoomInvite> {
+    return this.mutate<SharedRoomInvite>("createRoomInvite", { roomId }, false);
+  }
+
+  joinSharedRoom(token: string, agentId: string, displayName?: string): Promise<SharedRoomJoinRequest> {
+    return this.mutate<SharedRoomJoinRequest>("joinSharedRoom", { token, agentId, displayName });
+  }
+
+  respondToRoomJoinRequest(requestId: string, accept: boolean): Promise<SharedRoomJoinRequest> {
+    return this.mutate<SharedRoomJoinRequest>("respondToRoomJoinRequest", { requestId, accept });
+  }
+
+  addOwnAgentToSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary> {
+    return this.mutate<SharedRoomSummary>("addOwnAgentToSharedRoom", { roomId, agentId });
+  }
+
+  removeOwnAgentFromSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary | null> {
+    return this.mutate<SharedRoomSummary | null>("removeOwnAgentFromSharedRoom", { roomId, agentId });
+  }
+
+  async setSharedRoomTyping(roomId: string, participantId: string, isTyping: boolean): Promise<void> {
+    const typing = await invokeNativeDesktop<SharedRoomTypingState>("setSharedRoomTyping", { roomId, participantId, isTyping });
+    this.emit({ type: "typing.changed", ...typing });
+  }
+
+  leaveSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary | null> {
+    return this.mutate<SharedRoomSummary | null>("leaveSharedRoom", { roomId, agentId });
+  }
+
+  subscribe(listener: (event: CollaborationEvent) => void): () => void {
+    this.listeners.add(listener);
+    this.ensureLiveRefresh();
+    return () => {
+      this.listeners.delete(listener);
+      if (!this.listeners.size) this.stopPolling();
+    };
+  }
+
+  close(): void {
+    this.closed = true;
+    this.nativeUnsubscribe?.();
+    this.nativeUnsubscribe = null;
+    this.stopPolling();
+    this.listeners.clear();
+  }
+
+  private async mutate<T>(method: string, params: Record<string, unknown>, refresh = true): Promise<T> {
+    const result = await invokeNativeDesktop<T>(method, params);
+    if (refresh) await this.refresh().catch(() => undefined);
+    return result;
+  }
+
+  private applyState(next: SharingState): void {
+    const previousTyping = new Map((this.state.typing ?? []).map((entry) => [`${entry.roomId}:${entry.participantId}`, entry]));
+    const nextTyping = new Map((next.typing ?? []).map((entry) => [`${entry.roomId}:${entry.participantId}`, entry]));
+    this.state = next;
+    this.emit({ type: "state.changed", state: next });
+    for (const [key, entry] of nextTyping) {
+      const previous = previousTyping.get(key);
+      if (!previous || previous.isTyping !== entry.isTyping || previous.updatedAtMs !== entry.updatedAtMs) {
+        this.emit({ type: "typing.changed", ...entry });
+      }
+    }
+    for (const [key, entry] of previousTyping) {
+      if (!nextTyping.has(key) && entry.isTyping) {
+        this.emit({ type: "typing.changed", ...entry, isTyping: false, updatedAtMs: Date.now() });
+      }
+    }
+  }
+
+  private ensureLiveRefresh(): void {
+    if (!this.nativeUnsubscribe) {
+      this.nativeUnsubscribe = subscribeNativeDesktopEvents({
+        "shared-room-changed": () => { void this.refresh().catch(() => undefined); },
+      });
+    }
+    void this.refresh().catch(() => undefined);
+    this.schedulePoll();
+  }
+
+  private schedulePoll(): void {
+    if (this.pollTimer || !this.listeners.size || this.closed) return;
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.refresh().catch(() => undefined).finally(() => this.schedulePoll());
+    }, 7_500);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  private emit(event: CollaborationEvent): void {
+    for (const listener of this.listeners) listener(event);
   }
 }
 

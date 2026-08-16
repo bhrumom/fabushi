@@ -43,6 +43,7 @@ import {
 } from "../fabushi-runtime/native-desktop";
 import {
   LocalCollaborationProvider,
+  PlatformCollaborationProvider,
   type CollaborationEvent,
   type SharedRoomInvite,
   type SharedRoomJoinRequest,
@@ -77,6 +78,11 @@ function includesSearch(value: string | undefined, query: string): boolean {
   return normalizedSearch(value ?? "").includes(query);
 }
 
+function shouldUseLocalCollaborationFallback(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /native desktop bridge is unavailable|transport|host process|econn|enet|network|offline|timed?\s*out|http 5\d\d/i.test(message);
+}
+
 function connectorIdForListener(platform: ListenerPlatform): string | null {
   switch (platform) {
     case "slack": return "slack";
@@ -97,6 +103,7 @@ export class MahayanaCoordinator {
   private readonly receipts = new Map<string, CommandAccepted>();
   private readonly interactions = new FabushiInteractionStore();
   private readonly collaboration = new LocalCollaborationProvider();
+  private readonly platformCollaboration = new PlatformCollaborationProvider();
   private readonly widgets = new FabushiWidgetInteractionStore();
   private readonly capabilityProvider = new FabushiCapabilityProvider();
   private sequence = 0;
@@ -235,48 +242,107 @@ export class MahayanaCoordinator {
     return this.capabilityProvider.isEgressTunnelAvailable();
   }
 
-  getSharingState(agentId?: string): SharingState {
-    return this.collaboration.getSharingState(agentId);
+  async getSharingState(agentId?: string): Promise<SharingState> {
+    try {
+      return await this.platformCollaboration.refresh(agentId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.getSharingState(agentId);
+    }
   }
 
-  createRoomFromAgent(agentId: string, name?: string): SharedRoomSummary {
-    return this.collaboration.createRoomFromAgent(agentId, name);
+  async createRoomFromAgent(agentId: string, name?: string): Promise<SharedRoomSummary> {
+    try {
+      return await this.platformCollaboration.createRoomFromAgent(agentId, name);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.createRoomFromAgent(agentId, name);
+    }
   }
 
-  createRoomInvite(roomId: string): SharedRoomInvite {
-    return this.collaboration.createRoomInvite(roomId);
+  async createRoomInvite(roomId: string): Promise<SharedRoomInvite> {
+    try {
+      return await this.platformCollaboration.createRoomInvite(roomId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.createRoomInvite(roomId);
+    }
   }
 
-  joinSharedRoom(token: string, agentId: string, displayName?: string): SharedRoomJoinRequest {
-    return this.collaboration.joinSharedRoom(token, agentId, displayName);
+  async joinSharedRoom(token: string, agentId: string, displayName?: string): Promise<SharedRoomJoinRequest> {
+    try {
+      return await this.platformCollaboration.joinSharedRoom(token, agentId, displayName);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.joinSharedRoom(token, agentId, displayName);
+    }
   }
 
-  respondToRoomJoinRequest(requestId: string, accept: boolean): SharedRoomJoinRequest {
-    return this.collaboration.respondToRoomJoinRequest(requestId, accept);
+  async respondToRoomJoinRequest(requestId: string, accept: boolean): Promise<SharedRoomJoinRequest> {
+    try {
+      return await this.platformCollaboration.respondToRoomJoinRequest(requestId, accept);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.respondToRoomJoinRequest(requestId, accept);
+    }
   }
 
-  createSharedRoom(name: string, memberAgentIds: readonly string[], ownerAgentId: string | null = null): SharedRoomSummary {
-    return this.collaboration.createSharedRoom(name, memberAgentIds, ownerAgentId);
+  async createSharedRoom(
+    name: string,
+    memberAgentIds: readonly string[],
+    ownerAgentId: string | null = null,
+  ): Promise<SharedRoomSummary> {
+    try {
+      return await this.platformCollaboration.createSharedRoom(name, memberAgentIds, ownerAgentId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.createSharedRoom(name, memberAgentIds, ownerAgentId);
+    }
   }
 
-  addOwnAgentToSharedRoom(roomId: string, agentId: string): SharedRoomSummary {
-    return this.collaboration.addOwnAgentToSharedRoom(roomId, agentId);
+  async addOwnAgentToSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary> {
+    try {
+      return await this.platformCollaboration.addOwnAgentToSharedRoom(roomId, agentId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.addOwnAgentToSharedRoom(roomId, agentId);
+    }
   }
 
-  removeOwnAgentFromSharedRoom(roomId: string, agentId: string): SharedRoomSummary {
-    return this.collaboration.removeOwnAgentFromSharedRoom(roomId, agentId);
+  async removeOwnAgentFromSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary | null> {
+    try {
+      return await this.platformCollaboration.removeOwnAgentFromSharedRoom(roomId, agentId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.removeOwnAgentFromSharedRoom(roomId, agentId);
+    }
   }
 
-  setSharedRoomTyping(roomId: string, participantId: string, isTyping: boolean): void {
-    this.collaboration.setSharedRoomTyping(roomId, participantId, isTyping);
+  async setSharedRoomTyping(roomId: string, participantId: string, isTyping: boolean): Promise<void> {
+    try {
+      await this.platformCollaboration.setSharedRoomTyping(roomId, participantId, isTyping);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      this.collaboration.setSharedRoomTyping(roomId, participantId, isTyping);
+    }
   }
 
-  leaveSharedRoom(roomId: string, agentId: string): SharedRoomSummary | null {
-    return this.collaboration.leaveSharedRoom(roomId, agentId);
+  async leaveSharedRoom(roomId: string, agentId: string): Promise<SharedRoomSummary | null> {
+    try {
+      return await this.platformCollaboration.leaveSharedRoom(roomId, agentId);
+    } catch (error) {
+      if (!shouldUseLocalCollaborationFallback(error)) throw error;
+      return this.collaboration.leaveSharedRoom(roomId, agentId);
+    }
   }
 
   subscribeCollaboration(listener: (event: CollaborationEvent) => void): () => void {
-    return this.collaboration.subscribe(listener);
+    const unsubscribePlatform = this.platformCollaboration.subscribe(listener);
+    const unsubscribeLocal = this.collaboration.subscribe(listener);
+    return () => {
+      unsubscribePlatform();
+      unsubscribeLocal();
+    };
   }
 
   requestId(scope: string): string {
@@ -961,6 +1027,7 @@ export class MahayanaCoordinator {
     this.unsubscribeTransport?.();
     this.unsubscribeTransport = null;
     this.collaboration.close();
+    this.platformCollaboration.close();
     this.listeners.clear();
     const cause = new Error("Mahayana coordinator disposed");
     for (const pending of [...this.pending]) pending.reject(cause);
