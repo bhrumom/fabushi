@@ -17,6 +17,18 @@ secret_names() {
   (cd "$LEGACY_DIR" && npx --yes "wrangler@${WRANGLER_VERSION}" secret list --env "$environment" --format json | jq -r '.[].name' | sort -u)
 }
 contains_name() { grep -Fxq "$2" <<<"$1"; }
+has_email_binding() {
+  local environment="$1"
+  python3 - "$LEGACY_DIR/wrangler.toml" "$environment" <<'PYTOML'
+import sys
+import tomllib
+with open(sys.argv[1], 'rb') as handle:
+    config = tomllib.load(handle)
+environment = sys.argv[2]
+bindings = config.get('env', {}).get(environment, {}).get('send_email', [])
+print('true' if any(binding.get('name') == 'EMAIL' for binding in bindings) else 'false')
+PYTOML
+}
 env_url() {
   case "$1" in
     development) printf '%s' 'https://fabushi-flutter-web-dev.bhrumom.workers.dev' ;;
@@ -28,7 +40,9 @@ env_url() {
 printf '%s\n' 'Inspecting legacy Worker secret names only; secret values are never read.'
 dev_names="$(secret_names development)"
 prod_names="$(secret_names production)"
-dev_alipay=false; dev_email=false; prod_alipay=false; prod_email=false
+dev_alipay=false; prod_alipay=false
+dev_email="$(has_email_binding development)"
+prod_email="$(has_email_binding production)"
 contains_name "$dev_names" ALIPAY_PRIVATE_KEY && dev_alipay=true || true
 contains_name "$dev_names" RESEND_API_KEY && dev_email=true || true
 contains_name "$prod_names" ALIPAY_PRIVATE_KEY && prod_alipay=true || true
