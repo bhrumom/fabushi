@@ -50,10 +50,20 @@ for host_ui_file in host_ui_files:
 open_button_rule = '.marketRow button:nth-of-type(2) { display: inline-flex; }'
 runtime_status_rule = ".runtimeStatus {\n  display: inline-flex;"
 composer_select_rule = ".composerToolbar select {\n  display: block;"
+notification_rule = ".titleActions > button:first-child {\n  display: inline-grid;"
+automation_rule = ".sidebarFooter > button:first-child {\n  display: flex;"
+activity_header_rule = ".activityHeader {\n  display: flex;"
+agent_run_rule = ".agentRunCard {\n  display: block;"
 if runtime_status_rule not in styles:
     raise SystemExit('product UI gate: runtime Host status is still hidden')
 if composer_select_rule not in styles:
     raise SystemExit('product UI gate: composer mode/model selectors are still hidden')
+if notification_rule not in styles:
+    raise SystemExit('product UI gate: notification/error tray entry is still hidden')
+if automation_rule not in styles:
+    raise SystemExit('product UI gate: automation entry is still hidden')
+if activity_header_rule not in styles or agent_run_rule not in styles:
+    raise SystemExit('product UI gate: agent activity observability is still hidden')
 if styles.rfind(open_button_rule) < styles.rfind('.marketRow button:nth-of-type(2) { display: none; }'):
     raise SystemExit('product UI gate: installed plugins are not visually openable')
 
@@ -70,6 +80,9 @@ required_styles = [
     '.confirmDialog',
     '.runtimeStatus',
     '.composerToolbar select',
+    '.activityHeader',
+    '.agentRunCard',
+    '.activityPanel',
 ]
 for marker in required_styles:
     if marker not in styles:
