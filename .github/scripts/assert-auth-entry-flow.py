@@ -11,7 +11,7 @@ host_process = Path('desktop/electron/host-process.cjs').read_text(encoding='utf
 mahayana_host = Path('third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs').read_text(encoding='utf-8')
 worker_config = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/wrangler.toml').read_text(encoding='utf-8')
 account_status_migration = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0003_oauth_attempt_failed_status.sql').read_text(encoding='utf-8')
-cloud_e2e = Path('.github/workflows/mahayana-cloud-marketplace-e2e.yml').read_text(encoding='utf-8')
+staging_auth_repair = Path('.github/workflows/mahayana-staging-auth-repair.yml').read_text(encoding='utf-8')
 
 required = {
     'worker browser start route': (worker, '/api/auth/browser/start'),
@@ -52,8 +52,8 @@ required = {
     'Mahayana Host honors Product API override with explicit state paths': (mahayana_host, 'env::var("MAHAYANA_API_BASE_URL")'),
     'staging browser origin': (worker_config, 'AUTH_PUBLIC_BASE_URL = "https://mahayana-platform.bhrumom.workers.dev"'),
     'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
-    'cloud E2E applies account auth migrations': (cloud_e2e, 'd1 migrations apply ACCOUNT_DB --remote'),
-    'cloud E2E verifies browser broker': (cloud_e2e, 'Verify browser login broker lifecycle'),
+    'staging auth repair applies account auth migrations': (staging_auth_repair, 'd1 migrations apply ACCOUNT_DB --remote'),
+    'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login broker lifecycle'),
 }
 for label, (text, marker) in required.items():
     if marker not in text:
