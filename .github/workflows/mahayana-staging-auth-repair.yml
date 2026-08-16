@@ -22,6 +22,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
       TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+      OAUTH_APPLE_CLIENT_ID: ${{ secrets.OAUTH_APPLE_CLIENT_ID || vars.OAUTH_APPLE_CLIENT_ID || secrets.APPLE_SERVICES_ID || vars.APPLE_SERVICES_ID || secrets.APPLE_SERVICE_ID || vars.APPLE_SERVICE_ID || secrets.APPLE_CLIENT_ID || vars.APPLE_CLIENT_ID || secrets.SIGN_IN_WITH_APPLE_CLIENT_ID || vars.SIGN_IN_WITH_APPLE_CLIENT_ID }}
 
     steps:
       - name: Checkout
@@ -88,6 +89,19 @@ jobs:
         shell: bash
         run: printf 'y\n' | npx --yes wrangler@4 d1 migrations apply ACCOUNT_DB --remote
 
+      - id: apple-provider
+        name: Sync Apple Services ID when configured
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=false
+          if [ -n "${OAUTH_APPLE_CLIENT_ID:-}" ]; then
+            printf '%s' "$OAUTH_APPLE_CLIENT_ID" | npx --yes wrangler@4 secret put OAUTH_APPLE_CLIENT_ID >/dev/null
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
       - name: Deploy Mahayana staging Worker
         id: platform
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
@@ -118,10 +132,16 @@ jobs:
           PLATFORM_URL: ${{ steps.platform.outputs.url }}
           BRIDGE_URL: ${{ steps.identity-bridge.outputs.bridge_url }}
           REGISTRATION_EMAIL_READY: ${{ steps.identity-bridge.outputs.email_ready }}
+          APPLE_READY: ${{ steps.apple-provider.outputs.enabled }}
         run: |
           set -euo pipefail
           providers="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 "$PLATFORM_URL/api/auth/oauth/providers")"
           jq -e '.providers | map(.id) | index("alipay") != null' <<<"$providers" >/dev/null
+          if [ "$APPLE_READY" = true ]; then
+            jq -e '.providers | map(.id) | index("apple") != null' <<<"$providers" >/dev/null
+          else
+            jq -e '.providers | map(.id) | index("apple") == null' <<<"$providers" >/dev/null
+          fi
 
           start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors \
             -H 'content-type: application/json' \
