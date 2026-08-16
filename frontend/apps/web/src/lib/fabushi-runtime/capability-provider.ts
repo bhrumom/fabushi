@@ -1,7 +1,24 @@
+export type CloudAgentStatus = "queued" | "running" | "finished" | "error" | "expired" | "unknown";
+
 export interface CloudAgentInfo {
-  readonly agentId: string;
+  readonly id: string;
+  readonly agentId?: string;
+  readonly runId?: string;
+  readonly conversationId?: string;
+  readonly name?: string;
   readonly available: boolean;
-  readonly provider: "local-device" | null;
+  readonly provider: "fabushi-platform" | "local-device" | null;
+  readonly status: CloudAgentStatus;
+  readonly rawStatus?: string;
+  readonly model?: string | null;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly toolCallCount?: number;
+  readonly startedAt?: string | null;
+  readonly completedAt?: string | null;
+  readonly failedAt?: string | null;
+  readonly errorCode?: string | null;
+  readonly errorMessage?: string | null;
   readonly reason: string | null;
 }
 
@@ -61,14 +78,16 @@ function stableLocalBoxId(agentId: string): string {
 export class FabushiCapabilityProvider {
   private state = loadState();
 
-  getCloudAgentInfo(agentId: string): CloudAgentInfo {
-    const clean = agentId.trim();
-    if (!clean) throw new Error("Agent ID is required");
+  getCloudAgentInfo(id: string): CloudAgentInfo {
+    const clean = id.trim();
+    if (!clean) throw new Error("Cloud agent or run ID is required");
     return {
+      id: clean,
       agentId: clean,
       available: false,
       provider: null,
-      reason: "No cloud-agent provider is configured; Fabushi will use local execution when available.",
+      status: "unknown",
+      reason: "No cloud run was resolved; Fabushi will use local execution when available.",
     };
   }
 

@@ -37,6 +37,7 @@ import {
   type ForeverBoxStatus,
 } from "../fabushi-runtime/capability-provider";
 import {
+  invokeNativeDesktop,
   requestNativeDiskSaverAudit,
   type NativeDiskAudit,
 } from "../fabushi-runtime/native-desktop";
@@ -188,9 +189,17 @@ export class MahayanaCoordinator {
     return this.interactions.feedbackFor(messageId);
   }
 
-  async getCloudAgentInfo(agentId: string): Promise<CloudAgentInfo> {
-    await this.requireAgent(agentId);
-    return this.capabilityProvider.getCloudAgentInfo(agentId);
+  async getCloudAgentInfo(id: string): Promise<CloudAgentInfo> {
+    const clean = id.trim();
+    if (!clean) throw new Error("Cloud agent or run ID is required");
+    try {
+      return await invokeNativeDesktop<CloudAgentInfo>("getCloudAgentInfo", {
+        bcId: clean,
+        includeFiles: false,
+      });
+    } catch {
+      return this.capabilityProvider.getCloudAgentInfo(clean);
+    }
   }
 
   async getForeverBoxStatus(agentId: string): Promise<ForeverBoxStatus> {

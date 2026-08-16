@@ -105,6 +105,7 @@ export const NATIVE_DESKTOP_METHODS = {
   reportHeapMetrics: { args: 'object' },
   noteConversationForDiagnostics: { args: 'object' },
   openCloudAgent: { args: 'object' },
+  getCloudAgentInfo: { args: 'object' },
   getLinkMetadata: { args: 'object' },
   listSecrets: { args: 'none' },
   revealSecret: { args: 'object' },

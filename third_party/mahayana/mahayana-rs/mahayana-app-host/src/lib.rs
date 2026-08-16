@@ -130,6 +130,10 @@ impl AppHost {
                     .marketplace_release_metadata(plugin_id, version)
                     .map_err(|error| AppHostError::Operation(error.to_string()))
             }
+            "platform.request" => self
+                .product
+                .execute("mahayana.platform.request", &params)
+                .map_err(|error| AppHostError::Operation(error.to_string())),
             "plugin.install" => self.install_plugin(params),
             "plugin.uninstall" => self.uninstall_plugin(params),
             "plugin.active" => self.active_plugin(params),

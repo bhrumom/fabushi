@@ -145,6 +145,21 @@ function createNativeCapabilityHandlers(deps) {
     return host.request('feature.execute', { command });
   }
 
+  async function platformRequest(method, requestPath, options = {}) {
+    const response = await host.request('platform.request', {
+      method,
+      path: requestPath,
+      authenticated: options.authenticated !== false,
+      ...(options.query ? { query: options.query } : {}),
+      ...(options.body !== undefined ? { body: options.body } : {}),
+    });
+    if (!response || response.ok !== true) {
+      const detail = response?.data?.message ?? response?.bodyText ?? `HTTP ${response?.statusCode ?? 'unknown'}`;
+      throw new Error(`Fabushi platform request failed: ${String(detail).slice(0, 1000)}`);
+    }
+    return response.data ?? null;
+  }
+
   async function loadSecretVault() {
     try {
       const parsed = JSON.parse(await fs.readFile(secretPath(), 'utf8'));
@@ -316,12 +331,16 @@ function createNativeCapabilityHandlers(deps) {
 
     async getComputeMigrationStatus() {
       const value = await getPreference('computeMigrationStatus', null);
-      return value ?? { required: false, status: 'complete', provider: 'mahayana' };
+      const status = value ?? { required: false, status: 'complete', provider: 'mahayana' };
+      broadcastNativeEvent('compute-migration', status);
+      return status;
     },
 
     async markDeepLinksReady() {
       await setPreference('deepLinksReady', true);
-      return { ready: true, pending: [] };
+      return typeof deps.markDeepLinksReady === 'function'
+        ? deps.markDeepLinksReady()
+        : { ready: true, flushed: 0 };
     },
 
     getAutoReviewInstructions() {
@@ -472,6 +491,7 @@ function createNativeCapabilityHandlers(deps) {
       await setPreference('computerGeneration', generation);
       const accepted = await featureExecute({ type: 'computer.status', requestId: requestId('computer-recreate') });
       const result = { dispatched: true, generation, accepted };
+      broadcastNativeEvent('dev-compute-rebuild', { state: 'requested', generation, requestedAtMs: Date.now() });
       broadcastNativeEvent('update-computer-dispatched', result);
       return result;
     },
@@ -481,8 +501,11 @@ function createNativeCapabilityHandlers(deps) {
         ? params.command
         : { type: 'computer.status', requestId: requestId('computer-update') };
       if (!command.requestId) command.requestId = requestId('computer-update');
+      const startedAtMs = Date.now();
+      broadcastNativeEvent('dev-compute-pull-progress', { state: 'dispatching', progress: 0, startedAtMs });
       const accepted = await featureExecute(command);
       const result = { dispatched: true, accepted };
+      broadcastNativeEvent('dev-compute-pull-progress', { state: 'dispatched', progress: 1, startedAtMs, completedAtMs: Date.now() });
       broadcastNativeEvent('update-computer-dispatched', result);
       return result;
     },
@@ -557,7 +580,16 @@ function createNativeCapabilityHandlers(deps) {
       const configured = cleanString(process.env.FABUSHI_AVAILABLE_MODELS, 4096)
         .split(',').map((value) => value.trim()).filter(Boolean);
       const defaults = [await this.getAgentDefaultModel(), await this.getComputerUseModel(), 'auto'];
-      return [...new Set([...configured, ...defaults])];
+      let remote = [];
+      try {
+        const catalog = await platformRequest('GET', '/api/ai/models', { authenticated: false });
+        remote = Array.isArray(catalog?.models)
+          ? catalog.models.map((item) => cleanString(item?.id ?? item, 160)).filter(Boolean)
+          : [];
+      } catch {
+        // Local/runtime defaults remain available when the product catalog cannot be reached.
+      }
+      return [...new Set([...remote, ...configured, ...defaults])];
     },
 
     async transcribeAudio(params) {
@@ -614,14 +646,29 @@ function createNativeCapabilityHandlers(deps) {
       const entries = Array.isArray(state.usageEvents) ? state.usageEvents : [];
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const recent = entries.filter((item) => Number(item.timestampMs) >= cutoff);
-      const totalTokens = recent.reduce((sum, item) => sum + Number(item.totalTokens ?? 0), 0);
-      return { windowDays: 7, totalTokens, events: recent.length, source: 'local-runtime-telemetry' };
+      const localTokens = recent.reduce((sum, item) => sum + Number(item.totalTokens ?? 0), 0);
+      let quota = null;
+      try { quota = await platformRequest('GET', '/api/ai/quota'); } catch { /* anonymous/offline fallback */ }
+      return {
+        windowDays: 7,
+        totalTokens: localTokens,
+        events: recent.length,
+        source: quota ? 'fabushi-platform+local-runtime' : 'local-runtime-telemetry',
+        quota,
+      };
     },
 
     async getUsageSummary() {
       const weekly = await this.getWeeklyUsage();
       const state = await readNativeState();
-      return { ...weekly, lifetimeTokens: Number(state.usageLifetimeTokens ?? weekly.totalTokens), updatedAtMs: state.usageUpdatedAtMs ?? null };
+      let membership = null;
+      try { membership = await platformRequest('GET', '/api/stripe/membership-status'); } catch { /* offline/not logged in */ }
+      return {
+        ...weekly,
+        membership,
+        lifetimeTokens: Number(state.usageLifetimeTokens ?? weekly.totalTokens),
+        updatedAtMs: state.usageUpdatedAtMs ?? null,
+      };
     },
 
     async getReviewPreferences() {
@@ -662,7 +709,8 @@ function createNativeCapabilityHandlers(deps) {
     },
 
     async cancelRuntimeTrial() {
-      return { cancelled: false, available: false, reason: 'No billing/trial provider is configured in the desktop runtime.' };
+      const result = await platformRequest('POST', '/api/stripe/cancel-subscription', { body: {} });
+      return { cancelled: result?.success !== false, available: true, provider: 'fabushi-platform', result };
     },
 
     reportAgentLoad(params) { return report('agent-load', params); },
@@ -686,6 +734,46 @@ function createNativeCapabilityHandlers(deps) {
     reportClientFailure(params) { return report('client-failure', params); },
     reportHeapMetrics(params) { return report('heap-metrics', params); },
     noteConversationForDiagnostics(params) { return report('conversation-diagnostics', params); },
+
+    async getCloudAgentInfo(params) {
+      const runId = cleanString(params.bcId ?? params.runId ?? params.id, 240);
+      if (!runId) throw new Error('Cloud run ID is required.');
+      const result = await platformRequest('GET', `/api/agent/runs/${encodeURIComponent(runId)}`);
+      const run = result?.run;
+      if (!run || typeof run !== 'object') throw new Error('Cloud run response did not include run metadata.');
+      const rawStatus = cleanString(run.status, 40) || 'unknown';
+      const status = rawStatus === 'completed'
+        ? 'finished'
+        : rawStatus === 'failed'
+          ? 'error'
+          : rawStatus === 'cancelled'
+            ? 'expired'
+            : rawStatus === 'queued'
+              ? 'queued'
+              : rawStatus === 'running'
+                ? 'running'
+                : 'unknown';
+      return {
+        id: runId,
+        runId,
+        conversationId: cleanString(run.conversationId, 240) || undefined,
+        name: cleanString(params.name ?? `Cloud run ${runId.slice(-8)}`, 160),
+        available: true,
+        provider: 'fabushi-platform',
+        status,
+        rawStatus,
+        model: run.model ?? null,
+        inputTokens: Number(run.inputTokens ?? 0),
+        outputTokens: Number(run.outputTokens ?? 0),
+        toolCallCount: Number(run.toolCallCount ?? 0),
+        startedAt: run.startedAt ?? null,
+        completedAt: run.completedAt ?? null,
+        failedAt: run.failedAt ?? null,
+        errorCode: run.errorCode ?? null,
+        errorMessage: run.errorMessage ?? null,
+        reason: status === 'error' ? cleanString(run.errorMessage, 1000) || 'Cloud run failed.' : null,
+      };
+    },
 
     async openCloudAgent(params) {
       const url = cleanString(params.url, 4096);
@@ -787,7 +875,19 @@ function createNativeCapabilityHandlers(deps) {
     },
 
     async getMcpTeamPopularity() {
-      return { available: false, items: [], reason: 'No team marketplace analytics provider is configured.' };
+      const catalog = await host.request('marketplace.browse', { query: 'mcp', platform: process.platform }).catch(() => []);
+      const entries = Array.isArray(catalog) ? catalog : Array.isArray(catalog?.plugins) ? catalog.plugins : [];
+      const items = entries
+        .map((item) => ({
+          id: cleanString(item?.id ?? item?.pluginId, 200),
+          name: cleanString(item?.name ?? item?.title ?? item?.id, 200),
+          score: Number(item?.popularity ?? item?.installCount ?? item?.downloads ?? 0) || 0,
+          source: 'marketplace-catalog',
+        }))
+        .filter((item) => item.id)
+        .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
+        .slice(0, 50);
+      return { available: true, items, source: 'marketplace-catalog' };
     },
 
     async getMcpPluginLogo(params) {

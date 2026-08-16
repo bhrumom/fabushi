@@ -41,4 +41,11 @@ missing = [name for name in ts_methods if name not in core and name not in exten
 if missing:
     print('native desktop parity guard: missing handlers: ' + ', '.join(missing), file=sys.stderr)
     raise SystemExit(1)
-print(f'Native desktop edge parity passed: {len(ts_methods)} methods, {len(ts_events)} events.')
+
+producer_source = main + "\n" + (ext_path.read_text(encoding='utf-8') if ext_path.is_file() else '')
+produced_events = set(re.findall(r"broadcastNativeEvent\(['\"]([^'\"]+)['\"]", producer_source))
+missing_producers = [event for event in ts_events if event not in produced_events]
+if missing_producers:
+    print('native desktop parity guard: events have no producer: ' + ', '.join(missing_producers), file=sys.stderr)
+    raise SystemExit(1)
+print(f'Native desktop edge parity passed: {len(ts_methods)} methods, {len(ts_events)} events, all events produced.')

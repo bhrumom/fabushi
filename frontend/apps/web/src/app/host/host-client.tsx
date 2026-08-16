@@ -69,9 +69,14 @@ import {
   type AgentNotificationSnapshot,
 } from "../../lib/fabushi-runtime/agent-notifications";
 import {
+  invokeNativeDesktop,
+  markNativeDeepLinksReady,
   nativeOnboardingSeen,
   rememberNativeOnboarding,
+  subscribeNativeDesktopEvents,
   syncNativeTheme,
+  type NativeDeepLink,
+  type NativeDesktopEnvironment,
 } from "../../lib/fabushi-runtime/native-desktop";
 import {
   ExtensionStudio,
@@ -491,6 +496,13 @@ export default function HostClient() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackState, setFeedbackState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutEnvironment, setAboutEnvironment] = useState<NativeDesktopEnvironment | null>(null);
+  const [widgetGalleryOpen, setWidgetGalleryOpen] = useState(false);
+  const [nativeZoomFactor, setNativeZoomFactor] = useState(1);
   const [mcpServers, setMcpServers] = useState<unknown[]>([]);
   const [mcpApps, setMcpApps] = useState<unknown[]>([]);
   const [mcpToolServer, setMcpToolServer] = useState("");
@@ -547,6 +559,59 @@ export default function HostClient() {
   const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const computerRefreshInFlightRef = useRef(false);
   const remoteDesktopControllerRef = useRef<RemoteComputerDesktopController | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNativeDesktopEvents({
+      "focus-agent": (payload) => {
+        const agentId = typeof payload === "object" && payload !== null && "agentId" in payload
+          ? String((payload as { agentId?: unknown }).agentId ?? "").trim()
+          : "";
+        if (!agentId) return;
+        setActiveGroupId(null);
+        setActiveAgentId(agentId);
+      },
+      "deep-link": (payload) => {
+        const link = payload as NativeDeepLink;
+        if (link?.route === "settings" && link.section) {
+          setSettingsSection(link.section);
+          setSettingsOpen(true);
+        }
+      },
+      "open-feedback": () => {
+        setFeedbackState("idle");
+        setFeedbackOpen(true);
+      },
+      "open-about": () => setAboutOpen(true),
+      "widget-gallery": () => setWidgetGalleryOpen(true),
+      "force-onboarding": () => {
+        window.localStorage.removeItem(ONBOARDING_COMPLETE_KEY);
+        setOnboardingStep(0);
+      },
+      "skip-onboarding": () => {
+        window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, "1");
+        rememberNativeOnboarding();
+        setOnboardingStep(3);
+      },
+      "zoom-factor-changed": (payload) => {
+        const factor = typeof payload === "object" && payload !== null && "factor" in payload
+          ? Number((payload as { factor?: unknown }).factor)
+          : Number.NaN;
+        if (Number.isFinite(factor) && factor > 0) setNativeZoomFactor(factor);
+      },
+    });
+    markNativeDeepLinksReady();
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!aboutOpen) return;
+    let cancelled = false;
+    void invokeNativeDesktop<NativeDesktopEnvironment>("getDesktopEnvironment")
+      .then((environment) => { if (!cancelled) setAboutEnvironment(environment); })
+      .catch(() => { if (!cancelled) setAboutEnvironment(null); });
+    return () => { cancelled = true; };
+  }, [aboutOpen]);
+
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [selectedModel, setSelectedModel] = useState("auto");
   const [attachments, setAttachments] = useState<AttachmentContext[]>([]);
@@ -2317,6 +2382,29 @@ export default function HostClient() {
     resetAutomationDraft();
   };
 
+  async function submitDesktopFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = feedbackText.trim();
+    if (!message || feedbackState === "sending") return;
+    setFeedbackState("sending");
+    try {
+      await invokeNativeDesktop("submitFeedback", {
+        category: "product",
+        message,
+        context: {
+          activeAgentId,
+          activeGroupId,
+          settingsSection,
+          zoomFactor: nativeZoomFactor,
+        },
+      });
+      setFeedbackText("");
+      setFeedbackState("sent");
+    } catch {
+      setFeedbackState("error");
+    }
+  }
+
   return (
     <main className={styles.shell} data-theme={effectiveTheme} data-testid="mahayana-host">
       <aside className={styles.sidebar}>
@@ -3792,6 +3880,63 @@ export default function HostClient() {
               >
                 本会话始终允许
               </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {feedbackOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setFeedbackOpen(false)}>
+          <section className={styles.nativeUtilityDialog} role="dialog" aria-modal="true" aria-labelledby="feedback-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>FABUSHI DESKTOP</small><h2 id="feedback-title">发送反馈</h2><p>反馈保存在本机诊断目录；敏感上下文会在写入前脱敏。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭反馈" onClick={() => setFeedbackOpen(false)}><Icon name="close" /></button>
+            </header>
+            <form onSubmit={(event) => void submitDesktopFeedback(event)}>
+              <textarea autoFocus rows={7} maxLength={12000} value={feedbackText} onChange={(event) => { setFeedbackText(event.target.value); if (feedbackState !== "idle") setFeedbackState("idle"); }} placeholder="告诉我们哪里可以更快、更稳或更好用…" />
+              <footer>
+                <span>{feedbackState === "sent" ? "已保存反馈" : feedbackState === "error" ? "保存失败，请重试" : "不会把密码、Token 或 Cookie 写入诊断上下文"}</span>
+                <button type="submit" disabled={!feedbackText.trim() || feedbackState === "sending"}>{feedbackState === "sending" ? "保存中…" : "提交反馈"}</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {aboutOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setAboutOpen(false)}>
+          <section className={styles.nativeUtilityDialog} role="dialog" aria-modal="true" aria-labelledby="about-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>FABUSHI · MAHAYANA</small><h2 id="about-title">关于 Fabushi</h2><p>面向多智能体工作流的原生桌面运行时。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭关于" onClick={() => setAboutOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.aboutGrid}>
+              <div><span>应用版本</span><strong>{aboutEnvironment?.appVersion ?? "Web"}</strong></div>
+              <div><span>平台</span><strong>{aboutEnvironment ? `${aboutEnvironment.platform} · ${aboutEnvironment.arch}` : "Browser"}</strong></div>
+              <div><span>Electron</span><strong>{aboutEnvironment?.electronVersion ?? "—"}</strong></div>
+              <div><span>界面缩放</span><strong>{Math.round(nativeZoomFactor * 100)}%</strong></div>
+              <div><span>运行模式</span><strong>{aboutEnvironment?.packaged ? "Production" : "Development"}</strong></div>
+              <div><span>Host</span><strong>Mahayana Feature Host</strong></div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {widgetGalleryOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setWidgetGalleryOpen(false)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.widgetGalleryDialog}`} role="dialog" aria-modal="true" aria-labelledby="widget-gallery-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>DESIGN SYSTEM</small><h2 id="widget-gallery-title">Widget Gallery</h2><p>Fabushi 自己的实时状态组件与 Bot 视觉语义。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭组件画廊" onClick={() => setWidgetGalleryOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.widgetGalleryGrid}>
+              {(["idle", "listening", "thinking", "working", "happy", "alerting"] as BotMarkState[]).map((state, index) => (
+                <article key={state}>
+                  <BotMark botId={`gallery-${state}`} state={state} size={62} color={(["violet", "cyan", "blue", "orange", "green", "red"] as BotMarkColor[])[index]} label={`${state} state`} />
+                  <strong>{state}</strong>
+                  <small>{state === "idle" ? "待命" : state === "listening" ? "监听" : state === "thinking" ? "推理" : state === "working" ? "执行" : state === "happy" ? "完成" : "提醒"}</small>
+                </article>
+              ))}
             </div>
           </section>
         </div>
