@@ -2,6 +2,8 @@ import type {
   AgentPeerMessage,
   ApprovalResolution,
   AuthState,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
   AuthProvider,
   AuthProviderId,
   AutomationSummary,
@@ -511,6 +513,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private sequence = 0;
   private auth: AuthState = { loggedIn: false, provider: "test" };
   private oauthAttempt: OAuthAttempt | null = null;
+  private browserLoginAttempt: BrowserLoginAttempt | null = null;
   private automations = new Map<string, AutomationSummary>();
   private connectors = new Map(defaultConnectors().map((connector) => [connector.id, connector]));
   private skills = new Map(defaultSkills().map((skill) => [skill.id, skill]));
@@ -1751,6 +1754,34 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   async authStatus(): Promise<AuthState> {
     if (this.native) return this.native.authStatus();
     return this.auth;
+  }
+
+  async browserLoginStart(): Promise<BrowserLoginAttempt> {
+    if (this.native) return this.native.browserLoginStart();
+    this.assertReady();
+    this.browserLoginAttempt = {
+      attemptId: `browser-${this.nextId("attempt")}`,
+      loginUrl: "about:blank#fabushi-test-browser-login",
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
+      pollAfterMs: 120,
+    };
+    return this.browserLoginAttempt;
+  }
+
+  async browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult> {
+    if (this.native) return this.native.browserLoginPoll(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) return { status: "expired" };
+    this.auth = {
+      loggedIn: true,
+      provider: "browser",
+      user: {
+        id: "fast-e2e-browser-user",
+        email: "browser@example.test",
+        nickname: "Browser 测试用户",
+      },
+    };
+    this.browserLoginAttempt = null;
+    return { status: "completed", provider: "browser", auth: this.auth };
   }
 
   async authProviders(): Promise<AuthProvider[]> {

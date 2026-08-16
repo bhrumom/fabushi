@@ -46,12 +46,14 @@ export function nativeDesktopBridge(): NativeDesktopBridge | null {
 
 export interface NativeDeepLink {
   readonly version: 1;
-  readonly route: "agent" | "settings" | "feedback" | "about" | "widgets" | "onboarding";
+  readonly route: "agent" | "auth" | "settings" | "feedback" | "about" | "widgets" | "onboarding";
   readonly source?: string;
   readonly canonicalUrl?: string;
   readonly agentId?: string;
   readonly section?: "general" | "mcp" | "usage" | "updates";
-  readonly action?: "start" | "skip";
+  readonly action?: "start" | "skip" | "complete";
+  readonly attemptId?: string;
+  readonly status?: "completed" | "cancelled";
 }
 
 export interface NativeDesktopEnvironment {

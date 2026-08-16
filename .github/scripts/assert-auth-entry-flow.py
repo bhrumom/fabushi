@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding='utf-8')
+worker = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs').read_text(encoding='utf-8')
+product = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs').read_text(encoding='utf-8')
+feature = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs').read_text(encoding='utf-8')
+app_host = Path('third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs').read_text(encoding='utf-8')
+main = Path('desktop/electron/main.cjs').read_text(encoding='utf-8')
+
+required = {
+    'worker browser start route': (worker, '/api/auth/browser/start'),
+    'worker browser portal route': (worker, '/api/auth/browser/portal'),
+    'worker browser password route': (worker, '/api/auth/browser/password'),
+    'worker one-time attempt poll': (worker, '/api/auth/browser/attempts/:attempt_id'),
+    'worker PKCE challenge': (worker, 'code_challenge_method'),
+    'worker safe return scheme': (worker, 'fabushi://auth/complete?attemptId='),
+    'product browser start': (product, 'mahayana.auth.browser.start'),
+    'product browser poll': (product, 'mahayana.auth.browser.poll'),
+    'product encrypts browser poll verifier': (product, 'save_browser_login_poll_secret'),
+    'product strips browser poll verifier': (product, 'object.remove("pollSecret")'),
+    'worker requires browser poll verifier': (worker, 'browser_poll_forbidden'),
+    'feature browser start': (feature, 'browser_login_start'),
+    'feature browser poll': (feature, 'browser_login_poll'),
+    'app host browser start': (app_host, 'feature.auth.browserStart'),
+    'app host browser poll': (app_host, 'feature.auth.browserPoll'),
+    'electron auth deep link': (main, "route: 'auth'"),
+    'renderer browser start': (host, 'transport.browserLoginStart()'),
+    'renderer browser poll': (host, 'transport.browserLoginPoll(attempt.attemptId)'),
+    'renderer single browser CTA': (host, 'data-testid="browser-login-start"'),
+    'feature browser credential-boundary regression': (feature, 'deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary'),
+}
+for label, (text, marker) in required.items():
+    if marker not in text:
+        raise SystemExit(f'auth entry gate: missing {label}: {marker}')
+
+for forbidden in [
+    'data-testid={`oauth-${provider.id}`}',
+    'data-testid="password-login-toggle"',
+    'data-testid="login-username"',
+    'data-testid="login-password"',
+    'transport.passwordLogin(',
+    'transport.oauthStart(',
+]:
+    if forbidden in host:
+        raise SystemExit(f'auth entry gate: desktop login regressed to in-app auth: {forbidden}')
+
+# Deep links are a wake-up hint only: never allow credential names into the
+# custom scheme builder/parser.
+auth_deep_link_region = main[main.find("hostName === 'auth'"):main.find("hostName === 'settings'")]
+for secret_name in ['accessToken', 'refreshToken', 'password', 'codeVerifier']:
+    if secret_name in auth_deep_link_region:
+        raise SystemExit(f'auth entry gate: secret-like field leaked into auth deep link: {secret_name}')
+
+print('Browser auth entry gate passed: provider selection and credentials stay in the browser portal.')

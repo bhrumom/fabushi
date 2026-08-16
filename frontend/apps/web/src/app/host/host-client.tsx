@@ -18,9 +18,8 @@ import type {
   ApprovalRequestedEvent,
   AttachmentContext,
   AutomationSummary,
-  AuthProvider,
-  AuthProviderId,
   AuthState,
+  BrowserLoginAttempt,
   BotSummary,
   CapabilitySummary,
   ComputerSnapshot,
@@ -498,13 +497,10 @@ export default function HostClient() {
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [authResolved, setAuthResolved] = useState(false);
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
-  const [loginProvider, setLoginProvider] = useState<AuthProviderId | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [authProviders, setAuthProviders] = useState<AuthProvider[]>([]);
-  const [loginOptionsOpen, setLoginOptionsOpen] = useState(false);
+  const [browserLoginAttempt, setBrowserLoginAttempt] = useState<BrowserLoginAttempt | null>(null);
+  const [browserLoginWakeNonce, setBrowserLoginWakeNonce] = useState(0);
   const [onboardingStep, setOnboardingStep] = useState(() =>
     screenshotMode !== null || window.localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "1"
       ? 3
@@ -547,7 +543,6 @@ export default function HostClient() {
     };
   }, [coordinator, networkOpen]);
 
-  const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
@@ -650,6 +645,15 @@ export default function HostClient() {
       },
       "deep-link": (payload) => {
         const link = payload as NativeDeepLink;
+        if (link?.route === "auth" && link.attemptId) {
+          setLoginBusy(true);
+          setLoginError(null);
+          setBrowserLoginAttempt((current) => current?.attemptId === link.attemptId
+            ? current
+            : { attemptId: link.attemptId!, loginUrl: "", pollAfterMs: 150 });
+          setBrowserLoginWakeNonce((value) => value + 1);
+          return;
+        }
         if (link?.route === "settings" && link.section) {
           setSettingsSection(link.section);
           setSettingsOpen(true);
@@ -1714,25 +1718,6 @@ export default function HostClient() {
           }),
         ]);
         try {
-          setAuthProviders(
-            (
-              await Promise.race([
-                transport.authProviders(),
-                new Promise<AuthProvider[]>((_, reject) =>
-                  window.setTimeout(
-                    () => reject(new Error("登录方式发现超时")),
-                    4_000,
-                  ),
-                ),
-              ])
-            ).filter((provider) => provider.enabled),
-          );
-        } catch {
-          // Provider discovery is server-owned. Password login remains the
-          // safe fallback when an older deployment has not enabled OAuth yet.
-          setAuthProviders([]);
-        }
-        try {
           const authState = await Promise.race([
             transport.authStatus(),
             new Promise<never>((_, reject) =>
@@ -1907,71 +1892,96 @@ export default function HostClient() {
     if (attachmentInput.current) attachmentInput.current.value = "";
   };
 
-  const login = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!loginUsername.trim() || !loginPassword) {
-      setLoginError("请输入账号和密码");
-      return;
-    }
+  const beginBrowserLogin = async () => {
+    if (loginBusy) return;
     setLoginBusy(true);
     setLoginError(null);
     try {
-      const state = await transport.passwordLogin(
-        loginUsername.trim(),
-        loginPassword,
-      );
-      setAuth({ ...state, loggedIn: true });
-      setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
-      setLoginPassword("");
+      const attempt = await transport.browserLoginStart();
+      setBrowserLoginAttempt(attempt);
+      await transport.openExternal(attempt.loginUrl);
     } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
+      setBrowserLoginAttempt(null);
       setLoginBusy(false);
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+
+  const reopenBrowserLogin = async () => {
+    const url = browserLoginAttempt?.loginUrl;
+    if (!url) return;
+    try {
+      await transport.openExternal(url);
+      setLoginError(null);
+      setBrowserLoginWakeNonce((value) => value + 1);
+    } catch (cause: unknown) {
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const cancelBrowserLogin = () => {
+    setBrowserLoginAttempt(null);
+    setLoginBusy(false);
+    setLoginError(null);
+  };
+
+  useEffect(() => {
+    const attempt = browserLoginAttempt;
+    if (!attempt) return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const pollDelay = Math.max(150, Math.min(2_000, attempt.pollAfterMs ?? 750));
+    const schedule = (delay = pollDelay) => {
+      if (!cancelled) timer = window.setTimeout(() => void poll(), delay);
+    };
+    const poll = async () => {
+      if (cancelled) return;
+      if (attempt.expiresAt && Date.now() / 1000 >= attempt.expiresAt) {
+        setBrowserLoginAttempt(null);
+        setLoginBusy(false);
+        setLoginError("登录链接已过期，请重新开始");
+        return;
+      }
+      try {
+        const result = await transport.browserLoginPoll(attempt.attemptId);
+        if (cancelled) return;
+        if (result.status === "completed" && result.auth) {
+          setAuth({ ...result.auth, loggedIn: true });
+          setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+          setBrowserLoginAttempt(null);
+          setLoginBusy(false);
+          setLoginError(null);
+          return;
+        }
+        if (result.status === "expired" || result.status === "cancelled") {
+          setBrowserLoginAttempt(null);
+          setLoginBusy(false);
+          setLoginError(result.status === "cancelled" ? "登录已取消" : "登录链接已过期，请重新开始");
+          return;
+        }
+        setLoginError(null);
+        schedule();
+      } catch (cause: unknown) {
+        if (cancelled) return;
+        setLoginError(`正在重新连接账号服务：${cause instanceof Error ? cause.message : String(cause)}`);
+        schedule(1_500);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [browserLoginAttempt?.attemptId, browserLoginWakeNonce]);
 
   const logout = async () => {
     await run(async () => {
       const state = await transport.logout();
       setAuth({ ...state, loggedIn: false });
       setAccountOpen(false);
-    });
-  };
-
-  const oauthLogin = async (provider: AuthProviderId) => {
-    setLoginBusy(true);
-    setLoginProvider(provider);
-    setLoginError(null);
-    try {
-      const attempt = await transport.oauthStart(provider);
-      await transport.openExternal(attempt.authorizationUrl);
-      for (let poll = 0; poll < 160; poll += 1) {
-        const result = await transport.oauthPoll(attempt.attemptId);
-        if (result.status === "completed" && result.auth) {
-          setAuth({ ...result.auth, loggedIn: true });
-          setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
-          return;
-        }
-        if (result.status !== "pending") throw new Error("登录链接已失效，请重新登录");
-        await new Promise((resolve) => window.setTimeout(resolve, 750));
-      }
-      throw new Error("等待登录超时，请重试");
-    } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
+      setBrowserLoginAttempt(null);
       setLoginBusy(false);
-      setLoginProvider(null);
-    }
-  };
-
-  const providerIcon = (provider: AuthProviderId) => {
-    const labels: Record<AuthProviderId, string> = {
-      google: "G",
-      apple: "●",
-      microsoft: "⊞",
-      github: "⌘",
-    };
-    return <span className={`${styles.providerIcon} ${styles[provider]}`}>{labels[provider]}</span>;
+    });
   };
 
   const installMiniApp = (miniAppId: string) => {
@@ -4528,73 +4538,51 @@ export default function HostClient() {
               </div>
             </section>
           ) : !authResolved ? (
-            <section className={styles.fabushiWelcome} role="status" aria-live="polite">
-              <div className={styles.fabushiTitle}>
-                <div className={styles.fabushiLogo}><span>••</span></div>
-                <h2>Fabushi</h2>
-              </div>
-              <p>正在恢复本地会话…</p>
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience}`} role="status" aria-live="polite">
+              <BotMark botId="fabushi-account" state="waking" size={96} className={styles.loginHeroMark} paused={false} />
+              <p className={styles.loginEyebrow}>FABUSHI ACCOUNT</p>
+              <h2>正在恢复你的工作空间</h2>
+              <p>安全会话保存在本机；不会把登录凭据暴露给界面层。</p>
+              <div className={styles.loginLoadingRail}><i /><i /><i /></div>
             </section>
-          ) : !loginOptionsOpen ? (
-            <section className={styles.fabushiWelcome} role="dialog" aria-modal="true" aria-labelledby="login-title">
-              <div className={styles.fabushiTitle}>
-                <div className={styles.fabushiLogo}><span>••</span></div>
-                <h2 id="login-title">Fabushi</h2>
+          ) : browserLoginAttempt ? (
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience} ${styles.browserLoginWaiting}`} role="dialog" aria-modal="true" aria-labelledby="browser-login-title">
+              <div className={styles.loginMarkStage}>
+                <BotMark botId="fabushi-account" state="orbit" size={108} followPointer emphasis className={styles.loginHeroMark} label="Fabushi 登录助手" />
+                <span className={styles.loginOrbitDot} aria-hidden="true" />
               </div>
-              <p>一支始终在线、可以真正完成工作的智能体团队。</p>
-              <button type="button" data-testid="show-login-options" onClick={() => setLoginOptionsOpen(true)}>登录 <span>→</span></button>
+              <p className={styles.loginEyebrow}>SECURE BROWSER LOGIN</p>
+              <h2 id="browser-login-title">在浏览器完成登录</h2>
+              <p>登录方式和密码都只在 Fabushi Account Portal 中处理。完成后会自动回到这里。</p>
+              <div className={styles.browserLoginSteps} aria-label="登录进度">
+                <span data-active="true"><i />已创建一次性会话</span>
+                <span data-active="true"><i />等待浏览器授权</span>
+                <span><i />安全领取会话</span>
+              </div>
+              {loginError ? <output className={styles.loginInlineStatus} role="status">{loginError}</output> : null}
+              <div className={styles.browserLoginActions}>
+                <button data-testid="browser-login-reopen" type="button" disabled={!browserLoginAttempt.loginUrl} onClick={() => void reopenBrowserLogin()}>重新打开浏览器</button>
+                <button data-testid="browser-login-cancel" type="button" onClick={cancelBrowserLogin}>取消等待</button>
+              </div>
+              <small className={styles.loginPrivacyNote}>Deep link 只携带 attempt ID，不包含 access token、refresh token 或密码。</small>
             </section>
           ) : (
-            <section className={styles.loginDialog} role="dialog" aria-modal="true" aria-labelledby="login-options-title">
-              <button className={styles.loginBack} type="button" onClick={() => setLoginOptionsOpen(false)}>← 返回</button>
-              <div className={styles.loginBrand}>
-                <span className={styles.loginMark}>乘</span>
-                <p>FABUSHI</p>
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience} ${styles.loginLanding}`} role="dialog" aria-modal="true" aria-labelledby="login-title">
+              <div className={styles.loginMarkStage}>
+                <BotMark botId="fabushi-account" state="idle" size={118} followPointer emphasis className={styles.loginHeroMark} label="Fabushi" />
+                <span className={styles.loginPresenceHalo} aria-hidden="true" />
               </div>
-              <h2 id="login-options-title">在浏览器中继续</h2>
-              <small>选择登录方式；完成授权后会自动回到 Fabushi。</small>
-              <div className={styles.providerList}>
-                {authProviders.map((provider) => (
-                  <button
-                    key={provider.id}
-                    data-testid={`oauth-${provider.id}`}
-                    type="button"
-                    disabled={loginBusy}
-                    onClick={() => void oauthLogin(provider.id)}
-                  >
-                    {providerIcon(provider.id)}
-                    <span>使用 {provider.displayName} 登录</span>
-                    {loginProvider === provider.id ? <i aria-label="登录中" /> : null}
-                  </button>
-                ))}
+              <p className={styles.loginEyebrow}>WELCOME TO FABUSHI</p>
+              <h2 id="login-title">一支真正会继续工作的智能体团队。</h2>
+              <p>桌面只负责发起安全会话。Google、Microsoft、GitHub 和 Fabushi 账号等登录方式统一在浏览器中选择。</p>
+              <div className={styles.loginTrustRow}>
+                <span>PKCE</span><span>一次性会话</span><span>本机安全存储</span>
               </div>
-              {authProviders.length ? <div className={styles.loginDivider}><span>或使用账号密码</span></div> : null}
-              <button
-                className={styles.passwordToggle}
-                data-testid="password-login-toggle"
-                type="button"
-                aria-expanded={passwordLoginOpen || authProviders.length === 0}
-                onClick={() => setPasswordLoginOpen((open) => !open)}
-              >
-                账号密码登录
+              <button className={styles.browserLoginPrimary} data-testid="browser-login-start" type="button" disabled={loginBusy} onClick={() => void beginBrowserLogin()}>
+                <span>{loginBusy ? "正在打开浏览器…" : "在浏览器中登录"}</span><b>↗</b>
               </button>
-              {passwordLoginOpen || authProviders.length === 0 ? (
-                <form className={styles.passwordForm} onSubmit={(event) => void login(event)}>
-                  <label>
-                    <span>账号或邮箱</span>
-                    <input data-testid="login-username" autoComplete="username" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} placeholder="请输入账号或邮箱" />
-                  </label>
-                  <label>
-                    <span>密码</span>
-                    <input data-testid="login-password" autoComplete="current-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="请输入密码" />
-                  </label>
-                  <button data-testid="login-submit" type="submit" disabled={loginBusy}>
-                    {loginBusy ? "登录中…" : "登录"}
-                  </button>
-                </form>
-              ) : null}
-              {loginError ? <output role="alert">{loginError}</output> : null}
-              <p className={styles.loginTerms}>继续即表示你同意《服务条款》和《隐私政策》</p>
+              {loginError ? <output className={styles.loginInlineStatus} role="alert">{loginError}</output> : null}
+              <small className={styles.loginPrivacyNote}>Fabushi 桌面不会显示或接收第三方登录表单中的密码。</small>
             </section>
           )}
         </div>

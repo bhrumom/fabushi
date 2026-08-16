@@ -35,14 +35,13 @@ async function launchDesktopApp(appDataDir: string) {
   });
 }
 
-async function openLoginOptions(page: Page): Promise<void> {
+async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId('onboarding-gate').isVisible().catch(() => false)) {
     await page.getByRole('button', { name: '下一步' }).click();
   }
   await expect(page.getByTestId('login-gate')).toBeVisible();
-  if (await page.getByTestId('show-login-options').isVisible().catch(() => false)) {
-    await page.getByTestId('show-login-options').click();
-  }
+  await page.getByTestId('browser-login-start').click();
+  await expect(page.getByTestId('login-gate')).toBeHidden();
 }
 
 async function ensureComputerPanel(page: Page): Promise<void> {
@@ -54,17 +53,8 @@ async function ensureComputerPanel(page: Page): Promise<void> {
 async function runJourneyStep(page: Page, step: MahayanaHostJourneyStep): Promise<void> {
   switch (step.action) {
     case 'oauthLogin':
-      await openLoginOptions(page);
-      await page.getByTestId(`oauth-${step.provider}`).click();
-      await expect(page.getByTestId('login-gate')).toBeHidden();
-      return;
     case 'login':
-      await openLoginOptions(page);
-      await page.getByTestId('password-login-toggle').click();
-      await page.getByTestId('login-username').fill(step.username);
-      await page.getByTestId('login-password').fill(step.password);
-      await page.getByTestId('login-submit').click();
-      await expect(page.getByTestId('login-gate')).toBeHidden();
+      await completeBrowserLogin(page);
       return;
     case 'expectReady':
       await expect(page.getByTestId('host-status')).toHaveText('ready');

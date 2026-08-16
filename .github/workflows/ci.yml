@@ -269,6 +269,8 @@ jobs:
         run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
       - name: Verify native desktop edge parity
         run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Verify browser-first account login
+        run: python3 .github/scripts/assert-auth-entry-flow.py
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify offline ASR provider contracts
