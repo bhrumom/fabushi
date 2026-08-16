@@ -6855,3 +6855,93 @@
   .confirmMarkStage > i,
   .confirmDialog footer button { animation: none !important; transition: none !important; }
 }
+
+/* Capability reachability: runtime health and composer routing controls must
+   remain visible. Earlier compact-shell rules hid both surfaces. */
+.runtimeStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 2.5%);
+  color: var(--faint);
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.runtimeStatus span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8a8a88;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 3%);
+}
+.runtimeStatus[data-state="ready"] { color: rgb(219 244 232 / 66%); }
+.runtimeStatus[data-state="ready"] span {
+  background: #69d4a5;
+  box-shadow: 0 0 0 4px rgb(105 212 165 / 7%);
+}
+.runtimeStatus[data-state="initializing"] span {
+  background: #a18def;
+  animation: runtimeStatusPulse 1.4s ease-in-out infinite;
+}
+.runtimeStatus[data-state="closed"] span,
+.runtimeStatus[data-state="failed"] span {
+  background: #e77d8b;
+  box-shadow: 0 0 0 4px rgb(231 125 139 / 7%);
+}
+
+.composerToolbar {
+  position: static;
+  inset: auto;
+  min-height: 34px;
+  pointer-events: auto;
+}
+.composerToolbar > * { pointer-events: auto; }
+.composerToolbar select {
+  display: block;
+  width: auto;
+  max-width: 144px;
+  height: 29px;
+  padding: 0 25px 0 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  outline: 0;
+  background-color: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 7.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.composerToolbar select:hover,
+.composerToolbar select:focus-visible {
+  border-color: var(--line);
+  background-color: rgb(255 255 255 / 4%);
+  color: var(--muted);
+}
+.composerToolbar select:focus-visible { box-shadow: 0 0 0 3px rgb(129 105 230 / 7%); }
+.composerToolbar .toolButton { flex: 0 0 auto; }
+.composerToolbar .toolbarSpacer { min-width: 6px; }
+
+.shell[data-theme="light"] .runtimeStatus { background: rgb(0 0 0 / 2.5%); }
+.shell[data-theme="light"] .composerToolbar select:hover,
+.shell[data-theme="light"] .composerToolbar select:focus-visible { background-color: rgb(0 0 0 / 4%); }
+
+@keyframes runtimeStatusPulse {
+  0%, 100% { opacity: .35; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@media (max-width: 720px) {
+  .runtimeStatus { padding-inline: 8px; }
+  .composerToolbar select { max-width: 112px; padding-left: 7px; font-size: 7px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtimeStatus[data-state="initializing"] span { animation: none !important; }
+}

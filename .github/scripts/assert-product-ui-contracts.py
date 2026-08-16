@@ -48,6 +48,12 @@ for host_ui_file in host_ui_files:
 # The historical stylesheet once permanently hid the marketplace Open button.
 # The final cascade must explicitly restore it.
 open_button_rule = '.marketRow button:nth-of-type(2) { display: inline-flex; }'
+runtime_status_rule = ".runtimeStatus {\n  display: inline-flex;"
+composer_select_rule = ".composerToolbar select {\n  display: block;"
+if runtime_status_rule not in styles:
+    raise SystemExit('product UI gate: runtime Host status is still hidden')
+if composer_select_rule not in styles:
+    raise SystemExit('product UI gate: composer mode/model selectors are still hidden')
 if styles.rfind(open_button_rule) < styles.rfind('.marketRow button:nth-of-type(2) { display: none; }'):
     raise SystemExit('product UI gate: installed plugins are not visually openable')
 
@@ -62,6 +68,8 @@ required_styles = [
     '.computerPanel',
     '.cloudRunGrid',
     '.confirmDialog',
+    '.runtimeStatus',
+    '.composerToolbar select',
 ]
 for marker in required_styles:
     if marker not in styles:

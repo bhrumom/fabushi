@@ -3368,7 +3368,13 @@ export default function HostClient() {
             aria-live="polite"
           >
             <span />
-            {hostStatus}
+            {hostStatus === "ready"
+              ? "Host 已连接"
+              : hostStatus === "initializing"
+                ? "Host 启动中"
+                : hostStatus === "closed"
+                  ? "Host 已断开"
+                  : "Host 连接失败"}
           </output>
           <button
             className={styles.computerButton}
