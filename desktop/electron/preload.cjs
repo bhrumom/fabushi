@@ -12,6 +12,7 @@ const NATIVE_EVENTS = new Set([
   'mcp-auth-completed',
   'focus-agent',
   'cloud-agent-open',
+  'shared-room-changed',
   'deep-link',
   'compute-migration',
   'dev-compute-rebuild',
