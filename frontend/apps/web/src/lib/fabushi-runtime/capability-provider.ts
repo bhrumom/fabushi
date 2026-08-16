@@ -26,7 +26,7 @@ export interface ForeverBoxStatus {
   readonly agentId: string;
   readonly boxId: string | null;
   readonly status: "ready" | "released" | "unavailable";
-  readonly provider: "local-device" | null;
+  readonly provider: "local-device" | "fabushi-desktop" | null;
   readonly createdAtMs: number | null;
   readonly updatedAtMs: number;
   readonly reason: string | null;
@@ -37,7 +37,7 @@ export interface BoxSecretsStatus {
   readonly boxId: string | null;
   readonly configured: boolean;
   readonly secretCount: number;
-  readonly provider: "local-device" | null;
+  readonly provider: "local-device" | "fabushi-desktop" | null;
 }
 
 type ProviderState = {

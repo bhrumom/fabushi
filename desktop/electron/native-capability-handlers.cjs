@@ -847,6 +847,132 @@ function createNativeCapabilityHandlers(deps) {
       return result?.room ?? null;
     },
 
+    async getForeverBoxStatus(params) {
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) throw new Error('Agent ID is required.');
+      const state = await readNativeState();
+      const workspace = state.workspaces?.[agentId] ?? null;
+      if (!workspace?.boxId) {
+        return {
+          agentId,
+          boxId: null,
+          status: 'released',
+          provider: null,
+          createdAtMs: null,
+          updatedAtMs: Date.now(),
+          reason: 'No persistent desktop workspace is provisioned for this agent.',
+        };
+      }
+      const workspaceRoot = path.join(app.getPath('userData'), 'workspaces', 'active');
+      const workspacePath = ensureWithin(workspaceRoot, path.join(workspaceRoot, workspace.boxId));
+      try {
+        const stat = await fs.stat(workspacePath);
+        if (!stat.isDirectory()) throw new Error('workspace path is not a directory');
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          return {
+            agentId,
+            boxId: workspace.boxId,
+            status: 'unavailable',
+            provider: 'fabushi-desktop',
+            createdAtMs: workspace.createdAtMs ?? null,
+            updatedAtMs: Date.now(),
+            reason: 'Workspace metadata exists but its managed directory is missing.',
+          };
+        }
+        throw error;
+      }
+      return {
+        agentId,
+        boxId: workspace.boxId,
+        status: 'ready',
+        provider: 'fabushi-desktop',
+        createdAtMs: workspace.createdAtMs ?? null,
+        updatedAtMs: workspace.updatedAtMs ?? Date.now(),
+        reason: null,
+      };
+    },
+
+    async ensureForeverBox(params) {
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) throw new Error('Agent ID is required.');
+      const now = Date.now();
+      const state = await readNativeState();
+      const current = state.workspaces?.[agentId] ?? null;
+      const boxId = current?.boxId || `box-${crypto.createHash('sha256').update(agentId).digest('hex').slice(0, 20)}`;
+      const workspaceRoot = path.join(app.getPath('userData'), 'workspaces', 'active');
+      const workspacePath = ensureWithin(workspaceRoot, path.join(workspaceRoot, boxId));
+      await fs.mkdir(path.join(workspacePath, 'files'), { recursive: true, mode: 0o700 });
+      await fs.mkdir(path.join(workspacePath, '.fabushi'), { recursive: true, mode: 0o700 });
+      const metadata = {
+        schemaVersion: 1,
+        agentId,
+        boxId,
+        provider: 'fabushi-desktop',
+        createdAtMs: current?.createdAtMs ?? now,
+        updatedAtMs: now,
+      };
+      await fs.writeFile(path.join(workspacePath, '.fabushi', 'workspace.json'), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
+      await mutateNativeState((nativeState) => ({
+        ...nativeState,
+        workspaces: {
+          ...(nativeState.workspaces ?? {}),
+          [agentId]: metadata,
+        },
+      }));
+      return this.getForeverBoxStatus({ agentId });
+    },
+
+    async handBackForeverBox(params) {
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) throw new Error('Agent ID is required.');
+      const state = await readNativeState();
+      const workspace = state.workspaces?.[agentId] ?? null;
+      if (workspace?.boxId) {
+        const activeRoot = path.join(app.getPath('userData'), 'workspaces', 'active');
+        const releasedRoot = path.join(app.getPath('userData'), 'workspaces', 'released');
+        const source = ensureWithin(activeRoot, path.join(activeRoot, workspace.boxId));
+        const target = ensureWithin(releasedRoot, path.join(releasedRoot, `${workspace.boxId}-${Date.now()}`));
+        await fs.mkdir(releasedRoot, { recursive: true, mode: 0o700 });
+        try {
+          await fs.rename(source, target);
+        } catch (error) {
+          if (error?.code !== 'ENOENT') throw error;
+        }
+        await mutateNativeState((nativeState) => {
+          const workspaces = { ...(nativeState.workspaces ?? {}) };
+          delete workspaces[agentId];
+          return { ...nativeState, workspaces };
+        });
+      }
+      return this.getForeverBoxStatus({ agentId });
+    },
+
+    async getBoxSecretsStatus(params) {
+      const agentId = cleanString(params.agentId, 200);
+      const box = await this.getForeverBoxStatus({ agentId });
+      if (!box.boxId) {
+        return { agentId, boxId: null, configured: false, secretCount: 0, provider: box.provider };
+      }
+      const vault = await loadSecretVault();
+      const prefix = `box:${box.boxId}:`;
+      const secretCount = Object.keys(vault).filter((name) => name.startsWith(prefix)).length;
+      return {
+        agentId,
+        boxId: box.boxId,
+        configured: secretCount > 0,
+        secretCount,
+        provider: box.provider,
+      };
+    },
+
+    async isAgentNetworkEnabled(params) {
+      const agentId = cleanString(params.agentId, 200);
+      if (!agentId) throw new Error('Agent ID is required.');
+      const status = await this.getEgressTunnelStatus();
+      return status.available === true && status.enabled === true;
+    },
+
     async getCloudAgentInfo(params) {
       const runId = cleanString(params.bcId ?? params.runId ?? params.id, 240);
       if (!runId) throw new Error('Cloud run ID is required.');
