@@ -9,10 +9,10 @@ const mahayanaHostFeatures =
   journeyContract.features as ReadonlyArray<MahayanaHostFeature>;
 
 async function openLoginOptions(page: Page): Promise<void> {
-  await expect(page.getByTestId("login-gate")).toBeVisible();
-  while (await page.getByRole("button", { name: "下一步" }).isVisible().catch(() => false)) {
+  while (await page.getByTestId("onboarding-gate").isVisible().catch(() => false)) {
     await page.getByRole("button", { name: "下一步" }).click();
   }
+  await expect(page.getByTestId("login-gate")).toBeVisible();
   if (await page.getByTestId("show-login-options").isVisible().catch(() => false)) {
     await page.getByTestId("show-login-options").click();
   }

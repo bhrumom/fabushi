@@ -1261,6 +1261,7 @@
 }
 
 .marketplace {
+  box-sizing: border-box;
   width: min(610px, 100%);
   max-height: min(760px, 86vh);
   display: flex;
@@ -2847,7 +2848,7 @@
 }
 
 .marketplace {
-  width: min(1000px, calc(100vw - 40px));
+  width: min(1000px, 100%);
   max-width: none;
   height: calc(100vh - 95px);
   border-radius: 14px;
