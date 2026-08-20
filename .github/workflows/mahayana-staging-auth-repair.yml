@@ -114,4 +114,6 @@ jobs:
             "$PLATFORM_URL/api/auth/browser/portal"*) ;;
             *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
           esac
-          curl --fail --silent --show-error -H 'content-type: application/json' --data "$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')" "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id/cancel" | jq -e '.status == "cancelled"' >/dev/null
+          poll_body="$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')"
+          curl --fail --silent --show-error -H 'content-type: application/json' --data "$poll_body" "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id" | jq -e '.status == "pending"' >/dev/null
+          curl --fail --silent --show-error -H 'content-type: application/json' --data "$poll_body" "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id/cancel" | jq -e '.status == "cancelled"' >/dev/null
