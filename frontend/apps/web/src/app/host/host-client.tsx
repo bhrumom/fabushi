@@ -1750,7 +1750,7 @@ export default function HostClient() {
     const attempt = browserLoginAttempt;
     if (!attempt) return undefined;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
     const pollDelay = Math.max(150, Math.min(2_000, attempt.pollAfterMs ?? 750));
     const schedule = (delay = pollDelay) => {
       if (!cancelled) timer = window.setTimeout(() => void poll(), delay);

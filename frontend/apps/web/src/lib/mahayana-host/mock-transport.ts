@@ -1637,6 +1637,35 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         });
         return { requestId: command.requestId };
       }
+      case "widget.respond":
+        this.emit({
+          type: "widget.changed",
+          timestamp: now(),
+          interaction: {
+            widgetId: command.widgetId,
+            agentId: command.agentId,
+            conversationId: command.conversationId,
+            actionId: command.actionId,
+            value: command.value,
+            status: "responded",
+            createdAtMs: Date.now(),
+          },
+        });
+        return { requestId: command.requestId };
+      case "widget.dismiss":
+        this.emit({
+          type: "widget.changed",
+          timestamp: now(),
+          interaction: {
+            widgetId: command.widgetId,
+            agentId: command.agentId,
+            conversationId: command.conversationId,
+            status: "dismissed",
+            reason: command.reason,
+            createdAtMs: Date.now(),
+          },
+        });
+        return { requestId: command.requestId };
       case "secret.provide":
         if (!command.value) throw new Error("Secret value must not be empty");
         this.emit({
