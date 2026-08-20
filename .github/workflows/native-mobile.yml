@@ -5,20 +5,20 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
+      - 'contracts/automation/cross-platform-journeys.json'
       - 'app-version.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
       - '.github/workflows/native-mobile.yml'
   push:
     branches: [main]
-    paths:
-      - 'mobile/**'
-      - 'app-version.json'
-      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-plugin-runtime/**'
-      - 'third_party/mahayana/mahayana-rs/mahayana-js-runtime/**'
-      - '.github/workflows/native-mobile.yml'
   workflow_dispatch:
   workflow_call:
 
@@ -30,8 +30,62 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Classify native changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      shared: ${{ steps.classify.outputs.shared }}
+      android: ${{ steps.classify.outputs.android }}
+      ios: ${{ steps.classify.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - id: classify
+        name: Select only affected native platforms on pull requests
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_ALL" = "true" ] || [ -z "$BASE_SHA" ]; then
+            shared=true
+            android=true
+            ios=true
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+            printf '%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
+            shared=false
+            android=false
+            ios=false
+            if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml|Cargo\.lock|mahayana-app-host/|mahayana-app-host-mobile/|mahayana-host-protocol/|mahayana-product/|mahayana-plugin-runtime/|mahayana-js-runtime/))'; then
+              shared=true
+            fi
+            if printf '%s\n' "$changed" | grep -Eq '^(mobile/android/|app-version\.json$)'; then
+              android=true
+            fi
+            if printf '%s\n' "$changed" | grep -Eq '^(mobile/ios/|app-version\.json$)'; then
+              ios=true
+            fi
+            if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|\.github/workflows/native-mobile\.yml$)'; then
+              shared=true
+              android=true
+              ios=true
+            fi
+          fi
+          echo "shared=$shared" >> "$GITHUB_OUTPUT"
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          printf 'shared=%s android=%s ios=%s\n' "$shared" "$android" "$ios" >> "$GITHUB_STEP_SUMMARY"
+
   rust-contract:
     name: Shared Rust host contract
+    needs: changes
+    if: needs.changes.outputs.shared == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -44,9 +98,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: native-shared-contract-v4
       - name: Format shared host
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo fmt -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime -- --check
+        run: cargo fmt -p mahayana-app-host -p mahayana-app-host-mobile -p mahayana-plugin-runtime -p mahayana-js-runtime -- --check
       - name: Lint shared host
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo clippy -p mahayana-app-host --all-targets -- -D warnings
@@ -55,45 +110,172 @@ jobs:
         run: cargo test -p mahayana-app-host -p mahayana-plugin-runtime -p mahayana-js-runtime
 
   android:
-    name: Android Compose gate
+    name: Android Compose simulated user gate
+    needs: changes
+    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.shared == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+
+      - id: jni-source-key
+        name: Freeze Android Rust JNI source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android SDK/NDK
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+      - name: Install Android 17 preview SDK without the NDK hot path
         shell: bash
-        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
-      - uses: dtolnay/rust-toolchain@stable
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /platforms;android-(37([.]0)?|CinnamonBun)/ && !found {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1);
+              print $1;
+              found = 1;
+            }
+          ')"
+          if [ -z "$platform_package" ]; then
+            printf '%s\n' "$available_packages" | grep -E 'platforms;android-|Cinnamon|37[.]0' || true
+            echo 'Android 17 / API 37 preview platform is not published in this runner SDK repository.' >&2
+            exit 1
+          fi
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '
+            /build-tools;37[.]/ && !found {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1);
+              print $1;
+              found = 1;
+            }
+          ')"
+          test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package"
+          stable_api_path="$ANDROID_HOME/platforms/android-37"
+          if [ ! -e "$stable_api_path" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$stable_api_path"
+          fi
+
+      - id: jni-cache
+        name: Restore reusable Android Rust JNI libraries
+        uses: actions/cache/restore@v4
+        with:
+          path: mobile/android/app/src/main/jniLibs
+          key: native-host-android-v6-${{ steps.jni-source-key.outputs.hash }}
+
+      - name: Install Android NDK on JNI cache miss
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        run: sdkmanager --channel=3 'ndk;28.2.13676358'
+
+      - name: Set up Rust targets on JNI cache miss
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore Rust compiler cache on JNI cache miss
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-      - name: Install cargo-ndk
+          shared-key: native-mobile-android-ci-v5
+
+      - id: cargo-ndk-cache
+        name: Restore cargo-ndk on JNI cache miss
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v4
+
+      - name: Install cargo-ndk only when needed
+        if: steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-ndk --locked
-      - name: Build Rust JNI libraries
+
+      - name: Save cargo-ndk immediately
+        if: steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v4
+
+      - name: Build Rust JNI libraries only when Rust changed
+        if: steps.jni-cache.outputs.cache-hit != 'true'
         working-directory: third_party/mahayana/mahayana-rs
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
-        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host
-      - name: Android unit, lint and package
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --profile ci -p mahayana-app-host-mobile
+
+      - name: Save reusable JNI libraries before UI tests
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: mobile/android/app/src/main/jniLibs
+          key: native-host-android-v6-${{ steps.jni-source-key.outputs.hash }}
+
+      - name: Restore Gradle dependency and build cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Android unit, lint and debug package with incremental build cache
         working-directory: mobile/android
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
-      - name: Emulator Compose UI tests
+        run: ./gradlew --no-daemon --build-cache testDebugUnitTest lintDebug assembleDebug
+
+      - name: Enable KVM acceleration for the Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -w /dev/kvm
+
+      - id: avd-cache
+        name: Restore reusable Pixel 7 emulator snapshot
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: android-avd-api35-x86_64-pixel7-kvm-v2
+
+      - name: Generate clean Pixel 7 snapshot once
+        if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_7
+          force-avd-creation: false
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'Generated reusable Pixel 7 AVD snapshot.'
+
+      - name: Emulator Compose simulated user tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          disable-linux-hw-accel: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: cd mobile/android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: cd mobile/android && ./gradlew --no-daemon --build-cache connectedDebugAndroidTest
+
       - name: Upload Android reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -107,32 +289,69 @@ jobs:
           retention-days: 14
 
   ios:
-    name: iOS SwiftUI gate
+    name: iOS SwiftUI simulated user gate
+    needs: changes
+    if: needs.changes.outputs.ios == 'true' || needs.changes.outputs.shared == 'true'
     runs-on: macos-15
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
+
+      - id: staticlib-source-key
+        name: Freeze iOS Rust static-library source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
+      - id: staticlib-cache
+        name: Restore reusable iOS simulator Rust static library
+        uses: actions/cache/restore@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v6-${{ steps.staticlib-source-key.outputs.hash }}
+
+      - name: Set up Rust target on static library cache miss
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore Rust compiler cache on static library cache miss
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Build Rust static library for simulator
+          shared-key: native-mobile-ios-ci-v5
+
+      - name: Build Rust static library only when Rust changed
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
         working-directory: third_party/mahayana/mahayana-rs
-        run: cargo build --release -p mahayana-app-host --target aarch64-apple-ios-sim
-      - name: Stage Rust library
+        run: cargo build --profile ci -p mahayana-app-host-mobile --target aarch64-apple-ios-sim
+
+      - name: Stage Rust static library on cache miss
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir -p mobile/ios/Frameworks
-          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/release/libmahayana_app_host.a mobile/ios/Frameworks/
+          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios-sim/ci/libmahayana_app_host.a mobile/ios/Frameworks/
+
+      - name: Save reusable iOS static library before UI tests
+        if: steps.staticlib-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: mobile/ios/Frameworks/libmahayana_app_host.a
+          key: native-host-ios-sim-v6-${{ steps.staticlib-source-key.outputs.hash }}
+
+      - name: Install XcodeGen only when the runner does not have it
+        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+
       - name: Generate Xcode project
         working-directory: mobile/ios
         run: xcodegen generate
+
       - name: Select an available iPhone simulator
         id: simulator
         shell: bash
@@ -141,15 +360,34 @@ jobs:
           udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime in d.values() for x in runtime if x.get("isAvailable") and x.get("name", "").startswith("iPhone")))')"
           test -n "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-      - name: SwiftUI unit and UI tests
+
+      - id: derived-cache
+        name: Restore incremental Xcode DerivedData
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/FabushiDerivedData
+          key: ios-derived-v4-${{ hashFiles('mobile/ios/project.yml') }}-${{ github.sha }}
+          restore-keys: |
+            ios-derived-v4-${{ hashFiles('mobile/ios/project.yml') }}-
+
+      - name: SwiftUI unit and simulated user UI tests
         working-directory: mobile/ios
         run: >-
           xcodebuild test
           -project Fabushi.xcodeproj
           -scheme Fabushi
           -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
+          -derivedDataPath "${{ runner.temp }}/FabushiDerivedData"
           CODE_SIGNING_ALLOWED=NO
           -resultBundlePath "$RUNNER_TEMP/FabushiTests.xcresult"
+
+      - name: Save incremental Xcode DerivedData after compilation
+        if: always() && steps.derived-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/FabushiDerivedData
+          key: ios-derived-v4-${{ hashFiles('mobile/ios/project.yml') }}-${{ github.sha }}
+
       - name: Upload iOS result bundle
         if: always()
         uses: actions/upload-artifact@v7
@@ -158,3 +396,28 @@ jobs:
           path: ${{ runner.temp }}/FabushiTests.xcresult
           if-no-files-found: warn
           retention-days: 14
+
+  result:
+    name: Native mobile result
+    needs: [changes, rust-contract, android, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require every selected native layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            "shared:${{ needs.rust-contract.result }}" \
+            "android:${{ needs.android.result }}" \
+            "ios:${{ needs.ios.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result" >&2
+              exit 1
+            fi
+          done
+          echo 'Native selected-surface checks passed.'

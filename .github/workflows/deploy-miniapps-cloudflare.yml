@@ -33,6 +33,7 @@ jobs:
             frontend/pnpm-lock.yaml
             frontend/pnpm-workspace.yaml
             frontend/tsconfig.base.json
+            contracts/automation/cross-platform-journeys.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

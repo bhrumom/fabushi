@@ -2,6 +2,9 @@ import type {
   AgentPeerMessage,
   ApprovalResolution,
   AuthState,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   AuthProvider,
   AuthProviderId,
   AutomationSummary,
@@ -39,8 +42,8 @@ import type {
   MahayanaHostTransport,
   RuntimeEventListener,
 } from "./transport";
-import { memoryDedupeKey, memoryIdFor, normalizeMemoryContent } from "../grok-bot/memory";
-import { TrayManager } from "../grok-bot/trays";
+import { makeMemoryId, memoryDedupeKey, normalizeMemoryContent } from "../fabushi-runtime/memory-store";
+import { ErrorTrayQueue } from "../fabushi-runtime/error-trays";
 
 const now = () => new Date().toISOString();
 const mockComputerSnapshot = () => ({
@@ -201,9 +204,9 @@ const defaultSkills = (): SkillSummary[] => [
 ];
 
 const defaultBots = (): BotSummary[] => [
-  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:assistant" },
-  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, conversationId: "codex:agent:research" },
-  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, conversationId: "codex:agent:incident" },
+  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:assistant" },
+  { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:research" },
+  { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:incident" },
 ];
 
 const listenerCopy: Record<ListenerPlatform, [string, string]> = {
@@ -511,6 +514,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private sequence = 0;
   private auth: AuthState = { loggedIn: false, provider: "test" };
   private oauthAttempt: OAuthAttempt | null = null;
+  private browserLoginAttempt: BrowserLoginAttempt | null = null;
   private automations = new Map<string, AutomationSummary>();
   private connectors = new Map(defaultConnectors().map((connector) => [connector.id, connector]));
   private skills = new Map(defaultSkills().map((skill) => [skill.id, skill]));
@@ -518,7 +522,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   private groups = new Map<string, GroupSummary>();
   private peerMessages: AgentPeerMessage[] = [];
   private memories = new Map<string, MemoryRecord[]>();
-  private trays = new TrayManager();
+  private trays = new ErrorTrayQueue();
   private workflows = new Map<string, WorkflowSummary>();
   private disabledWorkflows = new Map<string, Set<string>>();
   private attachmentData = new Map<string, { agentId: string; name: string; mimeType?: string; bytesBase64: string }>();
@@ -657,14 +661,23 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         this.emit({
           type: "automation.listed",
           timestamp: now(),
-          automations: [...this.automations.values()],
+          automations: [...this.automations.values()].filter((automation) =>
+            command.agentId ? automation.agentId === command.agentId : true,
+          ),
         });
         return { requestId: command.requestId };
       case "automation.upsert": {
         const previous = command.id ? this.automations.get(command.id) : undefined;
+        if (command.agentId && !this.bots.has(command.agentId)) {
+          throw new Error(`Unknown automation agent: ${command.agentId}`);
+        }
+        if (previous && command.agentId && previous.agentId !== command.agentId) {
+          throw new Error(`Automation ${previous.id} does not belong to agent ${command.agentId}`);
+        }
         const id = command.id ?? this.nextId("routine");
         const automation = {
           id,
+          agentId: command.agentId ?? previous?.agentId,
           name: command.name,
           prompt: command.prompt,
           schedule: command.schedule,
@@ -681,6 +694,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.setEnabled": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         const next = {
           ...automation,
           enabled: command.enabled,
@@ -696,6 +712,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.delete": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         this.automations.delete(command.id);
         this.emit({ type: "automation.changed", timestamp: now(), action: "deleted", automation });
         return { requestId: command.requestId };
@@ -703,6 +722,9 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "automation.run": {
         const automation = this.automations.get(command.id);
         if (!automation) throw new Error(`Unknown automation: ${command.id}`);
+        if (command.agentId && automation.agentId !== command.agentId) {
+          throw new Error(`Automation ${automation.id} does not belong to agent ${command.agentId}`);
+        }
         const next = { ...automation, lastRunAtMs: Date.now() };
         this.automations.set(command.id, next);
         this.emit({ type: "automation.changed", timestamp: now(), action: "running", automation: next });
@@ -1028,6 +1050,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           avatarShape: command.avatarShape?.trim() || undefined,
           avatarColor: command.avatarColor?.trim() || undefined,
           notificationsEnabled: true,
+          notifyOnUpdates: true,
+          unread: false,
           conversationId: `codex:agent:${id}`,
         };
         this.bots.set(bot.id, bot);
@@ -1042,9 +1066,12 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           ...(command.name === undefined ? {} : { name: command.name.replace(/\s+/g, " ").trim().slice(0, 72) }),
           ...(command.description === undefined ? {} : { description: command.description.trim().slice(0, 2000) }),
           ...(command.title === undefined ? {} : { title: command.title.trim() }),
+          ...(command.avatar === undefined ? {} : { avatar: command.avatar.trim() || undefined }),
           ...(command.avatarShape === undefined ? {} : { avatarShape: command.avatarShape.trim() || undefined }),
           ...(command.avatarColor === undefined ? {} : { avatarColor: command.avatarColor.trim() || undefined }),
           ...(command.notificationsEnabled === undefined ? {} : { notificationsEnabled: command.notificationsEnabled }),
+          ...(command.notifyOnUpdates === undefined ? {} : { notifyOnUpdates: command.notifyOnUpdates }),
+          ...(command.unread === undefined ? {} : { unread: command.unread }),
         };
         if (!next.name) throw new Error("Bot name must not be empty");
         this.bots.set(next.id, next);
@@ -1061,6 +1088,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           id,
           name: trimmed ? `${trimmed} copy` : "copy",
           hidden: false,
+          unread: false,
           conversationId: `codex:agent:${id}`,
         };
         this.bots.set(bot.id, bot);
@@ -1309,7 +1337,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         const current = this.memories.get(command.agentId) ?? [];
         const duplicate = current.some((memory) => memoryDedupeKey(memory.content) === memoryDedupeKey(content));
         const memory = !content || duplicate ? undefined : {
-          id: memoryIdFor(content),
+          id: makeMemoryId(content),
           content,
           createdAt: Date.now(),
           kind: command.kind,
@@ -1599,6 +1627,13 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
       case "mcp.oauthLogout":
         this.emit({ type: "mcp.oauth", timestamp: now(), server: command.server, removed: true });
         return { requestId: command.requestId };
+      case "mcp.remove":
+        this.emit({ type: "mcp.refreshed", timestamp: now() });
+        return { requestId: command.requestId };
+      case "mcp.setCustomInstructions":
+      case "mcp.setToolDisabled":
+        this.emit({ type: "mcp.refreshed", timestamp: now() });
+        return { requestId: command.requestId };
       case "mcp.refresh":
         this.emit({ type: "mcp.refreshed", timestamp: now() });
         return { requestId: command.requestId };
@@ -1633,6 +1668,35 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
         });
         return { requestId: command.requestId };
       }
+      case "widget.respond":
+        this.emit({
+          type: "widget.changed",
+          timestamp: now(),
+          interaction: {
+            widgetId: command.widgetId,
+            agentId: command.agentId,
+            conversationId: command.conversationId,
+            actionId: command.actionId,
+            value: command.value,
+            status: "responded",
+            createdAtMs: Date.now(),
+          },
+        });
+        return { requestId: command.requestId };
+      case "widget.dismiss":
+        this.emit({
+          type: "widget.changed",
+          timestamp: now(),
+          interaction: {
+            widgetId: command.widgetId,
+            agentId: command.agentId,
+            conversationId: command.conversationId,
+            status: "dismissed",
+            reason: command.reason,
+            createdAtMs: Date.now(),
+          },
+        });
+        return { requestId: command.requestId };
       case "secret.provide":
         if (!command.value) throw new Error("Secret value must not be empty");
         this.emit({
@@ -1659,6 +1723,20 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           const connected: ConnectorSummary = { ...connector, status: "connected" };
           this.connectors.set(connected.id, connected);
           this.emit({ type: "connector.changed", timestamp: now(), action: "connected", connector: connected });
+        }
+        return { requestId: command.requestId };
+      }
+      case "listener.disconnect": {
+        const integration = this.listenerIntegrations.get(command.platform);
+        if (!integration) throw new Error(`Unsupported listener: ${command.platform}`);
+        const next = { ...integration, isConnected: false, accountLabel: undefined, error: undefined };
+        this.listenerIntegrations.set(command.platform, next);
+        this.emit({ type: "listener.changed", timestamp: now(), integration: next });
+        const connector = this.connectors.get(connectorForPlatform(command.platform));
+        if (connector) {
+          const disconnected: ConnectorSummary = { ...connector, status: "disconnected", accounts: [] };
+          this.connectors.set(disconnected.id, disconnected);
+          this.emit({ type: "connector.changed", timestamp: now(), action: "disconnected", connector: disconnected });
         }
         return { requestId: command.requestId };
       }
@@ -1706,6 +1784,52 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   async authStatus(): Promise<AuthState> {
     if (this.native) return this.native.authStatus();
     return this.auth;
+  }
+
+  async browserLoginStart(): Promise<BrowserLoginAttempt> {
+    if (this.native) return this.native.browserLoginStart();
+    this.assertReady();
+    this.browserLoginAttempt = {
+      attemptId: `browser-${this.nextId("attempt")}`,
+      loginUrl: "about:blank#fabushi-test-browser-login",
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
+      pollAfterMs: 120,
+    };
+    return this.browserLoginAttempt;
+  }
+
+  async browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult> {
+    if (this.native) return this.native.browserLoginPoll(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) return { status: "expired" };
+    this.auth = {
+      loggedIn: true,
+      provider: "browser",
+      user: {
+        id: "fast-e2e-browser-user",
+        email: "browser@example.test",
+        nickname: "Browser 测试用户",
+      },
+    };
+    this.browserLoginAttempt = null;
+    return { status: "completed", provider: "browser", auth: this.auth };
+  }
+
+  async browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
+    if (this.native) return this.native.browserLoginReopen(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) throw new Error("Browser login attempt expired");
+    this.browserLoginAttempt = {
+      ...this.browserLoginAttempt,
+      loginUrl: "about:blank#fabushi-test-browser-login",
+      pollAfterMs: 120,
+    };
+    return { ...this.browserLoginAttempt, status: "pending" };
+  }
+
+  async browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    if (this.native) return this.native.browserLoginCancel(attemptId);
+    if (this.browserLoginAttempt?.attemptId !== attemptId) return { status: "expired" };
+    this.browserLoginAttempt = null;
+    return { status: "cancelled" };
   }
 
   async authProviders(): Promise<AuthProvider[]> {

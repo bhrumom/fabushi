@@ -7,10 +7,16 @@ test -f desktop/package.json || fail 'desktop/package.json is missing'
 test -f desktop/electron/main.cjs || fail 'Electron main process is missing'
 test -f mobile/android/app/src/main/java/com/ombhrum/fabushi/MainActivity.kt || fail 'Compose MainActivity is missing'
 test -f mobile/ios/Fabushi/FabushiApp.swift || fail 'SwiftUI app entry is missing'
-test -f third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml || fail 'shared Rust app host is missing'
+test -f third_party/mahayana/mahayana-rs/mahayana-app-host/Cargo.toml || fail 'shared Rust app host core is missing'
+test -f third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/Cargo.toml || fail 'Electron Rust sidecar wrapper is missing'
+test -f third_party/mahayana/mahayana-rs/mahayana-app-host-mobile/Cargo.toml || fail 'native mobile Rust FFI wrapper is missing'
 test -f app-version.json || fail 'canonical app-version.json is missing'
+test -f .github/workflows/electron-desktop.yml || fail 'Electron desktop quality workflow is missing'
+test -f .github/workflows/native-mobile.yml || fail 'native mobile quality workflow is missing'
+test -f .github/workflows/native-electron-release.yml || fail 'native Electron release workflow is missing'
 
 grep -q '"electron"' desktop/package.json || fail 'desktop does not declare Electron'
+grep -q 'mahayana-app-host-desktop' desktop/package.json || fail 'Electron must build the desktop-only Rust sidecar wrapper'
 grep -q 'contextIsolation: true' desktop/electron/main.cjs || fail 'Electron contextIsolation is not enforced'
 grep -q 'nodeIntegration: false' desktop/electron/main.cjs || fail 'Electron nodeIntegration must remain disabled'
 grep -q 'sandbox: true' desktop/electron/main.cjs || fail 'Electron renderer sandbox is not enforced'
@@ -34,7 +40,7 @@ if grep -Eq "project\(':capacitor|apply from:.*capacitor" mobile/android/setting
   fail 'Capacitor cannot return to the canonical Android project'
 fi
 if grep -Eq 'npm run tauri|tauri android|tauri ios|mobile/src-tauri' \
-  .github/workflows/desktop-installers.yml .github/workflows/native-mobile.yml .github/workflows/android-real-device-e2e.yml 2>/dev/null; then
+  .github/workflows/electron-desktop.yml .github/workflows/native-mobile.yml .github/workflows/native-electron-release.yml; then
   fail 'canonical desktop/mobile workflows cannot invoke Tauri'
 fi
 

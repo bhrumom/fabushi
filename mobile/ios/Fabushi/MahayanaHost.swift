@@ -1,6 +1,10 @@
 import Foundation
 
 final class MahayanaHost: @unchecked Sendable {
+    struct JSONResult: @unchecked Sendable {
+        let value: Any
+    }
+
     enum HostError: LocalizedError {
         case initializationFailed
         case invalidResponse
@@ -18,9 +22,11 @@ final class MahayanaHost: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ombhrum.fabushi.mahayana-host", qos: .userInitiated)
     private var handle: UnsafeMutableRawPointer?
 
-    init(appDataDirectory: URL) throws {
+    init(appDataDirectory: URL, featureHostTest: Bool = false) throws {
         try FileManager.default.createDirectory(at: appDataDirectory, withIntermediateDirectories: true)
-        handle = appDataDirectory.path.withCString { mahayana_app_host_create($0) }
+        handle = appDataDirectory.path.withCString { path in
+            featureHostTest ? mahayana_app_host_create_test(path) : mahayana_app_host_create(path)
+        }
         guard handle != nil else { throw HostError.initializationFailed }
     }
 
@@ -28,11 +34,14 @@ final class MahayanaHost: @unchecked Sendable {
         if let handle { mahayana_app_host_destroy(handle) }
     }
 
-    func request(method: String, params: [String: Any] = [:]) async throws -> Any {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
+    @MainActor
+    func request(method: String, params: [String: Any] = [:]) async throws -> JSONResult {
+        let data = try JSONSerialization.data(withJSONObject: ["method": method, "params": params])
+        guard let request = String(data: data, encoding: .utf8) else { throw HostError.invalidResponse }
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self, request] in
                 do {
-                    continuation.resume(returning: try requestSync(method: method, params: params))
+                    continuation.resume(returning: JSONResult(value: try requestSync(request)))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -40,10 +49,8 @@ final class MahayanaHost: @unchecked Sendable {
         }
     }
 
-    private func requestSync(method: String, params: [String: Any]) throws -> Any {
+    private func requestSync(_ request: String) throws -> Any {
         guard let handle else { throw HostError.initializationFailed }
-        let data = try JSONSerialization.data(withJSONObject: ["method": method, "params": params])
-        guard let request = String(data: data, encoding: .utf8) else { throw HostError.invalidResponse }
         let pointer = request.withCString { mahayana_app_host_dispatch_with_handle(handle, $0) }
         guard let pointer else { throw HostError.invalidResponse }
         defer { mahayana_app_host_free_string(pointer) }

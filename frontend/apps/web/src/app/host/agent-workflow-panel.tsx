@@ -71,7 +71,7 @@ export function AgentWorkflowPanel({
   }) => Promise<void> | void;
   onSetEnabled: (id: string, enabled: boolean) => Promise<void> | void;
   onRun: (id: string) => Promise<void> | void;
-  onDelete: (id: string) => Promise<void> | void;
+  onDelete: (id: string, name: string) => Promise<void> | void;
   onImportMarkdown: (markdown: string, fallbackName?: string) => Promise<void> | void;
   onImportLiveSource: (source: string, fallbackName?: string) => Promise<void> | void;
 }) {
@@ -150,7 +150,7 @@ export function AgentWorkflowPanel({
           <label><span>描述</span><input maxLength={1536} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
           <label><span>指令 / SKILL.md body</span><textarea required rows={9} maxLength={100000} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} /></label>
           <label><span>Live Source</span><input value={draft.sourceRef} onChange={(event) => setDraft({ ...draft, sourceRef: event.target.value })} placeholder="可选；保存在 metadata.source" /></label>
-          <label className={styles.workflowScheduleToggle}><span><strong>定时触发</strong><small>启用后按 Grok 语义转为 Automation</small></span><input type="checkbox" checked={draft.scheduled} onChange={(event) => setDraft({ ...draft, scheduled: event.target.checked })} /></label>
+          <label className={styles.workflowScheduleToggle}><span><strong>定时触发</strong><small>启用后会同步为可独立运行的 Automation</small></span><input type="checkbox" checked={draft.scheduled} onChange={(event) => setDraft({ ...draft, scheduled: event.target.checked })} /></label>
           {draft.scheduled ? (
             <div className={styles.workflowScheduleFields}>
               <label><span>Schedule</span><input required value={draft.schedule} onChange={(event) => setDraft({ ...draft, schedule: event.target.value })} placeholder="@daily / every 1h / cron expression" /></label>
@@ -178,7 +178,7 @@ export function AgentWorkflowPanel({
               </label>
               <button type="button" disabled={!workflow.isEnabledForAgent} onClick={() => void onRun(workflow.id)}>运行</button>
               <button type="button" onClick={() => { setDraft(draftFromWorkflow(workflow)); setEditorOpen(true); }}>编辑</button>
-              <button type="button" className={styles.dangerAction} onClick={() => { if (window.confirm(`删除 Workflow ${workflow.name}？`)) void onDelete(workflow.id); }}>删除</button>
+              <button type="button" className={styles.dangerAction} onClick={() => void onDelete(workflow.id, workflow.name)}>删除</button>
             </div>
           </article>
         ))}
