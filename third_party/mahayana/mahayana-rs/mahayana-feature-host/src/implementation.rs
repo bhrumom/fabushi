@@ -11696,10 +11696,10 @@ mod tests {
 
     #[test]
     fn deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary() {
-        let controller = controller();
-        assert_eq!(controller.auth_status().unwrap()["loggedIn"], false);
+        let login_controller = controller();
+        assert_eq!(login_controller.auth_status().unwrap()["loggedIn"], false);
 
-        let attempt = controller
+        let attempt = login_controller
             .browser_login_start()
             .expect("start browser login");
         assert_eq!(attempt["attemptId"], "test-browser-login");
@@ -11711,7 +11711,7 @@ mod tests {
         assert!(attempt.get("refreshToken").is_none());
         assert!(attempt.get("password").is_none());
 
-        let completed = controller
+        let completed = login_controller
             .browser_login_poll(
                 attempt["attemptId"]
                     .as_str()
@@ -11723,7 +11723,7 @@ mod tests {
         assert_eq!(completed["auth"]["loggedIn"], true);
         assert!(completed["auth"].get("accessToken").is_none());
         assert!(completed["auth"].get("refreshToken").is_none());
-        assert_eq!(controller.auth_status().unwrap()["loggedIn"], true);
+        assert_eq!(login_controller.auth_status().unwrap()["loggedIn"], true);
 
         let reopened_controller = controller();
         let reopened_attempt = reopened_controller
