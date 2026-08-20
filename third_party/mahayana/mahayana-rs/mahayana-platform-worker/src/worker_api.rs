@@ -2943,15 +2943,14 @@ async fn browser_login_cancel(mut request: Request, context: RouteContext<()>) -
     Response::from_json(&json!({"status": status}))
 }
 
-async fn browser_login_poll(request: Request, context: RouteContext<()>) -> Result<Response> {
+async fn browser_login_poll(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     let attempt_id = route_identifier(&context, "attempt_id")?;
-    let url = request.url()?;
-    let provided = url
-        .query_pairs()
-        .find_map(|(key, value)| (key == "pollSecret").then(|| value.into_owned()))
-        .unwrap_or_default();
+    let poll: BrowserLoginProofRequest = match request.json().await {
+        Ok(poll) => poll,
+        Err(_) => return error_response(400, "invalid_browser_poll", "登录轮询请求无效"),
+    };
     let expected = browser_poll_secret(&context.env, attempt_id)?;
-    if provided.is_empty() || !constant_time_text_eq(&provided, &expected) {
+    if poll.poll_secret.is_empty() || !constant_time_text_eq(&poll.poll_secret, &expected) {
         return error_response(
             403,
             "browser_poll_forbidden",
