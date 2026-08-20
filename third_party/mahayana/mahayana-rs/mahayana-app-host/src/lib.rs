@@ -75,10 +75,15 @@ impl AppHost {
         let app_data_dir = app_data_dir.into();
         std::fs::create_dir_all(&app_data_dir)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        let feature_root = feature_host_root(&app_data_dir);
         let feature = create_feature_host(&app_data_dir, feature_mode)?;
+        let product = MahayanaProductClient::new_with_default_api_base_url(
+            feature_root.join("account-session.json"),
+            feature_root.join("product-surface.json"),
+        );
         Ok(Self {
             app_data_dir,
-            product: MahayanaProductClient::default(),
+            product,
             js: Mutex::new(
                 DeepSeekJsHost::new()
                     .map_err(|error| AppHostError::Operation(error.to_string()))?,
@@ -503,11 +508,15 @@ fn configured_feature_host_mode() -> Result<AppHostFeatureMode, AppHostError> {
     }
 }
 
+fn feature_host_root(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("feature-host")
+}
+
 fn create_feature_host(
     app_data_dir: &Path,
     feature_mode: AppHostFeatureMode,
 ) -> Result<FeatureHostController, AppHostError> {
-    let root = app_data_dir.join("feature-host");
+    let root = feature_host_root(app_data_dir);
     std::fs::create_dir_all(&root).map_err(|error| AppHostError::Operation(error.to_string()))?;
     let host_config = HostCreateConfig {
         runtime: RuntimeConfig {
