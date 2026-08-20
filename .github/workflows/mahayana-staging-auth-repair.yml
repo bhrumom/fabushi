@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  REPAIR_SOURCE_SHA: ba9126c0ca86be887dc1dbd29927a8b2da377701
+  REPAIR_SOURCE_SHA: a0ad370e1baf772bcd4bbfb29028f06811d650bf
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
 
