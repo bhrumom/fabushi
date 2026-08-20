@@ -10,7 +10,7 @@ const mahayanaHostFeatures =
 
 async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId("onboarding-gate").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByTestId("onboarding-next").click();
   }
   await expect(page.getByTestId("login-gate")).toBeVisible();
   await page.getByTestId("browser-login-start").click();
@@ -33,7 +33,7 @@ async function runJourneyStep(
       await completeBrowserLogin(page);
       break;
     case "expectReady":
-      await expect(page.getByTestId("host-status")).toHaveText("ready");
+      await expect(page.getByTestId("host-status")).toHaveAttribute("data-state", "ready");
       return;
     case "sendChat":
       await page.getByTestId("chat-input").fill(step.text);
@@ -124,7 +124,7 @@ test("所有官方应用复用同一条安装、机器人和 MiniApp 打开旅�
 
   await page.goto("/");
   await completeBrowserLogin(page);
-  await expect(page.getByTestId("host-status")).toHaveText("ready");
+  await expect(page.getByTestId("host-status")).toHaveAttribute("data-state", "ready");
 
   for (const appId of appIds) {
     await test.step(appId, async () => {
