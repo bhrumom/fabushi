@@ -28,6 +28,7 @@ required = {
     'product strips browser poll verifier': (product, 'object.remove("pollSecret")'),
     'worker requires browser poll verifier': (worker, 'browser_poll_forbidden'),
     'worker browser poll proof body': (worker, 'let poll: BrowserLoginProofRequest = match request.json().await'),
+    'worker one-time delivery compare-and-set': (worker, 'if delivery.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0'),
     'worker browser cancel route': (worker, '/api/auth/browser/attempts/:attempt_id/cancel'),
     'worker browser reopen route': (worker, '/api/auth/browser/attempts/:attempt_id/reopen'),
     'worker browser reopen verifier': (worker, 'browser_reopen_forbidden'),
