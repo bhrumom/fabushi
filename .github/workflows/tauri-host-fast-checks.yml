@@ -1,45 +1,6 @@
-name: Tauri Host fast checks
+name: Legacy Tauri Host checks (manual only)
 
 on:
-  pull_request:
-    paths:
-      - apps/fabushi-tauri/**
-      - frontend/apps/host/**
-      - frontend/apps/web/src/app/host/**
-      - frontend/apps/web/src/lib/mahayana-host/**
-      - frontend/packages/shared/src/mahayana-host-features.ts
-      - contracts/automation/cross-platform-journeys.json
-      - scripts/check-tauri-production-contract.mjs
-      - frontend/pnpm-lock.yaml
-      - frontend/pnpm-workspace.yaml
-      - third_party/mahayana/mahayana-rs/Cargo.toml
-      - third_party/mahayana/mahayana-rs/Cargo.lock
-      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
-      - third_party/mahayana/mahayana-rs/mahayana-host/**
-      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
-      - third_party/mahayana/mahayana-rs/mahayana-product/**
-      - third_party/mahayana/mahayana-rs/mahayana-core/**
-      - third_party/mahayana/mahayana-rs/mahayana-runtime/**
-      - .github/workflows/tauri-host-fast-checks.yml
-  push:
-    branches: [main]
-    paths:
-      - apps/fabushi-tauri/**
-      - frontend/apps/host/**
-      - frontend/apps/web/src/app/host/**
-      - frontend/apps/web/src/lib/mahayana-host/**
-      - frontend/packages/shared/src/mahayana-host-features.ts
-      - contracts/automation/cross-platform-journeys.json
-      - scripts/check-tauri-production-contract.mjs
-      - frontend/pnpm-lock.yaml
-      - frontend/pnpm-workspace.yaml
-      - third_party/mahayana/mahayana-rs/Cargo.toml
-      - third_party/mahayana/mahayana-rs/Cargo.lock
-      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
-      - third_party/mahayana/mahayana-rs/mahayana-host/**
-      - third_party/mahayana/mahayana-rs/mahayana-host-protocol/**
-      - third_party/mahayana/mahayana-rs/mahayana-product/**
-      - .github/workflows/tauri-host-fast-checks.yml
   workflow_dispatch:
 
 concurrency:

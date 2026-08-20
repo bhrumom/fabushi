@@ -40,6 +40,7 @@ interface ExtensionStudioProps {
   execute: (command: RuntimeCommand) => Promise<unknown>;
   nextRequestId: (prefix: string) => string;
   run: (action: () => Promise<unknown>) => Promise<void>;
+  onDeleteBot: (bot: BotSummary) => void;
 }
 
 const statusLabels: Record<ConnectorSummary["status"], string> = {
@@ -401,9 +402,10 @@ function BotPanel({
   execute,
   nextRequestId,
   run,
+  onDeleteBot,
 }: Pick<
   ExtensionStudioProps,
-  "bots" | "search" | "execute" | "nextRequestId" | "run"
+  "bots" | "search" | "execute" | "nextRequestId" | "run" | "onDeleteBot"
 >) {
   const [draft, setDraft] = useState<BotDraft>(emptyBotDraft);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -453,7 +455,7 @@ function BotPanel({
       <div className={styles.skillToolbar}>
         <div>
           <strong>Bots</strong>
-          <p>Grok Bot 0.16 profile 语义：独立名称、职衔、描述、形状、颜色和会话身份。</p>
+          <p>Fabushi 智能体支持独立名称、职衔、描述、形状、颜色和会话身份。</p>
         </div>
         <button type="button" onClick={() => { setDraft(emptyBotDraft); setEditorOpen(true); }}>
           <Plus size={15} /> 新建 Bot
@@ -462,7 +464,7 @@ function BotPanel({
       {editorOpen ? (
         <form className={styles.skillEditor} onSubmit={(event) => void save(event)}>
           <header>
-            <div><strong>{draft.id ? "编辑 Bot" : "新建 Bot"}</strong><small>Profile 字段与 Grok Bot 0.16 保持一致。</small></div>
+            <div><strong>{draft.id ? "编辑 Bot" : "新建 Bot"}</strong><small>Profile 字段会作为 Fabushi 智能体的持久身份配置。</small></div>
             <button type="button" onClick={() => setEditorOpen(false)}>×</button>
           </header>
           <div className={styles.botProfilePreview}>
@@ -500,7 +502,7 @@ function BotPanel({
             <div className={styles.botActions}>
               <button type="button" title="编辑" onClick={() => { setDraft({ id: bot.id, name: bot.name, description: bot.description, title: bot.title, avatarShape: bot.avatarShape ?? "", avatarColor: bot.avatarColor ?? "" }); setEditorOpen(true); }}><Pencil size={13} /></button>
               <button type="button" title="复制" onClick={() => void run(() => execute({ type: "bot.clone", requestId: nextRequestId("bot-clone"), id: bot.id }))}><Copy size={13} /></button>
-              {bot.id !== "mahayana-assistant" ? <button className={styles.dangerAction} type="button" title="删除" onClick={() => { if (window.confirm(`永久删除 ${bot.name}？`)) void run(() => execute({ type: "bot.delete", requestId: nextRequestId("bot-delete"), id: bot.id })); }}><Trash2 size={13} /></button> : null}
+              {bot.id !== "mahayana-assistant" ? <button className={styles.dangerAction} type="button" title="删除" onClick={() => onDeleteBot(bot)}><Trash2 size={13} /></button> : null}
               <label title={bot.hidden ? "显示 Bot" : "隐藏 Bot"}>
                 <input className={styles.switchInput} type="checkbox" checked={!bot.hidden} onChange={(event) => void run(() => execute({ type: "bot.setHidden", requestId: nextRequestId("bot-hidden"), id: bot.id, hidden: !event.target.checked }))} />
               </label>

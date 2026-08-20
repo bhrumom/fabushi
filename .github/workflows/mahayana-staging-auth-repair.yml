@@ -6,8 +6,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mahayana-staging-auth-repair
+  cancel-in-progress: false
+
 env:
-  REPAIR_SOURCE_SHA: 64c409586d81262b2f1901c6645d033c1a494e5f
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   PLATFORM_WORKER_DIR: third_party/mahayana/mahayana-rs/mahayana-platform-worker
 
@@ -19,18 +22,13 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
       TEST_ACCOUNT_TOKEN: ${{ secrets.TEST_ACCOUNT_TOKEN || secrets.MAHAYANA_TEST_ACCOUNT_TOKEN }}
+      OAUTH_APPLE_CLIENT_ID: ${{ secrets.OAUTH_APPLE_CLIENT_ID || vars.OAUTH_APPLE_CLIENT_ID || secrets.APPLE_SERVICES_ID || vars.APPLE_SERVICES_ID || secrets.APPLE_SERVICE_ID || vars.APPLE_SERVICE_ID || secrets.APPLE_CLIENT_ID || vars.APPLE_CLIENT_ID || secrets.SIGN_IN_WITH_APPLE_CLIENT_ID || vars.SIGN_IN_WITH_APPLE_CLIENT_ID }}
 
     steps:
-      - name: Checkout pinned repair source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.REPAIR_SOURCE_SHA }}
           submodules: recursive
-          persist-credentials: false
-
-      - name: Verify pinned source
-        shell: bash
-        run: test "$(git rev-parse HEAD)" = "$REPAIR_SOURCE_SHA"
 
       - name: Require deployment credentials
         shell: bash
@@ -49,6 +47,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: rustfmt
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
@@ -58,19 +57,26 @@ jobs:
           cache-bin: true
           cache-on-failure: true
 
-      - name: Check deployable platform Worker
+      - name: Check deployable Worker
         shell: bash
         run: cargo check --locked --manifest-path "$MAHAYANA_MANIFEST" --target wasm32-unknown-unknown --package mahayana-platform-worker
 
       - name: Install Cloudflare Worker build tool
         run: cargo install worker-build --locked
 
+      - id: identity-bridge
+        name: Configure deployed identity bridge
+        shell: bash
+        env:
+          PLATFORM_URL: https://mahayana-platform.bhrumom.workers.dev
+        run: bash .github/scripts/deploy-auth-provider-bridge.sh
+
       - name: Capture account D1 recovery bookmark
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
         shell: bash
         run: npx --yes wrangler@4 d1 time-travel info ACCOUNT_DB --json | tee "$RUNNER_TEMP/account-db-recovery-bookmark.json"
 
-      - name: Upload account D1 recovery bookmark
+      - name: Upload recovery bookmark
         uses: actions/upload-artifact@v4
         with:
           name: mahayana-account-db-recovery-bookmark
@@ -82,6 +88,19 @@ jobs:
         working-directory: ${{ env.PLATFORM_WORKER_DIR }}
         shell: bash
         run: printf 'y\n' | npx --yes wrangler@4 d1 migrations apply ACCOUNT_DB --remote
+
+      - id: apple-provider
+        name: Sync Apple Services ID when configured
+        working-directory: ${{ env.PLATFORM_WORKER_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=false
+          if [ -n "${OAUTH_APPLE_CLIENT_ID:-}" ]; then
+            printf '%s' "$OAUTH_APPLE_CLIENT_ID" | npx --yes wrangler@4 secret put OAUTH_APPLE_CLIENT_ID >/dev/null
+            enabled=true
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Mahayana staging Worker
         id: platform
@@ -99,14 +118,35 @@ jobs:
         shell: bash
         run: printf '%s' "$TEST_ACCOUNT_TOKEN" | npx --yes wrangler@4 secret put TEST_ACCOUNT_TOKEN
 
-      - name: Verify browser login broker lifecycle
+      - name: Verify platform health
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.platform.outputs.url }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | jq -e '.ok == true' >/dev/null
-          start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors -H 'content-type: application/json' --data '{"platform":"desktop"}' "$PLATFORM_URL/api/auth/browser/start")"
+
+      - name: Verify browser login, registration, and Alipay broker lifecycle
+        shell: bash
+        env:
+          PLATFORM_URL: ${{ steps.platform.outputs.url }}
+          BRIDGE_URL: ${{ steps.identity-bridge.outputs.bridge_url }}
+          REGISTRATION_EMAIL_READY: ${{ steps.identity-bridge.outputs.email_ready }}
+          APPLE_READY: ${{ steps.apple-provider.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          providers="$(curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 3 "$PLATFORM_URL/api/auth/oauth/providers")"
+          jq -e '.providers | map(.id) | index("alipay") != null' <<<"$providers" >/dev/null
+          if [ "$APPLE_READY" = true ]; then
+            jq -e '.providers | map(.id) | index("apple") != null' <<<"$providers" >/dev/null
+          else
+            jq -e '.providers | map(.id) | index("apple") == null' <<<"$providers" >/dev/null
+          fi
+
+          start="$(curl --fail --silent --show-error --retry 5 --retry-all-errors \
+            -H 'content-type: application/json' \
+            --data '{"platform":"desktop"}' \
+            "$PLATFORM_URL/api/auth/browser/start")"
           attempt_id="$(jq -er '.attemptId' <<<"$start")"
           poll_secret="$(jq -er '.pollSecret' <<<"$start")"
           login_url="$(jq -er '.loginUrl' <<<"$start")"
@@ -114,4 +154,38 @@ jobs:
             "$PLATFORM_URL/api/auth/browser/portal"*) ;;
             *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
           esac
-          curl --fail --silent --show-error -H 'content-type: application/json' --data "$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')" "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id/cancel" | jq -e '.status == "cancelled"' >/dev/null
+
+          portal_html="$(curl --fail --silent --show-error "$login_url")"
+          grep -F 'aria-label="账号模式"' <<<"$portal_html" >/dev/null
+          grep -F 'data-provider="alipay"' <<<"$portal_html" >/dev/null
+          register_url="${login_url}&mode=register"
+          register_html="$(curl --fail --silent --show-error "$register_url")"
+          grep -F '>注册</a>' <<<"$register_html" >/dev/null
+          if [ "$REGISTRATION_EMAIL_READY" = true ]; then
+            grep -F 'id="register-form"' <<<"$register_html" >/dev/null
+            grep -F '发送验证码' <<<"$register_html" >/dev/null
+          else
+            grep -F '邮箱注册当前未配置邮件服务' <<<"$register_html" >/dev/null
+          fi
+
+          authorize_url="$(node -e 'const login=new URL(process.argv[1]); const base=process.argv[2].replace(/\/$/, ""); const out=new URL(base + "/api/auth/browser/authorize"); out.searchParams.set("attemptId", login.searchParams.get("attemptId")); out.searchParams.set("ticket", login.searchParams.get("ticket")); out.searchParams.set("provider", "alipay"); process.stdout.write(out.toString());' "$login_url" "$PLATFORM_URL")"
+          first_headers="$RUNNER_TEMP/alipay-rust-redirect.headers"
+          first_status="$(curl --silent --show-error --output /dev/null --dump-header "$first_headers" --write-out '%{http_code}' "$authorize_url")"
+          [ "$first_status" = 302 ] || { echo "Rust Alipay authorize returned HTTP $first_status" >&2; exit 1; }
+          bridge_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/\r$/,""); print substr($0,11)}' "$first_headers" | tail -n 1)"
+          case "$bridge_location" in
+            "$BRIDGE_URL/api/internal/auth-provider/alipay/authorize"*) ;;
+            *) echo "Rust Alipay authorize escaped identity bridge: $bridge_location" >&2; exit 1 ;;
+          esac
+
+          second_headers="$RUNNER_TEMP/alipay-provider-redirect.headers"
+          second_status="$(curl --silent --show-error --output /dev/null --dump-header "$second_headers" --write-out '%{http_code}' "$bridge_location")"
+          [ "$second_status" = 302 ] || { echo "Identity bridge returned HTTP $second_status" >&2; exit 1; }
+          alipay_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/\r$/,""); print substr($0,11)}' "$second_headers" | tail -n 1)"
+          node -e 'const u=new URL(process.argv[1]); if (u.protocol !== "https:" || u.hostname !== "openauth.alipay.com" || u.pathname !== "/oauth2/publicAppAuthorize.htm") throw new Error(`unexpected Alipay authorization URL: ${u}`); if (u.searchParams.get("scope") !== "auth_user") throw new Error("Alipay authorization scope is not auth_user"); if (!/^fbs_[a-f0-9]{32}$/i.test(u.searchParams.get("state") || "")) throw new Error("Alipay authorization state is not a bounded Fabushi browser state");' "$alipay_location"
+
+          curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            --data "$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')" \
+            "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id/cancel" \
+            | jq -e '.status == "cancelled"' >/dev/null

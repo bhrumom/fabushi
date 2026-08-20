@@ -18,9 +18,8 @@ import type {
   ApprovalRequestedEvent,
   AttachmentContext,
   AutomationSummary,
-  AuthProvider,
-  AuthProviderId,
   AuthState,
+  BrowserLoginAttempt,
   BotSummary,
   CapabilitySummary,
   ComputerSnapshot,
@@ -51,19 +50,45 @@ import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electro
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
 import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
+import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
 import {
   RemoteComputerDesktopController,
   type RemoteComputerDesktopState,
 } from "../../lib/remote-computer/desktop-peer";
-import { estimateStringTokenCount } from "../../lib/grok-agent/token-estimate";
-import { buildCurrentModeStatement } from "../../lib/grok-agent/agent-mode-guidance";
-import { addLineNumbers } from "../../lib/grok-agent/formatting";
-import { normalizeSchedule } from "../../lib/grok-agent/automation-schedule";
 import {
-  SandOsNotificationDecider,
-  buildNotificationContent,
-  type SandAgentNotificationSnapshot,
-} from "../../lib/grok-bot/os-notification";
+  buildModeTransitionNote,
+  clampAgentMessage,
+  estimateTextTokens,
+  formatNumberedLines,
+  normalizeAutomationSchedule,
+} from "../../lib/fabushi-runtime/agent-utils";
+import {
+  AgentNotificationPolicy,
+  buildAgentNotification,
+  type AgentNotificationSnapshot,
+} from "../../lib/fabushi-runtime/agent-notifications";
+import type {
+  BoxSecretsStatus,
+  CloudAgentInfo,
+  ForeverBoxStatus,
+} from "../../lib/fabushi-runtime/capability-provider";
+import type {
+  SharingState,
+  SharedRoomInvite,
+} from "../../lib/fabushi-runtime/collaboration";
+import {
+  invokeNativeDesktop,
+  markNativeDeepLinksReady,
+  nativeOnboardingSeen,
+  rememberNativeOnboarding,
+  subscribeNativeDesktopEvents,
+  syncNativeTheme,
+  type NativeDeepLink,
+  type NativeDesktopEnvironment,
+  type NativeDiskAudit,
+  type NativeOfflineAsrProgress,
+  type NativeOfflineAsrStatus,
+} from "../../lib/fabushi-runtime/native-desktop";
 import {
   ExtensionStudio,
   MarketplaceTabs,
@@ -85,6 +110,7 @@ import { GroupAvatarStack, GroupChatPanel, GroupEditor } from "./group-chat-pane
 import { AgentWorkflowPanel } from "./agent-workflow-panel";
 
 const defaultMiniAppId = "global-dharma";
+const ONBOARDING_COMPLETE_KEY = "fabushi.host.onboarding-complete.v1";
 const ATTACHMENT_BYTE_LIMIT = 25 * 1024 * 1024;
 const VIDEO_ATTACHMENT_BYTE_LIMIT = 200 * 1024 * 1024;
 const ATTACHMENT_TEXT_PREVIEW_BYTES = 64 * 1024;
@@ -373,6 +399,14 @@ function Icon({
   );
 }
 
+interface ConfirmAction {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone: "danger" | "warning";
+  action: () => void | Promise<void>;
+}
+
 export default function HostClient() {
   const screenshotMode = new URLSearchParams(window.location.search).get("screenshot");
   const screenshotHasMiniApp = screenshotMode === "miniapp";
@@ -381,6 +415,7 @@ export default function HostClient() {
     () => new MockMahayanaHostTransport({ authenticated: screenshotMode !== null }),
     [screenshotMode],
   );
+  const coordinator = useMemo(() => new MahayanaCoordinator(transport), [transport]);
   const requestSequence = useRef(0);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [hostStatus, setHostStatus] = useState("initializing");
@@ -415,13 +450,31 @@ export default function HostClient() {
     createInitialFeatureStates,
   );
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const overlayReturnFocusRef = useRef<HTMLElement | null>(null);
+  const overlayWasOpenRef = useRef(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(screenshotMode === "marketplace");
   const [marketplaceSection, setMarketplaceSection] = useState<MarketplaceSection>("apps");
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [networkView, setNetworkView] = useState<"agents" | "rooms" | "workspace">("agents");
   const [networkTargetId, setNetworkTargetId] = useState("");
   const [networkMessage, setNetworkMessage] = useState("");
   const [networkPriority, setNetworkPriority] = useState(false);
   const [peerMessages, setPeerMessages] = useState<AgentPeerMessage[]>([]);
+  const [sharingState, setSharingState] = useState<SharingState>({ scope: "local-device", rooms: [], joinRequests: [] });
+  const [sharingBusy, setSharingBusy] = useState(false);
+  const [sharingError, setSharingError] = useState<string | null>(null);
+  const [sharedRoomName, setSharedRoomName] = useState("");
+  const [sharedInviteToken, setSharedInviteToken] = useState("");
+  const [lastSharedInvite, setLastSharedInvite] = useState<SharedRoomInvite | null>(null);
+  const [workspaceStatus, setWorkspaceStatus] = useState<ForeverBoxStatus | null>(null);
+  const [workspaceSecrets, setWorkspaceSecrets] = useState<BoxSecretsStatus | null>(null);
+  const [workspaceDiskAudit, setWorkspaceDiskAudit] = useState<NativeDiskAudit | null>(null);
+  const [workspaceEgressAvailable, setWorkspaceEgressAvailable] = useState(false);
+  const [workspaceAgentNetworkEnabled, setWorkspaceAgentNetworkEnabled] = useState(false);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [backgroundWorkingAgents, setBackgroundWorkingAgents] = useState<Set<string>>(() => new Set());
   const [backgroundPreviews, setBackgroundPreviews] = useState<Record<string, { agentId: string; text: string }>>({});
   const [lastBroadcastResult, setLastBroadcastResult] = useState<{ total: number; scheduled: number } | null>(null);
@@ -455,18 +508,69 @@ export default function HostClient() {
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
   const [busyMiniApp, setBusyMiniApp] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthState | null>(null);
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
+  const [authResolved, setAuthResolved] = useState(false);
+  const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
-  const [loginProvider, setLoginProvider] = useState<AuthProviderId | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [authProviders, setAuthProviders] = useState<AuthProvider[]>([]);
-  const [loginOptionsOpen, setLoginOptionsOpen] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [passwordLoginOpen, setPasswordLoginOpen] = useState(false);
+  const [browserLoginAttempt, setBrowserLoginAttempt] = useState<BrowserLoginAttempt | null>(null);
+  const [browserLoginWakeNonce, setBrowserLoginWakeNonce] = useState(0);
+  const [onboardingStep, setOnboardingStep] = useState(() =>
+    screenshotMode !== null || window.localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "1"
+      ? 3
+      : 0,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void nativeOnboardingSeen().then((seen) => {
+      if (!cancelled && seen === true) setOnboardingStep(3);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!networkOpen) return;
+    let cancelled = false;
+    const applyState = (state: SharingState) => {
+      if (!cancelled) {
+        setSharingState(state);
+        setSharingError(null);
+      }
+    };
+    void coordinator.getSharingState()
+      .then(applyState)
+      .catch((error) => { if (!cancelled) setSharingError(error instanceof Error ? error.message : String(error)); });
+    const unsubscribe = coordinator.subscribeCollaboration((event) => {
+      if (event.type === "state.changed") applyState(event.state);
+      if (event.type === "typing.changed") {
+        void coordinator.getSharingState().then(applyState).catch(() => undefined);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [coordinator, networkOpen]);
+
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(screenshotMode === "settings");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackState, setFeedbackState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutEnvironment, setAboutEnvironment] = useState<NativeDesktopEnvironment | null>(null);
+  const [widgetGalleryOpen, setWidgetGalleryOpen] = useState(false);
+  const [nativeZoomFactor, setNativeZoomFactor] = useState(1);
+  const [offlineAsrOpen, setOfflineAsrOpen] = useState(false);
+  const [offlineAsrStatus, setOfflineAsrStatus] = useState<NativeOfflineAsrStatus | null>(null);
+  const [offlineAsrModelUrl, setOfflineAsrModelUrl] = useState("");
+  const [offlineAsrSha256, setOfflineAsrSha256] = useState("");
+  const [offlineAsrProgress, setOfflineAsrProgress] = useState<NativeOfflineAsrProgress | null>(null);
+  const [offlineAsrBusy, setOfflineAsrBusy] = useState(false);
+  const [offlineAsrError, setOfflineAsrError] = useState<string | null>(null);
+  const [cloudAgentInfo, setCloudAgentInfo] = useState<CloudAgentInfo | null>(null);
+  const [cloudAgentFailure, setCloudAgentFailure] = useState<string | null>(null);
+  const [cloudAgentActionPending, setCloudAgentActionPending] = useState(false);
   const [mcpServers, setMcpServers] = useState<unknown[]>([]);
   const [mcpApps, setMcpApps] = useState<unknown[]>([]);
   const [mcpToolServer, setMcpToolServer] = useState("");
@@ -481,6 +585,12 @@ export default function HostClient() {
   const [ruleDraft, setRuleDraft] = useState("");
   const [ruleBehavior, setRuleBehavior] = useState<"allow" | "ask">("allow");
   const [activeAgentId, setActiveAgentId] = useState("mahayana-assistant");
+
+  useEffect(() => {
+    if (!networkOpen || networkView !== "workspace") return;
+    void refreshWorkspaceState();
+  }, [networkOpen, networkView, activeAgentId]);
+
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilitySummary[]>([]);
@@ -517,12 +627,133 @@ export default function HostClient() {
   const activeAgentIdRef = useRef(activeAgentId);
   const activeGroupIdRef = useRef(activeGroupId);
   const agentWorkflowForIdRef = useRef<string | null>(null);
-  const notificationDeciderRef = useRef(new SandOsNotificationDecider());
-  const notificationSnapshotsRef = useRef(new Map<string, SandAgentNotificationSnapshot>());
+  const notificationDeciderRef = useRef(new AgentNotificationPolicy());
+  const notificationSnapshotsRef = useRef(new Map<string, AgentNotificationSnapshot>());
   const notificationOperationAgentsRef = useRef(new Map<string, string>());
   const notificationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const computerRefreshInFlightRef = useRef(false);
   const remoteDesktopControllerRef = useRef<RemoteComputerDesktopController | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNativeDesktopEvents({
+      "cloud-agent-open": (payload) => {
+        const info = payload as CloudAgentInfo;
+        if (!info?.id) return;
+        setCloudAgentFailure(null);
+        setCloudAgentInfo(info);
+      },
+      "open-offline-asr": () => {
+        setOfflineAsrError(null);
+        setOfflineAsrOpen(true);
+      },
+      "offline-asr-progress": (payload) => {
+        setOfflineAsrProgress(payload as NativeOfflineAsrProgress);
+      },
+      "focus-agent": (payload) => {
+        const agentId = typeof payload === "object" && payload !== null && "agentId" in payload
+          ? String((payload as { agentId?: unknown }).agentId ?? "").trim()
+          : "";
+        if (!agentId) return;
+        setActiveGroupId(null);
+        setActiveAgentId(agentId);
+      },
+      "deep-link": (payload) => {
+        const link = payload as NativeDeepLink;
+        if (link?.route === "auth" && link.attemptId) {
+          setLoginBusy(true);
+          setLoginError(null);
+          setBrowserLoginAttempt((current) => current?.attemptId === link.attemptId
+            ? current
+            : { attemptId: link.attemptId!, loginUrl: "", pollAfterMs: 150 });
+          setBrowserLoginWakeNonce((value) => value + 1);
+          return;
+        }
+        if (link?.route === "settings" && link.section) {
+          setSettingsSection(link.section);
+          setSettingsOpen(true);
+        }
+      },
+      "open-feedback": () => {
+        setFeedbackState("idle");
+        setFeedbackOpen(true);
+      },
+      "open-about": () => setAboutOpen(true),
+      "widget-gallery": () => setWidgetGalleryOpen(true),
+      "force-onboarding": () => {
+        window.localStorage.removeItem(ONBOARDING_COMPLETE_KEY);
+        setOnboardingStep(0);
+      },
+      "skip-onboarding": () => {
+        window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, "1");
+        rememberNativeOnboarding();
+        setOnboardingStep(3);
+      },
+      "zoom-factor-changed": (payload) => {
+        const factor = typeof payload === "object" && payload !== null && "factor" in payload
+          ? Number((payload as { factor?: unknown }).factor)
+          : Number.NaN;
+        if (Number.isFinite(factor) && factor > 0) setNativeZoomFactor(factor);
+      },
+    });
+    markNativeDeepLinksReady();
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!aboutOpen) return;
+    let cancelled = false;
+    void invokeNativeDesktop<NativeDesktopEnvironment>("getDesktopEnvironment")
+      .then((environment) => { if (!cancelled) setAboutEnvironment(environment); })
+      .catch(() => { if (!cancelled) setAboutEnvironment(null); });
+    return () => { cancelled = true; };
+  }, [aboutOpen]);
+
+  useEffect(() => {
+    if (!offlineAsrOpen) return;
+    let cancelled = false;
+    void invokeNativeDesktop<NativeOfflineAsrStatus>("getOfflineAsrStatus")
+      .then((status) => {
+        if (!cancelled) {
+          setOfflineAsrStatus(status);
+          setOfflineAsrModelUrl((current) => current || status.modelUrl || "");
+          setOfflineAsrSha256((current) => current || status.expectedSha256 || "");
+          setOfflineAsrError(null);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setOfflineAsrError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { cancelled = true; };
+  }, [offlineAsrOpen]);
+
+  useEffect(() => {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || ["finished", "error", "expired"].includes(cloudAgentInfo?.status ?? "unknown")) return;
+    let cancelled = false;
+    let timer: number | null = null;
+    const schedule = (delayMs: number) => {
+      if (!cancelled) timer = window.setTimeout(() => void refresh(), delayMs);
+    };
+    const refresh = async () => {
+      try {
+        const info = await invokeNativeDesktop<CloudAgentInfo>("getCloudAgentInfo", { bcId: runId, includeFiles: false });
+        if (cancelled) return;
+        setCloudAgentFailure(null);
+        setCloudAgentInfo(info);
+        if (!["finished", "error", "expired"].includes(info.status)) schedule(5_000);
+      } catch (error) {
+        if (cancelled) return;
+        setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+        schedule(60_000);
+      }
+    };
+    schedule(5_000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [cloudAgentInfo?.id, cloudAgentInfo?.runId, cloudAgentInfo?.status]);
+
   const [agentMode, setAgentMode] = useState<AgentMode>("agent");
   const [selectedModel, setSelectedModel] = useState("auto");
   const [attachments, setAttachments] = useState<AttachmentContext[]>([]);
@@ -535,8 +766,8 @@ export default function HostClient() {
 
   const notificationSnapshot = (
     agentId: string,
-    patch: Partial<SandAgentNotificationSnapshot> = {},
-  ): SandAgentNotificationSnapshot => {
+    patch: Partial<AgentNotificationSnapshot> = {},
+  ): AgentNotificationSnapshot => {
     const bot = botsRef.current.find((candidate) => candidate.id === agentId);
     const current = notificationSnapshotsRef.current.get(agentId);
     return {
@@ -546,7 +777,10 @@ export default function HostClient() {
       awaitingReason: current?.awaitingReason ?? null,
       lastMessageId: current?.lastMessageId ?? null,
       lastMessagePreview: current?.lastMessagePreview ?? null,
-      notifyEnabled: preferencesRef.current.notifyOnUpdates && (bot?.notificationsEnabled ?? current?.notifyEnabled ?? true),
+      notifyEnabled:
+        preferencesRef.current.notifyOnUpdates
+        && (bot?.notificationsEnabled ?? current?.notifyEnabled ?? true)
+        && (bot?.notifyOnUpdates ?? true),
       isHiddenFromSidebar: bot?.hidden ?? current?.isHiddenFromSidebar ?? false,
       ...patch,
     };
@@ -554,7 +788,7 @@ export default function HostClient() {
 
   const queueNotificationSnapshot = (
     agentId: string,
-    patch: Partial<SandAgentNotificationSnapshot>,
+    patch: Partial<AgentNotificationSnapshot>,
     allowNotification: boolean,
   ) => {
     const snapshot = notificationSnapshot(agentId, patch);
@@ -565,13 +799,13 @@ export default function HostClient() {
         const isWindowFocused = allowNotification
           ? await transport.windowFocused().catch(() => document.hasFocus())
           : true;
-        const transitions = notificationDeciderRef.current.decideAgent(snapshot, {
+        const transitions = notificationDeciderRef.current.evaluate(snapshot, {
           isWindowFocused,
           nowMs: Date.now(),
         });
         if (!allowNotification) return;
         for (const transition of transitions) {
-          const content = buildNotificationContent(transition);
+          const content = buildAgentNotification(transition);
           await transport.showNotification(content.title, content.body).catch(() => {});
         }
       });
@@ -594,6 +828,7 @@ export default function HostClient() {
       "fabushi.host.preferences.v1",
       JSON.stringify(preferences),
     );
+    syncNativeTheme(preferences.theme);
     if (!hostSettingsHydrated) return;
     const settings: ProductHostSettings = {
       notifications: preferences.notifyOnUpdates,
@@ -784,17 +1019,21 @@ export default function HostClient() {
     }
     setSearchPending(true);
     const timer = window.setTimeout(() => {
-      const stamp = Date.now();
       void Promise.all([
-        transport.execute({ type: "search.messages", requestId: `global-message-search-${stamp}`, query, limit: 50 }),
-        transport.execute({ type: "search.media", requestId: `global-media-search-${stamp}`, query, limit: 50 }),
-      ]).catch((cause: unknown) => {
+        coordinator.searchMessages(query, 50),
+        coordinator.searchMedia(query, 50),
+      ]).then(([messageMatches, mediaMatches]) => {
+        if (searchQueryRef.current !== query) return;
+        setSearchMessageMatches(messageMatches);
+        setSearchMediaMatches(mediaMatches);
+        setSearchPending(false);
+      }).catch((cause: unknown) => {
         setSearchPending(false);
         setError(cause instanceof Error ? cause.message : String(cause));
       });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [conversationSearch, transport]);
+  }, [conversationSearch, coordinator]);
 
   useEffect(() => {
     const pass = (featureId: MahayanaHostFeatureId) => {
@@ -804,7 +1043,7 @@ export default function HostClient() {
       }));
     };
 
-    const unsubscribe = transport.subscribe((event) => {
+    const unsubscribe = coordinator.subscribe((event) => {
       switch (event.type) {
         case "host.ready":
           setHostStatus("ready");
@@ -975,9 +1214,9 @@ export default function HostClient() {
             lastMessagePreview: null,
             notifyEnabled: preferencesRef.current.notifyOnUpdates && bot.notificationsEnabled,
             isHiddenFromSidebar: bot.hidden,
-          } satisfies SandAgentNotificationSnapshot));
+          } satisfies AgentNotificationSnapshot));
           for (const baseline of baselines) notificationSnapshotsRef.current.set(baseline.id, baseline);
-          notificationDeciderRef.current.seedBaseline(baselines);
+          notificationDeciderRef.current.seed(baselines);
           break;
         }
         case "bot.changed":
@@ -992,7 +1231,7 @@ export default function HostClient() {
           });
           if (event.action === "deleted") {
             notificationSnapshotsRef.current.delete(event.bot.id);
-            notificationDeciderRef.current.forget(event.bot.id);
+            notificationDeciderRef.current.forgetAgent(event.bot.id);
           }
           break;
         case "group.listed":
@@ -1472,63 +1711,26 @@ export default function HostClient() {
           type: "capability.list",
           requestId: "capability-list-initial",
         });
-        await transport.execute({
-          type: "automation.list",
-          requestId: "automation-list-initial",
-        });
+        await coordinator.listAutomations();
         await Promise.all([
           transport.execute({
             type: "connector.list",
             requestId: "connector-list-initial",
           }),
-          transport.execute({
-            type: "skill.list",
-            requestId: "skill-list-initial",
-          }),
-          transport.execute({
-            type: "bot.list",
-            requestId: "bot-list-initial",
-          }),
-          transport.execute({
-            type: "group.list",
-            requestId: "group-list-initial",
-          }),
-          transport.execute({
-            type: "tray.list",
-            requestId: "tray-list-initial",
-          }),
+          coordinator.listSkills(),
+          coordinator.listAgents(),
+          coordinator.listGroups(),
+          coordinator.listTrays(),
           transport.execute({
             type: "settings.get",
             requestId: "settings-get-initial",
           }),
-          transport.execute({
-            type: "listener.list",
-            requestId: "listener-list-initial",
-          }),
+          coordinator.listListenerIntegrations(),
           transport.execute({
             type: "update.status",
             requestId: "update-status-initial",
           }),
         ]);
-        try {
-          setAuthProviders(
-            (
-              await Promise.race([
-                transport.authProviders(),
-                new Promise<AuthProvider[]>((_, reject) =>
-                  window.setTimeout(
-                    () => reject(new Error("登录方式发现超时")),
-                    4_000,
-                  ),
-                ),
-              ])
-            ).filter((provider) => provider.enabled),
-          );
-        } catch {
-          // Provider discovery is server-owned. Password login remains the
-          // safe fallback when an older deployment has not enabled OAuth yet.
-          setAuthProviders([]);
-        }
         try {
           const authState = await Promise.race([
             transport.authStatus(),
@@ -1548,6 +1750,8 @@ export default function HostClient() {
           setLoginError(
             `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
           );
+        } finally {
+          setAuthResolved(true);
         }
         const stored = JSON.parse(
           window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
@@ -1570,6 +1774,7 @@ export default function HostClient() {
         }
       })
       .catch((cause: unknown) => {
+        setAuthResolved(true);
         setHostStatus("failed");
         setError(cause instanceof Error ? cause.message : String(cause));
       });
@@ -1578,7 +1783,7 @@ export default function HostClient() {
       unsubscribe();
       void transport.close();
     };
-  }, [transport]);
+  }, [transport, coordinator]);
 
   const nextRequestId = (prefix: string) => {
     requestSequence.current += 1;
@@ -1595,7 +1800,7 @@ export default function HostClient() {
     }
   };
 
-  const execute = (command: RuntimeCommand) => transport.execute(command);
+  const execute = (command: RuntimeCommand) => coordinator.execute(command);
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1614,7 +1819,7 @@ export default function HostClient() {
         agentId: activeAgentId,
         conversationId: activeConversationId ?? undefined,
         mode: agentMode,
-        modeStatement: buildCurrentModeStatement(
+        modeStatement: buildModeTransitionNote(
           agentMode === "ask" ? "chat" : agentMode,
         ),
         model: selectedModel === "auto" ? undefined : selectedModel,
@@ -1656,7 +1861,7 @@ export default function HostClient() {
             window.clearTimeout(timeout);
             unsubscribe();
           };
-          unsubscribe = transport.subscribe((event) => {
+          unsubscribe = coordinator.subscribe((event) => {
             if (
               event.type !== "attachment.stored" ||
               event.attachment.agentId !== ownerId ||
@@ -1701,72 +1906,276 @@ export default function HostClient() {
     if (attachmentInput.current) attachmentInput.current.value = "";
   };
 
-  const login = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!loginUsername.trim() || !loginPassword) {
-      setLoginError("请输入账号和密码");
-      return;
-    }
+  const beginBrowserLogin = async () => {
+    if (loginBusy) return;
     setLoginBusy(true);
     setLoginError(null);
     try {
-      const state = await transport.passwordLogin(
-        loginUsername.trim(),
-        loginPassword,
-      );
-      setAuth({ ...state, loggedIn: true });
-      setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
-      setLoginPassword("");
+      const attempt = await transport.browserLoginStart();
+      setBrowserLoginAttempt(attempt);
+      await transport.openExternal(attempt.loginUrl);
     } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
+      setBrowserLoginAttempt(null);
       setLoginBusy(false);
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+
+  const reopenBrowserLogin = async () => {
+    const attempt = browserLoginAttempt;
+    if (!attempt) return;
+    try {
+      const reopened = await transport.browserLoginReopen(attempt.attemptId);
+      if (reopened.status !== "pending") {
+        setBrowserLoginWakeNonce((value) => value + 1);
+        return;
+      }
+      const loginUrl = reopened.loginUrl?.trim();
+      if (!loginUrl) throw new Error("账号服务没有返回新的登录地址");
+      setBrowserLoginAttempt((current) => current?.attemptId === attempt.attemptId
+        ? {
+            ...current,
+            loginUrl,
+            pollAfterMs: reopened.pollAfterMs ?? current.pollAfterMs,
+          }
+        : current);
+      await transport.openExternal(loginUrl);
+      setLoginError(null);
+      setBrowserLoginWakeNonce((value) => value + 1);
+    } catch (cause: unknown) {
+      setLoginError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const cancelBrowserLogin = async () => {
+    const attempt = browserLoginAttempt;
+    if (!attempt) return;
+    setLoginError(null);
+    try {
+      const result = await transport.browserLoginCancel(attempt.attemptId);
+      if (result.status === "completed") {
+        setBrowserLoginWakeNonce((value) => value + 1);
+        return;
+      }
+      setBrowserLoginAttempt(null);
+      setLoginBusy(false);
+      setLoginError(result.status === "failed" ? "登录流程已失败，请重新开始" : null);
+    } catch (cause: unknown) {
+      setLoginError(`取消登录失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  };
+
+  useEffect(() => {
+    if (!auth?.loggedIn) {
+      setAccountAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void invokeNativeDesktop<{ avatar?: string | null; displayName?: string | null }>("getAccountAvatar")
+      .then((profile) => {
+        if (!cancelled) setAccountAvatarUrl(profile?.avatar?.trim() || null);
+      })
+      .catch(() => {
+        if (!cancelled) setAccountAvatarUrl(auth.user?.avatar?.trim() || null);
+      });
+    return () => { cancelled = true; };
+  }, [auth?.loggedIn, auth?.user?.avatar]);
+
+  useEffect(() => {
+    const attempt = browserLoginAttempt;
+    if (!attempt) return undefined;
+    let cancelled = false;
+    let timer: number | null = null;
+    const pollDelay = Math.max(150, Math.min(2_000, attempt.pollAfterMs ?? 750));
+    const schedule = (delay = pollDelay) => {
+      if (!cancelled) timer = window.setTimeout(() => void poll(), delay);
+    };
+    const poll = async () => {
+      if (cancelled) return;
+      if (attempt.expiresAt && Date.now() / 1000 >= attempt.expiresAt) {
+        setBrowserLoginAttempt(null);
+        setLoginBusy(false);
+        setLoginError("登录链接已过期，请重新开始");
+        return;
+      }
+      try {
+        const result = await transport.browserLoginPoll(attempt.attemptId);
+        if (cancelled) return;
+        if (result.status === "completed" && result.auth) {
+          setAuth({ ...result.auth, loggedIn: true });
+          setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+          setBrowserLoginAttempt(null);
+          setLoginBusy(false);
+          setLoginError(null);
+          return;
+        }
+        if (result.status === "expired" || result.status === "cancelled" || result.status === "failed") {
+          setBrowserLoginAttempt(null);
+          setLoginBusy(false);
+          setLoginError(
+            result.status === "cancelled"
+              ? "登录已取消"
+              : result.status === "failed"
+                ? "登录流程未完成，请重新开始"
+                : "登录链接已过期，请重新开始",
+          );
+          return;
+        }
+        setLoginError(null);
+        schedule();
+      } catch (cause: unknown) {
+        if (cancelled) return;
+        setLoginError(`正在重新连接账号服务：${cause instanceof Error ? cause.message : String(cause)}`);
+        schedule(1_500);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [browserLoginAttempt?.attemptId, browserLoginWakeNonce]);
 
   const logout = async () => {
     await run(async () => {
       const state = await transport.logout();
       setAuth({ ...state, loggedIn: false });
       setAccountOpen(false);
+      setBrowserLoginAttempt(null);
+      setLoginBusy(false);
     });
   };
 
-  const oauthLogin = async (provider: AuthProviderId) => {
-    setLoginBusy(true);
-    setLoginProvider(provider);
-    setLoginError(null);
-    try {
-      const attempt = await transport.oauthStart(provider);
-      await transport.openExternal(attempt.authorizationUrl);
-      for (let poll = 0; poll < 160; poll += 1) {
-        const result = await transport.oauthPoll(attempt.attemptId);
-        if (result.status === "completed" && result.auth) {
-          setAuth({ ...result.auth, loggedIn: true });
-          setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+  const hasManagedModal = Boolean(
+    confirmAction ||
+    approval ||
+    browserLoginAttempt ||
+    accountOpen ||
+    feedbackOpen ||
+    aboutOpen ||
+    widgetGalleryOpen ||
+    offlineAsrOpen ||
+    cloudAgentInfo ||
+    settingsOpen ||
+    automationOpen ||
+    networkOpen ||
+    marketplaceOpen ||
+    agentSettingsOpen
+  );
+
+  useEffect(() => {
+    if (!hasManagedModal) {
+      if (overlayWasOpenRef.current) {
+        overlayWasOpenRef.current = false;
+        const returnTarget = overlayReturnFocusRef.current;
+        overlayReturnFocusRef.current = null;
+        window.requestAnimationFrame(() => {
+          if (returnTarget?.isConnected) {
+            returnTarget.focus({ preventScroll: true });
+            return;
+          }
+          const browserLoginButton = document.querySelector<HTMLElement>('[data-testid="browser-login-start"]');
+          browserLoginButton?.focus({ preventScroll: true });
+        });
+      }
+      return undefined;
+    }
+
+    if (!overlayWasOpenRef.current) {
+      const activeElement = document.activeElement;
+      overlayReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+      overlayWasOpenRef.current = true;
+    }
+
+    const visibleDialogs = () => Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+    ).filter((dialog) => dialog.getClientRects().length > 0);
+    const topDialog = () => {
+      const dialogs = visibleDialogs();
+      return dialogs.length ? dialogs[dialogs.length - 1] : null;
+    };
+    const focusableWithin = (dialog: HTMLElement) => Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true');
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const dialog = topDialog();
+      if (!dialog || dialog.contains(document.activeElement)) return;
+      const focusable = focusableWithin(dialog);
+      (focusable[0] ?? dialog).focus({ preventScroll: true });
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const dialog = topDialog();
+      if (!dialog) return;
+      if (event.key === 'Tab') {
+        const focusable = focusableWithin(dialog);
+        if (!focusable.length) {
+          event.preventDefault();
+          dialog.focus({ preventScroll: true });
           return;
         }
-        if (result.status !== "pending") throw new Error("登录链接已失效，请重新登录");
-        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (event.shiftKey && (active === first || !dialog.contains(active))) {
+          event.preventDefault();
+          last.focus({ preventScroll: true });
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus({ preventScroll: true });
+        }
+        return;
       }
-      throw new Error("等待登录超时，请重试");
-    } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoginBusy(false);
-      setLoginProvider(null);
-    }
-  };
-
-  const providerIcon = (provider: AuthProviderId) => {
-    const labels: Record<AuthProviderId, string> = {
-      google: "G",
-      apple: "●",
-      microsoft: "⊞",
-      github: "⌘",
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (confirmAction) {
+        if (!confirmBusy) setConfirmAction(null);
+        return;
+      }
+      // Approval is an explicit security decision; Escape must never silently
+      // deny or dismiss it.
+      if (approval) return;
+      if (accountOpen) return void setAccountOpen(false);
+      if (widgetGalleryOpen) return void setWidgetGalleryOpen(false);
+      if (aboutOpen) return void setAboutOpen(false);
+      if (feedbackOpen) return void setFeedbackOpen(false);
+      if (cloudAgentInfo) return void setCloudAgentInfo(null);
+      if (offlineAsrOpen) return void setOfflineAsrOpen(false);
+      if (settingsOpen) return void setSettingsOpen(false);
+      if (automationOpen) return void setAutomationOpen(false);
+      if (networkOpen) return void setNetworkOpen(false);
+      if (marketplaceOpen) return void setMarketplaceOpen(false);
+      if (agentSettingsOpen) return void setAgentSettingsOpen(false);
+      if (browserLoginAttempt) void cancelBrowserLogin();
     };
-    return <span className={`${styles.providerIcon} ${styles[provider]}`}>{labels[provider]}</span>;
-  };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [
+    hasManagedModal,
+    confirmAction,
+    confirmBusy,
+    approval,
+    browserLoginAttempt?.attemptId,
+    accountOpen,
+    feedbackOpen,
+    aboutOpen,
+    widgetGalleryOpen,
+    offlineAsrOpen,
+    cloudAgentInfo,
+    settingsOpen,
+    automationOpen,
+    networkOpen,
+    marketplaceOpen,
+    agentSettingsOpen,
+  ]);
 
   const installMiniApp = (miniAppId: string) => {
     setBusyMiniApp(miniAppId);
@@ -1858,9 +2267,11 @@ export default function HostClient() {
       ? undefined
       : marketplaceApps.find((app) => app.id === activeAgentId);
   const displayName =
-    auth?.user?.nickname || auth?.user?.username || "大乘用户";
+    auth?.user?.nickname || auth?.user?.username || "Fabushi 用户";
+  const accountAvatar = accountAvatarUrl || auth?.user?.avatar?.trim() || null;
+  const accountProvider = auth?.provider?.trim() || "browser";
   const attachmentTokens = attachments.reduce(
-    (total, attachment) => total + estimateStringTokenCount(attachment.text ?? ""),
+    (total, attachment) => total + estimateTextTokens(attachment.text ?? ""),
     0,
   );
   const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
@@ -1944,6 +2355,8 @@ export default function HostClient() {
             title: "Group",
             hidden: false,
             notificationsEnabled: false,
+            notifyOnUpdates: false,
+            unread: false,
           } satisfies BotSummary)),
       ]
     : [];
@@ -1963,7 +2376,8 @@ export default function HostClient() {
 
   const sendNetworkMessage = async () => {
     if (!networkSender || !networkTargetId || !networkMessage.trim()) return;
-    const text = networkMessage;
+    const text = clampAgentMessage(networkMessage);
+    if (!text) return;
     setNetworkMessage("");
     await run(() => execute({
       type: "agent.send",
@@ -1975,9 +2389,193 @@ export default function HostClient() {
     }));
   };
 
+  const requestConfirmation = (confirmation: ConfirmAction) => {
+    setConfirmBusy(false);
+    setConfirmAction(confirmation);
+  };
+
+  const executeConfirmedAction = async () => {
+    const confirmation = confirmAction;
+    if (!confirmation || confirmBusy) return;
+    setConfirmBusy(true);
+    try {
+      await confirmation.action();
+      setConfirmAction(null);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  const refreshWorkspaceState = async () => {
+    if (!activeAgentId || workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const [box, secrets, audit, egressAvailable, agentNetworkEnabled] = await Promise.all([
+        coordinator.getForeverBoxStatus(activeAgentId),
+        coordinator.getBoxSecretsStatus(activeAgentId),
+        coordinator.requestDiskSaverAudit(),
+        coordinator.isEgressTunnelAvailable(),
+        coordinator.isAgentNetworkEnabled(activeAgentId),
+      ]);
+      setWorkspaceStatus(box);
+      setWorkspaceSecrets(secrets);
+      setWorkspaceDiskAudit(audit);
+      setWorkspaceEgressAvailable(egressAvailable);
+      setWorkspaceAgentNetworkEnabled(agentNetworkEnabled);
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
+  const ensureActiveWorkspace = async () => {
+    if (!activeAgentId || workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const box = await coordinator.ensureForeverBox(activeAgentId);
+      setWorkspaceStatus(box);
+      setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
+      setWorkspaceError(null);
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  };
+
+  const handBackActiveWorkspace = () => {
+    if (!activeAgentId || workspaceBusy) return;
+    requestConfirmation({
+      title: "归档并释放 Workspace？",
+      message: "当前 Workspace 会移动到可恢复归档区并退出活跃状态。已保存的 Box secrets 不会写入明文，也不会被这个动作删除。",
+      confirmLabel: "归档并释放",
+      tone: "warning",
+      action: async () => {
+        setWorkspaceBusy(true);
+        try {
+          const box = await coordinator.handBackForeverBox(activeAgentId);
+          setWorkspaceStatus(box);
+          setWorkspaceSecrets(await coordinator.getBoxSecretsStatus(activeAgentId));
+          setWorkspaceError(null);
+        } finally {
+          setWorkspaceBusy(false);
+        }
+      },
+    });
+  };
+
+  const refreshSharingState = async () => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const createSharedRoomForActiveAgent = async () => {
+    const name = sharedRoomName.trim();
+    if (!name || !activeAgentId || sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await coordinator.createSharedRoom(name, [activeAgentId], activeAgentId);
+      setSharedRoomName("");
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const joinSharedRoomFromInvite = async () => {
+    const token = sharedInviteToken.trim();
+    if (!token || !activeAgentId || sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await coordinator.joinSharedRoom(token, activeAgentId, activeBotProfile?.name ?? activeAgentId);
+      setSharedInviteToken("");
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const createSharedInvite = async (roomId: string) => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      const invite = await coordinator.createRoomInvite(roomId);
+      setLastSharedInvite(invite);
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const mutateSharedRoom = async (action: () => Promise<unknown>) => {
+    if (sharingBusy) return;
+    setSharingBusy(true);
+    try {
+      await action();
+      setSharingState(await coordinator.getSharingState());
+      setSharingError(null);
+    } catch (error) {
+      setSharingError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+
+  const confirmRemoveAgentFromSharedRoom = (roomId: string, roomName: string) => {
+    if (!activeAgentId || sharingBusy) return;
+    const agentId = activeAgentId;
+    requestConfirmation({
+      title: `从「${roomName}」移除当前 Agent？`,
+      message: "只会移除当前 Agent 在这个共享房间里的成员关系；房间、其他成员和本机 Agent 本身都会保留。",
+      confirmLabel: "移除当前 Agent",
+      tone: "warning",
+      action: () => mutateSharedRoom(() => coordinator.removeOwnAgentFromSharedRoom(roomId, agentId)),
+    });
+  };
+
+  const confirmLeaveSharedRoom = (roomId: string, roomName: string) => {
+    if (!activeAgentId || sharingBusy) return;
+    const agentId = activeAgentId;
+    requestConfirmation({
+      title: `离开共享房间「${roomName}」？`,
+      message: "当前 Agent 的最后一个本方成员关系会被移除。之后需要新的邀请码或房主审批才能重新加入。",
+      confirmLabel: "离开房间",
+      tone: "warning",
+      action: () => mutateSharedRoom(() => coordinator.leaveSharedRoom(roomId, agentId)),
+    });
+  };
+
+  const pulseSharedRoomTyping = (roomId: string) => {
+    if (!activeAgentId) return;
+    void coordinator.setSharedRoomTyping(roomId, activeAgentId, true)
+      .then(() => setTimeout(() => { void coordinator.setSharedRoomTyping(roomId, activeAgentId, false); }, 1_500))
+      .catch((error) => setSharingError(error instanceof Error ? error.message : String(error)));
+  };
+
   const broadcastNetworkMessage = async () => {
     if (!networkMessage.trim()) return;
-    const message = networkMessage;
+    const message = clampAgentMessage(networkMessage);
+    if (!message) return;
     setNetworkMessage("");
     setLastBroadcastResult(null);
     await run(() => execute({
@@ -2016,12 +2614,20 @@ export default function HostClient() {
   };
 
   const deleteActiveGroup = () => {
-    if (!activeGroup || !window.confirm(`永久删除群聊 ${activeGroup.name}？`)) return;
-    void run(() => execute({
-      type: "group.delete",
-      requestId: nextRequestId("group-delete"),
-      id: activeGroup.id,
-    }));
+    if (!activeGroup) return;
+    const groupId = activeGroup.id;
+    const groupName = activeGroup.name;
+    requestConfirmation({
+      title: `删除群聊「${groupName}」？`,
+      message: "这个群聊及其本地上下文会从当前工作空间移除。这个操作不能从群聊列表直接撤销。",
+      confirmLabel: "永久删除",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "group.delete",
+        requestId: nextRequestId("group-delete"),
+        id: groupId,
+      })),
+    });
   };
 
   const openAgentSettings = () => {
@@ -2088,12 +2694,20 @@ export default function HostClient() {
   };
 
   const clearAgentMemory = () => {
-    if (!activeBotProfile || !window.confirm(`清空 ${activeBotProfile.name} 的全部记忆？`)) return;
-    void run(() => execute({
-      type: "memory.clear",
-      requestId: nextRequestId("memory-clear"),
-      agentId: activeBotProfile.id,
-    }));
+    if (!activeBotProfile) return;
+    const agentId = activeBotProfile.id;
+    const name = activeBotProfile.name;
+    requestConfirmation({
+      title: `清空 ${name} 的全部记忆？`,
+      message: "这会删除这个 Agent 的持久记忆条目。对话记录和工作流不会被这个动作删除。",
+      confirmLabel: "清空记忆",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "memory.clear",
+        requestId: nextRequestId("memory-clear"),
+        agentId,
+      })),
+    });
   };
 
   const refreshAgentWorkflows = () => {
@@ -2147,15 +2761,24 @@ export default function HostClient() {
     }));
   };
 
-  const deleteAgentWorkflow = async (id: string) => {
+  const deleteAgentWorkflow = (id: string, workflowName: string) => {
     if (!activeBotProfile) return;
-    await run(() => execute({
-      type: "workflow.delete",
-      requestId: nextRequestId("workflow-delete"),
-      agentId: activeBotProfile.id,
-      id,
-    }));
-    refreshAgentWorkflows();
+    const agentId = activeBotProfile.id;
+    requestConfirmation({
+      title: `删除 Workflow「${workflowName}」？`,
+      message: "这个可复用工作流会从当前 Agent 的工作流目录移除；关联的历史审计记录不会被改写。",
+      confirmLabel: "删除 Workflow",
+      tone: "danger",
+      action: async () => {
+        await run(() => execute({
+          type: "workflow.delete",
+          requestId: nextRequestId("workflow-delete"),
+          agentId,
+          id,
+        }));
+        refreshAgentWorkflows();
+      },
+    });
   };
 
   const importAgentWorkflowMarkdown = async (markdown: string, fallbackName?: string) => {
@@ -2278,7 +2901,7 @@ export default function HostClient() {
         }
       : {
           kind: "schedule" as const,
-          schedule: normalizeSchedule(automationSchedule),
+          schedule: normalizeAutomationSchedule(automationSchedule),
         };
     await run(() => execute({
       type: "automation.upsert",
@@ -2296,6 +2919,144 @@ export default function HostClient() {
     resetAutomationDraft();
   };
 
+  async function configureOfflineAsr() {
+    if (offlineAsrBusy) return;
+    setOfflineAsrBusy(true);
+    setOfflineAsrError(null);
+    try {
+      const status = await invokeNativeDesktop<NativeOfflineAsrStatus>("configureOfflineAsrModel", {
+        modelUrl: offlineAsrModelUrl.trim(),
+        sha256: offlineAsrSha256.trim().toLowerCase(),
+      });
+      setOfflineAsrStatus(status);
+    } catch (error) {
+      setOfflineAsrError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOfflineAsrBusy(false);
+    }
+  }
+
+  async function downloadOfflineAsr() {
+    const modelUrl = offlineAsrModelUrl.trim();
+    const sha256 = offlineAsrSha256.trim().toLowerCase();
+    if (!modelUrl || !sha256 || offlineAsrBusy) return;
+    setOfflineAsrBusy(true);
+    setOfflineAsrError(null);
+    setOfflineAsrProgress({ phase: "model-download", downloadedBytes: 0, totalBytes: null });
+    try {
+      await invokeNativeDesktop<NativeOfflineAsrStatus>("configureOfflineAsrModel", { modelUrl, sha256 });
+      const status = await invokeNativeDesktop<NativeOfflineAsrStatus>("downloadOfflineAsrModel", { modelUrl, sha256 });
+      setOfflineAsrStatus(status);
+      setOfflineAsrProgress({ phase: "ready", progress: 1, status });
+    } catch (error) {
+      setOfflineAsrError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOfflineAsrBusy(false);
+    }
+  }
+
+  async function openCloudRun(runId: string) {
+    const id = runId.trim();
+    if (!id || cloudAgentActionPending) return;
+    setCloudAgentActionPending(true);
+    setCloudAgentFailure(null);
+    try {
+      const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("openCloudAgent", { bcId: id });
+      if (result?.info) setCloudAgentInfo(result.info);
+    } catch (error) {
+      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCloudAgentActionPending(false);
+    }
+  }
+
+  async function refreshCloudRun() {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || cloudAgentActionPending) return;
+    setCloudAgentActionPending(true);
+    try {
+      const info = await invokeNativeDesktop<CloudAgentInfo>("getCloudAgentInfo", { bcId: runId, includeFiles: false });
+      setCloudAgentFailure(null);
+      setCloudAgentInfo(info);
+    } catch (error) {
+      setCloudAgentFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCloudAgentActionPending(false);
+    }
+  }
+
+  const confirmBotDelete = (bot: BotSummary) => {
+    requestConfirmation({
+      title: `永久删除 Bot「${bot.name}」？`,
+      message: "这个 Bot 的独立身份、配置和会话关联会从 Fabushi 工作空间移除。主助手不会受这个操作影响。",
+      confirmLabel: "永久删除 Bot",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "bot.delete",
+        requestId: nextRequestId("bot-delete"),
+        id: bot.id,
+      })),
+    });
+  };
+
+  const confirmAutomationDelete = (id: string, name: string) => {
+    requestConfirmation({
+      title: `删除例程「${name}」？`,
+      message: "这个自动化例程会停止触发，并从当前 Agent 的例程列表移除。",
+      confirmLabel: "删除例程",
+      tone: "danger",
+      action: () => run(() => execute({
+        type: "automation.delete",
+        requestId: nextRequestId("automation-delete"),
+        id,
+      })),
+    });
+  };
+
+  function cancelCloudRun() {
+    const runId = cloudAgentInfo?.runId ?? cloudAgentInfo?.id;
+    if (!runId || cloudAgentActionPending) return;
+    requestConfirmation({
+      title: "取消这个 Cloud Run？",
+      message: "正在执行的云端任务会收到取消请求。已经产生的工具调用或外部副作用不会被自动回滚。",
+      confirmLabel: "取消运行",
+      tone: "warning",
+      action: async () => {
+        setCloudAgentActionPending(true);
+        try {
+          const result = await invokeNativeDesktop<{ info?: CloudAgentInfo }>("cancelCloudAgent", { bcId: runId });
+          if (result?.info) setCloudAgentInfo(result.info);
+          setCloudAgentFailure(null);
+        } finally {
+          setCloudAgentActionPending(false);
+        }
+      },
+    });
+  }
+
+  async function submitDesktopFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = feedbackText.trim();
+    if (!message || feedbackState === "sending") return;
+    setFeedbackState("sending");
+    try {
+      await invokeNativeDesktop("submitFeedback", {
+        category: "product",
+        message,
+        context: {
+          activeAgentId,
+          activeGroupId,
+          settingsSection,
+          zoomFactor: nativeZoomFactor,
+        },
+      });
+      setFeedbackText("");
+      setFeedbackState("sent");
+    } catch {
+      setFeedbackState("error");
+    }
+  }
+
   return (
     <main className={styles.shell} data-theme={effectiveTheme} data-testid="mahayana-host">
       <aside className={styles.sidebar}>
@@ -2305,7 +3066,10 @@ export default function HostClient() {
             <span />
             <span />
           </div>
-          <strong>Fabushi</strong>
+          <div className={styles.titleBrand}>
+            <BotMark botId="fabushi-brand" state={operationState === "running" ? "working" : "idle"} size={21} color="black" className={styles.titleBrandMark} />
+            <strong>Fabushi</strong>
+          </div>
           <div className={styles.titleActions}>
             <button className={styles.iconButton} type="button" aria-label="通知与错误" data-has-trays={trays.length > 0} onClick={() => setTrayOpen((open) => !open)}>
               <Icon name="bell" />
@@ -2579,9 +3343,11 @@ export default function HostClient() {
             className={styles.profileButton}
             data-testid="account-menu"
             type="button"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setAccountOpen(true)}
           >
-            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
+            <span className={`${styles.profileAvatar} ${styles.profileAvatarLiving}`}>
+              {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth?.user?.id ?? displayName}`} state="idle" size={29} color="violet" label={displayName} />}
+            </span>
             <span>{displayName}</span>
             <Icon name="settings" size={17} />
           </button>
@@ -2616,7 +3382,13 @@ export default function HostClient() {
             aria-live="polite"
           >
             <span />
-            {hostStatus}
+            {hostStatus === "ready"
+              ? "Host 已连接"
+              : hostStatus === "initializing"
+                ? "Host 启动中"
+                : hostStatus === "closed"
+                  ? "Host 已断开"
+                  : "Host 连接失败"}
           </output>
           <button
             className={styles.computerButton}
@@ -2988,7 +3760,7 @@ export default function HostClient() {
                     {item.detail ? (
                       <details>
                         <summary>{item.kind === "shell" ? "查看终端输出" : "查看详情"}</summary>
-                        <pre>{item.kind === "shell" ? addLineNumbers({ gpt5CodexCatN: true }, item.detail, 1) : item.detail}</pre>
+                        <pre>{item.kind === "shell" ? formatNumberedLines({ compact: true }, item.detail, 1) : item.detail}</pre>
                       </details>
                     ) : null}
                   </div>
@@ -3072,12 +3844,20 @@ export default function HostClient() {
           </div>
           {asyncTasks.length ? (
             <div className={styles.asyncTaskStrip}>
-              {asyncTasks.map((task) => (
-                <article key={task.id}>
-                  <span data-kind={task.kind}>↻</span>
-                  <div><strong>{task.label}</strong><small>{task.kind}{task.subagentType ? ` · ${task.subagentType}` : ""}</small></div>
-                </article>
-              ))}
+              {asyncTasks.map((task) => {
+                const cloudRunId = task.kind === "cloud-agent" ? task.resourceId : undefined;
+                const content = (
+                  <>
+                    <span data-kind={task.kind}>↻</span>
+                    <div><strong>{task.label}</strong><small>{task.kind}{task.subagentType ? ` · ${task.subagentType}` : ""}{cloudRunId ? " · 打开 Cloud Run" : ""}</small></div>
+                  </>
+                );
+                return cloudRunId ? (
+                  <button className={styles.asyncTaskCard} key={task.id} type="button" onClick={() => void openCloudRun(cloudRunId)}>{content}</button>
+                ) : (
+                  <article className={styles.asyncTaskCard} key={task.id}>{content}</article>
+                );
+              })}
             </div>
           ) : null}
           <div className={styles.subagentList}>
@@ -3328,6 +4108,7 @@ export default function HostClient() {
                 execute={execute}
                 nextRequestId={nextRequestId}
                 run={run}
+                onDeleteBot={confirmBotDelete}
               />
             )}
           </section>
@@ -3341,6 +4122,13 @@ export default function HostClient() {
               <div><p>AGENT NETWORK</p><h2 id="network-title">智能体网络</h2><span>查看 Agents、Bots、插件和联系人之间的能力关系。</span></div>
               <button className={styles.iconButton} type="button" aria-label="关闭智能体网络" onClick={() => setNetworkOpen(false)}><Icon name="close" /></button>
             </header>
+            <nav className={styles.networkTabs} aria-label="智能体网络视图">
+              <button type="button" data-active={networkView === "agents"} onClick={() => setNetworkView("agents")}>Agent Network</button>
+              <button type="button" data-active={networkView === "rooms"} onClick={() => setNetworkView("rooms")}>Shared Rooms</button>
+              <button type="button" data-active={networkView === "workspace"} onClick={() => setNetworkView("workspace")}>Workspace</button>
+            </nav>
+            {networkView === "agents" ? (
+              <>
             <div className={styles.networkCanvas}>
               <span className={styles.networkLine} />
               <article className={styles.networkHub}>
@@ -3411,6 +4199,104 @@ export default function HostClient() {
                 {!peerMessages.length ? <p className={styles.networkNoMessages}>还没有 Agent 间消息。</p> : null}
               </div>
             </section>
+              </>
+            ) : networkView === "rooms" ? (
+              <section className={styles.sharedRoomsPanel} aria-label="共享房间">
+                <header>
+                  <div>
+                    <strong>跨设备共享房间</strong>
+                    <small>{sharingState.scope === "fabushi-platform" ? "Fabushi Platform · 已持久化" : "本机离线模式 · 网络恢复后可切回平台"}</small>
+                  </div>
+                  <button type="button" disabled={sharingBusy} onClick={() => void refreshSharingState()}>{sharingBusy ? "同步中…" : "刷新"}</button>
+                </header>
+                {sharingError ? <p className={styles.sharedRoomsError}>{sharingError}</p> : null}
+                <div className={styles.sharedRoomsForms}>
+                  <form onSubmit={(event) => { event.preventDefault(); void createSharedRoomForActiveAgent(); }}>
+                    <label><span>创建共享房间</span><input value={sharedRoomName} onChange={(event) => setSharedRoomName(event.target.value)} maxLength={96} placeholder="例如：发布协作室" /></label>
+                    <button type="submit" disabled={sharingBusy || !sharedRoomName.trim()}>用当前 Agent 创建</button>
+                  </form>
+                  <form onSubmit={(event) => { event.preventDefault(); void joinSharedRoomFromInvite(); }}>
+                    <label><span>加入邀请码</span><input value={sharedInviteToken} onChange={(event) => setSharedInviteToken(event.target.value)} maxLength={1000} placeholder="fabushi_…" /></label>
+                    <button type="submit" disabled={sharingBusy || !sharedInviteToken.trim()}>申请加入</button>
+                  </form>
+                </div>
+                {lastSharedInvite ? (
+                  <div className={styles.sharedInviteResult}>
+                    <span>邀请码 · {new Date(lastSharedInvite.expiresAtMs).toLocaleString()} 前有效</span>
+                    <code>{lastSharedInvite.token}</code>
+                    <button type="button" onClick={() => void navigator.clipboard?.writeText(lastSharedInvite.token)}>复制</button>
+                  </div>
+                ) : null}
+                <div className={styles.sharedRoomList}>
+                  {sharingState.rooms.map((room) => {
+                    const ownAgentIds = room.ownAgentIds ?? room.memberAgentIds.filter((id) => bots.some((bot) => bot.id === id) || id === "mahayana-assistant");
+                    const activeIsOwnMember = ownAgentIds.includes(activeAgentId);
+                    const typing = (sharingState.typing ?? []).filter((entry) => entry.roomId === room.id && entry.isTyping);
+                    return (
+                      <article key={room.id}>
+                        <header>
+                          <div><strong>{room.name}</strong><small>{room.memberCount ?? room.memberAgentIds.length} 个成员 · {room.isOwner ? "你创建的" : "已加入"}</small></div>
+                          <span data-scope={room.scope}>{room.scope === "fabushi-platform" ? "CLOUD" : "LOCAL"}</span>
+                        </header>
+                        <p>{room.memberAgentIds.slice(0, 8).join(" · ") || "暂无成员"}</p>
+                        {typing.length ? <small className={styles.sharedTyping}>{typing.map((entry) => entry.participantId).join("、")} 正在输入…</small> : null}
+                        <div className={styles.sharedRoomActions}>
+                          <button type="button" disabled={sharingBusy} onClick={() => void createSharedInvite(room.id)}>邀请</button>
+                          {!activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.addOwnAgentToSharedRoom(room.id, activeAgentId))}>加入当前 Agent</button> : null}
+                          {activeIsOwnMember ? <button type="button" disabled={sharingBusy} onClick={() => pulseSharedRoomTyping(room.id)}>输入状态</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length > 1 ? <button type="button" disabled={sharingBusy} onClick={() => confirmRemoveAgentFromSharedRoom(room.id, room.name)}>移除当前 Agent</button> : null}
+                          {activeIsOwnMember && ownAgentIds.length <= 1 ? <button type="button" disabled={sharingBusy} onClick={() => confirmLeaveSharedRoom(room.id, room.name)}>离开房间</button> : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {!sharingState.rooms.length ? <div className={styles.sharedRoomsEmpty}><Icon name="network" /><strong>还没有共享房间</strong><p>创建一个房间，或用邀请码把当前 Agent 加入别人的房间。</p></div> : null}
+                </div>
+                {sharingState.joinRequests.some((request) => request.status === "pending") ? (
+                  <section className={styles.sharedJoinRequests}>
+                    <h3>加入请求</h3>
+                    {sharingState.joinRequests.filter((request) => request.status === "pending").map((request) => (
+                      <article key={request.id}>
+                        <div><strong>{request.displayName}</strong><small>{request.agentId} · {request.isOwnRequest ? "等待房主审批" : "请求加入"}</small></div>
+                        {!request.isOwnRequest ? <div><button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.respondToRoomJoinRequest(request.id, true))}>接受</button><button type="button" disabled={sharingBusy} onClick={() => void mutateSharedRoom(() => coordinator.respondToRoomJoinRequest(request.id, false))}>拒绝</button></div> : null}
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
+              </section>
+            ) : (
+              <section className={styles.workspacePanel} aria-label="Agent workspace">
+                <header>
+                  <div>
+                    <strong>{activeBotProfile?.name ?? activeAgentId} · Workspace</strong>
+                    <small>持久工作区、密钥状态、managed egress 与存储审计</small>
+                  </div>
+                  <button type="button" disabled={workspaceBusy} onClick={() => void refreshWorkspaceState()}>{workspaceBusy ? "检查中…" : "刷新"}</button>
+                </header>
+                {workspaceError ? <p className={styles.sharedRoomsError}>{workspaceError}</p> : null}
+                <div className={styles.workspaceStatusGrid}>
+                  <article><span>Workspace</span><strong>{workspaceStatus?.status ?? "unknown"}</strong><small>{workspaceStatus?.provider ?? "尚未配置"}</small></article>
+                  <article><span>Box secrets</span><strong>{workspaceSecrets?.secretCount ?? 0}</strong><small>{workspaceSecrets?.configured ? "已加密保存" : "暂无 Box secret"}</small></article>
+                  <article><span>Egress relay</span><strong>{workspaceEgressAvailable ? "available" : "unavailable"}</strong><small>Fabushi managed HTTPS relay</small></article>
+                  <article><span>Agent network</span><strong>{workspaceAgentNetworkEnabled ? "enabled" : "not routed"}</strong><small>只有 runtime 真接入 relay 才会启用</small></article>
+                </div>
+                <div className={styles.workspaceActions}>
+                  {workspaceStatus?.status !== "ready" ? <button type="button" disabled={workspaceBusy} onClick={() => void ensureActiveWorkspace()}>创建持久 Workspace</button> : null}
+                  {workspaceStatus?.status === "ready" ? <button type="button" disabled={workspaceBusy} onClick={() => void handBackActiveWorkspace()}>归档并释放 Workspace</button> : null}
+                  <button type="button" disabled={workspaceBusy} onClick={() => void refreshWorkspaceState()}>重新审计磁盘</button>
+                </div>
+                {workspaceStatus?.boxId ? <code className={styles.workspaceBoxId}>{workspaceStatus.boxId}</code> : null}
+                <section className={styles.workspaceDiskAudit}>
+                  <header><strong>桌面存储审计</strong><small>{workspaceDiskAudit ? `${Math.round(workspaceDiskAudit.totalBytes / 1024 / 1024)} MiB 总占用 · ${Math.round(workspaceDiskAudit.reclaimableBytes / 1024 / 1024)} MiB 保守可回收` : "尚未审计"}</small></header>
+                  <div>
+                    {(workspaceDiskAudit?.entries ?? []).slice(0, 8).map((entry) => (
+                      <article key={entry.name}><span>{entry.name}</span><strong>{Math.max(0, Math.round(entry.bytes / 1024 / 1024))} MiB</strong><small>{entry.reclaimable ? "cache/log/temp" : "保留"}</small></article>
+                    ))}
+                    {workspaceDiskAudit?.truncated ? <p>目录过大，审计达到安全扫描上限；结果是保守估计。</p> : null}
+                  </div>
+                </section>
+              </section>
+            )}
           </section>
         </div>
       ) : null}
@@ -3432,7 +4318,7 @@ export default function HostClient() {
                       <button type="button" onClick={() => void run(() => execute({ type: "automation.run", requestId: nextRequestId("automation-run"), id: automation.id }))}>运行</button>
                       <button type="button" onClick={() => void run(() => execute({ type: "automation.setEnabled", requestId: nextRequestId("automation-toggle"), id: automation.id, enabled: !automation.enabled }))}>{automation.enabled ? "暂停" : "恢复"}</button>
                       <button type="button" onClick={() => editAutomation(automation)}>编辑</button>
-                      <button type="button" onClick={() => void run(() => execute({ type: "automation.delete", requestId: nextRequestId("automation-delete"), id: automation.id }))}>删除</button>
+                      <button type="button" onClick={() => confirmAutomationDelete(automation.id, automation.name)}>删除</button>
                     </div>
                   </article>
                 ))}
@@ -3489,8 +4375,10 @@ export default function HostClient() {
           >
             <aside className={styles.settingsNav}>
               <div className={styles.settingsBrand}>
-                <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
-                <div><strong>{displayName}</strong><small>{auth?.user?.email || auth?.provider || "本地账户"}</small></div>
+                <span className={`${styles.profileAvatar} ${styles.profileAvatarLiving}`}>
+                  {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth?.user?.id ?? displayName}`} state="idle" size={30} color="violet" label={displayName} />}
+                </span>
+                <div><strong>{displayName}</strong><small>{auth?.user?.email || `${accountProvider} · 安全会话`}</small></div>
               </div>
               <p>设置分区</p>
               {([
@@ -3517,9 +4405,9 @@ export default function HostClient() {
             <div className={styles.settingsContent}>
               <header>
                 <div>
-                  <p>GROK BOT SETTINGS</p>
+                  <p>FABUSHI AGENT SETTINGS</p>
                   <h2 id="settings-title">
-                    {settingsSection === "general" ? "通用设置" : settingsSection === "mcp" ? "MCP 与 Apps" : settingsSection === "usage" ? "用量与计费" : "Grok Bot 更新"}
+                    {settingsSection === "general" ? "通用设置" : settingsSection === "mcp" ? "MCP 与 Apps" : settingsSection === "usage" ? "用量与计费" : "全球法布施更新"}
                   </h2>
                 </div>
                 <button className={styles.iconButton} type="button" aria-label="关闭设置" onClick={() => setSettingsOpen(false)}>
@@ -3680,7 +4568,7 @@ export default function HostClient() {
                 </div>
               ) : (
                 <div className={styles.settingsSections}>
-                  <SettingsGroup title="Grok Bot 更新" description="Updates">
+                  <SettingsGroup title="全球法布施更新" description="Updates">
                     <div className={styles.updateCard} data-state={updateState.type}>
                       <span className={styles.updateIcon}>{updateState.type === "error" ? "!" : updateState.type === "checking" || updateState.type === "downloading" || updateState.type === "staging" ? "↻" : "✓"}</span>
                       <div><strong>{updateCopy.title}</strong><small>{updateCopy.detail}</small></div>
@@ -3712,7 +4600,7 @@ export default function HostClient() {
 
       {approval ? (
         <div className={styles.backdrop}>
-          <section className={styles.approvalDialog} role="dialog" aria-modal="true" aria-labelledby="approval-title">
+          <section className={styles.approvalDialog} role="dialog" aria-modal="true" aria-labelledby="approval-title" tabIndex={-1}>
             <span className={styles.approvalIcon}><Icon name="shield" size={24} /></span>
             <h2 id="approval-title">
               {approval.kind === "command"
@@ -3776,118 +4664,253 @@ export default function HostClient() {
         </div>
       ) : null}
 
-      {auth?.loggedIn === false ? (
-        <div className={styles.loginBackdrop} data-testid="login-gate">
-          {!loginOptionsOpen && onboardingStep < 3 ? (
+      {offlineAsrOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setOfflineAsrOpen(false)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.offlineAsrDialog}`} role="dialog" aria-modal="true" aria-labelledby="offline-asr-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <small>FABUSHI OFFLINE ASR</small>
+                <h2 id="offline-asr-title">离线语音转写</h2>
+                <p>优先使用 Mahayana runtime 转写工具；本页配置 whisper.cpp 离线兜底。</p>
+              </div>
+              <button type="button" className={styles.iconButton} aria-label="关闭离线语音转写" onClick={() => setOfflineAsrOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.offlineAsrStatusGrid}>
+              <div><span>本地引擎</span><strong>{offlineAsrStatus?.binaryPath ? "已就绪" : "未部署"}</strong></div>
+              <div><span>模型</span><strong>{offlineAsrStatus?.modelPath ? "已缓存" : "未下载"}</strong></div>
+              <div><span>完整性</span><strong>{offlineAsrStatus?.modelVerified ? "SHA-256 已验证" : "待验证"}</strong></div>
+              <div><span>可用状态</span><strong>{offlineAsrStatus?.available ? "离线可用" : "等待组件"}</strong></div>
+            </div>
+            {offlineAsrStatus?.missing?.length ? <p className={styles.offlineAsrHint}>缺少：{offlineAsrStatus.missing.join(" · ")}</p> : null}
+            <div className={styles.offlineAsrConfig}>
+              <label><span>模型 HTTPS URL</span><input value={offlineAsrModelUrl} onChange={(event) => setOfflineAsrModelUrl(event.target.value)} placeholder="https://…/model.bin" /></label>
+              <label><span>SHA-256</span><input value={offlineAsrSha256} onChange={(event) => setOfflineAsrSha256(event.target.value)} maxLength={64} spellCheck={false} placeholder="64 位十六进制摘要" /></label>
+            </div>
+            {offlineAsrProgress?.phase === "model-download" ? (
+              <div className={styles.offlineAsrProgress}>
+                <span>下载模型</span>
+                <progress max={offlineAsrProgress.totalBytes ?? 1} value={offlineAsrProgress.downloadedBytes ?? 0} />
+                <small>{offlineAsrProgress.downloadedBytes ? `${Math.round(offlineAsrProgress.downloadedBytes / 1024 / 1024)} MiB` : "准备中"}</small>
+              </div>
+            ) : null}
+            {offlineAsrError ? <p className={styles.offlineAsrError}>{offlineAsrError}</p> : null}
+            <footer className={styles.cloudRunActions}>
+              <button type="button" disabled={offlineAsrBusy} onClick={() => void configureOfflineAsr()}>保存配置</button>
+              <button type="button" disabled={offlineAsrBusy || !offlineAsrModelUrl.trim() || !/^[0-9a-fA-F]{64}$/.test(offlineAsrSha256.trim())} onClick={() => void downloadOfflineAsr()}>{offlineAsrBusy ? "处理中…" : "下载并校验模型"}</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {cloudAgentInfo ? (
+        <div className={styles.backdrop} onMouseDown={() => setCloudAgentInfo(null)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.cloudRunDialog}`} role="dialog" aria-modal="true" aria-labelledby="cloud-run-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <small>FABUSHI CLOUD RUN</small>
+                <h2 id="cloud-run-title">{cloudAgentInfo.name ?? `Cloud run ${cloudAgentInfo.id.slice(-8)}`}</h2>
+                <p>{cloudAgentInfo.provider ?? "unknown provider"} · {cloudAgentInfo.status}</p>
+              </div>
+              <button type="button" className={styles.iconButton} aria-label="关闭 Cloud Run" onClick={() => setCloudAgentInfo(null)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.cloudRunGrid}>
+              <div><span>Run ID</span><strong>{cloudAgentInfo.runId ?? cloudAgentInfo.id}</strong></div>
+              <div><span>模型</span><strong>{cloudAgentInfo.model ?? "自动"}</strong></div>
+              <div><span>输入 Tokens</span><strong>{cloudAgentInfo.inputTokens ?? 0}</strong></div>
+              <div><span>输出 Tokens</span><strong>{cloudAgentInfo.outputTokens ?? 0}</strong></div>
+              <div><span>工具调用</span><strong>{cloudAgentInfo.toolCallCount ?? 0}</strong></div>
+              <div><span>开始时间</span><strong>{cloudAgentInfo.startedAt ? new Date(cloudAgentInfo.startedAt).toLocaleString() : "—"}</strong></div>
+            </div>
+            {cloudAgentInfo.errorMessage || cloudAgentFailure ? <p className={styles.cloudRunError}>{cloudAgentInfo.errorMessage ?? cloudAgentFailure}</p> : null}
+            <footer className={styles.cloudRunActions}>
+              <button type="button" disabled={cloudAgentActionPending} onClick={() => void refreshCloudRun()}>刷新状态</button>
+              {!(["finished", "error", "expired"] as string[]).includes(cloudAgentInfo.status) ? <button type="button" disabled={cloudAgentActionPending} onClick={() => void cancelCloudRun()}>取消运行</button> : null}
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {feedbackOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setFeedbackOpen(false)}>
+          <section className={styles.nativeUtilityDialog} role="dialog" aria-modal="true" aria-labelledby="feedback-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>FABUSHI DESKTOP</small><h2 id="feedback-title">发送反馈</h2><p>反馈保存在本机诊断目录；敏感上下文会在写入前脱敏。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭反馈" onClick={() => setFeedbackOpen(false)}><Icon name="close" /></button>
+            </header>
+            <form onSubmit={(event) => void submitDesktopFeedback(event)}>
+              <textarea autoFocus rows={7} maxLength={12000} value={feedbackText} onChange={(event) => { setFeedbackText(event.target.value); if (feedbackState !== "idle") setFeedbackState("idle"); }} placeholder="告诉我们哪里可以更快、更稳或更好用…" />
+              <footer>
+                <span>{feedbackState === "sent" ? "已保存反馈" : feedbackState === "error" ? "保存失败，请重试" : "不会把密码、Token 或 Cookie 写入诊断上下文"}</span>
+                <button type="submit" disabled={!feedbackText.trim() || feedbackState === "sending"}>{feedbackState === "sending" ? "保存中…" : "提交反馈"}</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {aboutOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setAboutOpen(false)}>
+          <section className={styles.nativeUtilityDialog} role="dialog" aria-modal="true" aria-labelledby="about-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>FABUSHI · MAHAYANA</small><h2 id="about-title">关于 Fabushi</h2><p>面向多智能体工作流的原生桌面运行时。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭关于" onClick={() => setAboutOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.aboutGrid}>
+              <div><span>应用版本</span><strong>{aboutEnvironment?.appVersion ?? "Web"}</strong></div>
+              <div><span>平台</span><strong>{aboutEnvironment ? `${aboutEnvironment.platform} · ${aboutEnvironment.arch}` : "Browser"}</strong></div>
+              <div><span>Electron</span><strong>{aboutEnvironment?.electronVersion ?? "—"}</strong></div>
+              <div><span>界面缩放</span><strong>{Math.round(nativeZoomFactor * 100)}%</strong></div>
+              <div><span>运行模式</span><strong>{aboutEnvironment?.packaged ? "Production" : "Development"}</strong></div>
+              <div><span>Host</span><strong>Mahayana Feature Host</strong></div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {widgetGalleryOpen ? (
+        <div className={styles.backdrop} onMouseDown={() => setWidgetGalleryOpen(false)}>
+          <section className={`${styles.nativeUtilityDialog} ${styles.widgetGalleryDialog}`} role="dialog" aria-modal="true" aria-labelledby="widget-gallery-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>DESIGN SYSTEM</small><h2 id="widget-gallery-title">Widget Gallery</h2><p>Fabushi 自己的实时状态组件与 Bot 视觉语义。</p></div>
+              <button type="button" className={styles.iconButton} aria-label="关闭组件画廊" onClick={() => setWidgetGalleryOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.widgetGalleryGrid}>
+              {(["idle", "listening", "thinking", "working", "happy", "alerting"] as BotMarkState[]).map((state, index) => (
+                <article key={state}>
+                  <BotMark botId={`gallery-${state}`} state={state} size={62} color={(["violet", "cyan", "blue", "orange", "green", "red"] as BotMarkColor[])[index]} label={`${state} state`} />
+                  <strong>{state}</strong>
+                  <small>{state === "idle" ? "待命" : state === "listening" ? "监听" : state === "thinking" ? "推理" : state === "working" ? "执行" : state === "happy" ? "完成" : "提醒"}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {onboardingStep < 3 || !authResolved || auth?.loggedIn === false ? (
+        <div
+          className={styles.loginBackdrop}
+          data-testid={onboardingStep < 3 ? "onboarding-gate" : "login-gate"}
+        >
+          {onboardingStep < 3 ? (
             <section className={styles.onboarding} role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-              {onboardingStep === 0 ? (
-                <>
-                  <h2 id="onboarding-title">认识 Fabushi</h2>
-                  <BotMark
-                    botId="mahayana-assistant"
-                    state="waking"
-                    shape="blob"
-                    color="black"
-                    size={70}
-                    className={styles.onboardingBotMark}
-                    label="Fabushi Bot"
-                  />
-                  <div className={styles.onboardingPrompt}><span>把任何任务交给你的智能体团队</span><i>＋</i><b>↑</b></div>
-                </>
-              ) : null}
-              {onboardingStep === 1 ? (
-                <>
-                  <h2 id="onboarding-title">给每个 Bot 一份工作</h2>
-                  <div className={styles.onboardingBots}>
-                    <div>
-                      <BotMark botId="onboarding-billing" state="working" color="red" size={70} label="账单跟进 Bot" />
-                      <b>账单跟进</b>
+              <header className={styles.onboardingHeader}>
+                <div className={styles.onboardingBrand}><BotMark botId="fabushi-onboarding" state={onboardingStep === 0 ? "waking" : onboardingStep === 1 ? "working" : "listening"} size={30} color="black" /><span>FABUSHI</span></div>
+                <div className={styles.onboardingProgress} aria-label={`引导第 ${onboardingStep + 1} 步，共 3 步`}>
+                  {[0, 1, 2].map((step) => <i key={step} data-active={step <= onboardingStep} />)}
+                </div>
+              </header>
+              <div className={styles.onboardingStage} data-step={onboardingStep}>
+                {onboardingStep === 0 ? (
+                  <>
+                    <div className={styles.onboardingMarkStage}>
+                      <BotMark botId="mahayana-assistant" state="waking" shape="blob" color="black" size={112} followPointer emphasis className={styles.onboardingBotMark} label="Fabushi 助手" />
+                      <span aria-hidden="true" />
                     </div>
-                    <div>
-                      <BotMark botId="onboarding-standup" state="listening" color="cyan" size={70} label="每周站会 Bot" />
-                      <b>每周站会</b>
+                    <p className={styles.onboardingEyebrow}>YOUR AGENT WORKSPACE</p>
+                    <h2 id="onboarding-title">不是聊天窗口。<br />是一支会继续工作的团队。</h2>
+                    <p className={styles.onboardingLead}>把目标交给 Fabushi。智能体会拆解任务、调用工具、持续执行，并在需要你决定时回来找你。</p>
+                    <div className={styles.onboardingPrompt}><span>“整理今天的客户反馈，找出最值得修的三个问题”</span><i>＋</i><b>↑</b></div>
+                  </>
+                ) : null}
+                {onboardingStep === 1 ? (
+                  <>
+                    <p className={styles.onboardingEyebrow}>SPECIALIZED AGENTS</p>
+                    <h2 id="onboarding-title">每个 Bot 都有自己的工作、记忆和节奏。</h2>
+                    <p className={styles.onboardingLead}>不用把所有上下文塞给一个助手。让不同智能体长期负责不同领域，它们会在同一个工作空间协作。</p>
+                    <div className={styles.onboardingBots}>
+                      <article>
+                        <BotMark botId="onboarding-billing" state="working" color="red" size={74} label="账单跟进 Bot" />
+                        <div><b>账单跟进</b><small>核对 · 催办 · 汇总</small></div><em>执行中</em>
+                      </article>
+                      <article>
+                        <BotMark botId="onboarding-standup" state="listening" color="cyan" size={74} label="团队站会 Bot" />
+                        <div><b>团队站会</b><small>收集 · 提炼 · 跟进</small></div><em>监听中</em>
+                      </article>
+                      <article>
+                        <BotMark botId="onboarding-forecast" state="thinking" color="blue" size={74} label="销售预测 Bot" />
+                        <div><b>销售预测</b><small>研究 · 推理 · 更新</small></div><em>思考中</em>
+                      </article>
                     </div>
-                    <div>
-                      <BotMark botId="onboarding-forecast" state="thinking" color="blue" size={70} label="销售预测 Bot" />
-                      <b>销售预测</b>
+                  </>
+                ) : null}
+                {onboardingStep === 2 ? (
+                  <>
+                    <p className={styles.onboardingEyebrow}>CONNECT YOUR WORK</p>
+                    <h2 id="onboarding-title">工具留在原位，Fabushi 去那里工作。</h2>
+                    <p className={styles.onboardingLead}>连接器可以稍后配置。这里先告诉 Fabushi 你每天在哪些系统里工作。</p>
+                    <label className={styles.onboardingSearch}><Icon name="search" size={15} /><input aria-label="搜索工作工具" placeholder="搜索工具" /></label>
+                    <div className={styles.onboardingTools}>
+                      {["Workspace", "Slack", "Notion", "Salesforce", "Microsoft 365", "LinkedIn", "Zoom", "GitHub", "Jira", "Figma", "HubSpot", "Canva"].map((tool, index) => <button type="button" key={tool}><span data-tone={index % 4}>{tool.slice(0, 1)}</span><b>{tool}</b><small>稍后连接</small></button>)}
                     </div>
-                  </div>
-                </>
-              ) : null}
-              {onboardingStep === 2 ? (
-                <>
-                  <h2 id="onboarding-title">你每天使用哪些工具？</h2>
-                  <label className={styles.onboardingSearch}><Icon name="search" size={15} /><input placeholder="搜索" /></label>
-                  <div className={styles.onboardingTools}>
-                    {["Workspace", "Slack", "Notion", "Salesforce", "Microsoft 365", "LinkedIn", "Zoom", "GitHub", "Jira", "Figma", "HubSpot", "Canva"].map((tool) => <button type="button" key={tool}><span>{tool.slice(0, 1)}</span>{tool}</button>)}
-                  </div>
-                </>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
               <div className={styles.onboardingNav}>
-                <button type="button" onClick={() => setOnboardingStep((step) => Math.min(3, step + 1))}>下一步</button>
-                {onboardingStep ? <button type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : null}
+                {onboardingStep ? <button data-testid="onboarding-back" className={styles.onboardingBack} type="button" onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}>返回</button> : <span />}
+                <button
+                  data-testid="onboarding-next"
+                  className={styles.onboardingNext}
+                  type="button"
+                  onClick={() => setOnboardingStep((step) => {
+                    const nextStep = Math.min(3, step + 1);
+                    if (nextStep === 3) {
+                      window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, "1");
+                      rememberNativeOnboarding();
+                    }
+                    return nextStep;
+                  })}
+                >
+                  <span>{onboardingStep === 2 ? "开始使用 Fabushi" : "继续"}</span><b>→</b>
+                </button>
               </div>
             </section>
-          ) : !loginOptionsOpen ? (
-            <section className={styles.grokWelcome} role="dialog" aria-modal="true" aria-labelledby="login-title">
-              <div className={styles.grokTitle}>
-                <div className={styles.grokLogo}><span>••</span></div>
-                <h2 id="login-title">Fabushi</h2>
+          ) : !authResolved ? (
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience}`} role="status" aria-live="polite">
+              <BotMark botId="fabushi-account" state="waking" size={96} className={styles.loginHeroMark} paused={false} />
+              <p className={styles.loginEyebrow}>FABUSHI ACCOUNT</p>
+              <h2>正在恢复你的工作空间</h2>
+              <p>安全会话保存在本机；不会把登录凭据暴露给界面层。</p>
+              <div className={styles.loginLoadingRail}><i /><i /><i /></div>
+            </section>
+          ) : browserLoginAttempt ? (
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience} ${styles.browserLoginWaiting}`} role="dialog" aria-modal="true" aria-labelledby="browser-login-title">
+              <div className={styles.loginMarkStage}>
+                <BotMark botId="fabushi-account" state="orbit" size={108} followPointer emphasis className={styles.loginHeroMark} label="Fabushi 登录助手" />
+                <span className={styles.loginOrbitDot} aria-hidden="true" />
               </div>
-              <p>一支始终在线、可以真正完成工作的智能体团队。</p>
-              <button type="button" data-testid="show-login-options" onClick={() => setLoginOptionsOpen(true)}>登录 <span>→</span></button>
+              <p className={styles.loginEyebrow}>SECURE BROWSER LOGIN</p>
+              <h2 id="browser-login-title">在浏览器完成登录</h2>
+              <p>登录方式和密码都只在 Fabushi Account Portal 中处理。完成后会自动回到这里。</p>
+              <div className={styles.browserLoginSteps} aria-label="登录进度">
+                <span data-active="true"><i />已创建一次性会话</span>
+                <span data-active="true"><i />等待浏览器授权</span>
+                <span><i />安全领取会话</span>
+              </div>
+              {loginError ? <output className={styles.loginInlineStatus} role="status">{loginError}</output> : null}
+              <div className={styles.browserLoginActions}>
+                <button data-testid="browser-login-reopen" type="button" onClick={() => void reopenBrowserLogin()}>重新打开浏览器</button>
+                <button data-testid="browser-login-cancel" type="button" onClick={() => void cancelBrowserLogin()}>取消等待</button>
+              </div>
+              <small className={styles.loginPrivacyNote}>Deep link 只携带 attempt ID，不包含 access token、refresh token 或密码。</small>
             </section>
           ) : (
-            <section className={styles.loginDialog} role="dialog" aria-modal="true" aria-labelledby="login-options-title">
-              <button className={styles.loginBack} type="button" onClick={() => setLoginOptionsOpen(false)}>← 返回</button>
-              <div className={styles.loginBrand}>
-                <span className={styles.loginMark}>乘</span>
-                <p>FABUSHI</p>
+            <section className={`${styles.fabushiWelcome} ${styles.loginExperience} ${styles.loginLanding}`} role="dialog" aria-modal="true" aria-labelledby="login-title">
+              <div className={styles.loginMarkStage}>
+                <BotMark botId="fabushi-account" state="idle" size={118} followPointer emphasis className={styles.loginHeroMark} label="Fabushi" />
+                <span className={styles.loginPresenceHalo} aria-hidden="true" />
               </div>
-              <h2 id="login-options-title">在浏览器中继续</h2>
-              <small>选择登录方式；完成授权后会自动回到 Fabushi。</small>
-              <div className={styles.providerList}>
-                {authProviders.map((provider) => (
-                  <button
-                    key={provider.id}
-                    data-testid={`oauth-${provider.id}`}
-                    type="button"
-                    disabled={loginBusy}
-                    onClick={() => void oauthLogin(provider.id)}
-                  >
-                    {providerIcon(provider.id)}
-                    <span>使用 {provider.displayName} 登录</span>
-                    {loginProvider === provider.id ? <i aria-label="登录中" /> : null}
-                  </button>
-                ))}
+              <p className={styles.loginEyebrow}>WELCOME TO FABUSHI</p>
+              <h2 id="login-title">一支真正会继续工作的智能体团队。</h2>
+              <p>桌面只负责发起安全会话。Google、Microsoft、GitHub 和 Fabushi 账号等登录方式统一在浏览器中选择。</p>
+              <div className={styles.loginTrustRow}>
+                <span>PKCE</span><span>一次性会话</span><span>本机安全存储</span>
               </div>
-              {authProviders.length ? <div className={styles.loginDivider}><span>或使用账号密码</span></div> : null}
-              <button
-                className={styles.passwordToggle}
-                data-testid="password-login-toggle"
-                type="button"
-                aria-expanded={passwordLoginOpen || authProviders.length === 0}
-                onClick={() => setPasswordLoginOpen((open) => !open)}
-              >
-                账号密码登录
+              <button className={styles.browserLoginPrimary} data-testid="browser-login-start" type="button" disabled={loginBusy} onClick={() => void beginBrowserLogin()}>
+                <span>{loginBusy ? "正在打开浏览器…" : "在浏览器中登录"}</span><b>↗</b>
               </button>
-              {passwordLoginOpen || authProviders.length === 0 ? (
-                <form className={styles.passwordForm} onSubmit={(event) => void login(event)}>
-                  <label>
-                    <span>账号或邮箱</span>
-                    <input data-testid="login-username" autoComplete="username" value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} placeholder="请输入账号或邮箱" />
-                  </label>
-                  <label>
-                    <span>密码</span>
-                    <input data-testid="login-password" autoComplete="current-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="请输入密码" />
-                  </label>
-                  <button data-testid="login-submit" type="submit" disabled={loginBusy}>
-                    {loginBusy ? "登录中…" : "登录"}
-                  </button>
-                </form>
-              ) : null}
-              {loginError ? <output role="alert">{loginError}</output> : null}
-              <p className={styles.loginTerms}>继续即表示你同意《服务条款》和《隐私政策》</p>
+              {loginError ? <output className={styles.loginInlineStatus} role="alert">{loginError}</output> : null}
+              <small className={styles.loginPrivacyNote}>Fabushi 桌面不会显示或接收第三方登录表单中的密码。</small>
             </section>
           )}
         </div>
@@ -3895,13 +4918,70 @@ export default function HostClient() {
 
       {accountOpen && auth?.loggedIn ? (
         <div className={styles.backdrop} onMouseDown={() => setAccountOpen(false)}>
-          <section className={styles.accountDialog} onMouseDown={(event) => event.stopPropagation()}>
-            <span className={styles.profileAvatar}>{displayName.slice(0, 1)}</span>
-            <h2>{displayName}</h2>
-            <p>{auth.user?.email || auth.user?.username || auth.provider}</p>
-            <button data-testid="logout" type="button" onClick={() => void logout()}>
-              退出登录
-            </button>
+          <section className={styles.accountDialog} role="dialog" aria-modal="true" aria-labelledby="account-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div className={styles.accountAvatarStage}>
+                {accountAvatar ? <img src={accountAvatar} alt="" /> : <BotMark botId={`account-${auth.user?.id ?? displayName}`} state="happy" size={88} color="violet" followPointer emphasis label={displayName} />}
+                <i aria-hidden="true" />
+              </div>
+              <div className={styles.accountIdentity}>
+                <p>FABUSHI ACCOUNT</p>
+                <h2 id="account-title">{displayName}</h2>
+                <span>{auth.user?.email || auth.user?.username || "已登录"}</span>
+              </div>
+              <button className={styles.iconButton} type="button" aria-label="关闭账户" onClick={() => setAccountOpen(false)}><Icon name="close" /></button>
+            </header>
+            <div className={styles.accountSessionGrid}>
+              <article><span>登录方式</span><strong>{accountProvider}</strong><small>Browser Account Portal</small></article>
+              <article><span>会话</span><strong>本机安全存储</strong><small>renderer 不持有 refresh token</small></article>
+              <article><span>工作空间</span><strong>已同步</strong><small>账户资料与协作状态</small></article>
+            </div>
+            <div className={styles.accountSecurityNote}><i /><span>登录授权发生在系统浏览器；Fabushi 桌面只领取一次性会话结果。</span></div>
+            <footer>
+              <button type="button" onClick={() => { setAccountOpen(false); setSettingsOpen(true); setSettingsSection("general"); }}>账户设置</button>
+              <button className={styles.accountLogout} data-testid="logout" type="button" onClick={() => void logout()}>退出登录</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {confirmAction ? (
+        <div className={`${styles.backdrop} ${styles.confirmBackdrop}`} onMouseDown={() => { if (!confirmBusy) setConfirmAction(null); }}>
+          <section
+            className={styles.confirmDialog}
+            data-tone={confirmAction.tone}
+            data-testid="confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-action-title"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={styles.confirmMarkStage}>
+              <BotMark
+                botId={`confirm-${confirmAction.tone}`}
+                state={confirmAction.tone === "danger" ? "alerting" : "thinking"}
+                size={82}
+                color={confirmAction.tone === "danger" ? "red" : "violet"}
+                emphasis
+                label={confirmAction.tone === "danger" ? "危险操作确认" : "操作确认"}
+              />
+              <i aria-hidden="true" />
+            </div>
+            <p className={styles.confirmEyebrow}>CONFIRM ACTION</p>
+            <h2 id="confirm-action-title">{confirmAction.title}</h2>
+            <p>{confirmAction.message}</p>
+            <footer>
+              <button type="button" disabled={confirmBusy} onClick={() => setConfirmAction(null)}>返回</button>
+              <button
+                type="button"
+                data-tone={confirmAction.tone}
+                disabled={confirmBusy}
+                onClick={() => void executeConfirmedAction()}
+              >
+                {confirmBusy ? "处理中…" : confirmAction.confirmLabel}
+              </button>
+            </footer>
           </section>
         </div>
       ) : null}
