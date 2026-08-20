@@ -2,6 +2,9 @@ import type {
   ApprovalResolution,
   AuthState,
   AuthProvider,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   AuthProviderId,
   CommandAccepted,
   HostConfig,
@@ -82,6 +85,22 @@ export class TauriMahayanaHostTransport implements MahayanaHostTransport {
 
   authProviders(): Promise<AuthProvider[]> {
     return nativeInvoke<AuthProvider[]>("feature_host_auth_providers");
+  }
+
+  browserLoginStart(): Promise<BrowserLoginAttempt> {
+    return nativeInvoke<BrowserLoginAttempt>("feature_host_browser_login_start");
+  }
+
+  browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult> {
+    return nativeInvoke<BrowserLoginPollResult>("feature_host_browser_login_poll", { attemptId });
+  }
+
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    return nativeInvoke<BrowserLoginPollResult>("feature_host_browser_login_cancel", { attemptId });
+  }
+
+  browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
+    return nativeInvoke<BrowserLoginReopenResult>("feature_host_browser_login_reopen", { attemptId });
   }
 
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt> {

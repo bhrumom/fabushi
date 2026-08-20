@@ -3,6 +3,9 @@ import type {
   AuthProvider,
   AuthProviderId,
   AuthState,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   CommandAccepted,
   HostConfig,
   HostInfo,
@@ -76,6 +79,22 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     return bridge().invoke<AuthProvider[]>("feature.auth.providers");
   }
 
+  browserLoginStart(): Promise<BrowserLoginAttempt> {
+    return bridge().invoke<BrowserLoginAttempt>("feature.auth.browserStart");
+  }
+
+  browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult> {
+    return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserPoll", { attemptId });
+  }
+
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
+    return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserCancel", { attemptId });
+  }
+
+  browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
+    return bridge().invoke<BrowserLoginReopenResult>("feature.auth.browserReopen", { attemptId });
+  }
+
   passwordLogin(username: string, password: string): Promise<AuthState> {
     return bridge().invoke<AuthState>("feature.auth.passwordLogin", { username, password });
   }
@@ -97,7 +116,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     // for OAuth. Keep the full Electron -> IPC -> Rust login path in E2E
     // without asking the runner OS to launch a browser. Production OAuth URLs
     // still pass through the hardened Electron external-navigation bridge.
-    if (url.startsWith("about:blank#fabushi-test-oauth-")) {
+    if (
+      url.startsWith("about:blank#fabushi-test-oauth-") ||
+      url.startsWith("about:blank#fabushi-test-browser-login")
+    ) {
       return Promise.resolve();
     }
     return bridge().openExternal(url).then(() => undefined);

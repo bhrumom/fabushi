@@ -45,6 +45,13 @@ fn oauth_schema_separates_provider_identity_from_user_profile() {
 }
 
 #[test]
+fn oauth_attempt_terminal_states_include_failed() {
+    assert!(ACCOUNT_OAUTH_STATUS_SCHEMA_V4.contains("'cancelled', 'failed'"));
+    assert!(ACCOUNT_OAUTH_STATUS_SCHEMA_V4.contains("FROM account_oauth_attempts"));
+    assert!(ACCOUNT_OAUTH_STATUS_SCHEMA_V4.contains("RENAME TO account_oauth_attempts"));
+}
+
+#[test]
 fn validation_rejects_floating_point_money() {
     let schema = PLATFORM_SCHEMA_V1.replace("amount INTEGER", "amount REAL");
     assert_eq!(

@@ -10,6 +10,8 @@ pub const ACCOUNT_AUTH_SCHEMA_V2: &str =
     include_str!("../account-migrations/0001_account_auth.sql");
 pub const ACCOUNT_OAUTH_SCHEMA_V3: &str =
     include_str!("../account-migrations/0002_oauth_identities.sql");
+pub const ACCOUNT_OAUTH_STATUS_SCHEMA_V4: &str =
+    include_str!("../account-migrations/0003_oauth_attempt_failed_status.sql");
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SchemaError {
