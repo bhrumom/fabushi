@@ -1986,14 +1986,8 @@ async fn password_session_value(
         .run()
         .await?;
     }
-    let session = create_account_session_value(
-        &database,
-        env,
-        &user,
-        &device_id,
-        "login_succeeded",
-    )
-    .await?;
+    let session =
+        create_account_session_value(&database, env, &user, &device_id, "login_succeeded").await?;
     Ok(Ok(session))
 }
 
@@ -2021,7 +2015,10 @@ fn browser_ticket_hash(ticket: &str) -> String {
 fn browser_poll_secret(env: &Env, attempt_id: &str) -> Result<String> {
     let key = env.secret("ACCESS_TOKEN_PRIVATE_KEY_PEM")?.to_string();
     let material = format!("fabushi-browser-poll:v1:{attempt_id}:{key}");
-    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(material.as_bytes())))
+    Ok(
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(Sha256::digest(material.as_bytes())),
+    )
 }
 
 fn constant_time_text_eq(left: &str, right: &str) -> bool {
@@ -2045,20 +2042,18 @@ fn auth_public_base_url(env: &Env) -> Result<String> {
 }
 
 fn browser_portal_url(env: &Env, attempt_id: &str, ticket: &str) -> Result<Url> {
-    let mut url = Url::parse(&format!("{}/api/auth/browser/portal", auth_public_base_url(env)?))
-        .map_err(|error| worker::Error::RustError(error.to_string()))?;
+    let mut url = Url::parse(&format!(
+        "{}/api/auth/browser/portal",
+        auth_public_base_url(env)?
+    ))
+    .map_err(|error| worker::Error::RustError(error.to_string()))?;
     url.query_pairs_mut()
         .append_pair("attemptId", attempt_id)
         .append_pair("ticket", ticket);
     Ok(url)
 }
 
-fn browser_authorize_url(
-    env: &Env,
-    attempt_id: &str,
-    ticket: &str,
-    provider: &str,
-) -> Result<Url> {
+fn browser_authorize_url(env: &Env, attempt_id: &str, ticket: &str, provider: &str) -> Result<Url> {
     let mut url = Url::parse(&format!(
         "{}/api/auth/browser/authorize",
         auth_public_base_url(env)?
@@ -2157,7 +2152,12 @@ fn browser_portal_page(
     let providers = browser_provider_buttons(env, attempt_id, ticket)?;
     let message = message
         .filter(|message| !message.trim().is_empty())
-        .map(|message| format!(r#"<p class="form-error" role="alert">{}</p>"#, html_escape(message)))
+        .map(|message| {
+            format!(
+                r#"<p class="form-error" role="alert">{}</p>"#,
+                html_escape(message)
+            )
+        })
         .unwrap_or_default();
     let html = format!(
         r#"<!doctype html>
@@ -2173,10 +2173,7 @@ fn browser_portal_page(
     browser_html_response(html)
 }
 
-async fn browser_login_start(
-    mut request: Request,
-    context: RouteContext<()>,
-) -> Result<Response> {
+async fn browser_login_start(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     let start: BrowserLoginStartRequest = match request.json().await {
         Ok(start) => start,
         Err(_) => BrowserLoginStartRequest::default(),
@@ -2228,25 +2225,44 @@ async fn browser_login_start(
 
 async fn browser_login_portal(request: Request, context: RouteContext<()>) -> Result<Response> {
     let url = request.url()?;
-    let query = url.query_pairs().collect::<std::collections::HashMap<_, _>>();
-    let attempt_id = query.get("attemptId").map(|value| value.as_ref()).unwrap_or_default();
-    let ticket = query.get("ticket").map(|value| value.as_ref()).unwrap_or_default();
+    let query = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    let attempt_id = query
+        .get("attemptId")
+        .map(|value| value.as_ref())
+        .unwrap_or_default();
+    let ticket = query
+        .get("ticket")
+        .map(|value| value.as_ref())
+        .unwrap_or_default();
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
-    if browser_attempt_for_ticket(&database, attempt_id, ticket).await?.is_none() {
+    if browser_attempt_for_ticket(&database, attempt_id, ticket)
+        .await?
+        .is_none()
+    {
         return browser_result_page(false, "登录页面已失效，请返回 Fabushi 重试", None);
     }
     browser_portal_page(&context.env, attempt_id, ticket, None)
 }
 
-async fn browser_login_authorize(
-    request: Request,
-    context: RouteContext<()>,
-) -> Result<Response> {
+async fn browser_login_authorize(request: Request, context: RouteContext<()>) -> Result<Response> {
     let url = request.url()?;
-    let query = url.query_pairs().collect::<std::collections::HashMap<_, _>>();
-    let attempt_id = query.get("attemptId").map(|value| value.as_ref()).unwrap_or_default();
-    let ticket = query.get("ticket").map(|value| value.as_ref()).unwrap_or_default();
-    let provider_id = query.get("provider").map(|value| value.as_ref()).unwrap_or_default();
+    let query = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    let attempt_id = query
+        .get("attemptId")
+        .map(|value| value.as_ref())
+        .unwrap_or_default();
+    let ticket = query
+        .get("ticket")
+        .map(|value| value.as_ref())
+        .unwrap_or_default();
+    let provider_id = query
+        .get("provider")
+        .map(|value| value.as_ref())
+        .unwrap_or_default();
     let Some(provider) = oauth_provider(&context.env, provider_id) else {
         return browser_portal_page(
             &context.env,
@@ -2346,10 +2362,7 @@ async fn browser_login_password(
     browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt_id))
 }
 
-async fn browser_login_reopen(
-    mut request: Request,
-    context: RouteContext<()>,
-) -> Result<Response> {
+async fn browser_login_reopen(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     let attempt_id = route_identifier(&context, "attempt_id")?;
     let reopen: BrowserLoginProofRequest = match request.json().await {
         Ok(reopen) => reopen,
@@ -2357,7 +2370,11 @@ async fn browser_login_reopen(
     };
     let expected = browser_poll_secret(&context.env, attempt_id)?;
     if reopen.poll_secret.is_empty() || !constant_time_text_eq(&reopen.poll_secret, &expected) {
-        return error_response(403, "browser_reopen_forbidden", "登录会话验证失败，请重新开始");
+        return error_response(
+            403,
+            "browser_reopen_forbidden",
+            "登录会话验证失败，请重新开始",
+        );
     }
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     let current = worker::query!(
@@ -2406,10 +2423,7 @@ async fn browser_login_reopen(
     }))
 }
 
-async fn browser_login_cancel(
-    mut request: Request,
-    context: RouteContext<()>,
-) -> Result<Response> {
+async fn browser_login_cancel(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     let attempt_id = route_identifier(&context, "attempt_id")?;
     let cancel: BrowserLoginProofRequest = match request.json().await {
         Ok(cancel) => cancel,
@@ -2417,7 +2431,11 @@ async fn browser_login_cancel(
     };
     let expected = browser_poll_secret(&context.env, attempt_id)?;
     if cancel.poll_secret.is_empty() || !constant_time_text_eq(&cancel.poll_secret, &expected) {
-        return error_response(403, "browser_cancel_forbidden", "登录会话验证失败，请重新开始");
+        return error_response(
+            403,
+            "browser_cancel_forbidden",
+            "登录会话验证失败，请重新开始",
+        );
     }
     let database = context.env.d1(ACCOUNT_DATABASE_BINDING)?;
     let current = worker::query!(
@@ -2472,7 +2490,11 @@ async fn browser_login_poll(request: Request, context: RouteContext<()>) -> Resu
         .unwrap_or_default();
     let expected = browser_poll_secret(&context.env, attempt_id)?;
     if provided.is_empty() || !constant_time_text_eq(&provided, &expected) {
-        return error_response(403, "browser_poll_forbidden", "登录会话验证失败，请重新开始");
+        return error_response(
+            403,
+            "browser_poll_forbidden",
+            "登录会话验证失败，请重新开始",
+        );
     }
     oauth_poll(request, context).await
 }
@@ -2701,7 +2723,11 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
         return browser_result_page(false, "登录状态无效，请返回应用重试", None);
     };
     if attempt.status != "pending" || attempt.expires_at <= now_seconds() {
-        return browser_result_page(false, "登录链接已失效，请返回应用重试", Some(&attempt.attempt_id));
+        return browser_result_page(
+            false,
+            "登录链接已失效，请返回应用重试",
+            Some(&attempt.attempt_id),
+        );
     }
     if query.contains_key("error") {
         worker::query!(
@@ -2721,7 +2747,11 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
         )?
         .run()
         .await?;
-        return browser_result_page(false, "授权码缺失，请返回应用重试", Some(&attempt.attempt_id));
+        return browser_result_page(
+            false,
+            "授权码缺失，请返回应用重试",
+            Some(&attempt.attempt_id),
+        );
     };
     let Some(provider) = oauth_provider(&context.env, &attempt.provider) else {
         worker::query!(
@@ -2765,7 +2795,11 @@ async fn oauth_callback(request: Request, context: RouteContext<()>) -> Result<R
     )?
     .run()
     .await?;
-    browser_result_page(true, "登录完成，正在返回 Fabushi", Some(&attempt.attempt_id))
+    browser_result_page(
+        true,
+        "登录完成，正在返回 Fabushi",
+        Some(&attempt.attempt_id),
+    )
 }
 
 async fn oauth_exchange_code(
@@ -3071,11 +3105,7 @@ fn browser_cancelled_page(message: &str, attempt_id: Option<&str>) -> Result<Res
     browser_result_page_with_status("cancelled", false, message, attempt_id)
 }
 
-fn browser_result_page(
-    success: bool,
-    message: &str,
-    attempt_id: Option<&str>,
-) -> Result<Response> {
+fn browser_result_page(success: bool, message: &str, attempt_id: Option<&str>) -> Result<Response> {
     browser_result_page_with_status(
         if success { "completed" } else { "failed" },
         success,
@@ -3091,9 +3121,7 @@ fn browser_result_page_with_status(
     attempt_id: Option<&str>,
 ) -> Result<Response> {
     let deep_link = attempt_id.map(|attempt_id| {
-        format!(
-            "fabushi://auth/complete?attemptId={attempt_id}&status={status}"
-        )
+        format!("fabushi://auth/complete?attemptId={attempt_id}&status={status}")
     });
     let link_markup = deep_link
         .as_deref()
@@ -3108,18 +3136,24 @@ fn browser_result_page_with_status(
         .as_deref()
         .map(|link| {
             let literal = serde_json::to_string(link).unwrap_or_else(|_| "null".into());
-            format!(
-                "setTimeout(()=>{{try{{window.location.href={literal}}}catch{{}}}},350);"
-            )
+            format!("setTimeout(()=>{{try{{window.location.href={literal}}}catch{{}}}},350);")
         })
         .unwrap_or_default();
     let tone = if success { "ok" } else { "warn" };
-    let eyebrow = if success { "AUTHENTICATED" } else { "LOGIN INTERRUPTED" };
+    let eyebrow = if success {
+        "AUTHENTICATED"
+    } else {
+        "LOGIN INTERRUPTED"
+    };
     browser_html_response(format!(
         r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fabushi 登录</title><style>*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#080808;color:#f6f6f2;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}body{{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 35%,rgba(121,98,255,.12),transparent 29%),#080808}}main{{width:min(440px,100%);padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:28px;background:rgba(18,18,18,.94);box-shadow:0 40px 100px rgba(0,0,0,.55);text-align:center}}.mark{{position:relative;width:72px;height:78px;margin:0 auto 28px;border-radius:52% 48% 57% 43% / 46% 58% 42% 54%;background:#f4f4f0;animation:float 4.6s ease-in-out infinite}}.mark:before,.mark:after{{content:"";position:absolute;top:34px;width:8px;height:10px;border-radius:999px;background:#101010}}.mark:before{{left:23px}}.mark:after{{right:23px}}.ring{{position:absolute;inset:-10px;border:1px solid rgba(255,255,255,.1);border-radius:47% 53% 50% 50%;animation:orbit 8s linear infinite}}.eyebrow{{margin:0 0 10px;color:#8d7ee8;font-size:10px;font-weight:850;letter-spacing:.17em}}h1{{margin:0;font-size:26px;font-weight:580;letter-spacing:-.035em}}p{{margin:14px auto 0;color:#8f8f8f;font-size:13px;line-height:1.65}}.state{{width:9px;height:9px;display:inline-block;margin-right:7px;border-radius:50%;background:#72d8ad;box-shadow:0 0 0 6px rgba(114,216,173,.08)}}main[data-tone="warn"] .state{{background:#ff9b7f;box-shadow:0 0 0 6px rgba(255,155,127,.08)}}.return{{height:46px;margin-top:26px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#f0f0ec;color:#101010;text-decoration:none;font-size:13px;font-weight:780}}small{{display:block;margin-top:18px;color:#5f5f5f;font-size:10px;line-height:1.6}}@keyframes float{{0%,100%{{transform:translateY(0) rotate(-2deg)}}50%{{transform:translateY(-5px) rotate(2deg)}}}}@keyframes orbit{{to{{transform:rotate(360deg)}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important}}}}</style></head><body><main data-tone="{tone}"><div class="mark"><i class="ring"></i></div><p class="eyebrow"><span class="state"></span>{eyebrow}</p><h1>{title}</h1><p>{message}</p>{link_markup}<small>如果桌面应用没有自动出现，请点击上方按钮；登录结果仍会通过一次性会话安全领取。</small></main><script>{wake_script}</script></body></html>"#,
         tone = tone,
         eyebrow = eyebrow,
-        title = if success { "登录成功" } else { "登录未完成" },
+        title = if success {
+            "登录成功"
+        } else {
+            "登录未完成"
+        },
         message = html_escape(message),
         link_markup = link_markup,
         wake_script = wake_script,

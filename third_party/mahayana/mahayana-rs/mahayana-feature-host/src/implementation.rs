@@ -11141,7 +11141,10 @@ mod tests {
             .browser_login_start()
             .expect("start browser login");
         assert_eq!(attempt["attemptId"], "test-browser-login");
-        assert_eq!(attempt["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert_eq!(
+            attempt["loginUrl"],
+            "about:blank#fabushi-test-browser-login"
+        );
         assert!(attempt.get("accessToken").is_none());
         assert!(attempt.get("refreshToken").is_none());
         assert!(attempt.get("password").is_none());
@@ -11174,7 +11177,10 @@ mod tests {
             .expect("reopen browser login");
         assert_eq!(reopened["status"], "pending");
         assert_eq!(reopened["attemptId"], reopened_attempt["attemptId"]);
-        assert_eq!(reopened["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert_eq!(
+            reopened["loginUrl"],
+            "about:blank#fabushi-test-browser-login"
+        );
         assert!(reopened.get("pollSecret").is_none());
 
         let cancelled_controller = controller();
@@ -11190,7 +11196,10 @@ mod tests {
             )
             .expect("cancel browser login");
         assert_eq!(cancelled["status"], "cancelled");
-        assert_eq!(cancelled_controller.auth_status().unwrap()["loggedIn"], false);
+        assert_eq!(
+            cancelled_controller.auth_status().unwrap()["loggedIn"],
+            false
+        );
     }
 
     #[test]
