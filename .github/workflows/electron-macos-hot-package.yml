@@ -2,6 +2,12 @@ name: Fabushi macOS hot package
 
 on:
   workflow_dispatch:
+    inputs:
+      force_host:
+        description: Rebuild and include the current macOS Mahayana Host even if this commit only changes JS/workflow files
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -26,10 +32,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: fabushi-macos-hot-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   portable-payload:
@@ -60,6 +62,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before || '' }}
+          FORCE_HOST: ${{ github.event.inputs.force_host || 'false' }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
@@ -78,6 +81,9 @@ jobs:
           asr_changed=false
           full_required=false
 
+          if [ "$FORCE_HOST" = true ]; then
+            host_changed=true
+          fi
           if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml$|Cargo\.lock$|mahayana-agent-codex/|mahayana-app-host/|mahayana-app-host-desktop/|mahayana-feature-host/|mahayana-host/|mahayana-host-protocol/|mahayana-product/))'; then
             host_changed=true
           fi
@@ -169,6 +175,9 @@ jobs:
   native-delta:
     name: Add changed native Mac payload only
     needs: portable-payload
+    concurrency:
+      group: fabushi-macos-hot-native-arm64
+      cancel-in-progress: false
     if: needs.portable-payload.outputs.full_required != 'true' && (needs.portable-payload.outputs.host_changed == 'true' || needs.portable-payload.outputs.asr_changed == 'true')
     runs-on: macos-15
     timeout-minutes: 45
