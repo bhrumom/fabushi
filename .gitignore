@@ -88,3 +88,8 @@ fabushi/windows/telegram_runtime/
 
 # Generated standalone React Host bundle
 frontend/apps/host/dist/
+# Locally built offline ASR engine artifacts (CI rebuilds from the pinned source commit).
+desktop/resources/asr/*/whisper-cli
+desktop/resources/asr/*/whisper-cli.exe
+desktop/resources/asr/*/LICENSE.whisper.cpp
+desktop/resources/asr/*/build.json

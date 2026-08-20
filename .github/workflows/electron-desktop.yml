@@ -1,0 +1,370 @@
+name: Electron desktop quality gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'frontend/apps/web/src/app/host/**'
+      - 'frontend/apps/web/src/lib/fabushi-runtime/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/**'
+      - 'frontend/packages/shared/**'
+      - 'contracts/automation/cross-platform-journeys.json'
+      - 'third_party/mahayana/codex-rs/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-app-host-desktop/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-product/**'
+      - '.github/scripts/assert-native-electron-canonical.sh'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/scripts/assert-fabushi-desktop-architecture.py'
+      - '.github/scripts/assert-native-desktop-edge-parity.py'
+      - '.github/workflows/electron-desktop.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: electron-desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Classify Electron changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      host: ${{ steps.classify.outputs.host }}
+      renderer: ${{ steps.classify.outputs.renderer }}
+      package: ${{ steps.classify.outputs.package }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - id: classify
+        name: Select the minimum safe test surface
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_ALL" = "true" ] || [ -z "$BASE_SHA" ]; then
+            host=true
+            renderer=true
+            package=true
+          else
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+            printf '%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
+            host=false
+            renderer=false
+            package=false
+            if printf '%s\n' "$changed" | grep -Eq '^third_party/mahayana/(codex-rs/|mahayana-rs/(Cargo\.toml|Cargo\.lock|mahayana-app-host/|mahayana-app-host-desktop/|mahayana-feature-host/|mahayana-host/|mahayana-host-protocol/|mahayana-product/))'; then
+              host=true
+            fi
+            if printf '%s\n' "$changed" | grep -Eq '^(desktop/|contracts/automation/cross-platform-journeys\.json$|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|frontend/packages/shared/|\.github/scripts/(assert-native-electron-canonical\.sh|assert-electron-feature-host-bridge\.sh|assert-fabushi-desktop-architecture\.py|assert-native-desktop-edge-parity\.py)$)'; then
+              renderer=true
+            fi
+            if printf '%s\n' "$changed" | grep -Eq '^(contracts/automation/cross-platform-journeys\.json$|desktop/(electron/|resources/|scripts/|e2e/|playwright\.config\.ts$|package\.json$|package-lock\.json$)|\.github/workflows/electron-desktop\.yml$)'; then
+              package=true
+            fi
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "renderer=$renderer" >> "$GITHUB_OUTPUT"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          printf 'host=%s renderer=%s package=%s\n' "$host" "$renderer" "$package" >> "$GITHUB_STEP_SUMMARY"
+
+  runtime-smoke:
+    name: Electron Host simulated user smoke
+    needs: changes
+    if: needs.changes.outputs.host == 'true' || needs.changes.outputs.renderer == 'true' || needs.changes.outputs.package == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - id: host-source-key
+        name: Freeze Rust Host source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce canonical application architecture
+        shell: bash
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
+      - name: Verify Electron Feature Host bridge contract
+        shell: bash
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+
+      - name: Guard the Fabushi desktop architecture
+        run: python3 .github/scripts/assert-fabushi-desktop-architecture.py
+      - name: Verify native desktop edge parity
+        run: python3 .github/scripts/assert-native-desktop-edge-parity.py
+      - name: Verify browser-first account login
+        run: python3 .github/scripts/assert-auth-entry-flow.py
+      - name: Verify living BotMark motion contracts
+        run: python3 .github/scripts/assert-bot-mark-motion.py
+      - name: Verify product UI capability surfaces
+        run: python3 .github/scripts/assert-product-ui-contracts.py
+      - name: Reject native capability stubs
+        run: python3 .github/scripts/assert-native-capability-semantics.py
+      - name: Verify offline ASR provider contracts
+        run: node --test desktop/electron/offline-asr.test.cjs
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline
+
+      - id: host-binary-cache
+        name: Restore reusable Linux Host binary
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+
+      - name: Set up Rust on Host cache miss
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust compiler cache on Host cache miss
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: electron-desktop-host-ci-v5
+
+      - name: Build and stage CI Mahayana Host on cache miss
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        working-directory: desktop
+        run: npm run build:host:ci
+
+      - name: Save reusable Linux Host binary immediately
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+
+      - name: Hand off Linux Host binary to package job in the same run
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-host-linux-ci
+          path: desktop/resources/bin/mahayana-app-host
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Build Electron renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Simulate a user in the Electron sandbox and real Rust Host
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+          MAHAYANA_APP_HOST_BIN: ${{ github.workspace }}/desktop/resources/bin/mahayana-app-host
+        run: xvfb-run -a npm run test:e2e
+
+  package:
+    name: Package Electron (${{ matrix.label }})
+    needs: [changes, runtime-smoke]
+    if: >-
+      always() &&
+      needs.runtime-smoke.result == 'success' &&
+      (needs.changes.outputs.host == 'true' || needs.changes.outputs.package == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS
+            target: mac
+          - os: windows-latest
+            label: Windows
+            target: win
+          - os: ubuntu-latest
+            label: Linux
+            target: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - id: host-source-key
+        name: Freeze Rust Host source cache key
+        shell: bash
+        env:
+          SOURCE_HASH: ${{ hashFiles('third_party/mahayana/mahayana-rs/Cargo.lock', 'third_party/mahayana/mahayana-rs/**/*.rs', 'third_party/mahayana/mahayana-rs/**/Cargo.toml', 'third_party/mahayana/codex-rs/**/*.rs', 'third_party/mahayana/codex-rs/**/Cargo.toml') }}
+        run: echo "hash=$SOURCE_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline
+
+      - name: Reuse Linux Host binary from runtime smoke in the same run
+        if: matrix.target == 'linux'
+        uses: actions/download-artifact@v8
+        with:
+          name: electron-host-linux-ci
+          path: desktop/resources/bin
+
+      - name: Restore Linux Host executable permission after artifact transfer
+        if: matrix.target == 'linux'
+        run: chmod +x desktop/resources/bin/mahayana-app-host
+
+      - id: host-binary-cache
+        name: Restore reusable native Host binary
+        if: matrix.target != 'linux'
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+
+      - name: Set up Rust on Host cache miss
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust compiler cache on Host cache miss
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: electron-package-ci-${{ runner.os }}-v5
+
+      - name: Build and stage CI native Host on cache miss
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        working-directory: desktop
+        run: npm run build:host:ci
+
+      - name: Save reusable native Host binary immediately
+        if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop/resources/bin
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+
+      - name: Build pinned offline ASR engine
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Build renderer once without rebuilding the Host
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Package canonical Electron application from staged inputs
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --${{ matrix.target }}
+
+      - name: Locate runnable packaged Electron executable
+        shell: pwsh
+        run: |
+          $release = Join-Path $env:GITHUB_WORKSPACE 'desktop/release'
+          switch ('${{ matrix.target }}') {
+            'mac' {
+              $candidate = Get-ChildItem -Path $release -Recurse -File -Filter 'fabushi' |
+                Where-Object {
+                  $normalized = $_.FullName.Replace('\', '/')
+                  $normalized -like '*.app/Contents/MacOS/fabushi'
+                } |
+                Select-Object -First 1
+            }
+            'win' {
+              $path = Join-Path $release 'win-unpacked/fabushi.exe'
+              $candidate = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }
+            }
+            'linux' {
+              $path = Join-Path $release 'linux-unpacked/fabushi'
+              $candidate = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }
+            }
+          }
+          if (-not $candidate) {
+            Get-ChildItem -Path $release -Recurse | Select-Object -ExpandProperty FullName
+            throw 'electron-builder did not leave a runnable unpacked application'
+          }
+          "FABUSHI_ELECTRON_EXECUTABLE=$($candidate.FullName)" >> $env:GITHUB_ENV
+          "Packaged executable: $($candidate.FullName)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Simulate the complete user journey in packaged Linux Electron
+        if: matrix.target == 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: xvfb-run -a npm run test:e2e
+
+      - name: Simulate the complete user journey in packaged macOS or Windows Electron
+        if: matrix.target != 'linux'
+        working-directory: desktop
+        env:
+          FABUSHI_FEATURE_HOST_MODE: test
+        run: npm run test:e2e
+
+      - name: Upload packaged Electron user-journey diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-electron-${{ matrix.target }}-e2e-diagnostics
+          path: |
+            desktop/playwright-report/**
+            desktop/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Electron packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabushi-electron-${{ matrix.target }}
+          path: desktop/release/**
+          if-no-files-found: error
+          retention-days: 14
+
+  result:
+    name: Electron desktop result
+    needs: [changes, runtime-smoke, package]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require every selected Electron layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in \
+            "runtime:${{ needs.runtime-smoke.result }}" \
+            "package:${{ needs.package.result }}"
+          do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "$name failed: $result" >&2
+              exit 1
+            fi
+          done
+          echo 'Electron selected-surface checks passed.'

@@ -1,0 +1,86 @@
+name: Auth configuration diagnostic
+
+on:
+  push:
+    branches:
+      - grok-bot-latest-source-fusion
+    paths:
+      - .github/workflows/auth-config-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.WRANGLER_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN || vars.WRANGLER_API_TOKEN || vars.CLOUDFLARE_TOKEN || vars.CF_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || secrets.CF_ACCOUNT || secrets.CLOUDFLARE_ACCOUNT || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID || vars.CF_ACCOUNT || vars.CLOUDFLARE_ACCOUNT }}
+      HAS_SECRET_OAUTH_APPLE_CLIENT_ID: ${{ secrets.OAUTH_APPLE_CLIENT_ID != '' }}
+      HAS_SECRET_APPLE_SERVICES_ID: ${{ secrets.APPLE_SERVICES_ID != '' }}
+      HAS_SECRET_APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID != '' }}
+      HAS_SECRET_APPLE_CLIENT_ID: ${{ secrets.APPLE_CLIENT_ID != '' }}
+      HAS_SECRET_SIGN_IN_WITH_APPLE_CLIENT_ID: ${{ secrets.SIGN_IN_WITH_APPLE_CLIENT_ID != '' }}
+      HAS_SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' }}
+      HAS_SECRET_APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID != '' }}
+      HAS_SECRET_APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID != '' }}
+      HAS_SECRET_APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_TOKEN: ${{ secrets.AUTH_SYSTEM_MAIL_TOKEN != '' }}
+      HAS_SECRET_AUTH_SYSTEM_MAIL_ENABLED: ${{ secrets.AUTH_SYSTEM_MAIL_ENABLED != '' }}
+      AUTH_SYSTEM_MAIL_URL: ${{ secrets.AUTH_SYSTEM_MAIL_URL }}
+      HAS_VAR_OAUTH_APPLE_CLIENT_ID: ${{ vars.OAUTH_APPLE_CLIENT_ID != '' }}
+      HAS_VAR_APPLE_SERVICES_ID: ${{ vars.APPLE_SERVICES_ID != '' }}
+      HAS_VAR_APPLE_SERVICE_ID: ${{ vars.APPLE_SERVICE_ID != '' }}
+      HAS_VAR_APPLE_CLIENT_ID: ${{ vars.APPLE_CLIENT_ID != '' }}
+      HAS_VAR_SIGN_IN_WITH_APPLE_CLIENT_ID: ${{ vars.SIGN_IN_WITH_APPLE_CLIENT_ID != '' }}
+      HAS_VAR_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Report Apple configuration presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'Apple repository secret presence (values are never printed):'
+          env | grep '^HAS_SECRET_' | sort
+          printf '%s\n' 'Apple repository variable presence (values are never printed):'
+          env | grep '^HAS_VAR_' | sort
+          if [ "$HAS_SECRET_OAUTH_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_OAUTH_APPLE_CLIENT_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_SERVICES_ID" = true ] || [ "$HAS_VAR_APPLE_SERVICES_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_SERVICE_ID" = true ] || [ "$HAS_VAR_APPLE_SERVICE_ID" = true ] \
+            || [ "$HAS_SECRET_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_APPLE_CLIENT_ID" = true ] \
+            || [ "$HAS_SECRET_SIGN_IN_WITH_APPLE_CLIENT_ID" = true ] || [ "$HAS_VAR_SIGN_IN_WITH_APPLE_CLIENT_ID" = true ]; then
+            echo 'Apple browser Services ID source: configured'
+          else
+            echo 'Apple browser Services ID source: missing'
+          fi
+
+      - name: Inspect deployed Mahayana Worker secret names
+        shell: bash
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Cloudflare token unavailable'; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'Cloudflare account id unavailable'; exit 1; }
+          echo 'mahayana-platform secret names:'
+          npx --yes wrangler@4 secret list --format json | jq -r '.[].name' | sort
+
+      - name: Inspect self-hosted bhrum2 mail boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${AUTH_SYSTEM_MAIL_URL:-}" ]; then
+            echo 'Self-hosted mail URL is not configured.'
+            exit 0
+          fi
+          body="$RUNNER_TEMP/self-host-mail-boundary.json"
+          status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data '{"email":"probe@example.com","subject":"probe","text":"probe"}' \
+            "$AUTH_SYSTEM_MAIL_URL")"
+          echo "Self-hosted mail unauthenticated HTTP status: $status"
+          [ "$status" = 401 ] || { cat "$body"; exit 1; }

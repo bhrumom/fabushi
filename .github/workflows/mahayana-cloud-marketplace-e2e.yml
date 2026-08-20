@@ -155,7 +155,7 @@ jobs:
           curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "$PLATFORM_URL/health" | tee "$RUNNER_TEMP/platform-health.json"
           jq -e '.ok == true' "$RUNNER_TEMP/platform-health.json" >/dev/null
 
-      - name: Login and publish independent Cloudflare mini app
+      - name: Host and publish external Cloudflare plugin artifact
         id: publish
         shell: bash
         env:
@@ -170,8 +170,35 @@ jobs:
           package="$PLUGIN_DIR/package.json"
           jq --arg version "$PLUGIN_VERSION" '.version = $version' "$package" > "$RUNNER_TEMP/plugin-package.json"
           mv "$RUNNER_TEMP/plugin-package.json" "$package"
+
+          # The marketplace now admits externally hosted artifacts. Run the
+          # plugin test first so the archive served below is byte-identical to
+          # the archive generated again by `plugin publish`.
+          "$cli" plugin test "$PLUGIN_DIR" >/dev/null
+          source_archive="$RUNNER_TEMP/source-plugin.tar.gz"
+          "$cli" plugin pack "$PLUGIN_DIR" --output "$source_archive" >/dev/null
+          package_sha="$(sha256sum "$source_archive" | awk '{print $1}')"
+          package_size="$(stat -c '%s' "$source_archive")"
+
+          # Reuse the existing development R2 bucket and development Worker
+          # proxy instead of allocating a new Worker for every E2E artifact.
+          # This keeps the test genuinely external/HTTPS without consuming the
+          # account's finite Worker-script quota.
+          artifact_key="e2e/marketplace/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/plugin.tar.gz"
+          npx --yes wrangler@4 r2 object put "bushi-dev/$artifact_key" \
+            --file "$source_archive" --remote \
+            2>&1 | tee "$RUNNER_TEMP/artifact-r2-put.log"
+          encoded_key="$(jq -rn --arg value "$artifact_key" '$value|@uri')"
+          artifact_url="https://fabushi-flutter-web-dev.bhrumom.workers.dev/r2?file=$encoded_key"
+          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
+            "$artifact_url" > "$RUNNER_TEMP/served-plugin.tar.gz"
+          test "$(sha256sum "$RUNNER_TEMP/served-plugin.tar.gz" | awk '{print $1}')" = "$package_sha"
+          test "$(stat -c '%s' "$RUNNER_TEMP/served-plugin.tar.gz")" = "$package_size"
+          artifact_source="$(jq -cn --arg url "$artifact_url" '{type:"https",url:$url}')"
+
           "$cli" login test
-          "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" | tee "$RUNNER_TEMP/publish.log"
+          "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" \
+            --artifact-source "$artifact_source" | tee "$RUNNER_TEMP/publish.log"
           python3 - "$RUNNER_TEMP/publish.log" "$RUNNER_TEMP/publish.json" <<'PY'
           import json
           import sys
@@ -190,11 +217,7 @@ jobs:
           else:
               raise SystemExit("Mahayana publish output did not contain a final JSON object")
           PY
-          deployment_url="$(jq -er '.deploymentUrl' "$RUNNER_TEMP/publish.json")"
-          case "$deployment_url" in
-            https://*.workers.dev|https://*.pages.dev) ;;
-            *) echo "Plugin deployment is not an independent Cloudflare Pages/Worker site: $deployment_url" >&2; exit 1 ;;
-          esac
+          deployment_url="$artifact_url"
           source_tree="$(git rev-parse "${GITHUB_SHA}^{tree}")"
           jq -e \
             --arg id "$PLUGIN_ID" \
@@ -202,12 +225,14 @@ jobs:
             --arg repository "$GITHUB_REPOSITORY" \
             --argjson repository_id "$GITHUB_REPOSITORY_ID" \
             --arg commit "$GITHUB_SHA" \
-            --arg tree_hash "$source_tree" '
+            --arg tree_hash "$source_tree" \
+            --arg package_sha "$package_sha" \
+            --argjson package_size "$package_size" \
+            --arg artifact_url "$artifact_url" '
             .published == true and .approved == true and
+            .storage == "external" and
             .releaseStatus == "approved" and
             .pluginId == $id and .version == $version and
-            (.packageSha256 | test("^[0-9a-f]{64}$")) and
-            (.packageSize > 0) and
             .source.provider == "github" and
             .source.repository == $repository and
             .source.repositoryId == $repository_id and
@@ -217,15 +242,22 @@ jobs:
             .source.license == "Apache-2.0" and
             .source.visibility == "public" and
             .source.subdirectory == "examples/mahayana-cloud-marketplace/hello-market-plugin" and
-            .releaseManifest.protocol == "mahayana.multi-artifact-release.v1" and
+            .releaseManifest.protocol == "mahayana.external-release.v1" and
             .releaseManifest.pluginId == $id and
             .releaseManifest.version == $version and
-            .releaseManifest.source == .source and
+            (.releaseManifest.artifacts | length) == 1 and
+            .releaseManifest.artifacts[0].source.type == "https" and
+            .releaseManifest.artifacts[0].source.url == $artifact_url and
+            .releaseManifest.artifacts[0].sha256 == $package_sha and
+            .releaseManifest.artifacts[0].size == $package_size and
+            .resolvedArtifacts[0] == $artifact_url and
             (.releaseManifestSha256 | test("^[0-9a-f]{64}$"))
           ' "$RUNNER_TEMP/publish.json" >/dev/null
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo "artifact_key=$artifact_key" >> "$GITHUB_OUTPUT"
 
-      - name: Verify plugin site assets
+      - name: Legacy hosted-site validation (retired by external artifacts)
+        if: ${{ false }}
         shell: bash
         env:
           DEPLOYMENT_URL: ${{ steps.publish.outputs.deployment_url }}
@@ -291,7 +323,8 @@ jobs:
               .sourceCommit == $commit and .sourceTreeHash == $tree_hash)
           ' "$RUNNER_TEMP/release-manifest.json" >/dev/null
 
-      - name: Reject immutable plugin version overwrite
+      - name: Legacy multipart immutable-version validation (retired)
+        if: ${{ false }}
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.platform.outputs.url }}
@@ -331,6 +364,27 @@ jobs:
           [ "$status" = "409" ]
           jq -e '.error == "version_already_exists"' "$RUNNER_TEMP/duplicate-version-response.json" >/dev/null
 
+      - name: Reject immutable external plugin version overwrite
+        shell: bash
+        env:
+          MAHAYANA_API_BASE_URL: ${{ steps.platform.outputs.url }}
+          MAHAYANA_TEST_ACCOUNT_TOKEN: ${{ env.TEST_ACCOUNT_TOKEN }}
+        run: |
+          set -euo pipefail
+          cli="$GITHUB_WORKSPACE/third_party/mahayana/mahayana-rs/target/$CARGO_PROFILE/mahayana"
+          artifact_url="${{ steps.publish.outputs.deployment_url }}"
+          artifact_source="$(jq -cn --arg url "$artifact_url" '{type:"https",url:$url}')"
+          set +e
+          "$cli" plugin publish "$PLUGIN_DIR" --plugin-id "$PLUGIN_ID" --version "$PLUGIN_VERSION" \
+            --artifact-source "$artifact_source" \
+            >"$RUNNER_TEMP/duplicate-version.stdout" \
+            2>"$RUNNER_TEMP/duplicate-version.stderr"
+          duplicate_status="$?"
+          set -e
+          test "$duplicate_status" -ne 0
+          grep -E 'version_already_exists|already exists|immutable' \
+            "$RUNNER_TEMP/duplicate-version.stdout" "$RUNNER_TEMP/duplicate-version.stderr"
+
       - name: Browse, download, and safely install through Mahayana CLI
         shell: bash
         env:
@@ -352,7 +406,9 @@ jobs:
               .source.repository == env.GITHUB_REPOSITORY and
               .source.repositoryId == (env.GITHUB_REPOSITORY_ID | tonumber) and
               .source.commit == env.GITHUB_SHA and
-              .releaseManifest.source == .source and
+              .releaseManifest.protocol == "mahayana.external-release.v1" and
+              .releaseManifest.artifacts[0].source.type == "https" and
+              .releaseManifest.artifacts[0].source.url == $deployment and
               (.releaseManifestSha256 | test("^[0-9a-f]{64}$")))
           ' "$RUNNER_TEMP/browse.json" >/dev/null
 
@@ -454,6 +510,14 @@ jobs:
           [ ! -e "$revoked_archive" ]
           [ ! -e "$revoked_install_repo/.agents/plugins/plugins/$PLUGIN_ID" ]
 
+      - name: Delete temporary external plugin artifact
+        if: always() && steps.publish.outputs.artifact_key != ''
+        shell: bash
+        env:
+          ARTIFACT_KEY: ${{ steps.publish.outputs.artifact_key }}
+        run: >-
+          npx --yes wrangler@4 r2 object delete "bushi-dev/$ARTIFACT_KEY" --remote
+
       - name: Record end-to-end evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -464,6 +528,9 @@ jobs:
           path: |
             ${{ runner.temp }}/platform-deploy.log
             ${{ runner.temp }}/platform-health.json
+            ${{ runner.temp }}/artifact-r2-put.log
+            ${{ runner.temp }}/source-plugin.tar.gz
+            ${{ runner.temp }}/served-plugin.tar.gz
             ${{ runner.temp }}/publish.log
             ${{ runner.temp }}/publish.json
             ${{ runner.temp }}/plugin-index.html
@@ -481,6 +548,8 @@ jobs:
             ${{ runner.temp }}/run.stderr
             ${{ runner.temp }}/duplicate-version.tar.gz
             ${{ runner.temp }}/duplicate-version-response.json
+            ${{ runner.temp }}/duplicate-version.stdout
+            ${{ runner.temp }}/duplicate-version.stderr
             ${{ runner.temp }}/revoke.json
             ${{ runner.temp }}/after-revoke-browse.json
             ${{ runner.temp }}/after-revoke-browse.stderr

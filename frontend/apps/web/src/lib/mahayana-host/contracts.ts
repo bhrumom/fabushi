@@ -8,7 +8,7 @@ export interface HostConfig {
 export interface HostInfo {
   runtimeVersion: string;
   protocolVersion: "1";
-  platform: "mock" | "tauri" | "wasm" | "flutter";
+  platform: "mock" | "electron" | "tauri" | "wasm" | "flutter";
 }
 
 export interface AuthUser {
@@ -33,6 +33,26 @@ export interface AuthProvider {
   enabled: boolean;
 }
 
+export interface BrowserLoginAttempt {
+  attemptId: string;
+  loginUrl: string;
+  expiresAt?: number;
+  pollAfterMs?: number;
+}
+
+export interface BrowserLoginPollResult {
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
+  provider?: string;
+  auth?: AuthState;
+}
+
+export interface BrowserLoginReopenResult {
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
+  attemptId?: string;
+  loginUrl?: string;
+  pollAfterMs?: number;
+}
+
 export interface OAuthAttempt {
   attemptId: string;
   provider: AuthProviderId;
@@ -41,7 +61,7 @@ export interface OAuthAttempt {
 }
 
 export interface OAuthPollResult {
-  status: "pending" | "completed" | "expired" | "cancelled";
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
   auth?: AuthState;
 }
 
@@ -187,6 +207,8 @@ export interface BotSummary {
   avatarShape?: string;
   avatarColor?: string;
   notificationsEnabled: boolean;
+  notifyOnUpdates: boolean;
+  unread: boolean;
   conversationId?: string;
 }
 
@@ -249,6 +271,7 @@ export interface AsyncTaskSummary {
   startedAtMs: number;
   detail?: string;
   subagentType?: string;
+  resourceId?: string;
 }
 
 export type TeachEntryPoint = "screen_hover" | "composer_menu" | "fullscreen_title_bar";
@@ -556,19 +579,20 @@ export type RuntimeCommand =
   | (CommandBase & { type: "conversation.list"; query?: string })
   | (CommandBase & { type: "conversation.open"; conversationId: string })
   | (CommandBase & { type: "capability.list"; query?: string })
-  | (CommandBase & { type: "automation.list" })
+  | (CommandBase & { type: "automation.list"; agentId?: string })
   | (CommandBase & {
       type: "automation.upsert";
       id?: string;
+      agentId?: string;
       name: string;
       prompt: string;
       schedule: string;
       trigger?: AutomationTrigger;
       enabled?: boolean;
     })
-  | (CommandBase & { type: "automation.setEnabled"; id: string; enabled: boolean })
-  | (CommandBase & { type: "automation.delete"; id: string })
-  | (CommandBase & { type: "automation.run"; id: string })
+  | (CommandBase & { type: "automation.setEnabled"; id: string; agentId?: string; enabled: boolean })
+  | (CommandBase & { type: "automation.delete"; id: string; agentId?: string })
+  | (CommandBase & { type: "automation.run"; id: string; agentId?: string })
   | (CommandBase & { type: "marketplace.install"; miniAppId: string })
   | (CommandBase & { type: "miniapp.open"; miniAppId: string })
   | (CommandBase & {
@@ -620,6 +644,7 @@ export type RuntimeCommand =
       name: string;
       description?: string;
       title?: string;
+      avatar?: string;
       avatarShape?: string;
       avatarColor?: string;
     })
@@ -629,9 +654,12 @@ export type RuntimeCommand =
       name?: string;
       description?: string;
       title?: string;
+      avatar?: string;
       avatarShape?: string;
       avatarColor?: string;
       notificationsEnabled?: boolean;
+      notifyOnUpdates?: boolean;
+      unread?: boolean;
     })
   | (CommandBase & { type: "bot.clone"; id: string })
   | (CommandBase & { type: "bot.delete"; id: string })
@@ -706,6 +734,9 @@ export type RuntimeCommand =
   | (CommandBase & { type: "mcp.apps" })
   | (CommandBase & { type: "mcp.oauthLogin"; server: string })
   | (CommandBase & { type: "mcp.oauthLogout"; server: string })
+  | (CommandBase & { type: "mcp.remove"; server: string })
+  | (CommandBase & { type: "mcp.setCustomInstructions"; server: string; instructions: string })
+  | (CommandBase & { type: "mcp.setToolDisabled"; server: string; tool: string; disabled: boolean })
   | (CommandBase & { type: "mcp.refresh" })
   | (CommandBase & { type: "mcp.toolCall"; server: string; tool: string; arguments?: unknown })
   | (CommandBase & { type: "settings.get" })
@@ -721,8 +752,24 @@ export type RuntimeCommand =
       secretRequestId: string;
       value: string;
     })
+  | (CommandBase & {
+      type: "widget.respond";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      actionId?: string;
+      value?: unknown;
+    })
+  | (CommandBase & {
+      type: "widget.dismiss";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      reason?: string;
+    })
   | (CommandBase & { type: "listener.list" })
   | (CommandBase & { type: "listener.connect"; platform: ListenerPlatform })
+  | (CommandBase & { type: "listener.disconnect"; platform: ListenerPlatform })
   | (CommandBase & { type: "update.status" })
   | (CommandBase & { type: "update.check" })
   | (CommandBase & { type: "update.install" })
@@ -732,6 +779,17 @@ export type RuntimeCommand =
 export interface CommandAccepted {
   requestId: string;
   operationId?: string;
+}
+
+export interface WidgetInteractionSummary {
+  widgetId: string;
+  agentId: string;
+  conversationId?: string;
+  actionId?: string;
+  value?: unknown;
+  status: "responded" | "dismissed";
+  reason?: string;
+  createdAtMs: number;
 }
 
 export interface ConversationSummary {
@@ -759,6 +817,7 @@ export interface CapabilitySummary {
 
 export interface AutomationSummary {
   id: string;
+  agentId?: string;
   name: string;
   prompt: string;
   schedule: string;
@@ -799,6 +858,7 @@ export type RuntimeEvent =
       error?: string;
     })
   | (EventBase & { type: "secret.provided"; secretRequestId: string })
+  | (EventBase & { type: "widget.changed"; interaction: WidgetInteractionSummary })
   | (EventBase & {
       type: "conversation.listed";
       conversations: ConversationSummary[];
@@ -829,7 +889,7 @@ export type RuntimeEvent =
   | (EventBase & { type: "connector.listed"; connectors: ConnectorSummary[] })
   | (EventBase & {
       type: "connector.changed";
-      action: "connected" | "updated" | "removed" | "toolChanged" | "failed";
+      action: "connected" | "disconnected" | "updated" | "removed" | "toolChanged" | "failed";
       connector: ConnectorSummary;
     })
   | (EventBase & {

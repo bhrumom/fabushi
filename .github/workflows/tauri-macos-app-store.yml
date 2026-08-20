@@ -1,10 +1,10 @@
-name: Upload Tauri macOS package to Apple
+name: Legacy Tauri macOS App Store upload (manual only)
 
 on:
   workflow_dispatch:
     inputs:
       package_run_id:
-        description: GitHub Actions run ID from "Tauri macOS package and functional tests".
+        description: Legacy GitHub Actions run ID from the retired Tauri macOS package workflow.
         required: true
         type: string
       app_version:
