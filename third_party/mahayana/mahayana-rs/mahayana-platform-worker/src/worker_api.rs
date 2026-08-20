@@ -3077,15 +3077,18 @@ async fn oauth_poll(_request: Request, context: RouteContext<()>) -> Result<Resp
     };
     let session: Value = serde_json::from_str(&session_json)
         .map_err(|error| worker::Error::RustError(error.to_string()))?;
-    worker::query!(
+    let delivery = worker::query!(
         &database,
         "UPDATE account_oauth_attempts SET session_json = NULL, delivered_at = ?1
-         WHERE attempt_id = ?2 AND delivered_at IS NULL",
+         WHERE attempt_id = ?2 AND delivered_at IS NULL AND session_json IS NOT NULL",
         now,
         &row.attempt_id
     )?
     .run()
     .await?;
+    if delivery.meta()?.and_then(|meta| meta.changes).unwrap_or(0) == 0 {
+        return error_response(410, "oauth_session_delivered", "登录结果已经领取");
+    }
     Response::from_json(&json!({
         "status": "completed",
         "provider": row.provider,
