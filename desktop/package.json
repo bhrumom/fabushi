@@ -71,6 +71,14 @@
     "deb": {
       "packageName": "fabushi",
       "artifactName": "fabushi-${version}-${arch}.${ext}"
-    }
+    },
+    "protocols": [
+      {
+        "name": "Fabushi",
+        "schemes": [
+          "fabushi"
+        ]
+      }
+    ]
   }
 }
