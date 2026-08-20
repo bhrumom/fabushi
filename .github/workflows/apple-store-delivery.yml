@@ -1,0 +1,506 @@
+name: Apple Store delivery - Electron macOS and native iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Git ref to build. Leave as main for the current production source.
+        required: true
+        default: main
+        type: string
+      target:
+        description: Platform package(s) to build and upload.
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - macos
+          - ios
+      app_version:
+        description: Marketing version. Leave empty to use app-version.json.
+        required: false
+        type: string
+      build_number:
+        description: Apple build number. Leave empty to use UTC YYYY.MM.DD; override when rerunning on the same day.
+        required: false
+        type: string
+
+concurrency:
+  group: apple-store-delivery
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve Apple release identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.release.outputs.source_sha }}
+      app_version: ${{ steps.release.outputs.app_version }}
+      build_number: ${{ steps.release.outputs.build_number }}
+      macos: ${{ steps.release.outputs.macos }}
+      ios: ${{ steps.release.outputs.ios }}
+    steps:
+      - name: Checkout requested source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+
+      - id: release
+        name: Resolve version and selected platforms
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.app_version }}
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+          INPUT_TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          app_version="${INPUT_VERSION:-$(jq -r '.version' app-version.json)}"
+          build_number="${INPUT_BUILD_NUMBER:-$(date -u +'%Y.%-m.%-d')}"
+
+          if ! [[ "$app_version" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
+            echo "App version must contain two or three numeric components: $app_version" >&2
+            exit 2
+          fi
+          if ! [[ "$build_number" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]; then
+            echo "Build number must contain one to three numeric components: $build_number" >&2
+            exit 2
+          fi
+
+          macos=false
+          ios=false
+          case "$INPUT_TARGET" in
+            both) macos=true; ios=true ;;
+            macos) macos=true ;;
+            ios) ios=true ;;
+            *) echo "Unsupported target: $INPUT_TARGET" >&2; exit 2 ;;
+          esac
+
+          {
+            echo "source_sha=$source_sha"
+            echo "app_version=$app_version"
+            echo "build_number=$build_number"
+            echo "macos=$macos"
+            echo "ios=$ios"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo '## Apple Store manual delivery'
+            echo
+            echo "- Source: \`$source_sha\`"
+            echo "- Version: \`$app_version\`"
+            echo "- Build: \`$build_number\`"
+            echo "- Electron macOS: \`$macos\`"
+            echo "- Native iOS: \`$ios\`"
+            echo
+            echo 'A successful upload is ingested by App Store Connect. After Apple processing, the same build is available for TestFlight and for App Store release selection; this workflow does not submit an App Review automatically.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  macos-electron:
+    name: Build and upload Electron macOS MAS package
+    needs: resolve
+    if: needs.resolve.outputs.macos == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      APP_VERSION: ${{ needs.resolve.outputs.app_version }}
+      RELEASE_BUILD_NUMBER: ${{ needs.resolve.outputs.build_number }}
+      MACOS_APP_STORE_TEAM_ID: ${{ vars.MACOS_APP_STORE_TEAM_ID }}
+      MACOS_APP_STORE_BUNDLE_ID: ${{ vars.MACOS_APP_STORE_BUNDLE_ID || 'com.ombhrum.fabushi' }}
+      MACOS_APP_STORE_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_P12_BASE64 }}
+      MACOS_APP_STORE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
+      MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+      MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD }}
+      MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64 }}
+      CSC_LINK: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
+      CSC_NAME: ${{ vars.MACOS_APP_STORE_SIGNING_CERTIFICATE }}
+      CSC_INSTALLER_LINK: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+      CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Require macOS App Store configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            MACOS_APP_STORE_TEAM_ID \
+            MACOS_APP_STORE_CERTIFICATE_P12_BASE64 \
+            MACOS_APP_STORE_CERTIFICATE_PASSWORD \
+            MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64 \
+            MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD \
+            MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64 \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY_BASE64
+          do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'Missing macOS App Store configuration: %s\n' "${missing[*]}" >&2
+            exit 2
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore release Host compiler cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: electron-mas-release-v1
+
+      - name: Validate and stage Mac App Store provisioning profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="$RUNNER_TEMP/Fabushi_AppStore.provisionprofile"
+          profile_plist="$RUNNER_TEMP/Fabushi_AppStore.plist"
+          printf '%s' "$MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile"
+          security cms -D -i "$profile" > "$profile_plist"
+
+          profile_team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+          profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null || true)"
+          expected_app_id="${MACOS_APP_STORE_TEAM_ID}.${MACOS_APP_STORE_BUNDLE_ID}"
+          if [ "$profile_team_id" != "$MACOS_APP_STORE_TEAM_ID" ]; then
+            echo "Mac provisioning profile team '$profile_team_id' does not match '$MACOS_APP_STORE_TEAM_ID'." >&2
+            exit 2
+          fi
+          if [ -n "$profile_app_id" ] && [ "$profile_app_id" != "$expected_app_id" ]; then
+            echo "Mac provisioning profile application id '$profile_app_id' does not match '$expected_app_id'." >&2
+            exit 2
+          fi
+
+          mkdir -p desktop/resources/mas
+          cp "$profile" desktop/resources/mas/Fabushi_AppStore.provisionprofile
+
+      - name: Stamp Electron marketing and build versions
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$APP_VERSION" <<'NODE'
+          const fs = require('fs');
+          const version = process.argv[2];
+          for (const file of ['package.json', 'package-lock.json']) {
+            const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+            value.version = version;
+            if (value.packages && value.packages['']) value.packages[''].version = version;
+            fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+          }
+          NODE
+
+      - name: Build current Mahayana desktop Host
+        working-directory: desktop
+        run: npm run build:host
+
+      - name: Build pinned offline ASR engine
+        run: node .github/scripts/build-offline-asr-engine.mjs
+
+      - name: Build Electron renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Build signed Mac App Store package
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+        run: >-
+          npx --no-install electron-builder
+          --mac mas
+          --arm64
+          --config.buildVersion="$RELEASE_BUILD_NUMBER"
+
+      - id: mac-package
+        name: Verify Mac App Store package
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="$(find desktop/release -type f -name '*.pkg' -print | sort | head -n 1)"
+          if [ -z "$pkg" ]; then
+            echo 'electron-builder completed but produced no Mac App Store .pkg.' >&2
+            find desktop/release -maxdepth 3 -type f -print >&2 || true
+            exit 1
+          fi
+          pkgutil --check-signature "$pkg"
+          mkdir -p apple-store-artifacts/macos
+          final="apple-store-artifacts/macos/Fabushi-${APP_VERSION}-${RELEASE_BUILD_NUMBER}-macos-app-store.pkg"
+          cp "$pkg" "$final"
+          echo "package=$final" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and upload Electron macOS build to App Store Connect
+        shell: bash
+        env:
+          APP_STORE_PLATFORM: macos
+          APP_STORE_PACKAGE: ${{ steps.mac-package.outputs.package }}
+          APP_STORE_STATUS_FILE: apple-store-artifacts/macos/MACOS_TESTFLIGHT_UPLOAD_STATUS.txt
+        run: bash .github/scripts/upload-app-store-connect.sh
+
+      - name: Upload macOS delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: apple-store-macos-${{ needs.resolve.outputs.build_number }}
+          path: apple-store-artifacts/macos
+          if-no-files-found: warn
+          retention-days: 30
+
+  ios-native:
+    name: Build and upload native iOS IPA
+    needs: resolve
+    if: needs.resolve.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      APP_VERSION: ${{ needs.resolve.outputs.app_version }}
+      RELEASE_BUILD_NUMBER: ${{ needs.resolve.outputs.build_number }}
+      IOS_BUNDLE_ID: com.ombhrum.fabushi
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Require iOS App Store configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            IOS_CERTIFICATE_P12_BASE64 \
+            IOS_CERTIFICATE_PASSWORD \
+            IOS_PROVISIONING_PROFILE_BASE64 \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY_BASE64
+          do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'Missing iOS App Store configuration: %s\n' "${missing[*]}" >&2
+            exit 2
+          fi
+
+      - name: Set up Rust for physical iOS devices
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Restore iOS release Host compiler cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: native-ios-app-store-release-v1
+
+      - name: Build Mahayana static library for iOS devices
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo build --release -p mahayana-app-host-mobile --target aarch64-apple-ios
+
+      - name: Stage iOS device static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mobile/ios/Frameworks
+          cp third_party/mahayana/mahayana-rs/target/aarch64-apple-ios/release/libmahayana_app_host.a mobile/ios/Frameworks/
+
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+
+      - id: ios-signing
+        name: Install iOS distribution identity and provisioning profile
+        shell: bash
+        env:
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-ios
+        run: |
+          set -euo pipefail
+          cert="$RUNNER_TEMP/ios-distribution.p12"
+          profile="$RUNNER_TEMP/Fabushi.mobileprovision"
+          profile_plist="$RUNNER_TEMP/Fabushi-profile.plist"
+          keychain="$RUNNER_TEMP/fabushi-ios-signing.keychain-db"
+
+          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$profile"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$cert" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          security default-keychain -s "$keychain"
+
+          security cms -D -i "$profile" > "$profile_plist"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
+          profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")"
+          team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+          profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
+          if [ "${profile_app_id#${team_id}.}" != "$IOS_BUNDLE_ID" ]; then
+            echo "iOS provisioning profile application id '$profile_app_id' does not match '$IOS_BUNDLE_ID'." >&2
+            exit 2
+          fi
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+
+          signing_identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Apple Distribution|iPhone Distribution/ {print $2; exit}')"
+          if [ -z "$signing_identity" ]; then
+            echo 'Unable to resolve the imported iOS distribution signing identity.' >&2
+            security find-identity -v -p codesigning "$keychain" >&2 || true
+            exit 2
+          fi
+
+          {
+            echo "team_id=$team_id"
+            echo "profile_name=$profile_name"
+            echo "signing_identity=$signing_identity"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate native iOS Xcode project
+        working-directory: mobile/ios
+        run: xcodegen generate
+
+      - name: Archive signed native iOS application
+        working-directory: mobile/ios
+        shell: bash
+        env:
+          IOS_TEAM_ID: ${{ steps.ios-signing.outputs.team_id }}
+          IOS_PROFILE_NAME: ${{ steps.ios-signing.outputs.profile_name }}
+          IOS_SIGNING_IDENTITY: ${{ steps.ios-signing.outputs.signing_identity }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project Fabushi.xcodeproj \
+            -scheme Fabushi \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Fabushi.xcarchive" \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$IOS_SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME" \
+            PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="$RELEASE_BUILD_NUMBER"
+
+      - id: ios-package
+        name: Export signed native iOS IPA
+        shell: bash
+        env:
+          IOS_TEAM_ID: ${{ steps.ios-signing.outputs.team_id }}
+          IOS_PROFILE_NAME: ${{ steps.ios-signing.outputs.profile_name }}
+        run: |
+          set -euo pipefail
+          export_options="$RUNNER_TEMP/ExportOptions.plist"
+          cat > "$export_options" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key><string>export</string>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>${IOS_TEAM_ID}</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key><string>${IOS_PROFILE_NAME}</string>
+            </dict>
+          </dict>
+          </plist>
+          PLIST
+          rm -rf "$RUNNER_TEMP/ios-export"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Fabushi.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ios-export" \
+            -exportOptionsPlist "$export_options"
+
+          ipa="$(find "$RUNNER_TEMP/ios-export" -type f -name '*.ipa' -print | sort | head -n 1)"
+          if [ -z "$ipa" ]; then
+            echo 'xcodebuild export completed but produced no IPA.' >&2
+            find "$RUNNER_TEMP/ios-export" -maxdepth 2 -type f -print >&2 || true
+            exit 1
+          fi
+          mkdir -p apple-store-artifacts/ios
+          final="apple-store-artifacts/ios/Fabushi-${APP_VERSION}-${RELEASE_BUILD_NUMBER}-ios.ipa"
+          cp "$ipa" "$final"
+          echo "package=$final" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and upload native iOS build to App Store Connect
+        shell: bash
+        env:
+          APP_STORE_PLATFORM: ios
+          APP_STORE_PACKAGE: ${{ steps.ios-package.outputs.package }}
+          APP_STORE_STATUS_FILE: apple-store-artifacts/ios/IOS_TESTFLIGHT_UPLOAD_STATUS.txt
+        run: bash .github/scripts/upload-app-store-connect.sh
+
+      - name: Upload iOS delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: apple-store-ios-${{ needs.resolve.outputs.build_number }}
+          path: apple-store-artifacts/ios
+          if-no-files-found: warn
+          retention-days: 30
+
+  result:
+    name: Apple Store delivery result
+    needs: [resolve, macos-electron, ios-native]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require selected platform uploads to succeed
+        shell: bash
+        env:
+          MAC_SELECTED: ${{ needs.resolve.outputs.macos }}
+          IOS_SELECTED: ${{ needs.resolve.outputs.ios }}
+          MAC_RESULT: ${{ needs.macos-electron.result }}
+          IOS_RESULT: ${{ needs.ios-native.result }}
+        run: |
+          set -euo pipefail
+          failed=false
+          if [ "$MAC_SELECTED" = true ] && [ "$MAC_RESULT" != success ]; then
+            echo "Electron macOS delivery failed: $MAC_RESULT" >&2
+            failed=true
+          fi
+          if [ "$IOS_SELECTED" = true ] && [ "$IOS_RESULT" != success ]; then
+            echo "Native iOS delivery failed: $IOS_RESULT" >&2
+            failed=true
+          fi
+          if [ "$failed" = true ]; then exit 1; fi
+          echo 'All selected Apple Store uploads were accepted by App Store Connect.'
