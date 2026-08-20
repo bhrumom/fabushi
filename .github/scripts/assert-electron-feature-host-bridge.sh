@@ -19,6 +19,10 @@ methods=(
   feature.auth.status
   feature.auth.providers
   feature.auth.passwordLogin
+  feature.auth.browserStart
+  feature.auth.browserPoll
+  feature.auth.browserCancel
+  feature.auth.browserReopen
   feature.auth.oauthStart
   feature.auth.oauthPoll
   feature.auth.logout

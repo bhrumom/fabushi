@@ -24,6 +24,10 @@ const allowedHostMethods = new Set([
   'feature.auth.status',
   'feature.auth.providers',
   'feature.auth.passwordLogin',
+  'feature.auth.browserStart',
+  'feature.auth.browserPoll',
+  'feature.auth.browserCancel',
+  'feature.auth.browserReopen',
   'feature.auth.oauthStart',
   'feature.auth.oauthPoll',
   'feature.auth.logout',
@@ -41,6 +45,68 @@ const allowedHostMethods = new Set([
   'runtime.tools',
   'runtime.callTool',
 ]);
+
+const DEEP_LINK_PROTOCOL = 'fabushi:';
+const pendingAuthAttemptIds = [];
+
+function focusMainWindow() {
+  if (!app.isReady()) return;
+  const win = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function parseFabushiDeepLink(candidate) {
+  if (typeof candidate !== 'string' || !candidate.toLowerCase().startsWith(DEEP_LINK_PROTOCOL)) return null;
+  let url;
+  try { url = new URL(candidate); } catch { return null; }
+  if (url.protocol !== DEEP_LINK_PROTOCOL || url.username || url.password || url.port) return null;
+  const hostName = url.hostname.toLowerCase();
+  const pathParts = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
+  if (hostName === 'auth' && pathParts[0] === 'complete') {
+    const attemptId = String(url.searchParams.get('attemptId') ?? '').trim();
+    const status = String(url.searchParams.get('status') ?? 'completed').trim().toLowerCase();
+    if (!/^[A-Za-z0-9_-]{8,96}$/.test(attemptId) || !['completed', 'cancelled', 'failed'].includes(status)) return null;
+    return { route: 'auth', action: 'complete', attemptId, status };
+  }
+  return null;
+}
+
+function rememberAuthDeepLink(candidate) {
+  const link = parseFabushiDeepLink(candidate);
+  if (!link) return false;
+  const runningWindow = app.isReady()
+    ? BrowserWindow.getAllWindows().find((candidateWindow) => !candidateWindow.isDestroyed())
+    : null;
+  if (runningWindow) {
+    focusMainWindow();
+    return true;
+  }
+  if (link.status === 'completed' && !pendingAuthAttemptIds.includes(link.attemptId)) {
+    pendingAuthAttemptIds.push(link.attemptId);
+  }
+  return true;
+}
+
+function handleDeepLinkArgv(argv) {
+  for (const value of Array.isArray(argv) ? argv : []) rememberAuthDeepLink(value);
+}
+
+const primaryInstance = !app.isPackaged || app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+if (primaryInstance) {
+  app.on('second-instance', (_event, argv) => {
+    handleDeepLinkArgv(argv);
+    focusMainWindow();
+  });
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    rememberAuthDeepLink(url);
+  });
+  handleDeepLinkArgv(process.argv);
+}
 
 function isTrustedRendererUrl(value) {
   try {
@@ -168,11 +234,18 @@ function installAppProtocol() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   installAppProtocol();
+  if (primaryInstance && app.isPackaged) app.setAsDefaultProtocolClient('fabushi');
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   installIpcHandlers();
   host.start();
+  if (pendingAuthAttemptIds.length) {
+    const attempts = pendingAuthAttemptIds.splice(0);
+    await Promise.allSettled(attempts.map((attemptId) =>
+      host.request('feature.auth.browserPoll', { attemptId }, 12_000),
+    ));
+  }
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

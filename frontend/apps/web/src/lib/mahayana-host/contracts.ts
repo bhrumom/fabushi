@@ -33,6 +33,26 @@ export interface AuthProvider {
   enabled: boolean;
 }
 
+export interface BrowserLoginAttempt {
+  attemptId: string;
+  loginUrl: string;
+  expiresAt?: number;
+  pollAfterMs?: number;
+}
+
+export interface BrowserLoginPollResult {
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
+  provider?: string;
+  auth?: AuthState;
+}
+
+export interface BrowserLoginReopenResult {
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
+  attemptId?: string;
+  loginUrl?: string;
+  pollAfterMs?: number;
+}
+
 export interface OAuthAttempt {
   attemptId: string;
   provider: AuthProviderId;
@@ -41,7 +61,7 @@ export interface OAuthAttempt {
 }
 
 export interface OAuthPollResult {
-  status: "pending" | "completed" | "expired" | "cancelled";
+  status: "pending" | "completed" | "expired" | "cancelled" | "failed";
   auth?: AuthState;
 }
 
@@ -721,6 +741,21 @@ export type RuntimeCommand =
       secretRequestId: string;
       value: string;
     })
+  | (CommandBase & {
+      type: "widget.respond";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      actionId?: string;
+      value?: unknown;
+    })
+  | (CommandBase & {
+      type: "widget.dismiss";
+      widgetId: string;
+      agentId: string;
+      conversationId?: string;
+      reason?: string;
+    })
   | (CommandBase & { type: "listener.list" })
   | (CommandBase & { type: "listener.connect"; platform: ListenerPlatform })
   | (CommandBase & { type: "update.status" })
@@ -732,6 +767,17 @@ export type RuntimeCommand =
 export interface CommandAccepted {
   requestId: string;
   operationId?: string;
+}
+
+export interface WidgetInteractionSummary {
+  widgetId: string;
+  agentId: string;
+  conversationId?: string;
+  actionId?: string;
+  value?: unknown;
+  status: "responded" | "dismissed";
+  reason?: string;
+  createdAtMs: number;
 }
 
 export interface ConversationSummary {

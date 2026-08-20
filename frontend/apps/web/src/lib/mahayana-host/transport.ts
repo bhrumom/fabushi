@@ -2,6 +2,9 @@ import type {
   ApprovalResolution,
   AuthState,
   AuthProvider,
+  BrowserLoginAttempt,
+  BrowserLoginPollResult,
+  BrowserLoginReopenResult,
   AuthProviderId,
   CommandAccepted,
   HostConfig,
@@ -19,6 +22,10 @@ export interface MahayanaHostTransport {
   execute(command: RuntimeCommand): Promise<CommandAccepted>;
   authStatus(): Promise<AuthState>;
   authProviders(): Promise<AuthProvider[]>;
+  browserLoginStart(): Promise<BrowserLoginAttempt>;
+  browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult>;
+  browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult>;
+  browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult>;
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt>;
   oauthPoll(attemptId: string): Promise<OAuthPollResult>;
   openExternal(url: string): Promise<void>;

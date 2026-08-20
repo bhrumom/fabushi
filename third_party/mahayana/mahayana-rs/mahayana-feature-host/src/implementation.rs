@@ -540,6 +540,110 @@ impl FeatureHostController {
         }
     }
 
+    pub fn browser_login_start(&self) -> Result<Value, FeatureHostError> {
+        match self.config.mode {
+            HostMode::Test => Ok(json!({
+                "attemptId": "test-browser-login",
+                "loginUrl": "about:blank#fabushi-test-browser-login",
+                "expiresAt": now_millis() / 1000 + 600,
+                "pollAfterMs": 250,
+            })),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.start",
+                        &json!({"platform": "desktop"}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn browser_login_reopen(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => Ok(json!({
+                "status": "pending",
+                "attemptId": attempt_id,
+                "loginUrl": "about:blank#fabushi-test-browser-login",
+                "pollAfterMs": 120,
+            })),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.reopen",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn browser_login_cancel(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => Ok(json!({"status": "cancelled"})),
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.cancel",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
+    pub fn browser_login_poll(&self, attempt_id: String) -> Result<Value, FeatureHostError> {
+        let attempt_id = required(attempt_id, "attemptId")?;
+        match self.config.mode {
+            HostMode::Test => {
+                if attempt_id != "test-browser-login" {
+                    return Ok(json!({"status": "expired"}));
+                }
+                let user = json!({
+                    "id": "fast-e2e-browser-user",
+                    "email": "browser@example.test",
+                    "nickname": "Browser 测试用户",
+                });
+                self.state()?.auth_user = Some(user.clone());
+                Ok(json!({
+                    "status": "completed",
+                    "provider": "browser",
+                    "auth": {
+                        "loggedIn": true,
+                        "provider": "browser",
+                        "user": user,
+                    }
+                }))
+            }
+            HostMode::Production => {
+                #[cfg(feature = "production")]
+                return self
+                    .runtime()?
+                    .product_execute(
+                        "mahayana.auth.browser.poll",
+                        &json!({"attemptId": attempt_id}),
+                    )
+                    .map_err(FeatureHostError::from);
+                #[cfg(not(feature = "production"))]
+                return Err(FeatureHostError::ProductionUnavailable);
+            }
+        }
+    }
+
     pub fn auth_providers(&self) -> Result<Value, FeatureHostError> {
         match self.config.mode {
             HostMode::Test => Ok(json!([
@@ -11026,6 +11130,67 @@ mod tests {
         assert!(kinds.contains(&"operation.interrupted"));
         assert!(kinds.contains(&"session.cleared"));
         assert!(kinds.contains(&"host.closed"));
+    }
+
+    #[test]
+    fn deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary() {
+        let controller = controller();
+        assert_eq!(controller.auth_status().unwrap()["loggedIn"], false);
+
+        let attempt = controller
+            .browser_login_start()
+            .expect("start browser login");
+        assert_eq!(attempt["attemptId"], "test-browser-login");
+        assert_eq!(attempt["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert!(attempt.get("accessToken").is_none());
+        assert!(attempt.get("refreshToken").is_none());
+        assert!(attempt.get("password").is_none());
+
+        let completed = controller
+            .browser_login_poll(
+                attempt["attemptId"]
+                    .as_str()
+                    .expect("attempt id")
+                    .to_string(),
+            )
+            .expect("complete browser login");
+        assert_eq!(completed["status"], "completed");
+        assert_eq!(completed["auth"]["loggedIn"], true);
+        assert!(completed["auth"].get("accessToken").is_none());
+        assert!(completed["auth"].get("refreshToken").is_none());
+        assert_eq!(controller.auth_status().unwrap()["loggedIn"], true);
+
+        let reopened_controller = controller();
+        let reopened_attempt = reopened_controller
+            .browser_login_start()
+            .expect("start reopenable browser login");
+        let reopened = reopened_controller
+            .browser_login_reopen(
+                reopened_attempt["attemptId"]
+                    .as_str()
+                    .expect("reopen attempt id")
+                    .to_string(),
+            )
+            .expect("reopen browser login");
+        assert_eq!(reopened["status"], "pending");
+        assert_eq!(reopened["attemptId"], reopened_attempt["attemptId"]);
+        assert_eq!(reopened["loginUrl"], "about:blank#fabushi-test-browser-login");
+        assert!(reopened.get("pollSecret").is_none());
+
+        let cancelled_controller = controller();
+        let cancelled_attempt = cancelled_controller
+            .browser_login_start()
+            .expect("start cancellable browser login");
+        let cancelled = cancelled_controller
+            .browser_login_cancel(
+                cancelled_attempt["attemptId"]
+                    .as_str()
+                    .expect("cancel attempt id")
+                    .to_string(),
+            )
+            .expect("cancel browser login");
+        assert_eq!(cancelled["status"], "cancelled");
+        assert_eq!(cancelled_controller.auth_status().unwrap()["loggedIn"], false);
     }
 
     #[test]
