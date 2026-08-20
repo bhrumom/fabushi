@@ -457,13 +457,8 @@ impl std::fmt::Debug for MahayanaProductClient {
 
 impl Default for MahayanaProductClient {
     fn default() -> Self {
-        let api_base_url = env::var("MAHAYANA_API_BASE_URL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
         let home = default_mahayana_home();
-        Self::new_with_surface_state_path(
-            api_base_url,
+        Self::new_with_default_api_base_url(
             home.join("session.json"),
             home.join(PRODUCT_SURFACE_STATE_FILENAME),
         )
@@ -526,6 +521,22 @@ pub fn default_mahayana_home() -> PathBuf {
 }
 
 impl MahayanaProductClient {
+    /// Creates a product client with the configured first-party API while keeping
+    /// its encrypted account state anchored to caller-owned paths. Desktop and
+    /// native app hosts use this instead of `Default` so a stale shared-container
+    /// credential file cannot block startup of an otherwise independent app data
+    /// directory.
+    pub fn new_with_default_api_base_url(
+        session_path: impl Into<PathBuf>,
+        surface_state_path: impl Into<PathBuf>,
+    ) -> Self {
+        let api_base_url = env::var("MAHAYANA_API_BASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_API_BASE_URL.to_string());
+        Self::new_with_surface_state_path(api_base_url, session_path, surface_state_path)
+    }
+
     pub fn new(api_base_url: impl Into<String>, session_path: impl Into<PathBuf>) -> Self {
         let session_path = session_path.into();
         let surface_state_path = session_path
