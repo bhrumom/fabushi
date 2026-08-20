@@ -53,6 +53,7 @@ required = {
     'product browser start': (product, 'mahayana.auth.browser.start'),
     'product browser poll': (product, 'mahayana.auth.browser.poll'),
     'product encrypts browser poll verifier': (product, 'save_browser_login_poll_secret'),
+    'product keeps browser poll verifier out of OS keyring': (product, 'browser_login_poll_secret_path'),
     'product strips browser poll verifier': (product, 'object.remove("pollSecret")'),
     'worker requires browser poll verifier': (worker, 'browser_poll_forbidden'),
     'worker browser poll proof body': (worker, 'let poll: BrowserLoginProofRequest = match request.json().await'),
@@ -122,6 +123,15 @@ for label, (text, marker) in required.items():
 
 if '.find_map(|(key, value)| (key == "pollSecret")' in worker or '&[("pollSecret", poll_secret.as_str())]' in product:
     raise SystemExit('auth entry gate: browser poll verifier must not be sent in a URL query string')
+
+poll_storage_start = product.find('fn browser_login_poll_secret_path')
+poll_storage_end = product.find('fn save_session', poll_storage_start)
+if poll_storage_start < 0 or poll_storage_end < 0:
+    raise SystemExit('auth entry gate: browser poll verifier private-file storage is missing')
+poll_storage = product[poll_storage_start:poll_storage_end]
+for forbidden in ['.managed_secrets', '.secrets_manager', 'SecretScope::']:
+    if forbidden in poll_storage:
+        raise SystemExit(f'auth entry gate: browser poll verifier must not touch OS keyring-backed secrets: {forbidden}')
 
 for forbidden in [
     'data-testid={`oauth-${provider.id}`}',
