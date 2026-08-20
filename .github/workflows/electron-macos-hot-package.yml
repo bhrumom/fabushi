@@ -44,10 +44,15 @@ jobs:
       asr_changed: ${{ steps.classify.outputs.asr_changed }}
       full_required: ${{ steps.classify.outputs.full_required }}
     steps:
-      - name: Checkout exact source
+      - name: Checkout only renderer sources
         uses: actions/checkout@v5
         with:
           fetch-depth: 2
+          sparse-checkout: |
+            .github/scripts
+            contracts
+            desktop
+            frontend
 
       - id: classify
         name: Classify the minimum install delta
@@ -127,9 +132,10 @@ jobs:
           payload="$RUNNER_TEMP/fabushi-hot"
           rm -rf "$runtime" "$payload"
           mkdir -p "$runtime" "$payload"
-          cp desktop/package.json desktop/package-lock.json "$runtime/"
-          npm ci --prefix "$runtime" --omit=dev --ignore-scripts --prefer-offline --no-audit --no-fund
-          rm -f "$runtime/package-lock.json"
+          # Vite bundles renderer dependencies, while Electron main/preload only
+          # require Electron, Node built-ins, and local modules. Do not spend a
+          # second npm install copying unused production node_modules into asar.
+          cp desktop/package.json "$runtime/"
           cp -R desktop/dist "$runtime/dist"
           cp -R desktop/electron "$runtime/electron"
           node desktop/node_modules/@electron/asar/bin/asar.js pack "$runtime" "$payload/app.asar"
@@ -148,7 +154,7 @@ jobs:
           path: ${{ runner.temp }}/fabushi-hot
           if-no-files-found: error
           retention-days: 7
-          compression-level: 6
+          compression-level: 1
 
       - name: Hand portable payload to native delta job
         if: steps.classify.outputs.full_required != 'true' && (steps.classify.outputs.host_changed == 'true' || steps.classify.outputs.asr_changed == 'true')
@@ -167,11 +173,16 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - name: Checkout exact source
+      - name: Checkout only native Host sources
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.portable-payload.outputs.source_sha }}
           fetch-depth: 1
+          sparse-checkout: |
+            .github/scripts
+            desktop
+            third_party/mahayana/codex-rs
+            third_party/mahayana/mahayana-rs
 
       - name: Download portable hot payload
         uses: actions/download-artifact@v8
