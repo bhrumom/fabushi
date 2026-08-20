@@ -1885,9 +1885,9 @@ impl MahayanaProductClient {
         let Some(poll_secret) = self.load_browser_login_poll_secret(&attempt_id)? else {
             return Ok(json!({"status": "expired"}));
         };
-        let response = self.get_json(
+        let response = self.post_json(
             &format!("/api/auth/browser/attempts/{attempt_id}"),
-            &[("pollSecret", poll_secret.as_str())],
+            json!({"pollSecret": poll_secret}),
             None,
         )?;
         let terminal = matches!(

@@ -155,6 +155,13 @@ jobs:
             *) echo "Browser login portal escaped staging origin: $login_url" >&2; exit 1 ;;
           esac
 
+          poll_body="$(jq -cn --arg pollSecret "$poll_secret" '{pollSecret:$pollSecret}')"
+          curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            --data "$poll_body" \
+            "$PLATFORM_URL/api/auth/browser/attempts/$attempt_id" \
+            | jq -e '.status == "pending"' >/dev/null
+
           portal_html="$(curl --fail --silent --show-error "$login_url")"
           grep -F 'aria-label="账号模式"' <<<"$portal_html" >/dev/null
           grep -F 'data-provider="alipay"' <<<"$portal_html" >/dev/null

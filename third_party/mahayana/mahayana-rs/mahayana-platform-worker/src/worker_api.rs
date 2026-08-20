@@ -550,7 +550,7 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async("/api/auth/browser/password", browser_login_password)
         .post_async("/api/auth/browser/register/code", browser_registration_code)
         .post_async("/api/auth/browser/register", browser_registration_complete)
-        .get_async("/api/auth/browser/attempts/:attempt_id", browser_login_poll)
+        .post_async("/api/auth/browser/attempts/:attempt_id", browser_login_poll)
         .post_async(
             "/api/auth/browser/attempts/:attempt_id/cancel",
             browser_login_cancel,

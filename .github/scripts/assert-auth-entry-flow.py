@@ -82,6 +82,7 @@ required = {
     'browser registration code route': (worker, '/api/auth/browser/register/code'),
     'browser registration submit route': (worker, '/api/auth/browser/register'),
     'browser login/register UI tabs': (worker, 'aria-label=\"账号模式\"'),
+    'worker browser poll uses POST': (worker, '.post_async(\"/api/auth/browser/attempts/:attempt_id\", browser_login_poll)'),
 }
 if full_contract:
     required.update({
@@ -91,6 +92,7 @@ if full_contract:
         'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
         'staging auth repair applies account auth migrations': (staging_auth_repair, 'd1 migrations apply ACCOUNT_DB --remote'),
         'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login, registration, and Alipay broker lifecycle'),
+        'staging auth repair posts browser poll proof': (staging_auth_repair, "jq -e '.status == \"pending\"'"),
         'provider registry includes Apple': (identity_auth, '"apple"'),
         'provider registry includes Alipay': (identity_auth, '"alipay"'),
         'provider registry includes Cloudflare': (identity_auth, '"cloudflare"'),
@@ -114,6 +116,10 @@ if full_contract:
 for label, (text, marker) in required.items():
     if marker not in text:
         raise SystemExit(f'auth entry gate: missing {label}: {marker}')
+
+
+if '.find_map(|(key, value)| (key == "pollSecret")' in worker or '&[("pollSecret", poll_secret.as_str())]' in product:
+    raise SystemExit('auth entry gate: browser poll verifier must not be sent in a URL query string')
 
 for forbidden in [
     'data-testid={`oauth-${provider.id}`}',
