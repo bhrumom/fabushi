@@ -20,6 +20,10 @@ methods=(
   feature.auth.status
   feature.auth.providers
   feature.auth.passwordLogin
+  feature.auth.browserStart
+  feature.auth.browserPoll
+  feature.auth.browserCancel
+  feature.auth.browserReopen
   feature.auth.oauthStart
   feature.auth.oauthPoll
   feature.auth.logout
@@ -100,6 +104,14 @@ grep -Fq '<HostClient />' "$desktop_renderer" || {
   echo "Canonical Electron renderer does not render the shared browser HostClient" >&2
   exit 1
 }
+grep -Fq 'MahayanaProductClient::new_with_default_api_base_url' "$app_host" || {
+  echo "Electron Rust app host must keep product credentials inside its app-data Feature Host root" >&2
+  exit 1
+}
+if grep -Fq 'MahayanaProductClient::default()' "$app_host"; then
+  echo "Electron Rust app host must not probe the shared Mahayana container during startup" >&2
+  exit 1
+fi
 if grep -Eq 'PluginRuntimeApp|desktop-mode-switch|open-plugin-runtime|open-agent-host' "$desktop_renderer"; then
   echo "Canonical Electron renderer must not wrap the shared browser UI in a second desktop shell" >&2
   exit 1
