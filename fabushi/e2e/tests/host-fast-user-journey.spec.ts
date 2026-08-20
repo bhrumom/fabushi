@@ -10,7 +10,7 @@ const mahayanaHostFeatures =
 
 async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId("onboarding-gate").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "下一步" }).click();
+    await page.getByTestId("onboarding-next").click();
   }
   await expect(page.getByTestId("login-gate")).toBeVisible();
   await page.getByTestId("browser-login-start").click();
