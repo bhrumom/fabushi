@@ -249,6 +249,7 @@ jobs:
             /desktop/electron/main.cjs
             /desktop/electron/preload.cjs
             /desktop/electron/host-process.cjs
+            /desktop/package.json
             /desktop/src/main.tsx
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**

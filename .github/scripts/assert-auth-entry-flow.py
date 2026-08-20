@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 from pathlib import Path
 
 host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding='utf-8')
@@ -7,6 +8,7 @@ product = Path('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs').r
 feature = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs').read_text(encoding='utf-8')
 app_host = Path('third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs').read_text(encoding='utf-8')
 main = Path('desktop/electron/main.cjs').read_text(encoding='utf-8')
+desktop_package = Path('desktop/package.json').read_text(encoding='utf-8')
 host_process = Path('desktop/electron/host-process.cjs').read_text(encoding='utf-8')
 mahayana_host = Path('third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs').read_text(encoding='utf-8')
 worker_config = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/wrangler.toml').read_text(encoding='utf-8')
@@ -58,6 +60,11 @@ required = {
 for label, (text, marker) in required.items():
     if marker not in text:
         raise SystemExit(f'auth entry gate: missing {label}: {marker}')
+
+desktop_manifest = json.loads(desktop_package)
+protocols = desktop_manifest.get('build', {}).get('protocols', [])
+if not any(isinstance(protocol, dict) and 'fabushi' in protocol.get('schemes', []) for protocol in protocols):
+    raise SystemExit('auth entry gate: desktop package does not register the fabushi return scheme')
 
 for forbidden in [
     'data-testid={`oauth-${provider.id}`}',
