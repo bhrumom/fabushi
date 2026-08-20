@@ -40,6 +40,8 @@ use serde_json::json;
 use sha2::Digest;
 use std::env;
 use std::io::Read;
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
@@ -2243,12 +2245,14 @@ impl MahayanaProductClient {
         let mut url = url::Url::parse(&format!("{}{}", self.api_base_url, path))
             .map_err(|error| ProductError::Configuration(error.to_string()))?;
         url.query_pairs_mut().extend_pairs(query.iter().copied());
-        let client = http_client()?;
-        let mut request = client.get(url).header("Accept", "application/json");
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        }
-        decode_response(request.send())
+        let response = send_with_ipv4_fallback(|client| {
+            let mut request = client.get(url.clone()).header("Accept", "application/json");
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            request.send()
+        })?;
+        decode_response(Ok(response))
     }
 
     fn post_json(
@@ -2258,15 +2262,17 @@ impl MahayanaProductClient {
         token: Option<&str>,
     ) -> Result<Value, ProductError> {
         let url = format!("{}{}", self.api_base_url, path);
-        let client = http_client()?;
-        let mut request = client
-            .post(&url)
-            .header("Accept", "application/json")
-            .json(&body);
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        }
-        decode_response(request.send())
+        let response = send_with_ipv4_fallback(|client| {
+            let mut request = client
+                .post(&url)
+                .header("Accept", "application/json")
+                .json(&body);
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            request.send()
+        })?;
+        decode_response(Ok(response))
     }
 
     fn required_session(&self) -> Result<Value, ProductError> {
@@ -2798,11 +2804,42 @@ fn copy_optional_fields(request: &Value, body: &mut Value, fields: &[&str]) {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client, ProductError> {
-    reqwest::blocking::Client::builder()
+    build_http_client(false)
+}
+
+fn ipv4_http_client() -> Result<reqwest::blocking::Client, ProductError> {
+    build_http_client(true)
+}
+
+fn build_http_client(force_ipv4: bool) -> Result<reqwest::blocking::Client, ProductError> {
+    let mut builder = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(30));
+    if force_ipv4 {
+        builder = builder.local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+    }
+    builder
         .build()
         .map_err(|error| ProductError::Configuration(error.to_string()))
+}
+
+fn send_with_ipv4_fallback<F>(send: F) -> Result<reqwest::blocking::Response, ProductError>
+where
+    F: Fn(&reqwest::blocking::Client) -> Result<reqwest::blocking::Response, reqwest::Error>,
+{
+    let client = http_client()?;
+    match send(&client) {
+        Ok(response) => Ok(response),
+        Err(error) if error.is_connect() => {
+            let ipv4_client = ipv4_http_client()?;
+            send(&ipv4_client).map_err(|fallback_error| {
+                ProductError::Transport(format!(
+                    "{fallback_error}; IPv4 fallback after initial connection error: {error}"
+                ))
+            })
+        }
+        Err(error) => Err(ProductError::Transport(error.to_string())),
+    }
 }
 
 fn decode_response(
