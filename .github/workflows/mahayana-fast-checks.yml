@@ -53,6 +53,13 @@ jobs:
       - name: Verify formatting
         run: cargo fmt --all -- --check
 
+      - name: Test sovereign kernel and legacy bridge
+        run: >-
+          cargo test
+          -p mahayana-kernel
+          -p mahayana-agent-kernel-bridge
+          --profile ci
+
       - name: Test protocol and MiniApp bridge
         run: >-
           cargo test
