@@ -25,7 +25,12 @@ pub struct TextEntity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type", content = "value")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type",
+    content = "value"
+)]
 pub enum TextEntityKind {
     Mention,
     MentionActor(ActorId),
@@ -54,7 +59,10 @@ pub struct FormattedText {
 
 impl FormattedText {
     pub fn plain(text: impl Into<String>) -> Self {
-        Self { text: text.into(), entities: Vec::new() }
+        Self {
+            text: text.into(),
+            entities: Vec::new(),
+        }
     }
 }
 
@@ -92,13 +100,28 @@ pub struct InlineButton {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum InlineButtonAction {
-    Callback { data: String },
-    Url { url: String },
-    MiniApp { mini_app_id: String, start_parameter: Option<String> },
-    Pay { invoice_id: String },
-    SwitchInline { query: String },
+    Callback {
+        data: String,
+    },
+    Url {
+        url: String,
+    },
+    MiniApp {
+        mini_app_id: String,
+        start_parameter: Option<String>,
+    },
+    Pay {
+        invoice_id: String,
+    },
+    SwitchInline {
+        query: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,30 +131,104 @@ pub struct ReplyMarkup {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type", content = "data")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type",
+    content = "data"
+)]
 pub enum MessageContent {
-    Text { text: FormattedText },
-    Photo { media: MediaRef, caption: FormattedText, spoiler: bool },
-    Video { media: MediaRef, caption: FormattedText, spoiler: bool, streaming: bool },
-    Animation { media: MediaRef, caption: FormattedText },
-    Audio { media: MediaRef, caption: FormattedText, title: Option<String>, performer: Option<String> },
-    Voice { media: MediaRef, caption: FormattedText, waveform: Vec<u8> },
-    VideoNote { media: MediaRef },
-    Document { media: MediaRef, caption: FormattedText },
-    Sticker { media: MediaRef, emoji: Option<String>, set_id: Option<String> },
-    Contact { actor_id: Option<ActorId>, display_name: String, phone_number: Option<String> },
-    Location { latitude: f64, longitude: f64, live_until_ms: Option<i64> },
-    Venue { latitude: f64, longitude: f64, title: String, address: String },
-    Poll { question: FormattedText, options: Vec<PollOption>, anonymous: bool, multiple_answers: bool, quiz: bool },
-    Dice { emoji: String, value: u8 },
-    Story { story_id: String },
-    Invoice { invoice_id: String },
-    MiniApp { mini_app_id: String, title: String, start_parameter: Option<String> },
-    Service { action: String, text: Option<String> },
+    Text {
+        text: FormattedText,
+    },
+    Photo {
+        media: MediaRef,
+        caption: FormattedText,
+        spoiler: bool,
+    },
+    Video {
+        media: MediaRef,
+        caption: FormattedText,
+        spoiler: bool,
+        streaming: bool,
+    },
+    Animation {
+        media: MediaRef,
+        caption: FormattedText,
+    },
+    Audio {
+        media: MediaRef,
+        caption: FormattedText,
+        title: Option<String>,
+        performer: Option<String>,
+    },
+    Voice {
+        media: MediaRef,
+        caption: FormattedText,
+        waveform: Vec<u8>,
+    },
+    VideoNote {
+        media: MediaRef,
+    },
+    Document {
+        media: MediaRef,
+        caption: FormattedText,
+    },
+    Sticker {
+        media: MediaRef,
+        emoji: Option<String>,
+        set_id: Option<String>,
+    },
+    Contact {
+        actor_id: Option<ActorId>,
+        display_name: String,
+        phone_number: Option<String>,
+    },
+    Location {
+        latitude: f64,
+        longitude: f64,
+        live_until_ms: Option<i64>,
+    },
+    Venue {
+        latitude: f64,
+        longitude: f64,
+        title: String,
+        address: String,
+    },
+    Poll {
+        question: FormattedText,
+        options: Vec<PollOption>,
+        anonymous: bool,
+        multiple_answers: bool,
+        quiz: bool,
+    },
+    Dice {
+        emoji: String,
+        value: u8,
+    },
+    Story {
+        story_id: String,
+    },
+    Invoice {
+        invoice_id: String,
+    },
+    MiniApp {
+        mini_app_id: String,
+        title: String,
+        start_parameter: Option<String>,
+    },
+    Service {
+        action: String,
+        text: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "state")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "state"
+)]
 pub enum DeliveryState {
     Pending { client_message_id: ClientMessageId },
     Sent,

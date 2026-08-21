@@ -61,7 +61,11 @@ pub struct MiniAppSession {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum MiniAppRequest {
     Ready,
     Expand,
@@ -84,17 +88,47 @@ pub enum MiniAppRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum MiniAppResponse {
     Ok,
-    Error { code: String, message: String },
-    Theme { color_scheme: String, values: Vec<(String, String)> },
-    Viewport { width: f64, height: f64, stable_height: f64, expanded: bool },
-    Identity { actor_id: ActorId, display_name: String, username: Option<String> },
-    Location { latitude: f64, longitude: f64 },
-    Contact { actor_id: Option<ActorId>, display_name: String },
-    Clipboard { text: Option<String> },
-    InvoiceStatus { invoice_id: String, status: String },
+    Error {
+        code: String,
+        message: String,
+    },
+    Theme {
+        color_scheme: String,
+        values: Vec<(String, String)>,
+    },
+    Viewport {
+        width: f64,
+        height: f64,
+        stable_height: f64,
+        expanded: bool,
+    },
+    Identity {
+        actor_id: ActorId,
+        display_name: String,
+        username: Option<String>,
+    },
+    Location {
+        latitude: f64,
+        longitude: f64,
+    },
+    Contact {
+        actor_id: Option<ActorId>,
+        display_name: String,
+    },
+    Clipboard {
+        text: Option<String>,
+    },
+    InvoiceStatus {
+        invoice_id: String,
+        status: String,
+    },
 }
 
 impl MiniAppRequest {
@@ -108,7 +142,9 @@ impl MiniAppRequest {
             Self::WriteClipboard { .. } => Some(MiniAppPermission::ClipboardWrite),
             Self::OpenExternal { .. } => Some(MiniAppPermission::OpenExternal),
             Self::OpenInvoice { .. } => Some(MiniAppPermission::Payments),
-            Self::SendMessage { .. } | Self::SendData { .. } => Some(MiniAppPermission::SendMessage),
+            Self::SendMessage { .. } | Self::SendData { .. } => {
+                Some(MiniAppPermission::SendMessage)
+            }
             Self::Haptic { .. } => Some(MiniAppPermission::Haptics),
             Self::Ready
             | Self::Expand

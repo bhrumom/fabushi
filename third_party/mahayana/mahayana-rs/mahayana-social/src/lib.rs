@@ -170,16 +170,18 @@ fn conversations_from_response(response: &Value) -> Result<Vec<Conversation>, Co
 }
 
 fn messaging_actor_from_contact(contact: &Value) -> Result<Actor, ConversationError> {
-    let contact_id = contact_identifier(contact).ok_or_else(|| {
-        ConversationError::Provider("contact has no stable identifier".into())
-    })?;
+    let contact_id = contact_identifier(contact)
+        .ok_or_else(|| ConversationError::Provider("contact has no stable identifier".into()))?;
     let display_name = ["displayName", "nickname", "username", "userNo"]
         .iter()
         .find_map(|key| contact.get(key).and_then(Value::as_str))
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(&contact_id)
         .to_string();
-    let mut actor = Actor::human(format!("{MESSAGING_ACTOR_PREFIX}{contact_id}"), display_name);
+    let mut actor = Actor::human(
+        format!("{MESSAGING_ACTOR_PREFIX}{contact_id}"),
+        display_name,
+    );
     actor.username = contact
         .get("username")
         .and_then(Value::as_str)
@@ -292,8 +294,8 @@ mod tests {
         assert_eq!(conversations[0].id.as_str(), "mahayana:contact:42");
         assert_eq!(conversations[0].title, "善友");
 
-        let actor = messaging_actor_from_contact(&response["data"]["friends"][0])
-            .expect("messaging actor");
+        let actor =
+            messaging_actor_from_contact(&response["data"]["friends"][0]).expect("messaging actor");
         assert_eq!(actor.id.0, "human:platform:42");
         assert_eq!(actor.kind, ActorKind::Human);
         assert_eq!(actor.display_name, "善友");
