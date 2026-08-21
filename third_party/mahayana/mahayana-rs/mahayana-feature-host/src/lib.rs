@@ -5,6 +5,7 @@
 //! they do not disable warnings for the crate or skip any tests.
 
 mod harness;
+mod product_harness;
 
 #[expect(clippy::collapsible_if, clippy::unneeded_wildcard_pattern)]
 #[path = "implementation.rs"]
@@ -12,3 +13,4 @@ mod implementation;
 
 pub use harness::*;
 pub use implementation::*;
+pub use product_harness::*;
