@@ -17,15 +17,19 @@ jobs:
   lockfile:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
           ref: feat/fabushi-messaging-rust-selfhosted
           fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Resolve only the existing workspace graph
-        run: cargo metadata --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --format-version 1 --no-deps >/dev/null
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: messaging-lock-bootstrap-v1
+      - name: Resolve the real contact-to-messaging compile graph
+        run: cargo check --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social
       - name: Commit only Cargo.lock when Cargo changed it
         shell: bash
         run: |
