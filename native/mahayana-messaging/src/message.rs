@@ -1,5 +1,6 @@
 use crate::actor::ActorId;
 use crate::conversation::ConversationId;
+use crate::secret_chat::EncryptedSecretMessage;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -216,6 +217,9 @@ pub enum MessageContent {
         mini_app_id: String,
         title: String,
         start_parameter: Option<String>,
+    },
+    Secret {
+        envelope: EncryptedSecretMessage,
     },
     Service {
         action: String,
