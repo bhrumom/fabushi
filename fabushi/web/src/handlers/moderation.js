@@ -26,7 +26,7 @@ async function requireUser(request, env, db) {
 async function requireAdmin(request, env, db) {
   const user = await authenticatedUser(request, env, db);
   if (!user) return { response: jsonResponse({ error: '认证失败' }, 401) };
-  if (!isAdmin(user.email)) return { response: jsonResponse({ error: '权限不足' }, 403) };
+  if (!isAdmin(user.email, env)) return { response: jsonResponse({ error: '权限不足' }, 403) };
   return { user };
 }
 
