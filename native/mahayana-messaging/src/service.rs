@@ -1,7 +1,7 @@
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::MessageId;
 use crate::protocol::{
-    ClientCommand, ClientEnvelope, FABUSHI_MESSAGING_PROTOCOL_VERSION, ServerEnvelope, ServerEvent,
+    ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
 };
 use crate::store::{MessagingSnapshot, MessagingStateStore, StoreError};
 use thiserror::Error;
@@ -173,10 +173,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     .unwrap_or_else(|| crate::actor::ActorId::new("unknown"));
                 vec![Command::QueueMessage {
                     conversation_id,
-                    local_message_id: MessageId::new(format!(
-                        "local:{}",
-                        client_message_id.0
-                    )),
+                    local_message_id: MessageId::new(format!("local:{}", client_message_id.0)),
                     client_message_id,
                     sender_id,
                     content,
@@ -244,7 +241,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
             ClientCommand::StartTyping { .. } | ClientCommand::StopTyping { .. } => Vec::new(),
             ClientCommand::CreateInvoice { invoice } => vec![Command::CreateInvoice { invoice }],
             ClientCommand::CheckoutInvoice { order, .. } => vec![Command::UpsertOrder { order }],
-            ClientCommand::InstallMiniApp { manifest } => vec![Command::InstallMiniApp { manifest }],
+            ClientCommand::InstallMiniApp { manifest } => {
+                vec![Command::InstallMiniApp { manifest }]
+            }
             ClientCommand::GrantMiniApp { grant } => vec![Command::GrantMiniApp { grant }],
             ClientCommand::OpenMiniApp { session } => vec![Command::OpenMiniApp { session }],
             ClientCommand::MiniAppCall {
@@ -269,16 +268,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 ServerEvent::ConversationChanged { conversation }
             }
             Event::ConversationArchived {
-                conversation_id,
-                ..
+                conversation_id, ..
             }
             | Event::ConversationPinned {
-                conversation_id,
-                ..
+                conversation_id, ..
             }
             | Event::ConversationNotificationsUpdated {
-                conversation_id,
-                ..
+                conversation_id, ..
             } => self
                 .engine
                 .state()
