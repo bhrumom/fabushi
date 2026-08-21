@@ -1,3 +1,3 @@
-trigger=2026-08-21T21:32:00+08:00
+trigger=2026-08-21T21:38:00+08:00
 purpose=finalize-rust-native-harness
-attempt=6-verified-source-commit
+attempt=7-corrected-template
