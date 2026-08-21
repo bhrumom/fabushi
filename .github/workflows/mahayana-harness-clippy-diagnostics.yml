@@ -1,0 +1,55 @@
+name: Mahayana Harness Clippy diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mahayana-harness-clippy-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clippy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs
+      - name: Apply finalized Harness source patch
+        run: python3 scripts/mahayana_harness_finalize.py
+      - name: Format finalized source
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+      - name: Run strict Harness Clippy
+        id: clippy
+        shell: bash
+        working-directory: third_party/mahayana/mahayana-rs
+        run: |
+          set +e
+          cargo clippy \
+            -p mahayana-harness \
+            -p mahayana-harness-services \
+            -p mahayana-harness-advanced \
+            -p mahayana-harness-adapters \
+            -p mahayana-harness-agent \
+            -p mahayana-harness-protocol \
+            -p mahayana-unified-app-host \
+            --all-targets -- -D warnings > "$GITHUB_WORKSPACE/harness-clippy.log" 2>&1
+          status=$?
+          cat "$GITHUB_WORKSPACE/harness-clippy.log"
+          exit "$status"
+      - name: Upload Clippy diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mahayana-harness-clippy-diagnostics
+          path: harness-clippy.log
+          if-no-files-found: error
