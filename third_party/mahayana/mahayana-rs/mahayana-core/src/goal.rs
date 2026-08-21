@@ -63,7 +63,10 @@ impl GoalNode {
         if objective.trim().is_empty() {
             return Err(GoalError::EmptyField("goalNode.objective"));
         }
-        if !oracles.iter().any(|oracle| oracle.required && oracle.objective) {
+        if !oracles
+            .iter()
+            .any(|oracle| oracle.required && oracle.objective)
+        {
             return Err(GoalError::ObjectiveOracleRequired(id));
         }
         Ok(Self {
@@ -128,8 +131,12 @@ impl GoalGraph {
         if self.nodes.contains_key(&node.id) {
             return Err(GoalError::DuplicateNode(node.id));
         }
-        self.nodes.insert(node.id.clone(), node);
-        self.validate_dependencies()?;
+        let node_id = node.id.clone();
+        self.nodes.insert(node_id.clone(), node);
+        if let Err(error) = self.validate_dependencies() {
+            self.nodes.remove(&node_id);
+            return Err(error);
+        }
         self.refresh_ready_states();
         Ok(())
     }
@@ -229,7 +236,10 @@ impl GoalGraph {
 
     pub fn fail_node(&mut self, node_id: &str) -> Result<(), GoalError> {
         let node = self.node_mut(node_id)?;
-        if !matches!(node.state, GoalNodeState::Running | GoalNodeState::Verifying) {
+        if !matches!(
+            node.state,
+            GoalNodeState::Running | GoalNodeState::Verifying
+        ) {
             return Err(GoalError::InvalidTransition {
                 node: node_id.to_string(),
                 from: node.state,
@@ -322,16 +332,21 @@ impl GoalGraph {
                 let failed_dependency = node.dependencies.iter().any(|dependency| {
                     matches!(
                         states.get(dependency),
-                        Some(GoalNodeState::Failed | GoalNodeState::Cancelled | GoalNodeState::Blocked)
+                        Some(
+                            GoalNodeState::Failed
+                                | GoalNodeState::Cancelled
+                                | GoalNodeState::Blocked
+                        )
                     )
                 });
                 if failed_dependency {
                     node.state = GoalNodeState::Blocked;
                     continue;
                 }
-                let ready = node.dependencies.iter().all(|dependency| {
-                    states.get(dependency) == Some(&GoalNodeState::Succeeded)
-                });
+                let ready = node
+                    .dependencies
+                    .iter()
+                    .all(|dependency| states.get(dependency) == Some(&GoalNodeState::Succeeded));
                 node.state = if ready {
                     GoalNodeState::Ready
                 } else {
@@ -385,7 +400,16 @@ mod tests {
     fn dependencies_unlock_only_after_objective_verification() {
         let mut graph = GoalGraph::new("G1", "ship product").expect("graph");
         graph
-            .add_node(GoalNode::new("T1", "kernel", "build kernel", vec![], vec![oracle("ci")]).expect("node"))
+            .add_node(
+                GoalNode::new(
+                    "T1",
+                    "kernel",
+                    "build kernel",
+                    vec![],
+                    vec![oracle("ci")],
+                )
+                .expect("node"),
+            )
             .expect("add");
         graph
             .add_node(
@@ -399,24 +423,59 @@ mod tests {
                 .expect("node"),
             )
             .expect("add");
-        assert_eq!(graph.ready_nodes().iter().map(|node| node.id.as_str()).collect::<Vec<_>>(), vec!["T1"]);
+        assert_eq!(
+            graph
+                .ready_nodes()
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["T1"]
+        );
         graph.assign("T1", "agent:1").expect("assign");
         graph.begin_verification("T1").expect("verify");
         assert!(graph.complete_node("T1").is_err());
-        graph.record_oracle("T1", "ci", OracleStatus::Passed, Some("run:1".into())).expect("oracle");
+        graph
+            .record_oracle(
+                "T1",
+                "ci",
+                OracleStatus::Passed,
+                Some("run:1".into()),
+            )
+            .expect("oracle");
         graph.complete_node("T1").expect("complete");
-        assert_eq!(graph.ready_nodes().iter().map(|node| node.id.as_str()).collect::<Vec<_>>(), vec!["T2"]);
+        assert_eq!(
+            graph
+                .ready_nodes()
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["T2"]
+        );
     }
 
     #[test]
-    fn cycle_is_rejected() {
+    fn invalid_dependency_is_rejected_transactionally() {
         let mut graph = GoalGraph::new("G1", "ship").expect("graph");
         graph
-            .add_node(GoalNode::new("T1", "one", "one", vec![], vec![oracle("ci")]).expect("node"))
+            .add_node(
+                GoalNode::new("T1", "one", "one", vec![], vec![oracle("ci")])
+                    .expect("node"),
+            )
             .expect("add");
         let result = graph.add_node(
-            GoalNode::new("T2", "two", "two", vec!["missing".into()], vec![oracle("ci")]).expect("node"),
+            GoalNode::new(
+                "T2",
+                "two",
+                "two",
+                vec!["missing".into()],
+                vec![oracle("ci")],
+            )
+            .expect("node"),
         );
-        assert!(matches!(result, Err(GoalError::DependencyNotFound { .. })));
+        assert!(matches!(
+            result,
+            Err(GoalError::DependencyNotFound { .. })
+        ));
+        assert!(graph.node("T2").is_none());
     }
 }
