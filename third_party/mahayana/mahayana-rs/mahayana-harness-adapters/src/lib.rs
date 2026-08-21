@@ -145,12 +145,7 @@ impl FileSystemProvider for ToolHostAdapters {
 
 #[async_trait]
 impl LspProvider for ToolHostAdapters {
-    async fn request(
-        &self,
-        language: &str,
-        method: &str,
-        params: Value,
-    ) -> HarnessResult<Value> {
+    async fn request(&self, language: &str, method: &str, params: Value) -> HarnessResult<Value> {
         self.invoke_value(
             &self.routes.lsp,
             json!({
@@ -178,12 +173,7 @@ impl WebProvider for ToolHostAdapters {
 
 #[async_trait]
 impl CodeRuntimeProvider for ToolHostAdapters {
-    async fn execute(
-        &self,
-        language: &str,
-        source: &str,
-        input: Value,
-    ) -> HarnessResult<Value> {
+    async fn execute(&self, language: &str, source: &str, input: Value) -> HarnessResult<Value> {
         self.invoke_value(
             &self.routes.code_execute,
             json!({
