@@ -1,2 +1,2 @@
-run=4
-reason=final apply after all direct branch edits and one-shot cleanup
+run=5
+reason=single-shot push trigger after self-trigger loop removal
