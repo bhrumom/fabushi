@@ -9,7 +9,7 @@ use mahayana_tool_host::{ToolRequest, ToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
@@ -28,10 +28,8 @@ pub struct PromptSection {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceRecord {
     pub id: String,
-    pub name: String,
-    pub root: PathBuf,
-    #[serde(default)]
-    pub instructions: Vec<String>,
+    pub root: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -39,35 +37,32 @@ pub struct WorkspaceRecord {
 pub struct SettingRecord {
     pub key: String,
     pub value: Value,
-    pub updated_at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialReference {
     pub id: String,
-    pub provider: String,
-    pub label: String,
+    pub service: String,
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentRecord {
     pub id: String,
-    pub sha256: String,
-    pub size: u64,
-    pub media_type: String,
-    #[serde(default)]
-    pub filename: Option<String>,
+    pub name: String,
+    pub media_type: Option<String>,
+    pub content_address: String,
+    pub byte_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpillRecord {
     pub id: String,
-    pub sha256: String,
-    pub size: u64,
-    pub reason: String,
+    pub content_address: String,
+    pub byte_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,21 +70,16 @@ pub struct SpillRecord {
 pub struct TodoItem {
     pub id: String,
     pub text: String,
-    pub status: String,
-    pub created_at_ms: i64,
-    pub updated_at_ms: i64,
+    pub done: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanState {
     pub session_id: String,
-    pub mode: String,
-    #[serde(default)]
     pub steps: Vec<String>,
-    #[serde(default)]
     pub review_required: bool,
-    pub updated_at_ms: i64,
+    pub exited: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,34 +90,31 @@ pub struct ScheduleEntry {
     pub instruction: String,
     pub schedule: String,
     pub enabled: bool,
-    pub created_at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackRecord {
     pub id: String,
-    pub session_id: String,
-    pub kind: String,
-    pub text: String,
-    pub created_at_ms: i64,
+    pub session_id: Option<String>,
+    pub rating: Option<i32>,
+    pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityRecord {
-    pub anonymous_id: String,
-    #[serde(default)]
+    pub display_name: Option<String>,
     pub account_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSearchHit {
     pub session_id: String,
-    pub title: String,
-    pub score: u32,
-    pub excerpt: String,
+    pub event_id: String,
+    pub kind: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,372 +128,415 @@ pub struct TeamMember {
 #[serde(rename_all = "camelCase")]
 pub struct TeamTask {
     pub id: String,
-    pub text: String,
-    pub assignee_agent_id: Option<String>,
+    pub assignee_agent_id: String,
+    pub instruction: String,
     pub status: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamMessage {
     pub id: String,
     pub from_agent_id: String,
     pub to_agent_id: Option<String>,
-    pub text: String,
-    pub created_at_ms: i64,
+    pub payload: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTeam {
     pub id: String,
     pub name: String,
-    #[serde(default)]
     pub members: Vec<TeamMember>,
-    #[serde(default)]
     pub tasks: Vec<TeamTask>,
-    #[serde(default)]
-    pub mailbox: Vec<TeamMessage>,
+    pub messages: Vec<TeamMessage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuardPolicy {
-    pub repeat_window: usize,
-    pub repeat_threshold: usize,
-    pub tool_timeout_ms: u64,
+    pub max_repeat_observations: usize,
+    pub max_recent_observations: usize,
 }
 
 impl Default for GuardPolicy {
     fn default() -> Self {
         Self {
-            repeat_window: 8,
-            repeat_threshold: 3,
-            tool_timeout_ms: 120_000,
+            max_repeat_observations: 3,
+            max_recent_observations: 12,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GuardObservation {
-    pub tool: String,
-    pub fingerprint: String,
-    pub repeated: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SkillRecord {
-    pub id: String,
     pub name: String,
     pub description: String,
-    #[serde(default)]
-    pub metadata: Value,
+    pub body: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandRecord {
-    pub id: String,
+    pub name: String,
     pub description: String,
-    #[serde(default)]
-    pub input_schema: Value,
+    pub tool: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextFragment {
     pub id: String,
-    pub source: String,
+    pub label: String,
     pub content: String,
     pub priority: i32,
 }
 
-#[async_trait]
-pub trait CredentialProvider: Send + Sync {
-    fn id(&self) -> &str;
-    async fn store(&self, label: &str, secret: &[u8]) -> HarnessResult<CredentialReference>;
-    async fn resolve(&self, reference: &CredentialReference) -> HarnessResult<Vec<u8>>;
-    async fn remove(&self, reference: &CredentialReference) -> HarnessResult<()>;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellRequest {
+    pub command: String,
+    pub cwd: Option<String>,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalRequest {
+    pub operation: String,
+    pub terminal_id: Option<String>,
+    pub data: Option<String>,
+    pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSystemRequest {
+    pub operation: String,
+    pub path: String,
+    pub destination: Option<String>,
+    pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspRequest {
+    pub operation: String,
+    pub language: Option<String>,
+    pub path: Option<String>,
+    pub position: Option<Value>,
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebRequest {
+    pub operation: String,
+    pub query: Option<String>,
+    pub url: Option<String>,
+    pub options: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeRuntimeRequest {
+    pub language: String,
+    pub code: String,
+    pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionRequest {
+    pub session_id: String,
+    pub events: Vec<Value>,
+    pub target_tokens: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentRequest {
+    pub parent_session_id: String,
+    pub role: String,
+    pub instruction: String,
+    pub context: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRequest {
+    pub workflow_id: String,
+    pub session_id: String,
+    pub input: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpRequest {
+    pub operation: String,
+    pub payload: Value,
 }
 
 #[async_trait]
 pub trait ContentStore: Send + Sync {
     async fn put(&self, bytes: &[u8]) -> HarnessResult<String>;
-    async fn get(&self, content_id: &str) -> HarnessResult<Option<Vec<u8>>>;
+    async fn get(&self, address: &str) -> HarnessResult<Option<Vec<u8>>>;
 }
 
 #[async_trait]
 pub trait ShellProvider: Send + Sync {
-    async fn execute(&self, command: &str, cwd: Option<&str>) -> HarnessResult<ToolResult>;
+    async fn run(&self, request: ShellRequest) -> HarnessResult<ToolResult>;
 }
 
 #[async_trait]
 pub trait TerminalProvider: Send + Sync {
-    async fn open(&self, cwd: Option<&str>) -> HarnessResult<String>;
-    async fn write(&self, terminal_id: &str, data: &[u8]) -> HarnessResult<()>;
-    async fn read(&self, terminal_id: &str) -> HarnessResult<Vec<u8>>;
-    async fn close(&self, terminal_id: &str) -> HarnessResult<()>;
+    async fn perform(&self, request: TerminalRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait FileSystemProvider: Send + Sync {
-    async fn read(&self, path: &str) -> HarnessResult<Vec<u8>>;
-    async fn write(&self, path: &str, bytes: &[u8]) -> HarnessResult<()>;
-    async fn list(&self, path: &str) -> HarnessResult<Vec<String>>;
-    async fn remove(&self, path: &str) -> HarnessResult<()>;
+    async fn perform(&self, request: FileSystemRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait LspProvider: Send + Sync {
-    async fn request(&self, language: &str, method: &str, params: Value) -> HarnessResult<Value>;
+    async fn perform(&self, request: LspRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait WebProvider: Send + Sync {
-    async fn search(&self, query: &str) -> HarnessResult<Value>;
-    async fn fetch(&self, url: &str) -> HarnessResult<Value>;
+    async fn perform(&self, request: WebRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait CodeRuntimeProvider: Send + Sync {
-    async fn execute(&self, language: &str, source: &str, input: Value) -> HarnessResult<Value>;
+    async fn run(&self, request: CodeRuntimeRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait CompactionProvider: Send + Sync {
-    async fn compact(&self, session_id: &str, transcript: &str) -> HarnessResult<String>;
+    async fn compact(&self, request: CompactionRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait SubagentProvider: Send + Sync {
-    async fn spawn(&self, preset: &str, instruction: &str) -> HarnessResult<String>;
-    async fn resume(&self, subagent_id: &str, instruction: &str) -> HarnessResult<Value>;
-    async fn stop(&self, subagent_id: &str) -> HarnessResult<()>;
+    async fn spawn(&self, request: SubagentRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait WorkflowExecutor: Send + Sync {
-    async fn run(&self, workflow_id: &str, input: Value) -> HarnessResult<Value>;
+    async fn execute(&self, request: WorkflowRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait AcpProvider: Send + Sync {
-    async fn handle(&self, method: &str, params: Value) -> HarnessResult<Value>;
+    async fn call(&self, request: AcpRequest) -> HarnessResult<Value>;
 }
 
 #[async_trait]
 pub trait CommandProvider: Send + Sync {
-    async fn execute(&self, command: &str, input: Value) -> HarnessResult<Value>;
+    async fn invoke(&self, name: &str, arguments: Value) -> HarnessResult<Value>;
 }
 
-#[derive(Default)]
+#[async_trait]
+pub trait CredentialProvider: Send + Sync {
+    async fn store(&self, reference: &CredentialReference, secret: &str) -> HarnessResult<()>;
+    async fn resolve(&self, reference: &CredentialReference) -> HarnessResult<Option<String>>;
+    async fn remove(&self, reference: &CredentialReference) -> HarnessResult<()>;
+}
+
+#[derive(Clone, Default)]
 pub struct ProviderSet {
-    pub credentials: Option<Arc<dyn CredentialProvider>>,
-    pub content: Option<Arc<dyn ContentStore>>,
+    pub content_store: Option<Arc<dyn ContentStore>>,
     pub shell: Option<Arc<dyn ShellProvider>>,
     pub terminal: Option<Arc<dyn TerminalProvider>>,
-    pub filesystem: Option<Arc<dyn FileSystemProvider>>,
+    pub fs: Option<Arc<dyn FileSystemProvider>>,
     pub lsp: Option<Arc<dyn LspProvider>>,
     pub web: Option<Arc<dyn WebProvider>>,
-    pub code_runtime: Option<Arc<dyn CodeRuntimeProvider>>,
+    pub code: Option<Arc<dyn CodeRuntimeProvider>>,
     pub compaction: Option<Arc<dyn CompactionProvider>>,
     pub subagent: Option<Arc<dyn SubagentProvider>>,
     pub workflow: Option<Arc<dyn WorkflowExecutor>>,
     pub acp: Option<Arc<dyn AcpProvider>>,
-    pub commands: Option<Arc<dyn CommandProvider>>,
+    pub command: Option<Arc<dyn CommandProvider>>,
+    pub credentials: Option<Arc<dyn CredentialProvider>>,
 }
 
-#[derive(Debug, Default)]
-struct ServiceState {
+#[derive(Default)]
+struct ServicesState {
     prompt_sections: BTreeMap<String, PromptSection>,
     workspaces: BTreeMap<String, WorkspaceRecord>,
     settings: BTreeMap<String, SettingRecord>,
-    credential_refs: BTreeMap<String, CredentialReference>,
     attachments: BTreeMap<String, AttachmentRecord>,
     spills: BTreeMap<String, SpillRecord>,
     todos: BTreeMap<String, TodoItem>,
     plans: BTreeMap<String, PlanState>,
     schedules: BTreeMap<String, ScheduleEntry>,
     feedback: BTreeMap<String, FeedbackRecord>,
-    identity: Option<IdentityRecord>,
+    identity: IdentityRecord,
     teams: BTreeMap<String, AgentTeam>,
-    guard_policy: GuardPolicy,
-    recent_tool_calls: VecDeque<(String, String)>,
     skills: BTreeMap<String, SkillRecord>,
     commands: BTreeMap<String, CommandRecord>,
-    context: BTreeMap<String, ContextFragment>,
+    context_fragments: BTreeMap<String, ContextFragment>,
+    recent_observations: VecDeque<String>,
 }
 
 #[derive(Clone)]
 pub struct HarnessServices {
     harness: MahayanaHarness,
-    state: Arc<Mutex<ServiceState>>,
     providers: Arc<Mutex<ProviderSet>>,
+    state: Arc<Mutex<ServicesState>>,
+    guard_policy: GuardPolicy,
 }
 
 impl HarnessServices {
     pub fn new(harness: MahayanaHarness) -> Self {
         Self {
             harness,
-            state: Arc::new(Mutex::new(ServiceState::default())),
             providers: Arc::new(Mutex::new(ProviderSet::default())),
+            state: Arc::new(Mutex::new(ServicesState::default())),
+            guard_policy: GuardPolicy::default(),
         }
     }
 
-    pub fn harness(&self) -> &MahayanaHarness {
-        &self.harness
+    pub fn harness(&self) -> MahayanaHarness {
+        self.harness.clone()
     }
 
-    pub fn set_providers(&self, providers: ProviderSet) -> HarnessResult<()> {
-        *self.providers()? = providers;
+    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
+        self.harness.snapshot()
+    }
+
+    pub fn providers(&self) -> Arc<Mutex<ProviderSet>> {
+        self.providers.clone()
+    }
+
+    pub fn set_guard_policy(&mut self, policy: GuardPolicy) {
+        self.guard_policy = policy;
+    }
+
+    pub fn register_prompt_section(&self, section: PromptSection) -> HarnessResult<()> {
+        self.lock_state()?
+            .prompt_sections
+            .insert(section.id.clone(), section);
         Ok(())
     }
 
-    pub fn add_prompt_section(&self, section: PromptSection) -> HarnessResult<()> {
-        let id = required(&section.id, "prompt section id")?;
-        self.state()?.prompt_sections.insert(id, section);
-        Ok(())
-    }
-
-    pub fn assembled_prompt(&self) -> HarnessResult<String> {
-        let mut sections = self
-            .state()?
+    pub fn assemble_prompt(&self, base: &str) -> HarnessResult<String> {
+        let state = self.lock_state()?;
+        let mut sections = state
             .prompt_sections
             .values()
             .filter(|section| section.enabled)
             .cloned()
             .collect::<Vec<_>>();
         sections.sort_by_key(|section| (section.priority, section.id.clone()));
-        Ok(sections
-            .into_iter()
-            .map(|section| section.content)
-            .collect::<Vec<_>>()
-            .join("\n\n"))
+
+        let mut parts = Vec::with_capacity(sections.len() + 1);
+        if !base.trim().is_empty() {
+            parts.push(base.trim().to_string());
+        }
+        parts.extend(
+            sections
+                .into_iter()
+                .map(|section| section.content.trim().to_string())
+                .filter(|content| !content.is_empty()),
+        );
+        Ok(parts.join("\n\n"))
     }
 
-    pub fn register_workspace(&self, workspace: WorkspaceRecord) -> HarnessResult<()> {
-        let id = required(&workspace.id, "workspace id")?;
-        self.state()?.workspaces.insert(id, workspace);
+    pub fn inject_context(&self, fragment: ContextFragment) -> HarnessResult<()> {
+        self.lock_state()?
+            .context_fragments
+            .insert(fragment.id.clone(), fragment);
         Ok(())
     }
 
-    pub fn list_workspaces(&self) -> HarnessResult<Vec<WorkspaceRecord>> {
-        Ok(self.state()?.workspaces.values().cloned().collect())
+    pub fn context_fragments(&self) -> HarnessResult<Vec<ContextFragment>> {
+        let state = self.lock_state()?;
+        let mut fragments = state.context_fragments.values().cloned().collect::<Vec<_>>();
+        fragments.sort_by_key(|fragment| (fragment.priority, fragment.id.clone()));
+        Ok(fragments)
     }
 
-    pub fn set_setting(
-        &self,
-        key: impl Into<String>,
-        value: Value,
-    ) -> HarnessResult<SettingRecord> {
-        let key = required(&key.into(), "setting key")?;
-        let record = SettingRecord {
-            key: key.clone(),
-            value,
-            updated_at_ms: now_ms(),
+    pub fn register_workspace(&self, root: impl Into<String>, label: impl Into<String>) -> HarnessResult<WorkspaceRecord> {
+        let workspace = WorkspaceRecord {
+            id: format!("ws_{}", Uuid::new_v4().simple()),
+            root: root.into(),
+            label: label.into(),
         };
-        self.state()?.settings.insert(key, record.clone());
+        self.lock_state()?
+            .workspaces
+            .insert(workspace.id.clone(), workspace.clone());
+        Ok(workspace)
+    }
+
+    pub fn workspaces(&self) -> HarnessResult<Vec<WorkspaceRecord>> {
+        Ok(self.lock_state()?.workspaces.values().cloned().collect())
+    }
+
+    pub fn set_setting(&self, key: impl Into<String>, value: Value) -> HarnessResult<SettingRecord> {
+        let key = key.into();
+        let record = SettingRecord { key: key.clone(), value };
+        self.lock_state()?.settings.insert(key, record.clone());
         Ok(record)
     }
 
     pub fn get_setting(&self, key: &str) -> HarnessResult<Option<SettingRecord>> {
-        Ok(self.state()?.settings.get(key).cloned())
+        Ok(self.lock_state()?.settings.get(key).cloned())
     }
 
-    pub async fn store_credential(
+    pub async fn save_attachment(
         &self,
-        label: &str,
-        secret: &[u8],
-    ) -> HarnessResult<CredentialReference> {
-        let provider = self
-            .providers()?
-            .credentials
-            .clone()
-            .ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
-        let reference = provider.store(label, secret).await?;
-        self.state()?
-            .credential_refs
-            .insert(reference.id.clone(), reference.clone());
-        Ok(reference)
-    }
-
-    pub async fn resolve_credential(&self, reference_id: &str) -> HarnessResult<Vec<u8>> {
-        let reference = self
-            .state()?
-            .credential_refs
-            .get(reference_id)
-            .cloned()
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("credential:{reference_id}")))?;
-        let provider = self
-            .providers()?
-            .credentials
-            .clone()
-            .ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
-        provider.resolve(&reference).await
-    }
-
-    pub fn register_attachment(
-        &self,
+        name: impl Into<String>,
+        media_type: Option<String>,
         bytes: &[u8],
-        media_type: impl Into<String>,
-        filename: Option<String>,
     ) -> HarnessResult<AttachmentRecord> {
-        let sha256 = sha256(bytes);
+        let provider = self.content_store_provider()?;
+        let address = provider.put(bytes).await?;
         let record = AttachmentRecord {
-            id: format!("attachment:{sha256}"),
-            sha256,
-            size: bytes.len() as u64,
-            media_type: required(&media_type.into(), "media type")?,
-            filename,
+            id: format!("attachment_{}", Uuid::new_v4().simple()),
+            name: name.into(),
+            media_type,
+            content_address: address,
+            byte_len: bytes.len(),
         };
-        self.state()?
+        self.lock_state()?
             .attachments
             .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
-    pub fn register_spill(
-        &self,
-        bytes: &[u8],
-        reason: impl Into<String>,
-    ) -> HarnessResult<SpillRecord> {
-        let sha256 = sha256(bytes);
+    pub async fn spill(&self, bytes: &[u8]) -> HarnessResult<SpillRecord> {
+        let provider = self.content_store_provider()?;
+        let address = provider.put(bytes).await?;
         let record = SpillRecord {
-            id: format!("spill:{sha256}"),
-            sha256,
-            size: bytes.len() as u64,
-            reason: required(&reason.into(), "spill reason")?,
+            id: format!("spill_{}", Uuid::new_v4().simple()),
+            content_address: address,
+            byte_len: bytes.len(),
         };
-        self.state()?
+        self.lock_state()?
             .spills
             .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
     pub fn add_todo(&self, text: impl Into<String>) -> HarnessResult<TodoItem> {
-        let now = now_ms();
-        let todo = TodoItem {
-            id: format!("todo:{}", Uuid::new_v4()),
-            text: required(&text.into(), "todo")?,
-            status: "pending".into(),
-            created_at_ms: now,
-            updated_at_ms: now,
+        let item = TodoItem {
+            id: format!("todo_{}", Uuid::new_v4().simple()),
+            text: text.into(),
+            done: false,
         };
-        self.state()?.todos.insert(todo.id.clone(), todo.clone());
-        Ok(todo)
+        self.lock_state()?.todos.insert(item.id.clone(), item.clone());
+        Ok(item)
     }
 
-    pub fn update_todo(&self, todo_id: &str, status: impl Into<String>) -> HarnessResult<TodoItem> {
-        let mut state = self.state()?;
-        let todo = state
-            .todos
-            .get_mut(todo_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("todo:{todo_id}")))?;
-        todo.status = required(&status.into(), "todo status")?;
-        todo.updated_at_ms = now_ms();
-        Ok(todo.clone())
+    pub fn update_todo(&self, id: &str, done: bool) -> HarnessResult<TodoItem> {
+        let mut state = self.lock_state()?;
+        let item = state.todos.get_mut(id).ok_or_else(|| HarnessError::NotFound(id.to_string()))?;
+        item.done = done;
+        Ok(item.clone())
     }
 
     pub fn set_plan(
@@ -515,29 +545,27 @@ impl HarnessServices {
         steps: Vec<String>,
         review_required: bool,
     ) -> HarnessResult<PlanState> {
-        let session_id = required(&session_id.into(), "session id")?;
         let plan = PlanState {
-            session_id: session_id.clone(),
-            mode: "plan".into(),
+            session_id: session_id.into(),
             steps,
             review_required,
-            updated_at_ms: now_ms(),
+            exited: false,
         };
-        self.state()?.plans.insert(session_id, plan.clone());
+        self.lock_state()?
+            .plans
+            .insert(plan.session_id.clone(), plan.clone());
         Ok(plan)
     }
 
-    pub fn exit_plan(&self, session_id: &str, approved: bool) -> HarnessResult<PlanState> {
-        let mut state = self.state()?;
-        let plan = state
-            .plans
-            .get_mut(session_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("plan:{session_id}")))?;
-        if plan.review_required && !approved {
-            return Err(HarnessError::ApprovalRequired(format!("plan:{session_id}")));
+    pub fn exit_plan(&self, session_id: &str, reviewed: bool) -> HarnessResult<PlanState> {
+        let mut state = self.lock_state()?;
+        let plan = state.plans.get_mut(session_id).ok_or_else(|| HarnessError::NotFound(session_id.to_string()))?;
+        if plan.review_required && !reviewed {
+            return Err(HarnessError::InvalidRequest(
+                "plan exit requires review".into(),
+            ));
         }
-        plan.mode = "execution".into();
-        plan.updated_at_ms = now_ms();
+        plan.exited = true;
         Ok(plan.clone())
     }
 
@@ -548,145 +576,78 @@ impl HarnessServices {
         schedule: impl Into<String>,
     ) -> HarnessResult<ScheduleEntry> {
         let entry = ScheduleEntry {
-            id: format!("schedule:{}", Uuid::new_v4()),
-            session_id: required(&session_id.into(), "session id")?,
-            instruction: required(&instruction.into(), "instruction")?,
-            schedule: required(&schedule.into(), "schedule")?,
+            id: format!("schedule_{}", Uuid::new_v4().simple()),
+            session_id: session_id.into(),
+            instruction: instruction.into(),
+            schedule: schedule.into(),
             enabled: true,
-            created_at_ms: now_ms(),
         };
-        self.state()?
+        self.lock_state()?
             .schedules
             .insert(entry.id.clone(), entry.clone());
         Ok(entry)
     }
 
-    pub fn set_schedule_enabled(
-        &self,
-        schedule_id: &str,
-        enabled: bool,
-    ) -> HarnessResult<ScheduleEntry> {
-        let mut state = self.state()?;
-        let entry = state
-            .schedules
-            .get_mut(schedule_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))?;
+    pub fn set_schedule_enabled(&self, id: &str, enabled: bool) -> HarnessResult<ScheduleEntry> {
+        let mut state = self.lock_state()?;
+        let entry = state.schedules.get_mut(id).ok_or_else(|| HarnessError::NotFound(id.to_string()))?;
         entry.enabled = enabled;
         Ok(entry.clone())
     }
 
     pub fn record_feedback(
         &self,
-        session_id: impl Into<String>,
-        kind: impl Into<String>,
-        text: impl Into<String>,
+        session_id: Option<String>,
+        rating: Option<i32>,
+        note: Option<String>,
     ) -> HarnessResult<FeedbackRecord> {
         let record = FeedbackRecord {
-            id: format!("feedback:{}", Uuid::new_v4()),
-            session_id: required(&session_id.into(), "session id")?,
-            kind: required(&kind.into(), "feedback kind")?,
-            text: required(&text.into(), "feedback text")?,
-            created_at_ms: now_ms(),
+            id: format!("feedback_{}", Uuid::new_v4().simple()),
+            session_id,
+            rating,
+            note,
         };
-        self.state()?
+        self.lock_state()?
             .feedback
             .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
     pub fn identity(&self) -> HarnessResult<IdentityRecord> {
-        let mut state = self.state()?;
-        if let Some(identity) = state.identity.clone() {
-            return Ok(identity);
-        }
-        let identity = IdentityRecord {
-            anonymous_id: format!("anon:{}", Uuid::new_v4()),
-            account_id: None,
-        };
-        state.identity = Some(identity.clone());
-        Ok(identity)
+        Ok(self.lock_state()?.identity.clone())
     }
 
-    pub fn bind_account(&self, account_id: impl Into<String>) -> HarnessResult<IdentityRecord> {
-        let mut identity = self.identity()?;
-        identity.account_id = Some(required(&account_id.into(), "account id")?);
-        self.state()?.identity = Some(identity.clone());
-        Ok(identity)
+    pub fn bind_identity_account(&self, account_id: Option<String>, display_name: Option<String>) -> HarnessResult<IdentityRecord> {
+        let mut state = self.lock_state()?;
+        state.identity.account_id = account_id;
+        state.identity.display_name = display_name;
+        Ok(state.identity.clone())
     }
 
-    pub fn search_sessions(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> HarnessResult<Vec<SessionSearchHit>> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(Vec::new());
-        }
-        let snapshot: RuntimeSnapshot = self.harness.snapshot()?;
-        let mut hits = Vec::new();
-        for session in snapshot.sessions {
-            let transcript = self.harness.transcript(&session.id)?;
-            let haystack = format!("{}\n{}", session.title, transcript).to_lowercase();
-            let score = haystack.matches(&query).count() as u32;
-            if score == 0 {
-                continue;
-            }
-            let excerpt = transcript
-                .lines()
-                .find(|line| line.to_lowercase().contains(&query))
-                .unwrap_or(&session.title)
-                .chars()
-                .take(240)
-                .collect();
-            hits.push(SessionSearchHit {
-                session_id: session.id,
-                title: session.title,
-                score,
-                excerpt,
-            });
-        }
-        hits.sort_by(|left, right| {
-            right
-                .score
-                .cmp(&left.score)
-                .then_with(|| left.session_id.cmp(&right.session_id))
-        });
-        hits.truncate(limit);
-        Ok(hits)
-    }
-
-    pub fn create_team(
-        &self,
-        name: impl Into<String>,
-        members: Vec<TeamMember>,
-    ) -> HarnessResult<AgentTeam> {
+    pub fn create_team(&self, name: impl Into<String>, members: Vec<TeamMember>) -> HarnessResult<AgentTeam> {
         let team = AgentTeam {
-            id: format!("team:{}", Uuid::new_v4()),
-            name: required(&name.into(), "team name")?,
+            id: format!("team_{}", Uuid::new_v4().simple()),
+            name: name.into(),
             members,
             tasks: Vec::new(),
-            mailbox: Vec::new(),
+            messages: Vec::new(),
         };
-        self.state()?.teams.insert(team.id.clone(), team.clone());
+        self.lock_state()?.teams.insert(team.id.clone(), team.clone());
         Ok(team)
     }
 
     pub fn add_team_task(
         &self,
         team_id: &str,
-        text: impl Into<String>,
-        assignee_agent_id: Option<String>,
+        assignee_agent_id: impl Into<String>,
+        instruction: impl Into<String>,
     ) -> HarnessResult<TeamTask> {
-        let mut state = self.state()?;
-        let team = state
-            .teams
-            .get_mut(team_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
+        let mut state = self.lock_state()?;
+        let team = state.teams.get_mut(team_id).ok_or_else(|| HarnessError::NotFound(team_id.to_string()))?;
         let task = TeamTask {
-            id: format!("team-task:{}", Uuid::new_v4()),
-            text: required(&text.into(), "team task")?,
-            assignee_agent_id,
+            id: format!("team_task_{}", Uuid::new_v4().simple()),
+            assignee_agent_id: assignee_agent_id.into(),
+            instruction: instruction.into(),
             status: "pending".into(),
         };
         team.tasks.push(task.clone());
@@ -698,157 +659,110 @@ impl HarnessServices {
         team_id: &str,
         from_agent_id: impl Into<String>,
         to_agent_id: Option<String>,
-        text: impl Into<String>,
+        payload: Value,
     ) -> HarnessResult<TeamMessage> {
-        let mut state = self.state()?;
-        let team = state
-            .teams
-            .get_mut(team_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
+        let mut state = self.lock_state()?;
+        let team = state.teams.get_mut(team_id).ok_or_else(|| HarnessError::NotFound(team_id.to_string()))?;
         let message = TeamMessage {
-            id: format!("team-message:{}", Uuid::new_v4()),
-            from_agent_id: required(&from_agent_id.into(), "from agent")?,
+            id: format!("team_message_{}", Uuid::new_v4().simple()),
+            from_agent_id: from_agent_id.into(),
             to_agent_id,
-            text: required(&text.into(), "team message")?,
-            created_at_ms: now_ms(),
+            payload,
         };
-        team.mailbox.push(message.clone());
+        team.messages.push(message.clone());
         Ok(message)
     }
 
-    pub fn set_guard_policy(&self, policy: GuardPolicy) -> HarnessResult<()> {
-        if policy.repeat_window == 0 || policy.repeat_threshold == 0 || policy.tool_timeout_ms == 0
-        {
-            return Err(HarnessError::InvalidConfig(
-                "guard policy values must be positive".into(),
-            ));
-        }
-        self.state()?.guard_policy = policy;
-        Ok(())
-    }
-
-    pub fn observe_tool_call(&self, request: &ToolRequest) -> HarnessResult<GuardObservation> {
-        let fingerprint = tool_fingerprint(request);
-        let mut state = self.state()?;
-        let policy = state.guard_policy.clone();
-        let repeated_count = state
-            .recent_tool_calls
-            .iter()
-            .filter(|(tool, hash)| tool == &request.name && hash == &fingerprint)
-            .count();
-        state
-            .recent_tool_calls
-            .push_back((request.name.clone(), fingerprint.clone()));
-        while state.recent_tool_calls.len() > policy.repeat_window {
-            state.recent_tool_calls.pop_front();
-        }
-        Ok(GuardObservation {
-            tool: request.name.clone(),
-            fingerprint,
-            repeated: repeated_count + 1 >= policy.repeat_threshold,
-        })
-    }
-
     pub fn register_skill(&self, skill: SkillRecord) -> HarnessResult<()> {
-        let id = required(&skill.id, "skill id")?;
-        self.state()?.skills.insert(id, skill);
+        self.lock_state()?.skills.insert(skill.name.clone(), skill);
         Ok(())
+    }
+
+    pub fn skills(&self) -> HarnessResult<Vec<SkillRecord>> {
+        Ok(self.lock_state()?.skills.values().cloned().collect())
     }
 
     pub fn register_command(&self, command: CommandRecord) -> HarnessResult<()> {
-        let id = required(&command.id, "command id")?;
-        self.state()?.commands.insert(id, command);
+        self.lock_state()?.commands.insert(command.name.clone(), command);
         Ok(())
     }
 
-    pub fn inject_context(&self, fragment: ContextFragment) -> HarnessResult<()> {
-        let id = required(&fragment.id, "context id")?;
-        self.state()?.context.insert(id, fragment);
+    pub fn commands(&self) -> HarnessResult<Vec<CommandRecord>> {
+        Ok(self.lock_state()?.commands.values().cloned().collect())
+    }
+
+    pub fn observe(&self, value: impl Into<String>) -> HarnessResult<()> {
+        let value = value.into();
+        let mut state = self.lock_state()?;
+        let repeats = state
+            .recent_observations
+            .iter()
+            .filter(|item| *item == &value)
+            .count();
+        if repeats >= self.guard_policy.max_repeat_observations {
+            return Err(HarnessError::PolicyDenied(format!(
+                "guard rejected repeated observation: {value}"
+            )));
+        }
+        state.recent_observations.push_back(value);
+        while state.recent_observations.len() > self.guard_policy.max_recent_observations {
+            state.recent_observations.pop_front();
+        }
         Ok(())
     }
 
-    pub fn assembled_context(&self) -> HarnessResult<Vec<ContextFragment>> {
-        let mut fragments = self.state()?.context.values().cloned().collect::<Vec<_>>();
-        fragments.sort_by_key(|fragment| (fragment.priority, fragment.id.clone()));
-        Ok(fragments)
+    pub fn search_sessions(&self, query: &str) -> HarnessResult<Vec<SessionSearchHit>> {
+        let query = query.to_lowercase();
+        let sessions = self.harness.sessions()?;
+        let mut hits = Vec::new();
+        for session in sessions {
+            for event in session.events {
+                let text = serde_json::to_string(&event.payload)
+                    .map_err(|error| HarnessError::Serialization(error.to_string()))?;
+                if event.kind.to_lowercase().contains(&query) || text.to_lowercase().contains(&query) {
+                    hits.push(SessionSearchHit {
+                        session_id: session.id.clone(),
+                        event_id: event.id,
+                        kind: event.kind,
+                        text,
+                    });
+                }
+            }
+        }
+        Ok(hits)
     }
 
-    pub fn snapshot(&self) -> HarnessResult<Value> {
-        let state = self.state()?;
-        Ok(serde_json::json!({
-            "promptSections": state.prompt_sections.values().collect::<Vec<_>>(),
-            "workspaces": state.workspaces.values().collect::<Vec<_>>(),
-            "settings": state.settings.values().collect::<Vec<_>>(),
-            "credentialReferences": state.credential_refs.values().collect::<Vec<_>>(),
-            "attachments": state.attachments.values().collect::<Vec<_>>(),
-            "spills": state.spills.values().collect::<Vec<_>>(),
-            "todos": state.todos.values().collect::<Vec<_>>(),
-            "plans": state.plans.values().collect::<Vec<_>>(),
-            "schedules": state.schedules.values().collect::<Vec<_>>(),
-            "feedback": state.feedback.values().collect::<Vec<_>>(),
-            "identity": state.identity,
-            "teams": state.teams.values().collect::<Vec<_>>(),
-            "guardPolicy": state.guard_policy,
-            "skills": state.skills.values().collect::<Vec<_>>(),
-            "commands": state.commands.values().collect::<Vec<_>>(),
-            "context": state.context.values().collect::<Vec<_>>(),
-        }))
+    pub fn hash_bytes(bytes: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        format!("sha256:{:x}", hasher.finalize())
     }
 
-    fn state(&self) -> HarnessResult<MutexGuard<'_, ServiceState>> {
-        self.state.lock().map_err(|_| HarnessError::StatePoisoned)
-    }
-
-    fn providers(&self) -> HarnessResult<MutexGuard<'_, ProviderSet>> {
+    fn content_store_provider(&self) -> HarnessResult<Arc<dyn ContentStore>> {
         self.providers
             .lock()
-            .map_err(|_| HarnessError::StatePoisoned)
+            .map_err(|_| HarnessError::InvalidState("provider lock poisoned".into()))?
+            .content_store
+            .clone()
+            .ok_or_else(|| HarnessError::InvalidState("content store provider is not configured".into()))
     }
-}
 
-fn required(value: &str, field: &str) -> HarnessResult<String> {
-    if value.trim().is_empty() {
-        Err(HarnessError::InvalidConfig(format!(
-            "{field} must not be empty"
-        )))
-    } else {
-        Ok(value.to_string())
+    fn lock_state(&self) -> HarnessResult<MutexGuard<'_, ServicesState>> {
+        self.state
+            .lock()
+            .map_err(|_| HarnessError::InvalidState("services lock poisoned".into()))
     }
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
-}
-
-fn tool_fingerprint(request: &ToolRequest) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(request.name.as_bytes());
-    if let Ok(bytes) = serde_json::to_vec(&request.arguments) {
-        hasher.update(bytes);
-    }
-    format!("{:x}", hasher.finalize())
-}
-
-fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mahayana_core::BuildProfile;
 
     #[test]
-    fn prompt_sections_are_ordered() {
-        let services = HarnessServices::new(MahayanaHarness::new(BuildProfile::DesktopFull));
+    fn prompt_sections_are_deterministic() {
+        let services = HarnessServices::new(MahayanaHarness::new());
         services
-            .add_prompt_section(PromptSection {
+            .register_prompt_section(PromptSection {
                 id: "b".into(),
                 priority: 20,
                 content: "second".into(),
@@ -856,48 +770,38 @@ mod tests {
             })
             .unwrap();
         services
-            .add_prompt_section(PromptSection {
+            .register_prompt_section(PromptSection {
                 id: "a".into(),
                 priority: 10,
                 content: "first".into(),
                 enabled: true,
             })
             .unwrap();
-        assert_eq!(services.assembled_prompt().unwrap(), "first\n\nsecond");
+        assert_eq!(
+            services.assemble_prompt("base").unwrap(),
+            "base\n\nfirst\n\nsecond"
+        );
     }
 
     #[test]
-    fn session_search_uses_logged_transcript() {
-        let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
-        let session = harness.create_session("alpha").unwrap();
+    fn session_search_finds_payload_text() {
+        let harness = MahayanaHarness::new();
+        let session = harness.create_session(None, BTreeMap::new()).unwrap();
         harness
-            .append_session_event(
-                &session.id,
-                "user/message",
-                serde_json::json!({"text": "searchable needle"}),
-            )
+            .append_session_event(&session.id, "message/user", serde_json::json!({ "text": "lotus sutra" }))
             .unwrap();
         let services = HarnessServices::new(harness);
-        let hits = services.search_sessions("needle", 10).unwrap();
+        let hits = services.search_sessions("lotus").unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].session_id, session.id);
     }
 
     #[test]
-    fn repeat_guard_detects_identical_calls() {
-        let services = HarnessServices::new(MahayanaHarness::new(BuildProfile::DesktopFull));
-        services
-            .set_guard_policy(GuardPolicy {
-                repeat_window: 4,
-                repeat_threshold: 2,
-                tool_timeout_ms: 1_000,
-            })
-            .unwrap();
-        let request = ToolRequest {
-            name: "read".into(),
-            arguments: serde_json::json!({"path": "a"}),
-        };
-        assert!(!services.observe_tool_call(&request).unwrap().repeated);
-        assert!(services.observe_tool_call(&request).unwrap().repeated);
+    fn repeated_observations_are_guarded() {
+        let services = HarnessServices::new(MahayanaHarness::new());
+        services.observe("same").unwrap();
+        services.observe("same").unwrap();
+        services.observe("same").unwrap();
+        assert!(services.observe("same").is_err());
     }
 }
