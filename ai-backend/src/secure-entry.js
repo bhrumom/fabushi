@@ -1,6 +1,10 @@
 import process from 'node:process';
 
-const production = process.env.NODE_ENV === 'production';
+const runtimeMode = String(process.env.NODE_ENV || '').trim().toLowerCase();
+// Fail closed: an omitted or misspelled NODE_ENV must never silently disable
+// production security checks. Only explicitly declared development/test modes
+// are allowed to use the relaxed local contract.
+const production = runtimeMode !== 'development' && runtimeMode !== 'test';
 const adapterSecret = String(process.env.CODEX_DEEPSEEK_ADAPTER_SECRET || '').trim();
 const deepSeekKey = String(process.env.DEEPSEEK_API_KEY || '').trim();
 const openClawToken = String(process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
