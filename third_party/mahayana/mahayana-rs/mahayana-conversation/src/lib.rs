@@ -77,6 +77,73 @@ pub trait ConversationProvider: Send + Sync {
     ) -> Result<(), ConversationError>;
 }
 
+/// Compatibility wrapper that prevents an upstream-era provider identity from
+/// leaking through the Mahayana product boundary. It rewrites only agent
+/// conversation IDs; all provider behavior remains delegated to the adapter.
+struct CanonicalProvider {
+    inner: Arc<dyn ConversationProvider>,
+}
+
+impl CanonicalProvider {
+    fn new(inner: Arc<dyn ConversationProvider>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl ConversationProvider for CanonicalProvider {
+    fn key(&self) -> &'static str {
+        match self.inner.key() {
+            LEGACY_CODEX_AGENT_PROVIDER_KEY => MAHAYANA_AGENT_PROVIDER_KEY,
+            key => key,
+        }
+    }
+
+    async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
+        let mut conversations = self.inner.list_conversations().await?;
+        if self.key() == MAHAYANA_AGENT_PROVIDER_KEY {
+            for conversation in &mut conversations {
+                conversation.id = canonicalize_conversation_id(&conversation.id);
+            }
+        }
+        Ok(conversations)
+    }
+
+    async fn list_plugin_commands(
+        &self,
+        plugin_id: Option<&str>,
+    ) -> Result<Vec<PluginCommandDescriptor>, ConversationError> {
+        self.inner.list_plugin_commands(plugin_id).await
+    }
+
+    async fn history(
+        &self,
+        conversation_id: &ConversationId,
+        limit: u32,
+    ) -> Result<Vec<Message>, ConversationError> {
+        self.inner.history(conversation_id, limit).await
+    }
+
+    async fn send_message(
+        &self,
+        request: SendMessageRequest,
+        events: SharedConversationEventSink,
+    ) -> Result<(), ConversationError> {
+        self.inner.send_message(request, events).await
+    }
+
+    async fn interrupt(&self, operation_id: &OperationId) -> Result<(), ConversationError> {
+        self.inner.interrupt(operation_id).await
+    }
+
+    async fn resolve_approval(
+        &self,
+        request: ResolveApprovalRequest,
+    ) -> Result<(), ConversationError> {
+        self.inner.resolve_approval(request).await
+    }
+}
+
 #[derive(Default)]
 pub struct ProviderRegistry {
     providers: BTreeMap<String, Arc<dyn ConversationProvider>>,
@@ -92,6 +159,12 @@ impl ProviderRegistry {
             return Err(ConversationError::InvalidProviderKey);
         }
         let key = canonical_provider_key(raw_key);
+        let provider: Arc<dyn ConversationProvider> =
+            if raw_key == LEGACY_CODEX_AGENT_PROVIDER_KEY {
+                Arc::new(CanonicalProvider::new(provider))
+            } else {
+                provider
+            };
         if self.providers.insert(key.to_string(), provider).is_some() {
             return Err(ConversationError::DuplicateProvider(key.to_string()));
         }
