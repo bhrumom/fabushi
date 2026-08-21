@@ -336,7 +336,13 @@ impl MahayanaHarness {
         let harness = Self {
             state: Arc::new(Mutex::new(HarnessState::new(build_profile))),
         };
-        let _ = harness.emit(EventScope::Runtime, "runtime/ready", None, None, Value::Null);
+        let _ = harness.emit(
+            EventScope::Runtime,
+            "runtime/ready",
+            None,
+            None,
+            Value::Null,
+        );
         harness
     }
 
@@ -347,7 +353,13 @@ impl MahayanaHarness {
             return Err(HarnessError::DuplicateService(name));
         }
         drop(state);
-        self.emit(EventScope::Capability, "service/registered", None, None, serde_json::json!({"service": name}))?;
+        self.emit(
+            EventScope::Capability,
+            "service/registered",
+            None,
+            None,
+            serde_json::json!({"service": name}),
+        )?;
         Ok(())
     }
 
@@ -357,13 +369,21 @@ impl MahayanaHarness {
             return Err(HarnessError::ServiceNotFound(name.into()));
         }
         drop(state);
-        self.emit(EventScope::Capability, "service/unregistered", None, None, serde_json::json!({"service": name}))?;
+        self.emit(
+            EventScope::Capability,
+            "service/unregistered",
+            None,
+            None,
+            serde_json::json!({"service": name}),
+        )?;
         Ok(())
     }
 
     pub fn register_profile(&self, profile: ProfileDefinition) -> HarnessResult<()> {
         let mut state = self.state()?;
-        state.profiles.insert(required(profile.id.clone(), "profile id")?, profile);
+        state
+            .profiles
+            .insert(required(profile.id.clone(), "profile id")?, profile);
         Ok(())
     }
 
@@ -374,7 +394,13 @@ impl MahayanaHarness {
         }
         state.active_profile = profile_id.into();
         drop(state);
-        self.emit(EventScope::Runtime, "profile/activated", None, None, serde_json::json!({"profile": profile_id}))?;
+        self.emit(
+            EventScope::Runtime,
+            "profile/activated",
+            None,
+            None,
+            serde_json::json!({"profile": profile_id}),
+        )?;
         Ok(())
     }
 
@@ -386,7 +412,13 @@ impl MahayanaHarness {
         }
         state.plugins.insert(id.clone(), manifest);
         drop(state);
-        self.emit(EventScope::Capability, "plugin/mounted", None, None, serde_json::json!({"pluginId": id}))?;
+        self.emit(
+            EventScope::Capability,
+            "plugin/mounted",
+            None,
+            None,
+            serde_json::json!({"pluginId": id}),
+        )?;
         Ok(())
     }
 
@@ -396,7 +428,13 @@ impl MahayanaHarness {
             return Err(HarnessError::PluginNotFound(plugin_id.into()));
         }
         drop(state);
-        self.emit(EventScope::Capability, "plugin/unmounted", None, None, serde_json::json!({"pluginId": plugin_id}))?;
+        self.emit(
+            EventScope::Capability,
+            "plugin/unmounted",
+            None,
+            None,
+            serde_json::json!({"pluginId": plugin_id}),
+        )?;
         Ok(())
     }
 
@@ -410,9 +448,17 @@ impl MahayanaHarness {
         if state.tools.contains_key(&name) {
             return Err(HarnessError::DuplicateTool(name));
         }
-        state.tools.insert(name.clone(), RegisteredTool { definition, host });
+        state
+            .tools
+            .insert(name.clone(), RegisteredTool { definition, host });
         drop(state);
-        self.emit(EventScope::Capability, "tool/registered", None, None, serde_json::json!({"tool": name}))?;
+        self.emit(
+            EventScope::Capability,
+            "tool/registered",
+            None,
+            None,
+            serde_json::json!({"tool": name}),
+        )?;
         Ok(())
     }
 
@@ -424,7 +470,13 @@ impl MahayanaHarness {
     pub fn register_llm_provider(&self, provider: Arc<dyn LlmProvider>) -> HarnessResult<()> {
         let id = required(provider.id().to_string(), "llm provider id")?;
         self.state()?.llm_providers.insert(id.clone(), provider);
-        self.emit(EventScope::Capability, "llm/registered", None, None, serde_json::json!({"provider": id}))?;
+        self.emit(
+            EventScope::Capability,
+            "llm/registered",
+            None,
+            None,
+            serde_json::json!({"provider": id}),
+        )?;
         Ok(())
     }
 
@@ -435,7 +487,13 @@ impl MahayanaHarness {
     ) -> HarnessResult<()> {
         let id = required(id.into(), "storage provider id")?;
         self.state()?.storage_providers.insert(id.clone(), provider);
-        self.emit(EventScope::Capability, "storage/registered", None, None, serde_json::json!({"provider": id}))?;
+        self.emit(
+            EventScope::Capability,
+            "storage/registered",
+            None,
+            None,
+            serde_json::json!({"provider": id}),
+        )?;
         Ok(())
     }
 
@@ -449,12 +507,23 @@ impl MahayanaHarness {
             parent_session_id: None,
             events: Vec::new(),
         };
-        self.state()?.sessions.insert(session.id.clone(), session.clone());
-        self.emit(EventScope::Session, "session/created", Some(&session.id), None, serde_json::json!({"title": session.title}))?;
+        self.state()?
+            .sessions
+            .insert(session.id.clone(), session.clone());
+        self.emit(
+            EventScope::Session,
+            "session/created",
+            Some(&session.id),
+            None,
+            serde_json::json!({"title": session.title}),
+        )?;
         Ok(session)
     }
 
-    pub fn ensure_session_for_conversation(&self, conversation_id: &ConversationId) -> HarnessResult<SessionRecord> {
+    pub fn ensure_session_for_conversation(
+        &self,
+        conversation_id: &ConversationId,
+    ) -> HarnessResult<SessionRecord> {
         let id = format!("conversation:{}", conversation_id.as_str());
         if let Some(existing) = self.state()?.sessions.get(&id).cloned() {
             return Ok(existing);
@@ -469,7 +538,13 @@ impl MahayanaHarness {
             events: Vec::new(),
         };
         self.state()?.sessions.insert(id.clone(), session.clone());
-        self.emit(EventScope::Session, "session/created", Some(&id), None, serde_json::json!({"conversationId": conversation_id}))?;
+        self.emit(
+            EventScope::Session,
+            "session/created",
+            Some(&id),
+            None,
+            serde_json::json!({"conversationId": conversation_id}),
+        )?;
         Ok(session)
     }
 
@@ -486,8 +561,16 @@ impl MahayanaHarness {
         child.parent_session_id = Some(source.id.clone());
         child.created_at_ms = now;
         child.updated_at_ms = now;
-        self.state()?.sessions.insert(child.id.clone(), child.clone());
-        self.emit(EventScope::Session, "session/forked", Some(&child.id), None, serde_json::json!({"sourceSessionId": source_session_id}))?;
+        self.state()?
+            .sessions
+            .insert(child.id.clone(), child.clone());
+        self.emit(
+            EventScope::Session,
+            "session/forked",
+            Some(&child.id),
+            None,
+            serde_json::json!({"sourceSessionId": source_session_id}),
+        )?;
         Ok(child)
     }
 
@@ -509,7 +592,13 @@ impl MahayanaHarness {
             status: "idle".into(),
         };
         self.state()?.agents.insert(agent.id.clone(), agent.clone());
-        self.emit(EventScope::Agent, "agent/spawned", Some(&session_id), Some(&agent.id), serde_json::json!({"preset": agent.preset}))?;
+        self.emit(
+            EventScope::Agent,
+            "agent/spawned",
+            Some(&session_id),
+            Some(&agent.id),
+            serde_json::json!({"preset": agent.preset}),
+        )?;
         Ok(agent)
     }
 
@@ -527,18 +616,37 @@ impl MahayanaHarness {
             updated_at_ms: now,
         };
         self.state()?.goals.insert(goal.id.clone(), goal.clone());
-        self.emit(EventScope::Agent, "goal/created", Some(session_id), None, serde_json::json!({"goalId": goal.id, "text": goal.text}))?;
+        self.emit(
+            EventScope::Agent,
+            "goal/created",
+            Some(session_id),
+            None,
+            serde_json::json!({"goalId": goal.id, "text": goal.text}),
+        )?;
         Ok(goal)
     }
 
-    pub fn update_goal_status(&self, goal_id: &str, status: impl Into<String>) -> HarnessResult<GoalRecord> {
+    pub fn update_goal_status(
+        &self,
+        goal_id: &str,
+        status: impl Into<String>,
+    ) -> HarnessResult<GoalRecord> {
         let mut state = self.state()?;
-        let goal = state.goals.get_mut(goal_id).ok_or_else(|| HarnessError::GoalNotFound(goal_id.into()))?;
+        let goal = state
+            .goals
+            .get_mut(goal_id)
+            .ok_or_else(|| HarnessError::GoalNotFound(goal_id.into()))?;
         goal.status = required(status.into(), "goal status")?;
         goal.updated_at_ms = now_ms();
         let result = goal.clone();
         drop(state);
-        self.emit(EventScope::Agent, "goal/updated", Some(&result.session_id), None, serde_json::json!({"goalId": result.id, "status": result.status}))?;
+        self.emit(
+            EventScope::Agent,
+            "goal/updated",
+            Some(&result.session_id),
+            None,
+            serde_json::json!({"goalId": result.id, "status": result.status}),
+        )?;
         Ok(result)
     }
 
@@ -553,7 +661,13 @@ impl MahayanaHarness {
             result_ref: None,
         };
         self.state()?.jobs.insert(job.id.clone(), job.clone());
-        self.emit(EventScope::Runtime, "job/created", None, None, serde_json::json!({"jobId": job.id, "kind": job.kind}))?;
+        self.emit(
+            EventScope::Runtime,
+            "job/created",
+            None,
+            None,
+            serde_json::json!({"jobId": job.id, "kind": job.kind}),
+        )?;
         Ok(job)
     }
 
@@ -564,20 +678,35 @@ impl MahayanaHarness {
         result_ref: Option<String>,
     ) -> HarnessResult<JobRecord> {
         let mut state = self.state()?;
-        let job = state.jobs.get_mut(job_id).ok_or_else(|| HarnessError::JobNotFound(job_id.into()))?;
+        let job = state
+            .jobs
+            .get_mut(job_id)
+            .ok_or_else(|| HarnessError::JobNotFound(job_id.into()))?;
         job.status = required(status.into(), "job status")?;
         job.result_ref = result_ref;
         job.updated_at_ms = now_ms();
         let result = job.clone();
         drop(state);
-        self.emit(EventScope::Runtime, "job/updated", None, None, serde_json::json!({"jobId": result.id, "status": result.status}))?;
+        self.emit(
+            EventScope::Runtime,
+            "job/updated",
+            None,
+            None,
+            serde_json::json!({"jobId": result.id, "status": result.status}),
+        )?;
         Ok(result)
     }
 
     pub fn register_workflow(&self, workflow: WorkflowRecord) -> HarnessResult<()> {
         let id = required(workflow.id.clone(), "workflow id")?;
         self.state()?.workflows.insert(id.clone(), workflow);
-        self.emit(EventScope::Capability, "workflow/registered", None, None, serde_json::json!({"workflowId": id}))?;
+        self.emit(
+            EventScope::Capability,
+            "workflow/registered",
+            None,
+            None,
+            serde_json::json!({"workflowId": id}),
+        )?;
         Ok(())
     }
 
@@ -588,12 +717,17 @@ impl MahayanaHarness {
     ) -> HarnessResult<ToolResult> {
         let (registered, interceptors, approved) = {
             let state = self.state()?;
-            let registered = state.tools.get(&request.name).cloned().ok_or_else(|| HarnessError::ToolNotFound(request.name.clone()))?;
+            let registered = state
+                .tools
+                .get(&request.name)
+                .cloned()
+                .ok_or_else(|| HarnessError::ToolNotFound(request.name.clone()))?;
             let approved = state.approved_tools.contains(&request.name);
             (registered, state.interceptors.clone(), approved)
         };
 
-        if registered.definition.requires_approval && !registered.definition.read_only && !approved {
+        if registered.definition.requires_approval && !registered.definition.read_only && !approved
+        {
             let approval = ApprovalRequest {
                 id: format!("approval:{}", Uuid::new_v4()),
                 tool: request.name.clone(),
@@ -601,31 +735,66 @@ impl MahayanaHarness {
                 created_at_ms: now_ms(),
                 session_id: session_id.map(ToOwned::to_owned),
             };
-            self.state()?.approvals.insert(approval.id.clone(), approval.clone());
-            self.emit(EventScope::Capability, "tool/approval-required", session_id, None, serde_json::to_value(&approval).unwrap_or(Value::Null))?;
+            self.state()?
+                .approvals
+                .insert(approval.id.clone(), approval.clone());
+            self.emit(
+                EventScope::Capability,
+                "tool/approval-required",
+                session_id,
+                None,
+                serde_json::to_value(&approval).unwrap_or(Value::Null),
+            )?;
             return Err(HarnessError::ApprovalRequired(approval.id));
         }
 
         for interceptor in &interceptors {
-            match interceptor.before_execute(&registered.definition, &request).await? {
+            match interceptor
+                .before_execute(&registered.definition, &request)
+                .await?
+            {
                 InterceptorDecision::Continue => {}
-                InterceptorDecision::Reject(reason) => return Err(HarnessError::ToolExecution(reason)),
+                InterceptorDecision::Reject(reason) => {
+                    return Err(HarnessError::ToolExecution(reason));
+                }
             }
         }
 
-        self.emit(EventScope::Session, "tool/call", session_id, None, serde_json::json!({"tool": request.name, "arguments": request.arguments}))?;
-        let result = registered.host.execute(request.clone()).await.map_err(|error| HarnessError::ToolExecution(error.to_string()))?;
+        self.emit(
+            EventScope::Session,
+            "tool/call",
+            session_id,
+            None,
+            serde_json::json!({"tool": request.name, "arguments": request.arguments}),
+        )?;
+        let result = registered
+            .host
+            .execute(request.clone())
+            .await
+            .map_err(|error| HarnessError::ToolExecution(error.to_string()))?;
         for interceptor in &interceptors {
-            interceptor.after_execute(&registered.definition, &request, &result).await?;
+            interceptor
+                .after_execute(&registered.definition, &request, &result)
+                .await?;
         }
         self.emit(EventScope::Session, "tool/result", session_id, None, serde_json::json!({"tool": request.name, "isError": result.is_error, "content": result.content}))?;
         Ok(result)
     }
 
-    pub fn resolve_approval(&self, approval_id: &str, decision: ApprovalDecision) -> HarnessResult<()> {
+    pub fn resolve_approval(
+        &self,
+        approval_id: &str,
+        decision: ApprovalDecision,
+    ) -> HarnessResult<()> {
         let mut state = self.state()?;
-        let approval = state.approvals.remove(approval_id).ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
-        if matches!(decision, ApprovalDecision::Accept | ApprovalDecision::AcceptForSession) {
+        let approval = state
+            .approvals
+            .remove(approval_id)
+            .ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
+        if matches!(
+            decision,
+            ApprovalDecision::Accept | ApprovalDecision::AcceptForSession
+        ) {
             state.approved_tools.insert(approval.tool.clone());
         }
         drop(state);
@@ -639,12 +808,21 @@ impl MahayanaHarness {
         kind: impl Into<String>,
         payload: Value,
     ) -> HarnessResult<HarnessEvent> {
-        self.emit(EventScope::Session, &kind.into(), Some(session_id), None, payload)
+        self.emit(
+            EventScope::Session,
+            &kind.into(),
+            Some(session_id),
+            None,
+            payload,
+        )
     }
 
     pub fn derive_messages(&self, session_id: &str) -> HarnessResult<Vec<LlmMessage>> {
         let state = self.state()?;
-        let session = state.sessions.get(session_id).ok_or_else(|| HarnessError::SessionNotFound(session_id.into()))?;
+        let session = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| HarnessError::SessionNotFound(session_id.into()))?;
         let messages = session
             .events
             .iter()
@@ -655,7 +833,14 @@ impl MahayanaHarness {
                     "system/message" => "system",
                     _ => return None,
                 };
-                event.payload.get("text").and_then(Value::as_str).map(|text| LlmMessage { role: role.into(), content: text.into() })
+                event
+                    .payload
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(|text| LlmMessage {
+                        role: role.into(),
+                        content: text.into(),
+                    })
             })
             .collect();
         Ok(messages)
@@ -663,7 +848,11 @@ impl MahayanaHarness {
 
     pub fn transcript(&self, session_id: &str) -> HarnessResult<String> {
         let messages = self.derive_messages(session_id)?;
-        Ok(messages.into_iter().map(|message| format!("{}: {}", message.role, message.content)).collect::<Vec<_>>().join("\n"))
+        Ok(messages
+            .into_iter()
+            .map(|message| format!("{}: {}", message.role, message.content))
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 
     pub fn snapshot(&self) -> HarnessResult<RuntimeSnapshot> {
@@ -673,7 +862,11 @@ impl MahayanaHarness {
             profile: state.active_profile.clone(),
             services: state.services.iter().cloned().collect(),
             plugins: state.plugins.values().cloned().collect(),
-            tools: state.tools.values().map(|tool| tool.definition.clone()).collect(),
+            tools: state
+                .tools
+                .values()
+                .map(|tool| tool.definition.clone())
+                .collect(),
             sessions: state.sessions.values().cloned().collect(),
             agents: state.agents.values().cloned().collect(),
             approvals: state.approvals.values().cloned().collect(),
@@ -686,7 +879,10 @@ impl MahayanaHarness {
 
     pub fn dump_config(&self) -> HarnessResult<Value> {
         let state = self.state()?;
-        let profile = state.profiles.get(&state.active_profile).ok_or_else(|| HarnessError::ProfileNotFound(state.active_profile.clone()))?;
+        let profile = state
+            .profiles
+            .get(&state.active_profile)
+            .ok_or_else(|| HarnessError::ProfileNotFound(state.active_profile.clone()))?;
         Ok(serde_json::json!({
             "profile": profile,
             "services": state.services,
@@ -742,7 +938,9 @@ impl MahayanaHarness {
 
 fn required(value: String, field: &str) -> HarnessResult<String> {
     if value.trim().is_empty() {
-        Err(HarnessError::InvalidConfig(format!("{field} must not be empty")))
+        Err(HarnessError::InvalidConfig(format!(
+            "{field} must not be empty"
+        )))
     } else {
         Ok(value)
     }
@@ -760,23 +958,40 @@ mod tests {
     fn session_log_drives_transcript() {
         let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
         let session = harness.create_session("test").unwrap();
-        harness.append_session_event(&session.id, "user/message", serde_json::json!({"text": "hello"})).unwrap();
-        harness.append_session_event(&session.id, "assistant/message", serde_json::json!({"text": "world"})).unwrap();
-        assert_eq!(harness.transcript(&session.id).unwrap(), "user: hello\nassistant: world");
+        harness
+            .append_session_event(
+                &session.id,
+                "user/message",
+                serde_json::json!({"text": "hello"}),
+            )
+            .unwrap();
+        harness
+            .append_session_event(
+                &session.id,
+                "assistant/message",
+                serde_json::json!({"text": "world"}),
+            )
+            .unwrap();
+        assert_eq!(
+            harness.transcript(&session.id).unwrap(),
+            "user: hello\nassistant: world"
+        );
     }
 
     #[test]
     fn profiles_plugins_and_services_are_replaceable() {
         let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
         harness.register_service("tools").unwrap();
-        harness.mount_plugin(PluginManifest {
-            id: "example".into(),
-            name: "Example".into(),
-            version: "1.0.0".into(),
-            services: vec!["tools".into()],
-            tools: Vec::new(),
-            configuration: Value::Null,
-        }).unwrap();
+        harness
+            .mount_plugin(PluginManifest {
+                id: "example".into(),
+                name: "Example".into(),
+                version: "1.0.0".into(),
+                services: vec!["tools".into()],
+                tools: Vec::new(),
+                configuration: Value::Null,
+            })
+            .unwrap();
         let snapshot = harness.snapshot().unwrap();
         assert_eq!(snapshot.services, vec!["tools"]);
         assert_eq!(snapshot.plugins[0].id, "example");
@@ -784,6 +999,9 @@ mod tests {
 
     #[test]
     fn content_address_is_stable() {
-        assert_eq!(MahayanaHarness::content_address(b"abc"), "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            MahayanaHarness::content_address(b"abc"),
+            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }
