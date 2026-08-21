@@ -20,7 +20,7 @@ async function resolveUser(request, env) {
 async function requireAdmin(request, env) {
   const user = await resolveUser(request, env);
   if (!user) return jsonResponse({ error: '认证失败' }, 401);
-  if (!isAdmin(user.email)) return jsonResponse({ error: '权限不足' }, 403);
+  if (!isAdmin(user.email, env)) return jsonResponse({ error: '权限不足' }, 403);
   return null;
 }
 
@@ -55,7 +55,6 @@ function objectHeaders(object) {
   return headers;
 }
 
-// 资源清单包含对象键名和元数据，只允许管理员读取。
 export async function handleGetAssetsList(request, env) {
   const denied = await requireAdmin(request, env);
   if (denied) return denied;
@@ -64,12 +63,7 @@ export async function handleGetAssetsList(request, env) {
   if (env.R2_BUCKET) {
     const r2Objects = await env.R2_BUCKET.list({ limit: 1000 });
     if (r2Objects?.objects) {
-      r2Files = r2Objects.objects.map((obj) => ({
-        key: obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded,
-        source: 'r2'
-      }));
+      r2Files = r2Objects.objects.map((obj) => ({ key: obj.key, size: obj.size, uploaded: obj.uploaded, source: 'r2' }));
     }
   }
 
