@@ -4,13 +4,17 @@ const JWKS_CACHE = new Map();
 
 function base64UrlToBytes(value) {
   const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  if (normalized.length % 4 === 1) throw new Error('invalid base64url');
   const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
   const decoded = atob(normalized + padding);
   return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
 }
 
 function decodeJsonPart(value) {
-  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
+  const decoded = new TextDecoder().decode(base64UrlToBytes(value));
+  const parsed = JSON.parse(decoded);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid identity token JSON');
+  return parsed;
 }
 
 async function fetchJwks(url) {
@@ -36,20 +40,22 @@ async function fetchJwks(url) {
 async function verifyRs256Jwt(jwt, { jwksUrl, issuer, audiences }) {
   const parts = String(jwt || '').split('.');
   if (parts.length !== 3) throw new Error('malformed identity token');
-  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+  const [encodedHeader, encodedPayload] = parts;
+  if (!encodedHeader || !encodedPayload || !parts[2]) throw new Error('malformed identity token');
   const header = decodeJsonPart(encodedHeader);
   const payload = decodeJsonPart(encodedPayload);
 
-  if (header.alg !== 'RS256' || !header.kid) throw new Error('unsupported identity token algorithm');
+  if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+    throw new Error('unsupported identity token algorithm');
+  }
   const keys = await fetchJwks(jwksUrl);
-  const jwk = keys.find((entry) => entry.kid === header.kid && entry.kty === 'RSA');
+  let jwk = keys.find((entry) => entry.kid === header.kid && entry.kty === 'RSA' && (!entry.alg || entry.alg === 'RS256'));
   if (!jwk) {
     JWKS_CACHE.delete(jwksUrl);
     const refreshed = await fetchJwks(jwksUrl);
-    const refreshedKey = refreshed.find((entry) => entry.kid === header.kid && entry.kty === 'RSA');
-    if (!refreshedKey) throw new Error('identity token signing key not found');
-    return verifyWithJwk(refreshedKey, parts, payload, { issuer, audiences });
+    jwk = refreshed.find((entry) => entry.kid === header.kid && entry.kty === 'RSA' && (!entry.alg || entry.alg === 'RS256'));
   }
+  if (!jwk) throw new Error('identity token signing key not found');
   return verifyWithJwk(jwk, parts, payload, { issuer, audiences });
 }
 
@@ -72,14 +78,19 @@ async function verifyWithJwk(jwk, parts, payload, { issuer, audiences }) {
 
   const now = Math.floor(Date.now() / 1000);
   if (payload.iss !== issuer) throw new Error('identity token issuer invalid');
-  const allowedAudiences = new Set((audiences || []).map(String).filter(Boolean));
+  const allowedAudiences = new Set((audiences || []).map(String).map((v) => v.trim()).filter(Boolean));
   const tokenAudiences = Array.isArray(payload.aud) ? payload.aud.map(String) : [String(payload.aud || '')];
   if (allowedAudiences.size === 0 || !tokenAudiences.some((aud) => allowedAudiences.has(aud))) {
     throw new Error('identity token audience invalid');
   }
-  if (!Number.isFinite(Number(payload.exp)) || Number(payload.exp) <= now) throw new Error('identity token expired');
-  if (payload.iat && Number(payload.iat) > now + 60) throw new Error('identity token issued in the future');
-  if (!payload.sub) throw new Error('identity token subject missing');
+  const exp = Number(payload.exp);
+  const iat = Number(payload.iat);
+  if (!Number.isSafeInteger(exp) || exp <= now) throw new Error('identity token expired');
+  if (!Number.isSafeInteger(iat) || iat > now + 60 || iat < now - 24 * 60 * 60) {
+    throw new Error('identity token issued-at time invalid');
+  }
+  const subject = String(payload.sub || '');
+  if (!subject || subject.length > 128) throw new Error('identity token subject invalid');
   return payload;
 }
 
@@ -118,5 +129,8 @@ export async function verifyFirebaseIdentityToken(idToken, env) {
     audiences: [projectId],
   });
   if (!payload.user_id && !payload.sub) throw new Error('Firebase user identity missing');
+  const now = Math.floor(Date.now() / 1000);
+  const authTime = Number(payload.auth_time);
+  if (!Number.isSafeInteger(authTime) || authTime > now + 60) throw new Error('Firebase auth_time invalid');
   return payload;
 }
