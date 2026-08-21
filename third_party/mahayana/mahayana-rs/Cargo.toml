@@ -14,6 +14,7 @@ members = [
     "mahayana-ffi",
     "mahayana-host",
     "mahayana-host-protocol",
+    "mahayana-kernel",
     "mahayana-model",
     "mahayana-miniapp-bridge",
     "mahayana-miniapp-protocol",
@@ -78,6 +79,7 @@ mahayana-computer = { path = "mahayana-computer" }
 mahayana-feature-host = { path = "mahayana-feature-host", default-features = false }
 mahayana-host = { path = "mahayana-host", default-features = false }
 mahayana-host-protocol = { path = "mahayana-host-protocol" }
+mahayana-kernel = { path = "mahayana-kernel" }
 mahayana-model = { path = "mahayana-model" }
 mahayana-miniapp-bridge = { path = "mahayana-miniapp-bridge" }
 mahayana-miniapp-protocol = { path = "mahayana-miniapp-protocol" }
