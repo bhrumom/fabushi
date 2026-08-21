@@ -32,6 +32,19 @@ jobs:
           from pathlib import Path
           import textwrap
 
+          fast = Path('.github/workflows/mahayana-fast-checks.yml')
+          fast_text = fast.read_text()
+          if '-p mahayana-harness-advanced' not in fast_text:
+              anchor = '          -p mahayana-harness-services\n          -p mahayana-harness-adapters\n'
+              if anchor not in fast_text:
+                  raise SystemExit('permanent fast-check Harness anchor not found')
+              fast_text = fast_text.replace(
+                  anchor,
+                  '          -p mahayana-harness-services\n          -p mahayana-harness-advanced\n          -p mahayana-harness-adapters\n',
+                  1,
+              )
+              fast.write_text(fast_text)
+
           source = Path('.github/workflows/mahayana-harness-finalize-pr-once.yml').read_text()
           marker = "          python3 - <<'PY'\n"
           if marker not in source:
