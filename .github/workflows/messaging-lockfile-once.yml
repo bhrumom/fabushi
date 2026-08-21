@@ -1,0 +1,42 @@
+name: Messaging lockfile bootstrap
+
+on:
+  push:
+    branches:
+      - feat/fabushi-messaging-rust-selfhosted
+    paths:
+      - '.github/workflows/messaging-lockfile-once.yml'
+      - 'native/mahayana-messaging/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/Cargo.toml'
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/fabushi-messaging-rust-selfhosted
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve only the existing workspace graph
+        run: cargo metadata --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --format-version 1 --no-deps >/dev/null
+      - name: Commit only Cargo.lock when Cargo changed it
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock='third_party/mahayana/mahayana-rs/Cargo.lock'
+          if git diff --quiet -- "$lock"; then
+            echo 'Cargo.lock already represents the messaging dependency.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$lock"
+          git commit -m 'chore(messaging): refresh Mahayana lockfile'
+          git push origin HEAD:feat/fabushi-messaging-rust-selfhosted
