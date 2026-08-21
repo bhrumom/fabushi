@@ -54,8 +54,8 @@ impl HarnessJournal {
         if !self.path.is_file() {
             return Ok(());
         }
-        let file = File::open(&self.path)
-            .map_err(|error| AppHostError::Operation(error.to_string()))?;
+        let file =
+            File::open(&self.path).map_err(|error| AppHostError::Operation(error.to_string()))?;
         for (index, line) in BufReader::new(file).lines().enumerate() {
             let line = line.map_err(|error| AppHostError::Operation(error.to_string()))?;
             if line.trim().is_empty() {
@@ -79,12 +79,14 @@ impl HarnessJournal {
                 RewriteDirection::StableToRuntime,
                 None,
             );
-            let runtime_result = api.execute(&record.operation, runtime_payload).map_err(|error| {
-                AppHostError::Operation(format!(
-                    "failed to replay harness operation {}: {error}",
-                    record.operation
-                ))
-            })?;
+            let runtime_result =
+                api.execute(&record.operation, runtime_payload)
+                    .map_err(|error| {
+                        AppHostError::Operation(format!(
+                            "failed to replay harness operation {}: {error}",
+                            record.operation
+                        ))
+                    })?;
             collect_id_aliases(
                 &record.result,
                 &runtime_result,
@@ -107,9 +109,9 @@ impl HarnessJournal {
             RewriteDirection::StableToRuntime,
             None,
         );
-        let runtime_result = api
-            .execute(operation, runtime_payload)
-            .map_err(|error| AppHostError::Operation(format!("harness operation failed: {error}")))?;
+        let runtime_result = api.execute(operation, runtime_payload).map_err(|error| {
+            AppHostError::Operation(format!("harness operation failed: {error}"))
+        })?;
         let stable_result = rewrite_ids(
             &runtime_result,
             &self.stable_to_runtime,
@@ -354,10 +356,7 @@ impl UnifiedAppHost {
     fn harness_interrupt(&self, params: Value) -> Result<Value, AppHostError> {
         let session_id = required_string(&params, "sessionId")?;
         let operation_id = required_string(&params, "operationId")?;
-        let result = self.delegate(
-            "feature.interrupt",
-            json!({"operationId": operation_id}),
-        )?;
+        let result = self.delegate("feature.interrupt", json!({"operationId": operation_id}))?;
         self.execute_harness(
             "session.appendEvent",
             json!({
@@ -378,11 +377,9 @@ impl UnifiedAppHost {
         if response.ok {
             Ok(response.result.unwrap_or(Value::Null))
         } else {
-            Err(AppHostError::Operation(
-                response
-                    .error
-                    .unwrap_or_else(|| format!("delegated host method {method} failed")),
-            ))
+            Err(AppHostError::Operation(response.error.unwrap_or_else(
+                || format!("delegated host method {method} failed"),
+            )))
         }
     }
 }
