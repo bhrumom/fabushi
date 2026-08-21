@@ -14,3 +14,6 @@ mahayana-harness.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+mahayana-core.workspace = true
