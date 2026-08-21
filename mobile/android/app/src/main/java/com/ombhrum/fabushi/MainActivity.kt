@@ -14,7 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 class MainActivity : ComponentActivity() {
-    private val deepLinks = MutableSharedFlow<Uri>(extraBufferCapacity = 32)
+    private val deepLinks = MutableSharedFlow<Uri>(replay = 1, extraBufferCapacity = 31)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
