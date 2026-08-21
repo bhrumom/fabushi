@@ -1,9 +1,7 @@
 function base64UrlEncode(buffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i += 1) {
-    binary += String.fromCharCode(bytes[i]);
-  }
+  for (let i = 0; i < bytes.byteLength; i += 1) binary += String.fromCharCode(bytes[i]);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
@@ -57,7 +55,7 @@ async function derivePbkdf2(password, saltBytes, iterations = 210000) {
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations: normalizedIterations },
     keyMaterial,
-    256
+    256,
   );
   return new Uint8Array(bits);
 }
@@ -74,33 +72,20 @@ async function createPasswordHash(password) {
     passwordHash: base64UrlEncode(hashBytes),
     salt: base64UrlEncode(salt),
     iterations,
-    algo: 'PBKDF2-SHA256'
+    algo: 'PBKDF2-SHA256',
   };
 }
 
 async function verifyPassword(password, user) {
   try {
-    if (user && user.passwordHash && user.salt) {
-      const saltBytes = base64UrlDecodeToArray(user.salt);
-      const iterations = Math.max(100000, Number(user.iterations) || 100000);
-      const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
-      const expected = base64UrlDecodeToArray(user.passwordHash);
-      return timingSafeEqualBytes(hashBytes, expected);
-    }
-
-    // Legacy SHA-256 records are accepted only for migration compatibility.
-    // New writes always use salted PBKDF2. Callers should re-hash after a
-    // successful legacy login and remove the legacy `password` column value.
-    if (user && user.password && !user.passwordHash) {
-      const encoder = new TextEncoder();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      const expected = new TextEncoder().encode(String(user.password).toLowerCase());
-      const actual = new TextEncoder().encode(hex);
-      return timingSafeEqualBytes(actual, expected);
-    }
-    return false;
+    if (!user?.passwordHash || !user?.salt) return false;
+    const algo = String(user.algo || 'PBKDF2-SHA256').toUpperCase();
+    if (algo !== 'PBKDF2-SHA256') return false;
+    const saltBytes = base64UrlDecodeToArray(user.salt);
+    const iterations = Math.max(100000, Number(user.iterations) || 100000);
+    const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
+    const expected = base64UrlDecodeToArray(user.passwordHash);
+    return timingSafeEqualBytes(hashBytes, expected);
   } catch (error) {
     console.error('Password verification failed safely:', error?.message || error);
     return false;
@@ -112,7 +97,7 @@ function normalizeTokenIdentity(identity) {
     const userId = identity.id ?? identity.user_id ?? identity.userId;
     return {
       userId: userId === undefined || userId === null ? undefined : Number(userId),
-      username: identity.username ? String(identity.username) : undefined
+      username: identity.username ? String(identity.username) : undefined,
     };
   }
   if (typeof identity === 'number') return { userId: identity };
@@ -126,17 +111,12 @@ async function generateToken(identity, env) {
   if (!Number.isFinite(userId) && username && env?.DB?.prepare) {
     try {
       const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
-      if (user?.id !== undefined && user?.id !== null) {
-        userId = Number(user.id);
-      }
+      if (user?.id !== undefined && user?.id !== null) userId = Number(user.id);
     } catch (error) {
       console.warn('generateToken userId lookup skipped:', error?.message || error);
     }
   }
-
-  if (!Number.isFinite(userId) && !username) {
-    throw new Error('cannot issue token without a stable user identity');
-  }
+  if (!Number.isFinite(userId) && !username) throw new Error('cannot issue token without a stable user identity');
 
   const now = Math.floor(Date.now() / 1000);
   const payload = {
@@ -173,8 +153,7 @@ async function verifyToken(token, env) {
     const secret = resolveJwtSecret(env);
     const data = `${headerB64}.${payloadB64}`;
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-    const sig = base64UrlDecodeToArray(sigB64);
-    const valid = await crypto.subtle.verify('HMAC', key, sig, enc.encode(data));
+    const valid = await crypto.subtle.verify('HMAC', key, base64UrlDecodeToArray(sigB64), enc.encode(data));
     if (!valid) return null;
 
     const payload = JSON.parse(new TextDecoder().decode(base64UrlDecodeToArray(payloadB64)));
@@ -202,8 +181,8 @@ function jsonResponse(data, status = 200) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-    }
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
   });
 }
 
@@ -218,5 +197,5 @@ export {
   verifyPassword,
   generateToken,
   verifyToken,
-  jsonResponse
+  jsonResponse,
 };
