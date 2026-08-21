@@ -2,8 +2,8 @@
 //!
 //! This crate is intentionally independent from Telegram APIs and MTProto.
 //! Telegram Desktop and Unigram are compatibility/UX references only; humans,
-//! AI assistants, bots, services, payments, and Mini Apps share one Fabushi
-//! Actor/Conversation/Message model and one event-sourced state machine.
+//! AI assistants, bots, services, payments, Mini Apps, realtime calls, and
+//! durable sync share one Fabushi-owned protocol and state machine.
 
 pub mod actor;
 pub mod conversation;
@@ -11,7 +11,11 @@ pub mod engine;
 pub mod message;
 pub mod miniapp;
 pub mod payment;
+pub mod payment_provider;
 pub mod protocol;
+pub mod realtime;
+pub mod service;
+pub mod store;
 
 pub use actor::*;
 pub use conversation::*;
@@ -19,4 +23,8 @@ pub use engine::{Command, EngineError, Event, MessagingEngine, MessagingState};
 pub use message::*;
 pub use miniapp::*;
 pub use payment::*;
+pub use payment_provider::*;
 pub use protocol::*;
+pub use realtime::*;
+pub use service::*;
+pub use store::*;
