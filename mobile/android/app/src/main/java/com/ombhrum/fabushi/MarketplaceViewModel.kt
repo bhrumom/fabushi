@@ -55,9 +55,14 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
         val path = uri.pathSegments.filter { it.isNotBlank() }
         when (hostName) {
             "auth" -> {
-                if (path.firstOrNull() != "complete") return
-                val attemptId = uri.getQueryParameter("attemptId").orEmpty()
-                val status = uri.getQueryParameter("status")?.lowercase() ?: "completed"
+                if (path.firstOrNull() != "complete" || path.size != 1) return
+                val allowedNames = setOf("attemptId", "status")
+                if (uri.queryParameterNames.any { it !in allowedNames }) return
+                val attemptIds = uri.getQueryParameters("attemptId")
+                val statuses = uri.getQueryParameters("status")
+                if (attemptIds.size != 1 || statuses.size > 1) return
+                val attemptId = attemptIds.single()
+                val status = statuses.singleOrNull()?.lowercase() ?: "completed"
                 if (!Regex("^[A-Za-z0-9_-]{8,96}$").matches(attemptId)) return
                 if (status !in setOf("completed", "cancelled", "failed")) return
                 mutableState.value = mutableState.value.copy(
@@ -67,10 +72,10 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
                         else -> "登录授权失败"
                     },
                 )
-                // Auth attempts are server-side state machines; the deep link is
-                // only a trusted wake/focus signal. Refresh the host-backed view
-                // without accepting credentials or tokens from the URL itself.
-                if (status == "completed") refresh()
+                // The deep link is a wake/focus hint only. The credential/session
+                // result stays in the Rust browser-login state machine and is
+                // claimed using the attempt id through the FeatureHost.
+                if (status == "completed") completeBrowserLogin(attemptId)
             }
             "agent" -> {
                 val agentId = path.firstOrNull().orEmpty().take(200)
@@ -80,6 +85,33 @@ class MarketplaceViewModel(application: Application) : AndroidViewModel(applicat
             }
             "settings", "feedback", "about", "widgets", "onboarding" -> {
                 mutableState.value = mutableState.value.copy(message = "已接收应用链接：$hostName")
+            }
+        }
+    }
+
+    private fun completeBrowserLogin(attemptId: String) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    host.request(
+                        "feature.auth.browserPoll",
+                        JSONObject().put("attemptId", attemptId),
+                    )
+                }
+            }.onSuccess { result ->
+                when (result.optString("status")) {
+                    "completed" -> {
+                        mutableState.value = mutableState.value.copy(message = "登录成功，账号状态已同步")
+                        refresh()
+                    }
+                    "cancelled" -> mutableState.value = mutableState.value.copy(message = "登录授权已取消")
+                    "failed" -> mutableState.value = mutableState.value.copy(message = "登录授权失败")
+                    else -> mutableState.value = mutableState.value.copy(message = "登录结果尚未可用，请返回浏览器重试")
+                }
+            }.onFailure { error ->
+                mutableState.value = mutableState.value.copy(
+                    message = "登录状态同步失败：${error.message ?: error::class.java.simpleName}",
+                )
             }
         }
     }
