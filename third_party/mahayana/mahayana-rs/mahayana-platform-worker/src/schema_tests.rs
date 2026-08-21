@@ -13,6 +13,8 @@ fn fabushi_pay_migration_contains_payment_and_settlement_invariants() {
     assert!(FABUSHI_PAY_SCHEMA_V7.contains("PRIMARY KEY (provider, event_id)"));
     assert!(FABUSHI_PAY_SCHEMA_V7.contains("idempotency_key TEXT NOT NULL UNIQUE"));
     assert!(FABUSHI_PAY_SCHEMA_V7.contains("provider_product_refs_json"));
+    assert!(FABUSHI_PAY_SCHEMA_V7.contains("developer_settlement_releases_payment_idx"));
+    assert!(!FABUSHI_PAY_SCHEMA_V7.contains("payment_id TEXT NOT NULL UNIQUE REFERENCES payment_intents"));
     assert!(!FABUSHI_PAY_SCHEMA_V7.contains("amount REAL"));
 }
 
