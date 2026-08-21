@@ -61,7 +61,11 @@ pub struct MediaTransfer {
 impl MediaTransfer {
     pub fn progress_percent(&self) -> u8 {
         if self.media.size_bytes == 0 {
-            return if self.state == TransferState::Completed { 100 } else { 0 };
+            return if self.state == TransferState::Completed {
+                100
+            } else {
+                0
+            };
         }
         let percent = self
             .transferred_bytes
@@ -188,7 +192,10 @@ impl MediaTransferQueue {
         now_ms: i64,
     ) -> Result<(), MediaError> {
         let transfer = self.require_mut(id)?;
-        if matches!(transfer.state, TransferState::Completed | TransferState::Cancelled) {
+        if matches!(
+            transfer.state,
+            TransferState::Completed | TransferState::Cancelled
+        ) {
             return Err(MediaError::TerminalTransfer(id.clone()));
         }
         transfer.state = TransferState::Failed;

@@ -13,6 +13,10 @@ use chrono::Timelike;
 use chrono::Utc;
 
 #[cfg(feature = "production")]
+use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;
+use fabushi_messaging_core::JsonFileStateStore;
+use fabushi_messaging_core::MessagingService;
+#[cfg(feature = "production")]
 use mahayana_core::ApprovalDecision as RuntimeApprovalDecision;
 #[cfg(feature = "production")]
 use mahayana_core::ApprovalId;
@@ -34,7 +38,6 @@ use mahayana_core::RuntimeEvent;
 use mahayana_core::RuntimeResponse;
 #[cfg(feature = "production")]
 use mahayana_core::capability::CapabilityAvailability;
-#[cfg(feature = "production")]
 use mahayana_core::capability::CapabilityKind;
 #[cfg(feature = "production")]
 use mahayana_host::HostCreateConfig;
@@ -129,6 +132,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 #[cfg(feature = "production")]
 use std::time::Duration;
 use std::time::SystemTime;
@@ -745,6 +749,13 @@ impl FeatureHostController {
     }
 
     pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, FeatureHostError> {
+        if let FeatureCommand::MessagingExecute {
+            request_id,
+            envelope,
+        } = &command
+        {
+            return self.execute_messaging(request_id.clone(), envelope.clone());
+        }
         if matches!(
             &command,
             FeatureCommand::AutomationList { .. }
@@ -893,6 +904,45 @@ impl FeatureHostController {
             HostMode::Test => self.execute_test(command),
             HostMode::Production => self.execute_production(command),
         }
+    }
+
+    fn execute_messaging(
+        &self,
+        request_id: String,
+        envelope: Value,
+    ) -> Result<CommandAccepted, FeatureHostError> {
+        static MESSAGING_IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _io_guard = MESSAGING_IO_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .map_err(|_| FeatureHostError::Contract("messaging storage lock is poisoned".into()))?;
+        let root = self
+            .memory_root_path
+            .as_deref()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
+        let client_envelope: MessagingClientEnvelope =
+            serde_json::from_value(envelope).map_err(|error| {
+                FeatureHostError::Contract(format!("invalid messaging envelope: {error}"))
+            })?;
+        let store = JsonFileStateStore::new(root.join("_messaging").join("snapshot.json"));
+        let mut service = MessagingService::load(store)
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        let responses = service
+            .handle(client_envelope, now_millis())
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        let mut state = self.state()?;
+        for response in responses {
+            state.events.push_back(HostEvent::MessagingEvent {
+                timestamp: timestamp(),
+                request_id: request_id.clone(),
+                envelope: serde_json::to_value(response)
+                    .map_err(|error| FeatureHostError::Contract(error.to_string()))?,
+            });
+        }
+        Ok(CommandAccepted {
+            request_id,
+            operation_id: None,
+        })
     }
 
     fn execute_automation(
