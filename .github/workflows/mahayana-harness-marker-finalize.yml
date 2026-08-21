@@ -64,6 +64,109 @@ jobs:
       - name: Apply deterministic source patch
         run: python3 scripts/mahayana_harness_finalize.py
 
+      - name: Reconcile Services with current Harness API
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('third_party/mahayana/mahayana-rs')
+
+          core = root / 'mahayana-harness/src/lib.rs'
+          text = core.read_text()
+          if 'NotFound(String),' not in text:
+              anchor = '    #[error("state mutex is poisoned")]\n    StatePoisoned,\n'
+              extra = '''    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+    #[error("policy denied: {0}")]
+    PolicyDenied(String),
+    #[error("serialization failed: {0}")]
+    Serialization(String),
+    #[error("invalid state: {0}")]
+    InvalidState(String),
+'''
+              if anchor not in text:
+                  raise SystemExit('missing core error anchor')
+              text = text.replace(anchor, extra + anchor, 1)
+          if 'impl Default for MahayanaHarness' not in text:
+              anchor = 'impl MahayanaHarness {\n'
+              default_impl = '''impl Default for MahayanaHarness {
+    fn default() -> Self {
+        Self::new(BuildProfile::DesktopFull)
+    }
+}
+
+'''
+              if anchor not in text:
+                  raise SystemExit('missing harness impl anchor')
+              text = text.replace(anchor, default_impl + anchor, 1)
+          if 'pub fn sessions(&self)' not in text:
+              anchor = '    pub fn snapshot(&self) -> HarnessResult<RuntimeSnapshot> {\n'
+              method = '''    pub fn sessions(&self) -> HarnessResult<Vec<SessionRecord>> {
+        Ok(self.state()?.sessions.values().cloned().collect())
+    }
+
+'''
+              if anchor not in text:
+                  raise SystemExit('missing snapshot anchor')
+              text = text.replace(anchor, method + anchor, 1)
+          core.write_text(text)
+
+          services = root / 'mahayana-harness-services/src/lib.rs'
+          text = services.read_text()
+          text = text.replace(
+              'use mahayana_tool_host::{ToolRequest, ToolResult};',
+              'use mahayana_tool_host::ToolResult;',
+          )
+          text = text.replace('use std::path::PathBuf;\n', '')
+          text = text.replace(
+              '    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {\n        self.harness.snapshot()\n    }',
+              '    pub fn runtime_snapshot(&self) -> HarnessResult<RuntimeSnapshot> {\n        self.harness.snapshot()\n    }',
+          )
+          if 'pub fn snapshot(&self) -> HarnessResult<Value>' not in text:
+              anchor = '    pub fn providers(&self) -> Arc<Mutex<ProviderSet>> {\n'
+              method = '''    pub fn snapshot(&self) -> HarnessResult<Value> {
+        let state = self.lock_state()?;
+        Ok(serde_json::json!({
+            "runtime": self.harness.snapshot()?,
+            "promptSections": state.prompt_sections.values().cloned().collect::<Vec<_>>(),
+            "workspaces": state.workspaces.values().cloned().collect::<Vec<_>>(),
+            "settings": state.settings.values().cloned().collect::<Vec<_>>(),
+            "attachments": state.attachments.values().cloned().collect::<Vec<_>>(),
+            "spills": state.spills.values().cloned().collect::<Vec<_>>(),
+            "todos": state.todos.values().cloned().collect::<Vec<_>>(),
+            "plans": state.plans.values().cloned().collect::<Vec<_>>(),
+            "schedules": state.schedules.values().cloned().collect::<Vec<_>>(),
+            "feedback": state.feedback.values().cloned().collect::<Vec<_>>(),
+            "identity": state.identity.clone(),
+            "teams": state.teams.values().cloned().collect::<Vec<_>>(),
+            "skills": state.skills.values().cloned().collect::<Vec<_>>(),
+            "commands": state.commands.values().cloned().collect::<Vec<_>>(),
+            "contextFragments": state.context_fragments.values().cloned().collect::<Vec<_>>()
+        }))
+    }
+
+'''
+              if anchor not in text:
+                  raise SystemExit('missing providers anchor')
+              text = text.replace(anchor, method + anchor, 1)
+          text = text.replace(
+              '    pub fn search_sessions(&self, query: &str) -> HarnessResult<Vec<SessionSearchHit>> {',
+              '    pub fn search_sessions(&self, query: &str, limit: usize) -> HarnessResult<Vec<SessionSearchHit>> {',
+          )
+          search_start = text.find('    pub fn search_sessions(&self, query: &str, limit: usize)')
+          if search_start != -1:
+              search_end = text.find('    pub fn hash_bytes', search_start)
+              block = text[search_start:search_end]
+              if 'hits.truncate(limit);' not in block:
+                  block = block.replace('        Ok(hits)\n', '        hits.truncate(limit);\n        Ok(hits)\n', 1)
+                  text = text[:search_start] + block + text[search_end:]
+          text = text.replace('services.search_sessions("lotus").unwrap()', 'services.search_sessions("lotus", 20).unwrap()')
+          text = text.replace('MahayanaHarness::new()', 'MahayanaHarness::default()')
+          services.write_text(text)
+          PY
+
       - name: Format Harness stack
         working-directory: third_party/mahayana/mahayana-rs
         run: |
