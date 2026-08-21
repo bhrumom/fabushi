@@ -325,6 +325,9 @@ pub enum ServerEvent {
         profile: Option<BotProfile>,
         execution: Option<BotExecution>,
     },
+    BotInvocationRequested {
+        invocation: BotInvocation,
+    },
     MiniAppChanged {
         manifest: MiniAppManifest,
     },
