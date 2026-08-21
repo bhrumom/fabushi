@@ -27,7 +27,7 @@ async function createPrivateKeyPem() {
 
 async function createAppleEnv() {
   return {
-    JWT_SECRET: 'apple-iap-test-secret',
+    JWT_SECRET: 'apple-iap-test-secret-that-is-at-least-32-bytes-long',
     APPLE_ISSUER_ID: ' issuer-id ',
     APPLE_KEY_ID: ' key-id ',
     APPLE_PRIVATE_KEY: (await createPrivateKeyPem()).replace(/\n/g, '\\n'),
