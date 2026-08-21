@@ -52,6 +52,23 @@ mod worker_api {
 #[cfg(target_arch = "wasm32")]
 mod payment_api {
     include!("../../mahayana-platform-worker/src/payment_api.rs");
+
+    impl serde::Serialize for PayoutRow {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::SerializeStruct;
+            let mut state = serializer.serialize_struct("PayoutRow", 6)?;
+            state.serialize_field("payoutId", &self.payout_id)?;
+            state.serialize_field("developerId", &self.developer_id)?;
+            state.serialize_field("payoutAccountId", &self.payout_account_id)?;
+            state.serialize_field("currency", &self.currency)?;
+            state.serialize_field("amount", &self.amount)?;
+            state.serialize_field("status", &self.status)?;
+            state.end()
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
