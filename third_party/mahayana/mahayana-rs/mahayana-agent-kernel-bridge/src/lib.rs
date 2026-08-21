@@ -7,9 +7,8 @@
 
 use async_trait::async_trait;
 use mahayana_agent::{
-    AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink,
-    AgentMessageRequest, ApprovalResolution as AgentApprovalResolution, SharedAgentEventSink,
-    StartThreadRequest,
+    AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink, AgentMessageRequest,
+    ApprovalResolution as AgentApprovalResolution, SharedAgentEventSink, StartThreadRequest,
 };
 use mahayana_core::{
     ApprovalDecision, ApprovalId, ConversationId, OperationId as AgentOperationId,
@@ -18,7 +17,7 @@ use mahayana_kernel::{
     ApprovalResolution, BackendDescriptor, Capability, EngineBackend, KernelError, KernelEvent,
     OpenSessionRequest, OperationId, RunRequest, SessionId, SharedKernelEventSink,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
