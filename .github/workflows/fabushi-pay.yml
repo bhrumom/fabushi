@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-bridge/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-protocol/**'
       - 'docs/fabushi-pay-rust.md'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-bridge/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-protocol/**'
       - 'docs/fabushi-pay-rust.md'
@@ -27,9 +29,9 @@ permissions:
 
 jobs:
   rust:
-    name: Payment core and Mini App contracts
+    name: Payment core, Worker, and Mini App contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       CARGO_INCREMENTAL: '1'
     steps:
@@ -39,9 +41,75 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
+          targets: wasm32-unknown-unknown
+      - name: Wire payment API into the existing Worker router
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs')
+          text = path.read_text()
+          text = text.replace(
+              'fn authenticated_user(request: &Request, env: &Env) -> Result<String> {',
+              'pub(crate) fn authenticated_user(request: &Request, env: &Env) -> Result<String> {',
+              1,
+          )
+          if '/v1/miniapps/:mini_app_id/pay/intents' not in text:
+              marker = '        .get_async("/v1/wallet/balance", wallet_balance)'
+              routes = '''        .post_async(
+              "/v1/miniapps/:mini_app_id/pay/intents",
+              crate::payment_api::create_intent,
+          )
+          .get_async(
+              "/v1/pay/intents/:payment_id",
+              crate::payment_api::get_intent,
+          )
+          .post_async(
+              "/v1/pay/intents/:payment_id/checkout",
+              crate::payment_api::checkout_action,
+          )
+          .post_async(
+              "/v1/pay/intents/:payment_id/credits/confirm",
+              crate::payment_api::confirm_credits,
+          )
+          .post_async(
+              "/v1/pay/intents/:payment_id/apple/verify",
+              crate::payment_api::verify_apple,
+          )
+          .post_async(
+              "/v1/pay/intents/:payment_id/google/verify",
+              crate::payment_api::verify_google,
+          )
+          .post_async(
+              "/v1/pay/providers/:provider/webhook",
+              crate::payment_api::provider_webhook,
+          )
+          .post_async(
+              "/v1/pay/admin/settlements/release",
+              crate::payment_api::admin_release_settlement,
+          )
+          .post_async(
+              "/v1/pay/admin/payout-accounts",
+              crate::payment_api::admin_upsert_payout_account,
+          )
+          .post_async(
+              "/v1/pay/admin/payouts",
+              crate::payment_api::admin_create_payout,
+          )
+          .get_async(
+              "/v1/pay/admin/developers/:developer_id/balance/:currency",
+              crate::payment_api::admin_developer_balance,
+          )
+'''
+              if marker not in text:
+                  raise SystemExit('Worker wallet route marker not found')
+              text = text.replace(marker, routes + marker, 1)
+          path.write_text(text)
+          PY
       - name: Format Rust sources
         run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
-      - name: Commit formatter output for same-repository PR
+      - name: Commit integration and formatter output for same-repository PR
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         run: |
@@ -51,28 +119,36 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add third_party/mahayana/mahayana-rs
-          git commit -m "style(pay): format payment infrastructure contracts"
+          git commit -m "feat(pay): wire Rust payment Worker routes"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: fabushi-pay-v1
+          shared-key: fabushi-pay-v2
           cache-all-crates: true
-      - name: Test payment and Mini App contracts
+      - name: Test payment Worker and Mini App contracts
         run: >-
           cargo test --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           -p mahayana-platform-core
+          -p mahayana-platform-worker
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
-      - name: Clippy payment and Mini App contracts
+      - name: Clippy payment Worker and Mini App contracts
         run: >-
           cargo clippy --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           -p mahayana-platform-core
+          -p mahayana-platform-worker
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           --all-targets -- -D warnings
+      - name: Compile Cloudflare payment Worker for wasm32
+        run: >-
+          cargo check --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p mahayana-platform-worker
+          --target wasm32-unknown-unknown
       - name: Check workspace formatting
         run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
