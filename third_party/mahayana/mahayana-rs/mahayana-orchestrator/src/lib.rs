@@ -674,6 +674,18 @@ impl SubagentScheduler {
         Ok(id)
     }
 
+    pub fn start(&mut self, id: &str) -> Result<SubagentTask, OrchestratorError> {
+        if self.running_count() >= self.max_concurrency {
+            return Err(OrchestratorError::SubagentConcurrencyExhausted);
+        }
+        let task = self.task_mut(id)?;
+        if task.state != SubagentState::Pending {
+            return Err(OrchestratorError::SubagentNotPending(id.to_string()));
+        }
+        task.state = SubagentState::Running;
+        Ok(task.clone())
+    }
+
     pub fn start_next(&mut self) -> Option<SubagentTask> {
         if self.running_count() >= self.max_concurrency {
             return None;
@@ -775,6 +787,10 @@ pub enum OrchestratorError {
     SubagentNotFound(String),
     #[error("subagent is not running: {0}")]
     SubagentNotRunning(String),
+    #[error("subagent is not pending: {0}")]
+    SubagentNotPending(String),
+    #[error("subagent concurrency is exhausted")]
+    SubagentConcurrencyExhausted,
 }
 
 #[cfg(test)]

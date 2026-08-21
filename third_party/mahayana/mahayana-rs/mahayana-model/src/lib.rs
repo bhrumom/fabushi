@@ -1,7 +1,7 @@
 //! Model inference boundary for native, mobile, and Web runtimes.
 
 use async_trait::async_trait;
-use mahayana_core::ModelProviderMode;
+pub use mahayana_core::ModelProviderMode;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
