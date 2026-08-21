@@ -15,9 +15,8 @@ use mahayana_core::{
     ApprovalDecision, ApprovalId, ConversationId, OperationId as AgentOperationId,
 };
 use mahayana_kernel::{
-    ApprovalResolution, BackendDescriptor, EngineBackend, KernelError, KernelEvent,
-    KernelEventSink, OpenSessionRequest, OperationId, RunRequest, SessionId,
-    SharedKernelEventSink,
+    ApprovalResolution, BackendDescriptor, Capability, EngineBackend, KernelError, KernelEvent,
+    OpenSessionRequest, OperationId, RunRequest, SessionId, SharedKernelEventSink,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -58,6 +57,29 @@ impl LegacyAgentKernelBridge {
             AgentError::EventConsumerClosed => KernelError::EventConsumerClosed,
             other => KernelError::Backend(other.to_string()),
         }
+    }
+
+    fn validate_policy(request: &RunRequest) -> Result<(), KernelError> {
+        let required = &request.required_capabilities;
+        let policy = &request.policy;
+
+        if required.contains(Capability::Network) && !policy.allow_network {
+            return Err(KernelError::PolicyDenied(
+                "network capability is disabled by Mahayana policy".into(),
+            ));
+        }
+        if required.contains(Capability::Process) && !policy.allow_process {
+            return Err(KernelError::PolicyDenied(
+                "process execution is disabled by Mahayana policy".into(),
+            ));
+        }
+        if required.contains(Capability::FilesystemWrite) && !policy.allow_workspace_writes {
+            return Err(KernelError::PolicyDenied(
+                "workspace writes are disabled by Mahayana policy".into(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -179,6 +201,8 @@ impl EngineBackend for LegacyAgentKernelBridge {
         request: RunRequest,
         events: SharedKernelEventSink,
     ) -> Result<(), KernelError> {
+        Self::validate_policy(&request)?;
+
         if !self
             .descriptor
             .capabilities
