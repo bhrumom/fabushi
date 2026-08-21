@@ -44,6 +44,7 @@ jobs:
       build_number: ${{ steps.release.outputs.build_number }}
       macos: ${{ steps.release.outputs.macos }}
       ios: ${{ steps.release.outputs.ios }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
       - name: Checkout requested source
         uses: actions/checkout@v5
@@ -82,12 +83,14 @@ jobs:
             *) echo "Unsupported target: $INPUT_TARGET" >&2; exit 2 ;;
           esac
 
+          release_tag="apple-v${app_version}-${build_number}"
           {
             echo "source_sha=$source_sha"
             echo "app_version=$app_version"
             echo "build_number=$build_number"
             echo "macos=$macos"
             echo "ios=$ios"
+            echo "release_tag=$release_tag"
           } >> "$GITHUB_OUTPUT"
 
           {
@@ -98,9 +101,10 @@ jobs:
             echo "- Build: \`$build_number\`"
             echo "- Electron macOS: \`$macos\`"
             echo "- Native iOS: \`$ios\`"
+            echo "- GitHub Release: \`$release_tag\`"
             echo
             echo 'A successful upload is ingested by App Store Connect. After Apple processing, the same build is available for TestFlight and for App Store release selection; this workflow does not submit an App Review automatically.'
-            echo 'The MAS .pkg and App Store .ipa are store-distribution artifacts, not direct-install GitHub Release downloads, so this workflow intentionally does not publish them to GitHub Releases.'
+            echo 'After all selected App Store Connect uploads succeed, the exact signed store-distribution package(s) and SHA256SUMS.txt are also published to an immutable GitHub Release.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   macos-electron:
@@ -485,6 +489,8 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      contents: write
     steps:
       - name: Require selected platform uploads to succeed
         shell: bash
@@ -506,3 +512,54 @@ jobs:
           fi
           if [ "$failed" = true ]; then exit 1; fi
           echo 'All selected Apple Store uploads were accepted by App Store Connect.'
+
+      - name: Download accepted Apple Store packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: apple-store-*-${{ needs.resolve.outputs.build_number }}
+          path: apple-store-release
+          merge-multiple: true
+
+      - name: Verify release assets and generate checksums
+        shell: bash
+        env:
+          MAC_SELECTED: ${{ needs.resolve.outputs.macos }}
+          IOS_SELECTED: ${{ needs.resolve.outputs.ios }}
+        run: |
+          set -euo pipefail
+          expected=0
+          if [ "$MAC_SELECTED" = true ]; then expected=$((expected + 1)); fi
+          if [ "$IOS_SELECTED" = true ]; then expected=$((expected + 1)); fi
+          mapfile -d '' packages < <(find apple-store-release -type f \( -name '*.pkg' -o -name '*.ipa' \) -print0 | sort -z)
+          if [ "${#packages[@]}" -ne "$expected" ]; then
+            echo "Expected $expected signed Apple package(s), found ${#packages[@]}." >&2
+            find apple-store-release -maxdepth 3 -type f -print >&2 || true
+            exit 1
+          fi
+          (
+            cd apple-store-release
+            find . -type f \( -name '*.pkg' -o -name '*.ipa' \) -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+      - name: Publish accepted Apple Store packages to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          APP_VERSION: ${{ needs.resolve.outputs.app_version }}
+          BUILD_NUMBER: ${{ needs.resolve.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to mutate an immutable Apple delivery release." >&2
+            exit 1
+          fi
+          mapfile -d '' packages < <(find apple-store-release -type f \( -name '*.pkg' -o -name '*.ipa' \) -print0 | sort -z)
+          assets=("${packages[@]}" apple-store-release/SHA256SUMS.txt)
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Fabushi Apple $APP_VERSION ($BUILD_NUMBER)" \
+            --notes "Signed store-distribution packages accepted by App Store Connect from $SOURCE_SHA. These assets are also retained here exactly as delivered; Apple review/public availability remains controlled in App Store Connect."
+          echo "- GitHub Release: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

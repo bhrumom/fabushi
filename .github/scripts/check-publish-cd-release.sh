@@ -9,6 +9,7 @@ deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(enco
 publish_release_workflow = Path('.github/workflows/native-electron-release.yml').read_text(encoding='utf-8')
 desktop_installers_workflow = Path('.github/workflows/electron-desktop.yml').read_text(encoding='utf-8')
 google_play_workflow = Path('.github/workflows/google-play-delivery.yml').read_text(encoding='utf-8')
+apple_store_workflow = Path('.github/workflows/apple-store-delivery.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
@@ -95,6 +96,31 @@ for forbidden in (
 ):
     if forbidden in google_play_workflow:
         missing.append(f'Google Play workflow must not contain retired client dependency: {forbidden}')
+
+for required in (
+    'workflow_dispatch',
+    'Build and upload Electron macOS MAS package',
+    'Build and upload native iOS IPA',
+    'upload-app-store-connect.sh',
+    'actions/download-artifact@v8',
+    'Publish accepted Apple Store packages to GitHub Release',
+    'SHA256SUMS.txt',
+    'contents: write',
+):
+    if required not in apple_store_workflow:
+        missing.append(f'Apple Store workflow missing: {required}')
+
+for forbidden in (
+    'flutter build',
+    'flutter pub get',
+    'subosito/flutter-action',
+    'fabushi/pubspec.yaml',
+    'tauri build',
+    'mobile/src-tauri',
+    '@capacitor/',
+):
+    if forbidden in apple_store_workflow:
+        missing.append(f'Apple Store workflow must not contain retired client dependency: {forbidden}')
 
 for required in (
     'Electron desktop quality gate',
