@@ -1,0 +1,53 @@
+name: Mahayana native default cutover
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/apply-mahayana-native-default.py
+      - .github/workflows/mahayana-native-default-cutover.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cutover:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply guarded production cutover
+        working-directory: .
+        run: python3 .github/scripts/apply-mahayana-native-default.py
+
+      - name: Format Mahayana Rust
+        run: cargo fmt --all
+
+      - name: Refresh workspace lockfile
+        run: cargo generate-lockfile
+
+      - name: Commit production cutover
+        working-directory: .
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Native-default cutover already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs
+          git commit -m "feat(mahayana): make sovereign native engine the product default"
+          git push origin "HEAD:${{ github.head_ref }}"
