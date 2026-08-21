@@ -1,5 +1,7 @@
 //! Provider-neutral Agent abstraction used by the Mahayana conversation runtime.
 
+pub mod orchestrator;
+
 use async_trait::async_trait;
 use mahayana_core::AgentThreadId;
 use mahayana_core::ApprovalDecision;
@@ -319,6 +321,14 @@ impl BackendRegistry {
     }
 
     pub fn select(&self, required: BackendCapabilities) -> Option<Arc<dyn AgentBackend>> {
+        self.select_registration(required)
+            .map(|entry| Arc::clone(&entry.backend))
+    }
+
+    pub fn select_registration(
+        &self,
+        required: BackendCapabilities,
+    ) -> Option<&BackendRegistration> {
         self.backends
             .values()
             .filter(|entry| backend_supports(entry.backend.capabilities(), required))
@@ -327,7 +337,6 @@ impl BackendRegistry {
                     .cmp(&right.priority)
                     .then_with(|| right.id.cmp(&left.id))
             })
-            .map(|entry| Arc::clone(&entry.backend))
     }
 
     pub fn descriptors(&self) -> Vec<BackendDescriptor> {
