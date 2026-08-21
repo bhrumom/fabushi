@@ -53,7 +53,11 @@ import {
   asMessagingHostEvent,
   messagingText,
   type MessagingConversation,
+  type MessagingInvoice,
+  type MessagingLedgerEntry,
   type MessagingMessage,
+  type MessagingOrder,
+  type MessagingWalletAccount,
 } from './selfhosted-messaging-client-v2';
 import styles from './messaging-shell.module.css';
 import extra from './messaging-shell-v2.module.css';
@@ -100,6 +104,7 @@ type DisplayMessage = {
   createdAtMs: number;
   pinned?: boolean;
   reactions?: string[];
+  invoiceId?: string;
 };
 
 type NewDialog =
@@ -238,6 +243,10 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selfConversations, setSelfConversations] = useState<MessagingConversation[]>([]);
   const [selfMessages, setSelfMessages] = useState<Record<string, MessagingMessage[]>>({});
+  const [selfInvoices, setSelfInvoices] = useState<MessagingInvoice[]>([]);
+  const [selfOrders, setSelfOrders] = useState<MessagingOrder[]>([]);
+  const [walletAccount, setWalletAccount] = useState<MessagingWalletAccount | null>(null);
+  const [walletEntries, setWalletEntries] = useState<MessagingLedgerEntry[]>([]);
   const [activePeerKey, setActivePeerKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [composer, setComposer] = useState('');
@@ -351,6 +360,9 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       createdAtMs: message.createdAtMs,
       pinned: message.pinned,
       reactions: message.reactions.map((reaction) => `${reaction.reaction} ${reaction.count}`),
+      invoiceId: message.content.type === 'invoice'
+        ? (message.content.data as { invoiceId?: string } | undefined)?.invoiceId
+        : undefined,
     };
   }
 
@@ -367,6 +379,8 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         const payload = event as unknown as {
           conversations?: MessagingConversation[];
           messages?: MessagingMessage[];
+          invoices?: MessagingInvoice[];
+          orders?: MessagingOrder[];
         };
         const nextConversations = payload.conversations ?? [];
         const grouped: Record<string, MessagingMessage[]> = {};
@@ -376,6 +390,8 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         for (const list of Object.values(grouped)) list.sort((a, b) => a.createdAtMs - b.createdAtMs);
         setSelfConversations(nextConversations);
         setSelfMessages(grouped);
+        setSelfInvoices(payload.invoices ?? []);
+        setSelfOrders(payload.orders ?? []);
         const active = activePeerKeyRef.current;
         if (active?.startsWith('selfhosted:')) {
           const conversationId = active.slice('selfhosted:'.length);
@@ -412,6 +428,23 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
           }
           return { ...current, [payload.conversationId]: list };
         });
+        break;
+      }
+      case 'invoiceChanged': {
+        const invoice = (event as unknown as { invoice: MessagingInvoice }).invoice;
+        setSelfInvoices((current) => upsertById(current, invoice));
+        break;
+      }
+      case 'orderChanged': {
+        const order = (event as unknown as { order: MessagingOrder }).order;
+        setSelfOrders((current) => upsertById(current, order));
+        void selfHosted.requestWalletStatus().catch(() => {});
+        break;
+      }
+      case 'walletStatus': {
+        const payload = event as unknown as { account?: MessagingWalletAccount | null; recentEntries?: MessagingLedgerEntry[] };
+        setWalletAccount(payload.account ?? null);
+        setWalletEntries(payload.recentEntries ?? []);
         break;
       }
       default:
@@ -507,6 +540,13 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         break;
     }
   }
+
+  useEffect(() => {
+    if (section !== 'payments') return;
+    void selfHosted.requestWalletStatus().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
+  }, [section, selfHosted]);
 
   const peers = useMemo<PeerItem[]>(() => {
     const legacyConversations = conversations.map((conversation): PeerItem => ({
@@ -792,7 +832,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
   }
 
-  async function handleMessageAction(action: 'copy' | 'reply' | 'forward' | 'edit' | 'delete' | 'react' | 'pin') {
+  async function handleMessageAction(action: 'copy' | 'reply' | 'forward' | 'checkout' | 'edit' | 'delete' | 'react' | 'pin') {
     const target = messageMenu?.message;
     if (!target || !activePeer) return;
     setMessageMenu(null);
@@ -810,6 +850,25 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         return;
       }
       setForwardDialog({ sourceConversationId: activePeer.conversationId, message: target });
+      return;
+    }
+    if (action === 'checkout') {
+      if (target.source !== 'selfhosted' || !target.invoiceId) {
+        setError('该账单尚未迁移到 Fabushi Pay。');
+        return;
+      }
+      const invoice = selfInvoices.find((item) => item.id === target.invoiceId);
+      if (invoice?.sellerId === selfHosted.actorId) {
+        setError('不能支付自己创建的账单。');
+        return;
+      }
+      try {
+        await selfHosted.checkoutInvoice(target.invoiceId);
+        await selfHosted.requestWalletStatus();
+        setSection('payments');
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
       return;
     }
     if (activePeer.source !== 'selfhosted' || !activePeer.conversationId || target.source !== 'selfhosted') {
@@ -838,6 +897,15 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         peer.conversationId,
       );
       setForwardDialog(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function refundOrder(orderId: string) {
+    try {
+      await selfHosted.refundOrder(orderId);
+      await selfHosted.requestWalletStatus();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -953,7 +1021,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             {!visiblePeers.length ? <EmptyList section={section} /> : null}
           </div>
         ) : (
-          <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} />
+          <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
         )}
       </aside>
 
@@ -1018,7 +1086,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             </form>
           </>
         ) : (
-          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} />
+          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
         )}
       </section>
 
@@ -1067,7 +1135,7 @@ function AttachmentMenu({ onMedia, onFile, onPoll, onLocation, onSchedule }: { o
   </div>;
 }
 
-function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>; onAction: (action: 'copy' | 'reply' | 'forward' | 'edit' | 'delete' | 'react' | 'pin') => void }) {
+function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>; onAction: (action: 'copy' | 'reply' | 'forward' | 'checkout' | 'edit' | 'delete' | 'react' | 'pin') => void }) {
   return <div className={extra.contextMenu} style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
     <button type="button" onClick={() => onAction('reply')}><Reply size={16} />回复</button>
     <button type="button" onClick={() => onAction('copy')}><Copy size={16} />复制</button>
@@ -1075,6 +1143,7 @@ function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>
     {menu.message.role === 'me' ? <button type="button" onClick={() => onAction('edit')}><Edit3 size={16} />编辑</button> : null}
     <button type="button" onClick={() => onAction('pin')}><Pin size={16} />{menu.message.pinned ? '取消置顶' : '置顶'}</button>
     <button type="button" onClick={() => onAction('forward')}><Forward size={16} />转发</button>
+    {menu.message.invoiceId ? <button type="button" onClick={() => onAction('checkout')}><WalletCards size={16} />支付账单</button> : null}
     <button type="button" onClick={() => onAction('delete')}><Trash2 size={16} />删除</button>
   </div>;
 }
@@ -1114,17 +1183,47 @@ function MiniAppDialog({ app, onClose }: { app: { id: string; html?: string }; o
   return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.miniAppDialog} onMouseDown={(event) => event.stopPropagation()}><header><div><strong>{defaultMiniApps.find((item) => item.id === app.id)?.title ?? app.id}</strong><small>Mini App · 受控宿主容器</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>{app.html ? <iframe title={app.id} sandbox="allow-scripts allow-forms" srcDoc={app.html} /> : <div className={styles.miniAppEmpty}><AppWindow size={38} /><strong>Mini App 已由 Host 打开</strong><p>生产构建将使用受控页面/WebView 容器。</p></div>}</section></div>;
 }
 
-function SectionPanel({ section, onOpenMiniApp, onInvoice }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void }) {
+type PaymentUiState = {
+  account: MessagingWalletAccount | null;
+  entries: MessagingLedgerEntry[];
+  orders: MessagingOrder[];
+  invoices: MessagingInvoice[];
+  actorId: string;
+};
+
+function moneyLabel(currency: string, amountMinor: number): string {
+  return `${currency.toUpperCase()} ${(amountMinor / 100).toFixed(2)}`;
+}
+
+function PaymentOverview({ payment, onInvoice, onRefund, compact = false }: { payment: PaymentUiState; onInvoice: () => void; onRefund: (orderId: string) => void; compact?: boolean }) {
+  const balances = Object.entries(payment.account?.balancesMinor ?? {});
+  const invoiceById = new Map(payment.invoices.map((invoice) => [invoice.id, invoice]));
+  const orders = [...payment.orders].sort((left, right) => right.updatedAtMs - left.updatedAtMs);
+  return <div className={compact ? extra.paymentCompact : extra.paymentOverview}>
+    <div className={extra.walletCard}><WalletCards size={24} /><div><strong>Fabushi Wallet</strong><small>{balances.length ? balances.map(([currency, amount]) => moneyLabel(currency, amount)).join(' · ') : '暂无余额'}</small></div></div>
+    <button type="button" className={styles.primaryButton} onClick={onInvoice}><ShoppingBag size={17} />创建账单</button>
+    {!compact ? <>
+      <section className={extra.paymentSection}><strong>订单</strong>{orders.length ? orders.map((order) => {
+        const invoice = invoiceById.get(order.invoiceId);
+        const sellerOwned = invoice?.sellerId === payment.actorId;
+        return <div className={extra.paymentRow} key={order.id}><div><strong>{invoice?.title ?? order.invoiceId}</strong><small>{moneyLabel(order.amount.currency, order.amount.amountMinor)} · {order.status}</small></div>{sellerOwned && order.status === 'paid' ? <button type="button" onClick={() => onRefund(order.id)}>退款</button> : null}</div>;
+      }) : <small>暂无订单</small>}</section>
+      <section className={extra.paymentSection}><strong>最近流水</strong>{payment.entries.length ? payment.entries.slice(0, 12).map((entry) => <div className={extra.paymentRow} key={entry.id}><div><strong>{entry.kind}</strong><small>{entry.reference ?? entry.id}</small></div><span>{moneyLabel(entry.amount.currency, entry.amount.amountMinor)}</span></div>) : <small>暂无流水</small>}</section>
+    </> : null}
+  </div>;
+}
+
+function SectionPanel({ section, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
   if (section === 'miniapps') return <div className={styles.sectionList}>{defaultMiniApps.map((app) => <button type="button" key={app.id} onClick={() => void onOpenMiniApp(app.id)}><span className={styles.appIcon}><AppWindow size={18} /></span><div><strong>{app.title}</strong><small>{app.description}</small></div></button>)}</div>;
-  if (section === 'payments') return <div className={styles.sectionList}><div className={styles.panelHint}><WalletCards size={24} /><strong>Fabushi Pay</strong><p>Invoice/Order/Wallet/Entitlement 已由 Rust 自建域管理。</p></div><button type="button" onClick={onInvoice}><ShoppingBag size={17} /><div><strong>在当前会话创建账单</strong><small>账单会作为消息发送</small></div></button></div>;
+  if (section === 'payments') return <div className={styles.sectionList}><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} compact /></div>;
   if (section === 'folders') return <div className={styles.sectionList}><div className={styles.panelHint}><Folder size={24} /><strong>聊天文件夹</strong><p>按联系人、Bot、群组、频道、未读和静音状态组织。</p></div></div>;
   if (section === 'calls') return <div className={styles.sectionList}><div className={styles.panelHint}><Phone size={24} /><strong>最近通话</strong><p>从会话顶部发起语音/视频。</p></div></div>;
   return <div className={styles.sectionList}><div className={styles.panelHint}><Settings size={24} /><strong>{sectionTitle(section)}</strong><p>该功能入口已合并进统一 Messenger。</p></div></div>;
 }
 
-function FeatureWorkspace({ section, onOpenMiniApp, onInvoice }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void }) {
+function FeatureWorkspace({ section, onOpenMiniApp, onInvoice, payment, onRefund }: { section: MessengerSection; onOpenMiniApp: (id: string) => Promise<void>; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void }) {
   if (section === 'miniapps') return <div className={styles.featureWorkspace}><AppWindow size={54} /><h2>Mini Apps</h2><p>Mini App 与 Bot、会话、支付共享身份和权限上下文。</p><div className={styles.featureGrid}>{defaultMiniApps.map((app) => <button type="button" key={app.id} onClick={() => void onOpenMiniApp(app.id)}><AppWindow size={22} /><strong>{app.title}</strong><small>{app.description}</small></button>)}</div></div>;
-  if (section === 'payments') return <div className={styles.featureWorkspace}><WalletCards size={54} /><h2>Fabushi Pay</h2><p>支付不依赖 Telegram Payments；账单、订单和权益都由 Fabushi Rust 域管理。</p><button type="button" className={styles.primaryButton} onClick={onInvoice}><ShoppingBag size={17} />在当前会话创建账单</button></div>;
+  if (section === 'payments') return <div className={styles.featureWorkspace}><WalletCards size={54} /><h2>Fabushi Pay</h2><p>自建余额、Invoice、Order、退款与外部 settlement 都由 Rust 账本结算。</p><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} /></div>;
   if (section === 'calls') return <div className={styles.featureWorkspace}><Phone size={54} /><h2>通话</h2><p>本机媒体已接通，Rust realtime 已具备一对一/群组通话信令状态。</p></div>;
   return <div className={styles.featureWorkspace}><MessageCircle size={54} /><h2>{sectionTitle(section)}</h2><p>联系人、Bot、群组和频道正在统一到同一个 Fabushi Actor/Conversation 模型。</p></div>;
 }

@@ -5,10 +5,11 @@ use crate::message::{ClientMessageId, Message, MessageContent, MessageId, Reacti
 use crate::miniapp::{
     MiniAppGrant, MiniAppManifest, MiniAppRequest, MiniAppResponse, MiniAppSession,
 };
-use crate::payment::{Invoice, PaymentOrder};
+use crate::payment::{CustomerInfo, Invoice, PaymentOrder};
+use crate::wallet::{LedgerEntry, WalletAccount};
 use serde::{Deserialize, Serialize};
 
-pub const FABUSHI_MESSAGING_PROTOCOL_VERSION: u16 = 1;
+pub const FABUSHI_MESSAGING_PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -145,8 +146,14 @@ pub enum ClientCommand {
     },
     CheckoutInvoice {
         invoice_id: String,
-        order: PaymentOrder,
+        order_id: String,
+        customer: Option<CustomerInfo>,
     },
+    RefundOrder {
+        order_id: String,
+        request_id: String,
+    },
+    WalletStatus,
     InstallMiniApp {
         manifest: MiniAppManifest,
     },
@@ -240,6 +247,10 @@ pub enum ServerEvent {
     },
     OrderChanged {
         order: PaymentOrder,
+    },
+    WalletStatus {
+        account: Option<WalletAccount>,
+        recent_entries: Vec<LedgerEntry>,
     },
     MiniAppChanged {
         manifest: MiniAppManifest,

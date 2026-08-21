@@ -7,7 +7,8 @@ use crate::miniapp::{
     MiniAppGrant, MiniAppManifest, MiniAppPermission, MiniAppRequest, MiniAppResponse,
     MiniAppSession,
 };
-use crate::payment::{Invoice, PaymentOrder, PaymentStatus};
+use crate::payment::{CustomerInfo, Invoice, Money, PaymentOrder, PaymentStatus};
+use crate::wallet::{LedgerEntry, WalletAccountId, WalletError, WalletLedger};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -111,6 +112,26 @@ pub enum Command {
     UpsertOrder {
         order: PaymentOrder,
     },
+    CheckoutInvoice {
+        invoice_id: String,
+        order_id: String,
+        buyer_id: ActorId,
+        customer: Option<CustomerInfo>,
+        created_at_ms: i64,
+    },
+    RefundOrder {
+        order_id: String,
+        seller_id: ActorId,
+        request_id: String,
+        refunded_at_ms: i64,
+    },
+    CreditWalletSettlement {
+        request_id: String,
+        owner_id: ActorId,
+        amount: Money,
+        reference: Option<String>,
+        settled_at_ms: i64,
+    },
     InstallMiniApp {
         manifest: MiniAppManifest,
     },
@@ -207,6 +228,10 @@ pub enum Event {
     OrderUpserted {
         order: PaymentOrder,
     },
+    WalletChanged {
+        wallet: WalletLedger,
+        entry: LedgerEntry,
+    },
     MiniAppInstalled {
         manifest: MiniAppManifest,
     },
@@ -224,7 +249,7 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct MessagingState {
     pub actors: BTreeMap<ActorId, Actor>,
     pub conversations: BTreeMap<ConversationId, Conversation>,
@@ -232,6 +257,7 @@ pub struct MessagingState {
     pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,
     pub invoices: BTreeMap<String, Invoice>,
     pub orders: BTreeMap<String, PaymentOrder>,
+    pub wallet: WalletLedger,
     pub mini_apps: BTreeMap<String, MiniAppManifest>,
     pub mini_app_grants: BTreeMap<(String, ActorId), MiniAppGrant>,
     pub mini_app_sessions: BTreeMap<String, MiniAppSession>,
@@ -277,6 +303,16 @@ pub enum EngineError {
     InvoiceNotFound(String),
     #[error("payment order {0} does not exist")]
     OrderNotFound(String),
+    #[error("payment invoice {0} has expired")]
+    InvoiceExpired(String),
+    #[error("payment order {0} conflicts with an existing order")]
+    OrderConflict(String),
+    #[error("only the invoice seller may refund order {0}")]
+    RefundForbidden(String),
+    #[error("payment order {0} is not refundable in its current state")]
+    OrderNotRefundable(String),
+    #[error(transparent)]
+    Wallet(#[from] WalletError),
     #[error("Mini App {0} is not installed")]
     MiniAppNotFound(String),
     #[error("Mini App session {0} does not exist")]
@@ -290,6 +326,22 @@ pub enum EngineError {
 #[derive(Debug, Clone, Default)]
 pub struct MessagingEngine {
     state: MessagingState,
+}
+
+fn wallet_account_id(actor_id: &ActorId) -> WalletAccountId {
+    WalletAccountId(format!("wallet:{}", actor_id.0))
+}
+
+fn ensure_wallet_account(
+    wallet: &mut WalletLedger,
+    account_id: &WalletAccountId,
+    owner_id: &ActorId,
+    now_ms: i64,
+) -> Result<(), WalletError> {
+    if wallet.accounts.contains_key(account_id) {
+        return Ok(());
+    }
+    wallet.create_account(account_id.clone(), owner_id.clone(), now_ms)
 }
 
 impl MessagingEngine {
@@ -636,6 +688,131 @@ impl MessagingEngine {
                 self.require_actor(&order.buyer_id)?;
                 Ok(vec![Event::OrderUpserted { order }])
             }
+            Command::CheckoutInvoice {
+                invoice_id,
+                order_id,
+                buyer_id,
+                customer,
+                created_at_ms,
+            } => {
+                let invoice = self
+                    .state
+                    .invoices
+                    .get(&invoice_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::InvoiceNotFound(invoice_id.clone()))?;
+                self.require_actor(&buyer_id)?;
+                if invoice
+                    .expires_at_ms
+                    .is_some_and(|expires_at_ms| expires_at_ms <= created_at_ms)
+                {
+                    return Err(EngineError::InvoiceExpired(invoice_id));
+                }
+                if let Some(existing) = self.state.orders.get(&order_id) {
+                    if existing.invoice_id == invoice.id && existing.buyer_id == buyer_id {
+                        return Ok(vec![Event::OrderUpserted {
+                            order: existing.clone(),
+                        }]);
+                    }
+                    return Err(EngineError::OrderConflict(order_id));
+                }
+                let amount_minor = invoice
+                    .checked_total_minor()
+                    .ok_or(EngineError::InvalidInvoice)?;
+                if amount_minor <= 0 {
+                    return Err(EngineError::InvalidInvoice);
+                }
+                let buyer_account = wallet_account_id(&buyer_id);
+                let seller_account = wallet_account_id(&invoice.seller_id);
+                let mut wallet = self.state.wallet.clone();
+                ensure_wallet_account(&mut wallet, &buyer_account, &buyer_id, created_at_ms)?;
+                ensure_wallet_account(
+                    &mut wallet,
+                    &seller_account,
+                    &invoice.seller_id,
+                    created_at_ms,
+                )?;
+                let entry = wallet.transfer(
+                    format!("checkout:{order_id}"),
+                    &buyer_account,
+                    &seller_account,
+                    Money::new(&invoice.currency, amount_minor),
+                    Some(invoice.id.clone()),
+                    created_at_ms,
+                )?;
+                let order = PaymentOrder {
+                    id: order_id,
+                    invoice_id: invoice.id,
+                    buyer_id,
+                    status: PaymentStatus::Paid,
+                    amount: Money::new(&invoice.currency, amount_minor),
+                    customer,
+                    provider_payment_id: Some(entry.id.clone()),
+                    provider_receipt_url: Some(format!("fabushi://payments/receipts/{}", entry.id)),
+                    created_at_ms,
+                    updated_at_ms: created_at_ms,
+                };
+                Ok(vec![
+                    Event::WalletChanged { wallet, entry },
+                    Event::OrderUpserted { order },
+                ])
+            }
+            Command::RefundOrder {
+                order_id,
+                seller_id,
+                request_id,
+                refunded_at_ms,
+            } => {
+                let mut order = self
+                    .state
+                    .orders
+                    .get(&order_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::OrderNotFound(order_id.clone()))?;
+                let invoice = self
+                    .state
+                    .invoices
+                    .get(&order.invoice_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::InvoiceNotFound(order.invoice_id.clone()))?;
+                if invoice.seller_id != seller_id {
+                    return Err(EngineError::RefundForbidden(order_id));
+                }
+                if order.status == PaymentStatus::Refunded {
+                    return Ok(vec![Event::OrderUpserted { order }]);
+                }
+                if order.status != PaymentStatus::Paid {
+                    return Err(EngineError::OrderNotRefundable(order_id));
+                }
+                let original_entry_id = order
+                    .provider_payment_id
+                    .clone()
+                    .ok_or_else(|| EngineError::OrderNotRefundable(order.id.clone()))?;
+                let mut wallet = self.state.wallet.clone();
+                let entry =
+                    wallet.refund_transfer(request_id, &original_entry_id, refunded_at_ms)?;
+                order.status = PaymentStatus::Refunded;
+                order.updated_at_ms = refunded_at_ms;
+                Ok(vec![
+                    Event::WalletChanged { wallet, entry },
+                    Event::OrderUpserted { order },
+                ])
+            }
+            Command::CreditWalletSettlement {
+                request_id,
+                owner_id,
+                amount,
+                reference,
+                settled_at_ms,
+            } => {
+                self.require_actor(&owner_id)?;
+                let account_id = wallet_account_id(&owner_id);
+                let mut wallet = self.state.wallet.clone();
+                ensure_wallet_account(&mut wallet, &account_id, &owner_id, settled_at_ms)?;
+                let entry =
+                    wallet.credit(request_id, &account_id, amount, reference, settled_at_ms)?;
+                Ok(vec![Event::WalletChanged { wallet, entry }])
+            }
             Command::InstallMiniApp { manifest } => Ok(vec![Event::MiniAppInstalled { manifest }]),
             Command::GrantMiniApp { grant } => {
                 if !self.state.mini_apps.contains_key(&grant.mini_app_id) {
@@ -880,6 +1057,9 @@ impl MessagingEngine {
             }
             Event::OrderUpserted { order } => {
                 self.state.orders.insert(order.id.clone(), order);
+            }
+            Event::WalletChanged { wallet, .. } => {
+                self.state.wallet = wallet;
             }
             Event::MiniAppInstalled { manifest } => {
                 self.state.mini_apps.insert(manifest.id.clone(), manifest);

@@ -2,10 +2,13 @@ use crate::actor::ActorId;
 use crate::blob_store::{BlobStoreError, FileBlobStore};
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::MessageId;
+use crate::payment::Money;
 use crate::protocol::{
     ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
 };
+use crate::settlement::{SettlementError, SettlementVerifier, SignedSettlement};
 use crate::store::{MessagingSnapshot, MessagingStateStore, StoreError};
+use crate::wallet::{LedgerEntry, WalletAccountId};
 use base64::Engine as _;
 use thiserror::Error;
 
@@ -23,6 +26,10 @@ pub enum MessagingServiceError {
     BlobStoreUnavailable,
     #[error("blob chunk is not valid base64: {0}")]
     InvalidBlobBase64(String),
+    #[error("messaging service invariant failed: {0}")]
+    Invariant(String),
+    #[error(transparent)]
+    Settlement(#[from] SettlementError),
 }
 
 pub struct MessagingService<S: MessagingStateStore> {
@@ -106,6 +113,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 self.blob_store()?.delete(&blob_id)?;
                 self.single_service_event(ServerEvent::BlobDeleted { blob_id }, server_time_ms)
             }
+            ClientCommand::WalletStatus => {
+                return Ok(vec![self.wallet_status_envelope(&actor_id, server_time_ms)]);
+            }
             command => {
                 if let ClientCommand::Sync { limit, .. } = &command {
                     return Ok(vec![self.sync_envelope(*limit, server_time_ms)]);
@@ -149,6 +159,87 @@ impl<S: MessagingStateStore> MessagingService<S> {
             server_time_ms,
             event,
         }])
+    }
+
+    pub fn apply_signed_settlement(
+        &mut self,
+        verifier: &SettlementVerifier,
+        signed: &SignedSettlement,
+        server_time_ms: i64,
+    ) -> Result<LedgerEntry, MessagingServiceError> {
+        let event = verifier.verify(signed, server_time_ms)?;
+        self.credit_wallet_from_settlement(
+            event.idempotency_key(),
+            event.actor_id,
+            event.amount,
+            Some(event.provider_reference),
+            server_time_ms,
+        )
+    }
+
+    pub fn credit_wallet_from_settlement(
+        &mut self,
+        request_id: String,
+        owner_id: ActorId,
+        amount: Money,
+        reference: Option<String>,
+        server_time_ms: i64,
+    ) -> Result<LedgerEntry, MessagingServiceError> {
+        let events = self.engine.execute(Command::CreditWalletSettlement {
+            request_id,
+            owner_id,
+            amount,
+            reference,
+            settled_at_ms: server_time_ms,
+        })?;
+        let entry = events
+            .iter()
+            .find_map(|event| match event {
+                Event::WalletChanged { entry, .. } => Some(entry.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                MessagingServiceError::Invariant(
+                    "wallet settlement produced no ledger entry".into(),
+                )
+            })?;
+        self.cursor = self.cursor.saturating_add(events.len() as u64);
+        self.persist(server_time_ms)?;
+        Ok(entry)
+    }
+
+    fn wallet_status_envelope(&self, actor_id: &ActorId, server_time_ms: i64) -> ServerEnvelope {
+        let account_id = WalletAccountId(format!("wallet:{}", actor_id.0));
+        let account = self
+            .engine
+            .state()
+            .wallet
+            .accounts
+            .get(&account_id)
+            .cloned();
+        let mut recent_entries = self
+            .engine
+            .state()
+            .wallet
+            .entries
+            .values()
+            .filter(|entry| {
+                entry.from_account_id.as_ref() == Some(&account_id)
+                    || entry.to_account_id.as_ref() == Some(&account_id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        recent_entries.sort_by(|left, right| right.created_at_ms.cmp(&left.created_at_ms));
+        recent_entries.truncate(50);
+        ServerEnvelope {
+            protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
+            cursor: Some(self.cursor.to_string()),
+            server_time_ms,
+            event: ServerEvent::WalletStatus {
+                account,
+                recent_entries,
+            },
+        }
     }
 
     fn sync_envelope(&self, limit: u32, server_time_ms: i64) -> ServerEnvelope {
@@ -304,7 +395,27 @@ impl<S: MessagingStateStore> MessagingService<S> {
             }],
             ClientCommand::StartTyping { .. } | ClientCommand::StopTyping { .. } => Vec::new(),
             ClientCommand::CreateInvoice { invoice } => vec![Command::CreateInvoice { invoice }],
-            ClientCommand::CheckoutInvoice { order, .. } => vec![Command::UpsertOrder { order }],
+            ClientCommand::CheckoutInvoice {
+                invoice_id,
+                order_id,
+                customer,
+            } => vec![Command::CheckoutInvoice {
+                invoice_id,
+                order_id,
+                buyer_id: actor_id.clone(),
+                customer,
+                created_at_ms: now_ms,
+            }],
+            ClientCommand::RefundOrder {
+                order_id,
+                request_id,
+            } => vec![Command::RefundOrder {
+                order_id,
+                seller_id: actor_id.clone(),
+                request_id,
+                refunded_at_ms: now_ms,
+            }],
+            ClientCommand::WalletStatus => Vec::new(),
             ClientCommand::InstallMiniApp { manifest } => {
                 vec![Command::InstallMiniApp { manifest }]
             }
@@ -403,6 +514,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             },
             Event::InvoiceCreated { invoice } => ServerEvent::InvoiceChanged { invoice },
             Event::OrderUpserted { order } => ServerEvent::OrderChanged { order },
+            Event::WalletChanged { .. } => return None,
             Event::MiniAppInstalled { manifest } => ServerEvent::MiniAppChanged { manifest },
             Event::MiniAppGrantUpdated { .. } => return None,
             Event::MiniAppOpened { session } => ServerEvent::MiniAppOpened { session },

@@ -64,21 +64,26 @@ pub struct Invoice {
 }
 
 impl Invoice {
+    pub fn checked_total_minor(&self) -> Option<i64> {
+        self.prices.iter().try_fold(0i64, |total, line| {
+            total.checked_add(line.amount.amount_minor)
+        })
+    }
+
     pub fn total_minor(&self) -> i64 {
-        self.prices
-            .iter()
-            .map(|line| line.amount.amount_minor)
-            .sum()
+        self.checked_total_minor().unwrap_or(i64::MAX)
     }
 
     pub fn is_valid(&self) -> bool {
         !self.id.trim().is_empty()
             && !self.title.trim().is_empty()
             && self.currency.len() == 3
+            && !self.prices.is_empty()
             && self
                 .prices
                 .iter()
                 .all(|line| line.amount.currency == self.currency && line.amount.is_valid())
+            && self.checked_total_minor().is_some_and(|total| total > 0)
     }
 }
 
