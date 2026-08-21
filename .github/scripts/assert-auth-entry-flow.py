@@ -80,7 +80,8 @@ required = {
     'renderer browser poll': (host, 'transport.browserLoginPoll(attempt.attemptId)'),
     'renderer single browser CTA': (host, 'data-testid="browser-login-start"'),
     'feature browser credential-boundary regression': (feature, 'deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary'),
-    'desktop defaults to Rust staging Product API': (host_process, "DEFAULT_DESKTOP_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev'"),
+    'desktop packaged Product API uses production origin': (host_process, "PRODUCTION_PRODUCT_API_BASE_URL = 'https://api.ombhrum.com'"),
+    'desktop packaged/runtime environment selects production explicitly': (host_process, 'return app.isPackaged ? PRODUCTION_PRODUCT_API_BASE_URL : DEVELOPMENT_PRODUCT_API_BASE_URL;'),
     'desktop forwards Product API override to Host': (host_process, 'MAHAYANA_API_BASE_URL:'),
     'browser registration code route': (worker, '/api/auth/browser/register/code'),
     'browser registration submit route': (worker, '/api/auth/browser/register'),
@@ -120,6 +121,8 @@ for label, (text, marker) in required.items():
     if marker not in text:
         raise SystemExit(f'auth entry gate: missing {label}: {marker}')
 
+if 'DEFAULT_DESKTOP_PRODUCT_API_BASE_URL' in host_process:
+    raise SystemExit('auth entry gate: obsolete staging desktop default compatibility marker must not return')
 
 if '.find_map(|(key, value)| (key == "pollSecret")' in worker or '&[("pollSecret", poll_secret.as_str())]' in product:
     raise SystemExit('auth entry gate: browser poll verifier must not be sent in a URL query string')
