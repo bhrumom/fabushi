@@ -125,6 +125,20 @@ export interface MessagingHostEvent {
   envelope: MessagingServerEnvelope;
 }
 
+export interface MessagingMediaRef {
+  id: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  thumbnailId?: string;
+  localPath?: string;
+  remoteUrl?: string;
+  contentHash?: string;
+}
+
 export type MessagingContent =
   | { type: 'text'; data: { text: { text: string; entities: unknown[] } } }
   | {
@@ -137,6 +151,9 @@ export type MessagingContent =
         quiz: boolean;
       };
     }
+  | { type: 'photo'; data: { media: MessagingMediaRef; caption: { text: string; entities: unknown[] }; spoiler: boolean } }
+  | { type: 'video'; data: { media: MessagingMediaRef; caption: { text: string; entities: unknown[] }; spoiler: boolean; streaming: boolean } }
+  | { type: 'document'; data: { media: MessagingMediaRef; caption: { text: string; entities: unknown[] } } }
   | { type: 'contact'; data: { actorId?: string; displayName: string; phoneNumber?: string } }
   | { type: 'location'; data: { latitude: number; longitude: number; liveUntilMs?: number } }
   | { type: 'invoice'; data: { invoiceId: string } }
@@ -157,11 +174,26 @@ export function messagingText(message: MessagingMessage): string {
     const data = message.content.data as { question?: { text?: string } } | undefined;
     return `📊 ${data?.question?.text ?? '投票'}`;
   }
+  if (message.content.type === 'photo') return '🖼 图片';
+  if (message.content.type === 'video') return '🎬 视频';
+  if (message.content.type === 'document') {
+    const data = message.content.data as { media?: { fileName?: string } } | undefined;
+    return `📎 ${data?.media?.fileName ?? '文件'}`;
+  }
   if (message.content.type === 'location') return '📍 位置';
   if (message.content.type === 'contact') return '👤 联系人';
   if (message.content.type === 'invoice') return '🧾 账单';
   if (message.content.type === 'miniApp') return '▣ Mini App';
   return `[${message.content.type}]`;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const stride = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += stride) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + stride)));
+  }
+  return btoa(binary);
 }
 
 function bridgeCommand(requestId: string, envelope: MessagingClientEnvelope): RuntimeCommand {
@@ -351,6 +383,63 @@ export class SelfHostedMessagingClientV2 {
         quiz: false,
       },
     });
+  }
+
+  async uploadBlob(file: File, onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<MessagingMediaRef> {
+    if (!file.size) throw new Error('不能发送空文件');
+    const id = `blob-${crypto.randomUUID()}`;
+    await this.execute({
+      type: 'beginBlobUpload',
+      metadata: {
+        id,
+        fileName: file.name || 'attachment',
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        contentHash: null,
+        createdAtMs: Date.now(),
+      },
+    });
+    const chunkBytes = 512 * 1024;
+    let offset = 0;
+    while (offset < file.size) {
+      const end = Math.min(file.size, offset + chunkBytes);
+      const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+      await this.execute({
+        type: 'appendBlobChunk',
+        blobId: id,
+        offset,
+        dataBase64: bytesToBase64(bytes),
+      });
+      offset = end;
+      onProgress?.(offset, file.size);
+    }
+    await this.execute({ type: 'finishBlobUpload', blobId: id });
+    return {
+      id,
+      fileName: file.name || 'attachment',
+      mimeType: file.type || 'application/octet-stream',
+      sizeBytes: file.size,
+      remoteUrl: `fabushi-blob://${id}`,
+    };
+  }
+
+  async sendAttachment(
+    conversationId: string,
+    file: File,
+    options: Parameters<SelfHostedMessagingClientV2['sendContent']>[2] = {},
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void,
+  ): Promise<void> {
+    const media = await this.uploadBlob(file, onProgress);
+    const caption = { text: '', entities: [] as unknown[] };
+    if (file.type.startsWith('image/')) {
+      await this.sendContent(conversationId, { type: 'photo', data: { media, caption, spoiler: false } }, options);
+      return;
+    }
+    if (file.type.startsWith('video/')) {
+      await this.sendContent(conversationId, { type: 'video', data: { media, caption, spoiler: false, streaming: true } }, options);
+      return;
+    }
+    await this.sendContent(conversationId, { type: 'document', data: { media, caption } }, options);
   }
 
   forwardMessage(sourceConversationId: string, messageId: string, destinationConversationId: string): Promise<void> {

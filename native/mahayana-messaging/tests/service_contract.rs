@@ -162,3 +162,71 @@ fn realtime_state_tracks_group_call_media_and_typing() {
     realtime.expire_typing(51);
     assert!(realtime.typing.is_empty());
 }
+
+#[test]
+fn messaging_service_streams_blob_chunks_to_self_hosted_storage() {
+    let root = std::env::temp_dir().join(format!(
+        "fabushi-messaging-blob-contract-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let blob_root = root.join("blobs");
+    let store = MemoryStateStore::default();
+    let mut service =
+        MessagingService::load_with_blob_store(store, FileBlobStore::new(&blob_root)).unwrap();
+    let id = BlobId::new("blob-contract-1").unwrap();
+    let metadata = BlobMetadata {
+        id: id.clone(),
+        file_name: "hello.txt".into(),
+        mime_type: "text/plain".into(),
+        size_bytes: 5,
+        content_hash: None,
+        created_at_ms: 10,
+    };
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:1"),
+                ClientCommand::BeginBlobUpload {
+                    metadata: metadata.clone(),
+                },
+            ),
+            10,
+        )
+        .unwrap();
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:1"),
+                ClientCommand::AppendBlobChunk {
+                    blob_id: id.clone(),
+                    offset: 0,
+                    data_base64: "aGVsbG8=".into(),
+                },
+            ),
+            11,
+        )
+        .unwrap();
+    let events = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:1"),
+                ClientCommand::FinishBlobUpload {
+                    blob_id: id.clone(),
+                },
+            ),
+            12,
+        )
+        .unwrap();
+    assert!(matches!(events[0].event, ServerEvent::BlobReady { .. }));
+    assert_eq!(
+        FileBlobStore::new(&blob_root)
+            .read_range(&id, 0, 5)
+            .unwrap(),
+        b"hello"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

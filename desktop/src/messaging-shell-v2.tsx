@@ -253,6 +253,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [messageMenu, setMessageMenu] = useState<MessageMenu>(null);
   const [forwardDialog, setForwardDialog] = useState<ForwardDialogState>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentProgress, setAttachmentProgress] = useState<string | null>(null);
   const [localCall, setLocalCall] = useState<LocalCall | null>(null);
   const [miniApp, setMiniApp] = useState<{ id: string; html?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +263,8 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const activePeerKeyRef = useRef<string | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     activePeerKeyRef.current = activePeerKey;
@@ -703,6 +706,31 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
   }
 
+  async function sendAttachmentFile(file: File) {
+    if (!activePeer?.conversationId || activePeer.source !== 'selfhosted') {
+      setError('附件需要发送到 Fabushi 自建会话。');
+      return;
+    }
+    setAttachmentMenuOpen(false);
+    setPendingSend(true);
+    setAttachmentProgress(`正在上传 ${file.name}…`);
+    try {
+      await selfHosted.sendAttachment(
+        activePeer.conversationId,
+        file,
+        { replyToMessageId: replyTo?.id, scheduledAtMs, silent: silentSend },
+        (uploaded, total) => setAttachmentProgress(`正在上传 ${file.name} · ${Math.round((uploaded / total) * 100)}%`),
+      );
+      setReplyTo(null);
+      setScheduledAtMs(undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPendingSend(false);
+      setAttachmentProgress(null);
+    }
+  }
+
   async function sendPoll() {
     if (!activePeer?.conversationId || activePeer.source !== 'selfhosted') {
       setError('投票使用 Fabushi 自研消息协议；请先打开自建群组或频道。');
@@ -974,12 +1002,15 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             <form className={styles.composer} onSubmit={(event) => void sendMessage(event)}>
               <div className={extra.attachmentAnchor}>
                 <button type="button" title="附件" onClick={() => setAttachmentMenuOpen((value) => !value)}><Paperclip size={20} /></button>
-                {attachmentMenuOpen ? <AttachmentMenu onPoll={() => void sendPoll()} onLocation={() => void sendLocation()} onSchedule={() => {
+                {attachmentMenuOpen ? <AttachmentMenu onMedia={() => mediaInputRef.current?.click()} onFile={() => fileInputRef.current?.click()} onPoll={() => void sendPoll()} onLocation={() => void sendLocation()} onSchedule={() => {
                   const minutes = Number(window.prompt('多少分钟后发送？', '10'));
                   if (Number.isFinite(minutes) && minutes > 0) setScheduledAtMs(Date.now() + minutes * 60_000);
                   setAttachmentMenuOpen(false);
                 }} onUnavailable={(label) => { setError(`${label} 已有 Rust 媒体传输状态机；生产 blob 上传 provider 仍在接线。`); setAttachmentMenuOpen(false); }} /> : null}
               </div>
+              <input ref={mediaInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
+              <input ref={fileInputRef} type="file" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
+              {attachmentProgress ? <span className={extra.uploadProgress}>{attachmentProgress}</span> : null}
               <textarea data-testid="messenger-input" value={composer} onChange={(event) => setComposer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="消息" rows={1} />
               <button type="button" title="表情"><Smile size={20} /></button>
               <button type="button" data-active={silentSend} title={silentSend ? '关闭静默发送' : '静默发送'} onClick={() => setSilentSend((value) => !value)}><BellOff size={19} /></button>
@@ -1026,10 +1057,10 @@ function EmptyList({ section }: { section: MessengerSection }) {
   return <div className={styles.emptyList}><MessageCircle size={27} /><strong>暂无{sectionTitle(section)}</strong><p>新建会话后会显示在这里。</p></div>;
 }
 
-function AttachmentMenu({ onPoll, onLocation, onSchedule, onUnavailable }: { onPoll: () => void; onLocation: () => void; onSchedule: () => void; onUnavailable: (label: string) => void }) {
+function AttachmentMenu({ onMedia, onFile, onPoll, onLocation, onSchedule }: { onMedia: () => void; onFile: () => void; onPoll: () => void; onLocation: () => void; onSchedule: () => void }) {
   return <div className={extra.popover} onClick={(event) => event.stopPropagation()}>
-    <button type="button" onClick={() => onUnavailable('图片/视频')}><Image size={17} />图片或视频</button>
-    <button type="button" onClick={() => onUnavailable('文件')}><FileText size={17} />文件</button>
+    <button type="button" onClick={onMedia}><Image size={17} />图片或视频</button>
+    <button type="button" onClick={onFile}><FileText size={17} />文件</button>
     <button type="button" onClick={onPoll}><span>📊</span>投票</button>
     <button type="button" onClick={onLocation}><MapPin size={17} />位置</button>
     <button type="button" onClick={onSchedule}><span>⏱</span>定时发送</button>

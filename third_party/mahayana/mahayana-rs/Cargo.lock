@@ -5373,6 +5373,7 @@ dependencies = [
 name = "fabushi-messaging-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

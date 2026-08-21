@@ -1,4 +1,5 @@
 use crate::actor::{Actor, ActorId, Presence};
+use crate::blob_store::{BlobId, BlobMetadata, BlobUploadStatus};
 use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
 use crate::message::{ClientMessageId, Message, MessageContent, MessageId, ReactionSummary};
 use crate::miniapp::{
@@ -93,6 +94,20 @@ pub enum ClientCommand {
         message_id: MessageId,
         destination_conversation_id: ConversationId,
         client_message_id: ClientMessageId,
+    },
+    BeginBlobUpload {
+        metadata: BlobMetadata,
+    },
+    AppendBlobChunk {
+        blob_id: BlobId,
+        offset: u64,
+        data_base64: String,
+    },
+    FinishBlobUpload {
+        blob_id: BlobId,
+    },
+    DeleteBlob {
+        blob_id: BlobId,
     },
     EditMessage {
         conversation_id: ConversationId,
@@ -195,6 +210,15 @@ pub enum ServerEvent {
     },
     MessageChanged {
         message: Message,
+    },
+    BlobUploadChanged {
+        status: BlobUploadStatus,
+    },
+    BlobReady {
+        metadata: BlobMetadata,
+    },
+    BlobDeleted {
+        blob_id: BlobId,
     },
     MessagesDeleted {
         conversation_id: ConversationId,

@@ -14,6 +14,7 @@ use chrono::Utc;
 
 #[cfg(feature = "production")]
 use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;
+use fabushi_messaging_core::FileBlobStore;
 use fabushi_messaging_core::JsonFileStateStore;
 use fabushi_messaging_core::MessagingService;
 #[cfg(feature = "production")]
@@ -924,8 +925,12 @@ impl FeatureHostController {
             serde_json::from_value(envelope).map_err(|error| {
                 FeatureHostError::Contract(format!("invalid messaging envelope: {error}"))
             })?;
-        let store = JsonFileStateStore::new(root.join("_messaging").join("snapshot.json"));
-        let mut service = MessagingService::load(store)
+        let messaging_root = root.join("_messaging");
+        let store = JsonFileStateStore::new(messaging_root.join("snapshot.json"));
+        let mut service = MessagingService::load_with_blob_store(
+            store,
+            FileBlobStore::new(messaging_root.join("blobs")),
+        )
             .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
         let responses = service
             .handle(client_envelope, now_millis())
