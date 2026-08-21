@@ -7,6 +7,13 @@ on:
       - '.github/workflows/messaging-validation-fixup-once.yml'
       - 'native/mahayana-messaging/**'
       - 'third_party/mahayana/mahayana-rs/**'
+  push:
+    branches:
+      - feat/fabushi-messaging-rust-selfhosted
+    paths:
+      - '.github/workflows/messaging-validation-fixup-once.yml'
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/**'
 
 permissions:
   contents: write
@@ -17,13 +24,13 @@ concurrency:
 
 jobs:
   validate-and-format:
-    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.actor != 'github-actions[bot]' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -33,7 +40,7 @@ jobs:
           workspaces: |
             native/mahayana-messaging -> target
             third_party/mahayana/mahayana-rs -> target
-          shared-key: messaging-final-validation-v1
+          shared-key: messaging-final-validation-v2
 
       - name: Format only messaging Rust sources
         run: cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml
@@ -56,9 +63,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git status --porcelain | grep -E '(^|/)target/'; then
-            echo 'Cargo target output exists as expected but must never be staged.'
-          fi
           git add native/mahayana-messaging/src native/mahayana-messaging/tests
           if git diff --cached --name-only | grep -E '(^|/)target/'; then
             echo 'Refusing to commit Cargo build artifacts.' >&2
@@ -76,4 +80,4 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'style(messaging): apply final rustfmt'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
