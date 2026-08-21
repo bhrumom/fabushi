@@ -167,3 +167,12 @@
   white-space: nowrap;
   opacity: 0.65;
 }
+
+.uploadProgress {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #4d839f;
+}

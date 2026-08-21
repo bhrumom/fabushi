@@ -1,3 +1,4 @@
+use crate::blob_store::FileBlobStore;
 use crate::protocol::{ClientEnvelope, ServerEnvelope};
 use crate::service::{MessagingService, MessagingServiceError};
 use crate::store::JsonFileStateStore;
@@ -95,7 +96,12 @@ impl MessagingTcpServer {
     pub fn load(config: MessagingServerConfig) -> Result<Self, MessagingServerError> {
         config.validate()?;
         let store = JsonFileStateStore::new(config.snapshot_path.clone());
-        let service = MessagingService::load(store)?;
+        let blob_root = config
+            .snapshot_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("blobs");
+        let service = MessagingService::load_with_blob_store(store, FileBlobStore::new(blob_root))?;
         Ok(Self {
             config,
             service: Arc::new(Mutex::new(service)),

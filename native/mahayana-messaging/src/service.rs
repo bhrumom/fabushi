@@ -1,10 +1,12 @@
 use crate::actor::ActorId;
+use crate::blob_store::{BlobStoreError, FileBlobStore};
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::MessageId;
 use crate::protocol::{
     ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
 };
 use crate::store::{MessagingSnapshot, MessagingStateStore, StoreError};
+use base64::Engine as _;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -15,11 +17,18 @@ pub enum MessagingServiceError {
     Engine(#[from] EngineError),
     #[error(transparent)]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    Blob(#[from] BlobStoreError),
+    #[error("blob storage is unavailable for this messaging service")]
+    BlobStoreUnavailable,
+    #[error("blob chunk is not valid base64: {0}")]
+    InvalidBlobBase64(String),
 }
 
 pub struct MessagingService<S: MessagingStateStore> {
     engine: MessagingEngine,
     store: S,
+    blob_store: Option<FileBlobStore>,
     cursor: u64,
 }
 
@@ -33,8 +42,18 @@ impl<S: MessagingStateStore> MessagingService<S> {
         Ok(Self {
             engine,
             store,
+            blob_store: None,
             cursor,
         })
+    }
+
+    pub fn load_with_blob_store(
+        store: S,
+        blob_store: FileBlobStore,
+    ) -> Result<Self, MessagingServiceError> {
+        let mut service = Self::load(store)?;
+        service.blob_store = Some(blob_store);
+        Ok(service)
     }
 
     pub fn engine(&self) -> &MessagingEngine {
@@ -63,25 +82,81 @@ impl<S: MessagingStateStore> MessagingService<S> {
 
         let actor_id = envelope.context.actor_id;
         let command = envelope.command;
-        if let ClientCommand::Sync { limit, .. } = &command {
-            return Ok(vec![self.sync_envelope(*limit, server_time_ms)]);
-        }
+        match command {
+            ClientCommand::BeginBlobUpload { metadata } => {
+                let status = self.blob_store()?.begin_upload(&metadata)?;
+                return self.single_service_event(
+                    ServerEvent::BlobUploadChanged { status },
+                    server_time_ms,
+                );
+            }
+            ClientCommand::AppendBlobChunk {
+                blob_id,
+                offset,
+                data_base64,
+            } => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data_base64.as_bytes())
+                    .map_err(|error| MessagingServiceError::InvalidBlobBase64(error.to_string()))?;
+                let status = self.blob_store()?.append_chunk(&blob_id, offset, &bytes)?;
+                return self.single_service_event(
+                    ServerEvent::BlobUploadChanged { status },
+                    server_time_ms,
+                );
+            }
+            ClientCommand::FinishBlobUpload { blob_id } => {
+                let metadata = self.blob_store()?.finish_upload(&blob_id)?;
+                return self
+                    .single_service_event(ServerEvent::BlobReady { metadata }, server_time_ms);
+            }
+            ClientCommand::DeleteBlob { blob_id } => {
+                self.blob_store()?.delete(&blob_id)?;
+                return self
+                    .single_service_event(ServerEvent::BlobDeleted { blob_id }, server_time_ms);
+            }
+            command => {
+                if let ClientCommand::Sync { limit, .. } = &command {
+                    return Ok(vec![self.sync_envelope(*limit, server_time_ms)]);
+                }
 
-        let commands = self.project_command(&actor_id, command, server_time_ms);
-        let mut events = Vec::new();
-        for command in commands {
-            events.extend(self.engine.execute(command)?);
-        }
-        if events.is_empty() {
-            return Ok(Vec::new());
-        }
+                let commands = self.project_command(&actor_id, command, server_time_ms);
+                let mut events = Vec::new();
+                for command in commands {
+                    events.extend(self.engine.execute(command)?);
+                }
+                if events.is_empty() {
+                    return Ok(Vec::new());
+                }
 
-        self.cursor = self.cursor.saturating_add(events.len() as u64);
+                self.cursor = self.cursor.saturating_add(events.len() as u64);
+                self.persist(server_time_ms)?;
+                return Ok(events
+                    .into_iter()
+                    .filter_map(|event| self.project_event(event, server_time_ms))
+                    .collect());
+            }
+        }
+    }
+
+    fn blob_store(&self) -> Result<&FileBlobStore, MessagingServiceError> {
+        self.blob_store
+            .as_ref()
+            .ok_or(MessagingServiceError::BlobStoreUnavailable)
+    }
+
+    fn single_service_event(
+        &mut self,
+        event: ServerEvent,
+        server_time_ms: i64,
+    ) -> Result<Vec<ServerEnvelope>, MessagingServiceError> {
+        self.cursor = self.cursor.saturating_add(1);
         self.persist(server_time_ms)?;
-        Ok(events
-            .into_iter()
-            .filter_map(|event| self.project_event(event, server_time_ms))
-            .collect())
+        Ok(vec![ServerEnvelope {
+            protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
+            cursor: Some(self.cursor.to_string()),
+            server_time_ms,
+            event,
+        }])
     }
 
     fn sync_envelope(&self, limit: u32, server_time_ms: i64) -> ServerEnvelope {
@@ -252,6 +327,10 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 request_id,
                 request,
             }],
+            ClientCommand::BeginBlobUpload { .. }
+            | ClientCommand::AppendBlobChunk { .. }
+            | ClientCommand::FinishBlobUpload { .. }
+            | ClientCommand::DeleteBlob { .. } => Vec::new(),
         }
     }
 
