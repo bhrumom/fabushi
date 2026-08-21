@@ -20,6 +20,10 @@ async function resolveAdminActor(request, env, db, requireAdmin = true) {
   return { user, tokenData, admin };
 }
 
+function adminTestPricingEnabled(env) {
+  return env?.ENVIRONMENT === 'development' && env?.ALLOW_ADMIN_TEST_PRICING === 'true';
+}
+
 export async function handleCheckAdminStatus(request, env, db) {
   const actor = await resolveAdminActor(request, env, db, false);
   if (actor.response) return actor.response;
@@ -75,8 +79,8 @@ export async function handleGetAdminPrice(request, env, db) {
   const planInfo = MEMBERSHIP_PLANS[plan];
   if (!planInfo) return jsonResponse({ error: '无效的会员方案' }, 400);
 
-  if (actor.admin) {
-    return jsonResponse({ isAdmin: true, originalPrice: planInfo.price, adminPrice: planInfo.adminPrice, plan });
+  if (actor.admin && adminTestPricingEnabled(env)) {
+    return jsonResponse({ isAdmin: true, originalPrice: planInfo.price, adminPrice: planInfo.adminPrice, plan, testPricing: true });
   }
-  return jsonResponse({ isAdmin: false, price: planInfo.price, plan });
+  return jsonResponse({ isAdmin: actor.admin, price: planInfo.price, plan, testPricing: false });
 }
