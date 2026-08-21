@@ -11,6 +11,7 @@ doctest = false
 
 [dependencies]
 async-trait.workspace = true
+mahayana-core.workspace = true
 mahayana-harness.workspace = true
 mahayana-harness-services.workspace = true
 mahayana-tool-host.workspace = true
