@@ -1,0 +1,12 @@
+[package]
+name = "mahayana-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Provider-neutral orchestration kernel owned by Mahayana."
+publish = false
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
