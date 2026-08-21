@@ -244,9 +244,10 @@ fn required_scope(command: &ClientCommand) -> AccessScope {
         | ClientCommand::AppendBlobChunk { .. }
         | ClientCommand::FinishBlobUpload { .. }
         | ClientCommand::DeleteBlob { .. } => AccessScope::BlobsWrite,
-        ClientCommand::CreateInvoice { .. } | ClientCommand::CheckoutInvoice { .. } => {
-            AccessScope::Payments
-        }
+        ClientCommand::CreateInvoice { .. }
+        | ClientCommand::CheckoutInvoice { .. }
+        | ClientCommand::RefundOrder { .. }
+        | ClientCommand::WalletStatus => AccessScope::Payments,
         ClientCommand::InstallMiniApp { .. }
         | ClientCommand::GrantMiniApp { .. }
         | ClientCommand::OpenMiniApp { .. }

@@ -1,7 +1,7 @@
 import type { RuntimeCommand, RuntimeEvent } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
 import type { MahayanaHostTransport } from '../../frontend/apps/web/src/lib/mahayana-host/transport';
 
-export const FABUSHI_MESSAGING_PROTOCOL_VERSION = 1 as const;
+export const FABUSHI_MESSAGING_PROTOCOL_VERSION = 2 as const;
 
 export type ActorKind = 'human' | 'assistant' | 'bot' | 'service';
 export type ConversationKind = 'direct' | 'group' | 'channel' | 'savedMessages' | 'secret';
@@ -97,6 +97,53 @@ export interface MessagingMessage {
   protectedContent: boolean;
   pinned: boolean;
   deleted: boolean;
+}
+
+export interface MessagingInvoice {
+  id: string;
+  conversationId: string;
+  sellerId: string;
+  title: string;
+  description: string;
+  kind: 'oneTime' | 'subscription' | 'donation' | 'digitalGoods';
+  currency: string;
+  prices: Array<{ label: string; amount: { currency: string; amountMinor: number } }>;
+  payload: string;
+  providerId: string;
+  createdAtMs: number;
+  expiresAtMs?: number;
+}
+
+export interface MessagingOrder {
+  id: string;
+  invoiceId: string;
+  buyerId: string;
+  status: 'draft' | 'pending' | 'requiresAction' | 'authorized' | 'paid' | 'refunded' | 'partiallyRefunded' | 'cancelled' | 'failed';
+  amount: { currency: string; amountMinor: number };
+  providerPaymentId?: string;
+  providerReceiptUrl?: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface MessagingWalletAccount {
+  id: string;
+  ownerId: string;
+  balancesMinor: Record<string, number>;
+  frozen: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface MessagingLedgerEntry {
+  id: string;
+  requestId: string;
+  kind: 'credit' | 'transfer' | 'refund' | 'adjustment';
+  fromAccountId?: string;
+  toAccountId?: string;
+  amount: { currency: string; amountMinor: number };
+  reference?: string;
+  createdAtMs: number;
 }
 
 export interface MessagingClientEnvelope {
@@ -505,6 +552,27 @@ export class SelfHostedMessagingClientV2 {
         showPreview: true,
         notifyMentions: true,
       },
+    });
+  }
+
+  requestWalletStatus(): Promise<void> {
+    return this.execute({ type: 'walletStatus' });
+  }
+
+  checkoutInvoice(invoiceId: string, orderId = `order:${crypto.randomUUID()}`): Promise<string> {
+    return this.execute({
+      type: 'checkoutInvoice',
+      invoiceId,
+      orderId,
+      customer: null,
+    }).then(() => orderId);
+  }
+
+  refundOrder(orderId: string): Promise<void> {
+    return this.execute({
+      type: 'refundOrder',
+      orderId,
+      requestId: `refund:${crypto.randomUUID()}`,
     });
   }
 

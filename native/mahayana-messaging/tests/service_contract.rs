@@ -230,3 +230,188 @@ fn messaging_service_streams_blob_chunks_to_self_hosted_storage() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn wallet_checkout_and_refund_settle_invoice_atomically() {
+    let store = MemoryStateStore::default();
+    let mut service = MessagingService::load(store).unwrap();
+    let seller = ActorId::new("human:seller");
+    let buyer = ActorId::new("human:buyer");
+    for (id, name) in [(seller.clone(), "Seller"), (buyer.clone(), "Buyer")] {
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(&id.0),
+                    ClientCommand::UpsertProfile {
+                        actor: Actor::human(id.0.clone(), name),
+                    },
+                ),
+                1,
+            )
+            .unwrap();
+    }
+    service
+        .handle(
+            ClientEnvelope::new(
+                context(&seller.0),
+                ClientCommand::CreateConversation {
+                    conversation: Conversation::direct(
+                        "chat:wallet-shop",
+                        "Wallet shop",
+                        vec![
+                            Participant {
+                                actor_id: seller.clone(),
+                                role: ParticipantRole::Owner,
+                                joined_at_ms: 1,
+                                muted_until_ms: None,
+                            },
+                            Participant {
+                                actor_id: buyer.clone(),
+                                role: ParticipantRole::Member,
+                                joined_at_ms: 1,
+                                muted_until_ms: None,
+                            },
+                        ],
+                        1,
+                    ),
+                },
+            ),
+            2,
+        )
+        .unwrap();
+    let invoice = Invoice {
+        id: "invoice:wallet:1".into(),
+        conversation_id: ConversationId::new("chat:wallet-shop"),
+        seller_id: seller.clone(),
+        title: "Pro".into(),
+        description: "Digital entitlement".into(),
+        kind: InvoiceKind::DigitalGoods,
+        currency: "USD".into(),
+        prices: vec![PriceLine {
+            label: "Pro".into(),
+            amount: Money::new("USD", 250),
+        }],
+        payload: "product=pro".into(),
+        provider_id: "fabushi-wallet".into(),
+        start_parameter: None,
+        request_name: false,
+        request_email: false,
+        request_phone: false,
+        request_shipping_address: false,
+        flexible_shipping: false,
+        created_at_ms: 3,
+        expires_at_ms: Some(10_000),
+    };
+    service
+        .handle(
+            ClientEnvelope::new(context(&seller.0), ClientCommand::CreateInvoice { invoice }),
+            3,
+        )
+        .unwrap();
+    service
+        .credit_wallet_from_settlement(
+            "settlement:buyer:1".into(),
+            buyer.clone(),
+            Money::new("USD", 1_000),
+            Some("external:test".into()),
+            4,
+        )
+        .unwrap();
+
+    let checkout = service
+        .handle(
+            ClientEnvelope::new(
+                context(&buyer.0),
+                ClientCommand::CheckoutInvoice {
+                    invoice_id: "invoice:wallet:1".into(),
+                    order_id: "order:wallet:1".into(),
+                    customer: None,
+                },
+            ),
+            5,
+        )
+        .unwrap();
+    let paid = checkout
+        .iter()
+        .find_map(|envelope| match &envelope.event {
+            ServerEvent::OrderChanged { order } => Some(order),
+            _ => None,
+        })
+        .expect("paid order event");
+    assert_eq!(paid.status, PaymentStatus::Paid);
+    assert_eq!(paid.amount, Money::new("USD", 250));
+
+    let buyer_status = service
+        .handle(
+            ClientEnvelope::new(context(&buyer.0), ClientCommand::WalletStatus),
+            6,
+        )
+        .unwrap();
+    let buyer_account = match &buyer_status[0].event {
+        ServerEvent::WalletStatus {
+            account: Some(account),
+            ..
+        } => account,
+        other => panic!("unexpected buyer wallet event: {other:?}"),
+    };
+    assert_eq!(buyer_account.balance("USD"), 750);
+
+    let seller_status = service
+        .handle(
+            ClientEnvelope::new(context(&seller.0), ClientCommand::WalletStatus),
+            6,
+        )
+        .unwrap();
+    let seller_account = match &seller_status[0].event {
+        ServerEvent::WalletStatus {
+            account: Some(account),
+            ..
+        } => account,
+        other => panic!("unexpected seller wallet event: {other:?}"),
+    };
+    assert_eq!(seller_account.balance("USD"), 250);
+
+    let refund = service
+        .handle(
+            ClientEnvelope::new(
+                context(&seller.0),
+                ClientCommand::RefundOrder {
+                    order_id: "order:wallet:1".into(),
+                    request_id: "refund:wallet:1".into(),
+                },
+            ),
+            7,
+        )
+        .unwrap();
+    let refunded = refund
+        .iter()
+        .find_map(|envelope| match &envelope.event {
+            ServerEvent::OrderChanged { order } => Some(order),
+            _ => None,
+        })
+        .expect("refunded order event");
+    assert_eq!(refunded.status, PaymentStatus::Refunded);
+
+    service
+        .handle(
+            ClientEnvelope::new(
+                context(&seller.0),
+                ClientCommand::RefundOrder {
+                    order_id: "order:wallet:1".into(),
+                    request_id: "refund:wallet:retry".into(),
+                },
+            ),
+            8,
+        )
+        .unwrap();
+    let buyer_account_id = WalletAccountId("wallet:human:buyer".into());
+    let seller_account_id = WalletAccountId("wallet:human:seller".into());
+    assert_eq!(
+        service.engine().state().wallet.accounts[&buyer_account_id].balance("USD"),
+        1_000
+    );
+    assert_eq!(
+        service.engine().state().wallet.accounts[&seller_account_id].balance("USD"),
+        0
+    );
+}
