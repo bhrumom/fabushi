@@ -6,6 +6,14 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Provider-neutral orchestration primitives owned by Mahayana.
+///
+/// This lives under the capability namespace during the compatibility phase so
+/// the existing public ABI can remain stable while vendor adapters are peeled
+/// away from the product kernel.
+#[path = "kernel.rs"]
+pub mod kernel;
+
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const CHATGPT_AUTO_CONFIRM_PLUGIN_ID: &str = "chatgpt-auto-confirm";
 pub const CHATGPT_AUTO_CONFIRM_CAPABILITY_ID: &str = "miniapp.chatgpt-auto-confirm";
