@@ -1,29 +1,18 @@
-name: Mahayana Harness rustfmt once
+name: Mahayana Harness lifecycle once
 
 on:
-  pull_request:
-    paths:
-      - third_party/mahayana/mahayana-rs/mahayana-harness/**
-      - third_party/mahayana/mahayana-rs/mahayana-harness-services/**
-      - third_party/mahayana/mahayana-rs/mahayana-harness-adapters/**
-      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
-      - .github/workflows/mahayana-harness-rustfmt-once.yml
   push:
     branches:
       - feat/mahayana-deepseek-harness-rust
     paths:
-      - third_party/mahayana/mahayana-rs/mahayana-harness/**
-      - third_party/mahayana/mahayana-rs/mahayana-harness-services/**
-      - third_party/mahayana/mahayana-rs/mahayana-harness-adapters/**
-      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - .github/workflows/mahayana-harness-rustfmt-once.yml
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
 
 permissions:
   contents: write
 
 jobs:
-  rustfmt:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+  wire-lifecycle:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -36,124 +25,127 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Wire harness adapters and Host lifecycle
+      - name: Wire ProductHarness into FeatureHostController
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          adapters = Path('third_party/mahayana/mahayana-rs/mahayana-harness-adapters/src/lib.rs')
-          text = adapters.read_text()
-          marker = 'use async_trait::async_trait;\n'
-          export = 'mod extended;\npub use extended::*;\n\n'
-          if export not in text:
-              text = text.replace(marker, export + marker, 1)
-              adapters.write_text(text)
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
+          s = p.read_text()
 
-          host = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
-          text = host.read_text()
+          s = s.replace(
+              'use base64::Engine as _;\n',
+              'use crate::ProductHarness;\nuse mahayana_core::BuildProfile;\n\nuse base64::Engine as _;\n',
+              1,
+          ) if 'use crate::ProductHarness;' not in s else s
 
-          import_anchor = 'use base64::Engine as _;\n'
-          imports = 'use crate::ProductHarness;\nuse mahayana_core::BuildProfile;\n\n'
-          if imports not in text:
-              text = text.replace(import_anchor, imports + import_anchor, 1)
+          s = s.replace(
+              'pub struct FeatureHostController {\n    config: HostConfig,\n    info: HostInfo,\n',
+              'pub struct FeatureHostController {\n    config: HostConfig,\n    info: HostInfo,\n    harness: ProductHarness,\n',
+              1,
+          ) if '    harness: ProductHarness,\n' not in s else s
 
-          field_anchor = 'pub struct FeatureHostController {\n    config: HostConfig,\n    info: HostInfo,\n'
-          field_replacement = 'pub struct FeatureHostController {\n    config: HostConfig,\n    info: HostInfo,\n    harness: ProductHarness,\n'
-          if '    harness: ProductHarness,\n' not in text:
-              text = text.replace(field_anchor, field_replacement, 1)
-
-          impl_anchor = 'impl FeatureHostController {\n'
           helper = '''fn harness_profile_for_surface(platform: SurfacePlatform) -> BuildProfile {
-    match platform {
-        SurfacePlatform::Ios | SurfacePlatform::Android | SurfacePlatform::Flutter => {
-            BuildProfile::MobileEmbedded
-        }
-        SurfacePlatform::Wasm => BuildProfile::WebWasm,
-        SurfacePlatform::Mock | SurfacePlatform::Electron | SurfacePlatform::Tauri => {
-            BuildProfile::DesktopFull
-        }
-    }
-}
+              match platform {
+                  SurfacePlatform::Ios | SurfacePlatform::Android | SurfacePlatform::Flutter => BuildProfile::MobileEmbedded,
+                  SurfacePlatform::Wasm => BuildProfile::WebWasm,
+                  SurfacePlatform::Mock | SurfacePlatform::Electron | SurfacePlatform::Tauri => BuildProfile::DesktopFull,
+              }
+          }
 
-'''
-          if 'fn harness_profile_for_surface(' not in text:
-              text = text.replace(impl_anchor, helper + impl_anchor, 1)
+          '''
+          s = s.replace('impl FeatureHostController {\n', helper + 'impl FeatureHostController {\n', 1) if 'fn harness_profile_for_surface(' not in s else s
 
-          test_ready = '''        state.events.push_back(HostEvent::HostReady {
-            timestamp: timestamp(),
-            info: info.clone(),
-        });
-        Self {
-            config,
-            info,
-'''
-          test_ready_replacement = '''        state.events.push_back(HostEvent::HostReady {
-            timestamp: timestamp(),
-            info: info.clone(),
-        });
-        let harness = ProductHarness::new(harness_profile_for_surface(platform));
-        Self {
-            config,
-            info,
-            harness,
-'''
-          if 'let harness = ProductHarness::new(harness_profile_for_surface(platform));\n        Self {' not in text:
-              text = text.replace(test_ready, test_ready_replacement, 1)
+          s = s.replace(
+              '''        state.events.push_back(HostEvent::HostReady {
+                      timestamp: timestamp(),
+                      info: info.clone(),
+                  });
+                  Self {
+                      config,
+                      info,
+          ''',
+              '''        state.events.push_back(HostEvent::HostReady {
+                      timestamp: timestamp(),
+                      info: info.clone(),
+                  });
+                  let harness = ProductHarness::new(harness_profile_for_surface(platform));
+                  Self {
+                      config,
+                      info,
+                      harness,
+          ''',
+              1,
+          ) if 'let harness = ProductHarness::new(harness_profile_for_surface(platform));\n        Self {' not in s else s
 
-          prod_ready = '''        state.events.push_back(HostEvent::HostReady {
-            timestamp: timestamp(),
-            info: info.clone(),
-        });
-        Ok(Self {
-            config,
-            info,
-            runtime: Some(runtime),
-'''
-          prod_ready_replacement = '''        state.events.push_back(HostEvent::HostReady {
-            timestamp: timestamp(),
-            info: info.clone(),
-        });
-        let harness = ProductHarness::new(harness_profile_for_surface(platform));
-        Ok(Self {
-            config,
-            info,
-            harness,
-            runtime: Some(runtime),
-'''
-          if 'let harness = ProductHarness::new(harness_profile_for_surface(platform));\n        Ok(Self {' not in text:
-              text = text.replace(prod_ready, prod_ready_replacement, 1)
+          s = s.replace(
+              '''        state.events.push_back(HostEvent::HostReady {
+                      timestamp: timestamp(),
+                      info: info.clone(),
+                  });
+                  Ok(Self {
+                      config,
+                      info,
+                      runtime: Some(runtime),
+          ''',
+              '''        state.events.push_back(HostEvent::HostReady {
+                      timestamp: timestamp(),
+                      info: info.clone(),
+                  });
+                  let harness = ProductHarness::new(harness_profile_for_surface(platform));
+                  Ok(Self {
+                      config,
+                      info,
+                      harness,
+                      runtime: Some(runtime),
+          ''',
+              1,
+          ) if 'let harness = ProductHarness::new(harness_profile_for_surface(platform));\n        Ok(Self {' not in s else s
 
-          getter_anchor = '''    pub fn info(&self) -> HostInfo {
-        self.info.clone()
-    }
-'''
-          getter = '''    pub fn harness(&self) -> &ProductHarness {
-        &self.harness
-    }
+          s = s.replace(
+              '''    pub fn info(&self) -> HostInfo {
+                  self.info.clone()
+              }
+          ''',
+              '''    pub fn harness(&self) -> &ProductHarness {
+                  &self.harness
+              }
 
-    pub fn info(&self) -> HostInfo {
-        self.info.clone()
-    }
-'''
-          if 'pub fn harness(&self) -> &ProductHarness' not in text:
-              text = text.replace(getter_anchor, getter, 1)
+              pub fn info(&self) -> HostInfo {
+                  self.info.clone()
+              }
+          ''',
+              1,
+          ) if 'pub fn harness(&self) -> &ProductHarness' not in s else s
 
-          host.write_text(text)
+          required = [
+              'use crate::ProductHarness;',
+              'harness: ProductHarness,',
+              'fn harness_profile_for_surface(',
+              'pub fn harness(&self) -> &ProductHarness',
+          ]
+          missing = [needle for needle in required if needle not in s]
+          if missing:
+              raise SystemExit(f'lifecycle patch did not apply: {missing}')
+          if s.count('harness,') < 2:
+              raise SystemExit('lifecycle patch did not initialize both test and production constructors')
+
+          p.write_text(s)
           PY
 
-      - name: Format harness migration
+      - name: Format Rust
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all
 
-      - name: Commit formatting if needed
+      - name: Commit lifecycle wiring
         shell: bash
         run: |
-          if git diff --quiet -- third_party/mahayana/mahayana-rs; then
+          if git diff --quiet -- third_party/mahayana/mahayana-rs/mahayana-feature-host; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add third_party/mahayana/mahayana-rs
+          git add third_party/mahayana/mahayana-rs/mahayana-feature-host
           git commit -m "feat(mahayana): wire harness into feature Host lifecycle"
           git push origin HEAD:feat/mahayana-deepseek-harness-rust
