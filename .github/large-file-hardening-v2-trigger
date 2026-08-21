@@ -1,2 +1,0 @@
-run=5
-reason=single-shot push trigger after self-trigger loop removal
