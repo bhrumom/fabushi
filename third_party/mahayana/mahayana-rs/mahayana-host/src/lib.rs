@@ -50,42 +50,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppHostFeatureMode {
-    Production,
-    Test,
-}
-
-impl From<AppHostFeatureMode> for mahayana_host_protocol::HostMode {
-    fn from(value: AppHostFeatureMode) -> Self {
-        match value {
-            AppHostFeatureMode::Production => mahayana_host_protocol::HostMode::Production,
-            AppHostFeatureMode::Test => mahayana_host_protocol::HostMode::Test,
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum HostError {
-    #[error("{message}")]
-    Message { message: String },
-}
-
-impl HostError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self::Message {
-            message: message.into(),
-        }
-    }
-}
-
-impl From<RuntimeError> for HostError {
-    fn from(error: RuntimeError) -> Self {
-        Self::new(error.to_string())
-    }
-}
-
-/// Configuration for the long-lived process-local Mahayana host.
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HostCreateConfig {
@@ -108,6 +72,26 @@ pub struct HostCreateConfig {
     pub use_codex_account: bool,
     /// Tests and constrained hosts may opt out of inherited local plugins.
     pub inherit_installed_plugins: Option<bool>,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct HostError {
+    message: String,
+}
+
+impl HostError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<RuntimeError> for HostError {
+    fn from(error: RuntimeError) -> Self {
+        Self::new(error.to_string())
+    }
 }
 
 /// Long-lived process-local host shared by every presentation surface.
