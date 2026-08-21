@@ -1,23 +1,28 @@
 name: Large-file hardening patch v2
 
 on:
-  push:
-    branches:
-      - security/full-repo-hardening-20260821
+  pull_request:
+    branches: [main]
     paths:
+      - '.github/workflows/large-file-hardening-pr-v2.yml'
       - '.github/large-file-hardening-v2-trigger'
 
 permissions:
   contents: write
 
+concurrency:
+  group: large-file-hardening-v2-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
@@ -41,6 +46,18 @@ jobs:
               if count != expected:
                   raise SystemExit(f'{path}: expected {expected} matches, got {count}')
               write(path, text.replace(old, new))
+
+          already_hardened = (
+              'dacheng-codex-local-dev-secret' not in read('ai-backend/src/server.js')
+              and 'mock_alipay_user_' not in read('fabushi/web/alipay-login-functions.js')
+              and "import { verifyToken } from '../../auth-utils.js';" in read('fabushi/web/src/handlers/meditation.js')
+              and 'createLegacyMeditationToken' not in read('fabushi/web/src/router.js')
+              and 'rust-toolchain@1.98.0' in read('.github/workflows/native-mobile.yml')
+              and 'cargo install cargo-ndk --version 4.1.2 --locked' in read('.github/workflows/native-mobile.yml')
+          )
+          if already_hardened:
+              print('Large-file hardening already applied; patch step is a no-op.')
+              raise SystemExit(0)
 
           exact(
               'ai-backend/src/server.js',
@@ -218,4 +235,4 @@ jobs:
             fabushi/web/src/router.js .github/workflows/native-mobile.yml
           git diff --cached --quiet && exit 0
           git commit -m 'security: finish large-file hardening fixes'
-          git push origin HEAD:${{ github.ref_name }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
