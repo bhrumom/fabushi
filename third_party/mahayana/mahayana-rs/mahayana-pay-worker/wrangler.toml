@@ -22,6 +22,10 @@ routes = [
   { pattern = "pay.ombhrum.com", custom_domain = true }
 ]
 
+[env.production.vars]
+APPLE_BUNDLE_ID = "com.ombhrum.fabushi"
+GOOGLE_PLAY_PACKAGE_NAME = "com.ombhrum.fabushi"
+
 [[env.production.d1_databases]]
 binding = "PLATFORM_DB"
 database_name = "mahayana-platform"
