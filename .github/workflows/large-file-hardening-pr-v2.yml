@@ -1,10 +1,10 @@
 name: Large-file hardening patch v2
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches:
+      - security/full-repo-hardening-20260821
     paths:
-      - '.github/workflows/large-file-hardening-pr-v2.yml'
       - '.github/large-file-hardening-v2-trigger'
 
 permissions:
@@ -12,13 +12,12 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
@@ -43,7 +42,6 @@ jobs:
                   raise SystemExit(f'{path}: expected {expected} matches, got {count}')
               write(path, text.replace(old, new))
 
-          # AI backend secret/trust-proxy fallback removal.
           exact(
               'ai-backend/src/server.js',
               "const codexAdapterSecret =\n  process.env.CODEX_DEEPSEEK_ADAPTER_SECRET ||\n  deepseekApiKey ||\n  openClawGatewayToken ||\n  'dacheng-codex-local-dev-secret';",
@@ -55,7 +53,6 @@ jobs:
               "const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? NaN : 0));\nif (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 8) {\n  throw new Error('TRUST_PROXY_HOPS must be an integer between 0 and 8');\n}\napp.set('trust proxy', trustProxyHops);",
           )
 
-          # Remove legacy Alipay mock-identity fallback by exact block markers.
           path = 'fabushi/web/alipay-login-functions.js'
           text = read(path)
           start = text.find("    if (!appId || !privateKey || !alipayPublicKey) {\n")
@@ -71,7 +68,6 @@ jobs:
           )
           write(path, text[:start] + replacement + text[end:])
 
-          # Meditation handler validates JWT signature itself.
           path = 'fabushi/web/src/handlers/meditation.js'
           exact(
               path,
@@ -106,7 +102,6 @@ jobs:
           text = text.replace('authenticateUser(request, db)', 'authenticateUser(request, env, db)')
           write(path, text)
 
-          # Route helper validates JWT too.
           path = 'fabushi/web/src/routes/meditation-routes.js'
           exact(
               path,
@@ -145,7 +140,6 @@ jobs:
           )
           write(path, text)
 
-          # Delete fake legacy JWT adaptation in router and duplicate bind-email route.
           path = 'fabushi/web/src/router.js'
           text = read(path)
           import_line = "import { verifyToken } from '../auth-utils.js';\n"
@@ -173,7 +167,6 @@ jobs:
           text = text.replace(bind + bind, bind)
           write(path, text)
 
-          # Pin native toolchain and include workflow identity in cache hashes.
           path = '.github/workflows/native-mobile.yml'
           text = read(path)
           stable = 'uses: dtolnay/rust-toolchain@stable'
@@ -225,4 +218,4 @@ jobs:
             fabushi/web/src/router.js .github/workflows/native-mobile.yml
           git diff --cached --quiet && exit 0
           git commit -m 'security: finish large-file hardening fixes'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:${{ github.ref_name }}
