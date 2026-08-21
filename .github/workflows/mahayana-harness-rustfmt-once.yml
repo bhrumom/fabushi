@@ -1,6 +1,13 @@
 name: Mahayana Harness rustfmt once
 
 on:
+  pull_request:
+    paths:
+      - third_party/mahayana/mahayana-rs/mahayana-harness/**
+      - third_party/mahayana/mahayana-rs/mahayana-harness-services/**
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/src/harness.rs
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/src/product_harness.rs
+      - .github/workflows/mahayana-harness-rustfmt-once.yml
   push:
     branches:
       - feat/mahayana-deepseek-harness-rust
@@ -16,6 +23,7 @@ permissions:
 
 jobs:
   rustfmt:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
