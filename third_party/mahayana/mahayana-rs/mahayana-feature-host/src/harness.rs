@@ -24,6 +24,10 @@ impl HarnessFeatureController {
         }
     }
 
+    pub fn from_harness(harness: MahayanaHarness) -> Self {
+        Self { harness }
+    }
+
     pub fn inner(&self) -> &MahayanaHarness {
         &self.harness
     }
