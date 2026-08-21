@@ -24,6 +24,20 @@ jobs:
         with:
           components: rustfmt,clippy
 
+      - name: Correct deterministic patch anchor
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/mahayana_harness_finalize.py')
+          text = path.read_text()
+          text = text.replace(
+              'pub fn register_service(&self, id: impl Into<String>)',
+              'pub fn register_service(&self, name: impl Into<String>)',
+          )
+          path.write_text(text)
+          PY
+
       - name: Apply deterministic source patch
         run: python3 scripts/mahayana_harness_finalize.py
 
