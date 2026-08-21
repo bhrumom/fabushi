@@ -49,9 +49,11 @@ struct FabushiApp: App {
             guard parts.first == "complete",
                   let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             else { return }
-            let params = Dictionary(uniqueKeysWithValues: components.queryItems?.compactMap { item in
-                item.value.map { (item.name, $0) }
-            } ?? [])
+            var params: [String: String] = [:]
+            for item in components.queryItems ?? [] {
+                guard params[item.name] == nil, let value = item.value else { continue }
+                params[item.name] = value
+            }
             let attemptId = params["attemptId"] ?? ""
             let status = (params["status"] ?? "completed").lowercased()
             guard attemptId.range(of: "^[A-Za-z0-9_-]{8,96}$", options: .regularExpression) != nil,
