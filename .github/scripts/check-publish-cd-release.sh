@@ -8,6 +8,7 @@ import sys
 deploy_workflow = Path('.github/workflows/deploy-production.yml').read_text(encoding='utf-8')
 publish_release_workflow = Path('.github/workflows/native-electron-release.yml').read_text(encoding='utf-8')
 desktop_installers_workflow = Path('.github/workflows/electron-desktop.yml').read_text(encoding='utf-8')
+google_play_workflow = Path('.github/workflows/google-play-delivery.yml').read_text(encoding='utf-8')
 auth_utils = Path('fabushi/web/auth-utils.js').read_text(encoding='utf-8')
 auth_handler = Path('fabushi/web/src/handlers/auth.js').read_text(encoding='utf-8')
 password_login = Path('fabushi/web/src/handlers/password-login.js').read_text(encoding='utf-8')
@@ -68,6 +69,32 @@ for forbidden in (
 ):
     if forbidden in publish_release_workflow:
         missing.append(f'publish release workflow must not contain legacy Flutter dependency: {forbidden}')
+
+for required in (
+    'workflow_dispatch',
+    'mobile/android',
+    'mahayana-app-host-mobile',
+    'bundleRelease assembleRelease',
+    'ANDROID_KEYSTORE_BASE64',
+    'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
+    'r0adkll/upload-google-play@v1.1.5',
+    'changesNotSentForReview',
+    'Publish the delivered Android packages to GitHub Release',
+):
+    if required not in google_play_workflow:
+        missing.append(f'Google Play workflow missing: {required}')
+
+for forbidden in (
+    'flutter build',
+    'flutter pub get',
+    'subosito/flutter-action',
+    'fabushi/pubspec.yaml',
+    'tauri build',
+    'mobile/src-tauri',
+    '@capacitor/',
+):
+    if forbidden in google_play_workflow:
+        missing.append(f'Google Play workflow must not contain retired client dependency: {forbidden}')
 
 for required in (
     'Electron desktop quality gate',

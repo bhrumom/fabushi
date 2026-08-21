@@ -5,7 +5,7 @@ export const appExperienceStats = [
   { label: "经文素材", value: "1,248", unit: "份" },
 ] as const;
 
-export const flutterDesignTokens = {
+export const appDesignTokens = {
   colors: {
     spaceDeepBlue: "#0b0e14",
     spaceBlue: "#1b263b",
@@ -21,46 +21,44 @@ export const flutterDesignTokens = {
     control: 8,
   },
   sources: [
-    "fabushi/lib/core/design_system/colors.dart",
-    "fabushi/lib/core/design_system/app_theme.dart",
-    "fabushi/lib/screens/main_navigation_screen.dart",
-    "fabushi/lib/screens/globe_home_screen.dart",
-    "fabushi/lib/screens/meditation_room_screen.dart",
-    "fabushi/lib/screens/my_profile_screen.dart",
+    "frontend/packages/shared/src/app-experience.ts",
+    "frontend/apps/web/src/app/host/host-client.tsx",
+    "mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiScreen.kt",
+    "mobile/ios/Fabushi/FabushiApp.swift",
   ],
 } as const;
 
-export const miniProgramFlutterParity = [
+export const miniProgramParity = [
   {
-    flutter: "GlobeHomeScreen",
+    source: "Electron host / Native Home",
     miniProgram: "pages/index/index",
     title: "全球法布施",
     reused: "品牌、全局统计、AI 快捷任务、全球发送信息架构与宇宙玻璃视觉 token",
     nativeScope: "微信原生 View/Text/Button/Input 复刻首页与发送入口",
   },
   {
-    flutter: "SutraReaderScreen / VideoFeedViewFullTextReader",
+    source: "Shared web sutra experience",
     miniProgram: "pages/sutra/index",
     title: "经文续读",
     reused: "经文书架、进度、功德利益和 AI 问经入口",
     nativeScope: "微信原生列表、搜索和进度条",
   },
   {
-    flutter: "MeditationRoomScreen",
+    source: "Native practice experience",
     miniProgram: "pages/practice/index",
     title: "禅室修行",
     reused: "零摩擦开始修行、计时、念诵计数、回向和榜单入口",
     nativeScope: "微信原生计时器、计数器、本地草稿保存",
   },
   {
-    flutter: "DachengAiService / SutraAIPage",
+    source: "Shared Mahayana Host / AI experience",
     miniProgram: "pages/ai/index",
     title: "大乘 AI",
     reused: "AI 网关、快捷提示词、资源搜索类型与请求协议",
     nativeScope: "微信原生表单和 HTTPS request",
   },
   {
-    flutter: "MyProfileScreen",
+    source: "Electron/native account experience",
     miniProgram: "pages/me/index",
     title: "我的",
     reused: "账号、修行记录、设置、支持入口的信息架构",
@@ -237,7 +235,7 @@ export const miniProgramTabs = [
 ] as const;
 
 export const miniProgramNativeLimitations = [
-  "微信小程序不运行 Flutter Engine，不能直接加载 Flutter Widget tree。",
-  "当前 Flutter App 的 Firebase、3D、音视频、文件、支付、离线模型等插件不能在微信原生运行时无损复用。",
-  "小程序侧复用 Flutter 的信息架构、设计 token、领域数据和 HTTPS API，UI 用微信原生组件等价实现。",
+  "微信小程序使用自己的原生组件树，不能直接加载 Electron、SwiftUI 或 Jetpack Compose UI。",
+  "桌面端和移动端的系统能力需通过共享协议/API 复用，而不是复制平台 UI 实现。",
+  "小程序侧复用共享信息架构、设计 token、领域数据和 HTTPS API，UI 用微信原生组件等价实现。",
 ] as const;

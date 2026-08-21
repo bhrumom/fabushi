@@ -191,7 +191,7 @@ def build() -> None:
 
     doc.add_heading("1.2 软件定位", level=2)
     doc.add_paragraph(
-        "发布软件是一套采用Tauri 2、Rust和React/TypeScript构建的macOS桌面端应用平台。"
+        "发布软件是一套采用Electron、Rust和React/TypeScript构建的macOS桌面端应用平台。"
         "软件以AI对话为统一入口，提供Marketplace小程序安装与打开、隔离运行、能力授权、"
         "长任务中断、会话清理和运行状态反馈，为AI小程序的创作、交付与通信流程提供安全宿主。"
     )

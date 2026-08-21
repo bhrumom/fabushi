@@ -10852,7 +10852,7 @@ mod tests {
                 profile_id: "fast-e2e".into(),
                 mode: HostMode::Test,
             },
-            SurfacePlatform::Tauri,
+            SurfacePlatform::Electron,
         )
         .expect("create feature Host")
     }
@@ -11957,7 +11957,7 @@ mod tests {
                 profile_id: "production".into(),
                 mode: HostMode::Production,
             },
-            SurfacePlatform::Tauri,
+            SurfacePlatform::Electron,
         )
         .err()
         .expect("production must not fall back to the test backend");
@@ -11972,7 +11972,7 @@ mod tests {
                 profile_id: "production".into(),
                 mode: HostMode::Production,
             },
-            SurfacePlatform::Tauri,
+            SurfacePlatform::Electron,
             isolated_host_config("production"),
         )
         .expect("create feature Host");
@@ -12066,7 +12066,7 @@ mod tests {
                 profile_id: "production-events".into(),
                 mode: HostMode::Production,
             },
-            SurfacePlatform::Tauri,
+            SurfacePlatform::Electron,
             isolated_host_config("production-events"),
         )
         .expect("create production event Host");

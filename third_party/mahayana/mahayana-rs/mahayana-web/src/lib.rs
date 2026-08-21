@@ -430,7 +430,7 @@ impl MahayanaWebRuntime {
 
     /// Executes account, marketplace, payment, and social commands inside the
     /// browser-local Rust Worker. Credentials are retained in Rust state and
-    /// are removed from every response before it crosses into Flutter/Dart.
+    /// are removed from every response before it crosses into a UI host.
     pub async fn execute_product(&self, command_json: &str) -> Result<String, JsValue> {
         let command: Value = serde_json::from_str(command_json).map_err(js_error)?;
         let response = execute_product_command(Rc::clone(&self.state), command).await?;

@@ -1,0 +1,270 @@
+name: Native Android Google Play delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref (branch, tag, or SHA) to publish
+        required: true
+        default: main
+        type: string
+      track:
+        description: Google Play track
+        required: true
+        default: production
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      release_status:
+        description: Google Play release status
+        required: true
+        default: completed
+        type: choice
+        options:
+          - draft
+          - inProgress
+          - completed
+      version_code:
+        description: Optional Android versionCode override; blank uses UTC YYDDDHHMM
+        required: false
+        default: ''
+        type: string
+      changes_not_sent_for_review:
+        description: Keep the Play Console change pending manual review handoff
+        required: true
+        default: true
+        type: boolean
+      github_release_tag:
+        description: Optional GitHub Release tag; blank creates android-v<version>-<versionCode>
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: google-play-delivery-${{ inputs.track }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build signed native Android and upload to Google Play
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.GOOGLE_PLAY_PACKAGE_NAME || 'com.ombhrum.fabushi' }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout selected canonical source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify canonical Electron and native-mobile architecture
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
+      - name: Validate signing and Google Play credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            GOOGLE_PLAY_SERVICE_ACCOUNT_JSON \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is required for Google Play delivery." >&2
+              exit 1
+            fi
+          done
+
+      - id: release
+        name: Resolve native Android version
+        shell: bash
+        env:
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          version_name="$(jq -r '.version' app-version.json)"
+          test -n "$version_name" && test "$version_name" != null
+
+          version_code="${INPUT_VERSION_CODE:-}"
+          if [ -z "$version_code" ]; then
+            # Monotonic minute-resolution code through year 2099, safely below Android's limit.
+            version_code="$(date -u +%y%j%H%M)"
+          fi
+          if ! [[ "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "version_code must be a positive integer; got '$version_code'." >&2
+            exit 1
+          fi
+          if [ "$version_code" -gt 2100000000 ]; then
+            echo "version_code exceeds Android's supported range: $version_code" >&2
+            exit 1
+          fi
+
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          source_sha="$(git rev-parse HEAD)"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Native Android Google Play delivery"
+            echo ""
+            echo "- Source: ${{ inputs.ref }} ($short_sha)"
+            echo "- Version: $version_name ($version_code)"
+            echo "- Package: $GOOGLE_PLAY_PACKAGE_NAME"
+            echo "- Track: ${{ inputs.track }}"
+            echo "- Status: ${{ inputs.release_status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '14742923'
+          packages: 'platform-tools'
+
+      - name: Install Android 17 SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_packages="$(sdkmanager --list --channel=3)"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit}')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit}')"
+          test -n "$platform_package" && test -n "$build_tools_package"
+          sdkmanager --channel=3 "$platform_package" "$build_tools_package" 'ndk;28.2.13676358'
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            test -n "$installed_platform"
+            ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Restore reusable Rust compiler cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: google-play-native-android-v1
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build native Mahayana Host JNI libraries
+        working-directory: third_party/mahayana/mahayana-rs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: cargo ndk -t arm64-v8a -t x86_64 -o ../../../mobile/android/app/src/main/jniLibs build --release -p mahayana-app-host-mobile
+
+      - name: Install Android release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fabushi-release.jks"
+
+      - name: Restore Gradle dependency and build cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build signed native Android AAB and APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/fabushi-release.jks
+        run: >-
+          ./gradlew --no-daemon --build-cache
+          bundleRelease assembleRelease
+          -PversionName=${{ steps.release.outputs.version_name }}
+          -PversionCode=${{ steps.release.outputs.version_code }}
+
+      - name: Verify and stage signed packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          aab="mobile/android/app/build/outputs/bundle/release/app-release.aab"
+          apk="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$aab"
+          test -s "$apk"
+          out="$RUNNER_TEMP/google-play-release"
+          mkdir -p "$out"
+          cp "$aab" "$out/fabushi-android-${{ steps.release.outputs.version_name }}-${{ steps.release.outputs.version_code }}.aab"
+          cp "$apk" "$out/fabushi-android-${{ steps.release.outputs.version_name }}-${{ steps.release.outputs.version_code }}.apk"
+          sha256sum "$out"/* > "$out/SHA256SUMS.txt"
+
+      - name: Preserve signed Android packages as workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-play-native-android-${{ steps.release.outputs.version_code }}
+          path: ${{ runner.temp }}/google-play-release
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+      - id: review
+        name: Normalize Google Play review handoff
+        shell: bash
+        env:
+          TRACK: ${{ inputs.track }}
+          REQUESTED: ${{ inputs.changes_not_sent_for_review }}
+        run: |
+          set -euo pipefail
+          changes_not_sent_for_review="$REQUESTED"
+          case "$TRACK:$changes_not_sent_for_review" in
+            production:false|production:FALSE|production:False|production:0|production:no|production:NO)
+              echo "Production delivery is forced to changesNotSentForReview=true for manual Play Console review handoff."
+              changes_not_sent_for_review=true
+              ;;
+          esac
+          echo "changes_not_sent_for_review=$changes_not_sent_for_review" >> "$GITHUB_OUTPUT"
+          echo "- changesNotSentForReview: $changes_not_sent_for_review" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload native Android App Bundle to Google Play
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.GOOGLE_PLAY_PACKAGE_NAME }}
+          releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          tracks: ${{ inputs.track }}
+          status: ${{ inputs.release_status }}
+          releaseName: ${{ steps.release.outputs.version_name }}-${{ steps.release.outputs.version_code }}-${{ steps.release.outputs.short_sha }}
+          changesNotSentForReview: ${{ steps.review.outputs.changes_not_sent_for_review }}
+
+      - name: Publish the delivered Android packages to GitHub Release
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ inputs.github_release_tag }}
+        run: |
+          set -euo pipefail
+          release_tag="${INPUT_RELEASE_TAG:-}"
+          if [ -z "$release_tag" ]; then
+            release_tag="android-v${{ steps.release.outputs.version_name }}-${{ steps.release.outputs.version_code }}"
+          fi
+          if gh release view "$release_tag" >/dev/null 2>&1; then
+            echo "Release $release_tag already exists; refusing to mutate an immutable delivery release." >&2
+            exit 1
+          fi
+          mapfile -d '' assets < <(find "$RUNNER_TEMP/google-play-release" -type f -print0 | sort -z)
+          gh release create "$release_tag" "${assets[@]}" \
+            --target "${{ steps.release.outputs.source_sha }}" \
+            --title "Fabushi Android ${{ steps.release.outputs.version_name }} (${{ steps.release.outputs.version_code }})" \
+            --notes "Native Android package delivered to Google Play track '${{ inputs.track }}' from ${{ steps.release.outputs.short_sha }}."
+          echo "- GitHub Release: $release_tag" >> "$GITHUB_STEP_SUMMARY"
