@@ -4,6 +4,7 @@ import { route } from './src/router.js';
 import { OnlineCounter } from './src/durable-objects/OnlineCounter.js';
 import { jsonResponse } from './src/utils/response.js';
 import { enforceRequestSecurityGate } from './src/security/request-gate.js';
+import { configureRuntimeAdminEmails } from './src/utils/helpers.js';
 
 export { OnlineCounter };
 
@@ -11,6 +12,7 @@ export default {
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);
+      configureRuntimeAdminEmails(env);
 
       if (url.pathname === '/api/online/ws') {
         const upgradeHeader = request.headers.get('Upgrade');
