@@ -26,6 +26,7 @@ chrono.workspace = true
 mahayana-core = { workspace = true, optional = true }
 mahayana-computer.workspace = true
 mahayana-harness.workspace = true
+mahayana-harness-services.workspace = true
 mahayana-host = { workspace = true, default-features = false, optional = true }
 mahayana-host-protocol.workspace = true
 serde.workspace = true
