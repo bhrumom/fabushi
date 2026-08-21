@@ -308,9 +308,18 @@ impl MahayanaWebRuntime {
             | RuntimeCommand::McpApps
             | RuntimeCommand::McpOauthLogin { .. }
             | RuntimeCommand::McpOauthLogout { .. }
+            | RuntimeCommand::McpRemove { .. }
+            | RuntimeCommand::McpCustomInstructions
+            | RuntimeCommand::McpSetCustomInstructions { .. }
+            | RuntimeCommand::McpSetToolDisabled { .. }
             | RuntimeCommand::McpRefresh => {
                 return Err(JsValue::from_str(
-                    "native MCP account management is unavailable in the WebAssembly runtime",
+                    "native MCP management is unavailable in the WebAssembly runtime",
+                ));
+            }
+            RuntimeCommand::McpToolCall { .. } => {
+                return Err(JsValue::from_str(
+                    "native MCP tool execution is unavailable in the WebAssembly runtime",
                 ));
             }
             RuntimeCommand::ConversationHistory {
