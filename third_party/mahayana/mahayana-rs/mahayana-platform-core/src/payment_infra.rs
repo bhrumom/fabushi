@@ -1,4 +1,7 @@
-use crate::{CreatePaymentIntent, Money, PaymentCurrency, PaymentIntent, PaymentLedgerEntry, PaymentRail, ProductKind};
+use crate::{
+    CreatePaymentIntent, Money, PaymentCurrency, PaymentIntent, PaymentLedgerEntry, PaymentRail,
+    ProductKind,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
