@@ -18,11 +18,13 @@ desktop-full = [
     "mahayana-runtime-core/desktop-full",
     "dep:codex-protocol",
     "dep:mahayana-agent-codex",
+    "dep:mahayana-agent-responses",
 ]
 mobile-embedded = [
     "mahayana-runtime-core/mobile-embedded",
     "dep:codex-protocol",
     "dep:mahayana-agent-codex",
+    "dep:mahayana-agent-responses",
 ]
 linux-shared = [
     "mahayana-runtime-core/mobile-embedded",
@@ -39,6 +41,7 @@ codex-protocol = { workspace = true, optional = true }
 fabushi-official-miniapps.workspace = true
 mahayana-agent.workspace = true
 mahayana-agent-codex = { path = "../mahayana-agent-codex", optional = true }
+mahayana-agent-responses = { path = "../mahayana-agent-responses", optional = true }
 mahayana-conversation.workspace = true
 mahayana-core.workspace = true
 mahayana-miniapp.workspace = true
