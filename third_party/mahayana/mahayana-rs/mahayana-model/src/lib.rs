@@ -7,6 +7,11 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 
+pub mod responses;
+
+pub use responses::ResponsesModelConfig;
+pub use responses::ResponsesModelRuntime;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRequest {
@@ -16,9 +21,20 @@ pub struct ModelRequest {
     pub metadata: Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    pub total_tokens: u64,
+    pub input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_output_tokens: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModelEvent {
     OutputTextDelta(String),
+    Usage(ModelUsage),
     Completed { output: Value },
     Failed { code: String, message: String },
 }
