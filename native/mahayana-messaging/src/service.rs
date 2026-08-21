@@ -177,6 +177,20 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 silent,
                 protected_content,
             }],
+            ClientCommand::ForwardMessage {
+                source_conversation_id,
+                message_id,
+                destination_conversation_id,
+                client_message_id,
+            } => vec![Command::ForwardMessage {
+                source_conversation_id,
+                message_id,
+                destination_conversation_id,
+                local_message_id: MessageId::new(format!("local:{}", client_message_id.0)),
+                client_message_id,
+                sender_id: actor_id.clone(),
+                created_at_ms: now_ms,
+            }],
             ClientCommand::EditMessage {
                 conversation_id,
                 message_id,

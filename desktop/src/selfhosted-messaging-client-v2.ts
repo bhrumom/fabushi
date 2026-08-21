@@ -353,6 +353,16 @@ export class SelfHostedMessagingClientV2 {
     });
   }
 
+  forwardMessage(sourceConversationId: string, messageId: string, destinationConversationId: string): Promise<void> {
+    return this.execute({
+      type: 'forwardMessage',
+      sourceConversationId,
+      messageId,
+      destinationConversationId,
+      clientMessageId: `desktop:${crypto.randomUUID()}`,
+    });
+  }
+
   async editText(conversationId: string, messageId: string, text: string): Promise<void> {
     await this.execute({
       type: 'editMessage',

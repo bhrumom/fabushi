@@ -115,6 +115,7 @@ type LocalCall = {
 };
 
 type MessageMenu = { message: DisplayMessage; x: number; y: number } | null;
+type ForwardDialogState = { sourceConversationId: string; message: DisplayMessage } | null;
 type InfoTab = 'media' | 'files' | 'links';
 
 const rootSurfaceKey = 'fabushi.desktop.root-surface.v2';
@@ -250,6 +251,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [pendingSend, setPendingSend] = useState(false);
   const [newDialog, setNewDialog] = useState<NewDialog>(null);
   const [messageMenu, setMessageMenu] = useState<MessageMenu>(null);
+  const [forwardDialog, setForwardDialog] = useState<ForwardDialogState>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [localCall, setLocalCall] = useState<LocalCall | null>(null);
   const [miniApp, setMiniApp] = useState<{ id: string; html?: string } | null>(null);
@@ -762,7 +764,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
   }
 
-  async function handleMessageAction(action: 'copy' | 'reply' | 'edit' | 'delete' | 'react' | 'pin') {
+  async function handleMessageAction(action: 'copy' | 'reply' | 'forward' | 'edit' | 'delete' | 'react' | 'pin') {
     const target = messageMenu?.message;
     if (!target || !activePeer) return;
     setMessageMenu(null);
@@ -772,6 +774,14 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
     if (action === 'reply') {
       setReplyTo(target);
+      return;
+    }
+    if (action === 'forward') {
+      if (activePeer.source !== 'selfhosted' || !activePeer.conversationId || target.source !== 'selfhosted') {
+        setError('转发需要源消息已迁移到 Fabushi 自建协议。');
+        return;
+      }
+      setForwardDialog({ sourceConversationId: activePeer.conversationId, message: target });
       return;
     }
     if (activePeer.source !== 'selfhosted' || !activePeer.conversationId || target.source !== 'selfhosted') {
@@ -786,6 +796,20 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         const text = window.prompt('编辑消息', target.text);
         if (text && text !== target.text) await selfHosted.editText(activePeer.conversationId, target.id, text);
       }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function forwardToPeer(peer: PeerItem) {
+    if (!forwardDialog || peer.source !== 'selfhosted' || !peer.conversationId) return;
+    try {
+      await selfHosted.forwardMessage(
+        forwardDialog.sourceConversationId,
+        forwardDialog.message.id,
+        peer.conversationId,
+      );
+      setForwardDialog(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -986,6 +1010,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       ) : null}
 
       {messageMenu ? <MessageContextMenu menu={messageMenu} onAction={(action) => void handleMessageAction(action)} /> : null}
+      {forwardDialog ? <ForwardMessageDialog message={forwardDialog.message} peers={peers.filter((peer) => peer.source === 'selfhosted' && Boolean(peer.conversationId) && peer.conversationId !== forwardDialog.sourceConversationId)} onClose={() => setForwardDialog(null)} onSelect={(peer) => void forwardToPeer(peer)} /> : null}
       {newDialog ? <NewConversationDialog dialog={newDialog} bots={bots} onChange={setNewDialog} onClose={() => setNewDialog(null)} onSave={() => void saveNewDialog()} /> : null}
       {localCall ? <CallDialog call={localCall} videoRef={localVideoRef} onEnd={endCall} /> : null}
       {miniApp ? <MiniAppDialog app={miniApp} onClose={() => setMiniApp(null)} /> : null}
@@ -1011,16 +1036,25 @@ function AttachmentMenu({ onPoll, onLocation, onSchedule, onUnavailable }: { onP
   </div>;
 }
 
-function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>; onAction: (action: 'copy' | 'reply' | 'edit' | 'delete' | 'react' | 'pin') => void }) {
+function MessageContextMenu({ menu, onAction }: { menu: NonNullable<MessageMenu>; onAction: (action: 'copy' | 'reply' | 'forward' | 'edit' | 'delete' | 'react' | 'pin') => void }) {
   return <div className={extra.contextMenu} style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}>
     <button type="button" onClick={() => onAction('reply')}><Reply size={16} />回复</button>
     <button type="button" onClick={() => onAction('copy')}><Copy size={16} />复制</button>
     <button type="button" onClick={() => onAction('react')}><Smile size={16} />👍 反应</button>
     {menu.message.role === 'me' ? <button type="button" onClick={() => onAction('edit')}><Edit3 size={16} />编辑</button> : null}
     <button type="button" onClick={() => onAction('pin')}><Pin size={16} />{menu.message.pinned ? '取消置顶' : '置顶'}</button>
-    <button type="button" disabled title="转发目的地选择器将在自建 Forward command 落地后启用"><Forward size={16} />转发</button>
+    <button type="button" onClick={() => onAction('forward')}><Forward size={16} />转发</button>
     <button type="button" onClick={() => onAction('delete')}><Trash2 size={16} />删除</button>
   </div>;
+}
+
+function ForwardMessageDialog({ message, peers, onClose, onSelect }: { message: DisplayMessage; peers: PeerItem[]; onClose: () => void; onSelect: (peer: PeerItem) => void }) {
+  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
+    <header><div><strong>转发消息</strong><small>{message.text || '媒体消息'}</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
+    <div className={extra.forwardList}>
+      {peers.length ? peers.map((peer) => <button key={peer.key} type="button" onClick={() => onSelect(peer)}><span className={styles.avatar}>{avatarText(peer.title)}</span><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><Forward size={16} /></button>) : <p>暂无可转发的自建会话，请先创建群组、频道或收藏消息。</p>}
+    </div>
+  </section></div>;
 }
 
 function NewConversationDialog({ dialog, bots, onChange, onClose, onSave }: { dialog: Exclude<NewDialog, null>; bots: BotSummary[]; onChange: React.Dispatch<React.SetStateAction<NewDialog>>; onClose: () => void; onSave: () => void }) {
