@@ -37,7 +37,7 @@ async function openMessenger(page: Page): Promise<void> {
   await expect(page.getByTitle('聊天')).toBeVisible();
 }
 
-test('desktop Messenger exposes Telegram-class navigation and sends through the Rust Host', async () => {
+test('desktop Messenger exposes Telegram-class navigation and preserves the real AI Host', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-e2e-'));
   const app = await launchDesktopApp(appDataDir);
 
@@ -63,7 +63,7 @@ test('desktop Messenger exposes Telegram-class navigation and sends through the 
       await expect(page.getByTitle(label)).toBeVisible();
     }
 
-    const assistant = page.getByTestId('peer-conversation:codex:agent:assistant');
+    const assistant = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
     await expect(assistant).toBeVisible();
     await assistant.click();
     await expect(page.getByTestId('messenger-input')).toBeVisible();
@@ -73,12 +73,62 @@ test('desktop Messenger exposes Telegram-class navigation and sends through the 
     await expect(page.getByText('收到：统一消息链路验收')).toBeVisible();
 
     await page.getByTitle('置顶').click();
-    await expect(page.getByTitle('取消置顶')).toBeVisible();
     await page.getByTitle('静音').click();
     await expect(page.getByTitle('开启通知')).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
     await expect(page.getByPlaceholder('在当前会话中搜索')).toBeVisible();
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+
+test('desktop Messenger creates a self-hosted channel and executes message mutation commands', async () => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-channel-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    await page.getByRole('button', { name: '新建频道' }).first().click();
+    await expect(page.getByText('Fabushi 自建广播会话')).toBeVisible();
+    await page.getByPlaceholder('频道名称').fill('自建频道验收');
+    await page.getByPlaceholder('频道简介').fill('不依赖 Telegram API');
+    await page.getByRole('button', { name: '创建频道' }).click();
+
+    await expect(page.getByText('自建频道验收')).toBeVisible();
+    await expect(page.getByText('不依赖 Telegram API')).toBeVisible();
+
+    await page.getByTestId('messenger-input').fill('自建频道消息');
+    await page.getByTestId('messenger-send').click();
+    const message = page.locator('article').filter({ hasText: '自建频道消息' }).last();
+    await expect(message).toBeVisible();
+
+    await message.click({ button: 'right' });
+    await page.getByRole('button', { name: /反应/ }).click();
+    await expect(message.getByText('👍 1')).toBeVisible();
+
+    await message.click({ button: 'right' });
+    page.once('dialog', async (dialog) => dialog.accept('编辑后的频道消息'));
+    await page.getByRole('button', { name: '编辑' }).click();
+    await expect(page.getByText('编辑后的频道消息')).toBeVisible();
+
+    const edited = page.locator('article').filter({ hasText: '编辑后的频道消息' }).last();
+    await edited.click({ button: 'right' });
+    await page.getByRole('button', { name: /^置顶$/ }).click();
+    await expect(edited.locator('svg')).toHaveCount(2);
+
+    const answers = ['E2E 账单', '1.99'];
+    page.on('dialog', async (dialog) => dialog.accept(answers.shift() ?? ''));
+    await page.getByTitle('发送账单').click();
+    await expect(page.getByText('🧾 账单')).toBeVisible();
+
+    await edited.click({ button: 'right' });
+    await page.getByRole('button', { name: '删除' }).click();
+    await expect(page.getByText('编辑后的频道消息')).toBeHidden();
   } finally {
     await app.close();
     await rm(appDataDir, { recursive: true, force: true });
@@ -95,7 +145,7 @@ test('desktop Messenger creates a real Bot collaboration group and sends into it
     await openMessenger(page);
 
     await page.getByRole('button', { name: '新建群组' }).first().click();
-    await expect(page.getByText('联系人和 Bot 可以在同一群组中协作')).toBeVisible();
+    await expect(page.getByText('现有 AI 群组 Host 会执行 Bot 多轮协作')).toBeVisible();
     await page.getByPlaceholder('群组名称').fill('人机协作验收群');
 
     const researchBot = page.getByRole('button', { name: /Research Bot/ });
