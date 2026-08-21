@@ -100,6 +100,7 @@ jobs:
             echo "- Native iOS: \`$ios\`"
             echo
             echo 'A successful upload is ingested by App Store Connect. After Apple processing, the same build is available for TestFlight and for App Store release selection; this workflow does not submit an App Review automatically.'
+            echo 'The MAS .pkg and App Store .ipa are store-distribution artifacts, not direct-install GitHub Release downloads, so this workflow intentionally does not publish them to GitHub Releases.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   macos-electron:
