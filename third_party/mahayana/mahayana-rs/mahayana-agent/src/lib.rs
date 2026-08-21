@@ -1,4 +1,4 @@
-//! Agent abstraction used by the conversation runtime.
+//! Provider-neutral Agent abstraction used by the Mahayana conversation runtime.
 
 use async_trait::async_trait;
 use mahayana_core::AgentThreadId;
@@ -8,8 +8,10 @@ use mahayana_core::ConversationId;
 use mahayana_core::Message;
 use mahayana_core::ModelTokenUsageSnapshot;
 use mahayana_core::OperationId;
+use mahayana_core::capability::kernel::BackendCapabilities;
 use mahayana_platform_core::HostPlatform;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -84,19 +86,17 @@ pub enum AgentEvent {
     MessageCompleted {
         message: Message,
     },
-    /// Provider-reported usage projected from Codex's existing token usage event.
+    /// Provider-reported usage projected into the Mahayana token contract.
     TokenUsageUpdated {
         usage: ModelTokenUsageSnapshot,
     },
-    /// Progress reported by an MCP Tool while the containing Codex turn is
-    /// still running. The MCP protocol owns numeric tokens; the Agent bridge
-    /// preserves the user-facing message for every host surface.
+    /// Progress reported by a tool while the containing turn is still running.
     ToolProgress {
         message: String,
     },
-    /// Structured Codex turn item used by desktop/mobile activity timelines.
-    /// It intentionally carries a concise presentation-safe summary rather
-    /// than provider-specific protocol payloads.
+    /// Structured turn item used by desktop/mobile activity timelines. It
+    /// intentionally carries a presentation-safe summary rather than a
+    /// provider-specific protocol payload.
     Activity {
         activity: AgentActivity,
     },
@@ -116,8 +116,8 @@ pub trait AgentEventSink: Send + Sync {
 
 pub type SharedAgentEventSink = Arc<dyn AgentEventSink>;
 
-/// In-process AI engine boundary. Platform adapters implement this trait with
-/// Codex core plus their platform-specific model and tool hosts.
+/// In-process AI engine boundary. Codex, Grok-derived implementations, local
+/// models, and future Mahayana-native engines all implement this same contract.
 #[async_trait]
 pub trait AgentBackend: Send + Sync {
     async fn start_thread(&self, request: StartThreadRequest) -> Result<AgentThreadId, AgentError>;
@@ -132,17 +132,21 @@ pub trait AgentBackend: Send + Sync {
 
     async fn resolve_approval(&self, resolution: ApprovalResolution) -> Result<(), AgentError>;
 
-    /// Returns the live MCP server inventory owned by the agent runtime. The
-    /// values intentionally stay wire-shaped so product hosts can project
-    /// Codex auth/tool metadata without duplicating the upstream protocol.
+    /// Declares features implemented by this backend. The default is empty so
+    /// compatibility adapters remain source-compatible until they opt in.
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities::default()
+    }
+
+    /// Returns the live MCP server inventory owned by the agent runtime.
     async fn list_mcp_servers(&self) -> Result<Vec<Value>, AgentError> {
         Err(AgentError::Unavailable(
             "this agent backend does not expose MCP server status".into(),
         ))
     }
 
-    /// Returns the Codex Apps/Connector directory including accessibility and
-    /// install URLs when that capability is enabled for the current account.
+    /// Returns the Apps/Connector directory including accessibility and install
+    /// URLs when that capability is enabled for the current account.
     async fn list_connector_apps(&self) -> Result<Vec<Value>, AgentError> {
         Err(AgentError::Unavailable(
             "this agent backend does not expose the connector directory".into(),
@@ -208,10 +212,7 @@ pub trait AgentBackend: Send + Sync {
     }
 
     /// Calls one tool on a configured MCP server through a dedicated,
-    /// tool-isolated agent thread. This is used by first-party product flows
-    /// (for example an already user-approved email draft) that must execute a
-    /// concrete connector action without asking the language model to decide
-    /// whether to call the tool. Implementations must not expose shell,
+    /// tool-isolated agent thread. Implementations must not expose shell,
     /// filesystem, web, or unrelated MCP servers to this thread.
     async fn call_mcp_tool(
         &self,
@@ -224,9 +225,9 @@ pub trait AgentBackend: Send + Sync {
         ))
     }
 
-    /// Opens a tool-isolated MCP App thread. Backends that support Codex must
-    /// expose only this server's MCP tools and no general shell/filesystem
-    /// tools for the returned thread.
+    /// Opens a tool-isolated MCP App thread. Backends must expose only this
+    /// server's MCP tools and no general shell/filesystem tools for the returned
+    /// thread.
     async fn open_mcp_app(&self, _request: OpenMcpAppRequest) -> Result<McpAppSession, AgentError> {
         Err(AgentError::Unavailable(
             "this agent backend does not host MCP Apps".into(),
@@ -272,10 +273,108 @@ pub trait AgentBackend: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
+/// Registered backend plus product-owned routing priority.
+#[derive(Clone)]
+pub struct BackendRegistration {
+    pub id: String,
+    pub priority: i32,
+    pub backend: Arc<dyn AgentBackend>,
+}
+
+/// Mahayana-owned backend registry. It selects an implementation by declared
+/// capability rather than by vendor name, which keeps routing independent from
+/// Codex/Grok protocol types.
+#[derive(Default)]
+pub struct BackendRegistry {
+    backends: BTreeMap<String, BackendRegistration>,
+}
+
+impl BackendRegistry {
+    pub fn register(
+        &mut self,
+        id: impl Into<String>,
+        priority: i32,
+        backend: Arc<dyn AgentBackend>,
+    ) -> Result<(), AgentError> {
+        let id = id.into();
+        if id.trim().is_empty() {
+            return Err(AgentError::InvalidBackendId);
+        }
+        if self.backends.contains_key(&id) {
+            return Err(AgentError::DuplicateBackend(id));
+        }
+        self.backends.insert(
+            id.clone(),
+            BackendRegistration {
+                id,
+                priority,
+                backend,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<dyn AgentBackend>> {
+        self.backends.get(id).map(|entry| Arc::clone(&entry.backend))
+    }
+
+    pub fn select(&self, required: BackendCapabilities) -> Option<Arc<dyn AgentBackend>> {
+        self.backends
+            .values()
+            .filter(|entry| backend_supports(entry.backend.capabilities(), required))
+            .max_by(|left, right| {
+                left.priority
+                    .cmp(&right.priority)
+                    .then_with(|| right.id.cmp(&left.id))
+            })
+            .map(|entry| Arc::clone(&entry.backend))
+    }
+
+    pub fn descriptors(&self) -> Vec<BackendDescriptor> {
+        self.backends
+            .values()
+            .map(|entry| BackendDescriptor {
+                id: entry.id.clone(),
+                priority: entry.priority,
+                implementation: entry.backend.name().to_string(),
+                capabilities: entry.backend.capabilities(),
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendDescriptor {
+    pub id: String,
+    pub priority: i32,
+    pub implementation: String,
+    pub capabilities: BackendCapabilities,
+}
+
+pub fn backend_supports(
+    available: BackendCapabilities,
+    required: BackendCapabilities,
+) -> bool {
+    (!required.realtime || available.realtime)
+        && (!required.tools || available.tools)
+        && (!required.web || available.web)
+        && (!required.mcp || available.mcp)
+        && (!required.sandbox || available.sandbox)
+        && (!required.subagents || available.subagents)
+        && (!required.checkpoints || available.checkpoints)
+        && (!required.headless || available.headless)
+        && (!required.hooks || available.hooks)
+        && (!required.skills || available.skills)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("agent backend is unavailable: {0}")]
     Unavailable(String),
+    #[error("agent backend id must not be empty")]
+    InvalidBackendId,
+    #[error("agent backend is already registered: {0}")]
+    DuplicateBackend(String),
     #[error("agent thread was not found: {0}")]
     ThreadNotFound(AgentThreadId),
     #[error("agent operation was not found: {0}")]
@@ -335,5 +434,36 @@ impl AgentBackend for UnavailableAgentBackend {
 
     fn name(&self) -> &'static str {
         "unavailable"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capability_matching_is_vendor_neutral() {
+        let available = BackendCapabilities {
+            tools: true,
+            mcp: true,
+            sandbox: true,
+            headless: true,
+            ..BackendCapabilities::default()
+        };
+        assert!(backend_supports(
+            available,
+            BackendCapabilities {
+                tools: true,
+                sandbox: true,
+                ..BackendCapabilities::default()
+            }
+        ));
+        assert!(!backend_supports(
+            available,
+            BackendCapabilities {
+                subagents: true,
+                ..BackendCapabilities::default()
+            }
+        ));
     }
 }
