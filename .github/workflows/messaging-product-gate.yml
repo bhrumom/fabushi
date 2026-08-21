@@ -1,0 +1,87 @@
+name: Messaging Product Gate
+
+on:
+  pull_request:
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'desktop/src/messaging-**'
+      - 'desktop/src/selfhosted-messaging-**'
+      - 'desktop/src/main.tsx'
+      - 'desktop/e2e/messenger.spec.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/workflows/messaging-product-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'desktop/src/messaging-**'
+      - 'desktop/src/selfhosted-messaging-**'
+      - 'desktop/src/main.tsx'
+      - 'desktop/e2e/messenger.spec.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - '.github/scripts/assert-electron-feature-host-bridge.sh'
+      - '.github/workflows/messaging-product-gate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: messaging-product-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust-product:
+    name: Rust self-hosted product
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/mahayana-messaging -> target
+            third_party/mahayana/mahayana-rs -> target
+          shared-key: messaging-product-v1
+          cache-all-crates: true
+      - name: Rustfmt self-hosted messaging
+        run: cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml -- --check
+      - name: Test messaging library and server binaries
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml --all-targets
+      - name: Clippy messaging library and server binaries
+        run: cargo clippy --manifest-path native/mahayana-messaging/Cargo.toml --all-targets -- -D warnings
+      - name: Verify production Feature Host bridge and contacts projection
+        run: >-
+          cargo test
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p mahayana-host-protocol
+          -p mahayana-feature-host
+          -p mahayana-social
+
+  desktop-contract:
+    name: Electron Messenger contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci --prefer-offline --no-audit
+      - name: Verify Electron Feature Host architecture
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+      - name: Typecheck Messenger V2
+        working-directory: desktop
+        run: npx tsc --noEmit -p tsconfig.json
