@@ -1,0 +1,46 @@
+name: Messaging one-shot fixup
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/messaging-fixup-once.yml'
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+
+permissions:
+  contents: write
+
+jobs:
+  fixup:
+    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format only the new messaging core and social projection
+        run: |
+          cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social
+      - name: Let Cargo minimally refresh the existing lock graph
+        run: cargo metadata --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --format-version 1 --no-deps >/dev/null
+      - name: Commit generated-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add native/mahayana-messaging third_party/mahayana/mahayana-rs/mahayana-social third_party/mahayana/mahayana-rs/Cargo.lock
+          if git diff --cached --quiet; then
+            echo 'No fixup was required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(messaging): format Rust and refresh lockfile'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
