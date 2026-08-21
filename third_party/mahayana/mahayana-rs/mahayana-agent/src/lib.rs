@@ -1,5 +1,6 @@
 //! Provider-neutral Agent abstraction used by the Mahayana conversation runtime.
 
+pub mod mux;
 pub mod orchestrator;
 
 use async_trait::async_trait;
