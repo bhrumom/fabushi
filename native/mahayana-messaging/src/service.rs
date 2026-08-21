@@ -1,7 +1,8 @@
-use crate::actor::ActorId;
+use crate::actor::{ActorId, ActorKind};
 use crate::blob_store::{BlobStoreError, FileBlobStore};
+use crate::bot::BotInvocation;
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
-use crate::message::MessageId;
+use crate::message::{Message, MessageContent, MessageId};
 use crate::payment::Money;
 use crate::protocol::{
     ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
@@ -32,6 +33,20 @@ pub enum MessagingServiceError {
     UnauthorizedCommand(String),
     #[error(transparent)]
     Settlement(#[from] SettlementError),
+}
+
+fn sanitize_invocation_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | ':') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .take(160)
+        .collect()
 }
 
 pub struct MessagingService<S: MessagingStateStore> {
@@ -133,14 +148,95 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     return Ok(Vec::new());
                 }
 
+                let bot_invocations = events
+                    .iter()
+                    .filter_map(|event| match event {
+                        Event::MessageQueued { message } => Some(message),
+                        _ => None,
+                    })
+                    .flat_map(|message| self.bot_invocations_for_message(message))
+                    .collect::<Vec<_>>();
                 self.cursor = self.cursor.saturating_add(events.len() as u64);
                 self.persist(server_time_ms)?;
-                Ok(events
+                let mut responses = events
                     .into_iter()
                     .filter_map(|event| self.project_event(event, server_time_ms))
-                    .collect())
+                    .collect::<Vec<_>>();
+                responses.extend(
+                    bot_invocations
+                        .into_iter()
+                        .map(|invocation| ServerEnvelope {
+                            protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
+                            cursor: Some(self.cursor.to_string()),
+                            server_time_ms,
+                            event: ServerEvent::BotInvocationRequested { invocation },
+                        }),
+                );
+                Ok(responses)
             }
         }
+    }
+
+    fn bot_invocations_for_message(&self, message: &Message) -> Vec<BotInvocation> {
+        let sender = match self.engine.state().actors.get(&message.sender_id) {
+            Some(sender) => sender,
+            None => return Vec::new(),
+        };
+        if matches!(
+            sender.kind,
+            ActorKind::Bot | ActorKind::Assistant | ActorKind::Service
+        ) {
+            return Vec::new();
+        }
+        let MessageContent::Text { text } = &message.content else {
+            return Vec::new();
+        };
+        let Some(conversation) = self
+            .engine
+            .state()
+            .conversations
+            .get(&message.conversation_id)
+        else {
+            return Vec::new();
+        };
+        let command = text
+            .text
+            .trim()
+            .strip_prefix('/')
+            .and_then(|value| value.split_whitespace().next())
+            .map(|value| value.trim_start_matches('@').to_string())
+            .filter(|value| !value.is_empty());
+        conversation
+            .participants
+            .iter()
+            .filter_map(|participant| {
+                if participant.actor_id == message.sender_id {
+                    return None;
+                }
+                let actor = self.engine.state().actors.get(&participant.actor_id)?;
+                if !matches!(actor.kind, ActorKind::Bot | ActorKind::Assistant) {
+                    return None;
+                }
+                Some(BotInvocation {
+                    id: format!(
+                        "invoke:auto:{}:{}",
+                        sanitize_invocation_component(&message.id.0),
+                        sanitize_invocation_component(&actor.id.0)
+                    ),
+                    bot_id: actor.id.clone(),
+                    sender_id: message.sender_id.clone(),
+                    conversation_id: message.conversation_id.clone(),
+                    command: command.clone(),
+                    text: text.clone(),
+                    reply_to_message_id: message.reply_to_message_id.clone(),
+                    metadata: std::collections::BTreeMap::from([
+                        ("source".into(), "messaging-service".into()),
+                        ("messageId".into(), message.id.0.clone()),
+                    ]),
+                    created_at_ms: message.created_at_ms,
+                })
+            })
+            .collect()
     }
 
     fn validate_command_authorization(

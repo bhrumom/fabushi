@@ -529,3 +529,99 @@ fn authenticated_actor_cannot_spoof_profile_or_invoice_seller() {
         MessagingServiceError::UnauthorizedCommand(_)
     ));
 }
+
+#[test]
+fn human_group_message_requests_bot_execution_inside_messaging_service() {
+    let store = MemoryStateStore::default();
+    let mut service = MessagingService::load(store).unwrap();
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:caller"),
+                ClientCommand::UpsertProfile {
+                    actor: Actor::human("human:caller", "Caller"),
+                },
+            ),
+            1,
+        )
+        .unwrap();
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("bot:helper"),
+                ClientCommand::UpsertProfile {
+                    actor: Actor::bot("bot:helper", "Helper"),
+                },
+            ),
+            1,
+        )
+        .unwrap();
+    let mut conversation = Conversation::direct(
+        "group:bot-runtime",
+        "Bot runtime",
+        vec![
+            Participant {
+                actor_id: ActorId::new("human:caller"),
+                role: ParticipantRole::Owner,
+                joined_at_ms: 1,
+                muted_until_ms: None,
+            },
+            Participant {
+                actor_id: ActorId::new("bot:helper"),
+                role: ParticipantRole::Member,
+                joined_at_ms: 1,
+                muted_until_ms: None,
+            },
+        ],
+        1,
+    );
+    conversation.kind = ConversationKind::Group;
+    conversation.owner_id = Some(ActorId::new("human:caller"));
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:caller"),
+                ClientCommand::CreateConversation { conversation },
+            ),
+            2,
+        )
+        .unwrap();
+    let responses = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:caller"),
+                ClientCommand::SendMessage {
+                    conversation_id: ConversationId::new("group:bot-runtime"),
+                    client_message_id: ClientMessageId("client:bot-runtime".into()),
+                    content: MessageContent::Text {
+                        text: FormattedText::plain("/help 请处理"),
+                    },
+                    reply_to_message_id: None,
+                    thread_root_message_id: None,
+                    scheduled_at_ms: None,
+                    silent: false,
+                    protected_content: false,
+                },
+            ),
+            3,
+        )
+        .unwrap();
+    let invocation = responses
+        .iter()
+        .find_map(|response| match &response.event {
+            ServerEvent::BotInvocationRequested { invocation } => Some(invocation),
+            _ => None,
+        })
+        .expect("bot invocation request");
+    assert_eq!(invocation.bot_id, ActorId::new("bot:helper"));
+    assert_eq!(invocation.sender_id, ActorId::new("human:caller"));
+    assert_eq!(
+        invocation.conversation_id,
+        ConversationId::new("group:bot-runtime")
+    );
+    assert_eq!(invocation.command.as_deref(), Some("help"));
+    assert_eq!(
+        invocation.metadata.get("source").map(String::as_str),
+        Some("messaging-service")
+    );
+}
