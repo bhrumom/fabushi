@@ -75,7 +75,11 @@ pub struct CallSession {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum CallSignal {
     Invite {
         call_id: CallId,
@@ -203,7 +207,6 @@ impl RealtimeState {
     }
 
     pub fn expire_typing(&mut self, now_ms: i64) {
-        self.typing
-            .retain(|_, state| state.expires_at_ms > now_ms);
+        self.typing.retain(|_, state| state.expires_at_ms > now_ms);
     }
 }

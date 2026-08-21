@@ -100,7 +100,10 @@ fn sync_uses_the_fabushi_protocol_cursor() {
         )
         .unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].protocol_version, FABUSHI_MESSAGING_PROTOCOL_VERSION);
+    assert_eq!(
+        events[0].protocol_version,
+        FABUSHI_MESSAGING_PROTOCOL_VERSION
+    );
     assert!(matches!(events[0].event, ServerEvent::SyncBatch { .. }));
 }
 
