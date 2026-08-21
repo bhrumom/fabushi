@@ -8831,7 +8831,12 @@ dependencies = [
  "mahayana-agent-codex",
  "mahayana-conversation",
  "mahayana-core",
+ "mahayana-kernel",
+ "mahayana-mcp-runtime",
  "mahayana-miniapp",
+ "mahayana-model",
+ "mahayana-native-agent",
+ "mahayana-native-engine",
  "mahayana-platform-client",
  "mahayana-platform-core",
  "mahayana-runtime",
@@ -8840,7 +8845,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
- "tokio",
 ]
 
 [[package]]
@@ -8876,6 +8880,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "mahayana-mcp-runtime"
+version = "0.1.0"
+dependencies = [
+ "mahayana-platform-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ureq 2.12.1",
+ "url",
  "uuid",
 ]
 
@@ -8928,6 +8945,21 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "ureq 2.12.1",
+]
+
+[[package]]
+name = "mahayana-native-agent"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "mahayana-agent",
+ "mahayana-core",
+ "mahayana-kernel",
+ "mahayana-mcp-runtime",
+ "mahayana-native-engine",
+ "mahayana-platform-core",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -11782,9 +11814,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.14"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0527518605e68109d875e248ea259b6758801cf165e4b2c2733ae3b51f12535a"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "aws-lc-rs",
  "ring",

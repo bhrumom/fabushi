@@ -23,15 +23,24 @@ pub const MAHAYANA_AI_CONVERSATION_ID: &str = "mahayana-ai:agent:assistant";
 pub struct KernelConversationProvider {
     backend: Arc<dyn EngineBackend>,
     profile: BuildProfile,
+    workspace_root: Option<String>,
+    model: Option<String>,
     session_id: AsyncMutex<Option<SessionId>>,
     history: Arc<Mutex<Vec<Message>>>,
 }
 
 impl KernelConversationProvider {
-    pub fn new(backend: Arc<dyn EngineBackend>, profile: BuildProfile) -> Self {
+    pub fn new(
+        backend: Arc<dyn EngineBackend>,
+        profile: BuildProfile,
+        workspace_root: Option<String>,
+        model: Option<String>,
+    ) -> Self {
         Self {
             backend,
             profile,
+            workspace_root,
+            model,
             session_id: AsyncMutex::new(None),
             history: Arc::new(Mutex::new(Vec::new())),
         }
@@ -49,8 +58,8 @@ impl KernelConversationProvider {
             .backend
             .open_session(OpenSessionRequest {
                 profile: runtime_profile(self.profile),
-                workspace_root: None,
-                model: None,
+                workspace_root: self.workspace_root.clone(),
+                model: self.model.clone(),
                 metadata: json!({"conversationId": conversation_id.as_str()}),
             })
             .await

@@ -67,10 +67,7 @@ impl NativeMcpRegistry {
                 )));
             }
             let server_name = select_server(&manifest, platform)?;
-            let server_path = manifest
-                .mcp_servers
-                .as_deref()
-                .unwrap_or("./.mcp.json");
+            let server_path = manifest.mcp_servers.as_deref().unwrap_or("./.mcp.json");
             let config_path = safe_plugin_join(&plugin_root, Path::new(server_path))?;
             let config: McpFile = read_json(&config_path)?;
             let raw = config
@@ -141,10 +138,7 @@ impl NativeMcpClient {
         if name.trim().is_empty() {
             return Err(McpError::InvalidRequest("tool name is empty".into()));
         }
-        self.request(
-            "tools/call",
-            json!({"name": name, "arguments": arguments}),
-        )
+        self.request("tools/call", json!({"name": name, "arguments": arguments}))
     }
 
     pub fn read_resource(&self, uri: &str) -> Result<Vec<Value>, McpError> {
@@ -240,7 +234,13 @@ fn parse_transport(
     let kind = value
         .get("type")
         .and_then(Value::as_str)
-        .unwrap_or_else(|| if value.get("url").is_some() { "http" } else { "stdio" });
+        .unwrap_or_else(|| {
+            if value.get("url").is_some() {
+                "http"
+            } else {
+                "stdio"
+            }
+        });
     match kind {
         "stdio" => {
             let command = value
@@ -469,7 +469,10 @@ fn send_http(
             session_id,
         });
     }
-    let content_type = response.header("Content-Type").unwrap_or_default().to_string();
+    let content_type = response
+        .header("Content-Type")
+        .unwrap_or_default()
+        .to_string();
     let mut body = String::new();
     response
         .into_reader()
@@ -513,7 +516,10 @@ fn jsonrpc_result(value: Value) -> Result<Value, McpError> {
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or("MCP request failed");
-        return Err(McpError::Remote { code, message: message.to_string() });
+        return Err(McpError::Remote {
+            code,
+            message: message.to_string(),
+        });
     }
     Ok(value.get("result").cloned().unwrap_or(Value::Null))
 }
