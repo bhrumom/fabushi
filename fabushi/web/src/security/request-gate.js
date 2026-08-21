@@ -66,6 +66,33 @@ async function resolveUser(request, env, db) {
   return (await resolveTokenAndUser(request, env, db)).user;
 }
 
+function isUniqueConstraintError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('unique constraint') || message.includes('primary key') || message.includes('constraint failed');
+}
+
+async function claimTransferReceipt(db, { jti, user, bytes, exp }) {
+  if (!db?.prepare) throw new Error('transfer receipt claim database unavailable');
+  try {
+    await db.prepare(`
+      INSERT INTO transfer_receipt_claims
+        (jti, account_user_id, username, bytes, expires_at, claimed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      jti,
+      user.id === undefined || user.id === null ? null : String(user.id),
+      String(user.username || ''),
+      bytes,
+      exp,
+      new Date().toISOString(),
+    ).run();
+    return true;
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return false;
+    throw error;
+  }
+}
+
 async function enforceTransferReceipt(request, env, db) {
   const { user } = await resolveTokenAndUser(request, env, db);
   if (!user) return jsonResponse({ error: '认证失败' }, 401);
@@ -109,10 +136,13 @@ async function enforceTransferReceipt(request, env, db) {
     return jsonResponse({ error: '传输凭证不属于当前账号' }, 403);
   }
 
-  if (!env.USERS_KV) return jsonResponse({ error: '传输凭证防重放存储不可用' }, 503);
-  const replayKey = `transfer_receipt:${jti}`;
-  if (await env.USERS_KV.get(replayKey)) return jsonResponse({ error: '传输凭证已使用' }, 409);
-  await env.USERS_KV.put(replayKey, '1', { expirationTtl: Math.max(60, exp - now + 60) });
+  try {
+    const claimed = await claimTransferReceipt(db, { jti, user, bytes, exp });
+    if (!claimed) return jsonResponse({ error: '传输凭证已使用' }, 409);
+  } catch (error) {
+    console.error('transfer receipt atomic claim failed:', error?.message || error);
+    return jsonResponse({ error: '传输凭证防重放存储不可用' }, 503);
+  }
   return null;
 }
 
