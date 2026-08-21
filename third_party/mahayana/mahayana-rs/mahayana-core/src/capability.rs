@@ -14,6 +14,10 @@ use std::collections::BTreeMap;
 #[path = "kernel.rs"]
 pub mod kernel;
 
+/// Provider-neutral workspace/checkpoint contracts owned by Mahayana.
+#[path = "workspace.rs"]
+pub mod workspace;
+
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
 pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
