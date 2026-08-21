@@ -85,10 +85,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
         match command {
             ClientCommand::BeginBlobUpload { metadata } => {
                 let status = self.blob_store()?.begin_upload(&metadata)?;
-                return self.single_service_event(
-                    ServerEvent::BlobUploadChanged { status },
-                    server_time_ms,
-                );
+                self.single_service_event(ServerEvent::BlobUploadChanged { status }, server_time_ms)
             }
             ClientCommand::AppendBlobChunk {
                 blob_id,
@@ -99,20 +96,15 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     .decode(data_base64.as_bytes())
                     .map_err(|error| MessagingServiceError::InvalidBlobBase64(error.to_string()))?;
                 let status = self.blob_store()?.append_chunk(&blob_id, offset, &bytes)?;
-                return self.single_service_event(
-                    ServerEvent::BlobUploadChanged { status },
-                    server_time_ms,
-                );
+                self.single_service_event(ServerEvent::BlobUploadChanged { status }, server_time_ms)
             }
             ClientCommand::FinishBlobUpload { blob_id } => {
                 let metadata = self.blob_store()?.finish_upload(&blob_id)?;
-                return self
-                    .single_service_event(ServerEvent::BlobReady { metadata }, server_time_ms);
+                self.single_service_event(ServerEvent::BlobReady { metadata }, server_time_ms)
             }
             ClientCommand::DeleteBlob { blob_id } => {
                 self.blob_store()?.delete(&blob_id)?;
-                return self
-                    .single_service_event(ServerEvent::BlobDeleted { blob_id }, server_time_ms);
+                self.single_service_event(ServerEvent::BlobDeleted { blob_id }, server_time_ms)
             }
             command => {
                 if let ClientCommand::Sync { limit, .. } = &command {
@@ -130,10 +122,10 @@ impl<S: MessagingStateStore> MessagingService<S> {
 
                 self.cursor = self.cursor.saturating_add(events.len() as u64);
                 self.persist(server_time_ms)?;
-                return Ok(events
+                Ok(events
                     .into_iter()
                     .filter_map(|event| self.project_event(event, server_time_ms))
-                    .collect());
+                    .collect())
             }
         }
     }

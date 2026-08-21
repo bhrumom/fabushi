@@ -1006,7 +1006,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
                   const minutes = Number(window.prompt('多少分钟后发送？', '10'));
                   if (Number.isFinite(minutes) && minutes > 0) setScheduledAtMs(Date.now() + minutes * 60_000);
                   setAttachmentMenuOpen(false);
-                }} onUnavailable={(label) => { setError(`${label} 已有 Rust 媒体传输状态机；生产 blob 上传 provider 仍在接线。`); setAttachmentMenuOpen(false); }} /> : null}
+                }} /> : null}
               </div>
               <input ref={mediaInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
               <input ref={fileInputRef} type="file" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
