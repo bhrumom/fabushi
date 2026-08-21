@@ -318,7 +318,9 @@ impl BackendRegistry {
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn AgentBackend>> {
-        self.backends.get(id).map(|entry| Arc::clone(&entry.backend))
+        self.backends
+            .get(id)
+            .map(|entry| Arc::clone(&entry.backend))
     }
 
     pub fn select(&self, required: BackendCapabilities) -> Option<Arc<dyn AgentBackend>> {
@@ -361,10 +363,7 @@ pub struct BackendDescriptor {
     pub capabilities: BackendCapabilities,
 }
 
-pub fn backend_supports(
-    available: BackendCapabilities,
-    required: BackendCapabilities,
-) -> bool {
+pub fn backend_supports(available: BackendCapabilities, required: BackendCapabilities) -> bool {
     (!required.realtime || available.realtime)
         && (!required.tools || available.tools)
         && (!required.web || available.web)
