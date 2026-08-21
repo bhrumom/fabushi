@@ -68,6 +68,7 @@ jobs:
           -p mahayana-harness
           -p mahayana-harness-services
           -p mahayana-harness-adapters
+          -p mahayana-harness-protocol
           --profile ci
 
       - name: Test direct Mahayana Host
