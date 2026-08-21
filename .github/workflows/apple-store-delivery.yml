@@ -121,7 +121,6 @@ jobs:
       MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_STORE_PROVISIONING_PROFILE_BASE64 }}
       CSC_LINK: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_P12_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MACOS_APP_STORE_CERTIFICATE_PASSWORD }}
-      CSC_NAME: ${{ vars.MACOS_APP_STORE_SIGNING_CERTIFICATE }}
       CSC_INSTALLER_LINK: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_P12_BASE64 }}
       CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MACOS_APP_STORE_INSTALLER_CERTIFICATE_PASSWORD }}
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -329,6 +328,8 @@ jobs:
 
       - name: Build Mahayana static library for iOS devices
         working-directory: third_party/mahayana/mahayana-rs
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: '17.0'
         run: cargo build --release -p mahayana-app-host-mobile --target aarch64-apple-ios
 
       - name: Stage iOS device static library
