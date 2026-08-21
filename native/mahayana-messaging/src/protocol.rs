@@ -88,6 +88,12 @@ pub enum ClientCommand {
         silent: bool,
         protected_content: bool,
     },
+    ForwardMessage {
+        source_conversation_id: ConversationId,
+        message_id: MessageId,
+        destination_conversation_id: ConversationId,
+        client_message_id: ClientMessageId,
+    },
     EditMessage {
         conversation_id: ConversationId,
         message_id: MessageId,

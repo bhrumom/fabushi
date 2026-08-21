@@ -220,3 +220,90 @@ fn wire_protocol_is_fabushi_owned_and_versioned() {
         FABUSHI_MESSAGING_PROTOCOL_VERSION
     );
 }
+
+#[test]
+fn forwarding_preserves_origin_and_rejects_protected_content() {
+    let mut engine = MessagingEngine::new();
+    engine
+        .execute(Command::UpsertActor {
+            actor: Actor::human("human:forwarder", "转发者"),
+        })
+        .unwrap();
+    for (id, title) in [("chat:source", "来源"), ("chat:destination", "目标")] {
+        engine
+            .execute(Command::UpsertConversation {
+                conversation: Conversation::direct(
+                    id,
+                    title,
+                    vec![participant("human:forwarder", ParticipantRole::Owner)],
+                    1,
+                ),
+            })
+            .unwrap();
+    }
+    engine
+        .execute(Command::QueueMessage {
+            conversation_id: ConversationId::new("chat:source"),
+            local_message_id: MessageId::new("source:1"),
+            client_message_id: ClientMessageId("client:source".into()),
+            sender_id: ActorId::new("human:forwarder"),
+            content: MessageContent::Text {
+                text: FormattedText::plain("可转发内容"),
+            },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            created_at_ms: 2,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: false,
+        })
+        .unwrap();
+    engine
+        .execute(Command::ForwardMessage {
+            source_conversation_id: ConversationId::new("chat:source"),
+            message_id: MessageId::new("source:1"),
+            destination_conversation_id: ConversationId::new("chat:destination"),
+            local_message_id: MessageId::new("forward:1"),
+            client_message_id: ClientMessageId("client:forward".into()),
+            sender_id: ActorId::new("human:forwarder"),
+            created_at_ms: 3,
+        })
+        .unwrap();
+    let forwarded = &engine.state().messages[&ConversationId::new("chat:destination")]
+        [&MessageId::new("forward:1")];
+    assert_eq!(
+        forwarded.forward_origin.as_deref(),
+        Some("chat:source:source:1")
+    );
+    assert!(matches!(forwarded.content, MessageContent::Text { .. }));
+
+    engine
+        .execute(Command::QueueMessage {
+            conversation_id: ConversationId::new("chat:source"),
+            local_message_id: MessageId::new("source:protected"),
+            client_message_id: ClientMessageId("client:protected".into()),
+            sender_id: ActorId::new("human:forwarder"),
+            content: MessageContent::Text {
+                text: FormattedText::plain("禁止转发"),
+            },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            created_at_ms: 4,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: true,
+        })
+        .unwrap();
+    let error = engine
+        .execute(Command::ForwardMessage {
+            source_conversation_id: ConversationId::new("chat:source"),
+            message_id: MessageId::new("source:protected"),
+            destination_conversation_id: ConversationId::new("chat:destination"),
+            local_message_id: MessageId::new("forward:protected"),
+            client_message_id: ClientMessageId("client:forward-protected".into()),
+            sender_id: ActorId::new("human:forwarder"),
+            created_at_ms: 5,
+        })
+        .unwrap_err();
+    assert_eq!(error, EngineError::ProtectedContent);
+}

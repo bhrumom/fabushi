@@ -60,6 +60,15 @@ pub enum Command {
         silent: bool,
         protected_content: bool,
     },
+    ForwardMessage {
+        source_conversation_id: ConversationId,
+        message_id: MessageId,
+        destination_conversation_id: ConversationId,
+        local_message_id: MessageId,
+        client_message_id: ClientMessageId,
+        sender_id: ActorId,
+        created_at_ms: i64,
+    },
     AcknowledgeMessage {
         conversation_id: ConversationId,
         local_message_id: MessageId,
@@ -252,6 +261,8 @@ pub enum EngineError {
     InvalidClientMessageId,
     #[error("message id list must not be empty")]
     EmptyMessageList,
+    #[error("message is protected from forwarding")]
+    ProtectedContent,
     #[error("invoice is invalid")]
     InvalidInvoice,
     #[error("invoice {0} does not exist")]
@@ -393,6 +404,68 @@ impl MessagingEngine {
                     scheduled_at_ms,
                     silent,
                     protected_content,
+                    pinned: false,
+                    deleted: false,
+                };
+                Ok(vec![Event::MessageQueued { message }])
+            }
+            Command::ForwardMessage {
+                source_conversation_id,
+                message_id,
+                destination_conversation_id,
+                local_message_id,
+                client_message_id,
+                sender_id,
+                created_at_ms,
+            } => {
+                self.require_conversation(&destination_conversation_id)?;
+                self.require_actor(&sender_id)?;
+                if client_message_id.0.trim().is_empty() || client_message_id.0.len() > 200 {
+                    return Err(EngineError::InvalidClientMessageId);
+                }
+                if self
+                    .state
+                    .messages
+                    .get(&destination_conversation_id)
+                    .is_some_and(|messages| messages.contains_key(&local_message_id))
+                {
+                    return Err(EngineError::DuplicateMessage {
+                        conversation_id: destination_conversation_id,
+                        message_id: local_message_id,
+                    });
+                }
+                let original = self
+                    .require_message(&source_conversation_id, &message_id)?
+                    .clone();
+                if original.deleted {
+                    return Err(EngineError::MessageNotFound {
+                        conversation_id: source_conversation_id,
+                        message_id,
+                    });
+                }
+                if original.protected_content {
+                    return Err(EngineError::ProtectedContent);
+                }
+                let forward_origin = original
+                    .forward_origin
+                    .clone()
+                    .unwrap_or_else(|| format!("{}:{}", original.conversation_id.0, original.id.0));
+                let message = Message {
+                    id: local_message_id,
+                    conversation_id: destination_conversation_id,
+                    sender_id,
+                    content: original.content,
+                    reply_to_message_id: None,
+                    thread_root_message_id: None,
+                    forward_origin: Some(forward_origin),
+                    reply_markup: original.reply_markup,
+                    reactions: Vec::new(),
+                    delivery_state: DeliveryState::Pending { client_message_id },
+                    created_at_ms,
+                    edited_at_ms: None,
+                    scheduled_at_ms: None,
+                    silent: false,
+                    protected_content: original.protected_content,
                     pinned: false,
                     deleted: false,
                 };
