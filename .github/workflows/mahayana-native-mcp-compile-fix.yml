@@ -1,0 +1,53 @@
+name: Mahayana native MCP compile fix
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/fix-mahayana-native-mcp-compile.py
+      - .github/workflows/mahayana-native-mcp-compile-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply guarded compile fix
+        working-directory: .
+        run: python3 .github/scripts/fix-mahayana-native-mcp-compile.py
+
+      - name: Format workspace
+        run: cargo fmt --all
+
+      - name: Refresh lockfile
+        run: cargo generate-lockfile
+
+      - name: Commit fix
+        working-directory: .
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Compile fix already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs
+          git commit -m "fix(mahayana): support CLI in native MCP runtime"
+          git push origin "HEAD:${{ github.head_ref }}"
