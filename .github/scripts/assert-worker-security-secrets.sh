@@ -23,6 +23,7 @@ case "$environment" in
       FIREBASE_PROJECT_ID
       SMS_PROVIDER_URL
       SMS_PROVIDER_TOKEN
+      TRANSFER_RECEIPT_SECRET
     )
     ;;
   development)
@@ -31,6 +32,7 @@ case "$environment" in
       ADMIN_EMAILS
       ALIPAY_PRIVATE_KEY
       AUTH_PROVIDER_BRIDGE_SECRET
+      TRANSFER_RECEIPT_SECRET
     )
     ;;
   *)
@@ -42,8 +44,6 @@ esac
 secret_json="$(mktemp)"
 trap 'rm -f "$secret_json"' EXIT
 
-# Wrangler secret list defaults to JSON, but --format json keeps the contract
-# explicit across CLI updates.
 npx --yes wrangler@latest secret list --env "$environment" --format json "$@" > "$secret_json"
 
 python3 - "$secret_json" "$environment" "${required[@]}" <<'PY'
