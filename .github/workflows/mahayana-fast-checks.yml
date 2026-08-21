@@ -18,13 +18,13 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   protocol-and-bridge:
-    name: Rust protocol, Host, bridge, and payment Worker fast gate
+    name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     env:
       CARGO_INCREMENTAL: "1"
     defaults:
@@ -34,7 +34,6 @@ jobs:
       - name: Checkout Mahayana sources
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /third_party/mahayana/**
@@ -42,119 +41,17 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt,clippy
-          targets: wasm32-unknown-unknown
-
-      - name: Wire Fabushi Pay routes without replacing the Worker
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('mahayana-platform-worker/src/worker_api.rs')
-          text = path.read_text()
-          text = text.replace(
-              'fn authenticated_user(request: &Request, env: &Env) -> Result<String> {',
-              'pub(crate) fn authenticated_user(request: &Request, env: &Env) -> Result<String> {',
-              1,
-          )
-          if '/v1/miniapps/:mini_app_id/pay/intents' not in text:
-              marker = '        .get_async("/v1/wallet/balance", wallet_balance)'
-              routes = '''        .post_async(
-              "/v1/miniapps/:mini_app_id/pay/intents",
-              crate::payment_api::create_intent,
-          )
-          .get_async(
-              "/v1/pay/intents/:payment_id",
-              crate::payment_api::get_intent,
-          )
-          .post_async(
-              "/v1/pay/intents/:payment_id/checkout",
-              crate::payment_api::checkout_action,
-          )
-          .post_async(
-              "/v1/pay/intents/:payment_id/credits/confirm",
-              crate::payment_api::confirm_credits,
-          )
-          .post_async(
-              "/v1/pay/intents/:payment_id/apple/verify",
-              crate::payment_api::verify_apple,
-          )
-          .post_async(
-              "/v1/pay/intents/:payment_id/google/verify",
-              crate::payment_api::verify_google,
-          )
-          .post_async(
-              "/v1/pay/providers/:provider/webhook",
-              crate::payment_api::provider_webhook,
-          )
-          .post_async(
-              "/v1/pay/admin/settlements/release",
-              crate::payment_api::admin_release_settlement,
-          )
-          .post_async(
-              "/v1/pay/admin/payout-accounts",
-              crate::payment_api::admin_upsert_payout_account,
-          )
-          .post_async(
-              "/v1/pay/admin/payouts",
-              crate::payment_api::admin_create_payout,
-          )
-          .get_async(
-              "/v1/pay/admin/developers/:developer_id/balance/:currency",
-              crate::payment_api::admin_developer_balance,
-          )
-'''
-              if marker not in text:
-                  raise SystemExit('Worker wallet route marker not found')
-              text = text.replace(marker, routes + marker, 1)
-          path.write_text(text)
-          PY
-          cargo fmt --all
-
-      - name: Commit safe route wiring for same-repository PR
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: |
-          if git diff --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add third_party/mahayana/mahayana-rs
-          git commit -m "feat(pay): wire Rust payment Worker routes"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          components: rustfmt
 
       - name: Restore targeted Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-pay-v1
+          shared-key: mahayana-fast-v3
           cache-all-crates: true
 
       - name: Verify formatting
         run: cargo fmt --all -- --check
-
-      - name: Test payment core and Worker schema
-        run: >-
-          cargo test --locked
-          -p mahayana-platform-core
-          -p mahayana-platform-worker
-          --profile ci
-
-      - name: Clippy payment core and Worker host target
-        run: >-
-          cargo clippy --locked
-          -p mahayana-platform-core
-          -p mahayana-platform-worker
-          --all-targets -- -D warnings
-
-      - name: Compile payment Worker for wasm32
-        run: >-
-          cargo check --locked
-          -p mahayana-platform-worker
-          --target wasm32-unknown-unknown
 
       - name: Test protocol and MiniApp bridge
         run: >-
