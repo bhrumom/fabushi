@@ -7,19 +7,26 @@ const openClawToken = String(process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
 const corsOrigin = String(process.env.CORS_ORIGIN || '').trim();
 
 if (production) {
-  if (![adapterSecret, deepSeekKey, openClawToken].some((value) => value.length >= 24)) {
-    throw new Error('Production AI backend requires an explicit secret/token of at least 24 characters');
+  if (adapterSecret.length < 32) {
+    throw new Error('Production AI backend requires CODEX_DEEPSEEK_ADAPTER_SECRET with at least 32 characters');
+  }
+  if (deepSeekKey && deepSeekKey.length < 24) {
+    throw new Error('Configured DEEPSEEK_API_KEY is unexpectedly short');
+  }
+  if (openClawToken && openClawToken.length < 24) {
+    throw new Error('Configured OPENCLAW_GATEWAY_TOKEN is unexpectedly short');
   }
   if (!corsOrigin || corsOrigin === '*') {
     throw new Error('Production AI backend requires an explicit CORS_ORIGIN allowlist');
   }
-  if (!process.env.TRUST_PROXY_HOPS) {
-    throw new Error('Production AI backend requires explicit TRUST_PROXY_HOPS');
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS);
+  if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 8) {
+    throw new Error('Production AI backend requires TRUST_PROXY_HOPS between 0 and 8');
   }
 }
 
-if (adapterSecret && adapterSecret.length < 24) {
-  throw new Error('CODEX_DEEPSEEK_ADAPTER_SECRET must be at least 24 characters');
+if (adapterSecret && adapterSecret.length < 32) {
+  throw new Error('CODEX_DEEPSEEK_ADAPTER_SECRET must be at least 32 characters');
 }
 
 await import('./server.js');
