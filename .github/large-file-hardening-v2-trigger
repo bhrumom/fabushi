@@ -1,2 +1,2 @@
-run=3
-reason=apply validated large-file security hardening after meditation auth contract update
+run=4
+reason=final apply after all direct branch edits and one-shot cleanup
