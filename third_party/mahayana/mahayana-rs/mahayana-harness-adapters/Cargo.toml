@@ -16,3 +16,4 @@ mahayana-harness-services.workspace = true
 mahayana-tool-host.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tokio.workspace = true
