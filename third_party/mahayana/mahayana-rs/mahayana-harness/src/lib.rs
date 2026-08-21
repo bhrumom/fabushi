@@ -921,11 +921,11 @@ impl MahayanaHarness {
             agent_id: agent_id.map(ToOwned::to_owned),
             payload,
         };
-        if let Some(session_id) = session_id {
-            if let Some(session) = state.sessions.get_mut(session_id) {
-                session.updated_at_ms = event.timestamp_ms;
-                session.events.push(event.clone());
-            }
+        if let Some(session_id) = session_id
+            && let Some(session) = state.sessions.get_mut(session_id)
+        {
+            session.updated_at_ms = event.timestamp_ms;
+            session.events.push(event.clone());
         }
         state.events.push_back(event.clone());
         Ok(event)
