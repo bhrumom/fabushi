@@ -8695,6 +8695,7 @@ dependencies = [
  "fabushi-official-miniapps",
  "mahayana-agent",
  "mahayana-agent-codex",
+ "mahayana-agent-responses",
  "mahayana-conversation",
  "mahayana-core",
  "mahayana-miniapp",
