@@ -22,6 +22,14 @@ pub mod workspace;
 #[path = "extension.rs"]
 pub mod extension;
 
+/// Durable product-owned permission policy shared across backends.
+#[path = "permission.rs"]
+pub mod permission;
+
+/// Cross-surface protocol negotiation for CLI, desktop, mobile, Web, and IDE.
+#[path = "surface.rs"]
+pub mod surface;
+
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
 pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
