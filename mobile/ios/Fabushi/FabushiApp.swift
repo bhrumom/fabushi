@@ -46,12 +46,16 @@ struct FabushiApp: App {
         let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
         switch host {
         case "auth":
-            guard parts.first == "complete",
+            guard parts == ["complete"],
                   let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             else { return }
+            let allowedNames = Set(["attemptId", "status"])
             var params: [String: String] = [:]
             for item in components.queryItems ?? [] {
-                guard params[item.name] == nil, let value = item.value else { continue }
+                guard allowedNames.contains(item.name),
+                      params[item.name] == nil,
+                      let value = item.value
+                else { return }
                 params[item.name] = value
             }
             let attemptId = params["attemptId"] ?? ""
@@ -61,7 +65,7 @@ struct FabushiApp: App {
             else { return }
             model.message = status == "completed" ? "登录授权已完成，正在同步账号状态" : "登录授权状态：\(status)"
             if status == "completed" {
-                Task { await model.refresh() }
+                Task { await model.completeBrowserLogin(attemptId: attemptId) }
             }
         case "agent":
             guard let agentId = parts.first, !agentId.isEmpty, agentId.count <= 200 else { return }
