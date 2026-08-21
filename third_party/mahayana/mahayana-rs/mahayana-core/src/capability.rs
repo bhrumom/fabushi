@@ -30,6 +30,14 @@ pub mod permission;
 #[path = "surface.rs"]
 pub mod surface;
 
+/// Goal DAG and objective verification shared by all backends.
+#[path = "goal.rs"]
+pub mod goal;
+
+/// Provider-neutral durable session snapshots and recovery journal.
+#[path = "recovery.rs"]
+pub mod recovery;
+
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
 pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
