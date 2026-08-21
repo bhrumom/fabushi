@@ -4,9 +4,9 @@
 //! core only accepts outcomes that a trusted adapter has already authenticated.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
-use uuid::Uuid;
 
 pub const CREDITS_CURRENCY: &str = "FBC";
 
@@ -262,8 +262,15 @@ impl PayEngine {
                 .cloned()
                 .ok_or_else(|| PayError::CorruptIdempotencyIndex(request.idempotency_key));
         }
+        let payment_id = stable_id(&[
+            "payment",
+            &request.idempotency_key,
+            &request.user_id,
+            &request.mini_app_id,
+            &request.sku,
+        ]);
         let payment = PaymentIntent {
-            payment_id: Uuid::new_v4().to_string(),
+            payment_id,
             idempotency_key: request.idempotency_key.clone(),
             user_id: request.user_id,
             mini_app_id: request.mini_app_id,
@@ -319,11 +326,12 @@ impl PayEngine {
 
         let mut updated = payment.clone();
         updated.status = PaymentStatus::Succeeded;
-        updated.provider_reference = Some(outcome.provider_reference);
+        updated.provider_reference = Some(outcome.provider_reference.clone());
         updated.updated_at_ms = outcome.occurred_at_ms;
         let entry = balanced_entry(
             "payment",
             &payment.payment_id,
+            &outcome.provider_reference,
             outcome.occurred_at_ms,
             vec![
                 line(provider_account(&payment.amount.currency), &payment.amount.currency, -payment.amount.amount),
@@ -374,7 +382,13 @@ impl PayEngine {
             lines.push(line("platform-revenue".into(), &payment.amount.currency, -fee_refund));
         }
         lines.push(line(provider_account(&payment.amount.currency), &payment.amount.currency, request.amount));
-        let entry = balanced_entry("refund", &payment.payment_id, request.occurred_at_ms, lines)?;
+        let entry = balanced_entry(
+            "refund",
+            &payment.payment_id,
+            &request.idempotency_key,
+            request.occurred_at_ms,
+            lines,
+        )?;
 
         let new_refunded = payment.refunded_amount.saturating_add(request.amount);
         let mut updated = payment.clone();
@@ -409,6 +423,7 @@ impl PayEngine {
         let entry = balanced_entry(
             "settlement-release",
             &payment.payment_id,
+            &request.idempotency_key,
             request.occurred_at_ms,
             vec![
                 line(developer_pending(&payment.developer_id), &payment.amount.currency, -releasable),
@@ -455,6 +470,22 @@ impl PayEngine {
     }
 }
 
+fn stable_id(parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part.as_bytes());
+    }
+    let digest = hasher.finalize();
+    let mut encoded = String::with_capacity(64);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
 fn ensure_key(key: &str) -> Result<(), PayError> {
     if key.trim().is_empty() {
         Err(PayError::MissingStableId)
@@ -482,11 +513,12 @@ fn line(account_id: String, currency: &PaymentCurrency, amount: i64) -> PaymentL
 fn balanced_entry(
     reference_type: &str,
     reference_id: &str,
+    event_key: &str,
     created_at_ms: i64,
     lines: Vec<PaymentLedgerLine>,
 ) -> Result<PaymentLedgerEntry, PayError> {
     let entry = PaymentLedgerEntry {
-        entry_id: Uuid::new_v4().to_string(),
+        entry_id: stable_id(&["ledger", reference_type, reference_id, event_key]),
         reference_type: reference_type.into(),
         reference_id: reference_id.into(),
         created_at_ms,
@@ -559,11 +591,12 @@ mod tests {
     }
 
     #[test]
-    fn creation_is_idempotent() {
+    fn creation_is_idempotent_and_has_stable_id() {
         let mut engine = PayEngine::new();
         let first = engine.create_payment(request("same")).unwrap();
         let second = engine.create_payment(request("same")).unwrap();
         assert_eq!(first.payment_id, second.payment_id);
+        assert_eq!(first.payment_id.len(), 64);
     }
 
     #[test]
