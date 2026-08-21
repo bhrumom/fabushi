@@ -145,12 +145,12 @@ jobs:
         run: |
           set -euo pipefail
           available_packages="$(sdkmanager --list --channel=3)"
-          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit}')"
-          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit}')"
+          platform_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/platforms;android-(37([.]0)?|CinnamonBun)/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
+          build_tools_package="$(printf '%s\n' "$available_packages" | awk -F'|' '/build-tools;37[.]/ && !found {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; found=1}')"
           test -n "$platform_package" && test -n "$build_tools_package"
           sdkmanager --channel=3 "$platform_package" "$build_tools_package" 'ndk;28.2.13676358'
           if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
-            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) | head -n 1)"
+            installed_platform="$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d \( -name 'android-37*' -o -name 'android-CinnamonBun*' \) -print -quit)"
             test -n "$installed_platform"
             ln -s "$installed_platform" "$ANDROID_HOME/platforms/android-37"
           fi
