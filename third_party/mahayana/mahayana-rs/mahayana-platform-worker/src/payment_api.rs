@@ -6,9 +6,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
-use worker::{
-    Env, Fetch, Headers, Method, Request, RequestInit, Response, Result, RouteContext,
-};
+use worker::{Env, Fetch, Headers, Method, Request, RequestInit, Response, Result, RouteContext};
 
 use crate::worker_api::authenticated_user;
 
@@ -17,7 +15,8 @@ const CREDITS_CURRENCY: &str = "FBC";
 const APPLE_PRODUCTION_BASE: &str = "https://api.storekit.apple.com";
 const APPLE_SANDBOX_BASE: &str = "https://api.storekit-sandbox.apple.com";
 const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-const GOOGLE_ANDROID_PUBLISHER_BASE: &str = "https://androidpublisher.googleapis.com/androidpublisher/v3";
+const GOOGLE_ANDROID_PUBLISHER_BASE: &str =
+    "https://androidpublisher.googleapis.com/androidpublisher/v3";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -196,39 +195,70 @@ pub async fn create_intent(mut request: Request, context: RouteContext<()>) -> R
     let database = context.env.d1(DATABASE_BINDING)?;
     let now = now_seconds();
 
-    let Some(product) = active_payment_product(&database, &mini_app_id, input.sku.trim(), now).await?
+    let Some(product) =
+        active_payment_product(&database, &mini_app_id, input.sku.trim(), now).await?
     else {
         return error_response(404, "product_not_found", "payment product is not available");
     };
-    let allowed_rails = serde_json::from_str::<Vec<String>>(&product.allowed_rails_json)
-        .map_err(|_| worker::Error::RustError("invalid payment product rail configuration".into()))?;
-    if !allowed_rails.iter().any(|candidate| normalize_rail(candidate).ok() == Some(rail)) {
-        return error_response(409, "rail_not_allowed", "requested payment rail is not enabled for this product");
+    let allowed_rails =
+        serde_json::from_str::<Vec<String>>(&product.allowed_rails_json).map_err(|_| {
+            worker::Error::RustError("invalid payment product rail configuration".into())
+        })?;
+    if !allowed_rails
+        .iter()
+        .any(|candidate| normalize_rail(candidate).ok() == Some(rail))
+    {
+        return error_response(
+            409,
+            "rail_not_allowed",
+            "requested payment rail is not enabled for this product",
+        );
     }
     if rail == "credits" && product.currency != CREDITS_CURRENCY {
-        return error_response(409, "credits_currency_mismatch", "credits purchases must be priced in FBC");
+        return error_response(
+            409,
+            "credits_currency_mismatch",
+            "credits purchases must be priced in FBC",
+        );
     }
-    let provider_refs = serde_json::from_str::<BTreeMap<String, String>>(&product.provider_product_refs_json)
-        .map_err(|_| worker::Error::RustError("invalid payment provider product configuration".into()))?;
+    let provider_refs =
+        serde_json::from_str::<BTreeMap<String, String>>(&product.provider_product_refs_json)
+            .map_err(|_| {
+                worker::Error::RustError("invalid payment provider product configuration".into())
+            })?;
     let provider_product_ref = provider_refs.get(rail).cloned();
     if rail != "credits" && provider_product_ref.as_deref().is_none_or(str::is_empty) {
-        return error_response(409, "provider_product_missing", "payment provider product identifier is not configured");
+        return error_response(
+            409,
+            "provider_product_missing",
+            "payment provider product identifier is not configured",
+        );
     }
 
-    if let Some(existing) = payment_by_idempotency(&database, &user_id, &input.idempotency_key).await? {
+    if let Some(existing) =
+        payment_by_idempotency(&database, &user_id, &input.idempotency_key).await?
+    {
         if existing.mini_app_id != mini_app_id
             || existing.sku != product.sku
             || existing.rail != rail
             || existing.currency != product.currency
             || existing.amount != product.amount
         {
-            return error_response(409, "idempotency_conflict", "idempotency key was reused with different payment semantics");
+            return error_response(
+                409,
+                "idempotency_conflict",
+                "idempotency key was reused with different payment semantics",
+            );
         }
         return payment_response(&existing);
     }
 
     let payment_id = uuid::Uuid::new_v4().to_string();
-    let status = if rail == "credits" { "created" } else { "requires_action" };
+    let status = if rail == "credits" {
+        "created"
+    } else {
+        "requires_action"
+    };
     worker::query!(
         &database,
         "INSERT INTO payment_intents
@@ -286,7 +316,10 @@ pub async fn checkout_action(request: Request, context: RouteContext<()>) -> Res
     if payment.user_id != user_id {
         return error_response(404, "payment_not_found", "payment intent was not found");
     }
-    if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+    if matches!(
+        payment.status.as_str(),
+        "succeeded" | "partially_refunded" | "refunded"
+    ) {
         return payment_response(&payment);
     }
     let action = match payment.rail.as_str() {
@@ -328,25 +361,59 @@ pub async fn confirm_credits(request: Request, context: RouteContext<()>) -> Res
         return error_response(404, "payment_not_found", "payment intent was not found");
     }
     if payment.rail != "credits" || payment.currency != CREDITS_CURRENCY {
-        return error_response(409, "invalid_payment_rail", "payment is not an FBC credits purchase");
+        return error_response(
+            409,
+            "invalid_payment_rail",
+            "payment is not an FBC credits purchase",
+        );
     }
-    if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+    if matches!(
+        payment.status.as_str(),
+        "succeeded" | "partially_refunded" | "refunded"
+    ) {
         return payment_response(&payment);
     }
-    if !matches!(payment.status.as_str(), "created" | "requires_action" | "processing") {
-        return error_response(409, "invalid_payment_state", "payment can no longer be confirmed");
+    if !matches!(
+        payment.status.as_str(),
+        "created" | "requires_action" | "processing"
+    ) {
+        return error_response(
+            409,
+            "invalid_payment_state",
+            "payment can no longer be confirmed",
+        );
     }
 
-    post_success(&database, &payment, "credits", &format!("credits:{}", payment.payment_id), &payment.payment_id, now_seconds(), true).await?;
+    post_success(
+        &database,
+        &payment,
+        "credits",
+        &format!("credits:{}", payment.payment_id),
+        &payment.payment_id,
+        now_seconds(),
+        true,
+    )
+    .await?;
     let updated = payment_by_id(&database, &payment_id)
         .await?
-        .ok_or_else(|| worker::Error::RustError("payment disappeared after credits capture".into()))?;
+        .ok_or_else(|| {
+            worker::Error::RustError("payment disappeared after credits capture".into())
+        })?;
     if updated.status != "succeeded" {
-        let balance = wallet_balance(&database, &format!("user:{user_id}:{}", payment.currency)).await?;
+        let balance =
+            wallet_balance(&database, &format!("user:{user_id}:{}", payment.currency)).await?;
         if balance < payment.amount {
-            return error_response(402, "insufficient_credits", "insufficient FBC credits balance");
+            return error_response(
+                402,
+                "insufficient_credits",
+                "insufficient FBC credits balance",
+            );
         }
-        return error_response(500, "ledger_invariant_violation", "credits payment could not be posted atomically");
+        return error_response(
+            500,
+            "ledger_invariant_violation",
+            "credits payment could not be posted atomically",
+        );
     }
     payment_response(&updated)
 }
@@ -361,9 +428,16 @@ pub async fn verify_apple(mut request: Request, context: RouteContext<()>) -> Re
         return error_response(404, "payment_not_found", "payment intent was not found");
     };
     if payment.user_id != user_id || payment.rail != "apple_in_app_purchase" {
-        return error_response(404, "payment_not_found", "Apple payment intent was not found");
+        return error_response(
+            404,
+            "payment_not_found",
+            "Apple payment intent was not found",
+        );
     }
-    if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+    if matches!(
+        payment.status.as_str(),
+        "succeeded" | "partially_refunded" | "refunded"
+    ) {
         return payment_response(&payment);
     }
 
@@ -375,13 +449,36 @@ pub async fn verify_apple(mut request: Request, context: RouteContext<()>) -> Re
         || payload.transaction_id != input.transaction_id
         || payload.revocation_date.is_some()
     {
-        return error_response(403, "apple_transaction_mismatch", "Apple transaction does not match this payment intent");
+        return error_response(
+            403,
+            "apple_transaction_mismatch",
+            "Apple transaction does not match this payment intent",
+        );
     }
     let event_id = format!("apple:transaction:{}", payload.transaction_id);
-    claim_webhook_event(&database, "apple", &event_id, &body, &payment_id, now_seconds()).await?;
-    post_success(&database, &payment, "apple", &payload.transaction_id, &event_id, now_seconds(), false).await?;
+    claim_webhook_event(
+        &database,
+        "apple",
+        &event_id,
+        &body,
+        &payment_id,
+        now_seconds(),
+    )
+    .await?;
+    post_success(
+        &database,
+        &payment,
+        "apple",
+        &payload.transaction_id,
+        &event_id,
+        now_seconds(),
+        false,
+    )
+    .await?;
     mark_webhook_processed(&database, "apple", &event_id, &payment_id, now_seconds()).await?;
-    let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+    let updated = payment_by_id(&database, &payment_id)
+        .await?
+        .unwrap_or(payment);
     payment_response(&updated)
 }
 
@@ -395,9 +492,16 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
         return error_response(404, "payment_not_found", "payment intent was not found");
     };
     if payment.user_id != user_id || payment.rail != "google_play_billing" {
-        return error_response(404, "payment_not_found", "Google Play payment intent was not found");
+        return error_response(
+            404,
+            "payment_not_found",
+            "Google Play payment intent was not found",
+        );
     }
-    if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+    if matches!(
+        payment.status.as_str(),
+        "succeeded" | "partially_refunded" | "refunded"
+    ) {
         return payment_response(&payment);
     }
     let expected_product = payment.provider_product_ref.as_deref().ok_or_else(|| {
@@ -406,16 +510,47 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
     let access_token = google_access_token(&context.env).await?;
     let package_name = env_string(&context.env, "GOOGLE_PLAY_PACKAGE_NAME")?;
     let (body, provider_reference) = if payment.product_kind == "subscription" {
-        verify_google_subscription(&package_name, &input.purchase_token, expected_product, &access_token).await?
+        verify_google_subscription(
+            &package_name,
+            &input.purchase_token,
+            expected_product,
+            &access_token,
+        )
+        .await?
     } else {
-        verify_google_product(&package_name, &input.purchase_token, expected_product, &access_token).await?
+        verify_google_product(
+            &package_name,
+            &input.purchase_token,
+            expected_product,
+            &access_token,
+        )
+        .await?
     };
     let token_hash = sha256_hex(input.purchase_token.as_bytes());
     let event_id = format!("google:purchase:{token_hash}");
-    claim_webhook_event(&database, "google", &event_id, &body, &payment_id, now_seconds()).await?;
-    post_success(&database, &payment, "google", &provider_reference, &event_id, now_seconds(), false).await?;
+    claim_webhook_event(
+        &database,
+        "google",
+        &event_id,
+        &body,
+        &payment_id,
+        now_seconds(),
+    )
+    .await?;
+    post_success(
+        &database,
+        &payment,
+        "google",
+        &provider_reference,
+        &event_id,
+        now_seconds(),
+        false,
+    )
+    .await?;
     mark_webhook_processed(&database, "google", &event_id, &payment_id, now_seconds()).await?;
-    let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+    let updated = payment_by_id(&database, &payment_id)
+        .await?
+        .unwrap_or(payment);
     payment_response(&updated)
 }
 
@@ -423,7 +558,11 @@ pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
     let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
     if !matches!(provider.as_str(), "web" | "merchant") {
-        return error_response(404, "provider_not_found", "normalized webhook provider is not configured");
+        return error_response(
+            404,
+            "provider_not_found",
+            "normalized webhook provider is not configured",
+        );
     }
     let body = request.bytes().await?;
     let event: NormalizedProviderWebhook = serde_json::from_slice(&body)
@@ -432,7 +571,15 @@ pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -
     let database = context.env.d1(DATABASE_BINDING)?;
     let occurred_at = event.occurred_at.unwrap_or_else(now_seconds);
     let payment_id = event.payment_id.as_deref();
-    let claimed = claim_webhook_event(&database, &provider, &event.event_id, &body, payment_id.unwrap_or_default(), now_seconds()).await?;
+    let claimed = claim_webhook_event(
+        &database,
+        &provider,
+        &event.event_id,
+        &body,
+        payment_id.unwrap_or_default(),
+        now_seconds(),
+    )
+    .await?;
     if !claimed {
         return Response::from_json(&json!({"ok": true, "duplicate": true}));
     }
@@ -440,24 +587,45 @@ pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -
     let result = process_normalized_event(&database, &provider, &event, occurred_at).await;
     match result {
         Ok(payment_id) => {
-            mark_webhook_processed(&database, &provider, &event.event_id, payment_id.as_deref().unwrap_or_default(), now_seconds()).await?;
+            mark_webhook_processed(
+                &database,
+                &provider,
+                &event.event_id,
+                payment_id.as_deref().unwrap_or_default(),
+                now_seconds(),
+            )
+            .await?;
             Response::from_json(&json!({"ok": true, "paymentId": payment_id}))
         }
         Err(error) => {
-            mark_webhook_rejected(&database, &provider, &event.event_id, "processing_error", now_seconds()).await?;
+            mark_webhook_rejected(
+                &database,
+                &provider,
+                &event.event_id,
+                "processing_error",
+                now_seconds(),
+            )
+            .await?;
             Err(error)
         }
     }
 }
 
-pub async fn admin_release_settlement(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub async fn admin_release_settlement(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminSettlementRequest = request.json().await?;
     validate_identifier(&input.payment_id)?;
     validate_identifier(&input.idempotency_key)?;
     let reserve_bps = input.reserve_bps.unwrap_or(0);
     if reserve_bps > 10_000 {
-        return error_response(400, "invalid_reserve", "reserve basis points must be between 0 and 10000");
+        return error_response(
+            400,
+            "invalid_reserve",
+            "reserve basis points must be between 0 and 10000",
+        );
     }
     let hold_seconds = input.hold_period_seconds.unwrap_or(7 * 24 * 60 * 60).max(0);
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -465,17 +633,29 @@ pub async fn admin_release_settlement(mut request: Request, context: RouteContex
         return error_response(404, "payment_not_found", "payment intent was not found");
     };
     if !matches!(payment.status.as_str(), "succeeded" | "partially_refunded") {
-        return error_response(409, "settlement_not_allowed", "payment is not settlement eligible");
+        return error_response(
+            409,
+            "settlement_not_allowed",
+            "payment is not settlement eligible",
+        );
     }
     let now = now_seconds();
     if payment.created_at.saturating_add(hold_seconds) > now {
-        return error_response(409, "settlement_hold", "payment is still inside the settlement hold period");
+        return error_response(
+            409,
+            "settlement_hold",
+            "payment is still inside the settlement hold period",
+        );
     }
     let gross_net = developer_net_after_refunds(&payment);
     let target_released = proportional(gross_net, 10_000u16.saturating_sub(reserve_bps));
     let release_amount = target_released.saturating_sub(payment.released_developer_amount);
     if release_amount <= 0 {
-        return error_response(409, "nothing_to_settle", "no additional developer revenue is releasable");
+        return error_response(
+            409,
+            "nothing_to_settle",
+            "no additional developer revenue is releasable",
+        );
     }
     let release_id = uuid::Uuid::new_v4().to_string();
     let pending_account = developer_pending_account(&payment.developer_id, &payment.currency);
@@ -515,10 +695,18 @@ pub async fn admin_release_settlement(mut request: Request, context: RouteContex
     }))
 }
 
-pub async fn admin_upsert_payout_account(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub async fn admin_upsert_payout_account(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminPayoutAccountRequest = request.json().await?;
-    for value in [&input.payout_account_id, &input.developer_id, &input.provider, &input.external_account_reference] {
+    for value in [
+        &input.payout_account_id,
+        &input.developer_id,
+        &input.provider,
+        &input.external_account_reference,
+    ] {
         validate_identifier(value)?;
     }
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -537,10 +725,18 @@ pub async fn admin_upsert_payout_account(mut request: Request, context: RouteCon
     Response::from_json(&json!({"ok": true, "payoutAccountId": input.payout_account_id}))
 }
 
-pub async fn admin_create_payout(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub async fn admin_create_payout(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminPayoutRequest = request.json().await?;
-    for value in [&input.idempotency_key, &input.developer_id, &input.payout_account_id, &input.currency] {
+    for value in [
+        &input.idempotency_key,
+        &input.developer_id,
+        &input.payout_account_id,
+        &input.currency,
+    ] {
         validate_identifier(value)?;
     }
     if input.amount <= 0 {
@@ -548,25 +744,47 @@ pub async fn admin_create_payout(mut request: Request, context: RouteContext<()>
     }
     let database = context.env.d1(DATABASE_BINDING)?;
     if let Some(existing) = payout_by_idempotency(&database, &input.idempotency_key).await? {
-        if existing.developer_id != input.developer_id || existing.currency != input.currency || existing.amount != input.amount {
-            return error_response(409, "idempotency_conflict", "payout idempotency key was reused with different semantics");
+        if existing.developer_id != input.developer_id
+            || existing.currency != input.currency
+            || existing.amount != input.amount
+        {
+            return error_response(
+                409,
+                "idempotency_conflict",
+                "payout idempotency key was reused with different semantics",
+            );
         }
         return Response::from_json(&json!({"payout": existing}));
     }
-    let active_account = worker::query!(&database,
+    let active_account = worker::query!(
+        &database,
         "SELECT payout_account_id FROM developer_payout_accounts
          WHERE payout_account_id = ?1 AND developer_id = ?2 AND state = 'active'",
-        &input.payout_account_id, &input.developer_id)?
-        .first::<Value>(None).await?;
+        &input.payout_account_id,
+        &input.developer_id
+    )?
+    .first::<Value>(None)
+    .await?;
     if active_account.is_none() {
-        return error_response(409, "payout_account_unavailable", "developer payout account is not active");
+        return error_response(
+            409,
+            "payout_account_unavailable",
+            "developer payout account is not active",
+        );
     }
     let available_account = developer_available_account(&input.developer_id, &input.currency);
     if wallet_balance(&database, &available_account).await? < input.amount {
-        return error_response(409, "insufficient_developer_balance", "developer available balance is insufficient");
+        return error_response(
+            409,
+            "insufficient_developer_balance",
+            "developer available balance is insufficient",
+        );
     }
     let payout_id = uuid::Uuid::new_v4().to_string();
-    let clearing_account = format!("payout-clearing:{}:{}", input.payout_account_id, input.currency);
+    let clearing_account = format!(
+        "payout-clearing:{}:{}",
+        input.payout_account_id, input.currency
+    );
     let entry_id = format!("payout:{payout_id}");
     let now = now_seconds();
     database.batch(vec![
@@ -589,21 +807,41 @@ pub async fn admin_create_payout(mut request: Request, context: RouteContext<()>
         post_balanced_entry_statement(&database, &entry_id, now)?,
     ]).await?;
     let Some(payout) = payout_by_idempotency(&database, &input.idempotency_key).await? else {
-        return error_response(409, "insufficient_developer_balance", "developer available balance changed before payout reservation");
+        return error_response(
+            409,
+            "insufficient_developer_balance",
+            "developer available balance changed before payout reservation",
+        );
     };
     Response::from_json(&json!({"payout": payout}))
 }
 
-pub async fn admin_developer_balance(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub async fn admin_developer_balance(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let developer_id = route_identifier(&context, "developer_id")?;
-    let currency = context.param("currency").map(String::as_str).unwrap_or(CREDITS_CURRENCY);
+    let currency = context
+        .param("currency")
+        .map(String::as_str)
+        .unwrap_or(CREDITS_CURRENCY);
     validate_identifier(developer_id)?;
     validate_identifier(currency)?;
     let database = context.env.d1(DATABASE_BINDING)?;
-    let pending = wallet_balance(&database, &developer_pending_account(developer_id, currency)).await?;
-    let available = wallet_balance(&database, &developer_available_account(developer_id, currency)).await?;
-    Response::from_json(&json!({"developerId": developer_id, "currency": currency, "pending": pending, "available": available}))
+    let pending = wallet_balance(
+        &database,
+        &developer_pending_account(developer_id, currency),
+    )
+    .await?;
+    let available = wallet_balance(
+        &database,
+        &developer_available_account(developer_id, currency),
+    )
+    .await?;
+    Response::from_json(
+        &json!({"developerId": developer_id, "currency": currency, "pending": pending, "available": available}),
+    )
 }
 
 async fn process_normalized_event(
@@ -615,18 +853,40 @@ async fn process_normalized_event(
     match event.event_type.as_str() {
         "paymentSucceeded" => {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let provider_reference = required_event_value(event.provider_reference.as_deref(), "providerReference")?;
-            let payment = payment_by_id(database, payment_id).await?.ok_or_else(|| worker::Error::RustError("webhook payment not found".into()))?;
-            let expected_rail = if provider == "merchant" { "merchant_provider" } else { "web_provider" };
+            let provider_reference =
+                required_event_value(event.provider_reference.as_deref(), "providerReference")?;
+            let payment = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("webhook payment not found".into()))?;
+            let expected_rail = if provider == "merchant" {
+                "merchant_provider"
+            } else {
+                "web_provider"
+            };
             if payment.rail != expected_rail {
-                return Err(worker::Error::RustError("provider rail does not match payment intent".into()));
+                return Err(worker::Error::RustError(
+                    "provider rail does not match payment intent".into(),
+                ));
             }
-            post_success(database, &payment, provider, provider_reference, &event.event_id, occurred_at, false).await?;
+            post_success(
+                database,
+                &payment,
+                provider,
+                provider_reference,
+                &event.event_id,
+                occurred_at,
+                false,
+            )
+            .await?;
             Ok(Some(payment_id.to_string()))
         }
         "paymentFailed" | "paymentCancelled" => {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let status = if event.event_type == "paymentFailed" { "failed" } else { "cancelled" };
+            let status = if event.event_type == "paymentFailed" {
+                "failed"
+            } else {
+                "cancelled"
+            };
             worker::query!(database,
                 "UPDATE payment_intents SET status = ?1, provider_reference = COALESCE(?2, provider_reference), updated_at = ?3
                  WHERE payment_id = ?4 AND status IN ('created', 'requires_action', 'processing')",
@@ -635,17 +895,36 @@ async fn process_normalized_event(
         }
         "refundSucceeded" => {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let refund_reference = required_event_value(event.refund_reference.as_deref(), "refundReference")?;
-            let amount = event.amount.ok_or_else(|| worker::Error::RustError("refund amount is required".into()))?;
-            let payment = payment_by_id(database, payment_id).await?.ok_or_else(|| worker::Error::RustError("refund payment not found".into()))?;
-            apply_refund(database, &payment, provider, refund_reference, amount, &event.event_id, occurred_at).await?;
+            let refund_reference =
+                required_event_value(event.refund_reference.as_deref(), "refundReference")?;
+            let amount = event
+                .amount
+                .ok_or_else(|| worker::Error::RustError("refund amount is required".into()))?;
+            let payment = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("refund payment not found".into()))?;
+            apply_refund(
+                database,
+                &payment,
+                provider,
+                refund_reference,
+                amount,
+                &event.event_id,
+                occurred_at,
+            )
+            .await?;
             Ok(Some(payment_id.to_string()))
         }
         "chargebackOpened" => {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let reference = required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
-            let amount = event.amount.ok_or_else(|| worker::Error::RustError("dispute amount is required".into()))?;
-            let payment = payment_by_id(database, payment_id).await?.ok_or_else(|| worker::Error::RustError("dispute payment not found".into()))?;
+            let reference =
+                required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
+            let amount = event
+                .amount
+                .ok_or_else(|| worker::Error::RustError("dispute amount is required".into()))?;
+            let payment = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("dispute payment not found".into()))?;
             if amount <= 0 || amount > payment.amount.saturating_sub(payment.refunded_amount) {
                 return Err(worker::Error::RustError("invalid dispute amount".into()));
             }
@@ -657,7 +936,8 @@ async fn process_normalized_event(
             Ok(Some(payment_id.to_string()))
         }
         "chargebackWon" => {
-            let reference = required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
+            let reference =
+                required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
             worker::query!(database,
                 "UPDATE payment_disputes SET status = 'won', updated_at = ?1 WHERE provider = ?2 AND provider_reference = ?3 AND status = 'open'",
                 occurred_at, provider, reference)?.run().await?;
@@ -665,10 +945,24 @@ async fn process_normalized_event(
         }
         "chargebackLost" => {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let reference = required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
-            let payment = payment_by_id(database, payment_id).await?.ok_or_else(|| worker::Error::RustError("dispute payment not found".into()))?;
-            let amount = event.amount.unwrap_or_else(|| payment.amount.saturating_sub(payment.refunded_amount));
-            apply_refund(database, &payment, provider, &format!("chargeback:{reference}"), amount, &event.event_id, occurred_at).await?;
+            let reference =
+                required_event_value(event.dispute_reference.as_deref(), "disputeReference")?;
+            let payment = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("dispute payment not found".into()))?;
+            let amount = event
+                .amount
+                .unwrap_or_else(|| payment.amount.saturating_sub(payment.refunded_amount));
+            apply_refund(
+                database,
+                &payment,
+                provider,
+                &format!("chargeback:{reference}"),
+                amount,
+                &event.event_id,
+                occurred_at,
+            )
+            .await?;
             worker::query!(database,
                 "UPDATE payment_disputes SET status = 'lost', updated_at = ?1 WHERE provider = ?2 AND provider_reference = ?3",
                 occurred_at, provider, reference)?.run().await?;
@@ -687,7 +981,9 @@ async fn process_normalized_event(
             reverse_failed_payout(database, payout_id, occurred_at).await?;
             Ok(None)
         }
-        _ => Err(worker::Error::RustError("unsupported normalized provider event type".into())),
+        _ => Err(worker::Error::RustError(
+            "unsupported normalized provider event type".into(),
+        )),
     }
 }
 
@@ -700,13 +996,21 @@ async fn post_success(
     occurred_at: i64,
     debit_user: bool,
 ) -> Result<()> {
-    if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+    if matches!(
+        payment.status.as_str(),
+        "succeeded" | "partially_refunded" | "refunded"
+    ) {
         if payment.provider_reference.as_deref() == Some(provider_reference) {
             return Ok(());
         }
-        return Err(worker::Error::RustError("provider reference conflicts with successful payment".into()));
+        return Err(worker::Error::RustError(
+            "provider reference conflicts with successful payment".into(),
+        ));
     }
-    if !matches!(payment.status.as_str(), "created" | "requires_action" | "processing") {
+    if !matches!(
+        payment.status.as_str(),
+        "created" | "requires_action" | "processing"
+    ) {
         return Err(worker::Error::RustError("payment is not capturable".into()));
     }
     let fee = platform_fee(payment, payment.amount);
@@ -717,7 +1021,11 @@ async fn post_success(
         format!("provider-clearing:{provider}:{}", payment.currency)
     };
     let source_owner_type = if debit_user { "user" } else { "platform" };
-    let source_owner_id = if debit_user { payment.user_id.clone() } else { format!("provider-clearing:{provider}") };
+    let source_owner_id = if debit_user {
+        payment.user_id.clone()
+    } else {
+        format!("provider-clearing:{provider}")
+    };
     let developer_account = developer_pending_account(&payment.developer_id, &payment.currency);
     let platform_account = format!("platform:payment-revenue:{}", payment.currency);
     let order_id = payment.payment_id.clone();
@@ -727,9 +1035,30 @@ async fn post_success(
     let audit_id = format!("payment-audit:{}", payment.payment_id);
 
     let mut statements = vec![
-        wallet_account_statement(database, &source_account, source_owner_type, &source_owner_id, &payment.currency, occurred_at)?,
-        wallet_account_statement(database, &developer_account, "developer", &format!("{}:pending", payment.developer_id), &payment.currency, occurred_at)?,
-        wallet_account_statement(database, &platform_account, "platform", "payment-revenue", &payment.currency, occurred_at)?,
+        wallet_account_statement(
+            database,
+            &source_account,
+            source_owner_type,
+            &source_owner_id,
+            &payment.currency,
+            occurred_at,
+        )?,
+        wallet_account_statement(
+            database,
+            &developer_account,
+            "developer",
+            &format!("{}:pending", payment.developer_id),
+            &payment.currency,
+            occurred_at,
+        )?,
+        wallet_account_statement(
+            database,
+            &platform_account,
+            "platform",
+            "payment-revenue",
+            &payment.currency,
+            occurred_at,
+        )?,
     ];
     let balance_guard = if debit_user {
         "AND COALESCE((SELECT balance FROM wallet_balances WHERE account_id = ?12), 0) >= ?8"
@@ -744,27 +1073,72 @@ async fn post_success(
          WHERE pi.payment_id = ?11 AND pi.status IN ('created', 'requires_action', 'processing') {balance_guard}
          ON CONFLICT(buyer_user_id, idempotency_key) DO NOTHING"
     );
-    statements.push(worker::query!(database, &order_sql,
-        &order_id, &payment.user_id, &payment.mini_app_id, &payment.product_id, &payment.price_id,
-        &payment.sku, &payment.currency, payment.amount, &payment.idempotency_key, occurred_at,
-        &payment.payment_id, &source_account)?);
+    statements.push(worker::query!(
+        database,
+        &order_sql,
+        &order_id,
+        &payment.user_id,
+        &payment.mini_app_id,
+        &payment.product_id,
+        &payment.price_id,
+        &payment.sku,
+        &payment.currency,
+        payment.amount,
+        &payment.idempotency_key,
+        occurred_at,
+        &payment.payment_id,
+        &source_account
+    )?);
     statements.push(worker::query!(database,
         "INSERT OR IGNORE INTO journal_entries (entry_id, reference_type, reference_id, state, created_at)
          SELECT ?1, 'payment', ?2, 'draft', ?3 FROM orders WHERE order_id = ?2",
         &entry_id, &order_id, occurred_at)?);
-    statements.push(journal_line_statement(database, &format!("{entry_id}:source"), &entry_id, &source_account, &payment.currency, -payment.amount, occurred_at)?);
+    statements.push(journal_line_statement(
+        database,
+        &format!("{entry_id}:source"),
+        &entry_id,
+        &source_account,
+        &payment.currency,
+        -payment.amount,
+        occurred_at,
+    )?);
     if developer_net > 0 {
-        statements.push(journal_line_statement(database, &format!("{entry_id}:developer"), &entry_id, &developer_account, &payment.currency, developer_net, occurred_at)?);
+        statements.push(journal_line_statement(
+            database,
+            &format!("{entry_id}:developer"),
+            &entry_id,
+            &developer_account,
+            &payment.currency,
+            developer_net,
+            occurred_at,
+        )?);
     }
     if fee > 0 {
-        statements.push(journal_line_statement(database, &format!("{entry_id}:platform"), &entry_id, &platform_account, &payment.currency, fee, occurred_at)?);
+        statements.push(journal_line_statement(
+            database,
+            &format!("{entry_id}:platform"),
+            &entry_id,
+            &platform_account,
+            &payment.currency,
+            fee,
+            occurred_at,
+        )?);
     }
-    statements.push(post_balanced_entry_statement(database, &entry_id, occurred_at)?);
-    statements.push(worker::query!(database,
+    statements.push(post_balanced_entry_statement(
+        database,
+        &entry_id,
+        occurred_at,
+    )?);
+    statements.push(worker::query!(
+        database,
         "UPDATE payment_intents SET status = 'succeeded', provider_reference = ?1, updated_at = ?2
          WHERE payment_id = ?3 AND status IN ('created', 'requires_action', 'processing')
            AND EXISTS (SELECT 1 FROM journal_entries WHERE entry_id = ?4 AND state = 'posted')",
-        provider_reference, occurred_at, &payment.payment_id, &entry_id)?);
+        provider_reference,
+        occurred_at,
+        &payment.payment_id,
+        &entry_id
+    )?);
     statements.push(worker::query!(database,
         "UPDATE orders SET status = 'fulfilled', updated_at = ?1 WHERE order_id = ?2
            AND EXISTS (SELECT 1 FROM payment_intents WHERE payment_id = ?2 AND status = 'succeeded')",
@@ -775,13 +1149,20 @@ async fn post_success(
          SELECT ?1, ?2, ?3, ?4, ?5, 'captured', ?6, ?7, ?7 FROM orders WHERE order_id = ?2",
         &attempt_id, &order_id, provider, event_id, provider_reference,
         sha256_hex(format!("{}:{provider_reference}", payment.payment_id).as_bytes()), occurred_at)?);
-    statements.push(worker::query!(database,
+    statements.push(worker::query!(
+        database,
         "INSERT OR IGNORE INTO entitlements
          (entitlement_id, user_id, plugin_id, product_id, order_id, capability, status, granted_at)
          SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7
          FROM payment_intents WHERE payment_id = ?5 AND status = 'succeeded'",
-        &entitlement_id, &payment.user_id, &payment.mini_app_id, &payment.product_id,
-        &order_id, &payment.entitlement_capability, occurred_at)?);
+        &entitlement_id,
+        &payment.user_id,
+        &payment.mini_app_id,
+        &payment.product_id,
+        &order_id,
+        &payment.entitlement_capability,
+        occurred_at
+    )?);
     statements.push(worker::query!(database,
         "INSERT OR IGNORE INTO audit_events
          (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
@@ -802,28 +1183,43 @@ async fn apply_refund(
     occurred_at: i64,
 ) -> Result<()> {
     if amount <= 0 || amount > payment.amount.saturating_sub(payment.refunded_amount) {
-        return Err(worker::Error::RustError("refund exceeds remaining refundable amount".into()));
+        return Err(worker::Error::RustError(
+            "refund exceeds remaining refundable amount".into(),
+        ));
     }
     if !matches!(payment.status.as_str(), "succeeded" | "partially_refunded") {
         return Err(worker::Error::RustError("payment is not refundable".into()));
     }
     let new_refunded = payment.refunded_amount.saturating_add(amount);
-    let fee_refund = platform_fee(payment, new_refunded).saturating_sub(platform_fee(payment, payment.refunded_amount));
+    let fee_refund = platform_fee(payment, new_refunded)
+        .saturating_sub(platform_fee(payment, payment.refunded_amount));
     let developer_refund = amount.saturating_sub(fee_refund);
     let developer_net_before = developer_net_after_refunds(payment);
-    let pending_before = developer_net_before.saturating_sub(payment.released_developer_amount).max(0);
+    let pending_before = developer_net_before
+        .saturating_sub(payment.released_developer_amount)
+        .max(0);
     let pending_debit = developer_refund.min(pending_before);
     let available_debit = developer_refund.saturating_sub(pending_debit);
     if available_debit > payment.released_developer_amount {
-        return Err(worker::Error::RustError("refund accounting invariant was violated".into()));
+        return Err(worker::Error::RustError(
+            "refund accounting invariant was violated".into(),
+        ));
     }
     let source_account = if payment.rail == "credits" {
         format!("user:{}:{}", payment.user_id, payment.currency)
     } else {
         format!("provider-clearing:{provider}:{}", payment.currency)
     };
-    let source_owner_type = if payment.rail == "credits" { "user" } else { "platform" };
-    let source_owner_id = if payment.rail == "credits" { payment.user_id.clone() } else { format!("provider-clearing:{provider}") };
+    let source_owner_type = if payment.rail == "credits" {
+        "user"
+    } else {
+        "platform"
+    };
+    let source_owner_id = if payment.rail == "credits" {
+        payment.user_id.clone()
+    } else {
+        format!("provider-clearing:{provider}")
+    };
     let pending_account = developer_pending_account(&payment.developer_id, &payment.currency);
     let available_account = developer_available_account(&payment.developer_id, &payment.currency);
     let platform_account = format!("platform:payment-revenue:{}", payment.currency);
@@ -846,37 +1242,91 @@ async fn apply_refund(
             &entry_id, &refund_id, occurred_at)?,
     ];
     if pending_debit > 0 {
-        statements.push(journal_line_statement(database, &format!("{entry_id}:pending"), &entry_id, &pending_account, &payment.currency, -pending_debit, occurred_at)?);
+        statements.push(journal_line_statement(
+            database,
+            &format!("{entry_id}:pending"),
+            &entry_id,
+            &pending_account,
+            &payment.currency,
+            -pending_debit,
+            occurred_at,
+        )?);
     }
     if available_debit > 0 {
-        statements.push(journal_line_statement(database, &format!("{entry_id}:available"), &entry_id, &available_account, &payment.currency, -available_debit, occurred_at)?);
+        statements.push(journal_line_statement(
+            database,
+            &format!("{entry_id}:available"),
+            &entry_id,
+            &available_account,
+            &payment.currency,
+            -available_debit,
+            occurred_at,
+        )?);
     }
     if fee_refund > 0 {
-        statements.push(journal_line_statement(database, &format!("{entry_id}:platform"), &entry_id, &platform_account, &payment.currency, -fee_refund, occurred_at)?);
+        statements.push(journal_line_statement(
+            database,
+            &format!("{entry_id}:platform"),
+            &entry_id,
+            &platform_account,
+            &payment.currency,
+            -fee_refund,
+            occurred_at,
+        )?);
     }
-    statements.push(journal_line_statement(database, &format!("{entry_id}:source"), &entry_id, &source_account, &payment.currency, amount, occurred_at)?);
-    statements.push(post_balanced_entry_statement(database, &entry_id, occurred_at)?);
-    let next_status = if new_refunded == payment.amount { "refunded" } else { "partially_refunded" };
-    statements.push(worker::query!(database,
+    statements.push(journal_line_statement(
+        database,
+        &format!("{entry_id}:source"),
+        &entry_id,
+        &source_account,
+        &payment.currency,
+        amount,
+        occurred_at,
+    )?);
+    statements.push(post_balanced_entry_statement(
+        database,
+        &entry_id,
+        occurred_at,
+    )?);
+    let next_status = if new_refunded == payment.amount {
+        "refunded"
+    } else {
+        "partially_refunded"
+    };
+    statements.push(worker::query!(
+        database,
         "UPDATE payment_intents
          SET refunded_amount = ?1, released_developer_amount = released_developer_amount - ?2,
              status = ?3, updated_at = ?4
          WHERE payment_id = ?5
            AND EXISTS (SELECT 1 FROM journal_entries WHERE entry_id = ?6 AND state = 'posted')",
-        new_refunded, available_debit, next_status, occurred_at, &payment.payment_id, &entry_id)?);
+        new_refunded,
+        available_debit,
+        next_status,
+        occurred_at,
+        &payment.payment_id,
+        &entry_id
+    )?);
     if next_status == "refunded" {
         statements.push(worker::query!(database,
             "UPDATE entitlements SET status = 'revoked', revoked_at = ?1 WHERE order_id = ?2 AND status = 'active'",
             occurred_at, &payment.payment_id)?);
-        statements.push(worker::query!(database,
+        statements.push(worker::query!(
+            database,
             "UPDATE orders SET status = 'refunded', updated_at = ?1 WHERE order_id = ?2",
-            occurred_at, &payment.payment_id)?);
+            occurred_at,
+            &payment.payment_id
+        )?);
     }
     database.batch(statements).await?;
     Ok(())
 }
 
-async fn reverse_failed_payout(database: &worker::D1Database, payout_id: &str, occurred_at: i64) -> Result<()> {
+async fn reverse_failed_payout(
+    database: &worker::D1Database,
+    payout_id: &str,
+    occurred_at: i64,
+) -> Result<()> {
     let Some(payout) = payout_by_id(database, payout_id).await? else {
         return Err(worker::Error::RustError("payout not found".into()));
     };
@@ -884,10 +1334,15 @@ async fn reverse_failed_payout(database: &worker::D1Database, payout_id: &str, o
         return Ok(());
     }
     if !matches!(payout.status.as_str(), "pending" | "processing") {
-        return Err(worker::Error::RustError("payout cannot be failed from its current state".into()));
+        return Err(worker::Error::RustError(
+            "payout cannot be failed from its current state".into(),
+        ));
     }
     let available_account = developer_available_account(&payout.developer_id, &payout.currency);
-    let clearing_account = format!("payout-clearing:{}:{}", payout.payout_account_id, payout.currency);
+    let clearing_account = format!(
+        "payout-clearing:{}:{}",
+        payout.payout_account_id, payout.currency
+    );
     let entry_id = format!("payout-reversal:{payout_id}");
     database.batch(vec![
         wallet_account_statement(database, &available_account, "developer", &format!("{}:available", payout.developer_id), &payout.currency, occurred_at)?,
@@ -912,7 +1367,8 @@ async fn active_payment_product(
     sku: &str,
     now: i64,
 ) -> Result<Option<ProductPolicyRow>> {
-    worker::query!(database,
+    worker::query!(
+        database,
         "SELECT p.product_id, pr.price_id, p.plugin_id, p.sku,
                 p.entitlement_capability AS capability, pr.currency, pr.amount,
                 pc.developer_id, pc.product_kind, pc.platform_fee_bps,
@@ -923,11 +1379,18 @@ async fn active_payment_product(
          WHERE p.plugin_id = ?1 AND p.sku = ?2 AND p.active = 1 AND pc.active = 1
            AND pr.active = 1 AND pr.starts_at <= ?3 AND (pr.ends_at IS NULL OR pr.ends_at > ?3)
          ORDER BY pr.starts_at DESC LIMIT 1",
-        mini_app_id, sku, now)?
-        .first::<ProductPolicyRow>(None).await
+        mini_app_id,
+        sku,
+        now
+    )?
+    .first::<ProductPolicyRow>(None)
+    .await
 }
 
-async fn payment_by_id(database: &worker::D1Database, payment_id: &str) -> Result<Option<PaymentIntentRow>> {
+async fn payment_by_id(
+    database: &worker::D1Database,
+    payment_id: &str,
+) -> Result<Option<PaymentIntentRow>> {
     worker::query!(database,
         "SELECT payment_id, idempotency_key, user_id, mini_app_id, developer_id, product_id, price_id,
                 entitlement_capability, sku, product_kind, rail, provider_product_ref, currency, amount,
@@ -951,25 +1414,41 @@ async fn payment_by_idempotency(
         .first::<PaymentIntentRow>(None).await
 }
 
-async fn payout_by_idempotency(database: &worker::D1Database, key: &str) -> Result<Option<PayoutRow>> {
-    worker::query!(database,
+async fn payout_by_idempotency(
+    database: &worker::D1Database,
+    key: &str,
+) -> Result<Option<PayoutRow>> {
+    worker::query!(
+        database,
         "SELECT payout_id, developer_id, payout_account_id, currency, amount, status
-         FROM developer_payouts WHERE idempotency_key = ?1", key)?
-        .first::<PayoutRow>(None).await
+         FROM developer_payouts WHERE idempotency_key = ?1",
+        key
+    )?
+    .first::<PayoutRow>(None)
+    .await
 }
 
 async fn payout_by_id(database: &worker::D1Database, payout_id: &str) -> Result<Option<PayoutRow>> {
-    worker::query!(database,
+    worker::query!(
+        database,
         "SELECT payout_id, developer_id, payout_account_id, currency, amount, status
-         FROM developer_payouts WHERE payout_id = ?1", payout_id)?
-        .first::<PayoutRow>(None).await
+         FROM developer_payouts WHERE payout_id = ?1",
+        payout_id
+    )?
+    .first::<PayoutRow>(None)
+    .await
 }
 
 async fn wallet_balance(database: &worker::D1Database, account_id: &str) -> Result<i64> {
-    Ok(worker::query!(database,
-        "SELECT balance FROM wallet_balances WHERE account_id = ?1", account_id)?
-        .first::<BalanceOnlyRow>(None).await?
-        .map(|row| row.balance).unwrap_or(0))
+    Ok(worker::query!(
+        database,
+        "SELECT balance FROM wallet_balances WHERE account_id = ?1",
+        account_id
+    )?
+    .first::<BalanceOnlyRow>(None)
+    .await?
+    .map(|row| row.balance)
+    .unwrap_or(0))
 }
 
 async fn claim_webhook_event(
@@ -981,11 +1460,19 @@ async fn claim_webhook_event(
     received_at: i64,
 ) -> Result<bool> {
     let payload_sha256 = sha256_hex(body);
-    let result = worker::query!(database,
+    let result = worker::query!(
+        database,
         "INSERT OR IGNORE INTO payment_webhook_events
          (provider, event_id, payload_sha256, state, payment_id, received_at)
          VALUES (?1, ?2, ?3, 'processing', NULLIF(?4, ''), ?5)",
-        provider, event_id, &payload_sha256, payment_id, received_at)?.run().await?;
+        provider,
+        event_id,
+        &payload_sha256,
+        payment_id,
+        received_at
+    )?
+    .run()
+    .await?;
     Ok(d1_changes(&result) > 0)
 }
 
@@ -1010,10 +1497,17 @@ async fn mark_webhook_rejected(
     error_code: &str,
     processed_at: i64,
 ) -> Result<()> {
-    worker::query!(database,
+    worker::query!(
+        database,
         "UPDATE payment_webhook_events SET state = 'rejected', processed_at = ?1, error_code = ?2
          WHERE provider = ?3 AND event_id = ?4",
-        processed_at, error_code, provider, event_id)?.run().await?;
+        processed_at,
+        error_code,
+        provider,
+        event_id
+    )?
+    .run()
+    .await?;
     Ok(())
 }
 
@@ -1084,12 +1578,19 @@ fn payment_response(payment: &PaymentIntentRow) -> Result<Response> {
 }
 
 fn platform_fee(payment: &PaymentIntentRow, gross: i64) -> i64 {
-    proportional(gross, u16::try_from(payment.platform_fee_bps).unwrap_or(10_000))
+    proportional(
+        gross,
+        u16::try_from(payment.platform_fee_bps).unwrap_or(10_000),
+    )
 }
 
 fn developer_net_after_refunds(payment: &PaymentIntentRow) -> i64 {
-    let full_net = payment.amount.saturating_sub(platform_fee(payment, payment.amount));
-    let refunded_net = payment.refunded_amount.saturating_sub(platform_fee(payment, payment.refunded_amount));
+    let full_net = payment
+        .amount
+        .saturating_sub(platform_fee(payment, payment.amount));
+    let refunded_net = payment
+        .refunded_amount
+        .saturating_sub(platform_fee(payment, payment.refunded_amount));
     full_net.saturating_sub(refunded_net)
 }
 
@@ -1138,19 +1639,25 @@ fn status_api_name(value: &str) -> &str {
 fn validate_identifier(value: &str) -> Result<()> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > 512 {
-        return Err(worker::Error::RustError("invalid payment identifier".into()));
+        return Err(worker::Error::RustError(
+            "invalid payment identifier".into(),
+        ));
     }
     Ok(())
 }
 
 fn required_event_value<'a>(value: Option<&'a str>, field: &str) -> Result<&'a str> {
-    let value = value.ok_or_else(|| worker::Error::RustError(format!("provider event is missing {field}")))?;
+    let value = value
+        .ok_or_else(|| worker::Error::RustError(format!("provider event is missing {field}")))?;
     validate_identifier(value)?;
     Ok(value)
 }
 
 fn route_identifier<'a>(context: &'a RouteContext<()>, name: &str) -> Result<&'a str> {
-    context.param(name).map(String::as_str).filter(|value| !value.trim().is_empty())
+    context
+        .param(name)
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| worker::Error::RustError(format!("missing route identifier {name}")))
 }
 
@@ -1158,7 +1665,9 @@ fn require_bearer_secret(request: &Request, env: &Env, name: &str) -> Result<()>
     let expected = env_string(env, name)?;
     let authorization = request.headers().get("Authorization")?.unwrap_or_default();
     if authorization.strip_prefix("Bearer ") != Some(expected.as_str()) {
-        return Err(worker::Error::RustError("unauthorized payment service request".into()));
+        return Err(worker::Error::RustError(
+            "unauthorized payment service request".into(),
+        ));
     }
     Ok(())
 }
@@ -1176,7 +1685,9 @@ fn env_string(env: &Env, name: &str) -> Result<String> {
             return Ok(value);
         }
     }
-    Err(worker::Error::RustError(format!("missing required payment configuration {name}")))
+    Err(worker::Error::RustError(format!(
+        "missing required payment configuration {name}"
+    )))
 }
 
 fn now_seconds() -> i64 {
@@ -1189,7 +1700,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn d1_changes(result: &worker::D1Result) -> usize {
-    result.meta().ok().flatten().and_then(|meta| meta.changes).unwrap_or(0) as usize
+    result
+        .meta()
+        .ok()
+        .flatten()
+        .and_then(|meta| meta.changes)
+        .unwrap_or(0) as usize
 }
 
 fn error_response(status: u16, code: &str, message: &str) -> Result<Response> {
@@ -1213,37 +1729,51 @@ fn apple_server_jwt(env: &Env, bundle_id: &str) -> Result<String> {
     header.typ = Some("JWT".into());
     let key = EncodingKey::from_ec_pem(private_key.as_bytes())
         .map_err(|error| worker::Error::RustError(format!("invalid Apple private key: {error}")))?;
-    encode(&header, &claims, &key)
-        .map_err(|error| worker::Error::RustError(format!("failed to sign Apple server JWT: {error}")))
+    encode(&header, &claims, &key).map_err(|error| {
+        worker::Error::RustError(format!("failed to sign Apple server JWT: {error}"))
+    })
 }
 
-async fn fetch_apple_transaction(transaction_id: &str, jwt: &str) -> Result<(Vec<u8>, AppleTransactionPayload)> {
+async fn fetch_apple_transaction(
+    transaction_id: &str,
+    jwt: &str,
+) -> Result<(Vec<u8>, AppleTransactionPayload)> {
     let mut last_status = 0;
     for base in [APPLE_PRODUCTION_BASE, APPLE_SANDBOX_BASE] {
         let url = format!("{base}/inApps/v1/transactions/{transaction_id}");
         let mut outbound = Request::new(&url, Method::Get)?;
-        outbound.headers_mut()?.set("Authorization", &format!("Bearer {jwt}"))?;
+        outbound
+            .headers_mut()?
+            .set("Authorization", &format!("Bearer {jwt}"))?;
         outbound.headers_mut()?.set("Accept", "application/json")?;
         let mut response = Fetch::Request(outbound).send().await?;
         last_status = response.status_code();
         let body = response.bytes().await?;
         if last_status == 200 {
-            let envelope: AppleTransactionResponse = serde_json::from_slice(&body)
-                .map_err(|_| worker::Error::RustError("invalid Apple transaction response".into()))?;
-            let payload: AppleTransactionPayload = decode_jws_payload(&envelope.signed_transaction_info)?;
+            let envelope: AppleTransactionResponse =
+                serde_json::from_slice(&body).map_err(|_| {
+                    worker::Error::RustError("invalid Apple transaction response".into())
+                })?;
+            let payload: AppleTransactionPayload =
+                decode_jws_payload(&envelope.signed_transaction_info)?;
             return Ok((body, payload));
         }
         if last_status != 404 {
             break;
         }
     }
-    Err(worker::Error::RustError(format!("Apple transaction verification failed with HTTP {last_status}")))
+    Err(worker::Error::RustError(format!(
+        "Apple transaction verification failed with HTTP {last_status}"
+    )))
 }
 
 fn decode_jws_payload<T: DeserializeOwned>(jws: &str) -> Result<T> {
-    let payload = jws.split('.').nth(1)
+    let payload = jws
+        .split('.')
+        .nth(1)
         .ok_or_else(|| worker::Error::RustError("invalid JWS payload".into()))?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload)
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload))
         .map_err(|_| worker::Error::RustError("invalid base64url JWS payload".into()))?;
     serde_json::from_slice(&bytes)
@@ -1263,10 +1793,12 @@ async fn google_access_token(env: &Env) -> Result<String> {
     };
     let mut header = Header::new(Algorithm::RS256);
     header.typ = Some("JWT".into());
-    let key = EncodingKey::from_rsa_pem(private_key.as_bytes())
-        .map_err(|error| worker::Error::RustError(format!("invalid Google Play private key: {error}")))?;
-    let assertion = encode(&header, &claims, &key)
-        .map_err(|error| worker::Error::RustError(format!("failed to sign Google service JWT: {error}")))?;
+    let key = EncodingKey::from_rsa_pem(private_key.as_bytes()).map_err(|error| {
+        worker::Error::RustError(format!("invalid Google Play private key: {error}"))
+    })?;
+    let assertion = encode(&header, &claims, &key).map_err(|error| {
+        worker::Error::RustError(format!("failed to sign Google service JWT: {error}"))
+    })?;
     let form = format!(
         "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={assertion}"
     );
@@ -1282,7 +1814,9 @@ async fn google_access_token(env: &Env) -> Result<String> {
     let status = response.status_code();
     let body = response.bytes().await?;
     if status != 200 {
-        return Err(worker::Error::RustError(format!("Google OAuth token exchange failed with HTTP {status}")));
+        return Err(worker::Error::RustError(format!(
+            "Google OAuth token exchange failed with HTTP {status}"
+        )));
     }
     let token: GoogleTokenResponse = serde_json::from_slice(&body)
         .map_err(|_| worker::Error::RustError("invalid Google OAuth token response".into()))?;
@@ -1302,10 +1836,16 @@ async fn verify_google_product(
     let value: Value = serde_json::from_slice(&body)
         .map_err(|_| worker::Error::RustError("invalid Google Play product response".into()))?;
     if value.get("purchaseState").and_then(Value::as_i64) != Some(0) {
-        return Err(worker::Error::RustError("Google Play product purchase is not in purchased state".into()));
+        return Err(worker::Error::RustError(
+            "Google Play product purchase is not in purchased state".into(),
+        ));
     }
-    let order_id = value.get("orderId").and_then(Value::as_str)
-        .ok_or_else(|| worker::Error::RustError("Google Play product response is missing orderId".into()))?;
+    let order_id = value
+        .get("orderId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            worker::Error::RustError("Google Play product response is missing orderId".into())
+        })?;
     Ok((body, order_id.to_string()))
 }
 
@@ -1319,32 +1859,60 @@ async fn verify_google_subscription(
         "{GOOGLE_ANDROID_PUBLISHER_BASE}/applications/{package_name}/purchases/subscriptionsv2/tokens/{purchase_token}"
     );
     let body = google_authorized_get(&url, access_token).await?;
-    let value: Value = serde_json::from_slice(&body)
-        .map_err(|_| worker::Error::RustError("invalid Google Play subscription response".into()))?;
-    let state = value.get("subscriptionState").and_then(Value::as_str).unwrap_or_default();
-    if !matches!(state, "SUBSCRIPTION_STATE_ACTIVE" | "SUBSCRIPTION_STATE_IN_GRACE_PERIOD" | "SUBSCRIPTION_STATE_CANCELED") {
-        return Err(worker::Error::RustError("Google Play subscription is not entitlement eligible".into()));
+    let value: Value = serde_json::from_slice(&body).map_err(|_| {
+        worker::Error::RustError("invalid Google Play subscription response".into())
+    })?;
+    let state = value
+        .get("subscriptionState")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !matches!(
+        state,
+        "SUBSCRIPTION_STATE_ACTIVE"
+            | "SUBSCRIPTION_STATE_IN_GRACE_PERIOD"
+            | "SUBSCRIPTION_STATE_CANCELED"
+    ) {
+        return Err(worker::Error::RustError(
+            "Google Play subscription is not entitlement eligible".into(),
+        ));
     }
-    let has_product = value.get("lineItems").and_then(Value::as_array).is_some_and(|items| {
-        items.iter().any(|item| item.get("productId").and_then(Value::as_str) == Some(expected_product_id))
-    });
+    let has_product = value
+        .get("lineItems")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                item.get("productId").and_then(Value::as_str) == Some(expected_product_id)
+            })
+        });
     if !has_product {
-        return Err(worker::Error::RustError("Google Play subscription product does not match payment intent".into()));
+        return Err(worker::Error::RustError(
+            "Google Play subscription product does not match payment intent".into(),
+        ));
     }
-    let order_id = value.get("latestOrderId").and_then(Value::as_str)
-        .ok_or_else(|| worker::Error::RustError("Google Play subscription response is missing latestOrderId".into()))?;
+    let order_id = value
+        .get("latestOrderId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            worker::Error::RustError(
+                "Google Play subscription response is missing latestOrderId".into(),
+            )
+        })?;
     Ok((body, order_id.to_string()))
 }
 
 async fn google_authorized_get(url: &str, access_token: &str) -> Result<Vec<u8>> {
     let mut outbound = Request::new(url, Method::Get)?;
-    outbound.headers_mut()?.set("Authorization", &format!("Bearer {access_token}"))?;
+    outbound
+        .headers_mut()?
+        .set("Authorization", &format!("Bearer {access_token}"))?;
     outbound.headers_mut()?.set("Accept", "application/json")?;
     let mut response = Fetch::Request(outbound).send().await?;
     let status = response.status_code();
     let body = response.bytes().await?;
     if status != 200 {
-        return Err(worker::Error::RustError(format!("Google Play purchase verification failed with HTTP {status}")));
+        return Err(worker::Error::RustError(format!(
+            "Google Play purchase verification failed with HTTP {status}"
+        )));
     }
     Ok(body)
 }
