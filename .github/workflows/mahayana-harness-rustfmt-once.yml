@@ -28,6 +28,20 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Export extended harness adapters
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-harness-adapters/src/lib.rs')
+          text = path.read_text()
+          marker = 'use async_trait::async_trait;\n'
+          export = 'mod extended;\npub use extended::*;\n\n'
+          if export not in text:
+              text = text.replace(marker, export + marker, 1)
+              path.write_text(text)
+          PY
+
       - name: Format harness migration
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all
@@ -41,5 +55,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add third_party/mahayana/mahayana-rs
-          git commit -m "chore(mahayana): rustfmt harness adapters"
+          git commit -m "chore(mahayana): wire and rustfmt harness adapters"
           git push origin HEAD:feat/mahayana-deepseek-harness-rust
