@@ -18,6 +18,10 @@ pub mod kernel;
 #[path = "workspace.rs"]
 pub mod workspace;
 
+/// Unified MCP/Skill/Plugin/Hook/MiniApp extension contracts.
+#[path = "extension.rs"]
+pub mod extension;
+
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
 pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
