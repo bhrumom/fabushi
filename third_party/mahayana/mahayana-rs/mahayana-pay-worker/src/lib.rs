@@ -71,6 +71,28 @@ mod payment_api {
     }
 
     #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BoundAppleEnvelope {
+        signed_transaction_info: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BoundAppleTransaction {
+        transaction_id: String,
+        product_id: String,
+        bundle_id: String,
+        app_account_token: Option<String>,
+        revocation_date: Option<i64>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct WebhookInboxRow {
+        state: String,
+        payload_sha256: String,
+    }
+
+    #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct AdminProductRequest {
         product_id: String,
@@ -86,6 +108,471 @@ mod payment_api {
         allowed_rails: Vec<String>,
         #[serde(default)]
         provider_product_refs: BTreeMap<String, String>,
+    }
+
+    pub async fn verify_apple_bound(
+        mut request: Request,
+        context: RouteContext<()>,
+    ) -> Result<Response> {
+        let user_id = authenticated_user(&request, &context.env)?;
+        let payment_id = route_identifier(&context, "payment_id")?.to_string();
+        let input: AppleVerifyRequest = request.json().await?;
+        validate_identifier(&input.transaction_id)?;
+        let database = context.env.d1(DATABASE_BINDING)?;
+        let Some(payment) = payment_by_id(&database, &payment_id).await? else {
+            return error_response(404, "payment_not_found", "payment intent was not found");
+        };
+        if payment.user_id != user_id || payment.rail != "apple_in_app_purchase" {
+            return error_response(404, "payment_not_found", "Apple payment intent was not found");
+        }
+        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+            return payment_response(&payment);
+        }
+
+        let bundle_id = env_string(&context.env, "APPLE_BUNDLE_ID")?;
+        let jwt = apple_server_jwt(&context.env, &bundle_id)?;
+        let (body, _) = fetch_apple_transaction(&input.transaction_id, &jwt).await?;
+        let envelope: BoundAppleEnvelope = serde_json::from_slice(&body)
+            .map_err(|_| worker::Error::RustError("invalid Apple transaction response".into()))?;
+        let payload: BoundAppleTransaction = decode_jws_payload(&envelope.signed_transaction_info)?;
+        if payload.bundle_id != bundle_id
+            || Some(payload.product_id.as_str()) != payment.provider_product_ref.as_deref()
+            || payload.transaction_id != input.transaction_id
+            || payload.revocation_date.is_some()
+            || payload.app_account_token.as_deref() != Some(payment.payment_id.as_str())
+        {
+            return error_response(
+                403,
+                "apple_transaction_mismatch",
+                "Apple transaction does not belong to this Payment Intent",
+            );
+        }
+        let event_id = format!("apple:transaction:{}", payload.transaction_id);
+        claim_webhook_event(
+            &database,
+            "apple",
+            &event_id,
+            &body,
+            &payment_id,
+            now_seconds(),
+        )
+        .await?;
+        post_external_success(
+            &database,
+            &payment,
+            "apple",
+            &payload.transaction_id,
+            &event_id,
+            now_seconds(),
+        )
+        .await?;
+        mark_webhook_processed(&database, "apple", &event_id, &payment_id, now_seconds()).await?;
+        let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+        payment_response(&updated)
+    }
+
+    pub async fn verify_google_bound(
+        mut request: Request,
+        context: RouteContext<()>,
+    ) -> Result<Response> {
+        let user_id = authenticated_user(&request, &context.env)?;
+        let payment_id = route_identifier(&context, "payment_id")?.to_string();
+        let input: GoogleVerifyRequest = request.json().await?;
+        validate_identifier(&input.purchase_token)?;
+        let database = context.env.d1(DATABASE_BINDING)?;
+        let Some(payment) = payment_by_id(&database, &payment_id).await? else {
+            return error_response(404, "payment_not_found", "payment intent was not found");
+        };
+        if payment.user_id != user_id || payment.rail != "google_play_billing" {
+            return error_response(404, "payment_not_found", "Google Play payment intent was not found");
+        }
+        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+            return payment_response(&payment);
+        }
+        let expected_product = payment.provider_product_ref.as_deref().ok_or_else(|| {
+            worker::Error::RustError("Google Play product identifier is not configured".into())
+        })?;
+        let access_token = google_access_token(&context.env).await?;
+        let package_name = env_string(&context.env, "GOOGLE_PLAY_PACKAGE_NAME")?;
+        let (body, provider_reference) = if payment.product_kind == "subscription" {
+            verify_google_subscription(
+                &package_name,
+                &input.purchase_token,
+                expected_product,
+                &access_token,
+            )
+            .await?
+        } else {
+            verify_google_product(
+                &package_name,
+                &input.purchase_token,
+                expected_product,
+                &access_token,
+            )
+            .await?
+        };
+        let response_json: Value = serde_json::from_slice(&body)
+            .map_err(|_| worker::Error::RustError("invalid Google Play purchase response".into()))?;
+        let bound_account = if payment.product_kind == "subscription" {
+            response_json
+                .get("externalAccountIdentifiers")
+                .and_then(|value| value.get("obfuscatedExternalAccountId"))
+                .and_then(Value::as_str)
+        } else {
+            response_json
+                .get("obfuscatedExternalAccountId")
+                .and_then(Value::as_str)
+        };
+        if bound_account != Some(payment.payment_id.as_str()) {
+            return error_response(
+                403,
+                "google_purchase_account_mismatch",
+                "Google Play purchase does not belong to this Payment Intent",
+            );
+        }
+        let token_hash = sha256_hex(input.purchase_token.as_bytes());
+        let event_id = format!("google:purchase:{token_hash}");
+        claim_webhook_event(
+            &database,
+            "google",
+            &event_id,
+            &body,
+            &payment_id,
+            now_seconds(),
+        )
+        .await?;
+        post_external_success(
+            &database,
+            &payment,
+            "google",
+            &provider_reference,
+            &event_id,
+            now_seconds(),
+        )
+        .await?;
+        mark_webhook_processed(&database, "google", &event_id, &payment_id, now_seconds()).await?;
+        let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+        payment_response(&updated)
+    }
+
+    pub async fn provider_webhook_bound(
+        mut request: Request,
+        context: RouteContext<()>,
+    ) -> Result<Response> {
+        require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
+        let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
+        if !matches!(provider.as_str(), "web" | "merchant") {
+            return error_response(
+                404,
+                "provider_not_found",
+                "normalized webhook provider is not configured",
+            );
+        }
+        let body = request.bytes().await?;
+        let event: NormalizedProviderWebhook = serde_json::from_slice(&body)
+            .map_err(|_| worker::Error::RustError("invalid normalized provider webhook JSON".into()))?;
+        validate_identifier(&event.event_id)?;
+        let database = context.env.d1(DATABASE_BINDING)?;
+        let occurred_at = event.occurred_at.unwrap_or_else(now_seconds);
+        let payment_id = event.payment_id.as_deref().unwrap_or_default();
+        let claimed = claim_webhook_event(
+            &database,
+            &provider,
+            &event.event_id,
+            &body,
+            payment_id,
+            now_seconds(),
+        )
+        .await?;
+        if !claimed {
+            let existing = worker::query!(
+                &database,
+                "SELECT state, payload_sha256 FROM payment_webhook_events WHERE provider = ?1 AND event_id = ?2",
+                &provider,
+                &event.event_id
+            )?
+            .first::<WebhookInboxRow>(None)
+            .await?;
+            let Some(existing) = existing else {
+                return Err(worker::Error::RustError(
+                    "webhook inbox claim disappeared".into(),
+                ));
+            };
+            if existing.payload_sha256 != sha256_hex(&body) {
+                return error_response(
+                    409,
+                    "webhook_event_conflict",
+                    "provider event id was reused with a different payload",
+                );
+            }
+            match existing.state.as_str() {
+                "processed" | "processing" => {
+                    return Response::from_json(&json!({"ok": true, "duplicate": true}));
+                }
+                "rejected" => {
+                    worker::query!(
+                        &database,
+                        "UPDATE payment_webhook_events SET state = 'processing', processed_at = NULL, error_code = NULL
+                         WHERE provider = ?1 AND event_id = ?2 AND state = 'rejected'",
+                        &provider,
+                        &event.event_id
+                    )?
+                    .run()
+                    .await?;
+                }
+                _ => {
+                    return error_response(
+                        409,
+                        "webhook_event_busy",
+                        "provider event cannot be reclaimed from its current state",
+                    );
+                }
+            }
+        }
+
+        let result = if event.event_type == "paymentSucceeded" {
+            let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
+            let provider_reference = required_event_value(
+                event.provider_reference.as_deref(),
+                "providerReference",
+            )?;
+            let payment = payment_by_id(&database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("webhook payment not found".into()))?;
+            let expected_rail = if provider == "merchant" {
+                "merchant_provider"
+            } else {
+                "web_provider"
+            };
+            if payment.rail != expected_rail {
+                Err(worker::Error::RustError(
+                    "provider rail does not match payment intent".into(),
+                ))
+            } else {
+                post_external_success(
+                    &database,
+                    &payment,
+                    &provider,
+                    provider_reference,
+                    &event.event_id,
+                    occurred_at,
+                )
+                .await
+                .map(|_| Some(payment_id.to_string()))
+            }
+        } else {
+            process_normalized_event(&database, &provider, &event, occurred_at).await
+        };
+        match result {
+            Ok(payment_id) => {
+                mark_webhook_processed(
+                    &database,
+                    &provider,
+                    &event.event_id,
+                    payment_id.as_deref().unwrap_or_default(),
+                    now_seconds(),
+                )
+                .await?;
+                Response::from_json(&json!({"ok": true, "paymentId": payment_id}))
+            }
+            Err(error) => {
+                mark_webhook_rejected(
+                    &database,
+                    &provider,
+                    &event.event_id,
+                    "processing_error",
+                    now_seconds(),
+                )
+                .await?;
+                Err(error)
+            }
+        }
+    }
+
+    async fn post_external_success(
+        database: &worker::D1Database,
+        payment: &PaymentIntentRow,
+        provider: &str,
+        provider_reference: &str,
+        event_id: &str,
+        occurred_at: i64,
+    ) -> Result<()> {
+        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+            if payment.provider_reference.as_deref() == Some(provider_reference) {
+                return Ok(());
+            }
+            return Err(worker::Error::RustError(
+                "provider reference conflicts with successful payment".into(),
+            ));
+        }
+        if !matches!(payment.status.as_str(), "created" | "requires_action" | "processing") {
+            return Err(worker::Error::RustError("payment is not capturable".into()));
+        }
+        let fee = platform_fee(payment, payment.amount);
+        let developer_net = payment.amount.saturating_sub(fee);
+        let source_account = format!("provider-clearing:{provider}:{}", payment.currency);
+        let developer_account = developer_pending_account(&payment.developer_id, &payment.currency);
+        let platform_account = format!("platform:payment-revenue:{}", payment.currency);
+        let order_id = payment.payment_id.clone();
+        let entry_id = format!("payment:{}:capture", payment.payment_id);
+        let attempt_id = format!("payment-attempt:{}", payment.payment_id);
+        let entitlement_id = format!("payment-entitlement:{}", payment.payment_id);
+        let audit_id = format!("payment-audit:{}", payment.payment_id);
+        let mut statements = vec![
+            wallet_account_statement(
+                database,
+                &source_account,
+                "platform",
+                &format!("provider-clearing:{provider}"),
+                &payment.currency,
+                occurred_at,
+            )?,
+            wallet_account_statement(
+                database,
+                &developer_account,
+                "developer",
+                &format!("{}:pending", payment.developer_id),
+                &payment.currency,
+                occurred_at,
+            )?,
+            wallet_account_statement(
+                database,
+                &platform_account,
+                "platform",
+                "payment-revenue",
+                &payment.currency,
+                occurred_at,
+            )?,
+            worker::query!(
+                database,
+                "INSERT INTO orders
+                 (order_id, buyer_user_id, plugin_id, product_id, price_id, sku, currency, amount,
+                  status, idempotency_key, created_at, updated_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9, ?10, ?10
+                 FROM payment_intents pi
+                 WHERE pi.payment_id = ?11 AND pi.status IN ('created', 'requires_action', 'processing')
+                 ON CONFLICT(buyer_user_id, idempotency_key) DO NOTHING",
+                &order_id,
+                &payment.user_id,
+                &payment.mini_app_id,
+                &payment.product_id,
+                &payment.price_id,
+                &payment.sku,
+                &payment.currency,
+                payment.amount,
+                &payment.idempotency_key,
+                occurred_at,
+                &payment.payment_id
+            )?,
+            worker::query!(
+                database,
+                "INSERT OR IGNORE INTO journal_entries (entry_id, reference_type, reference_id, state, created_at)
+                 SELECT ?1, 'payment', ?2, 'draft', ?3 FROM orders WHERE order_id = ?2",
+                &entry_id,
+                &order_id,
+                occurred_at
+            )?,
+            journal_line_statement(
+                database,
+                &format!("{entry_id}:source"),
+                &entry_id,
+                &source_account,
+                &payment.currency,
+                -payment.amount,
+                occurred_at,
+            )?,
+        ];
+        if developer_net > 0 {
+            statements.push(journal_line_statement(
+                database,
+                &format!("{entry_id}:developer"),
+                &entry_id,
+                &developer_account,
+                &payment.currency,
+                developer_net,
+                occurred_at,
+            )?);
+        }
+        if fee > 0 {
+            statements.push(journal_line_statement(
+                database,
+                &format!("{entry_id}:platform"),
+                &entry_id,
+                &platform_account,
+                &payment.currency,
+                fee,
+                occurred_at,
+            )?);
+        }
+        statements.extend([
+            post_balanced_entry_statement(database, &entry_id, occurred_at)?,
+            worker::query!(
+                database,
+                "UPDATE payment_intents SET status = 'succeeded', provider_reference = ?1, updated_at = ?2
+                 WHERE payment_id = ?3 AND status IN ('created', 'requires_action', 'processing')
+                   AND EXISTS (SELECT 1 FROM journal_entries WHERE entry_id = ?4 AND state = 'posted')",
+                provider_reference,
+                occurred_at,
+                &payment.payment_id,
+                &entry_id
+            )?,
+            worker::query!(
+                database,
+                "UPDATE orders SET status = 'fulfilled', updated_at = ?1 WHERE order_id = ?2
+                   AND EXISTS (SELECT 1 FROM payment_intents WHERE payment_id = ?2 AND status = 'succeeded')",
+                occurred_at,
+                &order_id
+            )?,
+            worker::query!(
+                database,
+                "INSERT OR IGNORE INTO payment_attempts
+                 (attempt_id, order_id, provider, provider_event_id, provider_payment_id, status,
+                  request_fingerprint, created_at, updated_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, 'captured', ?6, ?7, ?7 FROM orders WHERE order_id = ?2",
+                &attempt_id,
+                &order_id,
+                provider,
+                event_id,
+                provider_reference,
+                sha256_hex(format!("{}:{provider_reference}", payment.payment_id).as_bytes()),
+                occurred_at
+            )?,
+            worker::query!(
+                database,
+                "INSERT OR IGNORE INTO entitlements
+                 (entitlement_id, user_id, plugin_id, product_id, order_id, capability, status, granted_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7
+                 FROM payment_intents WHERE payment_id = ?5 AND status = 'succeeded'",
+                &entitlement_id,
+                &payment.user_id,
+                &payment.mini_app_id,
+                &payment.product_id,
+                &order_id,
+                &payment.entitlement_capability,
+                occurred_at
+            )?,
+            worker::query!(
+                database,
+                "INSERT OR IGNORE INTO audit_events
+                 (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
+                 SELECT ?1, 'system', ?2, 'payment.succeeded', 'payment', ?3, '{}', ?4
+                 WHERE EXISTS (SELECT 1 FROM payment_intents WHERE payment_id = ?3 AND status = 'succeeded')",
+                &audit_id,
+                provider,
+                &payment.payment_id,
+                occurred_at
+            )?,
+        ]);
+        database.batch(statements).await?;
+        let updated = payment_by_id(database, &payment.payment_id)
+            .await?
+            .ok_or_else(|| worker::Error::RustError("payment disappeared after capture".into()))?;
+        if updated.status != "succeeded" {
+            return Err(worker::Error::RustError(
+                "external payment ledger did not post atomically".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub async fn admin_upsert_product(
@@ -293,15 +780,15 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         )
         .post_async(
             "/v1/pay/intents/:payment_id/apple/verify",
-            payment_api::verify_apple,
+            payment_api::verify_apple_bound,
         )
         .post_async(
             "/v1/pay/intents/:payment_id/google/verify",
-            payment_api::verify_google,
+            payment_api::verify_google_bound,
         )
         .post_async(
             "/v1/pay/providers/:provider/webhook",
-            payment_api::provider_webhook,
+            payment_api::provider_webhook_bound,
         )
         .post_async(
             "/v1/pay/admin/products",
