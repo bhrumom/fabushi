@@ -109,7 +109,10 @@ impl CapabilitySet {
     }
 
     pub fn supports_all(&self, required: &CapabilitySet) -> bool {
-        required.values.iter().all(|value| self.values.contains(value))
+        required
+            .values
+            .iter()
+            .all(|value| self.values.contains(value))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Capability> {
