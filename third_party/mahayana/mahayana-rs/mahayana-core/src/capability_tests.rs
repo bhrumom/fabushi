@@ -18,7 +18,11 @@ fn conversation(id: &str, title: &str, peer: PeerKind) -> Conversation {
 fn registry_uses_stable_mentions_and_resolves_mentions_or_ids() {
     let registry = CapabilityRegistry::from_conversations(
         [
-            conversation("codex:agent:assistant", "大乘 AI", PeerKind::CodexAi),
+            conversation(
+                "mahayana:agent:assistant",
+                "大乘 AI",
+                PeerKind::MahayanaAi,
+            ),
             conversation(
                 "miniapp:bot-father",
                 "Bot Father",
@@ -62,10 +66,10 @@ fn registry_uses_stable_mentions_and_resolves_mentions_or_ids() {
 }
 
 #[test]
-fn canonical_agent_identity_is_idempotent() {
+fn canonical_agent_identity_accepts_legacy_ids_without_writing_them() {
     for id in ["codex:agent:assistant", "mahayana:agent:assistant"] {
         let capability = capability_from_conversation(
-            &conversation(id, "大乘 AI", PeerKind::CodexAi),
+            &conversation(id, "大乘 AI", PeerKind::MahayanaAi),
             BuildProfile::DesktopFull,
         );
         assert_eq!(
