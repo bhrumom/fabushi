@@ -1,0 +1,53 @@
+name: Mahayana Harness rustfmt once
+
+on:
+  push:
+    branches:
+      - feat/mahayana-deepseek-harness-rust
+    paths:
+      - third_party/mahayana/mahayana-rs/mahayana-harness/**
+      - third_party/mahayana/mahayana-rs/mahayana-harness-services/**
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/src/harness.rs
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/src/product_harness.rs
+      - .github/workflows/mahayana-harness-rustfmt-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/mahayana-deepseek-harness-rust
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format harness migration
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Commit formatting if needed
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            third_party/mahayana/mahayana-rs/mahayana-harness \
+            third_party/mahayana/mahayana-rs/mahayana-harness-services \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/harness.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/product_harness.rs; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            third_party/mahayana/mahayana-rs/mahayana-harness \
+            third_party/mahayana/mahayana-rs/mahayana-harness-services \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/harness.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/product_harness.rs
+          git commit -m "chore(mahayana): rustfmt harness migration"
+          git push origin HEAD:feat/mahayana-deepseek-harness-rust
