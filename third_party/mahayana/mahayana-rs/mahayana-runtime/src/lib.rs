@@ -18,15 +18,19 @@ use mahayana_agent::StartThreadRequest;
 use mahayana_conversation::ConversationError;
 use mahayana_conversation::ConversationEventSink;
 use mahayana_conversation::ConversationProvider;
+use mahayana_conversation::MAHAYANA_AGENT_PROVIDER_KEY;
 use mahayana_conversation::ProviderRegistry;
 use mahayana_conversation::ResolveApprovalRequest;
 use mahayana_conversation::SendMessageRequest;
 use mahayana_conversation::SharedConversationEventSink;
+use mahayana_conversation::canonicalize_conversation_id;
 use mahayana_core::AgentThreadId;
 use mahayana_core::ApprovalId;
 use mahayana_core::CONVERSATION_SCHEMA_VERSION;
 use mahayana_core::Conversation;
 use mahayana_core::ConversationId;
+use mahayana_core::LEGACY_CODEX_ASSISTANT_CONVERSATION_ID;
+use mahayana_core::MAHAYANA_AGENT_CONVERSATION_ID;
 use mahayana_core::MODEL_RUNTIME_VERSION;
 use mahayana_core::Message;
 use mahayana_core::MessageId;
@@ -92,8 +96,8 @@ impl RuntimeBuilder {
     }
 
     /// Starts an Agent backend on the same Tokio runtime that the long-lived
-    /// Mahayana runtime will own. This is required by in-process Codex because
-    /// its app-server worker tasks must outlive synchronous FFI construction.
+    /// Mahayana runtime will own. Some embedded adapters spawn worker tasks that
+    /// must outlive synchronous FFI construction.
     pub fn build_with_agent_backend<F, Fut>(
         self,
         create_backend: F,
@@ -625,10 +629,10 @@ fn create_async_runtime() -> Result<tokio::runtime::Runtime, RuntimeError> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("mahayana-runtime")
-        // Codex app-server thread creation walks a large typed protocol and
+        // Some embedded agent adapters walk a large typed protocol and
         // configuration graph. The platform default (commonly 2 MiB) can
-        // overflow on the first embedded thread/turn even though the same
-        // code works in the standalone Codex process.
+        // overflow on the first embedded thread/turn even when the standalone
+        // backend process has sufficient stack.
         .thread_stack_size(16 * 1024 * 1024)
         .build()
         .map_err(|error| RuntimeError::Initialization(error.to_string()))
@@ -683,10 +687,11 @@ impl AgentConversationProvider {
         if let Some(thread_id) = thread_id.as_ref() {
             return Ok(thread_id.clone());
         }
+        let canonical_conversation_id = canonicalize_conversation_id(conversation_id);
         let created = self
             .backend
             .start_thread(StartThreadRequest {
-                conversation_id: conversation_id.clone(),
+                conversation_id: canonical_conversation_id,
             })
             .await
             .map_err(agent_error)?;
@@ -698,11 +703,11 @@ impl AgentConversationProvider {
 #[async_trait::async_trait]
 impl ConversationProvider for AgentConversationProvider {
     fn key(&self) -> &'static str {
-        "codex"
+        MAHAYANA_AGENT_PROVIDER_KEY
     }
 
     async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
-        Ok(vec![Conversation::codex_assistant()])
+        Ok(vec![Conversation::mahayana_assistant()])
     }
 
     async fn history(
@@ -710,13 +715,14 @@ impl ConversationProvider for AgentConversationProvider {
         conversation_id: &ConversationId,
         limit: u32,
     ) -> Result<Vec<Message>, ConversationError> {
+        let canonical_conversation_id = canonicalize_conversation_id(conversation_id);
         let history = self
             .history
             .lock()
             .map_err(|_| ConversationError::Provider("history mutex poisoned".to_string()))?;
         let matching: Vec<_> = history
             .iter()
-            .filter(|message| &message.conversation_id == conversation_id)
+            .filter(|message| message.conversation_id == canonical_conversation_id)
             .cloned()
             .collect();
         let start = matching.len().saturating_sub(limit as usize);
@@ -725,9 +731,10 @@ impl ConversationProvider for AgentConversationProvider {
 
     async fn send_message(
         &self,
-        request: SendMessageRequest,
+        mut request: SendMessageRequest,
         events: SharedConversationEventSink,
     ) -> Result<(), ConversationError> {
+        request.conversation_id = canonicalize_conversation_id(&request.conversation_id);
         let thread_id = self.thread_id(&request.conversation_id).await?;
         let user_message = Message {
             id: request
@@ -822,7 +829,7 @@ impl AgentEventSink for AgentEventBridge {
             },
             AgentEvent::ToolProgress { message } => RuntimeEvent::PluginProgress {
                 operation_id: self.operation_id.clone(),
-                plugin_id: "codex".into(),
+                plugin_id: MAHAYANA_AGENT_PROVIDER_KEY.into(),
                 tool: String::new(),
                 progress: 0,
                 total: 0,
@@ -949,7 +956,6 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use mahayana_core::ApprovalDecision;
-    use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;
 
     struct EchoAgent;
 
@@ -1000,7 +1006,7 @@ mod tests {
     }
 
     #[test]
-    fn routes_codex_contact_and_streams_events() {
+    fn routes_mahayana_agent_and_streams_events() {
         let runtime = RuntimeBuilder::new(RuntimeConfig::default())
             .with_agent_backend(Arc::new(EchoAgent))
             .expect("register agent")
@@ -1014,7 +1020,7 @@ mod tests {
 
         let response = runtime
             .execute(RuntimeCommand::SendMessage {
-                conversation_id: ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()),
+                conversation_id: ConversationId(MAHAYANA_AGENT_CONVERSATION_ID.to_string()),
                 text: "你好".to_string(),
                 client_message_id: None,
                 hidden: false,
@@ -1054,6 +1060,60 @@ mod tests {
             }
         }
         assert!(saw_delta && saw_message && saw_complete);
+    }
+
+    #[test]
+    fn legacy_agent_id_is_read_alias_but_new_events_use_mahayana_identity() {
+        let runtime = RuntimeBuilder::new(RuntimeConfig::default())
+            .with_agent_backend(Arc::new(EchoAgent))
+            .expect("register agent")
+            .build()
+            .expect("build runtime");
+        let _ready = runtime
+            .receive(Duration::from_millis(10))
+            .expect("receive ready")
+            .expect("ready event");
+
+        assert!(
+            runtime
+                .status()
+                .providers
+                .iter()
+                .any(|provider| provider == MAHAYANA_AGENT_PROVIDER_KEY)
+        );
+        assert!(
+            !runtime
+                .status()
+                .providers
+                .iter()
+                .any(|provider| provider == "codex")
+        );
+
+        runtime
+            .execute(RuntimeCommand::SendMessage {
+                conversation_id: ConversationId(LEGACY_CODEX_ASSISTANT_CONVERSATION_ID.to_string()),
+                text: "兼容输入".to_string(),
+                client_message_id: None,
+                hidden: false,
+            })
+            .expect("send legacy alias");
+
+        let mut saw_canonical_message = false;
+        for _ in 0..5 {
+            let event = runtime
+                .receive(Duration::from_secs(1))
+                .expect("receive event")
+                .expect("event before timeout");
+            if let RuntimeEvent::MessageCompleted { message, .. } = event {
+                assert_eq!(
+                    message.conversation_id.as_str(),
+                    MAHAYANA_AGENT_CONVERSATION_ID
+                );
+                saw_canonical_message = true;
+                break;
+            }
+        }
+        assert!(saw_canonical_message);
     }
 
     #[test]
