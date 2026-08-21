@@ -354,6 +354,23 @@ function installNativeEdge() {
       await shell.openExternal(safeHttpsUrl(params.url));
       return true;
     },
+    async getMessagingAccessCredential(params) {
+      const deviceId = String(params?.deviceId || '').trim();
+      const sessionId = String(params?.sessionId || '').trim();
+      if (!deviceId || deviceId.length > 200 || !sessionId || sessionId.length > 200) {
+        throw new Error('Messaging access requires a valid deviceId and sessionId.');
+      }
+      const scopes = Array.isArray(params?.scopes)
+        ? params.scopes.map((scope) => String(scope)).slice(0, 16)
+        : [];
+      const ttlMs = Number.isFinite(Number(params?.ttlMs)) ? Number(params.ttlMs) : 24 * 60 * 60 * 1000;
+      return host.request('feature.messaging.access.issue', {
+        deviceId,
+        sessionId,
+        scopes,
+        ttlMs,
+      });
+    },
     getDesktopEnvironment() {
       return {
         platform: process.platform,

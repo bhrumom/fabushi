@@ -12,11 +12,11 @@ use chrono::TimeZone;
 use chrono::Timelike;
 use chrono::Utc;
 
-#[cfg(feature = "production")]
 use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;
 use fabushi_messaging_core::FileBlobStore;
 use fabushi_messaging_core::JsonFileStateStore;
 use fabushi_messaging_core::MessagingService;
+use fabushi_messaging_core::{AccessGrant, AccessScope, ActorId, FileAccessTokenStore};
 #[cfg(feature = "production")]
 use mahayana_core::ApprovalDecision as RuntimeApprovalDecision;
 #[cfg(feature = "production")]
@@ -39,6 +39,7 @@ use mahayana_core::RuntimeEvent;
 use mahayana_core::RuntimeResponse;
 #[cfg(feature = "production")]
 use mahayana_core::capability::CapabilityAvailability;
+#[cfg(feature = "production")]
 use mahayana_core::capability::CapabilityKind;
 #[cfg(feature = "production")]
 use mahayana_host::HostCreateConfig;
@@ -503,6 +504,110 @@ impl FeatureHostController {
                 Err(FeatureHostError::ProductionUnavailable)
             }
         }
+    }
+
+    /// Issue a short-lived self-hosted messaging credential bound to the
+    /// currently authenticated Fabushi account, one device, one client
+    /// session, and an explicit set of scopes. The underlying account token is
+    /// never exposed; only the derived messaging bearer token is returned once.
+    pub fn issue_messaging_access(
+        &self,
+        device_id: String,
+        session_id: String,
+        requested_scopes: Vec<String>,
+        ttl_ms: i64,
+    ) -> Result<Value, FeatureHostError> {
+        let device_id = required(device_id, "device id")?;
+        let session_id = required(session_id, "session id")?;
+        let auth = self.auth_status()?;
+        if auth.get("loggedIn").and_then(Value::as_bool) != Some(true) {
+            return Err(FeatureHostError::Contract(
+                "messaging access requires an authenticated Fabushi account session".into(),
+            ));
+        }
+        let user = auth.get("user").and_then(Value::as_object).ok_or_else(|| {
+            FeatureHostError::Contract("authenticated account has no user identity".into())
+        })?;
+        let user_id = user
+            .get("id")
+            .or_else(|| user.get("userId"))
+            .or_else(|| user.get("username"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                FeatureHostError::Contract("authenticated account has no stable user id".into())
+            })?;
+        let digest = Sha256::digest(user_id.as_bytes());
+        let account_fingerprint = digest[..16]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let actor_id = ActorId::new(format!("human:account:{account_fingerprint}"));
+        let mut scopes = std::collections::BTreeSet::new();
+        for scope in requested_scopes {
+            let parsed = match scope.as_str() {
+                "messaging" => AccessScope::Messaging,
+                "calls" => AccessScope::Calls,
+                "blobsRead" => AccessScope::BlobsRead,
+                "blobsWrite" => AccessScope::BlobsWrite,
+                "payments" => AccessScope::Payments,
+                "miniApps" => AccessScope::MiniApps,
+                "administration" => AccessScope::Administration,
+                _ => {
+                    return Err(FeatureHostError::Contract(format!(
+                        "unsupported messaging access scope: {scope}"
+                    )));
+                }
+            };
+            scopes.insert(parsed);
+        }
+        if scopes.is_empty() {
+            scopes.extend([
+                AccessScope::Messaging,
+                AccessScope::Calls,
+                AccessScope::BlobsRead,
+                AccessScope::BlobsWrite,
+            ]);
+        }
+        let now_ms = now_millis();
+        let ttl_ms = ttl_ms.clamp(5 * 60 * 1000, 30 * 24 * 60 * 60 * 1000);
+        let expires_at_ms = now_ms.saturating_add(ttl_ms);
+        let root = self
+            .memory_root_path
+            .as_deref()
+            .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
+        let access_store = FileAccessTokenStore::new(root.join("_messaging").join("access.json"));
+        let grant_seed = format!("{account_fingerprint}|{device_id}|{session_id}|{now_ms}");
+        let grant_digest = Sha256::digest(grant_seed.as_bytes());
+        let grant_id = format!(
+            "grant:{}",
+            grant_digest[..12]
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
+        let issued = access_store
+            .issue_random(AccessGrant {
+                id: grant_id,
+                actor_id: actor_id.clone(),
+                device_id: device_id.clone(),
+                session_id: session_id.clone(),
+                scopes: scopes.clone(),
+                issued_at_ms: now_ms,
+                expires_at_ms: Some(expires_at_ms),
+                revoked_at_ms: None,
+            })
+            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        Ok(json!({
+            "@type": "fabushi.messaging.access",
+            "actorId": actor_id.0,
+            "deviceId": device_id,
+            "sessionId": session_id,
+            "accessToken": issued.token,
+            "expiresAtMs": expires_at_ms,
+            "scopes": scopes,
+        }))
     }
 
     pub fn password_login(
@@ -11747,6 +11852,57 @@ mod tests {
         assert!(kinds.contains(&"operation.interrupted"));
         assert!(kinds.contains(&"session.cleared"));
         assert!(kinds.contains(&"host.closed"));
+    }
+
+    #[test]
+    fn messaging_access_is_issued_only_from_authenticated_account_session() {
+        let controller = controller();
+        let error = controller
+            .issue_messaging_access(
+                "desktop:test".into(),
+                "account-session:test".into(),
+                vec!["messaging".into(), "calls".into()],
+                60 * 60 * 1000,
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("authenticated Fabushi account session")
+        );
+        controller
+            .password_login("tester@example.invalid".into(), "secret".into())
+            .expect("test account login");
+        let issued = controller
+            .issue_messaging_access(
+                "desktop:test".into(),
+                "account-session:test".into(),
+                vec!["messaging".into(), "calls".into()],
+                60 * 60 * 1000,
+            )
+            .expect("issue messaging access");
+        let token = issued["accessToken"]
+            .as_str()
+            .expect("one-time access token")
+            .to_string();
+        let actor_id = ActorId::new(issued["actorId"].as_str().expect("actor id"));
+        let root = controller.memory_root_path.as_ref().expect("memory root");
+        let access_path = root.join("_messaging").join("access.json");
+        let persisted = std::fs::read_to_string(&access_path).expect("read access registry");
+        assert!(!persisted.contains(&token));
+        let store = FileAccessTokenStore::new(access_path);
+        assert!(
+            store
+                .authorize(
+                    token.as_bytes(),
+                    &actor_id,
+                    "desktop:test",
+                    "account-session:test",
+                    AccessScope::Messaging,
+                    now_millis(),
+                )
+                .is_ok()
+        );
     }
 
     #[test]

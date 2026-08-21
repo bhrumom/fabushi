@@ -1,5 +1,6 @@
 use fabushi_messaging_core::{CallSignalingServerConfig, CallSignalingTcpServer};
 use std::env;
+use std::path::PathBuf;
 
 fn main() {
     if let Err(error) = run() {
@@ -10,10 +11,10 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let bind = env::var("FABUSHI_CALL_SIGNAL_BIND").unwrap_or_else(|_| "127.0.0.1:9410".into());
-    let token = env::var("FABUSHI_CALL_SIGNAL_ACCESS_TOKEN").map_err(|_| {
-        "FABUSHI_CALL_SIGNAL_ACCESS_TOKEN is required and must contain at least 32 bytes"
-    })?;
-    let config = CallSignalingServerConfig::new(bind, token);
+    let access_registry = env::var_os("FABUSHI_MESSAGING_ACCESS_REGISTRY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("fabushi-messaging-access.json"));
+    let config = CallSignalingServerConfig::new(bind, access_registry);
     let server = CallSignalingTcpServer::new(config)?;
     server.serve()?;
     Ok(())

@@ -1,9 +1,11 @@
+use crate::access::{AccessScope, FileAccessTokenStore};
 use crate::actor::ActorId;
 use crate::realtime::CallSignal;
 use crate::signaling::{SignalingError, SignalingHub};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use thiserror::Error;
@@ -20,6 +22,8 @@ pub enum SignalingClientFrame {
     Hello {
         access_token: String,
         actor_id: ActorId,
+        device_id: String,
+        session_id: String,
     },
     Signal {
         signal: CallSignal,
@@ -45,15 +49,15 @@ pub enum SignalingServerFrame {
 #[derive(Debug, Clone)]
 pub struct CallSignalingServerConfig {
     pub bind_address: String,
-    pub access_token: String,
+    pub access_registry_path: PathBuf,
     pub max_frame_bytes: usize,
 }
 
 impl CallSignalingServerConfig {
-    pub fn new(bind_address: impl Into<String>, access_token: impl Into<String>) -> Self {
+    pub fn new(bind_address: impl Into<String>, access_registry_path: impl Into<PathBuf>) -> Self {
         Self {
             bind_address: bind_address.into(),
-            access_token: access_token.into(),
+            access_registry_path: access_registry_path.into(),
             max_frame_bytes: MAX_SIGNAL_FRAME_BYTES,
         }
     }
@@ -64,9 +68,9 @@ impl CallSignalingServerConfig {
                 "bind address is empty".into(),
             ));
         }
-        if self.access_token.len() < 32 {
+        if self.access_registry_path.as_os_str().is_empty() {
             return Err(CallSignalingServerError::InvalidConfig(
-                "access token must contain at least 32 bytes".into(),
+                "access registry path is empty".into(),
             ));
         }
         if self.max_frame_bytes < 1024 {
@@ -116,7 +120,9 @@ impl CallSignalingTcpServer {
 
     pub fn serve(self) -> Result<(), CallSignalingServerError> {
         let listener = TcpListener::bind(&self.config.bind_address)?;
-        let token = Arc::new(self.config.access_token);
+        let access_store = Arc::new(FileAccessTokenStore::new(
+            self.config.access_registry_path.clone(),
+        ));
         let max_frame_bytes = self.config.max_frame_bytes;
         for incoming in listener.incoming() {
             let stream = match incoming {
@@ -127,12 +133,12 @@ impl CallSignalingTcpServer {
                 }
             };
             let hub = Arc::clone(&self.hub);
-            let token = Arc::clone(&token);
+            let access_store = Arc::clone(&access_store);
             let _ = thread::Builder::new()
                 .name("fabushi-call-signal-connection".into())
                 .spawn(move || {
                     if let Err(error) =
-                        handle_connection(stream, hub, token.as_str(), max_frame_bytes)
+                        handle_connection(stream, hub, access_store, max_frame_bytes)
                     {
                         eprintln!("Fabushi call signaling connection failed: {error}");
                     }
@@ -145,7 +151,7 @@ impl CallSignalingTcpServer {
 fn handle_connection(
     stream: TcpStream,
     hub: Arc<Mutex<SignalingHub>>,
-    access_token: &str,
+    access_store: Arc<FileAccessTokenStore>,
     max_frame_bytes: usize,
 ) -> Result<(), CallSignalingServerError> {
     stream.set_nodelay(true)?;
@@ -160,19 +166,33 @@ fn handle_connection(
         SignalingClientFrame::Hello {
             access_token: provided,
             actor_id,
+            device_id,
+            session_id,
         } => {
-            if !constant_time_eq(provided.as_bytes(), access_token.as_bytes()) {
+            if !actor_id.is_valid() {
+                return Err(CallSignalingServerError::InvalidActor);
+            }
+            let now_ms = now_millis();
+            if access_store
+                .authorize(
+                    provided.as_bytes(),
+                    &actor_id,
+                    &device_id,
+                    &session_id,
+                    AccessScope::Calls,
+                    now_ms,
+                )
+                .is_err()
+            {
                 write_server_frame(
                     &writer,
                     &SignalingServerFrame::Error {
                         code: "unauthorized".into(),
-                        message: "access token is invalid".into(),
+                        message: "call access token is invalid for this actor/device/session"
+                            .into(),
                     },
                 )?;
                 return Err(CallSignalingServerError::Unauthorized);
-            }
-            if !actor_id.is_valid() {
-                return Err(CallSignalingServerError::InvalidActor);
             }
             actor_id
         }
@@ -324,15 +344,11 @@ fn drain_until_newline<R: BufRead>(reader: &mut R) -> Result<(), std::io::Error>
     }
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    let mut difference = 0u8;
-    for (left, right) in left.iter().zip(right) {
-        difference |= left ^ right;
-    }
-    difference == 0
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -351,8 +367,8 @@ mod tests {
     }
 
     #[test]
-    fn signaling_config_rejects_short_tokens() {
-        let config = CallSignalingServerConfig::new("127.0.0.1:9410", "short");
+    fn signaling_config_requires_access_registry_path() {
+        let config = CallSignalingServerConfig::new("127.0.0.1:9410", "");
         assert!(config.validate().is_err());
     }
 }

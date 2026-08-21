@@ -14,10 +14,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = env::var_os("FABUSHI_MESSAGING_SNAPSHOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("fabushi-messaging-snapshot.json"));
-    let token = env::var("FABUSHI_MESSAGING_ACCESS_TOKEN").map_err(|_| {
-        "FABUSHI_MESSAGING_ACCESS_TOKEN is required and must contain at least 32 bytes"
-    })?;
-    let config = MessagingServerConfig::new(bind, snapshot, token);
+    let access_registry = env::var_os("FABUSHI_MESSAGING_ACCESS_REGISTRY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("fabushi-messaging-access.json"));
+    let config = MessagingServerConfig::new(bind, snapshot, access_registry);
     let server = MessagingTcpServer::load(config)?;
     server.serve()?;
     Ok(())
