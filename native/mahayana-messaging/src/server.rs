@@ -1,5 +1,6 @@
+use crate::access::{AccessScope, FileAccessTokenStore};
 use crate::blob_store::FileBlobStore;
-use crate::protocol::{ClientEnvelope, ServerEnvelope};
+use crate::protocol::{ClientCommand, ClientEnvelope, ServerEnvelope};
 use crate::service::{MessagingService, MessagingServiceError};
 use crate::store::JsonFileStateStore;
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,7 @@ pub enum ServerFrame {
 pub struct MessagingServerConfig {
     pub bind_address: String,
     pub snapshot_path: PathBuf,
-    pub access_token: String,
+    pub access_registry_path: PathBuf,
     pub max_frame_bytes: usize,
 }
 
@@ -43,12 +44,12 @@ impl MessagingServerConfig {
     pub fn new(
         bind_address: impl Into<String>,
         snapshot_path: impl Into<PathBuf>,
-        access_token: impl Into<String>,
+        access_registry_path: impl Into<PathBuf>,
     ) -> Self {
         Self {
             bind_address: bind_address.into(),
             snapshot_path: snapshot_path.into(),
-            access_token: access_token.into(),
+            access_registry_path: access_registry_path.into(),
             max_frame_bytes: MAX_SERVER_FRAME_BYTES,
         }
     }
@@ -59,9 +60,9 @@ impl MessagingServerConfig {
                 "bind address is empty".into(),
             ));
         }
-        if self.access_token.len() < 32 {
+        if self.access_registry_path.as_os_str().is_empty() {
             return Err(MessagingServerError::InvalidConfig(
-                "access token must contain at least 32 bytes".into(),
+                "access registry path is empty".into(),
             ));
         }
         if self.max_frame_bytes < 1024 {
@@ -114,7 +115,9 @@ impl MessagingTcpServer {
 
     pub fn serve(self) -> Result<(), MessagingServerError> {
         let listener = TcpListener::bind(&self.config.bind_address)?;
-        let token = Arc::new(self.config.access_token);
+        let access_store = Arc::new(FileAccessTokenStore::new(
+            self.config.access_registry_path.clone(),
+        ));
         let max_frame_bytes = self.config.max_frame_bytes;
         for incoming in listener.incoming() {
             let stream = match incoming {
@@ -125,10 +128,10 @@ impl MessagingTcpServer {
                 }
             };
             let service = Arc::clone(&self.service);
-            let token = Arc::clone(&token);
+            let access_store = Arc::clone(&access_store);
             thread::spawn(move || {
                 if let Err(error) =
-                    handle_connection(stream, service, token.as_str(), max_frame_bytes)
+                    handle_connection(stream, service, access_store, max_frame_bytes)
                 {
                     eprintln!("Fabushi messaging connection failed: {error}");
                 }
@@ -141,7 +144,7 @@ impl MessagingTcpServer {
 fn handle_connection(
     stream: TcpStream,
     service: Arc<Mutex<MessagingService<JsonFileStateStore>>>,
-    access_token: &str,
+    access_store: Arc<FileAccessTokenStore>,
     max_frame_bytes: usize,
 ) -> Result<(), MessagingServerError> {
     stream.set_nodelay(true)?;
@@ -185,17 +188,25 @@ fn handle_connection(
                 continue;
             }
         };
-        if !constant_time_eq(request.access_token.as_bytes(), access_token.as_bytes()) {
+        let now_ms = now_millis();
+        let context = &request.envelope.context;
+        if let Err(error) = access_store.authorize(
+            request.access_token.as_bytes(),
+            &context.actor_id,
+            &context.device_id,
+            &context.session_id,
+            required_scope(&request.envelope.command),
+            now_ms,
+        ) {
             write_frame(
                 &mut writer,
                 &ServerFrame::Error {
                     code: "unauthorized".into(),
-                    message: "access token is invalid".into(),
+                    message: format!("messaging access denied: {error}"),
                 },
             )?;
             continue;
         }
-        let now_ms = now_millis();
         let events = {
             let mut service = service.lock().map_err(|_| MessagingServerError::Poisoned)?;
             match service.handle(request.envelope, now_ms) {
@@ -227,6 +238,23 @@ fn write_frame(
     Ok(())
 }
 
+fn required_scope(command: &ClientCommand) -> AccessScope {
+    match command {
+        ClientCommand::BeginBlobUpload { .. }
+        | ClientCommand::AppendBlobChunk { .. }
+        | ClientCommand::FinishBlobUpload { .. }
+        | ClientCommand::DeleteBlob { .. } => AccessScope::BlobsWrite,
+        ClientCommand::CreateInvoice { .. } | ClientCommand::CheckoutInvoice { .. } => {
+            AccessScope::Payments
+        }
+        ClientCommand::InstallMiniApp { .. }
+        | ClientCommand::GrantMiniApp { .. }
+        | ClientCommand::OpenMiniApp { .. }
+        | ClientCommand::MiniAppCall { .. } => AccessScope::MiniApps,
+        _ => AccessScope::Messaging,
+    }
+}
+
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -234,31 +262,27 @@ fn now_millis() -> i64 {
         .unwrap_or_default()
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    let mut difference = 0u8;
-    for (left, right) in left.iter().zip(right) {
-        difference |= left ^ right;
-    }
-    difference == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn token_comparison_requires_equal_contents_and_length() {
-        assert!(constant_time_eq(b"same", b"same"));
-        assert!(!constant_time_eq(b"same", b"diff"));
-        assert!(!constant_time_eq(b"short", b"longer"));
+    fn privileged_commands_require_narrow_scopes() {
+        let blob = ClientCommand::DeleteBlob {
+            blob_id: crate::blob_store::BlobId::new("blob-1").unwrap(),
+        };
+        assert_eq!(required_scope(&blob), AccessScope::BlobsWrite);
+        let mini_app = ClientCommand::MiniAppCall {
+            session_id: "session".into(),
+            request_id: "request".into(),
+            request: crate::miniapp::MiniAppRequest::Close,
+        };
+        assert_eq!(required_scope(&mini_app), AccessScope::MiniApps);
     }
 
     #[test]
-    fn production_config_rejects_short_tokens() {
-        let config = MessagingServerConfig::new("127.0.0.1:9400", "/tmp/messages.json", "short");
+    fn production_config_requires_access_registry_path() {
+        let config = MessagingServerConfig::new("127.0.0.1:9400", "/tmp/messages.json", "");
         assert!(config.validate().is_err());
     }
 }

@@ -6,6 +6,7 @@ const methods = {
   openExternal: { args: 'object' },
   submitFeedback: { args: 'object' },
   getDesktopEnvironment: { args: 'none' },
+  getMessagingAccessCredential: { args: 'object' },
   getWindowState: { args: 'none' },
   minimizeWindow: { args: 'none' },
   toggleMaximizeWindow: { args: 'none' },
