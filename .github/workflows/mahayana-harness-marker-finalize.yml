@@ -31,7 +31,7 @@ jobs:
           shared-key: mahayana-harness-final-v1
           cache-all-crates: true
 
-      - name: Correct deterministic patch anchor
+      - name: Correct deterministic patch template
         shell: bash
         run: |
           python3 - <<'PY'
@@ -41,6 +41,22 @@ jobs:
           text = text.replace(
               'pub fn register_service(&self, id: impl Into<String>)',
               'pub fn register_service(&self, name: impl Into<String>)',
+          )
+          text = text.replace(
+              'Ok(self.state()?.schedules.values().cloned().collect())',
+              'Ok(self.lock_state()?.schedules.values().cloned().collect())',
+          )
+          text = text.replace(
+              '        self.state()?\n            .schedules\n            .get',
+              '        self.lock_state()?\n            .schedules\n            .get',
+          )
+          text = text.replace(
+              '        self.state()?\n            .schedules\n            .remove',
+              '        self.lock_state()?\n            .schedules\n            .remove',
+          )
+          text = text.replace(
+              'harness.shares_state_with(services.harness())',
+              'harness.shares_state_with(&services.harness())',
           )
           path.write_text(text)
           PY
@@ -60,10 +76,6 @@ jobs:
             -p mahayana-harness-protocol \
             -p mahayana-unified-app-host
 
-      # Do not run cargo generate-lockfile here: that re-resolves the entire
-      # legacy workspace and can select incompatible transitive prereleases.
-      # cargo test below performs only the lock update required by the new
-      # local workspace packages while preserving the repository's compatible pins.
       - name: Test Harness stack
         id: harness_test
         shell: bash
