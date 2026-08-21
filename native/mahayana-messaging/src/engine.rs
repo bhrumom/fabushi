@@ -263,6 +263,14 @@ pub enum EngineError {
     EmptyMessageList,
     #[error("message is protected from forwarding")]
     ProtectedContent,
+    #[error("secret conversations must contain exactly two participants")]
+    InvalidSecretConversation,
+    #[error("secret conversations only accept encrypted secret content or service messages")]
+    SecretPlaintextRejected,
+    #[error("secret content may only be sent inside a secret conversation")]
+    SecretContentOutsideSecretConversation,
+    #[error("secret message envelope identity does not match the conversation participants")]
+    SecretEnvelopeMismatch,
     #[error("invoice is invalid")]
     InvalidInvoice,
     #[error("invoice {0} does not exist")]
@@ -325,6 +333,13 @@ impl MessagingEngine {
                 for participant in &conversation.participants {
                     self.require_actor(&participant.actor_id)?;
                 }
+                if matches!(
+                    conversation.kind,
+                    crate::conversation::ConversationKind::Secret
+                ) && conversation.participants.len() != 2
+                {
+                    return Err(EngineError::InvalidSecretConversation);
+                }
                 Ok(vec![Event::ConversationUpserted { conversation }])
             }
             Command::ArchiveConversation {
@@ -372,8 +387,35 @@ impl MessagingEngine {
                 silent,
                 protected_content,
             } => {
-                self.require_conversation(&conversation_id)?;
+                let conversation = self.require_conversation(&conversation_id)?;
                 self.require_actor(&sender_id)?;
+                let is_secret_conversation = matches!(
+                    conversation.kind,
+                    crate::conversation::ConversationKind::Secret
+                );
+                let is_secret_content = matches!(&content, MessageContent::Secret { .. });
+                let is_service_content = matches!(&content, MessageContent::Service { .. });
+                if is_secret_conversation && !is_secret_content && !is_service_content {
+                    return Err(EngineError::SecretPlaintextRejected);
+                }
+                if !is_secret_conversation && is_secret_content {
+                    return Err(EngineError::SecretContentOutsideSecretConversation);
+                }
+                if let MessageContent::Secret { envelope } = &content {
+                    let participant_ids = conversation
+                        .participants
+                        .iter()
+                        .map(|participant| &participant.actor_id)
+                        .collect::<Vec<_>>();
+                    if envelope.conversation_id != conversation_id
+                        || envelope.sender_id != sender_id
+                        || !participant_ids.contains(&&envelope.sender_id)
+                        || !participant_ids.contains(&&envelope.recipient_id)
+                        || envelope.sender_id == envelope.recipient_id
+                    {
+                        return Err(EngineError::SecretEnvelopeMismatch);
+                    }
+                }
                 if client_message_id.0.trim().is_empty() || client_message_id.0.len() > 200 {
                     return Err(EngineError::InvalidClientMessageId);
                 }
@@ -403,7 +445,7 @@ impl MessagingEngine {
                     edited_at_ms: None,
                     scheduled_at_ms,
                     silent,
-                    protected_content,
+                    protected_content: protected_content || is_secret_content,
                     pinned: false,
                     deleted: false,
                 };

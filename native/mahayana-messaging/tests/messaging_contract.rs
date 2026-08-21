@@ -307,3 +307,95 @@ fn forwarding_preserves_origin_and_rejects_protected_content() {
         .unwrap_err();
     assert_eq!(error, EngineError::ProtectedContent);
 }
+
+#[test]
+fn secret_conversations_reject_plaintext_and_protect_encrypted_messages() {
+    let mut engine = MessagingEngine::new();
+    for (id, name) in [("human:alice", "Alice"), ("human:bob", "Bob")] {
+        engine
+            .execute(Command::UpsertActor {
+                actor: Actor::human(id, name),
+            })
+            .unwrap();
+    }
+    let mut conversation = Conversation::direct(
+        "secret:contract",
+        "Secret",
+        vec![
+            participant("human:alice", ParticipantRole::Owner),
+            participant("human:bob", ParticipantRole::Member),
+        ],
+        1,
+    );
+    conversation.kind = ConversationKind::Secret;
+    engine
+        .execute(Command::UpsertConversation { conversation })
+        .unwrap();
+
+    let plaintext_error = engine
+        .execute(Command::QueueMessage {
+            conversation_id: ConversationId::new("secret:contract"),
+            local_message_id: MessageId::new("secret:plain"),
+            client_message_id: ClientMessageId("client:plain".into()),
+            sender_id: ActorId::new("human:alice"),
+            content: MessageContent::Text {
+                text: FormattedText::plain("must never persist"),
+            },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            created_at_ms: 2,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: false,
+        })
+        .unwrap_err();
+    assert!(matches!(
+        plaintext_error,
+        EngineError::SecretPlaintextRejected
+    ));
+
+    let alice_private = SecretPrivateKey::generate().unwrap();
+    let bob_private = SecretPrivateKey::generate().unwrap();
+    let mut alice_session = SecretChatSession::establish(
+        ConversationId::new("secret:contract"),
+        ActorId::new("human:alice"),
+        ActorId::new("human:bob"),
+        &alice_private,
+        &bob_private.public_key(),
+        1,
+    )
+    .unwrap();
+    let envelope = alice_session.encrypt(b"encrypted payload").unwrap();
+    engine
+        .execute(Command::QueueMessage {
+            conversation_id: ConversationId::new("secret:contract"),
+            local_message_id: MessageId::new("secret:cipher"),
+            client_message_id: ClientMessageId("client:cipher".into()),
+            sender_id: ActorId::new("human:alice"),
+            content: MessageContent::Secret { envelope },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            created_at_ms: 3,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: false,
+        })
+        .unwrap();
+    let stored = &engine.state().messages[&ConversationId::new("secret:contract")]
+        [&MessageId::new("secret:cipher")];
+    assert!(stored.protected_content);
+    assert!(matches!(stored.content, MessageContent::Secret { .. }));
+
+    let forward_error = engine
+        .execute(Command::ForwardMessage {
+            source_conversation_id: ConversationId::new("secret:contract"),
+            message_id: MessageId::new("secret:cipher"),
+            destination_conversation_id: ConversationId::new("secret:contract"),
+            local_message_id: MessageId::new("secret:forward"),
+            client_message_id: ClientMessageId("client:forward-secret".into()),
+            sender_id: ActorId::new("human:alice"),
+            created_at_ms: 4,
+        })
+        .unwrap_err();
+    assert!(matches!(forward_error, EngineError::ProtectedContent));
+}
