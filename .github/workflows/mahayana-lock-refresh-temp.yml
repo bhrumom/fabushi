@@ -1,0 +1,55 @@
+name: Mahayana temporary lock refresh
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mahayana-lock-refresh-temp.yml'
+      - 'third_party/mahayana/**'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'feat/mahayana-fusion-mainline'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fusion branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Refresh workspace lock graph only
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest='third_party/mahayana/mahayana-rs/Cargo.toml'
+          lock='third_party/mahayana/mahayana-rs/Cargo.lock'
+          cargo metadata --manifest-path "$manifest" --format-version 1 >/dev/null
+          changed="$(git status --porcelain --untracked-files=no)"
+          printf '%s\n' "$changed"
+          test -n "$changed"
+          if printf '%s\n' "$changed" | grep -Ev '^ M third_party/mahayana/mahayana-rs/Cargo\.lock$'; then
+            echo 'Lock refresh changed files other than Cargo.lock' >&2
+            exit 1
+          fi
+          git diff --check -- "$lock"
+          git diff --stat -- "$lock"
+
+      - name: Commit lock graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock='third_party/mahayana/mahayana-rs/Cargo.lock'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$lock"
+          git diff --cached --quiet && { echo 'No lock change required'; exit 1; }
+          git commit -m 'build(mahayana): refresh workspace lock graph'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
