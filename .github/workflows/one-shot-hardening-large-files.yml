@@ -1,0 +1,289 @@
+name: One-shot large-file hardening
+
+on:
+  push:
+    branches:
+      - security/full-repo-hardening-20260821
+    paths:
+      - '.github/hardening-large-file-trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply exact asserted hardening patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def replace_exact(path, old, new, expected=1):
+              text = read(path)
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} exact match(es), found {count}: {old[:120]!r}')
+              write(path, text.replace(old, new))
+
+          def replace_between(path, start, end, replacement):
+              text = read(path)
+              start_index = text.find(start)
+              if start_index < 0:
+                  raise SystemExit(f'{path}: start marker not found: {start!r}')
+              end_index = text.find(end, start_index)
+              if end_index < 0:
+                  raise SystemExit(f'{path}: end marker not found: {end!r}')
+              write(path, text[:start_index] + replacement + text[end_index:])
+
+          # AI backend: remove the checked-in adapter fallback and stop reusing
+          # unrelated provider credentials as the adapter secret.
+          replace_exact(
+              'ai-backend/src/server.js',
+              """const codexAdapterSecret =
+            process.env.CODEX_DEEPSEEK_ADAPTER_SECRET ||
+            deepseekApiKey ||
+            openClawGatewayToken ||
+            'dacheng-codex-local-dev-secret';""",
+              """const codexAdapterSecret =
+            String(process.env.CODEX_DEEPSEEK_ADAPTER_SECRET || '').trim() ||
+            (process.env.NODE_ENV === 'production' ? '' : crypto.randomBytes(32).toString('base64url'));
+          if (!codexAdapterSecret) {
+            throw new Error('CODEX_DEEPSEEK_ADAPTER_SECRET is required in production');
+          }""",
+          )
+          replace_exact(
+              'ai-backend/src/server.js',
+              "app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));",
+              """const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? NaN : 0));
+          if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 8) {
+            throw new Error('TRUST_PROXY_HOPS must be an integer between 0 and 8');
+          }
+          app.set('trust proxy', trustProxyHops);""",
+          )
+
+          # Legacy Alipay bridge must never manufacture an authenticated mock
+          # identity when production provider configuration is absent.
+          alipay_path = 'fabushi/web/alipay-login-functions.js'
+          alipay = read(alipay_path)
+          start = "    if (!appId || !privateKey || !alipayPublicKey) {\n"
+          end = "    // 第一步：使用auth_code换取access_token和user_id\n"
+          start_i = alipay.find(start)
+          end_i = alipay.find(end, start_i)
+          if start_i < 0 or end_i < 0:
+              raise SystemExit('alipay mock fallback markers not found')
+          replacement = """    if (!appId || !privateKey || !alipayPublicKey) {
+            console.error('支付宝登录配置不完整，拒绝使用模拟身份');
+            return {
+              error: true,
+              code: 'CONFIG_MISSING',
+              message: '支付宝登录暂不可用，请稍后再试'
+            };
+          }
+
+          """
+          write(alipay_path, alipay[:start_i] + replacement + alipay[end_i:])
+
+          # Meditation handlers verify signatures themselves instead of trusting
+          # payload-only decoding performed by a historical compatibility layer.
+          meditation_path = 'fabushi/web/src/handlers/meditation.js'
+          replace_exact(
+              meditation_path,
+              "import { jsonResponse } from '../utils/response.js';\n",
+              "import { jsonResponse } from '../utils/response.js';\nimport { verifyToken } from '../../auth-utils.js';\n",
+          )
+          meditation = read(meditation_path)
+          auth_start = '// 验证认证Token并获取用户名\nasync function authenticateUser(request, db) {'
+          auth_end = '\nfunction asInt(value, fallback = 0) {'
+          start_i = meditation.find(auth_start)
+          end_i = meditation.find(auth_end, start_i)
+          if start_i < 0 or end_i < 0:
+              raise SystemExit('meditation authenticateUser block markers not found')
+          auth_replacement = """// 验证认证Token并获取用户名
+          async function authenticateUser(request, env, db) {
+              const authHeader = request.headers.get('Authorization');
+              if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                  return { error: '未授权访问', status: 401 };
+              }
+
+              const payload = await verifyToken(authHeader.substring(7), env);
+              if (!payload) {
+                  return { error: 'Token无效或已过期', status: 401 };
+              }
+              const username = payload.username || payload.sub;
+              if (!username) {
+                  return { error: '无法获取用户信息', status: 401 };
+              }
+
+              const tokenUserId = normalizeUserId(payload.userId ?? payload.user_id ?? payload.id);
+              const userId = tokenUserId ?? await resolveUserIdByUsername(db, username);
+              const auth = { username, userId };
+              await backfillMeditationUserId(db, auth);
+              return auth;
+          }
+          """
+          meditation = meditation[:start_i] + auth_replacement + meditation[end_i:]
+          call_count = meditation.count('authenticateUser(request, db)')
+          if call_count < 10:
+              raise SystemExit(f'expected many meditation auth calls, found {call_count}')
+          meditation = meditation.replace('authenticateUser(request, db)', 'authenticateUser(request, env, db)')
+          write(meditation_path, meditation)
+
+          # The route wrapper independently verifies tokens as a second boundary.
+          route_path = 'fabushi/web/src/routes/meditation-routes.js'
+          replace_exact(
+              route_path,
+              "import { jsonResponse } from '../utils/response.js';\n",
+              "import { jsonResponse } from '../utils/response.js';\nimport { verifyToken } from '../../auth-utils.js';\n",
+          )
+          route = read(route_path)
+          route_auth_start = 'async function authenticateRouteUser(request, db = null) {'
+          route_auth_end = '\nfunction isMissingUserIdColumnError(error) {'
+          start_i = route.find(route_auth_start)
+          end_i = route.find(route_auth_end, start_i)
+          if start_i < 0 or end_i < 0:
+              raise SystemExit('meditation route auth block markers not found')
+          route_auth_replacement = """async function authenticateRouteUser(request, env, db = null) {
+            const authHeader = request.headers.get('Authorization');
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+              return { error: '未授权访问', status: 401 };
+            }
+
+            const payload = await verifyToken(authHeader.substring(7), env);
+            if (!payload) return { error: 'Token无效或已过期', status: 401 };
+            const username = payload.username || payload.sub;
+            if (!username) return { error: '无法获取用户信息', status: 401 };
+            const tokenUserId = payload.userId ?? payload.user_id ?? payload.id ?? null;
+            const userId = tokenUserId ?? (db ? await resolveUserIdByUsername(db, username) : null);
+            return { username, userId };
+          }
+          """
+          route = route[:start_i] + route_auth_replacement + route[end_i:]
+          if route.count('authenticateRouteUser(request, db)') != 2:
+              raise SystemExit('unexpected meditation route auth call count')
+          route = route.replace('authenticateRouteUser(request, db)', 'authenticateRouteUser(request, env, db)')
+          route = route.replace(
+              'async function handleCreateMeditationGroupWithGeneratedIds(request, db) {',
+              'async function handleCreateMeditationGroupWithGeneratedIds(request, env, db) {',
+          )
+          route = route.replace(
+              'handleCreateMeditationGroupWithGeneratedIds(request, db)',
+              'handleCreateMeditationGroupWithGeneratedIds(request, env, db)',
+          )
+          write(route_path, route)
+
+          # Remove the now-unnecessary legacy fake JWT layer from the main router.
+          router_path = 'fabushi/web/src/router.js'
+          router = read(router_path)
+          router = router.replace("import { verifyToken } from '../auth-utils.js';\n", '')
+          compat_start = 'function jsonStringifyAscii(value) {'
+          compat_end = 'export async function route(request, env, db, ctx) {'
+          start_i = router.find(compat_start)
+          end_i = router.find(compat_end, start_i)
+          if start_i < 0 or end_i < 0:
+              raise SystemExit('legacy meditation router compatibility block not found')
+          router = router[:start_i] + router[end_i:]
+          normalization = """  const normalizedMeditationAuth = await normalizeMeditationAuthRequest(request, env, pathname);
+            if (normalizedMeditationAuth.response) {
+              return normalizedMeditationAuth.response;
+            }
+            request = normalizedMeditationAuth.request;
+
+          """
+          if normalization not in router:
+              raise SystemExit('legacy meditation normalization call not found')
+          router = router.replace(normalization, '')
+          duplicate_bind = "  if (pathname === '/api/auth/bind-email' && method === 'POST') return await handleBindEmail(request, env, db);\n"
+          if router.count(duplicate_bind) != 2:
+              raise SystemExit('unexpected bind-email duplicate route count')
+          router = router.replace(duplicate_bind + duplicate_bind, duplicate_bind)
+          write(router_path, router)
+
+          # Native binary caches must include the workflow/toolchain definition,
+          # and all build tools are pinned instead of silently drifting.
+          native_path = '.github/workflows/native-mobile.yml'
+          native = read(native_path)
+          rust_count = native.count('uses: dtolnay/rust-toolchain@stable')
+          if rust_count < 3:
+              raise SystemExit(f'expected at least 3 Rust toolchain uses, found {rust_count}')
+          native = native.replace('uses: dtolnay/rust-toolchain@stable', 'uses: dtolnay/rust-toolchain@1.98.0')
+          source_hash_count = native.count("SOURCE_HASH: ${{ hashFiles('")
+          if source_hash_count != 2:
+              raise SystemExit(f'expected 2 native source hash definitions, found {source_hash_count}')
+          native = native.replace(
+              "SOURCE_HASH: ${{ hashFiles('",
+              "SOURCE_HASH: ${{ hashFiles('.github/workflows/native-mobile.yml', '",
+          )
+          if native.count('cargo install cargo-ndk --locked') != 1:
+              raise SystemExit('cargo-ndk install command changed unexpectedly')
+          native = native.replace(
+              'cargo install cargo-ndk --locked',
+              'cargo install cargo-ndk --version 4.1.2 --locked',
+          )
+          native = native.replace(
+              'key: cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v4',
+              'key: cargo-ndk-${{ runner.os }}-${{ runner.arch }}-v5-4.1.2',
+          )
+          write(native_path, native)
+          PY
+
+      - name: Validate patched JavaScript and workflow invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check ai-backend/src/server.js
+          node --check fabushi/web/alipay-login-functions.js
+          node --check fabushi/web/src/handlers/meditation.js
+          node --check fabushi/web/src/routes/meditation-routes.js
+          node --check fabushi/web/src/router.js
+          ! grep -q 'dacheng-codex-local-dev-secret' ai-backend/src/server.js
+          ! grep -q '使用模拟数据' fabushi/web/alipay-login-functions.js
+          ! grep -q 'JSON.parse(atob(parts\[1\]))' fabushi/web/src/handlers/meditation.js
+          ! grep -q 'JSON.parse(atob(parts\[1\]))' fabushi/web/src/routes/meditation-routes.js
+          ! grep -q 'createLegacyMeditationToken' fabushi/web/src/router.js
+          grep -q 'dtolnay/rust-toolchain@1.98.0' .github/workflows/native-mobile.yml
+          grep -q 'cargo install cargo-ndk --version 4.1.2 --locked' .github/workflows/native-mobile.yml
+
+      - name: Run focused Worker tests
+        working-directory: fabushi/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"type":"module"}\n' > package.json
+          node tests/router-meditation-auth.test.js
+          node tests/payment-products.test.js
+          rm package.json
+
+      - name: Commit exact patches to hardening branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'fabushi-security-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add ai-backend/src/server.js \
+            fabushi/web/alipay-login-functions.js \
+            fabushi/web/src/handlers/meditation.js \
+            fabushi/web/src/routes/meditation-routes.js \
+            fabushi/web/src/router.js \
+            .github/workflows/native-mobile.yml
+          if git diff --cached --quiet; then
+            echo 'No large-file patches were needed.'
+            exit 0
+          fi
+          git commit -m 'security: finish large-file hardening fixes'
+          git push origin HEAD:security/full-repo-hardening-20260821
