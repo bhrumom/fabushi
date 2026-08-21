@@ -10,7 +10,7 @@ import {
 } from '../src/handlers/payment.js';
 import { DatabaseService } from '../src/services/database.js';
 
-const env = { JWT_SECRET: 'payment-products-test-secret' };
+const env = { JWT_SECRET: 'payment-products-test-secret-that-is-at-least-32-bytes' };
 const TEST_ALIPAY_PRIVATE_KEY = readFileSync(
   new URL('../test_private_key_pkcs8.pem', import.meta.url),
   'utf8',
@@ -50,11 +50,19 @@ function createD1Mock({ columnsByTable = {}, firstResult = null } = {}) {
   };
 }
 
-test('alipay order query returns a success envelope and asset product type', async () => {
+test('alipay order query requires ownership and returns a minimal success envelope', async () => {
+  const token = await generateToken({ id: 22, username: 'bhrum108' }, env);
   const db = {
+    async getUserById(id) {
+      return Number(id) === 22 ? { id: 22, username: 'bhrum108', email: 'bhrum108@example.com' } : null;
+    },
+    async getUser(username) {
+      return username === 'bhrum108' ? { id: 22, username, email: 'bhrum108@example.com' } : null;
+    },
     async getOrder(orderId) {
       return {
         order_id: orderId,
+        account_user_id: 22,
         username: 'bhrum108',
         plan: 'zen_buddha_asset',
         amount: '33.00',
@@ -65,7 +73,9 @@ test('alipay order query returns a success envelope and asset product type', asy
   };
 
   const response = await handleQueryAlipayOrder(
-    new Request('https://example.com/api/alipay/query-order?orderId=ORDER_1'),
+    new Request('https://example.com/api/alipay/query-order?orderId=ORDER_1', {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
     env,
     db,
   );
@@ -74,9 +84,9 @@ test('alipay order query returns a success envelope and asset product type', asy
   assert.equal(response.status, 200);
   assert.equal(body.success, true);
   assert.equal(body.orderId, 'ORDER_1');
-  assert.equal(body.userId, 'bhrum108');
   assert.equal(body.productType, 'asset_unlock');
   assert.equal(body.status, 'PAID');
+  assert.equal('userId' in body, false);
 });
 
 test('paid asset entitlement is granted from completed purchase history', async () => {
@@ -140,6 +150,7 @@ test('create Alipay order resolves stale token username through userId', async (
       ...env,
       ALIPAY_APP_ID: 'test-app-id',
       ALIPAY_PRIVATE_KEY: TEST_ALIPAY_PRIVATE_KEY,
+      ALIPAY_PUBLIC_KEY: 'test-public-key-placeholder-for-config-check',
       WORKER_URL: 'https://api.example.com',
     },
     db,
@@ -151,7 +162,7 @@ test('create Alipay order resolves stale token username through userId', async (
   assert.equal(createdOrders.length, 1);
   assert.equal(createdOrders[0].username, 'real_paid_user');
   assert.equal(createdOrders[0].accountUserId, 55);
-  assert.match(createdOrders[0].orderId, /^MEMBER_real_paid_user_/);
+  assert.match(createdOrders[0].orderId, /^MEMBER_55_/);
 });
 
 test('createOrder writes username into legacy orders.user_id when username columns are absent', async () => {
