@@ -52,7 +52,10 @@ pub struct PermissionKey {
 }
 
 impl PermissionKey {
-    pub fn new(capability: impl Into<String>, target: impl Into<String>) -> Result<Self, KernelError> {
+    pub fn new(
+        capability: impl Into<String>,
+        target: impl Into<String>,
+    ) -> Result<Self, KernelError> {
         let capability = capability.into();
         let target = target.into();
         if capability.trim().is_empty() {
@@ -79,7 +82,11 @@ pub struct PermissionBook {
 }
 
 impl PermissionBook {
-    pub fn evaluate(&self, mode: PermissionMode, request: &PermissionRequest) -> PermissionDisposition {
+    pub fn evaluate(
+        &self,
+        mode: PermissionMode,
+        request: &PermissionRequest,
+    ) -> PermissionDisposition {
         if self.permanent_denials.contains(&request.key) {
             return PermissionDisposition::Deny;
         }
@@ -90,7 +97,9 @@ impl PermissionBook {
             RiskClass::ReadOnly => PermissionDisposition::Allow,
             RiskClass::WorkspaceMutation => match mode {
                 PermissionMode::ReadOnly => PermissionDisposition::Deny,
-                PermissionMode::Workspace | PermissionMode::Elevated => PermissionDisposition::Allow,
+                PermissionMode::Workspace | PermissionMode::Elevated => {
+                    PermissionDisposition::Allow
+                }
             },
             RiskClass::ExternalSideEffect | RiskClass::Privileged => PermissionDisposition::Ask,
         }
@@ -150,7 +159,12 @@ impl InputEnvelope {
         if text.trim().is_empty() {
             return Err(KernelError::EmptyField("input.text"));
         }
-        Ok(Self { id, text, origin, created_at_ms })
+        Ok(Self {
+            id,
+            text,
+            origin,
+            created_at_ms,
+        })
     }
 }
 
@@ -195,7 +209,10 @@ impl Default for ContextWindow {
 
 impl ContextWindow {
     pub fn new() -> Self {
-        Self { id: uuid::Uuid::new_v4().to_string(), generation: 0 }
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            generation: 0,
+        }
     }
 
     pub fn compact(&mut self) {
@@ -287,7 +304,14 @@ impl VerificationOracle {
         if name.trim().is_empty() {
             return Err(KernelError::EmptyField("oracle.name"));
         }
-        Ok(Self { name, kind, required, objective, status: OracleStatus::Pending, evidence: None })
+        Ok(Self {
+            name,
+            kind,
+            required,
+            objective,
+            status: OracleStatus::Pending,
+            evidence: None,
+        })
     }
 }
 
@@ -320,7 +344,10 @@ pub struct LoopPolicy {
 
 impl Default for LoopPolicy {
     fn default() -> Self {
-        Self { warn_after: 3, interrupt_after: 5 }
+        Self {
+            warn_after: 3,
+            interrupt_after: 5,
+        }
     }
 }
 
@@ -349,7 +376,11 @@ struct LoopGuard {
 
 impl LoopGuard {
     fn new(policy: LoopPolicy) -> Result<Self, KernelError> {
-        Ok(Self { policy: policy.validate()?, last_fingerprint: None, repeats: 0 })
+        Ok(Self {
+            policy: policy.validate()?,
+            last_fingerprint: None,
+            repeats: 0,
+        })
     }
 
     fn observe(&mut self, fingerprint: &str) -> LoopObservation {
@@ -360,11 +391,17 @@ impl LoopGuard {
             self.repeats = 1;
         }
         if self.repeats >= self.policy.interrupt_after {
-            LoopObservation::Interrupt { repeats: self.repeats }
+            LoopObservation::Interrupt {
+                repeats: self.repeats,
+            }
         } else if self.repeats >= self.policy.warn_after {
-            LoopObservation::Warn { repeats: self.repeats }
+            LoopObservation::Warn {
+                repeats: self.repeats,
+            }
         } else {
-            LoopObservation::Continue { repeats: self.repeats }
+            LoopObservation::Continue {
+                repeats: self.repeats,
+            }
         }
     }
 }
@@ -453,9 +490,18 @@ impl TaskSupervisor {
         Ok(())
     }
 
-    pub fn add_oracle(&mut self, task_id: &str, oracle: VerificationOracle) -> Result<(), KernelError> {
+    pub fn add_oracle(
+        &mut self,
+        task_id: &str,
+        oracle: VerificationOracle,
+    ) -> Result<(), KernelError> {
         let task = self.task_mut(task_id)?;
-        if task.record.oracles.iter().any(|existing| existing.name == oracle.name) {
+        if task
+            .record
+            .oracles
+            .iter()
+            .any(|existing| existing.name == oracle.name)
+        {
             return Err(KernelError::DuplicateOracle(oracle.name));
         }
         task.record.oracles.push(oracle);
@@ -481,12 +527,20 @@ impl TaskSupervisor {
         Ok(())
     }
 
-    pub fn queue_input(&mut self, task_id: &str, input: InputEnvelope) -> Result<(), KernelError> {
+    pub fn queue_input(
+        &mut self,
+        task_id: &str,
+        input: InputEnvelope,
+    ) -> Result<(), KernelError> {
         self.task_mut(task_id)?.record.queued_inputs.push(input);
         Ok(())
     }
 
-    pub fn steer(&mut self, task_id: &str, input: InputEnvelope) -> Result<(), KernelError> {
+    pub fn steer(
+        &mut self,
+        task_id: &str,
+        input: InputEnvelope,
+    ) -> Result<(), KernelError> {
         self.task_mut(task_id)?.record.queued_inputs.steer(input);
         Ok(())
     }
@@ -558,7 +612,9 @@ impl TaskSupervisor {
     }
 
     fn task_mut(&mut self, task_id: &str) -> Result<&mut ManagedTask, KernelError> {
-        self.tasks.get_mut(task_id).ok_or_else(|| KernelError::UnknownTask(task_id.to_string()))
+        self.tasks
+            .get_mut(task_id)
+            .ok_or_else(|| KernelError::UnknownTask(task_id.to_string()))
     }
 }
 
@@ -579,7 +635,11 @@ fn valid_transition(from: TaskState, to: TaskState) -> bool {
 }
 
 fn ensure_completion_ready(task: &TaskRecord) -> Result<(), KernelError> {
-    let required: Vec<_> = task.oracles.iter().filter(|oracle| oracle.required).collect();
+    let required: Vec<_> = task
+        .oracles
+        .iter()
+        .filter(|oracle| oracle.required)
+        .collect();
     if task.verification_mode == VerificationMode::ObjectiveRequired
         && !required.iter().any(|oracle| oracle.objective)
     {
@@ -618,7 +678,11 @@ pub enum KernelError {
     #[error("task is not running: {0}")]
     TaskNotRunning(String),
     #[error("invalid task transition for {task_id}: {from:?} -> {to:?}")]
-    InvalidTaskTransition { task_id: String, from: TaskState, to: TaskState },
+    InvalidTaskTransition {
+        task_id: String,
+        from: TaskState,
+        to: TaskState,
+    },
     #[error("verification oracle already exists: {0}")]
     DuplicateOracle(String),
     #[error("verification oracle not found: {0}")]
@@ -629,8 +693,14 @@ pub enum KernelError {
     VerificationIncomplete { task_id: String, oracle: String },
     #[error("verification failed for {task_id}: {oracle}")]
     VerificationFailed { task_id: String, oracle: String },
-    #[error("repeated action loop interrupted for {task_id} after {repeats} repeats: {fingerprint}")]
-    RepeatedActionLoop { task_id: String, fingerprint: String, repeats: u32 },
+    #[error(
+        "repeated action loop interrupted for {task_id} after {repeats} repeats: {fingerprint}"
+    )]
+    RepeatedActionLoop {
+        task_id: String,
+        fingerprint: String,
+        repeats: u32,
+    },
     #[error("attempt not found: {0}")]
     UnknownAttempt(String),
     #[error("finished attempt cannot keep a running outcome")]
@@ -648,7 +718,10 @@ mod tests {
                 "T01",
                 "ship a verified change",
                 VerificationMode::ObjectiveRequired,
-                LoopPolicy { warn_after: 2, interrupt_after: 4 },
+                LoopPolicy {
+                    warn_after: 2,
+                    interrupt_after: 4,
+                },
             )
             .expect("register task");
         supervisor
@@ -660,26 +733,43 @@ mod tests {
         supervisor
             .add_oracle(
                 "T01",
-                VerificationOracle::new("ci", VerificationKind::CiCheck, true, true).expect("oracle"),
+                VerificationOracle::new("ci", VerificationKind::CiCheck, true, true)
+                    .expect("oracle"),
             )
             .expect("add oracle");
-        supervisor.transition("T01", TaskState::Running).expect("start");
-        supervisor.transition("T01", TaskState::Verifying).expect("verify");
+        supervisor
+            .transition("T01", TaskState::Running)
+            .expect("start");
+        supervisor
+            .transition("T01", TaskState::Verifying)
+            .expect("verify");
         assert!(matches!(
             supervisor.transition("T01", TaskState::Succeeded),
             Err(KernelError::VerificationIncomplete { .. })
         ));
         supervisor
-            .record_oracle("T01", "ci", OracleStatus::Passed, Some("run:123".to_string()))
+            .record_oracle(
+                "T01",
+                "ci",
+                OracleStatus::Passed,
+                Some("run:123".to_string()),
+            )
             .expect("record oracle");
-        supervisor.transition("T01", TaskState::Succeeded).expect("complete");
-        assert_eq!(supervisor.task("T01").expect("task").state, TaskState::Succeeded);
+        supervisor
+            .transition("T01", TaskState::Succeeded)
+            .expect("complete");
+        assert_eq!(
+            supervisor.task("T01").expect("task").state,
+            TaskState::Succeeded
+        );
     }
 
     #[test]
     fn repeated_action_is_warned_then_interrupted() {
         let mut supervisor = task();
-        supervisor.transition("T01", TaskState::Running).expect("start");
+        supervisor
+            .transition("T01", TaskState::Running)
+            .expect("start");
         assert_eq!(
             supervisor.begin_attempt("T01", "shell:status", 1),
             Ok(LoopObservation::Continue { repeats: 1 })
@@ -704,19 +794,27 @@ mod tests {
         supervisor
             .queue_input(
                 "T01",
-                InputEnvelope::new("q1", "after this", InputOrigin::Queued, 1).expect("queued input"),
+                InputEnvelope::new("q1", "after this", InputOrigin::Queued, 1)
+                    .expect("queued input"),
             )
             .expect("queue");
         supervisor
             .steer(
                 "T01",
-                InputEnvelope::new("s1", "change direction", InputOrigin::Steer, 2).expect("steer input"),
+                InputEnvelope::new("s1", "change direction", InputOrigin::Steer, 2)
+                    .expect("steer input"),
             )
             .expect("steer");
-        let first = supervisor.next_input("T01").expect("next").expect("first input");
+        let first = supervisor
+            .next_input("T01")
+            .expect("next")
+            .expect("first input");
         assert_eq!(first.id, "s1");
         assert_eq!(first.origin, InputOrigin::Steer);
-        let second = supervisor.next_input("T01").expect("next").expect("second input");
+        let second = supervisor
+            .next_input("T01")
+            .expect("next")
+            .expect("second input");
         assert_eq!(second.id, "q1");
         assert_eq!(second.origin, InputOrigin::Queued);
     }
@@ -724,17 +822,30 @@ mod tests {
     #[test]
     fn permanent_denial_wins_over_permission_mode() {
         let key = PermissionKey::new("network.fetch", "example.test").expect("key");
-        let request = PermissionRequest { key: key.clone(), risk: RiskClass::ExternalSideEffect };
+        let request = PermissionRequest {
+            key: key.clone(),
+            risk: RiskClass::ExternalSideEffect,
+        };
         let mut book = PermissionBook::default();
-        assert_eq!(book.evaluate(PermissionMode::Elevated, &request), PermissionDisposition::Ask);
+        assert_eq!(
+            book.evaluate(PermissionMode::Elevated, &request),
+            PermissionDisposition::Ask
+        );
         book.remember(key, PermissionDecision::DenyAlways);
-        assert_eq!(book.evaluate(PermissionMode::Elevated, &request), PermissionDisposition::Deny);
+        assert_eq!(
+            book.evaluate(PermissionMode::Elevated, &request),
+            PermissionDisposition::Deny
+        );
     }
 
     #[test]
     fn compaction_rotates_context_window_identity() {
         let mut supervisor = task();
-        let before = supervisor.task("T01").expect("task").context_window.clone();
+        let before = supervisor
+            .task("T01")
+            .expect("task")
+            .context_window
+            .clone();
         let after = supervisor.compact_context("T01").expect("compact");
         assert_ne!(before.id, after.id);
         assert_eq!(after.generation, before.generation + 1);
