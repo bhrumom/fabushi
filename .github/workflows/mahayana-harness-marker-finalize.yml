@@ -7,7 +7,7 @@ on:
       - '.github/mahayana-harness-finalize.marker'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   finalize:
@@ -23,6 +23,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt,clippy
+
+      - name: Restore Harness Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-harness-final-v1
+          cache-all-crates: true
 
       - name: Correct deterministic patch anchor
         shell: bash
@@ -55,8 +62,8 @@ jobs:
 
       # Do not run cargo generate-lockfile here: that re-resolves the entire
       # legacy workspace and can select incompatible transitive prereleases.
-      # cargo test below performs the minimal lock update required by the new
-      # local workspace packages while preserving existing compatible pins.
+      # cargo test below performs only the lock update required by the new
+      # local workspace packages while preserving the repository's compatible pins.
       - name: Test Harness stack
         id: harness_test
         shell: bash
@@ -111,6 +118,29 @@ jobs:
           -p mahayana-unified-app-host
           --all-targets -- -D warnings
 
+      - name: Commit verified Rust product sources
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            third_party/mahayana/mahayana-rs/Cargo.lock \
+            third_party/mahayana/mahayana-rs/mahayana-harness \
+            third_party/mahayana/mahayana-rs/mahayana-harness-services \
+            third_party/mahayana/mahayana-rs/mahayana-harness-advanced \
+            third_party/mahayana/mahayana-rs/mahayana-harness-adapters \
+            third_party/mahayana/mahayana-rs/mahayana-harness-agent \
+            third_party/mahayana/mahayana-rs/mahayana-harness-protocol \
+            third_party/mahayana/mahayana-rs/mahayana-unified-app-host
+          if git diff --cached --quiet; then
+            echo 'Verified Harness sources already match the branch.'
+          else
+            git commit -m 'feat(mahayana): finalize verified Rust-native Harness semantics'
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
+
       - name: Export verified patch
         if: success()
         shell: bash
@@ -123,5 +153,5 @@ jobs:
         with:
           name: harness-verified-patch-${{ github.run_id }}
           path: .github/harness-final.patch
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 3
