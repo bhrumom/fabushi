@@ -10,8 +10,8 @@ use mahayana_core::{
 };
 use mahayana_kernel::{
     ApprovalResolution, Capability, CapabilitySet, EngineBackend, ExecutionPolicy, KernelError,
-    KernelEvent, KernelEventSink, OpenSessionRequest, OperationId as KernelOperationId,
-    RiskLevel, RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
+    KernelEvent, KernelEventSink, OpenSessionRequest, OperationId as KernelOperationId, RiskLevel,
+    RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
 };
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -67,9 +67,7 @@ impl ConversationProvider for KernelConversationProvider {
     }
 
     async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
-        let mut conversation = Conversation::codex_assistant();
-        conversation.id = ConversationId(MAHAYANA_AI_CONVERSATION_ID.to_string());
-        Ok(vec![conversation])
+        Ok(vec![Conversation::mahayana_assistant()])
     }
 
     async fn history(

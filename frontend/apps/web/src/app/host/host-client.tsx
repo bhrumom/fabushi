@@ -3208,7 +3208,7 @@ export default function HostClient() {
             </span>
           </button>
           {visibleConversations
-            .filter((conversation) => conversation.id !== "codex:agent:assistant")
+            .filter((conversation) => conversation.id !== "mahayana-ai:agent:assistant")
             .map((conversation) => (
               <button
                 key={conversation.id}
