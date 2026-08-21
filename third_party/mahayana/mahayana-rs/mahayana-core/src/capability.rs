@@ -38,9 +38,9 @@ pub mod goal;
 #[path = "recovery.rs"]
 pub mod recovery;
 
+pub use crate::MAHAYANA_AGENT_CONVERSATION_ID;
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
 pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
-pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
 pub const LEGACY_CODEX_AGENT_CONVERSATION_PREFIX: &str = "codex:";
 pub const CHATGPT_AUTO_CONFIRM_PLUGIN_ID: &str = "chatgpt-auto-confirm";
 pub const CHATGPT_AUTO_CONFIRM_CAPABILITY_ID: &str = "miniapp.chatgpt-auto-confirm";
@@ -133,7 +133,7 @@ pub fn capability_from_conversation(
     build_profile: BuildProfile,
 ) -> CapabilityDescriptor {
     let (id, kind, plugin_id, description, provider, conversation_id) = match &conversation.peer {
-        PeerKind::CodexAi => (
+        PeerKind::MahayanaAi => (
             MAHAYANA_AGENT_CAPABILITY_ID.to_string(),
             CapabilityKind::Agent,
             None,
