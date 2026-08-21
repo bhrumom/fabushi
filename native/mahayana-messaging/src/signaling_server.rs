@@ -64,7 +64,7 @@ impl CallSignalingServerConfig {
                 "bind address is empty".into(),
             ));
         }
-        if self.access_token.as_bytes().len() < 32 {
+        if self.access_token.len() < 32 {
             return Err(CallSignalingServerError::InvalidConfig(
                 "access token must contain at least 32 bytes".into(),
             ));
@@ -205,10 +205,7 @@ fn handle_connection(
             }
         });
 
-    loop {
-        let Some(line) = read_line_limited(&mut reader, max_frame_bytes)? else {
-            break;
-        };
+    while let Some(line) = read_line_limited(&mut reader, max_frame_bytes)? {
         if line.is_empty() {
             continue;
         }

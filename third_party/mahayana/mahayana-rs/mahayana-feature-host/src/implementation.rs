@@ -931,7 +931,7 @@ impl FeatureHostController {
             store,
             FileBlobStore::new(messaging_root.join("blobs")),
         )
-            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
+        .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
         let responses = service
             .handle(client_envelope, now_millis())
             .map_err(|error| FeatureHostError::Contract(error.to_string()))?;
