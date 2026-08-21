@@ -1,15 +1,21 @@
 //! Direct Rust host API for the long-lived Mahayana Runtime.
 //!
 //! Native shells such as Electron, Swift, and Kotlin should depend on this crate.
-//! The C/JSON ABI is the stable boundary used by native host adapters.
+//! The C/JSON ABI remains a compatibility adapter for legacy hosts.
 
 use fabushi_official_miniapps::OFFICIAL_PLUGIN_IDS;
 use fabushi_official_miniapps::app_definition;
 use mahayana_agent::UnavailableAgentBackend;
 #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_agent::mux::MahayanaMuxBackend;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
 use mahayana_agent_codex::CodexAgentBackend;
 #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
 use mahayana_agent_codex::CodexAgentConfig;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_agent_responses::ResponsesAgentBackend;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_agent_responses::ResponsesAgentConfig;
 #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
 use mahayana_conversation::ConversationProvider;
 use mahayana_core::ApprovalDecision;
@@ -21,6 +27,8 @@ use mahayana_core::RuntimeConfig;
 use mahayana_core::RuntimeEvent;
 use mahayana_core::RuntimeResponse;
 use mahayana_core::RuntimeStatus;
+#[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
+use mahayana_core::capability::kernel::BackendCapabilities;
 use mahayana_miniapp::EntitlementChecker;
 use mahayana_miniapp::MiniAppConversationProvider;
 use mahayana_miniapp::MiniAppDefinition;
@@ -51,8 +59,9 @@ pub struct HostCreateConfig {
     pub product_surface_state_path: Option<PathBuf>,
     /// Shared automation store used by CLI and native application shells.
     pub automation_path: Option<PathBuf>,
+    /// Compatibility adapter storage. This is not the Mahayana product identity.
     pub codex_home: Option<PathBuf>,
-    /// Optional Mahayana CLI used only for desktop argv helper dispatch.
+    /// Optional compatibility CLI used only for desktop argv helper dispatch.
     pub codex_executable_path: Option<PathBuf>,
     pub cwd: Option<PathBuf>,
     /// Existing embedded Telegram client created by the platform login flow.
@@ -189,10 +198,6 @@ pub fn default_product_session_path() -> PathBuf {
         return shared;
     }
 
-    // Releases before the native app-group migration stored the account in
-    // ~/.mahayana. Keep that signed-in account usable on first launch; the
-    // desktop shell copies it into its Rust-owned app-data session and never
-    // exposes credentials to React.
     if let Some(home) = std::env::var_os("HOME") {
         let legacy = PathBuf::from(home).join(".mahayana").join("session.json");
         if legacy.is_file() {
@@ -222,10 +227,6 @@ fn build_runtime(
             BuildProfile::MobileEmbedded => HostPlatform::Mobile,
             BuildProfile::WebWasm => HostPlatform::Web,
         });
-    // Runtime construction is intentionally network-free. Remote marketplace
-    // discovery belongs to an explicit product refresh command, not process
-    // startup or every unit test. Valid locally installed repository plugins
-    // are safe to discover from disk before official bundled MiniApps are merged.
     let inherit_installed_plugins = create.inherit_installed_plugins.unwrap_or(
         matches!(runtime_config.build_profile, BuildProfile::DesktopFull) && !cfg!(test),
     );
@@ -238,14 +239,14 @@ fn build_runtime(
     let session_token = product_client.session_token().ok();
     let mut builder = RuntimeBuilder::new(runtime_config.clone());
     #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
-    let mut codex_conversation_providers: Vec<Arc<dyn ConversationProvider>> = Vec::new();
+    let mut adapter_conversation_providers: Vec<Arc<dyn ConversationProvider>> = Vec::new();
     if let Some(token) = session_token.as_ref() {
         let provider = Arc::new(MahayanaSocialConversationProvider::new(
             product_client.clone(),
             Some(token.clone()),
         ));
         #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
-        codex_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
+        adapter_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
         builder = builder.with_provider(provider)?;
     }
     if let Some(telegram_client_id) = create.telegram_client_id {
@@ -254,7 +255,7 @@ fn build_runtime(
             create.telegram_self_user_id.unwrap_or_default(),
         ));
         #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]
-        codex_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
+        adapter_conversation_providers.push(Arc::clone(&provider) as Arc<dyn ConversationProvider>);
         builder = builder.with_provider(provider)?;
     }
 
@@ -277,7 +278,7 @@ fn build_runtime(
         };
         let codex_home = create
             .codex_home
-            .or_else(|| data_dir.map(|path| path.join("codex")))
+            .or_else(|| data_dir.map(|path| path.join("codex-compat")))
             .or_else(default_codex_home_if_available)
             .ok_or_else(|| {
                 HostError::new("embedded Mahayana requires an application data directory")
@@ -288,6 +289,11 @@ fn build_runtime(
             .base_url
             .clone()
             .ok_or_else(|| HostError::new("Dacheng Responses base URL is required"))?;
+        let responses_config = ResponsesAgentConfig {
+            model: runtime_config.model.model.clone(),
+            responses_base_url: responses_base_url.clone(),
+            product_session_token: session_token.clone(),
+        };
         let settings = CodexAgentConfig {
             codex_home,
             inherit_installed_plugins,
@@ -300,13 +306,35 @@ fn build_runtime(
             sandbox_mode: codex_protocol::config_types::SandboxMode::WorkspaceWrite,
             approval_policy: codex_protocol::protocol::AskForApproval::OnRequest,
             codex_executable_path: create.codex_executable_path,
-            conversation_providers: codex_conversation_providers,
+            conversation_providers: adapter_conversation_providers,
         };
+        let preferred_backend = env::var("MAHAYANA_AGENT_BACKEND")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         return builder
             .build_with_agent_backend_and(
                 || async move {
-                    let backend = CodexAgentBackend::start(settings).await?;
-                    Ok(Arc::new(backend) as Arc<dyn mahayana_agent::AgentBackend>)
+                    let codex = CodexAgentBackend::start(settings).await?;
+                    let responses = ResponsesAgentBackend::new(responses_config)?;
+                    let mut mux = MahayanaMuxBackend::new(preferred_backend);
+                    mux.register_profiled(
+                        "codex-compat",
+                        100,
+                        Arc::new(codex),
+                        BackendCapabilities {
+                            tools: true,
+                            web: true,
+                            mcp: true,
+                            sandbox: true,
+                            subagents: true,
+                            headless: true,
+                            skills: true,
+                            ..BackendCapabilities::default()
+                        },
+                    )?;
+                    mux.register("responses", 10, Arc::new(responses))?;
+                    Ok(Arc::new(mux) as Arc<dyn mahayana_agent::AgentBackend>)
                 },
                 move |builder, backend| {
                     let provider = MiniAppConversationProvider::new_for_platform_with_entitlements(
@@ -323,7 +351,7 @@ fn build_runtime(
             .map_err(HostError::from);
     }
 
-    let unavailable_reason = "this platform build has no embedded Codex backend";
+    let unavailable_reason = "this platform build has no embedded Mahayana agent backend";
     let backend: Arc<dyn mahayana_agent::AgentBackend> =
         Arc::new(UnavailableAgentBackend::new(unavailable_reason));
     let miniapp = MiniAppConversationProvider::new_for_platform_with_entitlements(
@@ -441,7 +469,7 @@ fn merge_official_mini_apps(
 
 #[cfg(feature = "desktop-full")]
 fn default_codex_home() -> PathBuf {
-    default_mahayana_home().join("codex")
+    default_mahayana_home().join("adapters/codex")
 }
 
 #[cfg(any(feature = "desktop-full", feature = "mobile-embedded"))]

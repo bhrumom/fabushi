@@ -1,4 +1,4 @@
-//! Conversation provider routing shared by CLI, native app, Electron, and Web surfaces.
+//! Conversation provider routing shared by all Mahayana surfaces.
 
 use async_trait::async_trait;
 use mahayana_core::ApprovalDecision;
@@ -12,6 +12,11 @@ use mahayana_core::RuntimeEvent;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
+pub const LEGACY_CODEX_AGENT_PROVIDER_KEY: &str = "codex";
+pub const MAHAYANA_AGENT_CONVERSATION_PREFIX: &str = "mahayana:agent:";
+pub const LEGACY_CODEX_AGENT_CONVERSATION_PREFIX: &str = "codex:";
 
 #[derive(Debug, Clone)]
 pub struct SendMessageRequest {
@@ -72,6 +77,79 @@ pub trait ConversationProvider: Send + Sync {
     ) -> Result<(), ConversationError>;
 }
 
+/// Compatibility wrapper that prevents an upstream-era provider identity from
+/// leaking through the Mahayana product boundary. Legacy IDs are accepted as
+/// input but rewritten before any provider call that can create new state.
+struct CanonicalProvider {
+    inner: Arc<dyn ConversationProvider>,
+}
+
+impl CanonicalProvider {
+    fn new(inner: Arc<dyn ConversationProvider>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl ConversationProvider for CanonicalProvider {
+    fn key(&self) -> &'static str {
+        match self.inner.key() {
+            LEGACY_CODEX_AGENT_PROVIDER_KEY => MAHAYANA_AGENT_PROVIDER_KEY,
+            key => key,
+        }
+    }
+
+    async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {
+        let mut conversations = self.inner.list_conversations().await?;
+        if self.key() == MAHAYANA_AGENT_PROVIDER_KEY {
+            for conversation in &mut conversations {
+                conversation.id = canonicalize_conversation_id(&conversation.id);
+            }
+        }
+        Ok(conversations)
+    }
+
+    async fn list_plugin_commands(
+        &self,
+        plugin_id: Option<&str>,
+    ) -> Result<Vec<PluginCommandDescriptor>, ConversationError> {
+        self.inner.list_plugin_commands(plugin_id).await
+    }
+
+    async fn history(
+        &self,
+        conversation_id: &ConversationId,
+        limit: u32,
+    ) -> Result<Vec<Message>, ConversationError> {
+        let canonical = canonicalize_conversation_id(conversation_id);
+        let mut messages = self.inner.history(&canonical, limit).await?;
+        for message in &mut messages {
+            message.conversation_id = canonicalize_conversation_id(&message.conversation_id);
+        }
+        Ok(messages)
+    }
+
+    async fn send_message(
+        &self,
+        mut request: SendMessageRequest,
+        events: SharedConversationEventSink,
+    ) -> Result<(), ConversationError> {
+        request.conversation_id = canonicalize_conversation_id(&request.conversation_id);
+        self.inner.send_message(request, events).await
+    }
+
+    async fn interrupt(&self, operation_id: &OperationId) -> Result<(), ConversationError> {
+        self.inner.interrupt(operation_id).await
+    }
+
+    async fn resolve_approval(
+        &self,
+        request: ResolveApprovalRequest,
+    ) -> Result<(), ConversationError> {
+        self.inner.resolve_approval(request).await
+    }
+}
+
 #[derive(Default)]
 pub struct ProviderRegistry {
     providers: BTreeMap<String, Arc<dyn ConversationProvider>>,
@@ -82,10 +160,17 @@ impl ProviderRegistry {
         &mut self,
         provider: Arc<dyn ConversationProvider>,
     ) -> Result<(), ConversationError> {
-        let key = provider.key().trim();
-        if key.is_empty() {
+        let raw_key = provider.key().trim();
+        if raw_key.is_empty() {
             return Err(ConversationError::InvalidProviderKey);
         }
+        let key = canonical_provider_key(raw_key);
+        let provider: Arc<dyn ConversationProvider> =
+            if raw_key == LEGACY_CODEX_AGENT_PROVIDER_KEY {
+                Arc::new(CanonicalProvider::new(provider))
+            } else {
+                provider
+            };
         if self.providers.insert(key.to_string(), provider).is_some() {
             return Err(ConversationError::DuplicateProvider(key.to_string()));
         }
@@ -93,7 +178,7 @@ impl ProviderRegistry {
     }
 
     pub fn get(&self, key: &str) -> Option<Arc<dyn ConversationProvider>> {
-        self.providers.get(key).cloned()
+        self.providers.get(canonical_provider_key(key)).cloned()
     }
 
     pub fn for_conversation(
@@ -105,6 +190,8 @@ impl ProviderRegistry {
             .ok_or_else(|| ConversationError::ProviderUnavailable(key.to_string()))
     }
 
+    /// Returns canonical Mahayana provider keys even when a compatibility
+    /// adapter still reports an upstream-era key such as `codex`.
     pub fn keys(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
@@ -114,12 +201,36 @@ impl ProviderRegistry {
     }
 }
 
+/// Normalizes provider identities at the product boundary. `codex` is accepted
+/// only as a compatibility alias; new Mahayana state is represented by
+/// `mahayana-agent`.
+pub fn canonical_provider_key(key: &str) -> &str {
+    match key.trim() {
+        LEGACY_CODEX_AGENT_PROVIDER_KEY => MAHAYANA_AGENT_PROVIDER_KEY,
+        key => key,
+    }
+}
+
+/// Rewrites the historic Codex assistant namespace into the canonical
+/// Mahayana agent namespace while leaving unrelated conversation providers
+/// untouched. Callers may safely apply this repeatedly.
+pub fn canonicalize_conversation_id(conversation_id: &ConversationId) -> ConversationId {
+    let value = conversation_id.as_str();
+    if let Some(suffix) = value.strip_prefix(LEGACY_CODEX_AGENT_CONVERSATION_PREFIX) {
+        ConversationId(format!("mahayana:{suffix}"))
+    } else {
+        conversation_id.clone()
+    }
+}
+
 pub fn provider_key_for_conversation_id(
     conversation_id: &ConversationId,
 ) -> Result<&'static str, ConversationError> {
     let value = conversation_id.as_str();
-    if value.starts_with("codex:") {
-        Ok("codex")
+    if value.starts_with(MAHAYANA_AGENT_CONVERSATION_PREFIX)
+        || value.starts_with(LEGACY_CODEX_AGENT_CONVERSATION_PREFIX)
+    {
+        Ok(MAHAYANA_AGENT_PROVIDER_KEY)
     } else if value.starts_with("telegram:") {
         Ok("telegram")
     } else if value.starts_with("mahayana:") {
@@ -162,9 +273,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn routes_all_supported_peer_prefixes() {
+    fn routes_canonical_and_legacy_agent_prefixes_to_mahayana() {
         let cases = [
-            ("codex:agent:assistant", "codex"),
+            ("mahayana:agent:assistant", MAHAYANA_AGENT_PROVIDER_KEY),
+            ("codex:agent:assistant", MAHAYANA_AGENT_PROVIDER_KEY),
             ("telegram:user:42", "telegram"),
             ("mahayana:contact:abc", "mahayana-social"),
             ("miniapp:official.flashcards", "miniapp"),
@@ -174,5 +286,25 @@ mod tests {
                 .expect("known conversation prefix");
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn rewrites_only_legacy_agent_identity() {
+        let legacy = ConversationId("codex:agent:assistant".to_string());
+        assert_eq!(
+            canonicalize_conversation_id(&legacy).as_str(),
+            "mahayana:agent:assistant"
+        );
+        let social = ConversationId("mahayana:contact:abc".to_string());
+        assert_eq!(canonicalize_conversation_id(&social), social);
+    }
+
+    #[test]
+    fn canonical_provider_key_hides_upstream_identity() {
+        assert_eq!(
+            canonical_provider_key(LEGACY_CODEX_AGENT_PROVIDER_KEY),
+            MAHAYANA_AGENT_PROVIDER_KEY
+        );
+        assert_eq!(canonical_provider_key("telegram"), "telegram");
     }
 }
