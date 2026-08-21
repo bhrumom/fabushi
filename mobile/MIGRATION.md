@@ -11,7 +11,7 @@ Mahayana Rust Host (mahayana-app-host)
 └── iOS: Swift + SwiftUI
 ```
 
-The previous WebView mobile shell is retired and is not a build, test, package, or release input. The legacy `mobile/src-tauri` directory remains only because the current DevSpace connector cannot delete files; its package and entrypoints are deliberately inert.
+The previous WebView/Tauri/Capacitor mobile shell has been removed from the repository. `mobile/` contains only the native SwiftUI and Jetpack Compose applications plus their shared native package metadata.
 
 ## Desktop
 
@@ -76,12 +76,13 @@ The desktop sidecar, Android JNI bridge, and iOS C bridge all call this same hos
 
 ## Release paths
 
-- Desktop: `.github/workflows/desktop-installers.yml`
+- Desktop quality/package gate: `.github/workflows/electron-desktop.yml`
 - Native mobile PR/main gate: `.github/workflows/native-mobile.yml`
-- Android physical-device gate: `.github/workflows/android-real-device-e2e.yml`
-- Native mobile production release: `.github/workflows/publish-cd-release.yml`
+- Signed cross-platform release: `.github/workflows/native-electron-release.yml`
+- Apple TestFlight/App Store delivery: `.github/workflows/apple-store-delivery.yml`
+- Android Google Play delivery: `.github/workflows/google-play-delivery.yml`
 
-Old shell workflows are either retired guards or wrappers around these canonical workflows.
+No Flutter, Tauri, or Capacitor application build path remains in the canonical repository.
 
 ## Non-negotiable rules
 

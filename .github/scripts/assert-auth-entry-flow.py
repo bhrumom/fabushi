@@ -173,9 +173,9 @@ for path, text in rust_bridges:
         'feature_host_browser_login_reopen',
     ]:
         if command not in text:
-            raise SystemExit(f'auth entry gate: Tauri/native browser auth bridge missing {command}: {path}')
+            raise SystemExit(f'auth entry gate: Rust/native browser auth bridge missing {command}: {path}')
 if rust_bridges:
-    print(f'Tauri/native browser auth bridge coverage: {len(rust_bridges)} source(s).')
+    print(f'Rust/native browser auth bridge coverage: {len(rust_bridges)} source(s).')
 
 if full_contract:
     for forbidden in ['dangerous_insecure_decode', 'decode_payload', 'identityToken.split']:

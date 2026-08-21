@@ -55,9 +55,7 @@ impl SignalingHub {
         let call_id = signal_call_id(&signal).clone();
 
         if let CallSignal::Invite {
-            from,
-            participants,
-            ..
+            from, participants, ..
         } = &signal
         {
             let room = self.rooms.entry(call_id.clone()).or_default();
@@ -66,7 +64,9 @@ impl SignalingHub {
         }
 
         let targets = match &signal {
-            CallSignal::Invite { from, participants, .. } => participants
+            CallSignal::Invite {
+                from, participants, ..
+            } => participants
                 .iter()
                 .filter(|actor_id| *actor_id != from)
                 .cloned()

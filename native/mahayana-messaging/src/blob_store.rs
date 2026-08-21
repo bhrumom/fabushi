@@ -15,9 +15,9 @@ impl BlobId {
         let value = value.into();
         if value.is_empty()
             || value.len() > 128
-            || !value.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
-            })
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
             || value == "."
             || value == ".."
         {

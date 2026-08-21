@@ -136,7 +136,10 @@ impl BotRegistry {
             .bots
             .get(&invocation.bot_id)
             .ok_or_else(|| BotError::BotNotFound(invocation.bot_id.clone()))?;
-        if invocation.command.is_some() && profile.privacy_mode && invocation.text.text.trim().is_empty() {
+        if invocation.command.is_some()
+            && profile.privacy_mode
+            && invocation.text.text.trim().is_empty()
+        {
             return Err(BotError::EmptyInvocation);
         }
         let execution = BotExecution {

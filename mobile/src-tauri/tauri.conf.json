@@ -1,9 +1,0 @@
-{
-  "retired": true,
-  "replacement": {
-    "desktop": "../../desktop",
-    "android": "../android",
-    "ios": "../ios",
-    "sharedRustHost": "../../third_party/mahayana/mahayana-rs/mahayana-app-host"
-  }
-}
