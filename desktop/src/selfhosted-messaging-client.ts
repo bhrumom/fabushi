@@ -85,6 +85,29 @@ export type MessagingTextContent = {
   };
 };
 
+export interface MessagingMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: Record<string, unknown> & { type: string };
+  replyToMessageId?: string;
+  threadRootMessageId?: string;
+  reactions: Array<{
+    reaction: string;
+    count: number;
+    chosenByMe: boolean;
+    recentActorIds: string[];
+  }>;
+  deliveryState: Record<string, unknown> & { state: string };
+  createdAtMs: number;
+  editedAtMs?: number;
+  scheduledAtMs?: number;
+  silent: boolean;
+  protectedContent: boolean;
+  pinned: boolean;
+  deleted: boolean;
+}
+
 export interface MessagingRequestContext {
   requestId: string;
   deviceId: string;
@@ -121,8 +144,15 @@ function bridgeCommand(requestId: string, envelope: MessagingClientEnvelope): Ru
   } as unknown as RuntimeCommand;
 }
 
-export function isMessagingHostEvent(event: RuntimeEvent): event is RuntimeEvent & MessagingHostEvent {
-  return (event as { type?: string }).type === 'messaging.event';
+export function asMessagingHostEvent(event: RuntimeEvent): MessagingHostEvent | null {
+  const candidate = event as unknown as MessagingHostEvent;
+  return candidate.type === 'messaging.event' ? candidate : null;
+}
+
+export function messagingText(message: MessagingMessage): string {
+  if (message.content.type !== 'text') return `[${message.content.type}]`;
+  const data = message.content.data as { text?: { text?: string } } | undefined;
+  return data?.text?.text ?? '';
 }
 
 export class SelfHostedMessagingClient {
