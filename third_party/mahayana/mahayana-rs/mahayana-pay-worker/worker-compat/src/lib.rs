@@ -1,9 +1,6 @@
-pub use worker_real::{
-    Context, D1Database, D1PreparedStatement, D1Result, Env, Error, Fetch, Headers, Method, Request,
-    RequestInit, Response, Result, RouteContext, Router, event, query,
-};
+pub use worker_real::*;
 
-/// Compatibility wrapper for worker-rs 0.8.x.  The shared payment service was
+/// Compatibility wrapper for worker-rs 0.8.x. The shared payment service was
 /// intentionally written in seconds from a millisecond clock; keeping this
 /// adapter local avoids leaking worker-rs numeric API churn into accounting
 /// code or duplicating the payment implementation.
