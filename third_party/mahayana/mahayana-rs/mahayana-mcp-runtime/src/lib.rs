@@ -220,6 +220,7 @@ fn select_server(manifest: &PluginManifest, platform: HostPlatform) -> Result<St
 
 fn platform_name(platform: HostPlatform) -> &'static str {
     match platform {
+        HostPlatform::Cli => "cli",
         HostPlatform::Desktop => "desktop",
         HostPlatform::Mobile => "mobile",
         HostPlatform::Web => "web",
