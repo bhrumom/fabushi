@@ -9,9 +9,7 @@ use mahayana_agent::{
     AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink, AgentMessageRequest,
     ApprovalResolution, SharedAgentEventSink, StartThreadRequest,
 };
-use mahayana_core::{
-    AgentThreadId, ApprovalDecision, ApprovalId, ConversationId, OperationId,
-};
+use mahayana_core::{AgentThreadId, ApprovalDecision, ApprovalId, ConversationId, OperationId};
 use mahayana_harness::{HarnessError, HarnessResult, MahayanaHarness};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
