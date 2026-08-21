@@ -57,17 +57,32 @@ jobs:
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo generate-lockfile
 
-      - name: Test Harness stack
-        working-directory: third_party/mahayana/mahayana-rs
-        run: >-
-          cargo test --profile ci
-          -p mahayana-harness
-          -p mahayana-harness-services
-          -p mahayana-harness-advanced
-          -p mahayana-harness-adapters
-          -p mahayana-harness-agent
-          -p mahayana-harness-protocol
-          -p mahayana-unified-app-host
+      - name: Test Harness stack and persist diagnostics on failure
+        shell: bash
+        run: |
+          set +e
+          cd third_party/mahayana/mahayana-rs
+          cargo test --profile ci \
+            -p mahayana-harness \
+            -p mahayana-harness-services \
+            -p mahayana-harness-advanced \
+            -p mahayana-harness-adapters \
+            -p mahayana-harness-agent \
+            -p mahayana-harness-protocol \
+            -p mahayana-unified-app-host \
+            > "$GITHUB_WORKSPACE/.github/harness-test-failure.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cd "$GITHUB_WORKSPACE"
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -A
+            git commit -m 'chore(mahayana): capture harness test failure'
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+            exit "$status"
+          fi
+          rm -f "$GITHUB_WORKSPACE/.github/harness-test-failure.log"
 
       - name: Clippy Harness stack
         working-directory: third_party/mahayana/mahayana-rs
@@ -91,6 +106,7 @@ jobs:
           rm -f .github/workflows/mahayana-harness-finalize-once.yml
           rm -f .github/workflows/mahayana-harness-finalize-pr-once.yml
           rm -f scripts/mahayana_harness_finalize.py
+          rm -f .github/harness-test-failure.log
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
