@@ -6,6 +6,10 @@
 
 use mahayana_core::BuildProfile;
 use mahayana_harness::{HarnessError, HarnessResult, MahayanaHarness, PluginManifest};
+use mahayana_harness_advanced::{
+    AdvancedHarnessServices, BundleDefinition, ExtensionDefinition, HookRegistration,
+    PermissionPreset, PresetDefinition, QuestionOption,
+};
 use mahayana_harness_services::{
     CommandRecord, ContextFragment, HarnessServices, PromptSection, SkillRecord, TeamMember,
     WorkspaceRecord,
@@ -46,6 +50,7 @@ pub struct HarnessProtocolError {
 pub struct HarnessApi {
     harness: MahayanaHarness,
     services: HarnessServices,
+    advanced: AdvancedHarnessServices,
 }
 
 impl HarnessApi {
@@ -53,12 +58,17 @@ impl HarnessApi {
         let harness = MahayanaHarness::new(build_profile);
         Self {
             services: HarnessServices::new(harness.clone()),
+            advanced: AdvancedHarnessServices::new(harness.clone()),
             harness,
         }
     }
 
     pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        Ok(Self { harness, services })
+        Ok(Self {
+            advanced: AdvancedHarnessServices::new(harness.clone()),
+            harness,
+            services,
+        })
     }
 
     pub fn harness(&self) -> &MahayanaHarness {
@@ -67,6 +77,10 @@ impl HarnessApi {
 
     pub fn services(&self) -> &HarnessServices {
         &self.services
+    }
+
+    pub fn advanced(&self) -> &AdvancedHarnessServices {
+        &self.advanced
     }
 
     pub fn execute_json(&self, input: &str) -> String {
@@ -109,6 +123,7 @@ impl HarnessApi {
             "runtime.config" => self.harness.dump_config(),
             "runtime.pollEvent" => to_value(self.harness.poll_event()?),
             "services.snapshot" => self.services.snapshot(),
+            "advanced.snapshot" => self.advanced.snapshot(),
 
             "service.register" => {
                 self.harness
@@ -162,6 +177,25 @@ impl HarnessApi {
                 required_str(&payload, "query")?,
                 optional_usize(&payload, "limit").unwrap_or(20),
             )?),
+            "session.readEvents" => to_value(self.advanced.session_events(
+                required_str(&payload, "sessionId")?,
+                payload.get("afterSequence").and_then(Value::as_u64),
+                optional_usize(&payload, "limit").unwrap_or(100),
+            )?),
+            "session.lineage" => to_value(
+                self.advanced
+                    .session_lineage(required_str(&payload, "sessionId")?)?,
+            ),
+            "session.relatedEvents" => to_value(self.advanced.related_events(
+                required_str(&payload, "sessionId")?,
+                optional_str(&payload, "kind"),
+                optional_str(&payload, "agentId"),
+                optional_usize(&payload, "limit").unwrap_or(100),
+            )?),
+            "session.title" => to_value(
+                self.advanced
+                    .suggest_title(required_str(&payload, "sessionId")?)?,
+            ),
 
             "agent.spawn" => to_value(self.harness.spawn_agent(
                 required_string(&payload, "name")?,
@@ -235,6 +269,27 @@ impl HarnessApi {
                         .unwrap_or(false),
                 )?,
             ),
+            "agentPlan.enter" => to_value(self.advanced.enter_plan(
+                required_string(&payload, "agentId")?,
+                required_string(&payload, "sessionId")?,
+                string_array(&payload, "steps")?,
+                payload
+                    .get("reviewRequired")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+            )?),
+            "agentPlan.exit" => to_value(self.advanced.exit_plan(
+                required_str(&payload, "agentId")?,
+                payload
+                    .get("approved")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                optional_string(&payload, "reviewer"),
+            )?),
+            "agentPlan.get" => to_value(
+                self.advanced
+                    .agent_plan(required_str(&payload, "agentId")?)?,
+            ),
 
             "schedule.create" => to_value(self.services.schedule(
                 required_string(&payload, "sessionId")?,
@@ -289,6 +344,90 @@ impl HarnessApi {
                     .register_command(from_payload::<CommandRecord>(payload)?)?;
                 Ok(Value::Null)
             }
+
+            "interaction.permissionPreset.register" => to_value(
+                self.advanced
+                    .register_permission_preset(from_payload::<PermissionPreset>(payload)?)?,
+            ),
+            "interaction.permissionPreset.list" => {
+                to_value(self.advanced.permission_presets()?)
+            }
+            "interaction.permissionPreset.activate" => to_value(
+                self.advanced.activate_permission_preset(required_str(
+                    &payload,
+                    "presetId",
+                )?)?,
+            ),
+            "interaction.permissionPreset.current" => {
+                to_value(self.advanced.active_permission_preset()?)
+            }
+            "interaction.question.create" => to_value(self.advanced.ask_question(
+                required_string(&payload, "sessionId")?,
+                optional_string(&payload, "agentId"),
+                required_string(&payload, "prompt")?,
+                payload
+                    .get("options")
+                    .cloned()
+                    .map(from_payload::<Vec<QuestionOption>>)
+                    .transpose()?
+                    .unwrap_or_default(),
+                payload
+                    .get("allowFreeform")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            )?),
+            "interaction.question.answer" => to_value(self.advanced.answer_question(
+                required_str(&payload, "questionId")?,
+                payload.get("answer").cloned().unwrap_or(Value::Null),
+            )?),
+            "interaction.question.list" => to_value(self.advanced.questions(
+                payload
+                    .get("pendingOnly")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            )?),
+
+            "bundle.register" => to_value(
+                self.advanced
+                    .register_bundle(from_payload::<BundleDefinition>(payload)?)?,
+            ),
+            "bundle.list" => to_value(self.advanced.bundles()?),
+            "preset.register" => to_value(
+                self.advanced
+                    .register_preset(from_payload::<PresetDefinition>(payload)?)?,
+            ),
+            "preset.list" => to_value(self.advanced.presets()?),
+            "preset.resolve" => to_value(
+                self.advanced
+                    .resolve_preset(required_str(&payload, "presetId")?)?,
+            ),
+            "extension.register" => to_value(
+                self.advanced
+                    .register_extension(from_payload::<ExtensionDefinition>(payload)?)?,
+            ),
+            "extension.list" => to_value(self.advanced.extensions()?),
+            "extension.setEnabled" => to_value(self.advanced.set_extension_enabled(
+                required_str(&payload, "extensionId")?,
+                required_bool(&payload, "enabled")?,
+            )?),
+            "hook.register" => to_value(
+                self.advanced
+                    .register_hook(from_payload::<HookRegistration>(payload)?)?,
+            ),
+            "hook.list" => to_value(self.advanced.hooks()?),
+            "hook.emit" => to_value(self.advanced.emit_hook(
+                required_string(&payload, "event")?,
+                payload.get("eventPayload").cloned().unwrap_or(Value::Null),
+            )?),
+            "telemetry.record" => to_value(self.advanced.record_telemetry(
+                required_string(&payload, "name")?,
+                payload.get("attributes").cloned().unwrap_or(Value::Null),
+            )?),
+            "telemetry.poll" => to_value(
+                self.advanced
+                    .poll_telemetry(optional_usize(&payload, "limit").unwrap_or(100))?,
+            ),
+
             _ => Err(HarnessError::ServiceNotFound(format!(
                 "protocol operation {operation}"
             ))),
@@ -332,16 +471,19 @@ fn required_str<'a>(payload: &'a Value, key: &str) -> HarnessResult<&'a str> {
         .ok_or_else(|| HarnessError::InvalidConfig(format!("{key} is required")))
 }
 
+fn optional_str<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+}
+
 fn required_string(payload: &Value, key: &str) -> HarnessResult<String> {
     required_str(payload, key).map(str::to_string)
 }
 
 fn optional_string(payload: &Value, key: &str) -> Option<String> {
-    payload
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
+    optional_str(payload, key).map(str::to_string)
 }
 
 fn required_bool(payload: &Value, key: &str) -> HarnessResult<bool> {
@@ -406,6 +548,62 @@ mod tests {
             .execute("session.search", json!({"query": "needle", "limit": 10}))
             .unwrap();
         assert_eq!(search.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn advanced_protocol_covers_interaction_plan_and_lineage() {
+        let api = HarnessApi::new(BuildProfile::DesktopFull);
+        let session = api
+            .execute("session.create", json!({"title": "advanced"}))
+            .unwrap();
+        let session_id = session["id"].as_str().unwrap();
+        let plan = api
+            .execute(
+                "agentPlan.enter",
+                json!({
+                    "agentId": "agent-a",
+                    "sessionId": session_id,
+                    "steps": ["inspect", "implement"],
+                    "reviewRequired": true
+                }),
+            )
+            .unwrap();
+        assert_eq!(plan["mode"], "plan");
+        let denied = api.execute(
+            "agentPlan.exit",
+            json!({"agentId": "agent-a", "approved": false}),
+        );
+        assert!(matches!(denied, Err(HarnessError::ApprovalRequired(_))));
+
+        let question = api
+            .execute(
+                "interaction.question.create",
+                json!({
+                    "sessionId": session_id,
+                    "prompt": "Choose",
+                    "options": [{"id": "yes", "label": "Yes"}]
+                }),
+            )
+            .unwrap();
+        let question_id = question["id"].as_str().unwrap();
+        let answered = api
+            .execute(
+                "interaction.question.answer",
+                json!({"questionId": question_id, "answer": "yes"}),
+            )
+            .unwrap();
+        assert_eq!(answered["status"], "answered");
+
+        let child = api
+            .execute("session.fork", json!({"sessionId": session_id}))
+            .unwrap();
+        let lineage = api
+            .execute(
+                "session.lineage",
+                json!({"sessionId": child["id"].as_str().unwrap()}),
+            )
+            .unwrap();
+        assert_eq!(lineage["ancestors"][0], session_id);
     }
 
     #[test]
