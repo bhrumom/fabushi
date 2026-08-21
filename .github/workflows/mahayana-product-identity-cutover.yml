@@ -1,0 +1,50 @@
+name: Mahayana product identity cutover
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/apply-mahayana-product-identity-cutover.py
+      - .github/workflows/mahayana-product-identity-cutover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cutover:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Apply guarded product identity migration
+        run: python3 .github/scripts/apply-mahayana-product-identity-cutover.py
+
+      - name: Format Rust workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: |
+          rustup component add rustfmt
+          cargo fmt --all
+
+      - name: Commit identity cutover
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Product identity cutover already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            third_party/mahayana/mahayana-rs/mahayana-core/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-core/src/capability.rs \
+            third_party/mahayana/mahayana-rs/mahayana-runtime/src/kernel_conversation.rs \
+            frontend/apps/web/src/app/host/host-client.tsx \
+            frontend/apps/web/src/lib/mahayana-host/mock-transport.ts \
+            scripts/test-mahayana-wasm.mjs
+          git commit -m "feat(mahayana): make Mahayana AI identity canonical"
+          git push origin "HEAD:${{ github.head_ref || github.ref_name }}"
