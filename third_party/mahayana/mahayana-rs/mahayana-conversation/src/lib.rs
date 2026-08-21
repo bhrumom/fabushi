@@ -78,8 +78,8 @@ pub trait ConversationProvider: Send + Sync {
 }
 
 /// Compatibility wrapper that prevents an upstream-era provider identity from
-/// leaking through the Mahayana product boundary. It rewrites only agent
-/// conversation IDs; all provider behavior remains delegated to the adapter.
+/// leaking through the Mahayana product boundary. Legacy IDs are accepted as
+/// input but rewritten before any provider call that can create new state.
 struct CanonicalProvider {
     inner: Arc<dyn ConversationProvider>,
 }
@@ -121,14 +121,20 @@ impl ConversationProvider for CanonicalProvider {
         conversation_id: &ConversationId,
         limit: u32,
     ) -> Result<Vec<Message>, ConversationError> {
-        self.inner.history(conversation_id, limit).await
+        let canonical = canonicalize_conversation_id(conversation_id);
+        let mut messages = self.inner.history(&canonical, limit).await?;
+        for message in &mut messages {
+            message.conversation_id = canonicalize_conversation_id(&message.conversation_id);
+        }
+        Ok(messages)
     }
 
     async fn send_message(
         &self,
-        request: SendMessageRequest,
+        mut request: SendMessageRequest,
         events: SharedConversationEventSink,
     ) -> Result<(), ConversationError> {
+        request.conversation_id = canonicalize_conversation_id(&request.conversation_id);
         self.inner.send_message(request, events).await
     }
 
