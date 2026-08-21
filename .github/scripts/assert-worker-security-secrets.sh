@@ -16,7 +16,7 @@ case "$environment" in
     # when it is not configured the handler returns 503 and Firebase Phone Auth
     # remains independently available.
     required=(
-      JWT_SECRET
+      JWT_SIGNING_SECRET
       ADMIN_EMAILS
       ALIPAY_PRIVATE_KEY
       AUTH_PROVIDER_BRIDGE_SECRET
@@ -32,7 +32,7 @@ case "$environment" in
     # Development must preserve identity/session integrity. External payment,
     # Apple and standalone SMS providers may intentionally be absent.
     required=(
-      JWT_SECRET
+      JWT_SIGNING_SECRET
       ADMIN_EMAILS
       TRANSFER_RECEIPT_SECRET
     )
