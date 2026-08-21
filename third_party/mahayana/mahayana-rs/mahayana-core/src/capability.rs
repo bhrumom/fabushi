@@ -15,6 +15,9 @@ use std::collections::BTreeMap;
 pub mod kernel;
 
 pub const MAHAYANA_AGENT_CAPABILITY_ID: &str = "agent.mahayana";
+pub const MAHAYANA_AGENT_PROVIDER_KEY: &str = "mahayana-agent";
+pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
+pub const LEGACY_CODEX_AGENT_CONVERSATION_PREFIX: &str = "codex:";
 pub const CHATGPT_AUTO_CONFIRM_PLUGIN_ID: &str = "chatgpt-auto-confirm";
 pub const CHATGPT_AUTO_CONFIRM_CAPABILITY_ID: &str = "miniapp.chatgpt-auto-confirm";
 
@@ -105,12 +108,14 @@ pub fn capability_from_conversation(
     conversation: &Conversation,
     build_profile: BuildProfile,
 ) -> CapabilityDescriptor {
-    let (id, kind, plugin_id, description) = match &conversation.peer {
+    let (id, kind, plugin_id, description, provider, conversation_id) = match &conversation.peer {
         PeerKind::CodexAi => (
             MAHAYANA_AGENT_CAPABILITY_ID.to_string(),
             CapabilityKind::Agent,
             None,
             "大乘共享智能代理".to_string(),
+            MAHAYANA_AGENT_PROVIDER_KEY.to_string(),
+            canonical_agent_conversation_id(&conversation.id),
         ),
         PeerKind::MiniApp { app_id } => (
             format!("miniapp.{app_id}"),
@@ -121,18 +126,24 @@ pub fn capability_from_conversation(
             },
             Some(app_id.clone()),
             "大乘共享插件、小程序、应用或机器人能力".to_string(),
+            conversation.peer.provider_key().to_string(),
+            conversation.id.clone(),
         ),
         PeerKind::TelegramContact { user_id } => (
             format!("contact.telegram.{user_id}"),
             CapabilityKind::Contact,
             None,
             "Telegram 联系人机器人".to_string(),
+            conversation.peer.provider_key().to_string(),
+            conversation.id.clone(),
         ),
         PeerKind::MahayanaContact { contact_id } => (
             format!("contact.mahayana.{contact_id}"),
             CapabilityKind::Contact,
             None,
             "大乘联系人机器人".to_string(),
+            conversation.peer.provider_key().to_string(),
+            conversation.id.clone(),
         ),
     };
     let mut required_permissions = Vec::new();
@@ -158,13 +169,26 @@ pub fn capability_from_conversation(
         id,
         title: conversation.title.clone(),
         kind,
-        conversation_id: conversation.id.clone(),
-        provider: conversation.peer.provider_key().to_string(),
+        conversation_id,
+        provider,
         plugin_id,
         description,
         required_permissions,
         availability,
         unavailable_reason,
+    }
+}
+
+fn canonical_agent_conversation_id(conversation_id: &ConversationId) -> ConversationId {
+    if let Some(suffix) = conversation_id
+        .as_str()
+        .strip_prefix(LEGACY_CODEX_AGENT_CONVERSATION_PREFIX)
+    {
+        ConversationId(format!("mahayana:{suffix}"))
+    } else if conversation_id.as_str().starts_with("mahayana:agent:") {
+        conversation_id.clone()
+    } else {
+        ConversationId(MAHAYANA_AGENT_CONVERSATION_ID.to_string())
     }
 }
 
