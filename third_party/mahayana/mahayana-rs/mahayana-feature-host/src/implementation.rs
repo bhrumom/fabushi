@@ -8604,7 +8604,7 @@ fn sha1_digest(input: &[u8]) -> [u8; 20] {
         padded.push(0);
     }
     padded.extend_from_slice(&bit_len.to_be_bytes());
-    for chunk in padded.chunks_exact(64) {
+    for chunk in padded.as_chunks::<64>().0 {
         let mut words = [0u32; 80];
         for (index, word) in words[..16].iter_mut().enumerate() {
             let offset = index * 4;
