@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { generateToken } from '../auth-utils.js';
-import { ADMIN_EMAIL } from '../src/config/constants.js';
 import {
   handleMarketplaceBrowse,
   handleMarketplacePublish,
 } from '../src/handlers/marketplace.js';
+
+const TEST_ADMIN_EMAIL = 'admin-test@example.com';
+const TEST_SECRET = 'marketplace-test-secret-that-is-at-least-32-bytes';
 
 function statement(sql, calls, result = null) {
   return {
@@ -63,7 +65,7 @@ test('marketplace browse returns exact immutable download metadata', async () =>
 });
 
 test('admin publication verifies a hashed independent deployment and returns a receipt', async () => {
-  const secretEnv = { JWT_SECRET: 'marketplace-test-secret' };
+  const secretEnv = { JWT_SECRET: TEST_SECRET, ADMIN_EMAILS: TEST_ADMIN_EMAIL };
   const token = await generateToken({ id: 7, username: 'publisher' }, secretEnv);
   const calls = [];
   const prepared = [];
@@ -94,7 +96,7 @@ test('admin publication verifies a hashed independent deployment and returns a r
   const accountDb = {
     async getUser(username) {
       assert.equal(username, 'publisher');
-      return { id: 7, username, email: ADMIN_EMAIL };
+      return { id: 7, username, email: TEST_ADMIN_EMAIL };
     },
   };
   const form = new FormData();
@@ -140,7 +142,7 @@ test('admin publication verifies a hashed independent deployment and returns a r
 });
 
 test('publication rejects invalid deployment metadata before fetching', async () => {
-  const secretEnv = { JWT_SECRET: 'marketplace-test-secret' };
+  const secretEnv = { JWT_SECRET: TEST_SECRET, ADMIN_EMAILS: TEST_ADMIN_EMAIL };
   const token = await generateToken({ id: 8, username: 'publisher' }, secretEnv);
   const form = new FormData();
   form.set('pluginId', 'unsafe-package');
@@ -159,7 +161,7 @@ test('publication rejects invalid deployment metadata before fetching', async ()
     ...secretEnv,
     PLATFORM_DB: {},
   }, {
-    async getUser() { return { id: 8, email: ADMIN_EMAIL }; },
+    async getUser() { return { id: 8, email: TEST_ADMIN_EMAIL }; },
   });
   globalThis.fetch = originalFetch;
   assert.equal(response.status, 400);
