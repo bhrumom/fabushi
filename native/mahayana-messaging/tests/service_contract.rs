@@ -415,3 +415,117 @@ fn wallet_checkout_and_refund_settle_invoice_atomically() {
         0
     );
 }
+
+#[test]
+fn sync_is_isolated_to_authenticated_actor_conversations() {
+    let store = MemoryStateStore::default();
+    let mut service = MessagingService::load(store).unwrap();
+    for (id, name) in [("human:a", "A"), ("human:b", "B")] {
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(id),
+                    ClientCommand::UpsertProfile {
+                        actor: Actor::human(id, name),
+                    },
+                ),
+                1,
+            )
+            .unwrap();
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(id),
+                    ClientCommand::CreateConversation {
+                        conversation: Conversation::direct(
+                            format!("saved:{id}"),
+                            format!("Saved {name}"),
+                            vec![Participant {
+                                actor_id: ActorId::new(id),
+                                role: ParticipantRole::Owner,
+                                joined_at_ms: 1,
+                                muted_until_ms: None,
+                            }],
+                            1,
+                        ),
+                    },
+                ),
+                2,
+            )
+            .unwrap();
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(id),
+                    ClientCommand::SendMessage {
+                        conversation_id: ConversationId::new(format!("saved:{id}")),
+                        client_message_id: ClientMessageId(format!("client:{id}")),
+                        content: MessageContent::Text {
+                            text: FormattedText::plain(format!("private-{id}")),
+                        },
+                        reply_to_message_id: None,
+                        thread_root_message_id: None,
+                        scheduled_at_ms: None,
+                        silent: false,
+                        protected_content: false,
+                    },
+                ),
+                3,
+            )
+            .unwrap();
+    }
+
+    let sync = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a"),
+                ClientCommand::Sync {
+                    cursor: None,
+                    limit: 100,
+                },
+            ),
+            4,
+        )
+        .unwrap();
+    match &sync[0].event {
+        ServerEvent::SyncBatch {
+            actors,
+            conversations,
+            messages,
+            ..
+        } => {
+            assert!(actors
+                .iter()
+                .all(|actor| actor.id != ActorId::new("human:b")));
+            assert_eq!(conversations.len(), 1);
+            assert_eq!(conversations[0].id, ConversationId::new("saved:human:a"));
+            assert_eq!(messages.len(), 1);
+            assert!(matches!(
+                &messages[0].content,
+                MessageContent::Text { text } if text.text == "private-human:a"
+            ));
+        }
+        other => panic!("unexpected sync event: {other:?}"),
+    }
+}
+
+#[test]
+fn authenticated_actor_cannot_spoof_profile_or_invoice_seller() {
+    let store = MemoryStateStore::default();
+    let mut service = MessagingService::load(store).unwrap();
+    let error = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a"),
+                ClientCommand::UpsertProfile {
+                    actor: Actor::human("human:b", "Spoofed"),
+                },
+            ),
+            1,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        MessagingServiceError::UnauthorizedCommand(_)
+    ));
+}

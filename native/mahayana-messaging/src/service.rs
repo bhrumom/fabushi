@@ -28,6 +28,8 @@ pub enum MessagingServiceError {
     InvalidBlobBase64(String),
     #[error("messaging service invariant failed: {0}")]
     Invariant(String),
+    #[error("messaging command is not authorized for the authenticated actor: {0}")]
+    UnauthorizedCommand(String),
     #[error(transparent)]
     Settlement(#[from] SettlementError),
 }
@@ -89,6 +91,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
 
         let actor_id = envelope.context.actor_id;
         let command = envelope.command;
+        self.validate_command_authorization(&actor_id, &command)?;
         match command {
             ClientCommand::BeginBlobUpload { metadata } => {
                 let status = self.blob_store()?.begin_upload(&metadata)?;
@@ -118,7 +121,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             }
             command => {
                 if let ClientCommand::Sync { limit, .. } = &command {
-                    return Ok(vec![self.sync_envelope(*limit, server_time_ms)]);
+                    return Ok(vec![self.sync_envelope(&actor_id, *limit, server_time_ms)]);
                 }
 
                 let commands = self.project_command(&actor_id, command, server_time_ms);
@@ -138,6 +141,71 @@ impl<S: MessagingStateStore> MessagingService<S> {
                     .collect())
             }
         }
+    }
+
+    fn validate_command_authorization(
+        &self,
+        actor_id: &ActorId,
+        command: &ClientCommand,
+    ) -> Result<(), MessagingServiceError> {
+        let denied = |reason: &str| MessagingServiceError::UnauthorizedCommand(reason.into());
+        match command {
+            ClientCommand::UpsertProfile { actor } if &actor.id != actor_id => {
+                return Err(denied(
+                    "profile actor id does not match authenticated actor",
+                ));
+            }
+            ClientCommand::CreateConversation { conversation } => {
+                let caller_is_participant = conversation
+                    .participants
+                    .iter()
+                    .any(|participant| &participant.actor_id == actor_id);
+                if !caller_is_participant
+                    || conversation
+                        .owner_id
+                        .as_ref()
+                        .is_some_and(|owner| owner != actor_id)
+                {
+                    return Err(denied("conversation creator must be an owner/participant"));
+                }
+            }
+            ClientCommand::UpdateConversation { conversation } => {
+                let existing = self
+                    .engine
+                    .state()
+                    .conversations
+                    .get(&conversation.id)
+                    .ok_or_else(|| denied("conversation update target does not exist"))?;
+                let caller = existing
+                    .participants
+                    .iter()
+                    .find(|participant| &participant.actor_id == actor_id)
+                    .ok_or_else(|| denied("conversation update requires membership"))?;
+                if !matches!(
+                    caller.role,
+                    crate::actor::ParticipantRole::Owner | crate::actor::ParticipantRole::Admin
+                ) {
+                    return Err(denied("conversation update requires owner/admin role"));
+                }
+            }
+            ClientCommand::CreateInvoice { invoice } if &invoice.seller_id != actor_id => {
+                return Err(denied(
+                    "invoice seller id does not match authenticated actor",
+                ));
+            }
+            ClientCommand::GrantMiniApp { grant } if &grant.actor_id != actor_id => {
+                return Err(denied(
+                    "Mini App grant actor does not match authenticated actor",
+                ));
+            }
+            ClientCommand::OpenMiniApp { session } if &session.actor_id != actor_id => {
+                return Err(denied(
+                    "Mini App session actor does not match authenticated actor",
+                ));
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn blob_store(&self) -> Result<&FileBlobStore, MessagingServiceError> {
@@ -242,31 +310,116 @@ impl<S: MessagingStateStore> MessagingService<S> {
         }
     }
 
-    fn sync_envelope(&self, limit: u32, server_time_ms: i64) -> ServerEnvelope {
+    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {
         let state = self.engine.state();
         let max_items = usize::try_from(limit.max(1)).unwrap_or(usize::MAX);
+        let visible_conversation_ids = state
+            .conversations
+            .values()
+            .filter(|conversation| {
+                conversation
+                    .participants
+                    .iter()
+                    .any(|participant| &participant.actor_id == actor_id)
+                    || conversation.owner_id.as_ref() == Some(actor_id)
+            })
+            .map(|conversation| conversation.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let visible_actor_ids = visible_conversation_ids
+            .iter()
+            .filter_map(|conversation_id| state.conversations.get(conversation_id))
+            .flat_map(|conversation| {
+                conversation
+                    .participants
+                    .iter()
+                    .map(|participant| participant.actor_id.clone())
+            })
+            .chain(std::iter::once(actor_id.clone()))
+            .collect::<std::collections::BTreeSet<_>>();
         ServerEnvelope {
             protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
             cursor: Some(self.cursor.to_string()),
             server_time_ms,
             event: ServerEvent::SyncBatch {
-                actors: state.actors.values().take(max_items).cloned().collect(),
-                conversations: state
-                    .conversations
-                    .values()
+                actors: visible_actor_ids
+                    .iter()
+                    .filter_map(|id| state.actors.get(id))
                     .take(max_items)
                     .cloned()
                     .collect(),
-                messages: state
-                    .messages
-                    .values()
+                conversations: visible_conversation_ids
+                    .iter()
+                    .filter_map(|id| state.conversations.get(id))
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                messages: visible_conversation_ids
+                    .iter()
+                    .filter_map(|id| state.messages.get(id))
                     .flat_map(|messages| messages.values())
                     .take(max_items)
                     .cloned()
                     .collect(),
-                folders: state.folders.values().take(max_items).cloned().collect(),
-                invoices: state.invoices.values().take(max_items).cloned().collect(),
-                orders: state.orders.values().take(max_items).cloned().collect(),
+                folders: state
+                    .folders
+                    .values()
+                    .filter(|folder| {
+                        folder
+                            .conversation_ids
+                            .iter()
+                            .any(|id| visible_conversation_ids.contains(id))
+                    })
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                invoices: state
+                    .invoices
+                    .values()
+                    .filter(|invoice| visible_conversation_ids.contains(&invoice.conversation_id))
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                orders: state
+                    .orders
+                    .values()
+                    .filter(|order| {
+                        &order.buyer_id == actor_id
+                            || state
+                                .invoices
+                                .get(&order.invoice_id)
+                                .is_some_and(|invoice| &invoice.seller_id == actor_id)
+                    })
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                stories: state
+                    .stories
+                    .values()
+                    .filter(|story| {
+                        (story.pinned_to_profile || story.expires_at_ms > server_time_ms)
+                            && story.is_visible_to(actor_id, false, false)
+                    })
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                communities: visible_conversation_ids
+                    .iter()
+                    .filter_map(|id| state.communities.get(id))
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+                bots: state.bots.bots.values().take(max_items).cloned().collect(),
+                bot_executions: state
+                    .bots
+                    .executions
+                    .values()
+                    .filter(|execution| {
+                        &execution.bot_id == actor_id
+                            || visible_actor_ids.contains(&execution.bot_id)
+                    })
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
                 mini_apps: state.mini_apps.values().take(max_items).cloned().collect(),
                 next_cursor: Some(self.cursor.to_string()),
             },
@@ -416,6 +569,97 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 refunded_at_ms: now_ms,
             }],
             ClientCommand::WalletStatus => Vec::new(),
+            ClientCommand::PublishStory { story } => vec![Command::PublishStory {
+                actor_id: actor_id.clone(),
+                story,
+            }],
+            ClientCommand::DeleteStory { story_id } => vec![Command::DeleteStory {
+                actor_id: actor_id.clone(),
+                story_id,
+            }],
+            ClientCommand::ViewStory { story_id } => vec![Command::ViewStory {
+                actor_id: actor_id.clone(),
+                story_id,
+                viewed_at_ms: now_ms,
+            }],
+            ClientCommand::ReactStory { story_id, reaction } => vec![Command::ReactStory {
+                actor_id: actor_id.clone(),
+                story_id,
+                reaction,
+            }],
+            ClientCommand::UpdateCommunity { community } => vec![Command::UpdateCommunity {
+                actor_id: actor_id.clone(),
+                community,
+            }],
+            ClientCommand::SetCommunityMember {
+                conversation_id,
+                member,
+            } => vec![Command::SetCommunityMember {
+                actor_id: actor_id.clone(),
+                conversation_id,
+                member,
+            }],
+            ClientCommand::CreateInviteLink { invite } => vec![Command::CreateInviteLink {
+                actor_id: actor_id.clone(),
+                invite,
+            }],
+            ClientCommand::RevokeInviteLink {
+                conversation_id,
+                invite_id,
+            } => vec![Command::RevokeInviteLink {
+                actor_id: actor_id.clone(),
+                conversation_id,
+                invite_id,
+            }],
+            ClientCommand::RequestCommunityJoin { request } => {
+                vec![Command::RequestCommunityJoin {
+                    actor_id: actor_id.clone(),
+                    request,
+                }]
+            }
+            ClientCommand::RespondCommunityJoin {
+                conversation_id,
+                requester_id,
+                approved,
+            } => vec![Command::RespondCommunityJoin {
+                actor_id: actor_id.clone(),
+                conversation_id,
+                requester_id,
+                approved,
+                decided_at_ms: now_ms,
+            }],
+            ClientCommand::UpsertForumTopic { topic } => vec![Command::UpsertForumTopic {
+                actor_id: actor_id.clone(),
+                topic,
+            }],
+            ClientCommand::DeleteForumTopic {
+                conversation_id,
+                topic_id,
+            } => vec![Command::DeleteForumTopic {
+                actor_id: actor_id.clone(),
+                conversation_id,
+                topic_id,
+            }],
+            ClientCommand::RegisterBot { profile } => vec![Command::RegisterBot {
+                actor_id: actor_id.clone(),
+                profile,
+            }],
+            ClientCommand::InvokeBot { invocation } => vec![Command::BeginBotInvocation {
+                actor_id: actor_id.clone(),
+                invocation,
+                created_at_ms: now_ms,
+            }],
+            ClientCommand::FinishBotExecution {
+                execution_id,
+                success,
+                error,
+            } => vec![Command::FinishBotExecution {
+                actor_id: actor_id.clone(),
+                execution_id,
+                success,
+                finished_at_ms: now_ms,
+                error,
+            }],
             ClientCommand::InstallMiniApp { manifest } => {
                 vec![Command::InstallMiniApp { manifest }]
             }
@@ -515,6 +759,12 @@ impl<S: MessagingStateStore> MessagingService<S> {
             Event::InvoiceCreated { invoice } => ServerEvent::InvoiceChanged { invoice },
             Event::OrderUpserted { order } => ServerEvent::OrderChanged { order },
             Event::WalletChanged { .. } => return None,
+            Event::StoryChanged { story } => ServerEvent::StoryChanged { story },
+            Event::StoryDeleted { story_id } => ServerEvent::StoryDeleted { story_id },
+            Event::CommunityChanged { community } => ServerEvent::CommunityChanged { community },
+            Event::BotRegistryChanged {
+                profile, execution, ..
+            } => ServerEvent::BotChanged { profile, execution },
             Event::MiniAppInstalled { manifest } => ServerEvent::MiniAppChanged { manifest },
             Event::MiniAppGrantUpdated { .. } => return None,
             Event::MiniAppOpened { session } => ServerEvent::MiniAppOpened { session },

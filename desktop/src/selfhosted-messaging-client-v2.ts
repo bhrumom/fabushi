@@ -135,6 +135,140 @@ export interface MessagingWalletAccount {
   updatedAtMs: number;
 }
 
+export type MessagingStoryPrivacyKind = 'everyone' | 'contacts' | 'closeFriends' | 'selected';
+
+export interface MessagingStory {
+  id: string;
+  ownerId: string;
+  media: MessagingMediaRef;
+  caption: { text: string; entities: unknown[] };
+  privacy: {
+    kind: MessagingStoryPrivacyKind;
+    includedActorIds: string[];
+    excludedActorIds: string[];
+  };
+  createdAtMs: number;
+  expiresAtMs: number;
+  editedAtMs?: number;
+  pinnedToProfile: boolean;
+  protectedContent: boolean;
+  allowReplies: boolean;
+  views: Record<string, {
+    actorId: string;
+    viewedAtMs: number;
+    reaction?: string;
+    forwarded: boolean;
+  }>;
+}
+
+export type MessagingMemberStatus = 'owner' | 'administrator' | 'member' | 'restricted' | 'left' | 'banned';
+
+export interface MessagingCommunityMember {
+  actorId: string;
+  status: MessagingMemberStatus;
+  adminTitle?: string;
+  adminRights: {
+    changeInfo: boolean;
+    postMessages: boolean;
+    editMessages: boolean;
+    deleteMessages: boolean;
+    banMembers: boolean;
+    inviteMembers: boolean;
+    pinMessages: boolean;
+    manageTopics: boolean;
+    manageCalls: boolean;
+    addAdmins: boolean;
+    remainAnonymous: boolean;
+  };
+  restrictions: {
+    sendMessages: boolean;
+    sendMedia: boolean;
+    sendPolls: boolean;
+    embedLinks: boolean;
+    addMembers: boolean;
+    pinMessages: boolean;
+    changeInfo: boolean;
+    untilMs?: number;
+  };
+  joinedAtMs: number;
+  invitedBy?: string;
+}
+
+export interface MessagingInviteLink {
+  id: string;
+  conversationId: string;
+  creatorId: string;
+  token: string;
+  name?: string;
+  createdAtMs: number;
+  expiresAtMs?: number;
+  memberLimit?: number;
+  joinRequest: boolean;
+  revoked: boolean;
+  joinedCount: number;
+}
+
+export interface MessagingJoinRequest {
+  conversationId: string;
+  actorId: string;
+  inviteLinkId?: string;
+  bio?: string;
+  requestedAtMs: number;
+}
+
+export interface MessagingForumTopic {
+  id: string;
+  conversationId: string;
+  title: string;
+  icon?: string;
+  creatorId: string;
+  createdAtMs: number;
+  pinned: boolean;
+  closed: boolean;
+  hidden: boolean;
+  unreadCount: number;
+  lastMessageId?: string;
+}
+
+export interface MessagingCommunityState {
+  conversationId: string;
+  publicUsername?: string;
+  linkedDiscussionId?: string;
+  signaturesEnabled: boolean;
+  joinToSend: boolean;
+  joinRequestRequired: boolean;
+  slowModeSeconds?: number;
+  members: Record<string, MessagingCommunityMember>;
+  inviteLinks: Record<string, MessagingInviteLink>;
+  pendingJoinRequests: Record<string, MessagingJoinRequest>;
+  topics: Record<string, MessagingForumTopic>;
+  bannedWords: string[];
+}
+
+export interface MessagingBotProfile {
+  actorId: string;
+  description: string;
+  about: string;
+  commands: Array<{ command: string; description: string; scopes: string[] }>;
+  inlineModeEnabled: boolean;
+  inlinePlaceholder?: string;
+  groupsAllowed: boolean;
+  privacyMode: boolean;
+  miniAppId?: string;
+  paymentProviderIds: string[];
+  businessMode: boolean;
+}
+
+export interface MessagingBotExecution {
+  id: string;
+  botId: string;
+  invocationId: string;
+  state: 'queued' | 'running' | 'waitingForApproval' | 'completed' | 'failed' | 'cancelled';
+  startedAtMs?: number;
+  finishedAtMs?: number;
+  error?: string;
+}
+
 export interface MessagingLedgerEntry {
   id: string;
   requestId: string;
@@ -582,6 +716,110 @@ export class SelfHostedMessagingClientV2 {
         notifyMentions: true,
       },
     });
+  }
+
+  publishStory(input: {
+    media: MessagingMediaRef;
+    caption?: string;
+    privacy?: MessagingStoryPrivacyKind;
+    includedActorIds?: string[];
+    excludedActorIds?: string[];
+    expiresAtMs?: number;
+    pinnedToProfile?: boolean;
+    protectedContent?: boolean;
+    allowReplies?: boolean;
+  }): Promise<string> {
+    const now = Date.now();
+    const id = `story:${crypto.randomUUID()}`;
+    return this.execute({
+      type: 'publishStory',
+      story: {
+        id,
+        ownerId: this.actorId,
+        media: input.media,
+        caption: { text: input.caption?.trim() ?? '', entities: [] },
+        privacy: {
+          kind: input.privacy ?? 'everyone',
+          includedActorIds: input.includedActorIds ?? [],
+          excludedActorIds: input.excludedActorIds ?? [],
+        },
+        createdAtMs: now,
+        expiresAtMs: input.expiresAtMs ?? now + 24 * 60 * 60 * 1000,
+        editedAtMs: null,
+        pinnedToProfile: input.pinnedToProfile ?? false,
+        protectedContent: input.protectedContent ?? true,
+        allowReplies: input.allowReplies ?? true,
+        views: {},
+      },
+    }).then(() => id);
+  }
+
+  deleteStory(storyId: string): Promise<void> {
+    return this.execute({ type: 'deleteStory', storyId });
+  }
+
+  viewStory(storyId: string): Promise<void> {
+    return this.execute({ type: 'viewStory', storyId });
+  }
+
+  reactStory(storyId: string, reaction?: string): Promise<void> {
+    return this.execute({ type: 'reactStory', storyId, reaction: reaction ?? null });
+  }
+
+  updateCommunity(community: MessagingCommunityState): Promise<void> {
+    return this.execute({ type: 'updateCommunity', community });
+  }
+
+  setCommunityMember(conversationId: string, member: MessagingCommunityMember): Promise<void> {
+    return this.execute({ type: 'setCommunityMember', conversationId, member });
+  }
+
+  createInviteLink(invite: MessagingInviteLink): Promise<void> {
+    return this.execute({ type: 'createInviteLink', invite });
+  }
+
+  revokeInviteLink(conversationId: string, inviteId: string): Promise<void> {
+    return this.execute({ type: 'revokeInviteLink', conversationId, inviteId });
+  }
+
+  respondCommunityJoin(conversationId: string, requesterId: string, approved: boolean): Promise<void> {
+    return this.execute({ type: 'respondCommunityJoin', conversationId, requesterId, approved });
+  }
+
+  upsertForumTopic(topic: MessagingForumTopic): Promise<void> {
+    return this.execute({ type: 'upsertForumTopic', topic });
+  }
+
+  deleteForumTopic(conversationId: string, topicId: string): Promise<void> {
+    return this.execute({ type: 'deleteForumTopic', conversationId, topicId });
+  }
+
+  registerBot(profile: MessagingBotProfile): Promise<void> {
+    return this.execute({ type: 'registerBot', profile });
+  }
+
+  invokeBot(input: {
+    botId: string;
+    conversationId: string;
+    text: string;
+    command?: string;
+    replyToMessageId?: string;
+  }): Promise<string> {
+    const id = `invoke:${crypto.randomUUID()}`;
+    return this.execute({
+      type: 'invokeBot',
+      invocation: {
+        id,
+        botId: input.botId,
+        senderId: this.actorId,
+        conversationId: input.conversationId,
+        command: input.command ?? null,
+        text: { text: input.text, entities: [] },
+        replyToMessageId: input.replyToMessageId ?? null,
+        metadata: {},
+        createdAtMs: Date.now(),
+      },
+    }).then(() => id);
   }
 
   requestWalletStatus(): Promise<void> {
