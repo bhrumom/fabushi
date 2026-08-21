@@ -83,21 +83,39 @@ impl RuntimeBuilder {
         Ok(self)
     }
 
-    pub fn with_agent_backend(
+    pub fn with_engine_backend(
         mut self,
-        backend: Arc<dyn AgentBackend>,
+        backend: Arc<dyn EngineBackend>,
     ) -> Result<Self, RuntimeError> {
+        let workspace_root = self
+            .config
+            .workspace_roots
+            .first()
+            .map(|path| path.to_string_lossy().to_string());
+        let model = Some(self.config.model.model.clone());
+        self.providers
+            .register(Arc::new(KernelConversationProvider::new(
+                backend,
+                self.config.build_profile,
+                workspace_root,
+                model,
+            )))?;
+        Ok(self)
+    }
+
+    pub fn with_agent_control_backend(mut self, backend: Arc<dyn AgentBackend>) -> Self {
+        self.agent_backend = Some(backend);
+        self
+    }
+
+    pub fn with_agent_backend(self, backend: Arc<dyn AgentBackend>) -> Result<Self, RuntimeError> {
         let kernel_backend: Arc<dyn EngineBackend> = Arc::new(LegacyAgentKernelBridge::new(
             Arc::clone(&backend),
             legacy_backend_descriptor(backend.as_ref()),
         ));
-        self.providers
-            .register(Arc::new(KernelConversationProvider::new(
-                kernel_backend,
-                self.config.build_profile,
-            )))?;
-        self.agent_backend = Some(backend);
-        Ok(self)
+        Ok(self
+            .with_engine_backend(kernel_backend)?
+            .with_agent_control_backend(backend))
     }
 
     pub fn build(self) -> Result<MahayanaRuntime, RuntimeError> {

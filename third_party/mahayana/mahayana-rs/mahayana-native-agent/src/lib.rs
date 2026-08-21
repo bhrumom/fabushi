@@ -17,8 +17,7 @@ use mahayana_core::{
 use mahayana_kernel::{
     ApprovalResolution as KernelApprovalResolution, Capability, CapabilitySet, EngineBackend,
     ExecutionPolicy, KernelError, KernelEvent, KernelEventSink, OpenSessionRequest,
-    OperationId as KernelOperationId, RunRequest, RuntimeProfile, SessionId,
-    SharedKernelEventSink,
+    OperationId as KernelOperationId, RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
 };
 use mahayana_mcp_runtime::{NativeMcpClient, NativeMcpRegistry, ResolvedMcpPlugin};
 use mahayana_native_engine::NativeEngine;
@@ -212,7 +211,9 @@ impl KernelEventSink for NativeEventBridge {
                     metadata: Some(metadata),
                 },
             },
-            KernelEvent::ToolStarted { tool, arguments, .. } => AgentEvent::Activity {
+            KernelEvent::ToolStarted {
+                tool, arguments, ..
+            } => AgentEvent::Activity {
                 activity: AgentActivity {
                     step_id: format!("tool:{tool}"),
                     kind: "tool".into(),
@@ -277,10 +278,7 @@ impl KernelEventSink for NativeEventBridge {
 
 #[async_trait]
 impl AgentBackend for NativeAgentBackend {
-    async fn start_thread(
-        &self,
-        request: StartThreadRequest,
-    ) -> Result<AgentThreadId, AgentError> {
+    async fn start_thread(&self, request: StartThreadRequest) -> Result<AgentThreadId, AgentError> {
         self.create_thread(request.conversation_id)
             .await
             .map(|(thread_id, _)| thread_id)
@@ -439,12 +437,11 @@ impl AgentBackend for NativeAgentBackend {
         let platform = request.platform;
         let registry = self.config.mcp_registry.clone();
         let plugin_id = request.plugin_id.clone();
-        let resolved = tokio::task::spawn_blocking(move || {
-            registry.resolve_plugin(&plugin_id, platform)
-        })
-        .await
-        .map_err(|error| AgentError::Backend(error.to_string()))?
-        .map_err(|error| AgentError::Unavailable(error.to_string()))?;
+        let resolved =
+            tokio::task::spawn_blocking(move || registry.resolve_plugin(&plugin_id, platform))
+                .await
+                .map_err(|error| AgentError::Backend(error.to_string()))?
+                .map_err(|error| AgentError::Unavailable(error.to_string()))?;
         let client = resolved.client();
         let tools = tokio::task::spawn_blocking({
             let client = client.clone();
@@ -566,14 +563,18 @@ fn command_tools(tools: &[Value]) -> HashMap<String, String> {
             .or_else(|| tool.pointer("/_meta/mahayana/command"))
             .and_then(Value::as_str);
         if let Some(command) = command {
-            commands.insert(command.trim_start_matches('/').to_string(), name.to_string());
+            commands.insert(
+                command.trim_start_matches('/').to_string(),
+                name.to_string(),
+            );
         }
     }
     commands
 }
 
 fn tool_gates(tools: &[Value]) -> HashMap<String, String> {
-    tools.iter()
+    tools
+        .iter()
         .filter_map(|tool| {
             let name = tool.get("name")?.as_str()?;
             let capability = tool
@@ -600,7 +601,9 @@ fn mcp_result_text(result: &Value) -> String {
         .get("text")
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .unwrap_or_else(|| serde_json::to_string_pretty(result).unwrap_or_else(|_| "MCP result".into()))
+        .unwrap_or_else(|| {
+            serde_json::to_string_pretty(result).unwrap_or_else(|_| "MCP result".into())
+        })
 }
 
 fn policy_for_profile(profile: RuntimeProfile) -> ExecutionPolicy {
@@ -608,7 +611,9 @@ fn policy_for_profile(profile: RuntimeProfile) -> ExecutionPolicy {
         RuntimeProfile::DesktopFull | RuntimeProfile::Headless => {
             ExecutionPolicy::interactive_default()
         }
-        RuntimeProfile::MobileEmbedded | RuntimeProfile::WebWasm => ExecutionPolicy::mobile_default(),
+        RuntimeProfile::MobileEmbedded | RuntimeProfile::WebWasm => {
+            ExecutionPolicy::mobile_default()
+        }
     }
 }
 
@@ -661,7 +666,10 @@ mod tests {
             "name":"publish",
             "annotations":{"command":"/ship","requiresCapability":"publish.pro"}
         })];
-        assert_eq!(command_tools(&tools).get("ship").map(String::as_str), Some("publish"));
+        assert_eq!(
+            command_tools(&tools).get("ship").map(String::as_str),
+            Some("publish")
+        );
         assert_eq!(
             tool_gates(&tools).get("publish").map(String::as_str),
             Some("publish.pro")
