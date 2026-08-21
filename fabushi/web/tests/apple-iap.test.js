@@ -7,12 +7,6 @@ import { deterministicAppAccountToken, handleVerifyAppleReceipt } from '../src/h
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
-function appleJws(payload) {
-  const header = Buffer.from(JSON.stringify({ alg: 'ES256', x5c: ['fixture-cert'] })).toString('base64url');
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `${header}.${body}.fixture-signature`;
-}
-
 async function privateKeyPem() {
   const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   const der = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
@@ -30,13 +24,17 @@ async function env() {
   };
 }
 
-function installFetch(payload) {
-  const original = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ signedTransactionInfo: appleJws(payload) }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return () => { globalThis.fetch = original; };
+function appleOptions(payload) {
+  return {
+    fetchImpl: async () => new Response(JSON.stringify({ signedTransactionInfo: 'server-fetched-fixture' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+    verifyJws: async (value) => {
+      assert.equal(value, 'server-fetched-fixture');
+      return { environment: 'Production', ...payload };
+    },
+  };
 }
 
 function request(token, transactionId, productId) {
@@ -90,7 +88,7 @@ test('Apple IAP rejects a transaction bound to another Fabushi account', async (
   const user = { id: 42, username: 'apple_user', membership_type: 'expired', membership_expires_at: null };
   const token = await generateToken({ id: 42, username: user.username }, e);
   const transactionId = '2000000000001001';
-  const restore = installFetch({
+  const options = appleOptions({
     transactionId,
     productId: 'monthly',
     bundleId: e.APPLE_BUNDLE_ID,
@@ -98,13 +96,11 @@ test('Apple IAP rejects a transaction bound to another Fabushi account', async (
     purchaseDate: Date.UTC(2026, 6, 1),
     expiresDate: Date.UTC(2026, 7, 1),
   });
-  try {
-    const response = await handleVerifyAppleReceipt(request(token, transactionId, 'monthly'), e, fakeDb(user));
-    const body = await response.json();
-    assert.equal(response.status, 409);
-    assert.equal(body.code, 'APP_ACCOUNT_TOKEN_MISMATCH');
-    assert.equal(body.appAccountToken, await deterministicAppAccountToken(user));
-  } finally { restore(); }
+  const response = await handleVerifyAppleReceipt(request(token, transactionId, 'monthly'), e, fakeDb(user), options);
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.code, 'APP_ACCOUNT_TOKEN_MISMATCH');
+  assert.equal(body.appAccountToken, await deterministicAppAccountToken(user));
 });
 
 test('Apple IAP fulfills an account-bound subscription atomically using Apple expiry', async () => {
@@ -114,7 +110,7 @@ test('Apple IAP fulfills an account-bound subscription atomically using Apple ex
   const transactionId = '2000000000001002';
   const accountToken = await deterministicAppAccountToken(user);
   const expiresDate = Date.UTC(2026, 7, 17, 12, 0, 0);
-  const restore = installFetch({
+  const options = appleOptions({
     transactionId,
     originalTransactionId: '2000000000000001',
     productId: 'monthly',
@@ -124,18 +120,34 @@ test('Apple IAP fulfills an account-bound subscription atomically using Apple ex
     expiresDate,
   });
   const db = fakeDb(user);
-  try {
-    const response = await handleVerifyAppleReceipt(request(token, transactionId, 'monthly'), e, db);
-    const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(body.success, true);
-    assert.equal(body.membershipType, 'paid');
-    assert.equal(body.expiresAt, new Date(expiresDate).toISOString());
-    assert.equal(db.state.batches.length, 1);
-    assert.equal(db.state.batches[0].some((item) => item.sql.includes('INSERT INTO apple_iap_receipts')), true);
-    assert.equal(db.state.batches[0].some((item) => item.sql.includes('INSERT INTO purchase_history')), true);
-    assert.equal(db.state.batches[0].some((item) => item.sql.includes('UPDATE users')), true);
-  } finally { restore(); }
+  const response = await handleVerifyAppleReceipt(request(token, transactionId, 'monthly'), e, db, options);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.success, true);
+  assert.equal(body.membershipType, 'paid');
+  assert.equal(body.expiresAt, new Date(expiresDate).toISOString());
+  assert.equal(db.state.batches.length, 1);
+  assert.equal(db.state.batches[0].some((item) => item.sql.includes('INSERT INTO apple_iap_receipts')), true);
+  assert.equal(db.state.batches[0].some((item) => item.sql.includes('INSERT INTO purchase_history')), true);
+  assert.equal(db.state.batches[0].some((item) => item.sql.includes('UPDATE users')), true);
+});
+
+test('Apple IAP rejects a JWS environment that does not match the server endpoint', async () => {
+  const e = await env();
+  const user = { id: 42, username: 'apple_user', membership_type: 'expired', membership_expires_at: null };
+  const token = await generateToken({ id: 42, username: user.username }, e);
+  const transactionId = '2000000000001004';
+  const options = {
+    ...appleOptions({ transactionId, productId: 'monthly', bundleId: e.APPLE_BUNDLE_ID }),
+    verifyJws: async () => ({
+      environment: 'Sandbox',
+      transactionId,
+      productId: 'monthly',
+      bundleId: e.APPLE_BUNDLE_ID,
+    }),
+  };
+  const response = await handleVerifyAppleReceipt(request(token, transactionId, 'monthly'), e, fakeDb(user), options);
+  assert.equal(response.status, 502);
 });
 
 test('historical Apple purchase can only restore the original account', async () => {
