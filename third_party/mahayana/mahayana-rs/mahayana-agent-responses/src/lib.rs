@@ -1,9 +1,9 @@
-//! Sandboxed Agent loop for platforms that cannot embed the full Codex core.
+//! Sandboxed Mahayana Agent backend for platforms without a native tool host.
 //!
-//! This backend runs thread state and event generation in the application
-//! process. It calls only the configured model Responses endpoint and never a
-//! remote Agent gateway. It intentionally exposes no native shell, process,
-//! Git, or unrestricted filesystem tools.
+//! This backend keeps thread state in the application process and calls only
+//! the configured model Responses endpoint. It never uses a remote Agent
+//! gateway and intentionally exposes no native shell, Git, or unrestricted
+//! filesystem tools.
 
 use async_trait::async_trait;
 use mahayana_agent::AgentBackend;
@@ -20,6 +20,7 @@ use mahayana_core::MessageRole;
 use mahayana_core::ModelTokenUsage;
 use mahayana_core::ModelTokenUsageSnapshot;
 use mahayana_core::OperationId;
+use mahayana_core::capability::kernel::BackendCapabilities;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
@@ -188,6 +189,14 @@ impl AgentBackend for ResponsesAgentBackend {
 
     async fn resolve_approval(&self, resolution: ApprovalResolution) -> Result<(), AgentError> {
         Err(AgentError::ApprovalNotFound(resolution.approval_id))
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            sandbox: true,
+            headless: true,
+            ..BackendCapabilities::default()
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -416,5 +425,21 @@ mod tests {
             product_session_token: None,
         };
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn declares_only_capabilities_it_actually_implements() {
+        let backend = ResponsesAgentBackend::new(ResponsesAgentConfig {
+            model: "deepseek-chat".into(),
+            responses_base_url: "https://example.test/v1".into(),
+            product_session_token: None,
+        })
+        .expect("backend");
+        let capabilities = backend.capabilities();
+        assert!(capabilities.sandbox);
+        assert!(capabilities.headless);
+        assert!(!capabilities.tools);
+        assert!(!capabilities.mcp);
+        assert!(!capabilities.subagents);
     }
 }
