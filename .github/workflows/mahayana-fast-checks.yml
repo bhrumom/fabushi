@@ -24,7 +24,7 @@ jobs:
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     env:
       CARGO_INCREMENTAL: "1"
     defaults:
@@ -47,7 +47,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v3
+          shared-key: mahayana-fast-v4
           cache-all-crates: true
 
       - name: Verify formatting
@@ -65,6 +65,13 @@ jobs:
           cargo test
           -p mahayana-orchestrator
           -p mahayana-workspace-engine
+          --profile ci
+
+      - name: Test native model and coding agent engine
+        run: >-
+          cargo test
+          -p mahayana-model
+          -p mahayana-native-engine
           --profile ci
 
       - name: Test protocol and MiniApp bridge
