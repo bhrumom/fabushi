@@ -33,7 +33,17 @@ function timingSafeEqualBytes(left, right) {
 }
 
 function resolveJwtSecret(env) {
-  const secret = String(env?.JWT_SECRET || env?.vars?.JWT_SECRET || '').trim();
+  // JWT_SIGNING_SECRET is the production key. JWT_SECRET remains a temporary
+  // compatibility alias for isolated tests/older development environments only;
+  // deployment preflight requires JWT_SIGNING_SECRET so a stale plaintext
+  // JWT_SECRET binding can never be selected by deployed hardened Workers.
+  const secret = String(
+    env?.JWT_SIGNING_SECRET ||
+    env?.vars?.JWT_SIGNING_SECRET ||
+    env?.JWT_SECRET ||
+    env?.vars?.JWT_SECRET ||
+    '',
+  ).trim();
   const weak = new Set([
     'dev-secret',
     'secret',
@@ -43,7 +53,7 @@ function resolveJwtSecret(env) {
     'prod_secret_key_2025_ombhrum_fabushi',
   ]);
   if (secret.length < 32 || weak.has(secret.toLowerCase())) {
-    throw new Error('JWT_SECRET is missing or insecure; configure a rotated secret of at least 32 characters');
+    throw new Error('JWT signing secret is missing or insecure; configure JWT_SIGNING_SECRET with at least 32 characters');
   }
   return secret;
 }
