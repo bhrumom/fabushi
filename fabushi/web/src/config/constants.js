@@ -1,5 +1,7 @@
 // 配置常量
-export const ADMIN_EMAIL = '1315518325@qq.com';
+// Deprecated compatibility export. Administrator identity is configured at
+// runtime through ADMIN_EMAILS / ADMIN_EMAIL and must never be committed here.
+export const ADMIN_EMAIL = '';
 
 export const ADMIN_PRICES = {
   'monthly': '0.01',
