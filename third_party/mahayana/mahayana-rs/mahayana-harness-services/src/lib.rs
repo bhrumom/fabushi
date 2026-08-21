@@ -379,7 +379,11 @@ impl HarnessServices {
             .cloned()
             .collect::<Vec<_>>();
         sections.sort_by_key(|section| (section.priority, section.id.clone()));
-        Ok(sections.into_iter().map(|section| section.content).collect::<Vec<_>>().join("\n\n"))
+        Ok(sections
+            .into_iter()
+            .map(|section| section.content)
+            .collect::<Vec<_>>()
+            .join("\n\n"))
     }
 
     pub fn register_workspace(&self, workspace: WorkspaceRecord) -> HarnessResult<()> {
@@ -392,9 +396,17 @@ impl HarnessServices {
         Ok(self.state()?.workspaces.values().cloned().collect())
     }
 
-    pub fn set_setting(&self, key: impl Into<String>, value: Value) -> HarnessResult<SettingRecord> {
+    pub fn set_setting(
+        &self,
+        key: impl Into<String>,
+        value: Value,
+    ) -> HarnessResult<SettingRecord> {
         let key = required(&key.into(), "setting key")?;
-        let record = SettingRecord { key: key.clone(), value, updated_at_ms: now_ms() };
+        let record = SettingRecord {
+            key: key.clone(),
+            value,
+            updated_at_ms: now_ms(),
+        };
         self.state()?.settings.insert(key, record.clone());
         Ok(record)
     }
@@ -403,20 +415,44 @@ impl HarnessServices {
         Ok(self.state()?.settings.get(key).cloned())
     }
 
-    pub async fn store_credential(&self, label: &str, secret: &[u8]) -> HarnessResult<CredentialReference> {
-        let provider = self.providers()?.credentials.clone().ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
+    pub async fn store_credential(
+        &self,
+        label: &str,
+        secret: &[u8],
+    ) -> HarnessResult<CredentialReference> {
+        let provider = self
+            .providers()?
+            .credentials
+            .clone()
+            .ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
         let reference = provider.store(label, secret).await?;
-        self.state()?.credential_refs.insert(reference.id.clone(), reference.clone());
+        self.state()?
+            .credential_refs
+            .insert(reference.id.clone(), reference.clone());
         Ok(reference)
     }
 
     pub async fn resolve_credential(&self, reference_id: &str) -> HarnessResult<Vec<u8>> {
-        let reference = self.state()?.credential_refs.get(reference_id).cloned().ok_or_else(|| HarnessError::ServiceNotFound(format!("credential:{reference_id}")))?;
-        let provider = self.providers()?.credentials.clone().ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
+        let reference = self
+            .state()?
+            .credential_refs
+            .get(reference_id)
+            .cloned()
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("credential:{reference_id}")))?;
+        let provider = self
+            .providers()?
+            .credentials
+            .clone()
+            .ok_or_else(|| HarnessError::ServiceNotFound("credentials".into()))?;
         provider.resolve(&reference).await
     }
 
-    pub fn register_attachment(&self, bytes: &[u8], media_type: impl Into<String>, filename: Option<String>) -> HarnessResult<AttachmentRecord> {
+    pub fn register_attachment(
+        &self,
+        bytes: &[u8],
+        media_type: impl Into<String>,
+        filename: Option<String>,
+    ) -> HarnessResult<AttachmentRecord> {
         let sha256 = sha256(bytes);
         let record = AttachmentRecord {
             id: format!("attachment:{sha256}"),
@@ -425,11 +461,17 @@ impl HarnessServices {
             media_type: required(&media_type.into(), "media type")?,
             filename,
         };
-        self.state()?.attachments.insert(record.id.clone(), record.clone());
+        self.state()?
+            .attachments
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
-    pub fn register_spill(&self, bytes: &[u8], reason: impl Into<String>) -> HarnessResult<SpillRecord> {
+    pub fn register_spill(
+        &self,
+        bytes: &[u8],
+        reason: impl Into<String>,
+    ) -> HarnessResult<SpillRecord> {
         let sha256 = sha256(bytes);
         let record = SpillRecord {
             id: format!("spill:{sha256}"),
@@ -437,7 +479,9 @@ impl HarnessServices {
             size: bytes.len() as u64,
             reason: required(&reason.into(), "spill reason")?,
         };
-        self.state()?.spills.insert(record.id.clone(), record.clone());
+        self.state()?
+            .spills
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
@@ -456,13 +500,21 @@ impl HarnessServices {
 
     pub fn update_todo(&self, todo_id: &str, status: impl Into<String>) -> HarnessResult<TodoItem> {
         let mut state = self.state()?;
-        let todo = state.todos.get_mut(todo_id).ok_or_else(|| HarnessError::ServiceNotFound(format!("todo:{todo_id}")))?;
+        let todo = state
+            .todos
+            .get_mut(todo_id)
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("todo:{todo_id}")))?;
         todo.status = required(&status.into(), "todo status")?;
         todo.updated_at_ms = now_ms();
         Ok(todo.clone())
     }
 
-    pub fn set_plan(&self, session_id: impl Into<String>, steps: Vec<String>, review_required: bool) -> HarnessResult<PlanState> {
+    pub fn set_plan(
+        &self,
+        session_id: impl Into<String>,
+        steps: Vec<String>,
+        review_required: bool,
+    ) -> HarnessResult<PlanState> {
         let session_id = required(&session_id.into(), "session id")?;
         let plan = PlanState {
             session_id: session_id.clone(),
@@ -477,7 +529,10 @@ impl HarnessServices {
 
     pub fn exit_plan(&self, session_id: &str, approved: bool) -> HarnessResult<PlanState> {
         let mut state = self.state()?;
-        let plan = state.plans.get_mut(session_id).ok_or_else(|| HarnessError::ServiceNotFound(format!("plan:{session_id}")))?;
+        let plan = state
+            .plans
+            .get_mut(session_id)
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("plan:{session_id}")))?;
         if plan.review_required && !approved {
             return Err(HarnessError::ApprovalRequired(format!("plan:{session_id}")));
         }
@@ -486,7 +541,12 @@ impl HarnessServices {
         Ok(plan.clone())
     }
 
-    pub fn schedule(&self, session_id: impl Into<String>, instruction: impl Into<String>, schedule: impl Into<String>) -> HarnessResult<ScheduleEntry> {
+    pub fn schedule(
+        &self,
+        session_id: impl Into<String>,
+        instruction: impl Into<String>,
+        schedule: impl Into<String>,
+    ) -> HarnessResult<ScheduleEntry> {
         let entry = ScheduleEntry {
             id: format!("schedule:{}", Uuid::new_v4()),
             session_id: required(&session_id.into(), "session id")?,
@@ -495,18 +555,32 @@ impl HarnessServices {
             enabled: true,
             created_at_ms: now_ms(),
         };
-        self.state()?.schedules.insert(entry.id.clone(), entry.clone());
+        self.state()?
+            .schedules
+            .insert(entry.id.clone(), entry.clone());
         Ok(entry)
     }
 
-    pub fn set_schedule_enabled(&self, schedule_id: &str, enabled: bool) -> HarnessResult<ScheduleEntry> {
+    pub fn set_schedule_enabled(
+        &self,
+        schedule_id: &str,
+        enabled: bool,
+    ) -> HarnessResult<ScheduleEntry> {
         let mut state = self.state()?;
-        let entry = state.schedules.get_mut(schedule_id).ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))?;
+        let entry = state
+            .schedules
+            .get_mut(schedule_id)
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))?;
         entry.enabled = enabled;
         Ok(entry.clone())
     }
 
-    pub fn record_feedback(&self, session_id: impl Into<String>, kind: impl Into<String>, text: impl Into<String>) -> HarnessResult<FeedbackRecord> {
+    pub fn record_feedback(
+        &self,
+        session_id: impl Into<String>,
+        kind: impl Into<String>,
+        text: impl Into<String>,
+    ) -> HarnessResult<FeedbackRecord> {
         let record = FeedbackRecord {
             id: format!("feedback:{}", Uuid::new_v4()),
             session_id: required(&session_id.into(), "session id")?,
@@ -514,7 +588,9 @@ impl HarnessServices {
             text: required(&text.into(), "feedback text")?,
             created_at_ms: now_ms(),
         };
-        self.state()?.feedback.insert(record.id.clone(), record.clone());
+        self.state()?
+            .feedback
+            .insert(record.id.clone(), record.clone());
         Ok(record)
     }
 
@@ -523,7 +599,10 @@ impl HarnessServices {
         if let Some(identity) = state.identity.clone() {
             return Ok(identity);
         }
-        let identity = IdentityRecord { anonymous_id: format!("anon:{}", Uuid::new_v4()), account_id: None };
+        let identity = IdentityRecord {
+            anonymous_id: format!("anon:{}", Uuid::new_v4()),
+            account_id: None,
+        };
         state.identity = Some(identity.clone());
         Ok(identity)
     }
@@ -535,7 +614,11 @@ impl HarnessServices {
         Ok(identity)
     }
 
-    pub fn search_sessions(&self, query: &str, limit: usize) -> HarnessResult<Vec<SessionSearchHit>> {
+    pub fn search_sessions(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> HarnessResult<Vec<SessionSearchHit>> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
             return Ok(Vec::new());
@@ -549,15 +632,35 @@ impl HarnessServices {
             if score == 0 {
                 continue;
             }
-            let excerpt = transcript.lines().find(|line| line.to_lowercase().contains(&query)).unwrap_or(&session.title).chars().take(240).collect();
-            hits.push(SessionSearchHit { session_id: session.id, title: session.title, score, excerpt });
+            let excerpt = transcript
+                .lines()
+                .find(|line| line.to_lowercase().contains(&query))
+                .unwrap_or(&session.title)
+                .chars()
+                .take(240)
+                .collect();
+            hits.push(SessionSearchHit {
+                session_id: session.id,
+                title: session.title,
+                score,
+                excerpt,
+            });
         }
-        hits.sort_by(|left, right| right.score.cmp(&left.score).then_with(|| left.session_id.cmp(&right.session_id)));
+        hits.sort_by(|left, right| {
+            right
+                .score
+                .cmp(&left.score)
+                .then_with(|| left.session_id.cmp(&right.session_id))
+        });
         hits.truncate(limit);
         Ok(hits)
     }
 
-    pub fn create_team(&self, name: impl Into<String>, members: Vec<TeamMember>) -> HarnessResult<AgentTeam> {
+    pub fn create_team(
+        &self,
+        name: impl Into<String>,
+        members: Vec<TeamMember>,
+    ) -> HarnessResult<AgentTeam> {
         let team = AgentTeam {
             id: format!("team:{}", Uuid::new_v4()),
             name: required(&name.into(), "team name")?,
@@ -569,25 +672,56 @@ impl HarnessServices {
         Ok(team)
     }
 
-    pub fn add_team_task(&self, team_id: &str, text: impl Into<String>, assignee_agent_id: Option<String>) -> HarnessResult<TeamTask> {
+    pub fn add_team_task(
+        &self,
+        team_id: &str,
+        text: impl Into<String>,
+        assignee_agent_id: Option<String>,
+    ) -> HarnessResult<TeamTask> {
         let mut state = self.state()?;
-        let team = state.teams.get_mut(team_id).ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
-        let task = TeamTask { id: format!("team-task:{}", Uuid::new_v4()), text: required(&text.into(), "team task")?, assignee_agent_id, status: "pending".into() };
+        let team = state
+            .teams
+            .get_mut(team_id)
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
+        let task = TeamTask {
+            id: format!("team-task:{}", Uuid::new_v4()),
+            text: required(&text.into(), "team task")?,
+            assignee_agent_id,
+            status: "pending".into(),
+        };
         team.tasks.push(task.clone());
         Ok(task)
     }
 
-    pub fn send_team_message(&self, team_id: &str, from_agent_id: impl Into<String>, to_agent_id: Option<String>, text: impl Into<String>) -> HarnessResult<TeamMessage> {
+    pub fn send_team_message(
+        &self,
+        team_id: &str,
+        from_agent_id: impl Into<String>,
+        to_agent_id: Option<String>,
+        text: impl Into<String>,
+    ) -> HarnessResult<TeamMessage> {
         let mut state = self.state()?;
-        let team = state.teams.get_mut(team_id).ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
-        let message = TeamMessage { id: format!("team-message:{}", Uuid::new_v4()), from_agent_id: required(&from_agent_id.into(), "from agent")?, to_agent_id, text: required(&text.into(), "team message")?, created_at_ms: now_ms() };
+        let team = state
+            .teams
+            .get_mut(team_id)
+            .ok_or_else(|| HarnessError::ServiceNotFound(format!("team:{team_id}")))?;
+        let message = TeamMessage {
+            id: format!("team-message:{}", Uuid::new_v4()),
+            from_agent_id: required(&from_agent_id.into(), "from agent")?,
+            to_agent_id,
+            text: required(&text.into(), "team message")?,
+            created_at_ms: now_ms(),
+        };
         team.mailbox.push(message.clone());
         Ok(message)
     }
 
     pub fn set_guard_policy(&self, policy: GuardPolicy) -> HarnessResult<()> {
-        if policy.repeat_window == 0 || policy.repeat_threshold == 0 || policy.tool_timeout_ms == 0 {
-            return Err(HarnessError::InvalidConfig("guard policy values must be positive".into()));
+        if policy.repeat_window == 0 || policy.repeat_threshold == 0 || policy.tool_timeout_ms == 0
+        {
+            return Err(HarnessError::InvalidConfig(
+                "guard policy values must be positive".into(),
+            ));
         }
         self.state()?.guard_policy = policy;
         Ok(())
@@ -597,12 +731,22 @@ impl HarnessServices {
         let fingerprint = tool_fingerprint(request);
         let mut state = self.state()?;
         let policy = state.guard_policy.clone();
-        let repeated_count = state.recent_tool_calls.iter().filter(|(tool, hash)| tool == &request.name && hash == &fingerprint).count();
-        state.recent_tool_calls.push_back((request.name.clone(), fingerprint.clone()));
+        let repeated_count = state
+            .recent_tool_calls
+            .iter()
+            .filter(|(tool, hash)| tool == &request.name && hash == &fingerprint)
+            .count();
+        state
+            .recent_tool_calls
+            .push_back((request.name.clone(), fingerprint.clone()));
         while state.recent_tool_calls.len() > policy.repeat_window {
             state.recent_tool_calls.pop_front();
         }
-        Ok(GuardObservation { tool: request.name.clone(), fingerprint, repeated: repeated_count + 1 >= policy.repeat_threshold })
+        Ok(GuardObservation {
+            tool: request.name.clone(),
+            fingerprint,
+            repeated: repeated_count + 1 >= policy.repeat_threshold,
+        })
     }
 
     pub fn register_skill(&self, skill: SkillRecord) -> HarnessResult<()> {
@@ -656,13 +800,17 @@ impl HarnessServices {
     }
 
     fn providers(&self) -> HarnessResult<MutexGuard<'_, ProviderSet>> {
-        self.providers.lock().map_err(|_| HarnessError::StatePoisoned)
+        self.providers
+            .lock()
+            .map_err(|_| HarnessError::StatePoisoned)
     }
 }
 
 fn required(value: &str, field: &str) -> HarnessResult<String> {
     if value.trim().is_empty() {
-        Err(HarnessError::InvalidConfig(format!("{field} must not be empty")))
+        Err(HarnessError::InvalidConfig(format!(
+            "{field} must not be empty"
+        )))
     } else {
         Ok(value.to_string())
     }
@@ -699,8 +847,22 @@ mod tests {
     #[test]
     fn prompt_sections_are_ordered() {
         let services = HarnessServices::new(MahayanaHarness::new(BuildProfile::DesktopFull));
-        services.add_prompt_section(PromptSection { id: "b".into(), priority: 20, content: "second".into(), enabled: true }).unwrap();
-        services.add_prompt_section(PromptSection { id: "a".into(), priority: 10, content: "first".into(), enabled: true }).unwrap();
+        services
+            .add_prompt_section(PromptSection {
+                id: "b".into(),
+                priority: 20,
+                content: "second".into(),
+                enabled: true,
+            })
+            .unwrap();
+        services
+            .add_prompt_section(PromptSection {
+                id: "a".into(),
+                priority: 10,
+                content: "first".into(),
+                enabled: true,
+            })
+            .unwrap();
         assert_eq!(services.assembled_prompt().unwrap(), "first\n\nsecond");
     }
 
@@ -708,7 +870,13 @@ mod tests {
     fn session_search_uses_logged_transcript() {
         let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
         let session = harness.create_session("alpha").unwrap();
-        harness.append_session_event(&session.id, "user/message", serde_json::json!({"text": "searchable needle"})).unwrap();
+        harness
+            .append_session_event(
+                &session.id,
+                "user/message",
+                serde_json::json!({"text": "searchable needle"}),
+            )
+            .unwrap();
         let services = HarnessServices::new(harness);
         let hits = services.search_sessions("needle", 10).unwrap();
         assert_eq!(hits.len(), 1);
@@ -718,8 +886,17 @@ mod tests {
     #[test]
     fn repeat_guard_detects_identical_calls() {
         let services = HarnessServices::new(MahayanaHarness::new(BuildProfile::DesktopFull));
-        services.set_guard_policy(GuardPolicy { repeat_window: 4, repeat_threshold: 2, tool_timeout_ms: 1_000 }).unwrap();
-        let request = ToolRequest { name: "read".into(), arguments: serde_json::json!({"path": "a"}) };
+        services
+            .set_guard_policy(GuardPolicy {
+                repeat_window: 4,
+                repeat_threshold: 2,
+                tool_timeout_ms: 1_000,
+            })
+            .unwrap();
+        let request = ToolRequest {
+            name: "read".into(),
+            arguments: serde_json::json!({"path": "a"}),
+        };
         assert!(!services.observe_tool_call(&request).unwrap().repeated);
         assert!(services.observe_tool_call(&request).unwrap().repeated);
     }

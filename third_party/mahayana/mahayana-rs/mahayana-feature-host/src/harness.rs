@@ -72,7 +72,8 @@ impl HarnessFeatureController {
         &self,
         conversation_id: &ConversationId,
     ) -> HarnessResult<SessionRecord> {
-        self.harness.ensure_session_for_conversation(conversation_id)
+        self.harness
+            .ensure_session_for_conversation(conversation_id)
     }
 
     pub fn fork_session(&self, session_id: &str) -> HarnessResult<SessionRecord> {
@@ -88,11 +89,7 @@ impl HarnessFeatureController {
         self.harness.spawn_agent(name, preset, session_id)
     }
 
-    pub fn set_goal(
-        &self,
-        session_id: &str,
-        text: impl Into<String>,
-    ) -> HarnessResult<GoalRecord> {
+    pub fn set_goal(&self, session_id: &str, text: impl Into<String>) -> HarnessResult<GoalRecord> {
         self.harness.set_goal(session_id, text)
     }
 
