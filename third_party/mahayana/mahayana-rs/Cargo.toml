@@ -3,6 +3,7 @@ members = [
     "mahayana-cli",
     "mahayana-agent",
     "mahayana-agent-codex",
+    "mahayana-agent-kernel-bridge",
     "mahayana-agent-responses",
     "mahayana-app-host",
     "mahayana-app-host-desktop",
@@ -71,6 +72,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 flate2 = "1.1.8"
 crossterm = "0.28.1"
 mahayana-agent = { path = "mahayana-agent" }
+mahayana-agent-kernel-bridge = { path = "mahayana-agent-kernel-bridge" }
 mahayana-agent-responses = { path = "mahayana-agent-responses" }
 mahayana-app-host = { path = "mahayana-app-host" }
 mahayana-conversation = { path = "mahayana-conversation" }
