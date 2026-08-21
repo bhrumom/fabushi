@@ -1,0 +1,118 @@
+name: Mahayana runtime canonicalization migration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mahayana-runtime-canonicalize-temp.yml'
+      - 'third_party/mahayana/**'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'feat/mahayana-fusion-mainline'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fusion branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Canonicalize Mahayana runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'use mahayana_conversation::ConversationError;\n',
+                  'use mahayana_conversation::ConversationError;\nuse mahayana_conversation::MAHAYANA_AGENT_PROVIDER_KEY;\nuse mahayana_conversation::canonicalize_conversation_id;\n',
+              ),
+              (
+                  'use mahayana_core::CONVERSATION_SCHEMA_VERSION;\n',
+                  'use mahayana_core::CONVERSATION_SCHEMA_VERSION;\nuse mahayana_core::LEGACY_CODEX_ASSISTANT_CONVERSATION_ID;\nuse mahayana_core::MAHAYANA_AGENT_CONVERSATION_ID;\n',
+              ),
+              (
+                  '    /// Starts an Agent backend on the same Tokio runtime that the long-lived\n    /// Mahayana runtime will own. This is required by in-process Codex because\n    /// its app-server worker tasks must outlive synchronous FFI construction.\n',
+                  '    /// Starts an Agent backend on the same Tokio runtime that the long-lived\n    /// Mahayana runtime will own. Some embedded adapters spawn worker tasks that\n    /// must outlive synchronous FFI construction.\n',
+              ),
+              (
+                  '        // Codex app-server thread creation walks a large typed protocol and\n        // configuration graph. The platform default (commonly 2 MiB) can\n        // overflow on the first embedded thread/turn even though the same\n        // code works in the standalone Codex process.\n',
+                  '        // Some embedded agent adapters walk a large typed protocol and\n        // configuration graph. The platform default (commonly 2 MiB) can\n        // overflow on the first embedded thread/turn even when the standalone\n        // backend process has sufficient stack.\n',
+              ),
+              (
+                  '        let created = self\n            .backend\n            .start_thread(StartThreadRequest {\n                conversation_id: conversation_id.clone(),\n            })\n',
+                  '        let canonical_conversation_id = canonicalize_conversation_id(conversation_id);\n        let created = self\n            .backend\n            .start_thread(StartThreadRequest {\n                conversation_id: canonical_conversation_id,\n            })\n',
+              ),
+              (
+                  '    fn key(&self) -> &\'static str {\n        "codex"\n    }\n\n    async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {\n        Ok(vec![Conversation::codex_assistant()])\n    }\n',
+                  '    fn key(&self) -> &\'static str {\n        MAHAYANA_AGENT_PROVIDER_KEY\n    }\n\n    async fn list_conversations(&self) -> Result<Vec<Conversation>, ConversationError> {\n        Ok(vec![Conversation::mahayana_assistant()])\n    }\n',
+              ),
+              (
+                  '        let history = self\n            .history\n',
+                  '        let canonical_conversation_id = canonicalize_conversation_id(conversation_id);\n        let history = self\n            .history\n',
+              ),
+              (
+                  '            .filter(|message| &message.conversation_id == conversation_id)\n',
+                  '            .filter(|message| message.conversation_id == canonical_conversation_id)\n',
+              ),
+              (
+                  '    async fn send_message(\n        &self,\n        request: SendMessageRequest,\n        events: SharedConversationEventSink,\n    ) -> Result<(), ConversationError> {\n        let thread_id = self.thread_id(&request.conversation_id).await?;\n',
+                  '    async fn send_message(\n        &self,\n        mut request: SendMessageRequest,\n        events: SharedConversationEventSink,\n    ) -> Result<(), ConversationError> {\n        request.conversation_id = canonicalize_conversation_id(&request.conversation_id);\n        let thread_id = self.thread_id(&request.conversation_id).await?;\n',
+              ),
+              (
+                  '                plugin_id: "codex".into(),\n',
+                  '                plugin_id: MAHAYANA_AGENT_PROVIDER_KEY.into(),\n',
+              ),
+              (
+                  '    use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;\n',
+                  '',
+              ),
+              (
+                  '    fn routes_codex_contact_and_streams_events() {\n',
+                  '    fn routes_mahayana_agent_and_streams_events() {\n',
+              ),
+              (
+                  '                conversation_id: ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()),\n',
+                  '                conversation_id: ConversationId(MAHAYANA_AGENT_CONVERSATION_ID.to_string()),\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one runtime migration match, found {count}: {old[:90]!r}')
+              text = text.replace(old, new, 1)
+
+          marker = '''    #[test]\n    fn rejects_cloud_agent_configuration_at_runtime_creation() {\n'''
+          if text.count(marker) != 1:
+              raise SystemExit('could not locate runtime regression-test insertion point')
+
+          legacy_test = '''    #[test]\n    fn legacy_agent_id_is_read_alias_but_new_events_use_mahayana_identity() {\n        let runtime = RuntimeBuilder::new(RuntimeConfig::default())\n            .with_agent_backend(Arc::new(EchoAgent))\n            .expect("register agent")\n            .build()\n            .expect("build runtime");\n        let _ready = runtime\n            .receive(Duration::from_millis(10))\n            .expect("receive ready")\n            .expect("ready event");\n\n        assert!(runtime\n            .status()\n            .providers\n            .iter()\n            .any(|provider| provider == MAHAYANA_AGENT_PROVIDER_KEY));\n        assert!(!runtime.status().providers.iter().any(|provider| provider == "codex"));\n\n        runtime\n            .execute(RuntimeCommand::SendMessage {\n                conversation_id: ConversationId(\n                    LEGACY_CODEX_ASSISTANT_CONVERSATION_ID.to_string(),\n                ),\n                text: "兼容输入".to_string(),\n                client_message_id: None,\n                hidden: false,\n            })\n            .expect("send legacy alias");\n\n        let mut saw_canonical_message = false;\n        for _ in 0..5 {\n            let event = runtime\n                .receive(Duration::from_secs(1))\n                .expect("receive event")\n                .expect("event before timeout");\n            if let RuntimeEvent::MessageCompleted { message, .. } = event {\n                assert_eq!(\n                    message.conversation_id.as_str(),\n                    MAHAYANA_AGENT_CONVERSATION_ID\n                );\n                saw_canonical_message = true;\n                break;\n            }\n        }\n        assert!(saw_canonical_message);\n    }\n\n'''
+          text = text.replace(marker, legacy_test + marker, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Format Mahayana workspace
+        run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs
+          git diff --cached --quiet && { echo "No migration changes required"; exit 0; }
+          git commit -m "refactor(mahayana): canonicalize runtime agent identity"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
