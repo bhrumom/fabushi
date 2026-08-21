@@ -11,24 +11,31 @@ const JWT_SECRET = 'transfer-gate-jwt-secret-that-is-at-least-32-bytes';
 const TRANSFER_RECEIPT_SECRET = 'transfer-receipt-secret-that-is-at-least-32-bytes';
 
 function createEnv() {
-  const values = new Map();
-  return {
-    JWT_SECRET,
-    TRANSFER_RECEIPT_SECRET,
-    USERS_KV: {
-      async get(key) { return values.get(key) ?? null; },
-      async put(key, value) { values.set(key, value); },
-    },
-  };
+  return { JWT_SECRET, TRANSFER_RECEIPT_SECRET };
 }
 
 function createDb() {
+  const claimed = new Set();
   return {
     async getUserById(id) {
       return Number(id) === 7 ? { id: 7, username: 'transfer_user', email: 'transfer@example.com' } : null;
     },
     async getUser(username) {
       return username === 'transfer_user' ? { id: 7, username, email: 'transfer@example.com' } : null;
+    },
+    prepare(sql) {
+      assert.match(sql, /INSERT INTO transfer_receipt_claims/);
+      return {
+        bind(jti) {
+          return {
+            async run() {
+              if (claimed.has(jti)) throw new Error('UNIQUE constraint failed: transfer_receipt_claims.jti');
+              claimed.add(jti);
+              return { success: true };
+            },
+          };
+        },
+      };
     },
   };
 }
@@ -67,7 +74,7 @@ async function buildRequest({ bytes = 4096, jti = 'transfer_receipt_0001', userI
   return { env, request };
 }
 
-test('transfer metric accepts a matching server-signed receipt once', async () => {
+test('transfer metric accepts a matching server-signed receipt once and atomically rejects replay', async () => {
   const { env, request } = await buildRequest();
   const db = createDb();
   assert.equal(await enforceRequestSecurityGate(request, env, db), null);
