@@ -51,10 +51,7 @@ test('marketplace browse returns exact immutable download metadata', async () =>
   const payload = await response.json();
   assert.equal(payload.plugins[0].pluginId, 'chatgpt-auto-confirm');
   assert.equal(payload.plugins[0].latestVersion, '0.1.0');
-  assert.equal(
-    payload.plugins[0].downloadUrl,
-    'https://chatgpt-auto-confirm.example/mahayana/plugin.tar.gz',
-  );
+  assert.equal(payload.plugins[0].downloadUrl, 'https://chatgpt-auto-confirm.example/mahayana/plugin.tar.gz');
   assert.match(calls[0].sql, /review_state = 'approved'/);
 
   const mobileResponse = await handleMarketplaceBrowse(
@@ -68,24 +65,16 @@ test('admin publication verifies a hashed independent deployment and returns a r
   const secretEnv = { JWT_SECRET: TEST_SECRET, ADMIN_EMAILS: TEST_ADMIN_EMAIL };
   const token = await generateToken({ id: 7, username: 'publisher' }, secretEnv);
   const calls = [];
-  const prepared = [];
   const env = {
     ...secretEnv,
     PLATFORM_DB: {
       prepare(sql) {
-        const preparedStatement = {
-          sql,
+        return {
           bind(...values) {
             calls.push({ sql, values });
-            return {
-              sql,
-              values,
-              async first() { return null; },
-            };
+            return { sql, values, async first() { return null; } };
           },
         };
-        prepared.push(preparedStatement);
-        return preparedStatement;
       },
       async batch(statements) {
         assert.equal(statements.length, 2);
@@ -113,7 +102,13 @@ test('admin publication verifies a hashed independent deployment and returns a r
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     assert.equal(url, 'https://chatgpt-auto-confirm.example/mahayana/plugin.tar.gz');
-    return new Response(packageBytes, { status: 200, headers: { 'Content-Type': 'application/gzip' } });
+    return new Response(packageBytes, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/gzip',
+        'Content-Length': String(packageBytes.byteLength),
+      },
+    });
   };
   let response;
   try {
@@ -134,10 +129,7 @@ test('admin publication verifies a hashed independent deployment and returns a r
   assert.match(receipt.packageSha256, /^[0-9a-f]{64}$/);
   assert.equal(receipt.deploymentUrl, 'https://chatgpt-auto-confirm.example');
   assert.deepEqual(receipt.platforms, ['cli', 'desktop']);
-  assert.equal(
-    receipt.downloadUrl,
-    'https://chatgpt-auto-confirm.example/mahayana/plugin.tar.gz',
-  );
+  assert.equal(receipt.downloadUrl, 'https://chatgpt-auto-confirm.example/mahayana/plugin.tar.gz');
   assert.equal(calls.length, 4);
 });
 
@@ -157,10 +149,7 @@ test('publication rejects invalid deployment metadata before fetching', async ()
   const response = await handleMarketplacePublish(new Request(
     'https://api.example/v1/marketplace/releases',
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form },
-  ), {
-    ...secretEnv,
-    PLATFORM_DB: {},
-  }, {
+  ), { ...secretEnv, PLATFORM_DB: {} }, {
     async getUser() { return { id: 8, email: TEST_ADMIN_EMAIL }; },
   });
   globalThis.fetch = originalFetch;
