@@ -18,7 +18,6 @@ members = [
     "mahayana-miniapp-bridge",
     "mahayana-miniapp-protocol",
     "mahayana-miniapp",
-    "mahayana-pay",
     "mahayana-platform-core",
     "mahayana-platform-worker",
     "mahayana-plugin-host",
@@ -83,7 +82,6 @@ mahayana-model = { path = "mahayana-model" }
 mahayana-miniapp-bridge = { path = "mahayana-miniapp-bridge" }
 mahayana-miniapp-protocol = { path = "mahayana-miniapp-protocol" }
 mahayana-miniapp = { path = "mahayana-miniapp" }
-mahayana-pay = { path = "mahayana-pay" }
 mahayana-platform-core = { path = "mahayana-platform-core" }
 mahayana-plugin-host = { path = "mahayana-plugin-host" }
 mahayana-plugin-runtime = { path = "mahayana-plugin-runtime" }
