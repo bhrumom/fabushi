@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { webcrypto } from 'node:crypto';
 import test from 'node:test';
 
 import { generateToken } from '../auth-utils.js';
@@ -10,11 +10,25 @@ import {
 } from '../src/handlers/payment.js';
 import { DatabaseService } from '../src/services/database.js';
 
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
 const env = { JWT_SECRET: 'payment-products-test-secret-that-is-at-least-32-bytes' };
-const TEST_ALIPAY_PRIVATE_KEY = readFileSync(
-  new URL('../test_private_key_pkcs8.pem', import.meta.url),
-  'utf8',
-);
+
+async function createAlipayPrivateKeyPem() {
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  );
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+  const body = Buffer.from(pkcs8).toString('base64').match(/.{1,64}/g).join('\n');
+  return `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
+}
 
 function createD1Mock({ columnsByTable = {}, firstResult = null } = {}) {
   const calls = [];
@@ -136,6 +150,7 @@ test('create Alipay order resolves stale token username through userId', async (
       createdOrders.push(order);
     },
   };
+  const testPrivateKey = await createAlipayPrivateKeyPem();
 
   const response = await handleCreateAlipayOrder(
     new Request('https://example.com/api/alipay/create-order', {
@@ -149,7 +164,7 @@ test('create Alipay order resolves stale token username through userId', async (
     {
       ...env,
       ALIPAY_APP_ID: 'test-app-id',
-      ALIPAY_PRIVATE_KEY: TEST_ALIPAY_PRIVATE_KEY,
+      ALIPAY_PRIVATE_KEY: testPrivateKey,
       ALIPAY_PUBLIC_KEY: 'test-public-key-placeholder-for-config-check',
       WORKER_URL: 'https://api.example.com',
     },
@@ -169,16 +184,8 @@ test('createOrder writes username into legacy orders.user_id when username colum
   const rawDb = createD1Mock({
     columnsByTable: {
       orders: [
-        'order_id',
-        'user_id',
-        'plan',
-        'amount',
-        'original_amount',
-        'is_admin_order',
-        'status',
-        'platform',
-        'created_at',
-        'updated_at',
+        'order_id', 'user_id', 'plan', 'amount', 'original_amount',
+        'is_admin_order', 'status', 'platform', 'created_at', 'updated_at',
       ],
     },
   });
@@ -200,18 +207,13 @@ test('createOrder writes username into legacy orders.user_id when username colum
   assert.match(insert.sql, /order_id, user_id, plan/);
   assert.doesNotMatch(insert.sql, /username/);
   assert.deepEqual(insert.params.slice(0, 4), [
-    'MEMBER_bhrum108_1',
-    'bhrum108',
-    'zen_buddha_asset',
-    '33.00',
+    'MEMBER_bhrum108_1', 'bhrum108', 'zen_buddha_asset', '33.00',
   ]);
 });
 
 test('hasCompletedPurchase supports legacy purchase_history without username column', async () => {
   const rawDb = createD1Mock({
-    columnsByTable: {
-      purchase_history: ['id', 'user_id', 'plan', 'status'],
-    },
+    columnsByTable: { purchase_history: ['id', 'user_id', 'plan', 'status'] },
     firstResult: { id: 'purchase_1' },
   });
   const db = new DatabaseService(rawDb);
