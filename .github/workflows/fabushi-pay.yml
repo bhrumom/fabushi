@@ -50,32 +50,20 @@ jobs:
           text = path.read_text()
 
           if 'filter(|line| line.amount != 0)' not in text:
-              old = '''    let entry = PaymentLedgerEntry {
-              entry_id: stable_id(&["ledger", reference_type, reference_id, event_key]),
-              reference_type: reference_type.into(),
-              reference_id: reference_id.into(),
-              created_at_ms,
-              lines,
-          };'''
-              new = '''    let lines = lines
+              anchor = '    let entry = PaymentLedgerEntry {\n'
+              replacement = '''    let lines = lines
               .into_iter()
               .filter(|line| line.amount != 0)
               .collect::<Vec<_>>();
-          let entry = PaymentLedgerEntry {
-              entry_id: stable_id(&["ledger", reference_type, reference_id, event_key]),
-              reference_type: reference_type.into(),
-              reference_id: reference_id.into(),
-              created_at_ms,
-              lines,
-          };'''
-              if old not in text:
-                  raise SystemExit('balanced_entry marker not found')
-              text = text.replace(old, new, 1)
+              let entry = PaymentLedgerEntry {
+          '''
+              if anchor not in text:
+                  raise SystemExit('PaymentLedgerEntry construction anchor not found')
+              text = text.replace(anchor, replacement, 1)
 
           test_name = 'zero_value_split_lines_are_not_posted'
           if test_name not in text:
-              marker = '''    #[test]
-          fn mutation_idempotency_cannot_cross_payments_or_operations() {'''
+              marker = '    #[test]\n    fn mutation_idempotency_cannot_cross_payments_or_operations() {'
               test = '''    #[test]
           fn zero_value_split_lines_are_not_posted() {
               for fee_bps in [0, 10_000] {
@@ -102,7 +90,7 @@ jobs:
           #[test]
           fn mutation_idempotency_cannot_cross_payments_or_operations() {'''
               if marker not in text:
-                  raise SystemExit('test insertion marker not found')
+                  raise SystemExit('test insertion anchor not found')
               text = text.replace(marker, test, 1)
 
           path.write_text(text)
