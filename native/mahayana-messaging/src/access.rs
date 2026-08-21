@@ -67,7 +67,9 @@ impl AccessTokenRegistry {
     ) -> Result<(), AccessError> {
         let secret = secret.as_ref();
         validate_secret(secret)?;
-        if grant.id.trim().is_empty() || grant.device_id.trim().is_empty() || !grant.actor_id.is_valid()
+        if grant.id.trim().is_empty()
+            || grant.device_id.trim().is_empty()
+            || !grant.actor_id.is_valid()
         {
             return Err(AccessError::InvalidGrant);
         }
@@ -240,10 +242,7 @@ mod tests {
                     id: "grant:1".into(),
                     actor_id: actor_id.clone(),
                     device_id: "desktop:1".into(),
-                    scopes: BTreeSet::from([
-                        AccessScope::Messaging,
-                        AccessScope::Calls,
-                    ]),
+                    scopes: BTreeSet::from([AccessScope::Messaging, AccessScope::Calls]),
                     issued_at_ms: 1,
                     expires_at_ms: Some(100),
                     revoked_at_ms: None,
@@ -252,13 +251,7 @@ mod tests {
             .unwrap();
 
         assert!(registry
-            .authorize(
-                secret(7),
-                &actor_id,
-                "desktop:1",
-                AccessScope::Messaging,
-                2,
-            )
+            .authorize(secret(7), &actor_id, "desktop:1", AccessScope::Messaging, 2,)
             .is_ok());
         assert!(matches!(
             registry.authorize(
@@ -271,24 +264,12 @@ mod tests {
             Err(AccessError::IdentityMismatch)
         ));
         assert!(matches!(
-            registry.authorize(
-                secret(7),
-                &actor_id,
-                "desktop:1",
-                AccessScope::Payments,
-                2,
-            ),
+            registry.authorize(secret(7), &actor_id, "desktop:1", AccessScope::Payments, 2,),
             Err(AccessError::ScopeDenied(AccessScope::Payments))
         ));
         registry.revoke("grant:1", 3).unwrap();
         assert!(matches!(
-            registry.authorize(
-                secret(7),
-                &actor_id,
-                "desktop:1",
-                AccessScope::Messaging,
-                4,
-            ),
+            registry.authorize(secret(7), &actor_id, "desktop:1", AccessScope::Messaging, 4,),
             Err(AccessError::Unauthorized | AccessError::ExpiredOrRevoked)
         ));
     }
