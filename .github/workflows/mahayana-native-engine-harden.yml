@@ -3,7 +3,7 @@ name: Mahayana native engine hardening
 on:
   pull_request:
     paths:
-      - .github/scripts/harden-mahayana-native-engine.py
+      - .github/scripts/harden-mahayana-native-engine-v2.py
       - .github/workflows/mahayana-native-engine-harden.yml
 
 permissions:
@@ -30,7 +30,7 @@ jobs:
 
       - name: Apply guarded hardening migration
         working-directory: .
-        run: python3 .github/scripts/harden-mahayana-native-engine.py
+        run: python3 .github/scripts/harden-mahayana-native-engine-v2.py
 
       - name: Format Rust workspace
         run: cargo fmt --all
