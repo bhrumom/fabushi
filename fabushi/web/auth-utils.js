@@ -8,8 +8,11 @@ function base64UrlEncode(buffer) {
 }
 
 function base64UrlDecodeToArray(base64url) {
-  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4 === 2 ? '==' : base64.length % 4 === 3 ? '=' : '';
+  const normalized = String(base64url || '');
+  const base64 = normalized.replace(/-/g, '+').replace(/_/g, '/');
+  const remainder = base64.length % 4;
+  const pad = remainder === 2 ? '==' : remainder === 3 ? '=' : remainder === 0 ? '' : null;
+  if (pad === null) throw new Error('invalid base64url');
   const str = atob(base64 + pad);
   const bytes = new Uint8Array(str.length);
   for (let i = 0; i < str.length; i += 1) bytes[i] = str.charCodeAt(i);
@@ -22,11 +25,37 @@ function randomBytes(size = 16) {
   return array;
 }
 
-async function derivePbkdf2(password, saltBytes, iterations = 100000) {
+function timingSafeEqualBytes(left, right) {
+  const a = left instanceof Uint8Array ? left : new Uint8Array(left);
+  const b = right instanceof Uint8Array ? right : new Uint8Array(right);
+  if (a.byteLength !== b.byteLength) return false;
+  let difference = 0;
+  for (let i = 0; i < a.byteLength; i += 1) difference |= a[i] ^ b[i];
+  return difference === 0;
+}
+
+function resolveJwtSecret(env) {
+  const secret = String(env?.JWT_SECRET || env?.vars?.JWT_SECRET || '').trim();
+  const weak = new Set([
+    'dev-secret',
+    'secret',
+    'changeme',
+    'change-me',
+    'dev_secret_key_2025',
+    'prod_secret_key_2025_ombhrum_fabushi',
+  ]);
+  if (secret.length < 32 || weak.has(secret.toLowerCase())) {
+    throw new Error('JWT_SECRET is missing or insecure; configure a rotated secret of at least 32 characters');
+  }
+  return secret;
+}
+
+async function derivePbkdf2(password, saltBytes, iterations = 210000) {
   const enc = new TextEncoder();
+  const normalizedIterations = Math.max(100000, Number(iterations) || 210000);
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations },
+    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations: normalizedIterations },
     keyMaterial,
     256
   );
@@ -34,9 +63,13 @@ async function derivePbkdf2(password, saltBytes, iterations = 100000) {
 }
 
 async function createPasswordHash(password) {
+  const normalized = String(password || '');
+  if (normalized.length < 8 || normalized.length > 1024) {
+    throw new Error('password must be between 8 and 1024 characters');
+  }
   const salt = randomBytes(16);
-  const iterations = 100000;
-  const hashBytes = await derivePbkdf2(password, salt, iterations);
+  const iterations = 210000;
+  const hashBytes = await derivePbkdf2(normalized, salt, iterations);
   return {
     passwordHash: base64UrlEncode(hashBytes),
     salt: base64UrlEncode(salt),
@@ -49,21 +82,27 @@ async function verifyPassword(password, user) {
   try {
     if (user && user.passwordHash && user.salt) {
       const saltBytes = base64UrlDecodeToArray(user.salt);
-      const iterations = user.iterations || 100000;
+      const iterations = Math.max(100000, Number(user.iterations) || 100000);
       const hashBytes = await derivePbkdf2(password, saltBytes, iterations);
-      return base64UrlEncode(hashBytes) === user.passwordHash;
+      const expected = base64UrlDecodeToArray(user.passwordHash);
+      return timingSafeEqualBytes(hashBytes, expected);
     }
-    if (user && user.password) {
+
+    // Legacy SHA-256 records are accepted only for migration compatibility.
+    // New writes always use salted PBKDF2. Callers should re-hash after a
+    // successful legacy login and remove the legacy `password` column value.
+    if (user && user.password && !user.passwordHash) {
       const encoder = new TextEncoder();
-      const data = encoder.encode(password);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      return hex === user.password;
+      const expected = new TextEncoder().encode(String(user.password).toLowerCase());
+      const actual = new TextEncoder().encode(hex);
+      return timingSafeEqualBytes(actual, expected);
     }
     return false;
   } catch (error) {
-    console.error('Password verification crashed:', error.stack);
+    console.error('Password verification failed safely:', error?.message || error);
     return false;
   }
 }
@@ -94,15 +133,26 @@ async function generateToken(identity, env) {
       console.warn('generateToken userId lookup skipped:', error?.message || error);
     }
   }
+
+  if (!Number.isFinite(userId) && !username) {
+    throw new Error('cannot issue token without a stable user identity');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
   const payload = {
-    exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60),
-    jti: crypto.randomUUID()
+    iss: 'fabushi-api',
+    aud: 'fabushi-clients',
+    iat: now,
+    nbf: now - 5,
+    exp: now + (7 * 24 * 60 * 60),
+    jti: crypto.randomUUID(),
+    ver: 2,
   };
   if (Number.isFinite(userId)) payload.userId = userId;
   if (username) payload.username = username;
 
   const enc = new TextEncoder();
-  const secret = (env && (env.JWT_SECRET || (env.vars && env.vars.JWT_SECRET))) || 'dev-secret';
+  const secret = resolveJwtSecret(env);
   const headerB64 = base64UrlEncode(enc.encode(JSON.stringify(header)));
   const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(payload)));
   const data = `${headerB64}.${payloadB64}`;
@@ -113,20 +163,31 @@ async function generateToken(identity, env) {
 
 async function verifyToken(token, env) {
   try {
-    const parts = token.split('.');
+    const parts = String(token || '').split('.');
     if (parts.length !== 3) return null;
     const [headerB64, payloadB64, sigB64] = parts;
+    const header = JSON.parse(new TextDecoder().decode(base64UrlDecodeToArray(headerB64)));
+    if (header?.alg !== 'HS256' || (header.typ && header.typ !== 'JWT')) return null;
+
     const enc = new TextEncoder();
-    const secret = (env && (env.JWT_SECRET || (env.vars && env.vars.JWT_SECRET))) || 'dev-secret';
+    const secret = resolveJwtSecret(env);
     const data = `${headerB64}.${payloadB64}`;
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
     const sig = base64UrlDecodeToArray(sigB64);
     const valid = await crypto.subtle.verify('HMAC', key, sig, enc.encode(data));
     if (!valid) return null;
+
     const payload = JSON.parse(new TextDecoder().decode(base64UrlDecodeToArray(payloadB64)));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(Number(payload.exp)) || Number(payload.exp) <= now) return null;
+    if (payload.nbf && Number(payload.nbf) > now + 30) return null;
+    if (payload.iat && Number(payload.iat) > now + 30) return null;
+    if (payload.iss && payload.iss !== 'fabushi-api') return null;
+    if (payload.aud && payload.aud !== 'fabushi-clients') return null;
+    if (!payload.username && (payload.userId === undefined || payload.userId === null)) return null;
     if (payload.userId !== undefined && payload.userId !== null) {
       payload.userId = Number(payload.userId);
+      if (!Number.isFinite(payload.userId)) return null;
     }
     return payload;
   } catch {
@@ -150,6 +211,8 @@ export {
   base64UrlEncode,
   base64UrlDecodeToArray,
   randomBytes,
+  timingSafeEqualBytes,
+  resolveJwtSecret,
   derivePbkdf2,
   createPasswordHash,
   verifyPassword,
