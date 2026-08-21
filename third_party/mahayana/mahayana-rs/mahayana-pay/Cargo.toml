@@ -1,0 +1,16 @@
+[package]
+name = "mahayana-pay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-neutral Rust payment, ledger, revenue, refund and settlement core for Fabushi Mini Apps."
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1"
