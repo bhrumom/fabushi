@@ -683,6 +683,10 @@ fn balanced_entry(
     created_at_ms: i64,
     lines: Vec<PaymentLedgerLine>,
 ) -> Result<PaymentLedgerEntry, PayError> {
+    let lines = lines
+        .into_iter()
+        .filter(|line| line.amount != 0)
+        .collect::<Vec<_>>();
     let entry = PaymentLedgerEntry {
         entry_id: stable_id(&["ledger", reference_type, reference_id, event_key]),
         reference_type: reference_type.into(),
@@ -909,6 +913,29 @@ mod tests {
             engine.get(&payment.payment_id).unwrap().status,
             PaymentStatus::Refunded
         );
+    }
+
+    #[test]
+    fn zero_value_split_lines_are_not_posted() {
+        for fee_bps in [0, 10_000] {
+            let mut engine = PayEngine::new();
+            let mut create = request(&format!("fee-{fee_bps}"));
+            create.platform_fee_bps = fee_bps;
+            let payment = engine.create_payment(create).unwrap();
+            let mutation = engine
+                .succeed(
+                    &payment.payment_id,
+                    ProviderOutcome {
+                        provider_reference: format!("provider-{fee_bps}"),
+                        occurred_at_ms: 20,
+                    },
+                )
+                .unwrap();
+            let entry = mutation.ledger_entry.unwrap();
+            entry.validate().unwrap();
+            assert_eq!(entry.lines.len(), 2);
+            assert!(entry.lines.iter().all(|line| line.amount != 0));
+        }
     }
 
     #[test]
