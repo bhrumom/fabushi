@@ -201,6 +201,7 @@ impl MahayanaWebRuntime {
                     conversation_id: conversation_id.clone(),
                     text,
                     client_message_id,
+                    hidden: false,
                 };
                 let send_command = serde_json::to_string(&send_command).map_err(js_error)?;
                 let accepted = self.execute(&send_command)?;
@@ -333,6 +334,7 @@ impl MahayanaWebRuntime {
                 conversation_id,
                 text,
                 client_message_id,
+                hidden,
             } => {
                 ensure_browser_conversation(&self.state.borrow().plugins, &conversation_id)?;
                 if text.trim().is_empty() {
@@ -380,18 +382,20 @@ impl MahayanaWebRuntime {
                     let message_id = client_message_id
                         .and_then(|id| MessageId::new(id).ok())
                         .unwrap_or_else(|| MessageId(state.next_id("message")));
-                    state
-                        .histories
-                        .entry(conversation_id.clone())
-                        .or_default()
-                        .push(Message {
-                            id: message_id,
-                            conversation_id: conversation_id.clone(),
-                            role: MessageRole::User,
-                            text: text.clone(),
-                            created_at_ms: now_ms(),
-                            metadata: json!({"sandbox": "web-wasm"}),
-                        });
+                    if !hidden {
+                        state
+                            .histories
+                            .entry(conversation_id.clone())
+                            .or_default()
+                            .push(Message {
+                                id: message_id,
+                                conversation_id: conversation_id.clone(),
+                                role: MessageRole::User,
+                                text: text.clone(),
+                                created_at_ms: now_ms(),
+                                metadata: json!({"sandbox": "web-wasm"}),
+                            });
+                    }
                     let input = state
                         .model_inputs
                         .entry(conversation_id.clone())
