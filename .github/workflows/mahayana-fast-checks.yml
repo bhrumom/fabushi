@@ -66,6 +66,7 @@ jobs:
         run: >-
           cargo test
           -p mahayana-harness
+          -p mahayana-harness-services
           --profile ci
 
       - name: Test direct Mahayana Host
