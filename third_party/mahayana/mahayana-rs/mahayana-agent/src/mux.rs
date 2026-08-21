@@ -228,7 +228,9 @@ impl MahayanaMuxBackend {
         }
         self.registry
             .select(BackendCapabilities::default())
-            .ok_or_else(|| AgentError::Unavailable("no Mahayana agent backend is registered".into()))
+            .ok_or_else(|| {
+                AgentError::Unavailable("no Mahayana agent backend is registered".into())
+            })
     }
 
     fn backend_for(
@@ -243,7 +245,9 @@ impl MahayanaMuxBackend {
             }
         }
         self.registry.select(required).ok_or_else(|| {
-            AgentError::Unavailable("no Mahayana backend satisfies the required capabilities".into())
+            AgentError::Unavailable(
+                "no Mahayana backend satisfies the required capabilities".into(),
+            )
         })
     }
 
@@ -481,8 +485,7 @@ impl AgentBackend for MahayanaMuxBackend {
             ..BackendCapabilities::default()
         })?;
         let mut session = backend.open_mcp_app(request).await?;
-        let public_thread_id =
-            self.insert_thread_route(backend, session.thread_id.clone())?;
+        let public_thread_id = self.insert_thread_route(backend, session.thread_id.clone())?;
         session.thread_id = public_thread_id;
         Ok(session)
     }
@@ -642,10 +645,7 @@ mod tests {
         )
         .await
         .expect("send");
-        assert_eq!(
-            sink.0.lock().expect("sink").as_slice(),
-            ["preferred:hello"]
-        );
+        assert_eq!(sink.0.lock().expect("sink").as_slice(), ["preferred:hello"]);
         assert_eq!(mux.name(), "mahayana-mux");
     }
 }

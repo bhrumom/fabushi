@@ -99,7 +99,9 @@ impl CheckpointStore {
     }
 
     pub fn latest(&self) -> Option<&WorkspaceCheckpoint> {
-        self.by_turn.last_key_value().map(|(_, checkpoint)| checkpoint)
+        self.by_turn
+            .last_key_value()
+            .map(|(_, checkpoint)| checkpoint)
     }
 
     pub fn rewind_plan(&self, target_turn: u64) -> Result<RewindPlan, WorkspaceError> {
@@ -260,8 +262,7 @@ impl MutationJournal {
     }
 
     pub fn truncate_from(&mut self, turn_index: u64) {
-        self.0
-            .retain(|mutation| mutation.turn_index < turn_index);
+        self.0.retain(|mutation| mutation.turn_index < turn_index);
     }
 }
 

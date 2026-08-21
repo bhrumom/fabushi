@@ -87,12 +87,7 @@ impl MahayanaAgentOrchestrator {
         let task_id = task_id.into();
         {
             let mut supervisor = lock(&self.supervisor)?;
-            supervisor.register_task(
-                task_id.clone(),
-                goal,
-                verification_mode,
-                loop_policy,
-            )?;
+            supervisor.register_task(task_id.clone(), goal, verification_mode, loop_policy)?;
         }
         let selected = lock(&self.backends)?
             .select(required)
@@ -158,11 +153,7 @@ impl MahayanaAgentOrchestrator {
         Ok(())
     }
 
-    pub fn steer(
-        &self,
-        task_id: &str,
-        input: InputEnvelope,
-    ) -> Result<(), OrchestratorError> {
+    pub fn steer(&self, task_id: &str, input: InputEnvelope) -> Result<(), OrchestratorError> {
         lock(&self.supervisor)?.steer(task_id, input)?;
         Ok(())
     }
@@ -237,11 +228,7 @@ impl MahayanaAgentOrchestrator {
         Ok(store.rewind_plan(target_turn)?)
     }
 
-    pub fn commit_rewind(
-        &self,
-        task_id: &str,
-        target_turn: u64,
-    ) -> Result<(), OrchestratorError> {
+    pub fn commit_rewind(&self, task_id: &str, target_turn: u64) -> Result<(), OrchestratorError> {
         let mut stores = lock(&self.checkpoints)?;
         let store = stores
             .get_mut(task_id)
@@ -278,8 +265,8 @@ impl MahayanaAgentOrchestrator {
                 supervisor.transition(task_id, TaskState::Running)?;
             }
         }
-        let observation = lock(&self.supervisor)?
-            .begin_attempt(task_id, fingerprint, started_at_ms)?;
+        let observation =
+            lock(&self.supervisor)?.begin_attempt(task_id, fingerprint, started_at_ms)?;
         let attempt_id = lock(&self.supervisor)?
             .task(task_id)
             .and_then(|task| task.attempts.last())
@@ -394,7 +381,8 @@ mod tests {
             &self,
             _request: StartThreadRequest,
         ) -> Result<AgentThreadId, AgentError> {
-            AgentThreadId::new("thread:echo").map_err(|error| AgentError::Backend(error.to_string()))
+            AgentThreadId::new("thread:echo")
+                .map_err(|error| AgentError::Backend(error.to_string()))
         }
 
         async fn send_message(
@@ -494,16 +482,18 @@ mod tests {
             )
             .await
             .expect("send");
-        orchestrator
-            .begin_verification("T01")
-            .expect("verify");
+        orchestrator.begin_verification("T01").expect("verify");
         assert!(orchestrator.complete("T01").is_err());
         orchestrator
             .record_oracle("T01", "ci", OracleStatus::Passed, Some("run:1".into()))
             .expect("record oracle");
         orchestrator.complete("T01").expect("complete");
         assert_eq!(
-            orchestrator.task("T01").expect("task").expect("record").state,
+            orchestrator
+                .task("T01")
+                .expect("task")
+                .expect("record")
+                .state,
             TaskState::Succeeded
         );
         assert_eq!(sink.0.lock().expect("sink").as_slice(), ["hello"]);

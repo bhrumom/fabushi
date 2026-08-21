@@ -527,20 +527,12 @@ impl TaskSupervisor {
         Ok(())
     }
 
-    pub fn queue_input(
-        &mut self,
-        task_id: &str,
-        input: InputEnvelope,
-    ) -> Result<(), KernelError> {
+    pub fn queue_input(&mut self, task_id: &str, input: InputEnvelope) -> Result<(), KernelError> {
         self.task_mut(task_id)?.record.queued_inputs.push(input);
         Ok(())
     }
 
-    pub fn steer(
-        &mut self,
-        task_id: &str,
-        input: InputEnvelope,
-    ) -> Result<(), KernelError> {
+    pub fn steer(&mut self, task_id: &str, input: InputEnvelope) -> Result<(), KernelError> {
         self.task_mut(task_id)?.record.queued_inputs.steer(input);
         Ok(())
     }
@@ -841,11 +833,7 @@ mod tests {
     #[test]
     fn compaction_rotates_context_window_identity() {
         let mut supervisor = task();
-        let before = supervisor
-            .task("T01")
-            .expect("task")
-            .context_window
-            .clone();
+        let before = supervisor.task("T01").expect("task").context_window.clone();
         let after = supervisor.compact_context("T01").expect("compact");
         assert_ne!(before.id, after.id);
         assert_eq!(after.generation, before.generation + 1);

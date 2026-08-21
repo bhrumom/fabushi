@@ -401,14 +401,8 @@ mod tests {
         let mut graph = GoalGraph::new("G1", "ship product").expect("graph");
         graph
             .add_node(
-                GoalNode::new(
-                    "T1",
-                    "kernel",
-                    "build kernel",
-                    vec![],
-                    vec![oracle("ci")],
-                )
-                .expect("node"),
+                GoalNode::new("T1", "kernel", "build kernel", vec![], vec![oracle("ci")])
+                    .expect("node"),
             )
             .expect("add");
         graph
@@ -435,12 +429,7 @@ mod tests {
         graph.begin_verification("T1").expect("verify");
         assert!(graph.complete_node("T1").is_err());
         graph
-            .record_oracle(
-                "T1",
-                "ci",
-                OracleStatus::Passed,
-                Some("run:1".into()),
-            )
+            .record_oracle("T1", "ci", OracleStatus::Passed, Some("run:1".into()))
             .expect("oracle");
         graph.complete_node("T1").expect("complete");
         assert_eq!(
@@ -457,10 +446,7 @@ mod tests {
     fn invalid_dependency_is_rejected_transactionally() {
         let mut graph = GoalGraph::new("G1", "ship").expect("graph");
         graph
-            .add_node(
-                GoalNode::new("T1", "one", "one", vec![], vec![oracle("ci")])
-                    .expect("node"),
-            )
+            .add_node(GoalNode::new("T1", "one", "one", vec![], vec![oracle("ci")]).expect("node"))
             .expect("add");
         let result = graph.add_node(
             GoalNode::new(
@@ -472,10 +458,7 @@ mod tests {
             )
             .expect("node"),
         );
-        assert!(matches!(
-            result,
-            Err(GoalError::DependencyNotFound { .. })
-        ));
+        assert!(matches!(result, Err(GoalError::DependencyNotFound { .. })));
         assert!(graph.node("T2").is_none());
     }
 }
