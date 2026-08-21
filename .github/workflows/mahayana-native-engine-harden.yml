@@ -1,0 +1,53 @@
+name: Mahayana native engine hardening
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/harden-mahayana-native-engine.py
+      - .github/workflows/mahayana-native-engine-harden.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply guarded hardening migration
+        working-directory: .
+        run: python3 .github/scripts/harden-mahayana-native-engine.py
+
+      - name: Format Rust workspace
+        run: cargo fmt --all
+
+      - name: Refresh lockfile
+        run: cargo generate-lockfile
+
+      - name: Commit migration
+        working-directory: .
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Hardening migration already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs
+          git commit -m "fix(mahayana): harden sovereign native engine"
+          git push origin "HEAD:${{ github.head_ref }}"
