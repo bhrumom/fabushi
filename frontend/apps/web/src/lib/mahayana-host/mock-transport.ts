@@ -200,7 +200,7 @@ const defaultSkills = (): SkillSummary[] => [
 ];
 
 const defaultBots = (): BotSummary[] => [
-  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:assistant" },
+  { id: "mahayana-assistant", name: "大乘助手", description: "General-purpose Mahayana assistant.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "mahayana-ai:agent:assistant" },
   { id: "research-bot", name: "Research Bot", description: "Source verification and research synthesis.", title: "", hidden: false, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:research" },
   { id: "incident-bot", name: "Incident Bot", description: "Incident triage and operational coordination.", title: "", hidden: true, notificationsEnabled: true, notifyOnUpdates: true, unread: false, conversationId: "codex:agent:incident" },
 ];
@@ -586,7 +586,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
           timestamp: now(),
           conversations: [
             {
-              id: "codex:agent:assistant",
+              id: "mahayana-ai:agent:assistant",
               title: "大乘助手",
               kind: "codex",
               pinned: true,
@@ -638,7 +638,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
               title: "大乘助手",
               kind: "agent" as const,
               mention: "@agent.mahayana",
-              conversationId: "codex:agent:assistant",
+              conversationId: "mahayana-ai:agent:assistant",
               provider: "codex",
               description: "大乘共享智能代理",
               requiredPermissions: [],
