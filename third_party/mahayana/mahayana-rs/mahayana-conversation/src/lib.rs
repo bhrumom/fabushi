@@ -165,12 +165,12 @@ impl ProviderRegistry {
             return Err(ConversationError::InvalidProviderKey);
         }
         let key = canonical_provider_key(raw_key);
-        let provider: Arc<dyn ConversationProvider> =
-            if raw_key == LEGACY_CODEX_AGENT_PROVIDER_KEY {
-                Arc::new(CanonicalProvider::new(provider))
-            } else {
-                provider
-            };
+        let provider: Arc<dyn ConversationProvider> = if raw_key == LEGACY_CODEX_AGENT_PROVIDER_KEY
+        {
+            Arc::new(CanonicalProvider::new(provider))
+        } else {
+            provider
+        };
         if self.providers.insert(key.to_string(), provider).is_some() {
             return Err(ConversationError::DuplicateProvider(key.to_string()));
         }

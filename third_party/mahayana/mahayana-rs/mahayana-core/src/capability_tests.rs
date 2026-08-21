@@ -18,11 +18,7 @@ fn conversation(id: &str, title: &str, peer: PeerKind) -> Conversation {
 fn registry_uses_stable_mentions_and_resolves_mentions_or_ids() {
     let registry = CapabilityRegistry::from_conversations(
         [
-            conversation(
-                "mahayana:agent:assistant",
-                "大乘 AI",
-                PeerKind::MahayanaAi,
-            ),
+            conversation("mahayana:agent:assistant", "大乘 AI", PeerKind::MahayanaAi),
             conversation(
                 "miniapp:bot-father",
                 "Bot Father",
@@ -53,7 +49,9 @@ fn registry_uses_stable_mentions_and_resolves_mentions_or_ids() {
             ),
         ]
     );
-    let agent = registry.resolve("agent.mahayana").expect("agent capability");
+    let agent = registry
+        .resolve("agent.mahayana")
+        .expect("agent capability");
     assert_eq!(agent.provider, MAHAYANA_AGENT_PROVIDER_KEY);
     assert_eq!(
         agent.conversation_id.as_str(),

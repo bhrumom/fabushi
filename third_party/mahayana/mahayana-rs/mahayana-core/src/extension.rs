@@ -216,10 +216,7 @@ impl ExtensionRegistry {
     }
 }
 
-fn backend_supports(
-    available: BackendCapabilities,
-    required: BackendCapabilities,
-) -> bool {
+fn backend_supports(available: BackendCapabilities, required: BackendCapabilities) -> bool {
     (!required.realtime || available.realtime)
         && (!required.tools || available.tools)
         && (!required.web || available.web)

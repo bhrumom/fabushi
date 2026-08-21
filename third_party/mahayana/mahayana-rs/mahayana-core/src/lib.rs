@@ -135,9 +135,15 @@ impl Default for RuntimeConfig {
 pub enum PeerKind {
     #[serde(alias = "codexAi")]
     MahayanaAi,
-    TelegramContact { user_id: i64 },
-    MahayanaContact { contact_id: String },
-    MiniApp { app_id: String },
+    TelegramContact {
+        user_id: i64,
+    },
+    MahayanaContact {
+        contact_id: String,
+    },
+    MiniApp {
+        app_id: String,
+    },
 }
 
 impl PeerKind {
