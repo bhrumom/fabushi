@@ -1,3 +1,4 @@
+use crate::actor::ActorId;
 use crate::engine::{Command, EngineError, Event, MessagingEngine};
 use crate::message::MessageId;
 use crate::protocol::{
@@ -60,11 +61,13 @@ impl<S: MessagingStateStore> MessagingService<S> {
             });
         }
 
-        if let ClientCommand::Sync { limit, .. } = envelope.command {
-            return Ok(vec![self.sync_envelope(limit, server_time_ms)]);
+        let actor_id = envelope.context.actor_id;
+        let command = envelope.command;
+        if let ClientCommand::Sync { limit, .. } = &command {
+            return Ok(vec![self.sync_envelope(*limit, server_time_ms)]);
         }
 
-        let commands = self.project_command(envelope.command, server_time_ms);
+        let commands = self.project_command(&actor_id, command, server_time_ms);
         let mut events = Vec::new();
         for command in commands {
             events.extend(self.engine.execute(command)?);
@@ -112,20 +115,19 @@ impl<S: MessagingStateStore> MessagingService<S> {
         }
     }
 
-    fn project_command(&self, command: ClientCommand, now_ms: i64) -> Vec<Command> {
+    fn project_command(
+        &self,
+        actor_id: &ActorId,
+        command: ClientCommand,
+        now_ms: i64,
+    ) -> Vec<Command> {
         match command {
             ClientCommand::Sync { .. } => Vec::new(),
             ClientCommand::UpsertProfile { actor } => vec![Command::UpsertActor { actor }],
-            ClientCommand::SetPresence { presence } => self
-                .engine
-                .state()
-                .actors
-                .keys()
-                .next()
-                .cloned()
-                .map(|actor_id| Command::SetPresence { actor_id, presence })
-                .into_iter()
-                .collect(),
+            ClientCommand::SetPresence { presence } => vec![Command::SetPresence {
+                actor_id: actor_id.clone(),
+                presence,
+            }],
             ClientCommand::CreateConversation { conversation }
             | ClientCommand::UpdateConversation { conversation } => {
                 vec![Command::UpsertConversation { conversation }]
@@ -162,29 +164,19 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 scheduled_at_ms,
                 silent,
                 protected_content,
-            } => {
-                let sender_id = self
-                    .engine
-                    .state()
-                    .actors
-                    .keys()
-                    .next()
-                    .cloned()
-                    .unwrap_or_else(|| crate::actor::ActorId::new("unknown"));
-                vec![Command::QueueMessage {
-                    conversation_id,
-                    local_message_id: MessageId::new(format!("local:{}", client_message_id.0)),
-                    client_message_id,
-                    sender_id,
-                    content,
-                    reply_to_message_id,
-                    thread_root_message_id,
-                    created_at_ms: now_ms,
-                    scheduled_at_ms,
-                    silent,
-                    protected_content,
-                }]
-            }
+            } => vec![Command::QueueMessage {
+                conversation_id,
+                local_message_id: MessageId::new(format!("local:{}", client_message_id.0)),
+                client_message_id,
+                sender_id: actor_id.clone(),
+                content,
+                reply_to_message_id,
+                thread_root_message_id,
+                created_at_ms: now_ms,
+                scheduled_at_ms,
+                silent,
+                protected_content,
+            }],
             ClientCommand::EditMessage {
                 conversation_id,
                 message_id,
@@ -206,20 +198,11 @@ impl<S: MessagingStateStore> MessagingService<S> {
             ClientCommand::MarkRead {
                 conversation_id,
                 message_id,
-            } => self
-                .engine
-                .state()
-                .actors
-                .keys()
-                .next()
-                .cloned()
-                .map(|actor_id| Command::MarkRead {
-                    conversation_id,
-                    actor_id,
-                    message_id,
-                })
-                .into_iter()
-                .collect(),
+            } => vec![Command::MarkRead {
+                conversation_id,
+                actor_id: actor_id.clone(),
+                message_id,
+            }],
             ClientCommand::SetReaction {
                 conversation_id,
                 message_id,
