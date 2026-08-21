@@ -1,7 +1,7 @@
 PRAGMA foreign_keys = ON;
 
 -- Fabushi Pay extends the existing marketplace products/prices and the shared
--- journal.  Product prices remain server-authoritative; this table only adds
+-- journal. Product prices remain server-authoritative; this table only adds
 -- payment policy and provider identifiers to an existing product.
 CREATE TABLE IF NOT EXISTS payment_product_config (
     product_id TEXT PRIMARY KEY REFERENCES products(product_id) ON DELETE RESTRICT,
@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS payment_intents_developer_idx
     ON payment_intents(developer_id, status, created_at DESC);
 
 -- Inbox/outbox-style event ownership makes provider delivery at-least-once
--- safe.  The event row is claimed before any state transition is attempted.
+-- safe. The event row is claimed before any state transition is attempted.
 CREATE TABLE IF NOT EXISTS payment_webhook_events (
     provider TEXT NOT NULL,
     event_id TEXT NOT NULL,
@@ -119,14 +119,20 @@ CREATE TABLE IF NOT EXISTS developer_payout_accounts (
     UNIQUE (developer_id, provider, external_account_reference)
 );
 
+-- Releases are intentionally not unique by payment: lowering a reserve later
+-- can release the remaining held amount without rewriting payment history.
 CREATE TABLE IF NOT EXISTS developer_settlement_releases (
     release_id TEXT PRIMARY KEY,
-    payment_id TEXT NOT NULL UNIQUE REFERENCES payment_intents(payment_id) ON DELETE RESTRICT,
+    payment_id TEXT NOT NULL REFERENCES payment_intents(payment_id) ON DELETE RESTRICT,
+    idempotency_key TEXT NOT NULL UNIQUE,
     developer_id TEXT NOT NULL,
     currency TEXT NOT NULL,
     amount INTEGER NOT NULL CHECK (amount > 0),
     released_at INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS developer_settlement_releases_payment_idx
+    ON developer_settlement_releases(payment_id, released_at);
 
 CREATE TABLE IF NOT EXISTS developer_payouts (
     payout_id TEXT PRIMARY KEY,
@@ -149,4 +155,4 @@ CREATE INDEX IF NOT EXISTS developer_payouts_developer_idx
 -- fabushi_pay_balance_enforced_by_worker_batch: every successful payment,
 -- refund, settlement release, dispute loss and payout is represented by a
 -- balanced set of integer journal lines and posted atomically by the Rust
--- Worker.  No public route writes journal tables directly.
+-- Worker. No public route writes journal tables directly.
