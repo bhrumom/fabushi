@@ -1,7 +1,9 @@
 use crate::actor::{Actor, ActorId, Presence};
 use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
 use crate::message::{ClientMessageId, Message, MessageContent, MessageId, ReactionSummary};
-use crate::miniapp::{MiniAppGrant, MiniAppManifest, MiniAppRequest, MiniAppResponse, MiniAppSession};
+use crate::miniapp::{
+    MiniAppGrant, MiniAppManifest, MiniAppRequest, MiniAppResponse, MiniAppSession,
+};
 use crate::payment::{Invoice, PaymentOrder};
 use serde::{Deserialize, Serialize};
 
@@ -27,23 +29,55 @@ pub struct ClientEnvelope {
 
 impl ClientEnvelope {
     pub fn new(context: RequestContext, command: ClientCommand) -> Self {
-        Self { protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION, context, command }
+        Self {
+            protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
+            context,
+            command,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum ClientCommand {
-    Sync { cursor: Option<String>, limit: u32 },
-    UpsertProfile { actor: Actor },
-    SetPresence { presence: Presence },
-    CreateConversation { conversation: Conversation },
-    UpdateConversation { conversation: Conversation },
-    ArchiveConversation { conversation_id: ConversationId, archived: bool },
-    PinConversation { conversation_id: ConversationId, pinned: bool },
-    SetConversationNotifications { conversation_id: ConversationId, settings: NotificationSettings },
-    UpsertFolder { folder: ConversationFolder },
-    DeleteFolder { folder_id: String },
+    Sync {
+        cursor: Option<String>,
+        limit: u32,
+    },
+    UpsertProfile {
+        actor: Actor,
+    },
+    SetPresence {
+        presence: Presence,
+    },
+    CreateConversation {
+        conversation: Conversation,
+    },
+    UpdateConversation {
+        conversation: Conversation,
+    },
+    ArchiveConversation {
+        conversation_id: ConversationId,
+        archived: bool,
+    },
+    PinConversation {
+        conversation_id: ConversationId,
+        pinned: bool,
+    },
+    SetConversationNotifications {
+        conversation_id: ConversationId,
+        settings: NotificationSettings,
+    },
+    UpsertFolder {
+        folder: ConversationFolder,
+    },
+    DeleteFolder {
+        folder_id: String,
+    },
     SendMessage {
         conversation_id: ConversationId,
         client_message_id: ClientMessageId,
@@ -54,19 +88,58 @@ pub enum ClientCommand {
         silent: bool,
         protected_content: bool,
     },
-    EditMessage { conversation_id: ConversationId, message_id: MessageId, content: MessageContent },
-    DeleteMessages { conversation_id: ConversationId, message_ids: Vec<MessageId>, for_everyone: bool },
-    MarkRead { conversation_id: ConversationId, message_id: MessageId },
-    SetReaction { conversation_id: ConversationId, message_id: MessageId, reaction: ReactionSummary },
-    PinMessage { conversation_id: ConversationId, message_id: MessageId, pinned: bool },
-    StartTyping { conversation_id: ConversationId, action: String },
-    StopTyping { conversation_id: ConversationId },
-    CreateInvoice { invoice: Invoice },
-    CheckoutInvoice { invoice_id: String, order: PaymentOrder },
-    InstallMiniApp { manifest: MiniAppManifest },
-    GrantMiniApp { grant: MiniAppGrant },
-    OpenMiniApp { session: MiniAppSession },
-    MiniAppCall { session_id: String, request_id: String, request: MiniAppRequest },
+    EditMessage {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        content: MessageContent,
+    },
+    DeleteMessages {
+        conversation_id: ConversationId,
+        message_ids: Vec<MessageId>,
+        for_everyone: bool,
+    },
+    MarkRead {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+    },
+    SetReaction {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        reaction: ReactionSummary,
+    },
+    PinMessage {
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        pinned: bool,
+    },
+    StartTyping {
+        conversation_id: ConversationId,
+        action: String,
+    },
+    StopTyping {
+        conversation_id: ConversationId,
+    },
+    CreateInvoice {
+        invoice: Invoice,
+    },
+    CheckoutInvoice {
+        invoice_id: String,
+        order: PaymentOrder,
+    },
+    InstallMiniApp {
+        manifest: MiniAppManifest,
+    },
+    GrantMiniApp {
+        grant: MiniAppGrant,
+    },
+    OpenMiniApp {
+        session: MiniAppSession,
+    },
+    MiniAppCall {
+        session_id: String,
+        request_id: String,
+        request: MiniAppRequest,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,7 +152,11 @@ pub struct ServerEnvelope {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum ServerEvent {
     SyncBatch {
         actors: Vec<Actor>,
@@ -91,20 +168,64 @@ pub enum ServerEvent {
         mini_apps: Vec<MiniAppManifest>,
         next_cursor: Option<String>,
     },
-    ActorChanged { actor: Actor },
-    PresenceChanged { actor_id: ActorId, presence: Presence },
-    ConversationChanged { conversation: Conversation },
-    FolderChanged { folder: ConversationFolder },
-    FolderDeleted { folder_id: String },
-    MessageAdded { message: Message },
-    MessageChanged { message: Message },
-    MessagesDeleted { conversation_id: ConversationId, message_ids: Vec<MessageId> },
-    ReadChanged { conversation_id: ConversationId, actor_id: ActorId, message_id: MessageId },
-    TypingChanged { conversation_id: ConversationId, actor_id: ActorId, action: Option<String>, expires_at_ms: Option<i64> },
-    InvoiceChanged { invoice: Invoice },
-    OrderChanged { order: PaymentOrder },
-    MiniAppChanged { manifest: MiniAppManifest },
-    MiniAppOpened { session: MiniAppSession },
-    MiniAppResult { session_id: String, request_id: String, response: MiniAppResponse },
-    Error { request_id: Option<String>, code: String, message: String, retryable: bool },
+    ActorChanged {
+        actor: Actor,
+    },
+    PresenceChanged {
+        actor_id: ActorId,
+        presence: Presence,
+    },
+    ConversationChanged {
+        conversation: Conversation,
+    },
+    FolderChanged {
+        folder: ConversationFolder,
+    },
+    FolderDeleted {
+        folder_id: String,
+    },
+    MessageAdded {
+        message: Message,
+    },
+    MessageChanged {
+        message: Message,
+    },
+    MessagesDeleted {
+        conversation_id: ConversationId,
+        message_ids: Vec<MessageId>,
+    },
+    ReadChanged {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+        message_id: MessageId,
+    },
+    TypingChanged {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+        action: Option<String>,
+        expires_at_ms: Option<i64>,
+    },
+    InvoiceChanged {
+        invoice: Invoice,
+    },
+    OrderChanged {
+        order: PaymentOrder,
+    },
+    MiniAppChanged {
+        manifest: MiniAppManifest,
+    },
+    MiniAppOpened {
+        session: MiniAppSession,
+    },
+    MiniAppResult {
+        session_id: String,
+        request_id: String,
+        response: MiniAppResponse,
+    },
+    Error {
+        request_id: Option<String>,
+        code: String,
+        message: String,
+        retryable: bool,
+    },
 }

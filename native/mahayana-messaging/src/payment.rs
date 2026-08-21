@@ -11,7 +11,10 @@ pub struct Money {
 
 impl Money {
     pub fn new(currency: impl Into<String>, amount_minor: i64) -> Self {
-        Self { currency: currency.into().to_uppercase(), amount_minor }
+        Self {
+            currency: currency.into().to_uppercase(),
+            amount_minor,
+        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -62,16 +65,20 @@ pub struct Invoice {
 
 impl Invoice {
     pub fn total_minor(&self) -> i64 {
-        self.prices.iter().map(|line| line.amount.amount_minor).sum()
+        self.prices
+            .iter()
+            .map(|line| line.amount.amount_minor)
+            .sum()
     }
 
     pub fn is_valid(&self) -> bool {
         !self.id.trim().is_empty()
             && !self.title.trim().is_empty()
             && self.currency.len() == 3
-            && self.prices.iter().all(|line| {
-                line.amount.currency == self.currency && line.amount.is_valid()
-            })
+            && self
+                .prices
+                .iter()
+                .all(|line| line.amount.currency == self.currency && line.amount.is_valid())
     }
 }
 

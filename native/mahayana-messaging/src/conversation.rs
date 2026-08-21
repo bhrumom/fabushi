@@ -118,7 +118,12 @@ pub struct Conversation {
 }
 
 impl Conversation {
-    pub fn direct(id: impl Into<String>, title: impl Into<String>, participants: Vec<Participant>, now_ms: i64) -> Self {
+    pub fn direct(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        participants: Vec<Participant>,
+        now_ms: i64,
+    ) -> Self {
         Self {
             id: ConversationId::new(id),
             kind: ConversationKind::Direct,
