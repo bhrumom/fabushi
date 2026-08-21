@@ -88,7 +88,7 @@ grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || {
   echo "Browser host selector does not delegate to Electron transport" >&2
   exit 1
 }
-grep -Fq 'isElectronMahayanaHostAvailable() || isTauriMahayanaHostAvailable()' "$host_client" || {
+grep -Fq 'isElectronMahayanaHostAvailable()' "$host_client" || {
   echo "Host UI does not select production mode for Electron" >&2
   exit 1
 }

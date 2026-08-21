@@ -60,9 +60,6 @@ fabushi/test-results/
 fabushi/e2e/playwright-report/
 fabushi/e2e/test-results/
 third_party/mahayana/mahayana-rs/target/
-apps/fabushi-tauri/src-tauri/gen/
-fabushi/test_bundle.dart
-fabushi/patrol_test/test_bundle.dart
 tf_swift_cache/
 
 # Generated Telegram Rust build artifacts
@@ -75,16 +72,12 @@ fabushi/web/telegram-wasm/fabushi_telegram_bg.wasm
 fabushi/web/telegram-wasm/fabushi_telegram_bg.wasm.d.ts
 
 # Generated iOS Telegram Rust static library
-fabushi/ios/Runner/Libs/libfabushi_telegram_runtime.a
 
 # Generated Android Telegram Rust runtime libraries
-fabushi/android/app/src/main/jniLibs/**/libfabushi_telegram_runtime.so
 
 # 敏感信息与本地变量
 fabushi/web/.dev.vars
 **/*.p8
-fabushi/linux/telegram_runtime/
-fabushi/windows/telegram_runtime/
 
 # Generated standalone React Host bundle
 frontend/apps/host/dist/
