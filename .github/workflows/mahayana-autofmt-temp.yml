@@ -4,19 +4,25 @@ on:
   push:
     branches:
       - feat/mahayana-fusion-mainline
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'third_party/mahayana/**'
+      - '.github/workflows/mahayana-autofmt-temp.yml'
 
 permissions:
   contents: write
 
 jobs:
   rustfmt:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'feat/mahayana-fusion-mainline')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout fusion branch
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup Rust formatter
@@ -35,8 +41,9 @@ jobs:
             echo "No formatting changes required."
             exit 0
           fi
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add third_party/mahayana/mahayana-rs
           git commit -m "style(mahayana): apply canonical rustfmt"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${branch}"
