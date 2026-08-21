@@ -123,11 +123,7 @@ impl PromptQueue {
         self.transition_prompt(id, PromptState::Cancelled)
     }
 
-    fn transition_prompt(
-        &mut self,
-        id: &str,
-        state: PromptState,
-    ) -> Result<(), OrchestratorError> {
+    fn transition_prompt(&mut self, id: &str, state: PromptState) -> Result<(), OrchestratorError> {
         let entry = self
             .entries
             .iter_mut()
@@ -428,9 +424,9 @@ impl Workflow {
             .filter(|task| task.state == WorkflowTaskState::Pending)
             .filter(|task| {
                 task.depends_on.iter().all(|dependency| {
-                    self.tasks.get(dependency).is_some_and(|dependency| {
-                        dependency.state == WorkflowTaskState::Completed
-                    })
+                    self.tasks
+                        .get(dependency)
+                        .is_some_and(|dependency| dependency.state == WorkflowTaskState::Completed)
                 })
             })
             .cloned()
@@ -438,10 +434,7 @@ impl Workflow {
     }
 
     pub fn start(&mut self, task_id: &str) -> Result<(), OrchestratorError> {
-        let runnable = self
-            .runnable_tasks()
-            .iter()
-            .any(|task| task.id == task_id);
+        let runnable = self.runnable_tasks().iter().any(|task| task.id == task_id);
         if !runnable {
             return Err(OrchestratorError::WorkflowTaskNotRunnable(
                 task_id.to_string(),
@@ -793,20 +786,10 @@ mod tests {
     fn prompt_queue_prioritizes_user_blocking_work() {
         let mut queue = PromptQueue::default();
         queue
-            .enqueue(
-                "background",
-                PromptPriority::Background,
-                None,
-                Value::Null,
-            )
+            .enqueue("background", PromptPriority::Background, None, Value::Null)
             .expect("enqueue background");
         queue
-            .enqueue(
-                "urgent",
-                PromptPriority::UserBlocking,
-                None,
-                Value::Null,
-            )
+            .enqueue("urgent", PromptPriority::UserBlocking, None, Value::Null)
             .expect("enqueue urgent");
         assert_eq!(queue.next().expect("next prompt").text, "urgent");
     }
