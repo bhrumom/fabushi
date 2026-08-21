@@ -5,12 +5,10 @@
 //! opaque JSON payloads rather than Rust implementation details.
 
 use mahayana_core::BuildProfile;
-use mahayana_harness::{
-    HarnessError, HarnessResult, MahayanaHarness, PluginManifest, ProfileDefinition,
-};
+use mahayana_harness::{HarnessError, HarnessResult, MahayanaHarness, PluginManifest};
 use mahayana_harness_services::{
-    AgentTeam, CommandRecord, ContextFragment, HarnessServices, PlanState, PromptSection,
-    SkillRecord, TeamMember, WorkspaceRecord,
+    CommandRecord, ContextFragment, HarnessServices, PromptSection, SkillRecord, TeamMember,
+    WorkspaceRecord,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -60,11 +58,6 @@ impl HarnessApi {
     }
 
     pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        if !std::ptr::eq(harness_ptr(&harness), harness_ptr(services.harness())) {
-            return Err(HarnessError::InvalidConfig(
-                "HarnessApi core and services must share one MahayanaHarness".into(),
-            ));
-        }
         Ok(Self { harness, services })
     }
 
@@ -118,11 +111,13 @@ impl HarnessApi {
             "services.snapshot" => self.services.snapshot(),
 
             "service.register" => {
-                self.harness.register_service(required_string(&payload, "name")?)?;
+                self.harness
+                    .register_service(required_string(&payload, "name")?)?;
                 Ok(Value::Null)
             }
             "service.unregister" => {
-                self.harness.unregister_service(required_str(&payload, "name")?)?;
+                self.harness
+                    .unregister_service(required_str(&payload, "name")?)?;
                 Ok(Value::Null)
             }
             "profile.register" => {
@@ -130,15 +125,18 @@ impl HarnessApi {
                 Ok(Value::Null)
             }
             "profile.activate" => {
-                self.harness.activate_profile(required_str(&payload, "profileId")?)?;
+                self.harness
+                    .activate_profile(required_str(&payload, "profileId")?)?;
                 Ok(Value::Null)
             }
             "plugin.mount" => {
-                self.harness.mount_plugin(from_payload::<PluginManifest>(payload)?)?;
+                self.harness
+                    .mount_plugin(from_payload::<PluginManifest>(payload)?)?;
                 Ok(Value::Null)
             }
             "plugin.unmount" => {
-                self.harness.unmount_plugin(required_str(&payload, "pluginId")?)?;
+                self.harness
+                    .unmount_plugin(required_str(&payload, "pluginId")?)?;
                 Ok(Value::Null)
             }
 
@@ -189,18 +187,21 @@ impl HarnessApi {
             )?),
 
             "prompt.register" => {
-                self.services.add_prompt_section(from_payload::<PromptSection>(payload)?)?;
+                self.services
+                    .add_prompt_section(from_payload::<PromptSection>(payload)?)?;
                 Ok(Value::Null)
             }
             "prompt.assemble" => Ok(json!({"prompt": self.services.assembled_prompt()?})),
             "context.inject" => {
-                self.services.inject_context(from_payload::<ContextFragment>(payload)?)?;
+                self.services
+                    .inject_context(from_payload::<ContextFragment>(payload)?)?;
                 Ok(Value::Null)
             }
             "context.list" => to_value(self.services.assembled_context()?),
 
             "workspace.register" => {
-                self.services.register_workspace(from_payload::<WorkspaceRecord>(payload)?)?;
+                self.services
+                    .register_workspace(from_payload::<WorkspaceRecord>(payload)?)?;
                 Ok(Value::Null)
             }
             "workspace.list" => to_value(self.services.list_workspaces()?),
@@ -208,34 +209,32 @@ impl HarnessApi {
                 required_string(&payload, "key")?,
                 payload.get("value").cloned().unwrap_or(Value::Null),
             )?),
-            "settings.get" => to_value(
-                self.services
-                    .get_setting(required_str(&payload, "key")?)?,
-            ),
+            "settings.get" => to_value(self.services.get_setting(required_str(&payload, "key")?)?),
 
-            "todo.add" => to_value(
-                self.services
-                    .add_todo(required_string(&payload, "text")?)?,
-            ),
+            "todo.add" => to_value(self.services.add_todo(required_string(&payload, "text")?)?),
             "todo.update" => to_value(self.services.update_todo(
                 required_str(&payload, "todoId")?,
                 required_string(&payload, "status")?,
             )?),
-            "plan.set" => to_value(self.services.set_plan(
-                required_string(&payload, "sessionId")?,
-                string_array(&payload, "steps")?,
-                payload
-                    .get("reviewRequired")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            )?),
-            "plan.exit" => to_value(self.services.exit_plan(
-                required_str(&payload, "sessionId")?,
-                payload
-                    .get("approved")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            )?),
+            "plan.set" => to_value(
+                self.services.set_plan(
+                    required_string(&payload, "sessionId")?,
+                    string_array(&payload, "steps")?,
+                    payload
+                        .get("reviewRequired")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )?,
+            ),
+            "plan.exit" => to_value(
+                self.services.exit_plan(
+                    required_str(&payload, "sessionId")?,
+                    payload
+                        .get("approved")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )?,
+            ),
 
             "schedule.create" => to_value(self.services.schedule(
                 required_string(&payload, "sessionId")?,
@@ -257,15 +256,17 @@ impl HarnessApi {
                     .bind_account(required_string(&payload, "accountId")?)?,
             ),
 
-            "team.create" => to_value(self.services.create_team(
-                required_string(&payload, "name")?,
-                payload
-                    .get("members")
-                    .cloned()
-                    .map(from_payload::<Vec<TeamMember>>)
-                    .transpose()?
-                    .unwrap_or_default(),
-            )?),
+            "team.create" => to_value(
+                self.services.create_team(
+                    required_string(&payload, "name")?,
+                    payload
+                        .get("members")
+                        .cloned()
+                        .map(from_payload::<Vec<TeamMember>>)
+                        .transpose()?
+                        .unwrap_or_default(),
+                )?,
+            ),
             "team.addTask" => to_value(self.services.add_team_task(
                 required_str(&payload, "teamId")?,
                 required_string(&payload, "text")?,
@@ -279,11 +280,13 @@ impl HarnessApi {
             )?),
 
             "skill.register" => {
-                self.services.register_skill(from_payload::<SkillRecord>(payload)?)?;
+                self.services
+                    .register_skill(from_payload::<SkillRecord>(payload)?)?;
                 Ok(Value::Null)
             }
             "command.register" => {
-                self.services.register_command(from_payload::<CommandRecord>(payload)?)?;
+                self.services
+                    .register_command(from_payload::<CommandRecord>(payload)?)?;
                 Ok(Value::Null)
             }
             _ => Err(HarnessError::ServiceNotFound(format!(
@@ -371,10 +374,6 @@ fn string_array(payload: &Value, key: &str) -> HarnessResult<Vec<String>> {
         .collect()
 }
 
-fn harness_ptr(harness: &MahayanaHarness) -> *const MahayanaHarness {
-    harness as *const MahayanaHarness
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,10 +397,9 @@ mod tests {
                 "eventPayload": {"text": "needle protocol"}
             }),
         };
-        let append: HarnessResponse = serde_json::from_str(
-            &api.execute_json(&serde_json::to_string(&append).unwrap()),
-        )
-        .unwrap();
+        let append: HarnessResponse =
+            serde_json::from_str(&api.execute_json(&serde_json::to_string(&append).unwrap()))
+                .unwrap();
         assert!(append.ok);
 
         let search = api
@@ -413,9 +411,9 @@ mod tests {
     #[test]
     fn unknown_operation_returns_stable_error() {
         let api = HarnessApi::new(BuildProfile::DesktopFull);
-        let response: HarnessResponse = serde_json::from_str(&api.execute_json(
-            r#"{"requestId":"x","operation":"missing.operation"}"#,
-        ))
+        let response: HarnessResponse = serde_json::from_str(
+            &api.execute_json(r#"{"requestId":"x","operation":"missing.operation"}"#),
+        )
         .unwrap();
         assert!(!response.ok);
         assert_eq!(response.error.unwrap().code, "not_found");
