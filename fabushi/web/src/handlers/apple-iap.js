@@ -1,6 +1,7 @@
 import { jsonResponse } from '../utils/response.js';
 import { verifyToken } from '../../auth-utils.js';
 import { APPLE_IAP_PRODUCTS } from '../config/constants.js';
+import { verifyAppleTransactionJws } from '../security/apple-jws-verifier.js';
 
 const PERMANENT_VALID_TO = '9999-12-31T23:59:59.999Z';
 
@@ -19,12 +20,6 @@ function b64url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function decodePart(value) {
-  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
-  return JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
-}
-
 async function appleJwt(env) {
   const c = config(env);
   if (!c.issuerId || !c.keyId || !c.privateKey || !c.bundleId) throw new Error('Apple IAP is not configured');
@@ -41,35 +36,34 @@ async function appleJwt(env) {
   return `${input}.${b64url(signature)}`;
 }
 
-function decodeAppleServerJws(value) {
-  const parts = String(value || '').split('.');
-  if (parts.length !== 3) throw new Error('malformed Apple transaction JWS');
-  const header = decodePart(parts[0]);
-  if (header.alg !== 'ES256' || !Array.isArray(header.x5c) || header.x5c.length === 0) {
-    throw new Error('invalid Apple transaction JWS envelope');
-  }
-  // This JWS is never client supplied: it is fetched below from Apple's
-  // authenticated App Store Server API over TLS, then its Apple envelope,
-  // transaction id, bundle id, product and account binding are all validated.
-  return decodePart(parts[1]);
-}
-
-async function fetchTransaction(transactionId, env) {
+async function fetchTransaction(transactionId, env, options = {}) {
   const token = await appleJwt(env);
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
-  const urls = [
-    `https://api.storekit.apple.com/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
-    `https://api.storekit-sandbox.itunes.apple.com/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
+  const endpoints = [
+    {
+      url: `https://api.storekit.apple.com/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
+      environment: 'Production',
+    },
+    {
+      url: `https://api.storekit-sandbox.itunes.apple.com/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
+      environment: 'Sandbox',
+    },
   ];
+  const fetchImpl = options.fetchImpl || fetch;
+  const verifyJws = options.verifyJws || verifyAppleTransactionJws;
   let lastStatus = 0;
-  for (const url of urls) {
-    const response = await fetch(url, { method: 'GET', headers, redirect: 'error' });
+  for (const endpoint of endpoints) {
+    const response = await fetchImpl(endpoint.url, { method: 'GET', headers, redirect: 'error' });
     lastStatus = response.status;
     if ([401, 404].includes(response.status)) continue;
     if (!response.ok) throw new Error(`Apple transaction lookup failed: ${response.status}`);
     const body = await response.json();
     if (!body?.signedTransactionInfo) throw new Error('Apple response omitted signedTransactionInfo');
-    return decodeAppleServerJws(body.signedTransactionInfo);
+    const transaction = await verifyJws(body.signedTransactionInfo);
+    if (transaction.environment !== endpoint.environment) {
+      throw new Error(`Apple transaction environment mismatch: expected ${endpoint.environment}`);
+    }
+    return transaction;
   }
   throw new Error(`Apple transaction not found (${lastStatus})`);
 }
@@ -155,7 +149,7 @@ async function restoreExisting(db, user, purchase, product) {
   });
 }
 
-export async function handleVerifyAppleReceipt(request, env, db) {
+export async function handleVerifyAppleReceipt(request, env, db, options = {}) {
   const authorization = request.headers.get('Authorization') || '';
   if (!authorization.startsWith('Bearer ')) return jsonResponse({ error: '未提供认证信息' }, 401);
   const claims = await verifyToken(authorization.slice(7), env);
@@ -182,7 +176,7 @@ export async function handleVerifyAppleReceipt(request, env, db) {
   if (!c.issuerId || !c.keyId || !c.privateKey || !c.bundleId) return jsonResponse({ error: '服务器 IAP 验证暂未配置' }, 503);
 
   try {
-    const transaction = await fetchTransaction(transactionId, env);
+    const transaction = await fetchTransaction(transactionId, env, options);
     if (String(transaction.transactionId || '') !== transactionId) return jsonResponse({ error: 'Apple 交易号不匹配' }, 403);
     if (transaction.bundleId !== c.bundleId) return jsonResponse({ error: 'Bundle ID 不匹配' }, 403);
     if (transaction.productId !== productId) return jsonResponse({ error: '商品 ID 不匹配' }, 403);
