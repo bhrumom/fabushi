@@ -15,7 +15,7 @@ local = []
 
 [dependencies]
 async-trait.workspace = true
-chrono.workspace = true
+chrono = { workspace = true, features = ["clock"] }
 mahayana-core.workspace = true
 mahayana-tool-host.workspace = true
 serde.workspace = true
