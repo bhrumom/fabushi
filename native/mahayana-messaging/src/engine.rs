@@ -1,4 +1,9 @@
-use crate::actor::{Actor, ActorId, Presence};
+use crate::actor::{Actor, ActorId, ActorKind, Presence};
+use crate::bot::{BotExecution, BotInvocation, BotProfile, BotRegistry};
+use crate::community::{
+    CommunityError, CommunityMember, CommunityState, ForumTopicState, InviteLink, JoinRequest,
+    MemberStatus,
+};
 use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
 use crate::message::{
     ClientMessageId, DeliveryState, Message, MessageContent, MessageId, ReactionSummary,
@@ -8,6 +13,7 @@ use crate::miniapp::{
     MiniAppSession,
 };
 use crate::payment::{CustomerInfo, Invoice, Money, PaymentOrder, PaymentStatus};
+use crate::story::{Story, StoryError, StoryId};
 use crate::wallet::{LedgerEntry, WalletAccountId, WalletError, WalletLedger};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -132,6 +138,78 @@ pub enum Command {
         reference: Option<String>,
         settled_at_ms: i64,
     },
+    PublishStory {
+        actor_id: ActorId,
+        story: Story,
+    },
+    DeleteStory {
+        actor_id: ActorId,
+        story_id: StoryId,
+    },
+    ViewStory {
+        actor_id: ActorId,
+        story_id: StoryId,
+        viewed_at_ms: i64,
+    },
+    ReactStory {
+        actor_id: ActorId,
+        story_id: StoryId,
+        reaction: Option<String>,
+    },
+    UpdateCommunity {
+        actor_id: ActorId,
+        community: CommunityState,
+    },
+    SetCommunityMember {
+        actor_id: ActorId,
+        conversation_id: ConversationId,
+        member: CommunityMember,
+    },
+    CreateInviteLink {
+        actor_id: ActorId,
+        invite: InviteLink,
+    },
+    RevokeInviteLink {
+        actor_id: ActorId,
+        conversation_id: ConversationId,
+        invite_id: String,
+    },
+    RequestCommunityJoin {
+        actor_id: ActorId,
+        request: JoinRequest,
+    },
+    RespondCommunityJoin {
+        actor_id: ActorId,
+        conversation_id: ConversationId,
+        requester_id: ActorId,
+        approved: bool,
+        decided_at_ms: i64,
+    },
+    UpsertForumTopic {
+        actor_id: ActorId,
+        topic: ForumTopicState,
+    },
+    DeleteForumTopic {
+        actor_id: ActorId,
+        conversation_id: ConversationId,
+        topic_id: String,
+    },
+    RegisterBot {
+        actor_id: ActorId,
+        profile: BotProfile,
+    },
+    BeginBotInvocation {
+        actor_id: ActorId,
+        invocation: BotInvocation,
+        created_at_ms: i64,
+    },
+    FinishBotExecution {
+        actor_id: ActorId,
+        execution_id: String,
+        success: bool,
+        finished_at_ms: i64,
+        error: Option<String>,
+    },
     InstallMiniApp {
         manifest: MiniAppManifest,
     },
@@ -232,6 +310,20 @@ pub enum Event {
         wallet: WalletLedger,
         entry: LedgerEntry,
     },
+    StoryChanged {
+        story: Story,
+    },
+    StoryDeleted {
+        story_id: StoryId,
+    },
+    CommunityChanged {
+        community: CommunityState,
+    },
+    BotRegistryChanged {
+        registry: BotRegistry,
+        profile: Option<BotProfile>,
+        execution: Option<BotExecution>,
+    },
     MiniAppInstalled {
         manifest: MiniAppManifest,
     },
@@ -258,6 +350,9 @@ pub struct MessagingState {
     pub invoices: BTreeMap<String, Invoice>,
     pub orders: BTreeMap<String, PaymentOrder>,
     pub wallet: WalletLedger,
+    pub stories: BTreeMap<StoryId, Story>,
+    pub communities: BTreeMap<ConversationId, CommunityState>,
+    pub bots: BotRegistry,
     pub mini_apps: BTreeMap<String, MiniAppManifest>,
     pub mini_app_grants: BTreeMap<(String, ActorId), MiniAppGrant>,
     pub mini_app_sessions: BTreeMap<String, MiniAppSession>,
@@ -297,6 +392,24 @@ pub enum EngineError {
     SecretContentOutsideSecretConversation,
     #[error("secret message envelope identity does not match the conversation participants")]
     SecretEnvelopeMismatch,
+    #[error("story is invalid")]
+    InvalidStory,
+    #[error("story {0:?} does not exist")]
+    StoryNotFound(StoryId),
+    #[error("only the story owner may modify story {0:?}")]
+    StoryPermissionDenied(StoryId),
+    #[error(transparent)]
+    Story(#[from] StoryError),
+    #[error("community {0:?} does not exist")]
+    CommunityNotFound(ConversationId),
+    #[error("community administration permission denied")]
+    CommunityPermissionDenied,
+    #[error(transparent)]
+    Community(#[from] CommunityError),
+    #[error("bot operation permission denied")]
+    BotPermissionDenied,
+    #[error("bot operation failed: {0}")]
+    Bot(String),
     #[error("invoice is invalid")]
     InvalidInvoice,
     #[error("invoice {0} does not exist")]
@@ -326,6 +439,26 @@ pub enum EngineError {
 #[derive(Debug, Clone, Default)]
 pub struct MessagingEngine {
     state: MessagingState,
+}
+
+fn require_community_admin(
+    community: &CommunityState,
+    actor_id: &ActorId,
+) -> Result<(), EngineError> {
+    let allowed = community.members.get(actor_id).is_some_and(|member| {
+        matches!(member.status, MemberStatus::Owner)
+            || (matches!(member.status, MemberStatus::Administrator)
+                && (member.admin_rights.change_info
+                    || member.admin_rights.ban_members
+                    || member.admin_rights.invite_members
+                    || member.admin_rights.manage_topics
+                    || member.admin_rights.add_admins))
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(EngineError::CommunityPermissionDenied)
+    }
 }
 
 fn wallet_account_id(actor_id: &ActorId) -> WalletAccountId {
@@ -813,6 +946,277 @@ impl MessagingEngine {
                     wallet.credit(request_id, &account_id, amount, reference, settled_at_ms)?;
                 Ok(vec![Event::WalletChanged { wallet, entry }])
             }
+            Command::PublishStory { actor_id, story } => {
+                self.require_actor(&actor_id)?;
+                if story.owner_id != actor_id
+                    || story.id.0.trim().is_empty()
+                    || story.media.id.trim().is_empty()
+                    || story.expires_at_ms <= story.created_at_ms
+                {
+                    return Err(EngineError::InvalidStory);
+                }
+                Ok(vec![Event::StoryChanged { story }])
+            }
+            Command::DeleteStory { actor_id, story_id } => {
+                let story = self
+                    .state
+                    .stories
+                    .get(&story_id)
+                    .ok_or_else(|| EngineError::StoryNotFound(story_id.clone()))?;
+                if story.owner_id != actor_id {
+                    return Err(EngineError::StoryPermissionDenied(story_id));
+                }
+                Ok(vec![Event::StoryDeleted { story_id }])
+            }
+            Command::ViewStory {
+                actor_id,
+                story_id,
+                viewed_at_ms,
+            } => {
+                self.require_actor(&actor_id)?;
+                let mut story = self
+                    .state
+                    .stories
+                    .get(&story_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::StoryNotFound(story_id.clone()))?;
+                if !story.is_visible_to(&actor_id, false, false) {
+                    return Err(EngineError::StoryPermissionDenied(story_id));
+                }
+                story.record_view(actor_id, viewed_at_ms)?;
+                Ok(vec![Event::StoryChanged { story }])
+            }
+            Command::ReactStory {
+                actor_id,
+                story_id,
+                reaction,
+            } => {
+                let mut story = self
+                    .state
+                    .stories
+                    .get(&story_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::StoryNotFound(story_id.clone()))?;
+                if !story.is_visible_to(&actor_id, false, false) {
+                    return Err(EngineError::StoryPermissionDenied(story_id));
+                }
+                story.react(&actor_id, reaction)?;
+                Ok(vec![Event::StoryChanged { story }])
+            }
+            Command::UpdateCommunity {
+                actor_id,
+                community,
+            } => {
+                let conversation = self.require_conversation(&community.conversation_id)?;
+                if !matches!(
+                    conversation.kind,
+                    crate::conversation::ConversationKind::Group
+                        | crate::conversation::ConversationKind::Channel
+                ) {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                if let Some(existing) = self.state.communities.get(&community.conversation_id) {
+                    require_community_admin(existing, &actor_id)?;
+                } else if conversation.owner_id.as_ref() != Some(&actor_id)
+                    && !conversation.participants.iter().any(|participant| {
+                        participant.actor_id == actor_id
+                            && matches!(participant.role, crate::actor::ParticipantRole::Owner)
+                    })
+                {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::SetCommunityMember {
+                actor_id,
+                conversation_id,
+                member,
+            } => {
+                self.require_actor(&member.actor_id)?;
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                require_community_admin(&community, &actor_id)?;
+                community.upsert_member(member);
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::CreateInviteLink { actor_id, invite } => {
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&invite.conversation_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        EngineError::CommunityNotFound(invite.conversation_id.clone())
+                    })?;
+                require_community_admin(&community, &actor_id)?;
+                if invite.creator_id != actor_id
+                    || invite.id.trim().is_empty()
+                    || invite.token.trim().is_empty()
+                    || invite.revoked
+                {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                community.invite_links.insert(invite.id.clone(), invite);
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::RevokeInviteLink {
+                actor_id,
+                conversation_id,
+                invite_id,
+            } => {
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                require_community_admin(&community, &actor_id)?;
+                community.revoke_invite(&invite_id)?;
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::RequestCommunityJoin { actor_id, request } => {
+                if request.actor_id != actor_id {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                self.require_actor(&actor_id)?;
+                self.require_conversation(&request.conversation_id)?;
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&request.conversation_id)
+                    .cloned()
+                    .unwrap_or_else(|| CommunityState::new(request.conversation_id.clone()));
+                community.request_join(request);
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::RespondCommunityJoin {
+                actor_id,
+                conversation_id,
+                requester_id,
+                approved,
+                decided_at_ms,
+            } => {
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                require_community_admin(&community, &actor_id)?;
+                if approved {
+                    community.approve_join(&requester_id, &actor_id, decided_at_ms)?;
+                } else {
+                    community
+                        .pending_join_requests
+                        .remove(&requester_id)
+                        .ok_or_else(|| CommunityError::JoinRequestNotFound(requester_id.clone()))?;
+                }
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::UpsertForumTopic { actor_id, topic } => {
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&topic.conversation_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::CommunityNotFound(topic.conversation_id.clone()))?;
+                require_community_admin(&community, &actor_id)?;
+                if topic.id.trim().is_empty() {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                community.topics.insert(topic.id.clone(), topic);
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::DeleteForumTopic {
+                actor_id,
+                conversation_id,
+                topic_id,
+            } => {
+                let mut community = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .cloned()
+                    .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
+                require_community_admin(&community, &actor_id)?;
+                community.topics.remove(&topic_id);
+                Ok(vec![Event::CommunityChanged { community }])
+            }
+            Command::RegisterBot { actor_id, profile } => {
+                let actor = self.require_actor(&actor_id)?;
+                if profile.actor_id != actor_id
+                    || !matches!(actor.kind, ActorKind::Bot | ActorKind::Assistant)
+                {
+                    return Err(EngineError::BotPermissionDenied);
+                }
+                let mut registry = self.state.bots.clone();
+                registry
+                    .register(profile.clone())
+                    .map_err(|error| EngineError::Bot(error.to_string()))?;
+                Ok(vec![Event::BotRegistryChanged {
+                    registry,
+                    profile: Some(profile),
+                    execution: None,
+                }])
+            }
+            Command::BeginBotInvocation {
+                actor_id,
+                invocation,
+                created_at_ms,
+            } => {
+                if invocation.sender_id != actor_id {
+                    return Err(EngineError::BotPermissionDenied);
+                }
+                self.require_actor(&actor_id)?;
+                self.require_conversation(&invocation.conversation_id)?;
+                let mut registry = self.state.bots.clone();
+                let execution = registry
+                    .begin_execution(&invocation, created_at_ms)
+                    .map_err(|error| EngineError::Bot(error.to_string()))?;
+                let profile = registry.bots.get(&execution.bot_id).cloned();
+                Ok(vec![Event::BotRegistryChanged {
+                    registry,
+                    profile,
+                    execution: Some(execution),
+                }])
+            }
+            Command::FinishBotExecution {
+                actor_id,
+                execution_id,
+                success,
+                finished_at_ms,
+                error,
+            } => {
+                let mut registry = self.state.bots.clone();
+                let execution =
+                    registry
+                        .executions
+                        .get(&execution_id)
+                        .cloned()
+                        .ok_or_else(|| {
+                            EngineError::Bot(format!("execution not found: {execution_id}"))
+                        })?;
+                if execution.bot_id != actor_id {
+                    return Err(EngineError::BotPermissionDenied);
+                }
+                registry
+                    .finish_execution(&execution_id, success, finished_at_ms, error)
+                    .map_err(|error| EngineError::Bot(error.to_string()))?;
+                let execution = registry.executions.get(&execution_id).cloned();
+                let profile = execution
+                    .as_ref()
+                    .and_then(|execution| registry.bots.get(&execution.bot_id))
+                    .cloned();
+                Ok(vec![Event::BotRegistryChanged {
+                    registry,
+                    profile,
+                    execution,
+                }])
+            }
             Command::InstallMiniApp { manifest } => Ok(vec![Event::MiniAppInstalled { manifest }]),
             Command::GrantMiniApp { grant } => {
                 if !self.state.mini_apps.contains_key(&grant.mini_app_id) {
@@ -1060,6 +1464,20 @@ impl MessagingEngine {
             }
             Event::WalletChanged { wallet, .. } => {
                 self.state.wallet = wallet;
+            }
+            Event::StoryChanged { story } => {
+                self.state.stories.insert(story.id.clone(), story);
+            }
+            Event::StoryDeleted { story_id } => {
+                self.state.stories.remove(&story_id);
+            }
+            Event::CommunityChanged { community } => {
+                self.state
+                    .communities
+                    .insert(community.conversation_id.clone(), community);
+            }
+            Event::BotRegistryChanged { registry, .. } => {
+                self.state.bots = registry;
             }
             Event::MiniAppInstalled { manifest } => {
                 self.state.mini_apps.insert(manifest.id.clone(), manifest);

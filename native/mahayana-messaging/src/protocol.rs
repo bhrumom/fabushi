@@ -1,11 +1,14 @@
 use crate::actor::{Actor, ActorId, Presence};
 use crate::blob_store::{BlobId, BlobMetadata, BlobUploadStatus};
+use crate::bot::{BotExecution, BotInvocation, BotProfile};
+use crate::community::{CommunityMember, CommunityState, ForumTopicState, InviteLink, JoinRequest};
 use crate::conversation::{Conversation, ConversationFolder, ConversationId, NotificationSettings};
 use crate::message::{ClientMessageId, Message, MessageContent, MessageId, ReactionSummary};
 use crate::miniapp::{
     MiniAppGrant, MiniAppManifest, MiniAppRequest, MiniAppResponse, MiniAppSession,
 };
 use crate::payment::{CustomerInfo, Invoice, PaymentOrder};
+use crate::story::{Story, StoryId};
 use crate::wallet::{LedgerEntry, WalletAccount};
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +157,59 @@ pub enum ClientCommand {
         request_id: String,
     },
     WalletStatus,
+    PublishStory {
+        story: Story,
+    },
+    DeleteStory {
+        story_id: StoryId,
+    },
+    ViewStory {
+        story_id: StoryId,
+    },
+    ReactStory {
+        story_id: StoryId,
+        reaction: Option<String>,
+    },
+    UpdateCommunity {
+        community: CommunityState,
+    },
+    SetCommunityMember {
+        conversation_id: ConversationId,
+        member: CommunityMember,
+    },
+    CreateInviteLink {
+        invite: InviteLink,
+    },
+    RevokeInviteLink {
+        conversation_id: ConversationId,
+        invite_id: String,
+    },
+    RequestCommunityJoin {
+        request: JoinRequest,
+    },
+    RespondCommunityJoin {
+        conversation_id: ConversationId,
+        requester_id: ActorId,
+        approved: bool,
+    },
+    UpsertForumTopic {
+        topic: ForumTopicState,
+    },
+    DeleteForumTopic {
+        conversation_id: ConversationId,
+        topic_id: String,
+    },
+    RegisterBot {
+        profile: BotProfile,
+    },
+    InvokeBot {
+        invocation: BotInvocation,
+    },
+    FinishBotExecution {
+        execution_id: String,
+        success: bool,
+        error: Option<String>,
+    },
     InstallMiniApp {
         manifest: MiniAppManifest,
     },
@@ -193,6 +249,10 @@ pub enum ServerEvent {
         folders: Vec<ConversationFolder>,
         invoices: Vec<Invoice>,
         orders: Vec<PaymentOrder>,
+        stories: Vec<Story>,
+        communities: Vec<CommunityState>,
+        bots: Vec<BotProfile>,
+        bot_executions: Vec<BotExecution>,
         mini_apps: Vec<MiniAppManifest>,
         next_cursor: Option<String>,
     },
@@ -251,6 +311,19 @@ pub enum ServerEvent {
     WalletStatus {
         account: Option<WalletAccount>,
         recent_entries: Vec<LedgerEntry>,
+    },
+    StoryChanged {
+        story: Story,
+    },
+    StoryDeleted {
+        story_id: StoryId,
+    },
+    CommunityChanged {
+        community: CommunityState,
+    },
+    BotChanged {
+        profile: Option<BotProfile>,
+        execution: Option<BotExecution>,
     },
     MiniAppChanged {
         manifest: MiniAppManifest,

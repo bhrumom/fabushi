@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL, URL } = require('node:url');
+const { Readable } = require('node:stream');
 const { MahayanaHostProcess } = require('./host-process.cjs');
 const { serveMainEdge } = require('./edge-ipc.cjs');
 const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
@@ -17,6 +18,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
     privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+  {
+    scheme: 'fabushi-blob',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
 
@@ -866,6 +871,87 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function messagingBlobRoot() {
+  return path.join(app.getPath('userData'), 'feature-host', 'runtime', 'agents', '_messaging', 'blobs');
+}
+
+function parseMessagingBlobId(requestUrl) {
+  const url = new URL(requestUrl);
+  const id = decodeURIComponent(url.hostname || url.pathname.replace(/^\/+/, ''));
+  if (!id || id.length > 128 || !/^[A-Za-z0-9._-]+$/.test(id) || id === '.' || id === '..') {
+    throw new Error('Invalid Fabushi blob id.');
+  }
+  return id;
+}
+
+function parseSingleRange(rangeHeader, size) {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader).trim());
+  if (!match) return { invalid: true };
+  let start;
+  let end;
+  if (!match[1] && !match[2]) return { invalid: true };
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return { invalid: true };
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= size || end < start) {
+    return { invalid: true };
+  }
+  return { start, end: Math.min(end, size - 1) };
+}
+
+async function handleMessagingBlobRequest(request) {
+  if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405 });
+  let id;
+  try { id = parseMessagingBlobId(request.url); } catch { return new Response('Bad blob id', { status: 400 }); }
+  const root = messagingBlobRoot();
+  const blobPath = path.join(root, `${id}.blob`);
+  const metadataPath = path.join(root, `${id}.json`);
+  let metadata;
+  let stat;
+  try {
+    const [rawMetadata, fileStat] = await Promise.all([fs.readFile(metadataPath, 'utf8'), fs.stat(blobPath)]);
+    metadata = JSON.parse(rawMetadata);
+    stat = fileStat;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return new Response('Not found', { status: 404 });
+    console.error('[messaging-blob] failed to read blob metadata', error);
+    return new Response('Blob unavailable', { status: 500 });
+  }
+  const expectedId = typeof metadata?.id === 'string' ? metadata.id : '';
+  const mimeType = String(metadata?.mimeType || 'application/octet-stream');
+  if (expectedId !== id || !/^[-\w.+]+\/[-\w.+]+$/.test(mimeType)) {
+    return new Response('Invalid blob metadata', { status: 500 });
+  }
+  const size = Number(stat.size);
+  const range = parseSingleRange(request.headers.get('range'), size);
+  if (range?.invalid) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  }
+  const start = range?.start ?? 0;
+  const end = range?.end ?? Math.max(0, size - 1);
+  const length = size === 0 ? 0 : end - start + 1;
+  const headers = new Headers({
+    'Content-Type': mimeType,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': String(length),
+    'Cache-Control': 'private, max-age=31536000, immutable',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  if (range) headers.set('Content-Range', `bytes ${start}-${end}/${size}`);
+  if (request.method === 'HEAD' || size === 0) {
+    return new Response(null, { status: range ? 206 : 200, headers });
+  }
+  const nodeStream = fsSync.createReadStream(blobPath, { start, end });
+  return new Response(Readable.toWeb(nodeStream), { status: range ? 206 : 200, headers });
+}
+
 function installAppProtocol() {
   const distRoot = path.resolve(__dirname, '..', 'dist');
   protocol.handle('app', (request) => {
@@ -877,6 +963,7 @@ function installAppProtocol() {
     if (!withinRoot) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(resolved).toString());
   });
+  protocol.handle('fabushi-blob', handleMessagingBlobRequest);
 }
 
 applyStartupNativePreferences();

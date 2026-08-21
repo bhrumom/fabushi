@@ -52,11 +52,19 @@ import {
   SelfHostedMessagingClientV2,
   asMessagingHostEvent,
   messagingText,
+  type MessagingActor,
+  type MessagingBotExecution,
+  type MessagingBotProfile,
+  type MessagingCommunityMember,
+  type MessagingCommunityState,
   type MessagingConversation,
+  type MessagingForumTopic,
   type MessagingInvoice,
   type MessagingLedgerEntry,
+  type MessagingMediaRef,
   type MessagingMessage,
   type MessagingOrder,
+  type MessagingStory,
   type MessagingWalletAccount,
 } from './selfhosted-messaging-client-v2';
 import styles from './messaging-shell.module.css';
@@ -110,6 +118,8 @@ type DisplayMessage = {
   pinned?: boolean;
   reactions?: string[];
   invoiceId?: string;
+  media?: MessagingMediaRef;
+  mediaType?: 'photo' | 'video' | 'document';
 };
 
 type NewDialog =
@@ -201,6 +211,58 @@ function matchesSection(peer: PeerItem, section: MessengerSection): boolean {
   return false;
 }
 
+function blobMediaUrl(media?: MessagingMediaRef): string | undefined {
+  if (!media?.id) return undefined;
+  return `fabushi-blob://${encodeURIComponent(media.id)}`;
+}
+
+function defaultCommunityState(conversationId: string, actorId: string): MessagingCommunityState {
+  const adminRights = {
+    changeInfo: true,
+    postMessages: true,
+    editMessages: true,
+    deleteMessages: true,
+    banMembers: true,
+    inviteMembers: true,
+    pinMessages: true,
+    manageTopics: true,
+    manageCalls: true,
+    addAdmins: true,
+    remainAnonymous: false,
+  };
+  return {
+    conversationId,
+    publicUsername: undefined,
+    linkedDiscussionId: undefined,
+    signaturesEnabled: false,
+    joinToSend: false,
+    joinRequestRequired: false,
+    slowModeSeconds: undefined,
+    members: {
+      [actorId]: {
+        actorId,
+        status: 'owner',
+        adminTitle: 'Owner',
+        adminRights,
+        restrictions: {
+          sendMessages: true,
+          sendMedia: true,
+          sendPolls: true,
+          embedLinks: true,
+          addMembers: true,
+          pinMessages: true,
+          changeInfo: true,
+        },
+        joinedAtMs: Date.now(),
+      },
+    },
+    inviteLinks: {},
+    pendingJoinRequests: {},
+    topics: {},
+    bannedWords: [],
+  };
+}
+
 function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
   return [...items.filter((current) => current.id !== item.id), item];
 }
@@ -249,8 +311,15 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [bots, setBots] = useState<BotSummary[]>([]);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [selfActors, setSelfActors] = useState<MessagingActor[]>([]);
   const [selfConversations, setSelfConversations] = useState<MessagingConversation[]>([]);
   const [selfMessages, setSelfMessages] = useState<Record<string, MessagingMessage[]>>({});
+  const [selfStories, setSelfStories] = useState<MessagingStory[]>([]);
+  const [selfCommunities, setSelfCommunities] = useState<MessagingCommunityState[]>([]);
+  const [selfBotProfiles, setSelfBotProfiles] = useState<MessagingBotProfile[]>([]);
+  const [selfBotExecutions, setSelfBotExecutions] = useState<MessagingBotExecution[]>([]);
+  const [activeStory, setActiveStory] = useState<MessagingStory | null>(null);
+  const [communityDialogPeer, setCommunityDialogPeer] = useState<PeerItem | null>(null);
   const [selfInvoices, setSelfInvoices] = useState<MessagingInvoice[]>([]);
   const [selfOrders, setSelfOrders] = useState<MessagingOrder[]>([]);
   const [walletAccount, setWalletAccount] = useState<MessagingWalletAccount | null>(null);
@@ -286,6 +355,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const storyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     activePeerKeyRef.current = activePeerKey;
@@ -432,6 +502,12 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       invoiceId: message.content.type === 'invoice'
         ? (message.content.data as { invoiceId?: string } | undefined)?.invoiceId
         : undefined,
+      media: ['photo', 'video', 'document'].includes(message.content.type)
+        ? (message.content.data as { media?: MessagingMediaRef } | undefined)?.media
+        : undefined,
+      mediaType: ['photo', 'video', 'document'].includes(message.content.type)
+        ? message.content.type as 'photo' | 'video' | 'document'
+        : undefined,
     };
   }
 
@@ -446,10 +522,15 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     switch (event.type) {
       case 'syncBatch': {
         const payload = event as unknown as {
+          actors?: MessagingActor[];
           conversations?: MessagingConversation[];
           messages?: MessagingMessage[];
           invoices?: MessagingInvoice[];
           orders?: MessagingOrder[];
+          stories?: MessagingStory[];
+          communities?: MessagingCommunityState[];
+          bots?: MessagingBotProfile[];
+          botExecutions?: MessagingBotExecution[];
         };
         const nextConversations = payload.conversations ?? [];
         const grouped: Record<string, MessagingMessage[]> = {};
@@ -457,10 +538,15 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
           (grouped[message.conversationId] ??= []).push(message);
         }
         for (const list of Object.values(grouped)) list.sort((a, b) => a.createdAtMs - b.createdAtMs);
+        setSelfActors(payload.actors ?? []);
         setSelfConversations(nextConversations);
         setSelfMessages(grouped);
         setSelfInvoices(payload.invoices ?? []);
         setSelfOrders(payload.orders ?? []);
+        setSelfStories(payload.stories ?? []);
+        setSelfCommunities(payload.communities ?? []);
+        setSelfBotProfiles(payload.bots ?? []);
+        setSelfBotExecutions(payload.botExecutions ?? []);
         const active = activePeerKeyRef.current;
         if (active?.startsWith('selfhosted:')) {
           const conversationId = active.slice('selfhosted:'.length);
@@ -497,6 +583,34 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
           }
           return { ...current, [payload.conversationId]: list };
         });
+        break;
+      }
+      case 'actorChanged': {
+        const actor = (event as unknown as { actor: MessagingActor }).actor;
+        setSelfActors((current) => upsertById(current, actor));
+        break;
+      }
+      case 'storyChanged': {
+        const story = (event as unknown as { story: MessagingStory }).story;
+        setSelfStories((current) => upsertById(current, story));
+        setActiveStory((current) => current?.id === story.id ? story : current);
+        break;
+      }
+      case 'storyDeleted': {
+        const storyId = String((event as unknown as { storyId: string }).storyId);
+        setSelfStories((current) => current.filter((story) => story.id !== storyId));
+        setActiveStory((current) => current?.id === storyId ? null : current);
+        break;
+      }
+      case 'communityChanged': {
+        const community = (event as unknown as { community: MessagingCommunityState }).community;
+        setSelfCommunities((current) => [...current.filter((item) => item.conversationId !== community.conversationId), community]);
+        break;
+      }
+      case 'botChanged': {
+        const payload = event as unknown as { profile?: MessagingBotProfile | null; execution?: MessagingBotExecution | null };
+        if (payload.profile) setSelfBotProfiles((current) => [...current.filter((item) => item.actorId !== payload.profile!.actorId), payload.profile!]);
+        if (payload.execution) setSelfBotExecutions((current) => upsertById(current, payload.execution!));
         break;
       }
       case 'invoiceChanged': {
@@ -616,6 +730,10 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       setError(cause instanceof Error ? cause.message : String(cause));
     });
   }, [section, selfHosted]);
+
+  const visibleStories = useMemo(() => selfStories
+    .filter((story) => story.pinnedToProfile || story.expiresAtMs > Date.now())
+    .sort((left, right) => right.createdAtMs - left.createdAtMs), [selfStories]);
 
   const peers = useMemo<PeerItem[]>(() => {
     const legacyConversations = conversations.map((conversation): PeerItem => ({
@@ -819,6 +937,54 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
   }
 
+  async function publishStoryFile(file: File) {
+    setAttachmentProgress(`正在上传动态 ${file.name}…`);
+    try {
+      const media = await selfHosted.uploadBlob(file, (uploaded, total) => {
+        setAttachmentProgress(`正在上传动态 ${file.name} · ${Math.round((uploaded / total) * 100)}%`);
+      });
+      const caption = window.prompt('动态说明（可选）', '') ?? '';
+      const privacyInput = (window.prompt('可见范围：everyone / contacts / closeFriends / selected', 'everyone') ?? 'everyone').trim();
+      const privacy = ['everyone', 'contacts', 'closeFriends', 'selected'].includes(privacyInput)
+        ? privacyInput as 'everyone' | 'contacts' | 'closeFriends' | 'selected'
+        : 'everyone';
+      let includedActorIds: string[] = [];
+      if (privacy === 'selected') {
+        const selected = window.prompt('输入允许查看的 Actor ID，用逗号分隔', '') ?? '';
+        includedActorIds = selected.split(',').map((value) => value.trim()).filter(Boolean);
+        if (!includedActorIds.length) throw new Error('Selected 动态至少需要一名可见联系人。');
+      }
+      await selfHosted.publishStory({
+        media,
+        caption,
+        privacy,
+        includedActorIds,
+        protectedContent: true,
+        allowReplies: true,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAttachmentProgress(null);
+    }
+  }
+
+  async function openStory(story: MessagingStory) {
+    setActiveStory(story);
+    if (story.ownerId !== selfHosted.actorId) {
+      void selfHosted.viewStory(story.id).catch(() => {});
+    }
+  }
+
+  async function reactToActiveStory(reaction: string) {
+    if (!activeStory) return;
+    try {
+      await selfHosted.reactStory(activeStory.id, reaction);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   async function sendAttachmentFile(file: File) {
     if (!activePeer?.conversationId || activePeer.source !== 'selfhosted') {
       setError('附件需要发送到 Fabushi 自建会话。');
@@ -994,6 +1160,33 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }, 0);
   }
 
+  async function openCommunityAdmin(peer: PeerItem) {
+    if (peer.source !== 'selfhosted' || !peer.conversationId || !['group', 'channel'].includes(peer.kind)) {
+      setError('群组/频道管理只对 Fabushi 自建社区开放。');
+      return;
+    }
+    const existing = selfCommunities.find((community) => community.conversationId === peer.conversationId);
+    if (!existing) {
+      const created = defaultCommunityState(peer.conversationId, selfHosted.actorId);
+      try {
+        await selfHosted.updateCommunity(created);
+        setSelfCommunities((current) => [...current.filter((item) => item.conversationId !== created.conversationId), created]);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return;
+      }
+    }
+    setCommunityDialogPeer(peer);
+  }
+
+  async function saveCommunity(community: MessagingCommunityState) {
+    try {
+      await selfHosted.updateCommunity(community);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   async function startCall(kind: 'voice' | 'video') {
     if (!activePeer) return;
     if (activePeer.source !== 'selfhosted' || !activePeer.conversationId || !activePeer.actorId) {
@@ -1159,6 +1352,19 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索消息、联系人和 Bot" />
           {search ? <button type="button" onClick={() => setSearch('')}><X size={14} /></button> : null}
         </label>
+        {['chats', 'contacts'].includes(section) ? <div className={extra.storyStrip}>
+          <button type="button" className={extra.storyItem} onClick={() => storyInputRef.current?.click()} title="发布动态">
+            <span className={extra.storyRing} data-own="true">{avatarText('我')}<b>+</b></span><small>我的动态</small>
+          </button>
+          {visibleStories.map((story) => {
+            const actor = selfActors.find((item) => item.id === story.ownerId);
+            const name = actor?.displayName ?? (story.ownerId === selfHosted.actorId ? '我' : story.ownerId);
+            return <button type="button" className={extra.storyItem} key={story.id} onClick={() => void openStory(story)} title={name}>
+              <span className={extra.storyRing}>{actor?.avatarUrl ? <img src={actor.avatarUrl} alt="" /> : avatarText(name)}</span><small>{name}</small>
+            </button>;
+          })}
+          <input ref={storyInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void publishStoryFile(file); }} />
+        </div> : null}
         {sectionIsPeerList ? (
           <div className={styles.peerList}>
             <div className={styles.quickActions}>
@@ -1215,6 +1421,9 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
                   }}
                 >
                   {message.pinned ? <Pin size={11} /> : null}
+                  {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
+                  {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline src={blobMediaUrl(message.media)} /> : null}
+                  {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
                   <p>{message.text}</p>
                   {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
                   <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
@@ -1259,6 +1468,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
             <button type="button" onClick={() => void toggleMuteConversation(activePeer)}><BellOff size={17} /><span>{mutedPeerKeys.has(activePeer.key) ? '开启通知' : '静音通知'}</span></button>
             <button type="button" onClick={() => void togglePinConversation(activePeer)}><Pin size={17} /><span>{activePeer.pinned ? '取消置顶' : '置顶会话'}</span></button>
             <button type="button" onClick={() => { void toggleArchiveConversation(activePeer); setSection('archive'); }}><Archive size={17} /><span>{activePeer.archived ? '移出归档' : '归档会话'}</span></button>
+            {activePeer.source === 'selfhosted' && ['group', 'channel'].includes(activePeer.kind) ? <button type="button" onClick={() => void openCommunityAdmin(activePeer)}><Settings size={17} /><span>管理群组/频道</span></button> : null}
           </div>
           <nav className={styles.infoTabs}><button type="button" data-active={infoTab === 'media'} onClick={() => setInfoTab('media')}>媒体</button><button type="button" data-active={infoTab === 'files'} onClick={() => setInfoTab('files')}>文件</button><button type="button" data-active={infoTab === 'links'} onClick={() => setInfoTab('links')}>链接</button></nav>
           <div className={styles.infoContent}>{infoTab === 'media' ? <><Image size={30} /><strong>共享媒体</strong><p>图片、视频和动画按消息索引展示。</p></> : null}{infoTab === 'files' ? <><FileText size={30} /><strong>共享文件</strong><p>文档、音频和附件由 Rust 媒体层管理。</p></> : null}{infoTab === 'links' ? <><Link2 size={30} /><strong>共享链接</strong><p>富文本 URL 建立可搜索索引。</p></> : null}</div>
@@ -1268,6 +1478,8 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       {messageMenu ? <MessageContextMenu menu={messageMenu} onAction={(action) => void handleMessageAction(action)} /> : null}
       {forwardDialog ? <ForwardMessageDialog message={forwardDialog.message} peers={peers.filter((peer) => peer.source === 'selfhosted' && Boolean(peer.conversationId) && peer.conversationId !== forwardDialog.sourceConversationId)} onClose={() => setForwardDialog(null)} onSelect={(peer) => void forwardToPeer(peer)} /> : null}
       {newDialog ? <NewConversationDialog dialog={newDialog} bots={bots} onChange={setNewDialog} onClose={() => setNewDialog(null)} onSave={() => void saveNewDialog()} /> : null}
+      {communityDialogPeer ? <CommunityAdminDialog peer={communityDialogPeer} community={selfCommunities.find((item) => item.conversationId === communityDialogPeer.conversationId) ?? defaultCommunityState(communityDialogPeer.conversationId!, selfHosted.actorId)} actors={selfActors} actorId={selfHosted.actorId} onClose={() => setCommunityDialogPeer(null)} onSave={(community) => void saveCommunity(community)} onSetMember={(conversationId, member) => void selfHosted.setCommunityMember(conversationId, member).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onCreateInvite={(community) => { const invite = { id: `invite:${crypto.randomUUID()}`, conversationId: community.conversationId, creatorId: selfHosted.actorId, token: crypto.randomUUID().replaceAll('-', ''), name: '邀请链接', createdAtMs: Date.now(), expiresAtMs: undefined, memberLimit: undefined, joinRequest: community.joinRequestRequired, revoked: false, joinedCount: 0 }; void selfHosted.createInviteLink(invite).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))); }} onRevokeInvite={(conversationId, inviteId) => void selfHosted.revokeInviteLink(conversationId, inviteId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onJoinDecision={(conversationId, requesterId, approved) => void selfHosted.respondCommunityJoin(conversationId, requesterId, approved).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onUpsertTopic={(topic) => void selfHosted.upsertForumTopic(topic).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onDeleteTopic={(conversationId, topicId) => void selfHosted.deleteForumTopic(conversationId, topicId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
+      {activeStory ? <StoryViewer story={activeStory} owner={selfActors.find((actor) => actor.id === activeStory.ownerId)} own={activeStory.ownerId === selfHosted.actorId} onClose={() => setActiveStory(null)} onReact={(reaction) => void reactToActiveStory(reaction)} onDelete={() => void selfHosted.deleteStory(activeStory.id).then(() => setActiveStory(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
       {localCall ? <CallDialog call={localCall} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef} remoteAudioRef={remoteAudioRef} canAccept={Boolean(incomingCall)} onAccept={() => void acceptIncomingCall()} onDecline={() => void declineIncomingCall()} onMute={() => void toggleCallMute()} onVideo={() => void toggleCallVideo()} onShare={() => void shareCallScreen()} onEnd={() => void endCall()} /> : null}
       {miniApp ? <MiniAppDialog app={miniApp} onClose={() => setMiniApp(null)} /> : null}
     </main>
@@ -1330,6 +1542,130 @@ function NewConversationDialog({ dialog, bots, onChange, onClose, onSave }: { di
     })}</div> : null}
     <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!dialog.name.trim()} onClick={onSave}>{dialog.type === 'group' ? '创建群组' : '创建频道'}</button></footer>
   </section></div>;
+}
+
+function CommunityAdminDialog({
+  peer,
+  community,
+  actors,
+  actorId,
+  onClose,
+  onSave,
+  onSetMember,
+  onCreateInvite,
+  onRevokeInvite,
+  onJoinDecision,
+  onUpsertTopic,
+  onDeleteTopic,
+}: {
+  peer: PeerItem;
+  community: MessagingCommunityState;
+  actors: MessagingActor[];
+  actorId: string;
+  onClose: () => void;
+  onSave: (community: MessagingCommunityState) => void;
+  onSetMember: (conversationId: string, member: MessagingCommunityMember) => void;
+  onCreateInvite: (community: MessagingCommunityState) => void;
+  onRevokeInvite: (conversationId: string, inviteId: string) => void;
+  onJoinDecision: (conversationId: string, requesterId: string, approved: boolean) => void;
+  onUpsertTopic: (topic: MessagingForumTopic) => void;
+  onDeleteTopic: (conversationId: string, topicId: string) => void;
+}) {
+  const [draft, setDraft] = useState(community);
+  useEffect(() => setDraft(community), [community]);
+  const actorName = (id: string) => actors.find((actor) => actor.id === id)?.displayName ?? id;
+  const members = Object.values(draft.members);
+  const invites = Object.values(draft.inviteLinks).filter((invite) => !invite.revoked);
+  const requests = Object.values(draft.pendingJoinRequests);
+  const topics = Object.values(draft.topics);
+  const canManage = draft.members[actorId]?.status === 'owner' || draft.members[actorId]?.status === 'administrator';
+
+  function changeMemberRole(member: MessagingCommunityMember, status: MessagingCommunityMember['status']) {
+    const next: MessagingCommunityMember = {
+      ...member,
+      status,
+      adminRights: status === 'administrator' || status === 'owner'
+        ? {
+            ...member.adminRights,
+            changeInfo: true,
+            deleteMessages: true,
+            banMembers: true,
+            inviteMembers: true,
+            pinMessages: true,
+            manageTopics: true,
+            manageCalls: true,
+          }
+        : member.adminRights,
+    };
+    onSetMember(draft.conversationId, next);
+  }
+
+  function createTopic() {
+    const title = window.prompt('Topic 名称');
+    if (!title?.trim()) return;
+    onUpsertTopic({
+      id: `topic:${crypto.randomUUID()}`,
+      conversationId: draft.conversationId,
+      title: title.trim(),
+      creatorId: actorId,
+      createdAtMs: Date.now(),
+      pinned: false,
+      closed: false,
+      hidden: false,
+      unreadCount: 0,
+    });
+  }
+
+  return <div className={styles.backdrop} onMouseDown={onClose}><section className={extra.communityDialog} onMouseDown={(event) => event.stopPropagation()}>
+    <header><div><strong>{peer.title} · 管理</strong><small>所有修改都由 Rust Community 权限层校验</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
+    <div className={extra.communityBody}>
+      <section>
+        <h3>群组 / 频道设置</h3>
+        <label><span>公开用户名</span><input value={draft.publicUsername ?? ''} onChange={(event) => setDraft((current) => ({ ...current, publicUsername: event.target.value || undefined }))} disabled={!canManage} placeholder="例如 fabushi" /></label>
+        <label><span>慢速模式（秒）</span><input type="number" min={0} max={3600} value={draft.slowModeSeconds ?? 0} onChange={(event) => setDraft((current) => ({ ...current, slowModeSeconds: Number(event.target.value) || undefined }))} disabled={!canManage} /></label>
+        <label><span>敏感词</span><textarea value={draft.bannedWords.join(', ')} onChange={(event) => setDraft((current) => ({ ...current, bannedWords: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) }))} disabled={!canManage} rows={2} /></label>
+        <div className={extra.communityToggles}>
+          <label><input type="checkbox" checked={draft.joinRequestRequired} onChange={(event) => setDraft((current) => ({ ...current, joinRequestRequired: event.target.checked }))} disabled={!canManage} />入群需审批</label>
+          <label><input type="checkbox" checked={draft.joinToSend} onChange={(event) => setDraft((current) => ({ ...current, joinToSend: event.target.checked }))} disabled={!canManage} />发言前必须入群</label>
+          <label><input type="checkbox" checked={draft.signaturesEnabled} onChange={(event) => setDraft((current) => ({ ...current, signaturesEnabled: event.target.checked }))} disabled={!canManage} />频道签名</label>
+        </div>
+        <button type="button" className={styles.primaryButton} disabled={!canManage} onClick={() => onSave(draft)}>保存设置</button>
+      </section>
+
+      <section>
+        <h3>成员</h3>
+        <div className={extra.communityList}>{members.length ? members.map((member) => <div className={extra.communityRow} key={member.actorId}><div><strong>{actorName(member.actorId)}</strong><small>{member.actorId}</small></div><select value={member.status} disabled={!canManage || member.actorId === actorId && member.status === 'owner'} onChange={(event) => changeMemberRole(member, event.target.value as MessagingCommunityMember['status'])}><option value="owner">Owner</option><option value="administrator">Admin</option><option value="member">Member</option><option value="restricted">Restricted</option><option value="banned">Banned</option><option value="left">Left</option></select></div>) : <small>暂无成员记录</small>}</div>
+      </section>
+
+      <section>
+        <div className={extra.communitySectionTitle}><h3>邀请链接</h3><button type="button" disabled={!canManage} onClick={() => onCreateInvite(draft)}><UserPlus size={15} />创建</button></div>
+        <div className={extra.communityList}>{invites.length ? invites.map((invite) => <div className={extra.communityRow} key={invite.id}><div><strong>{invite.name ?? '邀请链接'}</strong><small>{invite.token}</small></div><div><button type="button" onClick={() => void navigator.clipboard.writeText(`fabushi://join/${invite.token}`)}><Copy size={14} /></button><button type="button" disabled={!canManage} onClick={() => onRevokeInvite(draft.conversationId, invite.id)}><Trash2 size={14} /></button></div></div>) : <small>暂无有效邀请链接</small>}</div>
+      </section>
+
+      <section>
+        <h3>待审批</h3>
+        <div className={extra.communityList}>{requests.length ? requests.map((request) => <div className={extra.communityRow} key={request.actorId}><div><strong>{actorName(request.actorId)}</strong><small>{request.bio ?? '请求加入'}</small></div><div><button type="button" disabled={!canManage} onClick={() => onJoinDecision(draft.conversationId, request.actorId, true)}>通过</button><button type="button" disabled={!canManage} onClick={() => onJoinDecision(draft.conversationId, request.actorId, false)}>拒绝</button></div></div>) : <small>暂无待审批成员</small>}</div>
+      </section>
+
+      <section>
+        <div className={extra.communitySectionTitle}><h3>Forum Topics</h3><button type="button" disabled={!canManage} onClick={createTopic}><SquarePen size={15} />新建</button></div>
+        <div className={extra.communityList}>{topics.length ? topics.map((topic) => <div className={extra.communityRow} key={topic.id}><div><strong>{topic.title}</strong><small>{topic.closed ? '已关闭' : topic.pinned ? '已置顶' : '开放'}</small></div><button type="button" disabled={!canManage} onClick={() => onDeleteTopic(draft.conversationId, topic.id)}><Trash2 size={14} /></button></div>) : <small>暂无 Topic</small>}</div>
+      </section>
+    </div>
+  </section></div>;
+}
+
+function StoryViewer({ story, owner, own, onClose, onReact, onDelete }: { story: MessagingStory; owner?: MessagingActor; own: boolean; onClose: () => void; onReact: (reaction: string) => void; onDelete: () => void }) {
+  const source = blobMediaUrl(story.media);
+  const isVideo = story.media.mimeType?.startsWith('video/') === true;
+  return <div className={extra.storyBackdrop} onMouseDown={onClose}>
+    <section className={extra.storyViewer} onMouseDown={(event) => event.stopPropagation()}>
+      <header><span className={styles.avatar}>{owner?.avatarUrl ? <img src={owner.avatarUrl} alt="" /> : avatarText(owner?.displayName ?? story.ownerId)}</span><div><strong>{owner?.displayName ?? story.ownerId}</strong><small>{new Date(story.createdAtMs).toLocaleString()}</small></div><button type="button" onClick={onClose}><X size={18} /></button></header>
+      <div className={extra.storyMedia}>{source ? isVideo ? <video src={source} autoPlay controls playsInline /> : <img src={source} alt={story.caption.text || 'Story'} /> : <span>媒体不可用</span>}</div>
+      {story.caption.text ? <p>{story.caption.text}</p> : null}
+      <footer>{['👍', '❤️', '🔥', '🙏'].map((reaction) => <button key={reaction} type="button" onClick={() => onReact(reaction)}>{reaction}</button>)}{own ? <button type="button" onClick={onDelete}><Trash2 size={16} />删除</button> : null}</footer>
+    </section>
+  </div>;
 }
 
 function CallDialog({

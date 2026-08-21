@@ -399,3 +399,176 @@ fn secret_conversations_reject_plaintext_and_protect_encrypted_messages() {
         .unwrap_err();
     assert!(matches!(forward_error, EngineError::ProtectedContent));
 }
+
+#[test]
+fn stories_communities_and_bot_execution_enforce_actor_permissions() {
+    let mut engine = MessagingEngine::new();
+    for actor in [
+        Actor::human("human:owner", "Owner"),
+        Actor::human("human:member", "Member"),
+        Actor::human("human:outsider", "Outsider"),
+        Actor::bot("bot:helper", "Helper"),
+    ] {
+        engine.execute(Command::UpsertActor { actor }).unwrap();
+    }
+
+    let mut group = Conversation::direct(
+        "group:secure",
+        "Secure group",
+        vec![
+            participant("human:owner", ParticipantRole::Owner),
+            participant("human:member", ParticipantRole::Member),
+            participant("bot:helper", ParticipantRole::Member),
+        ],
+        1,
+    );
+    group.kind = ConversationKind::Group;
+    group.owner_id = Some(ActorId::new("human:owner"));
+    engine
+        .execute(Command::UpsertConversation {
+            conversation: group,
+        })
+        .unwrap();
+
+    let mut community = CommunityState::new(ConversationId::new("group:secure"));
+    community.upsert_member(CommunityMember {
+        actor_id: ActorId::new("human:owner"),
+        status: MemberStatus::Owner,
+        admin_title: Some("Owner".into()),
+        admin_rights: AdminRights::default(),
+        restrictions: MemberRestrictions::default(),
+        joined_at_ms: 1,
+        invited_by: None,
+    });
+    engine
+        .execute(Command::UpdateCommunity {
+            actor_id: ActorId::new("human:owner"),
+            community,
+        })
+        .unwrap();
+    let denied = engine
+        .execute(Command::SetCommunityMember {
+            actor_id: ActorId::new("human:member"),
+            conversation_id: ConversationId::new("group:secure"),
+            member: CommunityMember {
+                actor_id: ActorId::new("human:outsider"),
+                status: MemberStatus::Member,
+                admin_title: None,
+                admin_rights: AdminRights::default(),
+                restrictions: MemberRestrictions::default(),
+                joined_at_ms: 2,
+                invited_by: Some(ActorId::new("human:member")),
+            },
+        })
+        .unwrap_err();
+    assert!(matches!(denied, EngineError::CommunityPermissionDenied));
+
+    let story = Story {
+        id: StoryId("story:1".into()),
+        owner_id: ActorId::new("human:owner"),
+        media: MediaRef {
+            id: "blob-story-1".into(),
+            file_name: Some("story.jpg".into()),
+            mime_type: Some("image/jpeg".into()),
+            size_bytes: Some(10),
+            width: Some(1080),
+            height: Some(1920),
+            duration_ms: None,
+            thumbnail_id: None,
+            local_path: None,
+            remote_url: Some("fabushi-blob://blob-story-1".into()),
+            content_hash: None,
+        },
+        caption: FormattedText::plain("selected story"),
+        privacy: StoryPrivacy {
+            kind: StoryPrivacyKind::Selected,
+            included_actor_ids: std::collections::BTreeSet::from([ActorId::new("human:member")]),
+            excluded_actor_ids: std::collections::BTreeSet::new(),
+        },
+        created_at_ms: 10,
+        expires_at_ms: 100,
+        edited_at_ms: None,
+        pinned_to_profile: false,
+        protected_content: true,
+        allow_replies: true,
+        views: std::collections::BTreeMap::new(),
+    };
+    engine
+        .execute(Command::PublishStory {
+            actor_id: ActorId::new("human:owner"),
+            story,
+        })
+        .unwrap();
+    engine
+        .execute(Command::ViewStory {
+            actor_id: ActorId::new("human:member"),
+            story_id: StoryId("story:1".into()),
+            viewed_at_ms: 20,
+        })
+        .unwrap();
+    let denied = engine
+        .execute(Command::ViewStory {
+            actor_id: ActorId::new("human:outsider"),
+            story_id: StoryId("story:1".into()),
+            viewed_at_ms: 21,
+        })
+        .unwrap_err();
+    assert!(matches!(denied, EngineError::StoryPermissionDenied(_)));
+
+    engine
+        .execute(Command::RegisterBot {
+            actor_id: ActorId::new("bot:helper"),
+            profile: BotProfile {
+                actor_id: ActorId::new("bot:helper"),
+                description: "Unified helper".into(),
+                about: "Runs in the same MessagingService".into(),
+                commands: vec![BotCommand {
+                    command: "help".into(),
+                    description: "Help".into(),
+                    scopes: std::collections::BTreeSet::from(["group".into()]),
+                }],
+                inline_mode_enabled: false,
+                inline_placeholder: None,
+                groups_allowed: true,
+                privacy_mode: false,
+                mini_app_id: None,
+                payment_provider_ids: Vec::new(),
+                business_mode: false,
+            },
+        })
+        .unwrap();
+    let invocation = BotInvocation {
+        id: "invoke:1".into(),
+        bot_id: ActorId::new("bot:helper"),
+        sender_id: ActorId::new("human:member"),
+        conversation_id: ConversationId::new("group:secure"),
+        command: Some("help".into()),
+        text: FormattedText::plain("help me"),
+        reply_to_message_id: None,
+        metadata: std::collections::BTreeMap::new(),
+        created_at_ms: 30,
+    };
+    let events = engine
+        .execute(Command::BeginBotInvocation {
+            actor_id: ActorId::new("human:member"),
+            invocation,
+            created_at_ms: 31,
+        })
+        .unwrap();
+    let execution_id = match &events[0] {
+        Event::BotRegistryChanged {
+            execution: Some(execution),
+            ..
+        } => execution.id.clone(),
+        other => panic!("unexpected bot event: {other:?}"),
+    };
+    engine
+        .execute(Command::FinishBotExecution {
+            actor_id: ActorId::new("bot:helper"),
+            execution_id,
+            success: true,
+            finished_at_ms: 32,
+            error: None,
+        })
+        .unwrap();
+}
