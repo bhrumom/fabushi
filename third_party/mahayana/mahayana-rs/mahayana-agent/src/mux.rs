@@ -247,6 +247,25 @@ impl MahayanaMuxBackend {
         })
     }
 
+    fn insert_thread_route(
+        &self,
+        backend: Arc<dyn AgentBackend>,
+        inner_thread_id: AgentThreadId,
+    ) -> Result<AgentThreadId, AgentError> {
+        let public_thread_id = AgentThreadId::generated("mahayana-thread");
+        self.thread_routes
+            .lock()
+            .map_err(|_| AgentError::Backend("Mahayana thread route lock poisoned".into()))?
+            .insert(
+                public_thread_id.clone(),
+                ThreadRoute {
+                    backend,
+                    inner_thread_id,
+                },
+            );
+        Ok(public_thread_id)
+    }
+
     fn thread_route(&self, thread_id: &AgentThreadId) -> Result<ThreadRoute, AgentError> {
         self.thread_routes
             .lock()
@@ -298,18 +317,7 @@ impl AgentBackend for MahayanaMuxBackend {
     async fn start_thread(&self, request: StartThreadRequest) -> Result<AgentThreadId, AgentError> {
         let backend = self.default_backend()?;
         let inner_thread_id = backend.start_thread(request).await?;
-        let public_thread_id = AgentThreadId::generated("mahayana-thread");
-        self.thread_routes
-            .lock()
-            .map_err(|_| AgentError::Backend("Mahayana thread route lock poisoned".into()))?
-            .insert(
-                public_thread_id.clone(),
-                ThreadRoute {
-                    backend,
-                    inner_thread_id,
-                },
-            );
-        Ok(public_thread_id)
+        self.insert_thread_route(backend, inner_thread_id)
     }
 
     async fn send_message(
@@ -467,13 +475,16 @@ impl AgentBackend for MahayanaMuxBackend {
     }
 
     async fn open_mcp_app(&self, request: OpenMcpAppRequest) -> Result<McpAppSession, AgentError> {
-        self.backend_for(BackendCapabilities {
+        let backend = self.backend_for(BackendCapabilities {
             mcp: true,
             tools: true,
             ..BackendCapabilities::default()
-        })?
-        .open_mcp_app(request)
-        .await
+        })?;
+        let mut session = backend.open_mcp_app(request).await?;
+        let public_thread_id =
+            self.insert_thread_route(backend, session.thread_id.clone())?;
+        session.thread_id = public_thread_id;
+        Ok(session)
     }
 
     async fn list_mcp_app_tools(
@@ -631,7 +642,10 @@ mod tests {
         )
         .await
         .expect("send");
-        assert_eq!(sink.0.lock().expect("sink").as_slice(), ["preferred:hello"]);
+        assert_eq!(
+            sink.0.lock().expect("sink").as_slice(),
+            ["preferred:hello"]
+        );
         assert_eq!(mux.name(), "mahayana-mux");
     }
 }
