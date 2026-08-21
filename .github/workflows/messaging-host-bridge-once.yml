@@ -1,0 +1,124 @@
+name: Messaging Host bridge one-shot
+
+on:
+  push:
+    branches:
+      - feat/fabushi-messaging-rust-selfhosted
+    paths:
+      - '.github/workflows/messaging-host-bridge-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/fabushi-messaging-rust-selfhosted
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: messaging-host-bridge-v1
+      - name: Patch the versioned Host protocol and controller at narrow anchors
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one anchor, found {count}')
+              return text.replace(old, new, 1)
+
+          protocol = Path('third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs')
+          text = protocol.read_text()
+          if 'MessagingExecute {' not in text:
+              text = replace_once(
+                  text,
+                  '    #[serde(rename = "capability.request")]\n    CapabilityRequest {',
+                  '    #[serde(rename = "messaging.execute")]\n    MessagingExecute {\n        #[serde(rename = "requestId")]\n        request_id: String,\n        envelope: Value,\n    },\n    #[serde(rename = "capability.request")]\n    CapabilityRequest {',
+                  'command variant',
+              )
+              text = replace_once(
+                  text,
+                  '            | Self::MiniAppOpen { request_id, .. }\n            | Self::CapabilityRequest { request_id, .. }',
+                  '            | Self::MiniAppOpen { request_id, .. }\n            | Self::MessagingExecute { request_id, .. }\n            | Self::CapabilityRequest { request_id, .. }',
+                  'request id matcher',
+              )
+          if 'MessagingEvent {' not in text:
+              text = replace_once(
+                  text,
+                  '    #[serde(rename = "capability.listed")]\n    CapabilityListed {',
+                  '    #[serde(rename = "messaging.event")]\n    MessagingEvent {\n        timestamp: String,\n        #[serde(rename = "requestId")]\n        request_id: String,\n        envelope: Value,\n    },\n    #[serde(rename = "capability.listed")]\n    CapabilityListed {',
+                  'event variant',
+              )
+              text = replace_once(
+                  text,
+                  '            Self::ConversationOpened { .. } => "conversation.opened",\n            Self::CapabilityListed { .. } => "capability.listed",',
+                  '            Self::ConversationOpened { .. } => "conversation.opened",\n            Self::MessagingEvent { .. } => "messaging.event",\n            Self::CapabilityListed { .. } => "capability.listed",',
+                  'event type matcher',
+              )
+          protocol.write_text(text)
+
+          implementation = Path('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
+          text = implementation.read_text()
+          if 'use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;' not in text:
+              text = replace_once(
+                  text,
+                  'use mahayana_core::capability::CapabilityKind;\n',
+                  'use fabushi_messaging_core::ClientEnvelope as MessagingClientEnvelope;\nuse fabushi_messaging_core::JsonFileStateStore;\nuse fabushi_messaging_core::MessagingService;\nuse mahayana_core::capability::CapabilityKind;\n',
+                  'messaging imports',
+              )
+          if 'use std::sync::OnceLock;' not in text:
+              text = replace_once(
+                  text,
+                  'use std::sync::Mutex;\nuse std::sync::MutexGuard;\n',
+                  'use std::sync::Mutex;\nuse std::sync::MutexGuard;\nuse std::sync::OnceLock;\n',
+                  'OnceLock import',
+              )
+          if 'FeatureCommand::MessagingExecute' not in text:
+              text = replace_once(
+                  text,
+                  '    pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, FeatureHostError> {\n        if matches!(\n',
+                  '    pub fn execute(&self, command: FeatureCommand) -> Result<CommandAccepted, FeatureHostError> {\n        if let FeatureCommand::MessagingExecute { request_id, envelope } = &command {\n            return self.execute_messaging(request_id.clone(), envelope.clone());\n        }\n        if matches!(\n',
+                  'execute interception',
+              )
+              method = '''    fn execute_messaging(\n        &self,\n        request_id: String,\n        envelope: Value,\n    ) -> Result<CommandAccepted, FeatureHostError> {\n        static MESSAGING_IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();\n        let _io_guard = MESSAGING_IO_LOCK\n            .get_or_init(|| Mutex::new(()))\n            .lock()\n            .map_err(|_| FeatureHostError::Contract("messaging storage lock is poisoned".into()))?;\n        let root = self.memory_root_path.as_deref().ok_or_else(|| {\n            FeatureHostError::Contract("messaging storage is unavailable".into())\n        })?;\n        let client_envelope: MessagingClientEnvelope = serde_json::from_value(envelope)\n            .map_err(|error| FeatureHostError::Contract(format!("invalid messaging envelope: {error}")))?;\n        let store = JsonFileStateStore::new(root.join("_messaging").join("snapshot.json"));\n        let mut service = MessagingService::load(store)\n            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;\n        let responses = service\n            .handle(client_envelope, now_millis())\n            .map_err(|error| FeatureHostError::Contract(error.to_string()))?;\n        let mut state = self.state()?;\n        for response in responses {\n            state.events.push_back(HostEvent::MessagingEvent {\n                timestamp: timestamp(),\n                request_id: request_id.clone(),\n                envelope: serde_json::to_value(response)\n                    .map_err(|error| FeatureHostError::Contract(error.to_string()))?,\n            });\n        }\n        Ok(CommandAccepted {\n            request_id,\n            operation_id: None,\n        })\n    }\n\n'''
+              text = replace_once(
+                  text,
+                  '    fn execute_automation(\n',
+                  method + '    fn execute_automation(\n',
+                  'messaging method insertion',
+              )
+          implementation.write_text(text)
+          PY
+      - name: Format patched Rust
+        run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol -p mahayana-feature-host
+      - name: Compile the real Feature Host bridge
+        run: cargo check --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-feature-host
+      - name: Run Host protocol and Feature Host tests
+        run: cargo test --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-host-protocol -p mahayana-feature-host
+      - name: Commit only validated bridge changes and lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs \
+            third_party/mahayana/mahayana-rs/Cargo.lock
+          if git diff --cached --quiet; then
+            echo 'Messaging Host bridge already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(messaging): route self-hosted envelopes through Feature Host'
+          git push origin HEAD:feat/fabushi-messaging-rust-selfhosted
