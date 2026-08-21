@@ -1,6 +1,4 @@
-use crate::{
-    ModelError, ModelEvent, ModelRequest, ModelRuntime, ModelUsage, SharedModelEventSink,
-};
+use crate::{ModelError, ModelEvent, ModelRequest, ModelRuntime, ModelUsage, SharedModelEventSink};
 use async_trait::async_trait;
 use mahayana_core::ModelProviderMode;
 use serde_json::{Value, json};
@@ -189,16 +187,13 @@ pub fn extract_usage(payload: &Value) -> Option<ModelUsage> {
                 .and_then(Value::as_u64)
                 .unwrap_or(0),
         );
-    let reasoning_output_tokens = usage_value(
-        usage,
-        &["reasoning_output_tokens", "reasoningOutputTokens"],
-    )
-    .max(
-        usage
-            .pointer("/output_tokens_details/reasoning_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-    );
+    let reasoning_output_tokens =
+        usage_value(usage, &["reasoning_output_tokens", "reasoningOutputTokens"]).max(
+            usage
+                .pointer("/output_tokens_details/reasoning_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+        );
     let total_tokens = usage_value(usage, &["total_tokens", "totalTokens"])
         .max(input_tokens.saturating_add(output_tokens));
     (total_tokens > 0).then_some(ModelUsage {

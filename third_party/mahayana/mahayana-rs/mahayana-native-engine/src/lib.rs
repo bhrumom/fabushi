@@ -7,9 +7,9 @@
 
 use async_trait::async_trait;
 use mahayana_kernel::{
-    ApprovalMode, ApprovalResolution, BackendDescriptor, Capability, CapabilitySet,
-    EngineBackend, ExecutionPolicy, KernelError, KernelEvent, OpenSessionRequest, OperationId,
-    RiskLevel, RunRequest, SessionId, SharedKernelEventSink,
+    ApprovalMode, ApprovalResolution, BackendDescriptor, Capability, CapabilitySet, EngineBackend,
+    ExecutionPolicy, KernelError, KernelEvent, OpenSessionRequest, OperationId, RiskLevel,
+    RunRequest, SessionId, SharedKernelEventSink,
 };
 use mahayana_model::{
     ModelError, ModelEvent, ModelEventSink, ModelRequest, ModelRuntime, ModelUsage,
@@ -141,7 +141,10 @@ impl NativeEngine {
         CapabilitySet::new(capabilities)
     }
 
-    fn session(&self, session_id: &SessionId) -> Result<Arc<AsyncMutex<NativeSession>>, KernelError> {
+    fn session(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Arc<AsyncMutex<NativeSession>>, KernelError> {
         self.sessions
             .lock()
             .map_err(|_| KernelError::Backend("native session registry poisoned".into()))?
@@ -150,7 +153,10 @@ impl NativeEngine {
             .ok_or_else(|| KernelError::SessionNotFound(session_id.as_str().to_string()))
     }
 
-    fn register_operation(&self, operation_id: &OperationId) -> Result<Arc<AtomicBool>, KernelError> {
+    fn register_operation(
+        &self,
+        operation_id: &OperationId,
+    ) -> Result<Arc<AtomicBool>, KernelError> {
         let interrupted = Arc::new(AtomicBool::new(false));
         self.active_operations
             .lock()
@@ -176,7 +182,9 @@ impl NativeEngine {
         interrupted: &AtomicBool,
         events: SharedKernelEventSink,
     ) -> Result<String, KernelError> {
-        session.history.push(json!({"role": "user", "content": prompt}));
+        session
+            .history
+            .push(json!({"role": "user", "content": prompt}));
 
         for turn in 0..self.config.max_model_turns {
             ensure_not_interrupted(interrupted)?;
@@ -409,10 +417,7 @@ impl NativeEngine {
                 }
                 "workspace_worktree" => {
                     let root = workspace_root(session)?;
-                    let checkpoint_id = call
-                        .arguments
-                        .get("checkpoint_id")
-                        .and_then(Value::as_str);
+                    let checkpoint_id = call.arguments.get("checkpoint_id").and_then(Value::as_str);
                     let worktree = WorkspaceEngine::open(root)
                         .and_then(|engine| engine.create_worktree(checkpoint_id))
                         .map_err(|error| KernelError::Backend(error.to_string()))?;
@@ -492,16 +497,11 @@ impl NativeEngine {
                         .map_err(|error| KernelError::Backend(error.to_string()))?;
                     if let Some(tasks) = call.arguments.get("tasks").and_then(Value::as_array) {
                         for task in tasks {
-                            let id = task
-                                .get("id")
-                                .and_then(Value::as_str)
-                                .ok_or_else(|| {
-                                    KernelError::Backend("workflow task id is required".into())
-                                })?;
-                            let task_title = task
-                                .get("title")
-                                .and_then(Value::as_str)
-                                .unwrap_or(id);
+                            let id = task.get("id").and_then(Value::as_str).ok_or_else(|| {
+                                KernelError::Backend("workflow task id is required".into())
+                            })?;
+                            let task_title =
+                                task.get("title").and_then(Value::as_str).unwrap_or(id);
                             let dependencies = task
                                 .get("depends_on")
                                 .and_then(Value::as_array)
@@ -530,9 +530,9 @@ impl NativeEngine {
                         .workflows
                         .lock()
                         .map_err(|_| KernelError::Backend("workflow store poisoned".into()))?;
-                    let workflow = workflows.get(id).ok_or_else(|| {
-                        KernelError::Backend(format!("workflow not found: {id}"))
-                    })?;
+                    let workflow = workflows
+                        .get(id)
+                        .ok_or_else(|| KernelError::Backend(format!("workflow not found: {id}")))?;
                     serde_json::to_value(workflow)
                         .map_err(|error| KernelError::Backend(error.to_string()))
                 }
@@ -544,10 +544,9 @@ impl NativeEngine {
                         .unwrap_or("subagent");
                     let goal = string_arg(&call.arguments, "goal")?;
                     let task_id = {
-                        let mut scheduler = self
-                            .subagents
-                            .lock()
-                            .map_err(|_| KernelError::Backend("subagent scheduler poisoned".into()))?;
+                        let mut scheduler = self.subagents.lock().map_err(|_| {
+                            KernelError::Backend("subagent scheduler poisoned".into())
+                        })?;
                         scheduler
                             .spawn(
                                 None,
@@ -559,26 +558,30 @@ impl NativeEngine {
                             .map_err(|error| KernelError::Backend(error.to_string()))?;
                         scheduler
                             .start_next()
-                            .ok_or_else(|| KernelError::Backend("subagent concurrency exhausted".into()))?
+                            .ok_or_else(|| {
+                                KernelError::Backend("subagent concurrency exhausted".into())
+                            })?
                             .id
                     };
-                    let result = self.run_subagent(goal, interrupted, Arc::clone(&events), operation_id).await;
+                    let result = self
+                        .run_subagent(goal, interrupted, Arc::clone(&events), operation_id)
+                        .await;
                     match result {
                         Ok(text) => {
                             self.subagents
                                 .lock()
-                                .map_err(|_| KernelError::Backend("subagent scheduler poisoned".into()))?
+                                .map_err(|_| {
+                                    KernelError::Backend("subagent scheduler poisoned".into())
+                                })?
                                 .complete(&task_id, json!({"text": text}))
                                 .map_err(|error| KernelError::Backend(error.to_string()))?;
                             Ok(json!({"task_id": task_id, "text": text}))
                         }
                         Err(error) => {
                             let message = error.to_string();
-                            let _ = self
-                                .subagents
-                                .lock()
-                                .ok()
-                                .and_then(|mut scheduler| scheduler.fail(&task_id, message.clone()).ok());
+                            let _ = self.subagents.lock().ok().and_then(|mut scheduler| {
+                                scheduler.fail(&task_id, message.clone()).ok()
+                            });
                             Err(error)
                         }
                     }
@@ -608,7 +611,11 @@ impl NativeEngine {
                             "Git process execution is disabled by Mahayana policy".into(),
                         ));
                     }
-                    run_process(workspace_root(session)?, "git", &["status".into(), "--short".into()])
+                    run_process(
+                        workspace_root(session)?,
+                        "git",
+                        &["status".into(), "--short".into()],
+                    )
                 }
                 "git_diff" => {
                     if !self.config.enable_process_tools || !policy.allow_process {
@@ -616,7 +623,11 @@ impl NativeEngine {
                             "Git process execution is disabled by Mahayana policy".into(),
                         ));
                     }
-                    run_process(workspace_root(session)?, "git", &["diff".into(), "--".into()])
+                    run_process(
+                        workspace_root(session)?,
+                        "git",
+                        &["diff".into(), "--".into()],
+                    )
                 }
                 other => Err(KernelError::CapabilityUnavailable(format!(
                     "native tool {other} is not registered"
@@ -718,9 +729,7 @@ impl NativeEngine {
         })?;
         match receiver.await {
             Ok(true) => Ok(()),
-            Ok(false) => Err(KernelError::PolicyDenied(format!(
-                "user declined {tool}"
-            ))),
+            Ok(false) => Err(KernelError::PolicyDenied(format!("user declined {tool}"))),
             Err(_) => Err(KernelError::ApprovalNotFound(approval_id)),
         }
     }
@@ -775,7 +784,10 @@ impl EngineBackend for NativeEngine {
         request: RunRequest,
         events: SharedKernelEventSink,
     ) -> Result<(), KernelError> {
-        if !self.capabilities().supports_all(&request.required_capabilities) {
+        if !self
+            .capabilities()
+            .supports_all(&request.required_capabilities)
+        {
             return Err(KernelError::CapabilityUnavailable(
                 "native engine does not satisfy the requested capability set".into(),
             ));
@@ -1005,7 +1017,9 @@ fn relative_display(root: &Path, path: &Path) -> String {
 
 fn search_workspace(root: &Path, query: &str, limit: usize) -> Result<Vec<Value>, KernelError> {
     if query.is_empty() {
-        return Err(KernelError::Backend("search query must not be empty".into()));
+        return Err(KernelError::Backend(
+            "search query must not be empty".into(),
+        ));
     }
     let mut matches = Vec::new();
     search_directory(root, root, query, limit, &mut matches)?;
@@ -1022,7 +1036,9 @@ fn search_directory(
     if matches.len() >= limit {
         return Ok(());
     }
-    for entry in std::fs::read_dir(directory).map_err(|error| KernelError::Backend(error.to_string()))? {
+    for entry in
+        std::fs::read_dir(directory).map_err(|error| KernelError::Backend(error.to_string()))?
+    {
         let entry = entry.map_err(|error| KernelError::Backend(error.to_string()))?;
         let file_type = entry
             .file_type()
@@ -1305,8 +1321,8 @@ mod tests {
                 "output": [{"type":"message", "content":[{"type":"output_text", "text":"done"}]}]
             })])),
         });
-        let engine = NativeEngine::new(model, NativeEngineConfig::embedded("model"))
-            .expect("create engine");
+        let engine =
+            NativeEngine::new(model, NativeEngineConfig::embedded("model")).expect("create engine");
         let session = engine
             .open_session(OpenSessionRequest {
                 profile: mahayana_kernel::RuntimeProfile::MobileEmbedded,
@@ -1331,10 +1347,17 @@ mod tests {
             )
             .await
             .expect("run engine");
-        assert!(events.0.lock().expect("events").iter().any(|event| matches!(
-            event,
-            KernelEvent::MessageCompleted { text, .. } if text == "done"
-        )));
+        assert!(
+            events
+                .0
+                .lock()
+                .expect("events")
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    KernelEvent::MessageCompleted { text, .. } if text == "done"
+                ))
+        );
     }
 
     #[tokio::test]
@@ -1355,8 +1378,8 @@ mod tests {
         let model = Arc::new(FakeModel {
             outputs: Mutex::new(VecDeque::from([call, done])),
         });
-        let engine = NativeEngine::new(model, NativeEngineConfig::desktop("model"))
-            .expect("create engine");
+        let engine =
+            NativeEngine::new(model, NativeEngineConfig::desktop("model")).expect("create engine");
         let session = engine
             .open_session(OpenSessionRequest {
                 profile: mahayana_kernel::RuntimeProfile::DesktopFull,
@@ -1390,10 +1413,14 @@ mod tests {
             std::fs::read_to_string(workspace.join("new.txt")).expect("read result"),
             "hello"
         );
-        assert!(events.0.lock().expect("events").iter().any(|event| matches!(
-            event,
-            KernelEvent::CheckpointCreated { .. }
-        )));
+        assert!(
+            events
+                .0
+                .lock()
+                .expect("events")
+                .iter()
+                .any(|event| matches!(event, KernelEvent::CheckpointCreated { .. }))
+        );
         std::fs::remove_dir_all(workspace).expect("cleanup");
     }
 }
