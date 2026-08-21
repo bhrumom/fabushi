@@ -15,6 +15,7 @@ members = [
     "mahayana-ffi",
     "mahayana-harness",
     "mahayana-harness-adapters",
+    "mahayana-harness-advanced",
     "mahayana-harness-agent",
     "mahayana-harness-protocol",
     "mahayana-harness-services",
@@ -85,6 +86,7 @@ mahayana-computer = { path = "mahayana-computer" }
 mahayana-feature-host = { path = "mahayana-feature-host", default-features = false }
 mahayana-harness = { path = "mahayana-harness" }
 mahayana-harness-adapters = { path = "mahayana-harness-adapters" }
+mahayana-harness-advanced = { path = "mahayana-harness-advanced" }
 mahayana-harness-agent = { path = "mahayana-harness-agent" }
 mahayana-harness-protocol = { path = "mahayana-harness-protocol" }
 mahayana-harness-services = { path = "mahayana-harness-services" }
