@@ -70,6 +70,7 @@ jobs:
           -p mahayana-harness-adapters
           -p mahayana-harness-agent
           -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
           --profile ci
 
       - name: Test direct Mahayana Host
