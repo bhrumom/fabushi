@@ -180,8 +180,8 @@ impl WorkspaceEngine {
             }
             fs::copy(&source, &destination)
                 .map_err(|error| WorkspaceError::Io(error.to_string()))?;
-            let metadata = fs::metadata(&source)
-                .map_err(|error| WorkspaceError::Io(error.to_string()))?;
+            let metadata =
+                fs::metadata(&source).map_err(|error| WorkspaceError::Io(error.to_string()))?;
             snapshots.push(FileSnapshot {
                 path: path_string(&relative),
                 size: metadata.len(),
@@ -262,7 +262,10 @@ impl WorkspaceEngine {
             let checkpoint_files = self.checkpoint_dir(checkpoint_id).join("files");
             for snapshot in checkpoint.files {
                 let relative = safe_relative(Path::new(&snapshot.path))?;
-                copy_file(&checkpoint_files.join(&relative), &worktree_root.join(&relative))?;
+                copy_file(
+                    &checkpoint_files.join(&relative),
+                    &worktree_root.join(&relative),
+                )?;
             }
         } else {
             for source in self.collect_files()? {
@@ -285,8 +288,7 @@ impl WorkspaceEngine {
         validate_storage_id(id)?;
         let directory = self.worktree_dir(id);
         if directory.exists() {
-            fs::remove_dir_all(directory)
-                .map_err(|error| WorkspaceError::Io(error.to_string()))?;
+            fs::remove_dir_all(directory).map_err(|error| WorkspaceError::Io(error.to_string()))?;
         }
         Ok(())
     }
@@ -314,8 +316,8 @@ impl WorkspaceEngine {
         let mut nodes = Vec::new();
         let mut edges = BTreeSet::new();
         for file in self.collect_files()? {
-            let metadata = fs::metadata(&file)
-                .map_err(|error| WorkspaceError::Io(error.to_string()))?;
+            let metadata =
+                fs::metadata(&file).map_err(|error| WorkspaceError::Io(error.to_string()))?;
             let relative = self.relative_path(&file)?;
             let language = language_for_path(&relative).to_string();
             nodes.push(CodebaseNode {
@@ -349,8 +351,8 @@ impl WorkspaceEngine {
     pub fn index_symbols(&self) -> Result<Vec<CodeSymbol>, WorkspaceError> {
         let mut symbols = Vec::new();
         for file in self.collect_files()? {
-            let metadata = fs::metadata(&file)
-                .map_err(|error| WorkspaceError::Io(error.to_string()))?;
+            let metadata =
+                fs::metadata(&file).map_err(|error| WorkspaceError::Io(error.to_string()))?;
             if metadata.len() > self.options.max_index_file_bytes {
                 continue;
             }
@@ -403,7 +405,9 @@ impl WorkspaceEngine {
         directory: &Path,
         files: &mut Vec<PathBuf>,
     ) -> Result<(), WorkspaceError> {
-        for entry in fs::read_dir(directory).map_err(|error| WorkspaceError::Io(error.to_string()))? {
+        for entry in
+            fs::read_dir(directory).map_err(|error| WorkspaceError::Io(error.to_string()))?
+        {
             let entry = entry.map_err(|error| WorkspaceError::Io(error.to_string()))?;
             let file_type = entry
                 .file_type()
@@ -574,7 +578,10 @@ fn extract_references(content: &str, language: &str) -> Vec<String> {
             .next()
             .unwrap_or_default()
             .trim_matches(|character: char| {
-                matches!(character, '(' | ')' | '{' | '}' | '[' | ']' | ',' | '"' | '\'')
+                matches!(
+                    character,
+                    '(' | ')' | '{' | '}' | '[' | ']' | ',' | '"' | '\''
+                )
             });
         if !normalized.is_empty() {
             references.insert(normalized.to_string());
@@ -621,7 +628,11 @@ fn extract_symbol(line: &str, language: &str) -> Option<(String, String)> {
             ("const ", "constant"),
         ],
         "python" => &[("def ", "function"), ("class ", "class")],
-        "swift" => &[("func ", "function"), ("struct ", "struct"), ("class ", "class")],
+        "swift" => &[
+            ("func ", "function"),
+            ("struct ", "struct"),
+            ("class ", "class"),
+        ],
         "kotlin" | "java" => &[("class ", "class"), ("interface ", "interface")],
         "go" => &[("func ", "function"), ("type ", "type")],
         _ => &[],
@@ -672,8 +683,11 @@ mod tests {
             "use crate::engine::Runner;\npub struct App {}\nfn run() {}\n",
         )
         .expect("write rust source");
-        fs::write(root.join("src/main.ts"), "import { app } from './app';\nfunction main() {}\n")
-            .expect("write ts source");
+        fs::write(
+            root.join("src/main.ts"),
+            "import { app } from './app';\nfunction main() {}\n",
+        )
+        .expect("write ts source");
         root
     }
 
@@ -699,8 +713,8 @@ mod tests {
         let engine = WorkspaceEngine::open(&root).expect("open workspace");
         let worktree = engine.create_worktree(None).expect("create worktree");
         fs::write(root.join("src/lib.rs"), "source changed").expect("mutate source");
-        let worktree_content =
-            fs::read_to_string(Path::new(&worktree.path).join("src/lib.rs")).expect("read worktree");
+        let worktree_content = fs::read_to_string(Path::new(&worktree.path).join("src/lib.rs"))
+            .expect("read worktree");
         assert!(worktree_content.contains("pub struct App"));
         fs::remove_dir_all(root).expect("cleanup");
     }
