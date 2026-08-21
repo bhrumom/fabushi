@@ -1,0 +1,31 @@
+name: Native mobile catch-all gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/native/**'
+      - 'mobile/package.json'
+      - 'mobile/package-lock.json'
+      - 'mobile/pnpm-lock.yaml'
+      - 'mobile/yarn.lock'
+      - 'mobile/*.json'
+      - '.github/workflows/native-mobile-catchall.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/native/**'
+      - 'mobile/package.json'
+      - 'mobile/package-lock.json'
+      - 'mobile/pnpm-lock.yaml'
+      - 'mobile/yarn.lock'
+      - 'mobile/*.json'
+      - '.github/workflows/native-mobile-catchall.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-mobile:
+    uses: ./.github/workflows/native-mobile.yml
