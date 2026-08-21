@@ -5,9 +5,6 @@ const readline = require('node:readline');
 
 const PRODUCTION_PRODUCT_API_BASE_URL = 'https://api.ombhrum.com';
 const DEVELOPMENT_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev';
-// Compatibility marker for the pre-hardening auth-entry gate. The actual
-// packaged default above is production; this marker is deliberately inert:
-// DEFAULT_DESKTOP_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev'
 
 function productApiBaseUrl() {
   const configured = process.env.MAHAYANA_API_BASE_URL?.trim();
