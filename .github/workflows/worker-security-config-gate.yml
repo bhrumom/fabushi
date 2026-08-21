@@ -1,0 +1,58 @@
+name: Worker security config gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fabushi/web/**'
+      - '.github/scripts/assert-worker-security-secrets.sh'
+      - '.github/scripts/run-wrangler-d1-migrations.sh'
+      - '.github/workflows/worker-security-config-gate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: worker-security-config-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Worker security static gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate deployment guard scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/assert-worker-security-secrets.sh
+          bash -n .github/scripts/run-wrangler-d1-migrations.sh
+          ! grep -Eq '^JWT_SECRET\s*=|ADMIN_EMAIL\s*=.*@|BEGIN (RSA )?PRIVATE KEY' fabushi/web/wrangler.toml
+          ! grep -R -n -E "JWT_SECRET[[:space:]]*=[[:space:]]*['\"][^$]" fabushi/web --include='*.toml' --include='*.json' || {
+            echo 'Static Worker configuration contains a JWT secret literal.' >&2
+            exit 1
+          }
+
+  remote-production:
+    name: Production Worker secret preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify required production secret names exist in Cloudflare
+        working-directory: fabushi/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || vars.CLOUDFLARE_API_TOKEN || vars.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          bash ../../.github/scripts/assert-worker-security-secrets.sh production
