@@ -53,13 +53,15 @@ jobs:
             -p mahayana-harness-protocol \
             -p mahayana-unified-app-host
 
-      - name: Refresh workspace lockfile
-        working-directory: third_party/mahayana/mahayana-rs
-        run: cargo generate-lockfile
-
+      # Do not run cargo generate-lockfile here: that re-resolves the entire
+      # legacy workspace and can select incompatible transitive prereleases.
+      # cargo test below performs the minimal lock update required by the new
+      # local workspace packages while preserving existing compatible pins.
       - name: Test Harness stack
         id: harness_test
         shell: bash
+        env:
+          CARGO_TERM_COLOR: never
         run: |
           set +e
           cd third_party/mahayana/mahayana-rs
