@@ -1,0 +1,274 @@
+name: Mahayana harness schedule bridge once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mahayana-harness-schedule-bridge-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Wire schedule state and product automation bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          services = Path('third_party/mahayana/mahayana-rs/mahayana-harness-services/src/lib.rs')
+          text = services.read_text()
+          old = '''    pub fn set_schedule_enabled(
+              &self,
+              schedule_id: &str,
+              enabled: bool,
+          ) -> HarnessResult<ScheduleEntry> {
+              let mut state = self.state()?;
+              let entry = state
+                  .schedules
+                  .get_mut(schedule_id)
+                  .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))?;
+              entry.enabled = enabled;
+              Ok(entry.clone())
+          }
+          '''
+          new = '''    pub fn set_schedule_enabled(
+              &self,
+              schedule_id: &str,
+              enabled: bool,
+          ) -> HarnessResult<ScheduleEntry> {
+              let mut state = self.state()?;
+              let entry = state
+                  .schedules
+                  .get_mut(schedule_id)
+                  .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))?;
+              entry.enabled = enabled;
+              Ok(entry.clone())
+          }
+
+          pub fn list_schedules(&self) -> HarnessResult<Vec<ScheduleEntry>> {
+              Ok(self.state()?.schedules.values().cloned().collect())
+          }
+
+          pub fn get_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
+              self.state()?
+                  .schedules
+                  .get(schedule_id)
+                  .cloned()
+                  .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
+          }
+
+          pub fn delete_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
+              self.state()?
+                  .schedules
+                  .remove(schedule_id)
+                  .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
+          }
+          '''
+          if old not in text:
+              raise SystemExit('schedule service anchor not found')
+          services.write_text(text.replace(old, new, 1))
+
+          protocol = Path('third_party/mahayana/mahayana-rs/mahayana-harness-protocol/src/lib.rs')
+          text = protocol.read_text()
+          old = '''            "schedule.setEnabled" => to_value(self.services.set_schedule_enabled(
+                  required_str(&payload, "scheduleId")?,
+                  required_bool(&payload, "enabled")?,
+              )?),
+              "feedback.record" => to_value(self.services.record_feedback(
+          '''
+          new = '''            "schedule.setEnabled" => to_value(self.services.set_schedule_enabled(
+                  required_str(&payload, "scheduleId")?,
+                  required_bool(&payload, "enabled")?,
+              )?),
+              "schedule.list" => to_value(self.services.list_schedules()?),
+              "schedule.get" => to_value(
+                  self.services
+                      .get_schedule(required_str(&payload, "scheduleId")?)?,
+              ),
+              "schedule.delete" => to_value(
+                  self.services
+                      .delete_schedule(required_str(&payload, "scheduleId")?)?,
+              ),
+              "feedback.record" => to_value(self.services.record_feedback(
+          '''
+          if old not in text:
+              raise SystemExit('schedule protocol anchor not found')
+          protocol.write_text(text.replace(old, new, 1))
+
+          unified = Path('third_party/mahayana/mahayana-rs/mahayana-unified-app-host/src/lib.rs')
+          text = unified.read_text()
+          old = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
+              self.journal
+                  .lock()
+                  .map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?
+                  .execute(&self.harness, operation, payload)
+          }
+          '''
+          new = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
+              match operation {
+                  "schedule.create" => self.harness_schedule_create(payload),
+                  "schedule.setEnabled" => self.harness_schedule_set_enabled(payload),
+                  "schedule.delete" => self.harness_schedule_delete(payload),
+                  "schedule.run" => self.harness_schedule_run(payload),
+                  _ => self.execute_harness_state(operation, payload),
+              }
+          }
+
+          fn execute_harness_state(
+              &self,
+              operation: &str,
+              payload: Value,
+          ) -> Result<Value, AppHostError> {
+              self.journal
+                  .lock()
+                  .map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?
+                  .execute(&self.harness, operation, payload)
+          }
+
+          fn harness_schedule_create(&self, payload: Value) -> Result<Value, AppHostError> {
+              let created = self.execute_harness_state("schedule.create", payload)?;
+              let schedule_id = required_string(&created, "id")?;
+              let session_id = required_string(&created, "sessionId")?;
+              let instruction = required_string(&created, "instruction")?;
+              let schedule = required_string(&created, "schedule")?;
+              let command = json!({
+                  "command": {
+                      "type": "automation.upsert",
+                      "requestId": format!("harness-schedule-upsert:{}:{}", schedule_id, now_ms()),
+                      "id": schedule_id,
+                      "name": format!("Harness schedule · {session_id}"),
+                      "prompt": instruction,
+                      "schedule": schedule,
+                      "trigger": {"kind": "schedule", "schedule": schedule},
+                      "enabled": true
+                  }
+              });
+              if let Err(error) = self.delegate("feature.execute", command) {
+                  let _ = self.execute_harness_state(
+                      "schedule.delete",
+                      json!({"scheduleId": schedule_id}),
+                  );
+                  return Err(error);
+              }
+              Ok(created)
+          }
+
+          fn harness_schedule_set_enabled(&self, payload: Value) -> Result<Value, AppHostError> {
+              let schedule_id = required_string(&payload, "scheduleId")?;
+              let enabled = payload
+                  .get("enabled")
+                  .and_then(Value::as_bool)
+                  .ok_or_else(|| AppHostError::InvalidRequest("enabled is required".into()))?;
+              self.delegate(
+                  "feature.execute",
+                  json!({
+                      "command": {
+                          "type": "automation.setEnabled",
+                          "requestId": format!("harness-schedule-enabled:{}:{}", schedule_id, now_ms()),
+                          "id": schedule_id,
+                          "enabled": enabled
+                      }
+                  }),
+              )?;
+              self.execute_harness_state("schedule.setEnabled", payload)
+          }
+
+          fn harness_schedule_delete(&self, payload: Value) -> Result<Value, AppHostError> {
+              let schedule_id = required_string(&payload, "scheduleId")?;
+              self.delegate(
+                  "feature.execute",
+                  json!({
+                      "command": {
+                          "type": "automation.delete",
+                          "requestId": format!("harness-schedule-delete:{}:{}", schedule_id, now_ms()),
+                          "id": schedule_id
+                      }
+                  }),
+              )?;
+              self.execute_harness_state("schedule.delete", payload)
+          }
+
+          fn harness_schedule_run(&self, payload: Value) -> Result<Value, AppHostError> {
+              let schedule_id = required_string(&payload, "scheduleId")?;
+              let schedule = self.execute_harness_state(
+                  "schedule.get",
+                  json!({"scheduleId": schedule_id}),
+              )?;
+              let session_id = required_string(&schedule, "sessionId")?;
+              let accepted = self.delegate(
+                  "feature.execute",
+                  json!({
+                      "command": {
+                          "type": "automation.run",
+                          "requestId": format!("harness-schedule-run:{}:{}", schedule_id, now_ms()),
+                          "id": schedule_id
+                      }
+                  }),
+              )?;
+              self.execute_harness_state(
+                  "session.appendEvent",
+                  json!({
+                      "sessionId": session_id,
+                      "kind": "schedule/run",
+                      "eventPayload": {
+                          "scheduleId": schedule_id,
+                          "accepted": accepted
+                      }
+                  }),
+              )?;
+              Ok(json!({"schedule": schedule, "accepted": accepted}))
+          }
+          '''
+          if old not in text:
+              raise SystemExit('unified host execute_harness anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''            | "schedule.create"
+                  | "schedule.setEnabled"
+                  | "feedback.record"
+          '''
+          new = '''            | "schedule.create"
+                  | "schedule.setEnabled"
+                  | "schedule.delete"
+                  | "feedback.record"
+          '''
+          if old not in text:
+              raise SystemExit('journal operation anchor not found')
+          unified.write_text(text.replace(old, new, 1))
+          PY
+      - name: Refresh lockfile, format and verify focused crates
+        working-directory: third_party/mahayana/mahayana-rs
+        run: |
+          set -euo pipefail
+          cargo metadata --format-version 1 >/dev/null
+          cargo fmt -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-protocol -p mahayana-unified-app-host
+          cargo test -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-protocol -p mahayana-unified-app-host --profile ci
+          cargo clippy -p mahayana-harness-advanced -p mahayana-harness-protocol -p mahayana-unified-app-host --all-targets -- -D warnings
+      - name: Commit schedule bridge and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/mahayana-harness-schedule-bridge-once.yml
+          git add third_party/mahayana/mahayana-rs/Cargo.lock \
+            third_party/mahayana/mahayana-rs/mahayana-harness-services/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-harness-advanced/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-harness-protocol/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-unified-app-host/src/lib.rs
+          git diff --cached --check
+          git commit -m 'feat(mahayana): execute harness schedules through product automation'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
