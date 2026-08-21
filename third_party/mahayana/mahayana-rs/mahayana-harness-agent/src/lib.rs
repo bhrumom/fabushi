@@ -235,7 +235,7 @@ impl AgentEventSink for HarnessAgentEventSink {
             AgentEvent::MessageCompleted { message } => (
                 "assistant/message",
                 json!({
-                    "text": message_text(&message),
+                    "text": message.text,
                     "message": message,
                     "operationId": self.operation_id,
                 }),
@@ -287,18 +287,6 @@ fn activity_status(status: AgentActivityStatus) -> &'static str {
         AgentActivityStatus::Completed => "completed",
         AgentActivityStatus::Failed => "failed",
     }
-}
-
-fn message_text(message: &mahayana_core::Message) -> String {
-    message
-        .content
-        .iter()
-        .filter_map(|part| match part {
-            mahayana_core::MessageContent::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn agent_error(error: AgentError) -> HarnessError {
