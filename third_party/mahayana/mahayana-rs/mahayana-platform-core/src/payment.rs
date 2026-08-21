@@ -162,7 +162,7 @@ pub struct PaymentIntent {
     pub status: PaymentStatus,
     pub provider_reference: Option<String>,
     pub refunded_amount: i64,
-    /// Net developer revenue already moved from pending to available.
+    /// Net developer revenue currently held in Available for this payment.
     pub released_developer_amount: i64,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -198,6 +198,17 @@ impl PaymentIntent {
     pub fn pending_developer_amount(&self) -> i64 {
         self.developer_net_after_refunds()
             .saturating_sub(self.released_developer_amount)
+    }
+
+    fn matches_create(&self, request: &CreatePaymentIntent) -> bool {
+        self.user_id == request.user_id
+            && self.mini_app_id == request.mini_app_id
+            && self.developer_id == request.developer_id
+            && self.sku == request.sku
+            && self.product_kind == request.product_kind
+            && self.rail == request.rail
+            && self.amount == request.amount
+            && self.platform_fee_bps == request.platform_fee_bps
     }
 }
 
@@ -237,11 +248,18 @@ pub struct PaymentMutation {
     pub ledger_entry: Option<PaymentLedgerEntry>,
 }
 
+#[derive(Debug, Clone)]
+struct MutationRecord {
+    operation: &'static str,
+    payment_id: String,
+    entry: PaymentLedgerEntry,
+}
+
 #[derive(Default)]
 pub struct PayEngine {
     payments: HashMap<String, PaymentIntent>,
     payment_by_idempotency: HashMap<String, String>,
-    mutation_results: HashMap<String, PaymentLedgerEntry>,
+    mutation_results: HashMap<String, MutationRecord>,
 }
 
 impl PayEngine {
@@ -256,11 +274,15 @@ impl PayEngine {
     pub fn create_payment(&mut self, request: CreatePaymentIntent) -> Result<PaymentIntent, PayError> {
         request.validate()?;
         if let Some(payment_id) = self.payment_by_idempotency.get(&request.idempotency_key) {
-            return self
+            let existing = self
                 .payments
                 .get(payment_id)
                 .cloned()
-                .ok_or_else(|| PayError::CorruptIdempotencyIndex(request.idempotency_key));
+                .ok_or_else(|| PayError::CorruptIdempotencyIndex(request.idempotency_key.clone()))?;
+            if !existing.matches_create(&request) {
+                return Err(PayError::IdempotencyConflict(request.idempotency_key));
+            }
+            return Ok(existing);
         }
         let payment_id = stable_id(&[
             "payment",
@@ -345,7 +367,11 @@ impl PayEngine {
 
     pub fn refund(&mut self, request: RefundRequest) -> Result<PaymentMutation, PayError> {
         ensure_key(&request.idempotency_key)?;
-        if let Some(entry) = self.mutation_results.get(&request.idempotency_key).cloned() {
+        if let Some(entry) = self.replay_mutation(
+            &request.idempotency_key,
+            "refund",
+            &request.payment_id,
+        )? {
             let payment = self.payment(&request.payment_id)?;
             return Ok(PaymentMutation { payment, ledger_entry: Some(entry) });
         }
@@ -363,7 +389,12 @@ impl PayEngine {
             });
         }
 
-        let fee_refund = payment.fee_for(request.amount);
+        let new_refunded = payment.refunded_amount.saturating_add(request.amount);
+        // Cumulative-difference rounding guarantees that a full refund reverses
+        // exactly the original fee even when many tiny partial refunds occur.
+        let fee_refund = payment
+            .fee_for(new_refunded)
+            .saturating_sub(payment.fee_for(payment.refunded_amount));
         let developer_refund = request.amount.saturating_sub(fee_refund);
         let pending_debit = developer_refund.min(payment.pending_developer_amount());
         let available_debit = developer_refund.saturating_sub(pending_debit);
@@ -390,7 +421,6 @@ impl PayEngine {
             lines,
         )?;
 
-        let new_refunded = payment.refunded_amount.saturating_add(request.amount);
         let mut updated = payment.clone();
         updated.refunded_amount = new_refunded;
         updated.released_developer_amount = updated
@@ -403,14 +433,23 @@ impl PayEngine {
         };
         updated.updated_at_ms = request.occurred_at_ms;
         self.payments.insert(payment.payment_id.clone(), updated.clone());
-        self.mutation_results.insert(request.idempotency_key, entry.clone());
+        self.record_mutation(
+            request.idempotency_key,
+            "refund",
+            payment.payment_id,
+            entry.clone(),
+        );
         Ok(PaymentMutation { payment: updated, ledger_entry: Some(entry) })
     }
 
     pub fn release_settlement(&mut self, request: SettlementRelease) -> Result<PaymentLedgerEntry, PayError> {
         ensure_key(&request.idempotency_key)?;
-        if let Some(entry) = self.mutation_results.get(&request.idempotency_key) {
-            return Ok(entry.clone());
+        if let Some(entry) = self.replay_mutation(
+            &request.idempotency_key,
+            "settlement-release",
+            &request.payment_id,
+        )? {
+            return Ok(entry);
         }
         let payment = self.payment(&request.payment_id)?;
         if !matches!(payment.status, PaymentStatus::Succeeded | PaymentStatus::PartiallyRefunded) {
@@ -434,7 +473,12 @@ impl PayEngine {
         updated.released_developer_amount = updated.released_developer_amount.saturating_add(releasable);
         updated.updated_at_ms = request.occurred_at_ms;
         self.payments.insert(payment.payment_id.clone(), updated);
-        self.mutation_results.insert(request.idempotency_key, entry.clone());
+        self.record_mutation(
+            request.idempotency_key,
+            "settlement-release",
+            payment.payment_id,
+            entry.clone(),
+        );
         Ok(entry)
     }
 
@@ -443,6 +487,38 @@ impl PayEngine {
             .get(payment_id)
             .cloned()
             .ok_or_else(|| PayError::PaymentNotFound(payment_id.into()))
+    }
+
+    fn replay_mutation(
+        &self,
+        key: &str,
+        operation: &'static str,
+        payment_id: &str,
+    ) -> Result<Option<PaymentLedgerEntry>, PayError> {
+        let Some(record) = self.mutation_results.get(key) else {
+            return Ok(None);
+        };
+        if record.operation != operation || record.payment_id != payment_id {
+            return Err(PayError::IdempotencyConflict(key.into()));
+        }
+        Ok(Some(record.entry.clone()))
+    }
+
+    fn record_mutation(
+        &mut self,
+        key: String,
+        operation: &'static str,
+        payment_id: String,
+        entry: PaymentLedgerEntry,
+    ) {
+        self.mutation_results.insert(
+            key,
+            MutationRecord {
+                operation,
+                payment_id,
+                entry,
+            },
+        );
     }
 
     fn transition(&mut self, payment_id: &str, next: PaymentStatus, now_ms: i64) -> Result<PaymentIntent, PayError> {
@@ -548,6 +624,8 @@ pub enum PayError {
     InvalidTransition { from: PaymentStatus, to: PaymentStatus },
     #[error("provider reference conflicts with an already successful payment")]
     ProviderReferenceConflict,
+    #[error("idempotency key was reused with different semantics: {0}")]
+    IdempotencyConflict(String),
     #[error("refund is not allowed while payment is {0:?}")]
     RefundNotAllowed(PaymentStatus),
     #[error("refund {requested} exceeds remaining refundable amount {remaining}")]
@@ -591,12 +669,19 @@ mod tests {
     }
 
     #[test]
-    fn creation_is_idempotent_and_has_stable_id() {
+    fn creation_is_idempotent_and_conflicting_reuse_is_rejected() {
         let mut engine = PayEngine::new();
         let first = engine.create_payment(request("same")).unwrap();
         let second = engine.create_payment(request("same")).unwrap();
         assert_eq!(first.payment_id, second.payment_id);
         assert_eq!(first.payment_id.len(), 64);
+
+        let mut changed = request("same");
+        changed.sku = "other.sku".into();
+        assert_eq!(
+            engine.create_payment(changed).unwrap_err(),
+            PayError::IdempotencyConflict("same".into())
+        );
     }
 
     #[test]
@@ -646,5 +731,58 @@ mod tests {
         entry.validate().unwrap();
         assert!(entry.lines.iter().any(|line| line.account_id == "developer-available:dev-1" && line.amount == -170));
         assert_eq!(engine.get(&payment.payment_id).unwrap().released_developer_amount, 680);
+    }
+
+    #[test]
+    fn cumulative_rounding_fully_reverses_platform_fee() {
+        let mut engine = PayEngine::new();
+        let mut create = request("rounding");
+        create.amount.amount = 7;
+        create.platform_fee_bps = 1_500;
+        let payment = engine.create_payment(create).unwrap();
+        succeed(&mut engine, &payment.payment_id);
+        assert_eq!(engine.get(&payment.payment_id).unwrap().platform_fee(), 1);
+
+        let mut reversed_fee = 0;
+        for index in 0..7 {
+            let mutation = engine
+                .refund(RefundRequest {
+                    idempotency_key: format!("refund-{index}"),
+                    payment_id: payment.payment_id.clone(),
+                    amount: 1,
+                    occurred_at_ms: 30 + index,
+                })
+                .unwrap();
+            if let Some(entry) = mutation.ledger_entry {
+                reversed_fee += entry
+                    .lines
+                    .iter()
+                    .filter(|line| line.account_id == "platform-revenue")
+                    .map(|line| -line.amount)
+                    .sum::<i64>();
+            }
+        }
+        assert_eq!(reversed_fee, 1);
+        assert_eq!(engine.get(&payment.payment_id).unwrap().status, PaymentStatus::Refunded);
+    }
+
+    #[test]
+    fn mutation_idempotency_cannot_cross_payments_or_operations() {
+        let mut engine = PayEngine::new();
+        let first = engine.create_payment(request("first")).unwrap();
+        let mut second_request = request("second");
+        second_request.sku = "other".into();
+        let second = engine.create_payment(second_request).unwrap();
+        succeed(&mut engine, &first.payment_id);
+        engine
+            .release_settlement(SettlementRelease { idempotency_key: "mutation-1".into(), payment_id: first.payment_id, occurred_at_ms: 40 })
+            .unwrap();
+        succeed(&mut engine, &second.payment_id);
+        assert_eq!(
+            engine
+                .refund(RefundRequest { idempotency_key: "mutation-1".into(), payment_id: second.payment_id, amount: 1, occurred_at_ms: 50 })
+                .unwrap_err(),
+            PayError::IdempotencyConflict("mutation-1".into())
+        );
     }
 }
