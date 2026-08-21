@@ -8,13 +8,22 @@ on:
       - third_party/mahayana/mahayana-rs/mahayana-harness-adapters/**
       - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
       - .github/workflows/mahayana-harness-rustfmt-once.yml
+  push:
+    branches:
+      - feat/mahayana-deepseek-harness-rust
+    paths:
+      - third_party/mahayana/mahayana-rs/mahayana-harness/**
+      - third_party/mahayana/mahayana-rs/mahayana-harness-services/**
+      - third_party/mahayana/mahayana-rs/mahayana-harness-adapters/**
+      - third_party/mahayana/mahayana-rs/mahayana-feature-host/**
+      - .github/workflows/mahayana-harness-rustfmt-once.yml
 
 permissions:
   contents: write
 
 jobs:
   rustfmt:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
