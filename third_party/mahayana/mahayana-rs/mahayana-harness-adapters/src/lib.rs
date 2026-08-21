@@ -1,6 +1,9 @@
 //! Concrete adapters that bind Mahayana Harness capability seams to the
 //! existing Mahayana `ToolHost` and local content-addressed storage.
 
+mod extended;
+pub use extended::*;
+
 use async_trait::async_trait;
 use mahayana_harness::{HarnessError, HarnessResult};
 use mahayana_harness_services::{
