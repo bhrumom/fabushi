@@ -8926,6 +8926,24 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tokio",
+ "ureq 2.12.1",
+]
+
+[[package]]
+name = "mahayana-native-engine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "mahayana-kernel",
+ "mahayana-model",
+ "mahayana-orchestrator",
+ "mahayana-workspace-engine",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
