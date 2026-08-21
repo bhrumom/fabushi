@@ -8,6 +8,7 @@ const { serveMainEdge } = require('./edge-ipc.cjs');
 const { MAHAYANA_EDGE } = require('./mahayana-edge.cjs');
 const { NATIVE_EDGE } = require('./native-edge.cjs');
 const { createNativeCapabilityHandlers } = require('./native-capability-handlers.cjs');
+const { MessagingSignalingClient } = require('./messaging-signaling-client.cjs');
 
 const appDataOverride = process.env.FABUSHI_APP_DATA?.trim();
 if (appDataOverride) app.setPath('userData', path.resolve(appDataOverride));
@@ -25,6 +26,80 @@ let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let hostEventPumpStopped = false;
 let hostEventPump = null;
+const messagingAccessCache = new Map();
+let messagingSignalingClient = null;
+
+function normalizeMessagingAccessParams(params) {
+  const deviceId = String(params?.deviceId || 'desktop:electron').trim();
+  const sessionId = String(params?.sessionId || '').trim();
+  if (!deviceId || deviceId.length > 200 || !sessionId || sessionId.length > 200) {
+    throw new Error('Messaging access requires a valid deviceId and sessionId.');
+  }
+  return { deviceId, sessionId };
+}
+
+async function getOrIssueMessagingAccess(params, requestedScopes) {
+  const { deviceId, sessionId } = normalizeMessagingAccessParams(params);
+  const scopes = [...new Set(requestedScopes.map((scope) => String(scope)))].sort();
+  const key = `${deviceId}|${sessionId}|${scopes.join(',')}`;
+  const cached = messagingAccessCache.get(key);
+  if (cached && Number(cached.expiresAtMs || 0) > Date.now() + 60_000) return cached;
+  const credential = await host.request('feature.messaging.access.issue', {
+    deviceId,
+    sessionId,
+    scopes,
+    ttlMs: 24 * 60 * 60 * 1000,
+  });
+  if (!credential || typeof credential !== 'object'
+      || typeof credential.actorId !== 'string'
+      || typeof credential.accessToken !== 'string'
+      || credential.accessToken.length < 32) {
+    throw new Error('Fabushi account session did not return a valid messaging credential.');
+  }
+  const normalized = { ...credential, deviceId, sessionId, scopes };
+  messagingAccessCache.set(key, normalized);
+  return normalized;
+}
+
+function callIceServers() {
+  const raw = String(process.env.FABUSHI_CALL_ICE_SERVERS_JSON || '').trim();
+  if (!raw) return [];
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('FABUSHI_CALL_ICE_SERVERS_JSON must be valid JSON.'); }
+  if (!Array.isArray(parsed) || parsed.length > 16) throw new Error('Fabushi call ICE server configuration is invalid.');
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== 'object') throw new Error('Fabushi call ICE server entry is invalid.');
+    const urls = (Array.isArray(entry.urls) ? entry.urls : [entry.urls])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    if (!urls.length || urls.some((url) => !/^(stun|turn|turns):/i.test(url))) {
+      throw new Error('Fabushi call ICE server URLs must use stun:, turn:, or turns:.');
+    }
+    const normalized = { urls };
+    if (entry.username != null) normalized.username = String(entry.username);
+    if (entry.credential != null) normalized.credential = String(entry.credential);
+    return normalized;
+  });
+}
+
+function safeMessagingIdentity(credential) {
+  return {
+    actorId: String(credential.actorId),
+    deviceId: String(credential.deviceId),
+    sessionId: String(credential.sessionId),
+    expiresAtMs: Number(credential.expiresAtMs || 0),
+    scopes: Array.isArray(credential.scopes) ? [...credential.scopes] : [],
+  };
+}
+
+function callSignalingClient() {
+  if (messagingSignalingClient) return messagingSignalingClient;
+  messagingSignalingClient = new MessagingSignalingClient({
+    onSignal(signal) { broadcastNativeEvent('messaging-call-signal', signal); },
+    onStatus(status) { broadcastNativeEvent('messaging-call-status', status); },
+  });
+  return messagingSignalingClient;
+}
 
 const DEEP_LINK_PROTOCOL = 'fabushi:';
 const DEEP_LINK_PENDING_LIMIT = 32;
@@ -354,22 +429,37 @@ function installNativeEdge() {
       await shell.openExternal(safeHttpsUrl(params.url));
       return true;
     },
-    async getMessagingAccessCredential(params) {
-      const deviceId = String(params?.deviceId || '').trim();
-      const sessionId = String(params?.sessionId || '').trim();
-      if (!deviceId || deviceId.length > 200 || !sessionId || sessionId.length > 200) {
-        throw new Error('Messaging access requires a valid deviceId and sessionId.');
-      }
-      const scopes = Array.isArray(params?.scopes)
-        ? params.scopes.map((scope) => String(scope)).slice(0, 16)
-        : [];
-      const ttlMs = Number.isFinite(Number(params?.ttlMs)) ? Number(params.ttlMs) : 24 * 60 * 60 * 1000;
-      return host.request('feature.messaging.access.issue', {
-        deviceId,
-        sessionId,
-        scopes,
-        ttlMs,
+    async getMessagingIdentity(params) {
+      const credential = await getOrIssueMessagingAccess(params, [
+        'messaging', 'calls', 'blobsRead', 'blobsWrite', 'payments', 'miniApps',
+      ]);
+      return safeMessagingIdentity(credential);
+    },
+    async connectMessagingSignaling(params) {
+      const credential = await getOrIssueMessagingAccess(params, ['calls']);
+      const endpoint = String(process.env.FABUSHI_CALL_SIGNAL_ENDPOINT || 'tcp://127.0.0.1:9410').trim();
+      const connection = await callSignalingClient().connect(endpoint, {
+        actorId: credential.actorId,
+        deviceId: credential.deviceId,
+        sessionId: credential.sessionId,
+        accessToken: credential.accessToken,
       });
+      return {
+        ...safeMessagingIdentity(credential),
+        secure: connection.secure === true,
+        iceServers: callIceServers(),
+      };
+    },
+    sendMessagingSignal(params) {
+      const signal = params?.signal;
+      if (!signal || typeof signal !== 'object' || Array.isArray(signal)) {
+        throw new Error('Fabushi call signaling requires a signal object.');
+      }
+      return callSignalingClient().send(signal);
+    },
+    disconnectMessagingSignaling() {
+      callSignalingClient().disconnect();
+      return true;
     },
     getDesktopEnvironment() {
       return {
@@ -811,5 +901,8 @@ app.on('before-quit', () => {
   mahayanaEdgeServer = null;
   nativeEdgeServer?.dispose();
   nativeEdgeServer = null;
+  messagingSignalingClient?.disconnect('app_quit');
+  messagingSignalingClient = null;
+  messagingAccessCache.clear();
   host.close();
 });

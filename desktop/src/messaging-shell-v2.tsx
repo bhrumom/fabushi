@@ -61,6 +61,11 @@ import {
 } from './selfhosted-messaging-client-v2';
 import styles from './messaging-shell.module.css';
 import extra from './messaging-shell-v2.module.css';
+import {
+  FabushiWebRtcController,
+  type IncomingFabushiCall,
+  type WebRtcCallStatus,
+} from './webrtc-call-controller';
 
 type RootSurface = 'ai' | 'messages';
 type MessengerSection =
@@ -115,7 +120,10 @@ type NewDialog =
 type LocalCall = {
   kind: 'voice' | 'video';
   title: string;
-  status: 'requesting' | 'ready' | 'failed';
+  status: WebRtcCallStatus;
+  incoming: boolean;
+  muted: boolean;
+  videoEnabled: boolean;
   error?: string;
 };
 
@@ -264,14 +272,18 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachmentProgress, setAttachmentProgress] = useState<string | null>(null);
   const [localCall, setLocalCall] = useState<LocalCall | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingFabushiCall | null>(null);
   const [miniApp, setMiniApp] = useState<{ id: string; html?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mutedPeerKeys, setMutedPeerKeys] = useState<Set<string>>(() => new Set());
   const [pinnedPeerKeys, setPinnedPeerKeys] = useState<Set<string>>(() => new Set());
   const [archivedPeerKeys, setArchivedPeerKeys] = useState<Set<string>>(() => new Set());
   const activePeerKeyRef = useRef<string | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const peersRef = useRef<PeerItem[]>([]);
+  const webRtcRef = useRef<FabushiWebRtcController | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -307,6 +319,63 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   }, [mutedPeerKeys, pinnedPeerKeys, archivedPeerKeys]);
 
   useEffect(() => {
+    const controller = new FabushiWebRtcController(
+      () => ({ deviceId: selfHosted.deviceId, sessionId: selfHosted.sessionId }),
+      {
+        onIdentity(identity) {
+          selfHosted.actorId = identity.actorId;
+          selfHosted.deviceId = identity.deviceId;
+          selfHosted.sessionId = identity.sessionId;
+        },
+        onIncoming(call) {
+          const peer = peersRef.current.find((candidate) =>
+            candidate.conversationId === call.conversationId || candidate.actorId === call.fromActorId);
+          setIncomingCall(call);
+          setLocalCall({
+            kind: call.kind,
+            title: peer?.title ?? call.fromActorId,
+            status: 'ringing',
+            incoming: true,
+            muted: false,
+            videoEnabled: call.kind === 'video',
+          });
+        },
+        onStatus(status, detail) {
+          setLocalCall((current) => {
+            if (!current) return current;
+            if (status === 'ended') return null;
+            return {
+              ...current,
+              status,
+              error: status === 'failed' ? detail ?? 'WebRTC 连接失败' : current.error,
+            };
+          });
+          if (status === 'connecting' || status === 'active') syncLocalCallMedia();
+        },
+        onRemoteStream(stream) {
+          window.setTimeout(() => {
+            const video = remoteVideoRef.current;
+            const audio = remoteAudioRef.current;
+            if (video) {
+              video.srcObject = stream;
+              if (stream) void video.play().catch(() => {});
+            }
+            if (audio) {
+              audio.srcObject = stream;
+              if (stream) void audio.play().catch(() => {});
+            }
+          }, 0);
+        },
+      },
+    );
+    webRtcRef.current = controller;
+    return () => {
+      if (webRtcRef.current === controller) webRtcRef.current = null;
+      void controller.dispose();
+    };
+  }, [selfHosted]);
+
+  useEffect(() => {
     let closed = false;
     const unsubscribe = transport.subscribe((event) => {
       if (!closed) handleRuntimeEvent(event);
@@ -319,6 +388,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
         try {
           await selfHosted.ensureCurrentActor();
           await selfHosted.sync();
+          void webRtcRef.current?.connect().catch(() => {});
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : String(cause));
         }
@@ -327,7 +397,6 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     return () => {
       closed = true;
       unsubscribe();
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       void transport.close();
     };
   }, [transport, selfHosted]);
@@ -598,6 +667,9 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       id: conversation.id,
       source: 'selfhosted',
       conversationId: conversation.id,
+      actorId: conversation.participants.length === 2
+        ? conversation.participants.find((participant) => participant.actorId !== selfHosted.actorId)?.actorId
+        : undefined,
       kind: selfKind(conversation),
       title: conversation.title,
       subtitle: conversation.description || ({ channel: '频道', group: '群组', saved: '收藏消息', conversation: '私聊', bot: 'Bot' } as const)[selfKind(conversation)],
@@ -613,6 +685,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     });
   }, [conversations, bots, groups, selfConversations, pinnedPeerKeys, archivedPeerKeys]);
 
+  peersRef.current = peers;
   const activePeer = peers.find((peer) => peer.key === activePeerKey) ?? null;
   const visiblePeers = peers.filter((peer) => {
     if (['chats', 'contacts', 'bots', 'groups', 'channels', 'saved', 'archive'].includes(section) && !matchesSection(peer, section)) return false;
@@ -911,29 +984,113 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     }
   }
 
+  function syncLocalCallMedia() {
+    const stream = webRtcRef.current?.localMedia() ?? null;
+    window.setTimeout(() => {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        if (stream) void localVideoRef.current.play().catch(() => {});
+      }
+    }, 0);
+  }
+
   async function startCall(kind: 'voice' | 'video') {
     if (!activePeer) return;
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    setLocalCall({ kind, title: activePeer.title, status: 'requesting' });
+    if (activePeer.source !== 'selfhosted' || !activePeer.conversationId || !activePeer.actorId) {
+      setError('远端通话只对已迁移到 Fabushi 自建协议的一对一联系人开放。');
+      return;
+    }
+    const controller = webRtcRef.current;
+    if (!controller) {
+      setError('Fabushi WebRTC 控制器尚未准备好。');
+      return;
+    }
+    setLocalCall({
+      kind,
+      title: activePeer.title,
+      status: 'ringing',
+      incoming: false,
+      muted: false,
+      videoEnabled: kind === 'video',
+    });
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === 'video' });
-      mediaStreamRef.current = stream;
-      setLocalCall({ kind, title: activePeer.title, status: 'ready' });
-      window.setTimeout(() => {
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          void localVideoRef.current.play().catch(() => {});
-        }
-      }, 0);
+      await controller.start({
+        conversationId: activePeer.conversationId,
+        peerActorId: activePeer.actorId,
+        kind,
+      });
     } catch (cause) {
-      setLocalCall({ kind, title: activePeer.title, status: 'failed', error: cause instanceof Error ? cause.message : String(cause) });
+      setLocalCall({
+        kind,
+        title: activePeer.title,
+        status: 'failed',
+        incoming: false,
+        muted: false,
+        videoEnabled: kind === 'video',
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
     }
   }
 
-  function endCall() {
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
+  async function acceptIncomingCall() {
+    const controller = webRtcRef.current;
+    if (!controller || !incomingCall) return;
+    try {
+      const accepted = await controller.acceptIncoming();
+      setIncomingCall(null);
+      setLocalCall((current) => ({
+        kind: accepted.kind,
+        title: current?.title ?? accepted.peerActorId,
+        status: 'connecting',
+        incoming: true,
+        muted: false,
+        videoEnabled: accepted.kind === 'video',
+      }));
+      syncLocalCallMedia();
+    } catch (cause) {
+      setLocalCall((current) => current ? {
+        ...current,
+        status: 'failed',
+        error: cause instanceof Error ? cause.message : String(cause),
+      } : null);
+    }
+  }
+
+  async function declineIncomingCall() {
+    try {
+      await webRtcRef.current?.declineIncoming();
+    } finally {
+      setIncomingCall(null);
+      setLocalCall(null);
+    }
+  }
+
+  async function endCall() {
+    await webRtcRef.current?.hangup();
+    setIncomingCall(null);
     setLocalCall(null);
+  }
+
+  async function toggleCallMute() {
+    if (!localCall) return;
+    const next = !localCall.muted;
+    await webRtcRef.current?.setMuted(next);
+    setLocalCall((current) => current ? { ...current, muted: next } : null);
+  }
+
+  async function toggleCallVideo() {
+    if (!localCall || localCall.kind !== 'video') return;
+    const next = !localCall.videoEnabled;
+    await webRtcRef.current?.setVideoEnabled(next);
+    setLocalCall((current) => current ? { ...current, videoEnabled: next } : null);
+  }
+
+  async function shareCallScreen() {
+    try {
+      await webRtcRef.current?.startScreenShare();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   }
 
   function toggleLocalSet(setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) {
@@ -1111,7 +1268,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       {messageMenu ? <MessageContextMenu menu={messageMenu} onAction={(action) => void handleMessageAction(action)} /> : null}
       {forwardDialog ? <ForwardMessageDialog message={forwardDialog.message} peers={peers.filter((peer) => peer.source === 'selfhosted' && Boolean(peer.conversationId) && peer.conversationId !== forwardDialog.sourceConversationId)} onClose={() => setForwardDialog(null)} onSelect={(peer) => void forwardToPeer(peer)} /> : null}
       {newDialog ? <NewConversationDialog dialog={newDialog} bots={bots} onChange={setNewDialog} onClose={() => setNewDialog(null)} onSave={() => void saveNewDialog()} /> : null}
-      {localCall ? <CallDialog call={localCall} videoRef={localVideoRef} onEnd={endCall} /> : null}
+      {localCall ? <CallDialog call={localCall} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef} remoteAudioRef={remoteAudioRef} canAccept={Boolean(incomingCall)} onAccept={() => void acceptIncomingCall()} onDecline={() => void declineIncomingCall()} onMute={() => void toggleCallMute()} onVideo={() => void toggleCallVideo()} onShare={() => void shareCallScreen()} onEnd={() => void endCall()} /> : null}
       {miniApp ? <MiniAppDialog app={miniApp} onClose={() => setMiniApp(null)} /> : null}
     </main>
   );
@@ -1175,8 +1332,52 @@ function NewConversationDialog({ dialog, bots, onChange, onClose, onSave }: { di
   </section></div>;
 }
 
-function CallDialog({ call, videoRef, onEnd }: { call: LocalCall; videoRef: React.RefObject<HTMLVideoElement | null>; onEnd: () => void }) {
-  return <div className={styles.backdrop}><section className={styles.callDialog}><header><span className={styles.avatarHuge}>{avatarText(call.title)}</span><strong>{call.title}</strong><small>{call.status === 'requesting' ? '正在请求麦克风/摄像头…' : call.status === 'ready' ? `${call.kind === 'video' ? '视频' : '语音'}媒体已准备` : '无法启动本机媒体'}</small></header>{call.kind === 'video' && call.status === 'ready' ? <video ref={videoRef} muted playsInline className={styles.localVideo} /> : null}{call.error ? <p>{call.error}</p> : null}<div className={styles.callActions}><button type="button"><Mic size={20} /></button>{call.kind === 'video' ? <button type="button"><Video size={20} /></button> : null}<button type="button" className={styles.hangup} onClick={onEnd}><Phone size={21} /></button></div><p className={styles.callNote}>本机 WebRTC 采集已启用；Rust realtime 已定义 Invite/SDP/ICE/群组通话状态，远端 SFU/TURN 传输仍需生产部署。</p></section></div>;
+function CallDialog({
+  call,
+  localVideoRef,
+  remoteVideoRef,
+  remoteAudioRef,
+  canAccept,
+  onAccept,
+  onDecline,
+  onMute,
+  onVideo,
+  onShare,
+  onEnd,
+}: {
+  call: LocalCall;
+  localVideoRef: React.RefObject<HTMLVideoElement | null>;
+  remoteVideoRef: React.RefObject<HTMLVideoElement | null>;
+  remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
+  canAccept: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+  onMute: () => void;
+  onVideo: () => void;
+  onShare: () => void;
+  onEnd: () => void;
+}) {
+  const statusText = call.status === 'ringing'
+    ? call.incoming ? '来电…' : '正在呼叫…'
+    : call.status === 'connecting'
+      ? '正在建立端到端媒体连接…'
+      : call.status === 'active'
+        ? `${call.kind === 'video' ? '视频' : '语音'}通话中`
+        : call.status === 'failed'
+          ? '通话连接失败'
+          : '通话已结束';
+  return <div className={styles.backdrop}><section className={styles.callDialog}>
+    <header><span className={styles.avatarHuge}>{avatarText(call.title)}</span><strong>{call.title}</strong><small>{statusText}</small></header>
+    {call.kind === 'video' ? <div className={extra.callVideoStage}><video ref={remoteVideoRef} autoPlay playsInline className={extra.remoteVideo} /><video ref={localVideoRef} autoPlay muted playsInline className={extra.localVideoPip} /></div> : <audio ref={remoteAudioRef} autoPlay />}
+    {call.error ? <p>{call.error}</p> : null}
+    {canAccept && call.incoming && call.status === 'ringing' ? <div className={styles.callActions}><button type="button" onClick={onDecline} className={styles.hangup}><Phone size={20} /></button><button type="button" onClick={onAccept}><PhoneCall size={20} /></button></div> : <div className={styles.callActions}>
+      <button type="button" data-active={call.muted} onClick={onMute} title={call.muted ? '取消静音' : '静音'}><Mic size={20} /></button>
+      {call.kind === 'video' ? <button type="button" data-active={!call.videoEnabled} onClick={onVideo} title="摄像头"><Video size={20} /></button> : null}
+      {call.kind === 'video' ? <button type="button" onClick={onShare} title="共享屏幕"><Radio size={20} /></button> : null}
+      <button type="button" className={styles.hangup} onClick={onEnd}><Phone size={21} /></button>
+    </div>}
+    <p className={styles.callNote}>Fabushi 自建信令 + WebRTC 一对一媒体；远端信令强制 TLS，NAT 穿透使用部署方配置的自建 STUN/TURN。</p>
+  </section></div>;
 }
 
 function MiniAppDialog({ app, onClose }: { app: { id: string; html?: string }; onClose: () => void }) {
