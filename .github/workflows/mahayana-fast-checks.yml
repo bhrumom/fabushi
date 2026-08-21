@@ -60,6 +60,13 @@ jobs:
           -p mahayana-agent-kernel-bridge
           --profile ci
 
+      - name: Test native orchestration and workspace engines
+        run: >-
+          cargo test
+          -p mahayana-orchestrator
+          -p mahayana-workspace-engine
+          --profile ci
+
       - name: Test protocol and MiniApp bridge
         run: >-
           cargo test
