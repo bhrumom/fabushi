@@ -30,9 +30,11 @@ Require this aggregate check instead of every internal job:
 
 The aggregate check depends on:
 
-- `Flutter quality, tests, build, and web smoke`
-- `Cloudflare Worker syntax and deploy dry-run`
-- `Playwright E2E contract validation`
+- `Frontend checks`
+- `Worker checks`
+- `MCP plugin contracts`
+- `Canonical architecture guardrails`
+- `Electron Feature Host contract`
 
 ### Merge queue
 

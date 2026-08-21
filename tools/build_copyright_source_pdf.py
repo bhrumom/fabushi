@@ -9,7 +9,7 @@ OUTPUT = ROOT / "output" / "pdf" / "发布软件V1.0_源程序鉴别材料.pdf"
 HTML_OUTPUT = ROOT / "output" / "pdf" / "发布软件V1.0_源程序鉴别材料.html"
 SOURCE_ROOT = Path(
     os.environ.get(
-        "FABUSHI_TAURI_SOURCE_ROOT",
+        "FABUSHI_SOURCE_ROOT",
         "/Users/gloriachan/.devspace/worktrees/fabushi-2867ce87",
     )
 )
@@ -19,10 +19,10 @@ SECTIONS = [
     ("frontend/apps/web/src/app/host/host-client.tsx", 1, None),
     ("frontend/apps/web/src/app/host/host.module.css", 1, None),
     ("frontend/apps/web/src/app/host/rich-transcript.tsx", 1, None),
-    ("frontend/apps/web/src/lib/mahayana-host/tauri-transport.ts", 1, None),
+    ("frontend/apps/web/src/lib/mahayana-host/electron-transport.ts", 1, None),
     ("frontend/apps/web/src/lib/mahayana-host/contracts.ts", 1, None),
     ("frontend/apps/web/src/lib/mahayana-host/mock-transport.ts", 1, None),
-    ("apps/fabushi-tauri/src-tauri/src/lib.rs", 1, None),
+    ("desktop/electron/main.cjs", 1, None),
     ("third_party/mahayana/mahayana-rs/mahayana-feature-host/src/lib.rs", 1, None),
     ("third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs", 1, None),
     ("third_party/mahayana/mahayana-rs/mahayana-host/src/lib.rs", 1, None),

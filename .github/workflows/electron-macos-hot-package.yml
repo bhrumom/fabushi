@@ -189,7 +189,6 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             .github/scripts
-            apps/fabushi-tauri/src-tauri
             desktop
             third_party/mahayana/codex-rs
             third_party/mahayana/mahayana-rs

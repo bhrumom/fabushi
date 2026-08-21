@@ -48,7 +48,6 @@ import type {
 } from "../../lib/mahayana-host/contracts";
 import { isElectronMahayanaHostAvailable } from "../../lib/mahayana-host/electron-transport";
 import { MockMahayanaHostTransport } from "../../lib/mahayana-host/mock-transport";
-import { isTauriMahayanaHostAvailable } from "../../lib/mahayana-host/tauri-transport";
 import type { MahayanaHostTransport } from "../../lib/mahayana-host/transport";
 import { MahayanaCoordinator } from "../../lib/mahayana-host/coordinator";
 import {
@@ -1696,7 +1695,7 @@ export default function HostClient() {
     const mode =
       configuredMode === "production" || configuredMode === "test"
         ? configuredMode
-        : isElectronMahayanaHostAvailable() || isTauriMahayanaHostAvailable()
+        : isElectronMahayanaHostAvailable()
           ? "production"
           : "test";
 
