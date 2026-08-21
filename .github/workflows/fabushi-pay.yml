@@ -1,0 +1,62 @@
+name: Fabushi Pay Rust
+
+on:
+  pull_request:
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-bridge/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-protocol/**'
+      - 'docs/fabushi-pay-rust.md'
+      - '.github/workflows/fabushi-pay.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-bridge/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-miniapp-protocol/**'
+      - 'docs/fabushi-pay-rust.md'
+      - '.github/workflows/fabushi-pay.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: fabushi-pay-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Payment core and Mini App contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_INCREMENTAL: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: fabushi-pay-v1
+          cache-all-crates: true
+      - name: Test payment and Mini App contracts
+        run: >-
+          cargo test --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p mahayana-platform-core
+          -p mahayana-miniapp-protocol
+          -p mahayana-miniapp-bridge
+      - name: Clippy payment and Mini App contracts
+        run: >-
+          cargo clippy --locked
+          --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          -p mahayana-platform-core
+          -p mahayana-miniapp-protocol
+          -p mahayana-miniapp-bridge
+          --all-targets -- -D warnings
+      - name: Check workspace formatting
+        run: cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
