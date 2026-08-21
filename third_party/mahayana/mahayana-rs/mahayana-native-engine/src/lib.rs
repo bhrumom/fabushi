@@ -20,7 +20,7 @@ use mahayana_orchestrator::{
 };
 use mahayana_workspace_engine::WorkspaceEngine;
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
@@ -120,7 +120,6 @@ impl NativeEngine {
     fn capabilities(&self) -> CapabilitySet {
         let mut capabilities = vec![
             Capability::Model,
-            Capability::Network,
             Capability::FilesystemRead,
             Capability::FilesystemWrite,
             Capability::Workspace,
@@ -134,6 +133,9 @@ impl NativeEngine {
             Capability::Hooks,
             Capability::ToolProtocol,
         ];
+        if !self.model.is_local() {
+            capabilities.push(Capability::Network);
+        }
         if self.config.enable_process_tools {
             capabilities.push(Capability::Process);
             capabilities.push(Capability::Git);
@@ -547,7 +549,7 @@ impl NativeEngine {
                         let mut scheduler = self.subagents.lock().map_err(|_| {
                             KernelError::Backend("subagent scheduler poisoned".into())
                         })?;
-                        scheduler
+                        let task_id = scheduler
                             .spawn(
                                 None,
                                 name,
@@ -557,11 +559,9 @@ impl NativeEngine {
                             )
                             .map_err(|error| KernelError::Backend(error.to_string()))?;
                         scheduler
-                            .start_next()
-                            .ok_or_else(|| {
-                                KernelError::Backend("subagent concurrency exhausted".into())
-                            })?
-                            .id
+                            .start(&task_id)
+                            .map_err(|error| KernelError::Backend(error.to_string()))?;
+                        task_id
                     };
                     let result = self
                         .run_subagent(goal, interrupted, Arc::clone(&events), operation_id)
@@ -792,8 +792,8 @@ impl EngineBackend for NativeEngine {
                 "native engine does not satisfy the requested capability set".into(),
             ));
         }
-        let interrupted = self.register_operation(&request.operation_id)?;
         let session = self.session(&request.session_id)?;
+        let interrupted = self.register_operation(&request.operation_id)?;
         let result = async {
             let mut session = session.lock().await;
             let prompt_id = session
@@ -993,10 +993,33 @@ fn safe_join(root: &Path, relative: &Path) -> Result<PathBuf, KernelError> {
             "absolute workspace paths are not allowed".into(),
         ));
     }
-    let mut safe = PathBuf::from(root);
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| KernelError::Backend(error.to_string()))?;
+    let mut safe = canonical_root.clone();
     for component in relative.components() {
         match component {
-            Component::Normal(segment) => safe.push(segment),
+            Component::Normal(segment) => {
+                safe.push(segment);
+                if safe.exists() {
+                    let metadata = std::fs::symlink_metadata(&safe)
+                        .map_err(|error| KernelError::Backend(error.to_string()))?;
+                    if metadata.file_type().is_symlink() {
+                        return Err(KernelError::PolicyDenied(format!(
+                            "workspace path crosses a symbolic link: {}",
+                            safe.display()
+                        )));
+                    }
+                    let canonical = safe
+                        .canonicalize()
+                        .map_err(|error| KernelError::Backend(error.to_string()))?;
+                    if !canonical.starts_with(&canonical_root) {
+                        return Err(KernelError::PolicyDenied(
+                            "workspace path escapes the active root".into(),
+                        ));
+                    }
+                }
+            }
             Component::CurDir => {}
             _ => {
                 return Err(KernelError::PolicyDenied(
@@ -1260,7 +1283,7 @@ fn default_system_instructions() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mahayana_core::ModelProviderMode;
+    use mahayana_model::ModelProviderMode;
     use std::collections::VecDeque;
 
     struct FakeModel {
