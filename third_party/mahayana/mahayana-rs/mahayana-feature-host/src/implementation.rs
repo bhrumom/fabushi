@@ -578,15 +578,7 @@ impl FeatureHostController {
             .as_deref()
             .ok_or_else(|| FeatureHostError::Contract("messaging storage is unavailable".into()))?;
         let access_store = FileAccessTokenStore::new(root.join("_messaging").join("access.json"));
-        let grant_seed = format!("{account_fingerprint}|{device_id}|{session_id}|{now_ms}");
-        let grant_digest = Sha256::digest(grant_seed.as_bytes());
-        let grant_id = format!(
-            "grant:{}",
-            grant_digest[..12]
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        );
+        let grant_id = format!("grant:{}", Uuid::new_v4().simple());
         let issued = access_store
             .issue_random(AccessGrant {
                 id: grant_id,

@@ -114,7 +114,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 self.single_service_event(ServerEvent::BlobDeleted { blob_id }, server_time_ms)
             }
             ClientCommand::WalletStatus => {
-                return Ok(vec![self.wallet_status_envelope(&actor_id, server_time_ms)]);
+                Ok(vec![self.wallet_status_envelope(&actor_id, server_time_ms)])
             }
             command => {
                 if let ClientCommand::Sync { limit, .. } = &command {
@@ -229,7 +229,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
             })
             .cloned()
             .collect::<Vec<_>>();
-        recent_entries.sort_by(|left, right| right.created_at_ms.cmp(&left.created_at_ms));
+        recent_entries.sort_by_key(|entry| std::cmp::Reverse(entry.created_at_ms));
         recent_entries.truncate(50);
         ServerEnvelope {
             protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,

@@ -260,10 +260,13 @@ function defaultPermissions() {
 }
 
 export class SelfHostedMessagingClientV2 {
-  readonly actorId: string;
-  readonly deviceId: string;
-  readonly sessionId: string;
+  actorId: string;
+  deviceId: string;
+  sessionId: string;
   private readonly transport: MahayanaHostTransport;
+  private identityResolved = false;
+  private identityPromise: Promise<void> | null = null;
+  private lastIdentityFailureAtMs = 0;
 
   constructor(transport: MahayanaHostTransport, options: { actorId?: string; deviceId?: string; sessionId?: string } = {}) {
     this.transport = transport;
@@ -272,7 +275,33 @@ export class SelfHostedMessagingClientV2 {
     this.sessionId = options.sessionId ?? `messenger:${Date.now().toString(36)}`;
   }
 
+  private async ensureNativeIdentity(): Promise<void> {
+    if (this.identityResolved || typeof window === 'undefined' || typeof window.fabushiNative?.invoke !== 'function') return;
+    if (Date.now() - this.lastIdentityFailureAtMs < 5_000) return;
+    if (!this.identityPromise) {
+      this.identityPromise = window.fabushiNative.invoke<{ actorId?: string; deviceId?: string; sessionId?: string }>(
+        'getMessagingIdentity',
+        { deviceId: this.deviceId, sessionId: this.sessionId },
+      ).then((identity) => {
+        const actorId = String(identity?.actorId || '').trim();
+        const deviceId = String(identity?.deviceId || '').trim();
+        const sessionId = String(identity?.sessionId || '').trim();
+        if (!actorId || !deviceId || !sessionId) throw new Error('Fabushi messaging identity is incomplete.');
+        this.actorId = actorId;
+        this.deviceId = deviceId;
+        this.sessionId = sessionId;
+        this.identityResolved = true;
+      }).catch(() => {
+        this.lastIdentityFailureAtMs = Date.now();
+      }).finally(() => {
+        this.identityPromise = null;
+      });
+    }
+    await this.identityPromise;
+  }
+
   async execute(command: MessagingClientEnvelope['command']): Promise<void> {
+    await this.ensureNativeIdentity();
     const requestId = `messaging-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const envelope: MessagingClientEnvelope = {
       protocolVersion: FABUSHI_MESSAGING_PROTOCOL_VERSION,
