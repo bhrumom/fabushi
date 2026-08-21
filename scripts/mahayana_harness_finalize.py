@@ -13,7 +13,7 @@ def patch_core() -> None:
     path = ROOT / "mahayana-harness/src/lib.rs"
     text = path.read_text()
 
-    if "NotFound(String)," not in text:
+    if "\n    NotFound(String)," not in text:
         anchor = '    #[error("state mutex is poisoned")]\n    StatePoisoned,\n'
         require(text, anchor, "core error enum")
         text = text.replace(
