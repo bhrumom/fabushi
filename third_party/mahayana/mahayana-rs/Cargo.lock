@@ -5646,6 +5646,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabushi-messaging-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fabushi-official-miniapps"
 version = "0.1.0"
 dependencies = [
@@ -9322,6 +9331,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "fabushi-messaging-core",
  "mahayana-computer",
  "mahayana-core",
  "mahayana-host",
@@ -9547,6 +9557,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "fabushi-messaging-core",
  "mahayana-conversation",
  "mahayana-core",
  "mahayana-platform-client",

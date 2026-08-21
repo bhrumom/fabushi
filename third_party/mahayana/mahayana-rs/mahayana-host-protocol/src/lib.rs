@@ -1046,6 +1046,12 @@ pub enum FeatureCommand {
         #[serde(rename = "miniAppId")]
         mini_app_id: String,
     },
+    #[serde(rename = "messaging.execute")]
+    MessagingExecute {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        envelope: Value,
+    },
     #[serde(rename = "capability.request")]
     CapabilityRequest {
         #[serde(rename = "requestId")]
@@ -1791,6 +1797,7 @@ impl FeatureCommand {
             | Self::AutomationRun { request_id, .. }
             | Self::MarketplaceInstall { request_id, .. }
             | Self::MiniAppOpen { request_id, .. }
+            | Self::MessagingExecute { request_id, .. }
             | Self::CapabilityRequest { request_id, .. }
             | Self::ConnectorList { request_id }
             | Self::ConnectorConnect { request_id, .. }
@@ -2055,6 +2062,13 @@ pub enum HostEvent {
         #[serde(rename = "conversationId")]
         conversation_id: String,
         messages: Vec<ConversationMessage>,
+    },
+    #[serde(rename = "messaging.event")]
+    MessagingEvent {
+        timestamp: String,
+        #[serde(rename = "requestId")]
+        request_id: String,
+        envelope: Value,
     },
     #[serde(rename = "capability.listed")]
     CapabilityListed {
@@ -2548,6 +2562,7 @@ impl HostEvent {
             Self::SecretProvided { .. } => "secret.provided",
             Self::ConversationListed { .. } => "conversation.listed",
             Self::ConversationOpened { .. } => "conversation.opened",
+            Self::MessagingEvent { .. } => "messaging.event",
             Self::CapabilityListed { .. } => "capability.listed",
             Self::AutomationListed { .. } => "automation.listed",
             Self::AutomationChanged { .. } => "automation.changed",

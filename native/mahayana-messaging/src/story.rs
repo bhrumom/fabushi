@@ -52,7 +52,12 @@ pub struct Story {
 }
 
 impl Story {
-    pub fn is_visible_to(&self, actor_id: &ActorId, is_contact: bool, is_close_friend: bool) -> bool {
+    pub fn is_visible_to(
+        &self,
+        actor_id: &ActorId,
+        is_contact: bool,
+        is_close_friend: bool,
+    ) -> bool {
         if &self.owner_id == actor_id {
             return true;
         }
@@ -70,11 +75,7 @@ impl Story {
         }
     }
 
-    pub fn record_view(
-        &mut self,
-        actor_id: ActorId,
-        viewed_at_ms: i64,
-    ) -> Result<(), StoryError> {
+    pub fn record_view(&mut self, actor_id: ActorId, viewed_at_ms: i64) -> Result<(), StoryError> {
         if viewed_at_ms > self.expires_at_ms && !self.pinned_to_profile {
             return Err(StoryError::Expired(self.id.clone()));
         }
