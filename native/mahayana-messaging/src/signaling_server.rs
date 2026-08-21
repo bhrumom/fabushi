@@ -11,7 +11,11 @@ use thiserror::Error;
 pub const MAX_SIGNAL_FRAME_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum SignalingClientFrame {
     Hello {
         access_token: String,
@@ -26,7 +30,11 @@ pub enum SignalingClientFrame {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum SignalingServerFrame {
     Ready { actor_id: ActorId },
     Signal { signal: CallSignal },
@@ -123,12 +131,9 @@ impl CallSignalingTcpServer {
             let _ = thread::Builder::new()
                 .name("fabushi-call-signal-connection".into())
                 .spawn(move || {
-                    if let Err(error) = handle_connection(
-                        stream,
-                        hub,
-                        token.as_str(),
-                        max_frame_bytes,
-                    ) {
+                    if let Err(error) =
+                        handle_connection(stream, hub, token.as_str(), max_frame_bytes)
+                    {
                         eprintln!("Fabushi call signaling connection failed: {error}");
                     }
                 });
@@ -343,10 +348,7 @@ mod tests {
         let payload = format!("{}\nnext\n", "x".repeat(32));
         let mut cursor = Cursor::new(payload.into_bytes());
         let error = read_line_limited(&mut cursor, 16).unwrap_err();
-        assert!(matches!(
-            error,
-            CallSignalingServerError::FrameTooLarge(16)
-        ));
+        assert!(matches!(error, CallSignalingServerError::FrameTooLarge(16)));
         let next = read_line_limited(&mut cursor, 16).unwrap().unwrap();
         assert_eq!(next, b"next");
     }

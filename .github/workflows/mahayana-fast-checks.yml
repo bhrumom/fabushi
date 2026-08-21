@@ -38,7 +38,6 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /apps/fabushi-tauri/src-tauri/**
             /native/mahayana-messaging/**
             /third_party/mahayana/**
 

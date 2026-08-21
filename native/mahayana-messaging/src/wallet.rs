@@ -254,7 +254,11 @@ impl WalletLedger {
         Ok(entry)
     }
 
-    pub fn freeze(&mut self, account_id: &WalletAccountId, frozen: bool) -> Result<(), WalletError> {
+    pub fn freeze(
+        &mut self,
+        account_id: &WalletAccountId,
+        frozen: bool,
+    ) -> Result<(), WalletError> {
         let account = self
             .accounts
             .get_mut(account_id)
@@ -338,7 +342,9 @@ mod tests {
         ledger
             .create_account(seller.clone(), ActorId::new("human:seller"), 1)
             .unwrap();
-        ledger.credit("credit:1", &buyer, usd(1_000), None, 2).unwrap();
+        ledger
+            .credit("credit:1", &buyer, usd(1_000), None, 2)
+            .unwrap();
         let transfer = ledger
             .transfer(
                 "pay:1",

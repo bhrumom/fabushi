@@ -34,10 +34,6 @@ import {
   ElectronMahayanaHostTransport,
   isElectronMahayanaHostAvailable,
 } from "./electron-transport";
-import {
-  isTauriMahayanaHostAvailable,
-  TauriMahayanaHostTransport,
-} from "./tauri-transport";
 import type {
   MahayanaHostTransport,
   RuntimeEventListener,
@@ -550,9 +546,7 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
   constructor(options: { authenticated?: boolean } = {}) {
     this.native = isElectronMahayanaHostAvailable()
       ? new ElectronMahayanaHostTransport()
-      : isTauriMahayanaHostAvailable()
-        ? new TauriMahayanaHostTransport()
-        : null;
+      : null;
     if (!this.native && options.authenticated) {
       this.auth = {
         loggedIn: true,

@@ -60,8 +60,14 @@ grep -Fq "contextBridge.exposeInMainWorld('mahayana', mahayana)" "$preload" || {
 grep -Fq 'return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);' "$preload" || { echo "Electron preload runtime-event subscription is missing" >&2; exit 1; }
 grep -Fq "contextBridge.exposeInMainWorld('fabushiNative'" "$preload" || { echo "Electron preload native desktop bridge is missing" >&2; exit 1; }
 
-grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || { echo "Browser host selector does not delegate to Electron transport" >&2; exit 1; }
-grep -Fq 'isElectronMahayanaHostAvailable() || isTauriMahayanaHostAvailable()' "$host_client" || { echo "Host UI does not select production mode for Electron" >&2; exit 1; }
+grep -Fq 'new ElectronMahayanaHostTransport()' "$mock_transport" || {
+  echo "Browser host selector does not delegate to Electron transport" >&2
+  exit 1
+}
+grep -Fq 'isElectronMahayanaHostAvailable()' "$host_client" || {
+  echo "Host UI does not select production mode for Electron" >&2
+  exit 1
+}
 grep -Fq "ipcMain.handle('fabushi:window-focused'" "$main" || { echo "window focus IPC missing" >&2; exit 1; }
 grep -Fq "ipcMain.handle('fabushi:open-system-settings'" "$main" || { echo "system settings IPC missing" >&2; exit 1; }
 grep -Fq 'openSystemSettings(pane)' "$preload" || { echo "system settings preload bridge missing" >&2; exit 1; }

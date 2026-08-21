@@ -20,7 +20,11 @@ pub struct AuthenticatedClientFrame {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
 pub enum ServerFrame {
     Events { events: Vec<ServerEnvelope> },
     Error { code: String, message: String },
@@ -117,12 +121,9 @@ impl MessagingTcpServer {
             let service = Arc::clone(&self.service);
             let token = Arc::clone(&token);
             thread::spawn(move || {
-                if let Err(error) = handle_connection(
-                    stream,
-                    service,
-                    token.as_str(),
-                    max_frame_bytes,
-                ) {
+                if let Err(error) =
+                    handle_connection(stream, service, token.as_str(), max_frame_bytes)
+                {
                     eprintln!("Fabushi messaging connection failed: {error}");
                 }
             });
