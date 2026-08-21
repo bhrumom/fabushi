@@ -157,9 +157,6 @@ pub fn validate_account_oauth_schema(schema: &str) -> Result<(), SchemaError> {
 mod identity_auth;
 
 #[cfg(target_arch = "wasm32")]
-mod payment_api;
-
-#[cfg(target_arch = "wasm32")]
 mod worker_api;
 
 #[cfg(test)]
