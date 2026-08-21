@@ -83,5 +83,5 @@ test('router rejects invalid signed JWTs before legacy meditation handlers can a
   assert.equal(response.status, 401);
   const body = await response.json();
   assert.equal(body.success, false);
-  assert.match(body.error, /认证失败/);
+  assert.match(body.error, /Token无效或已过期/);
 });
