@@ -70,7 +70,7 @@ export async function handleCreateAlipayOrder(request, env, db) {
     if (!planDetails) return jsonResponse({ error: '无效的付费项目' }, 400);
 
     const { user } = auth;
-    const isAdminUser = isAdmin(user.email);
+    const isAdminUser = isAdmin(user.email, env);
     const finalAmount = isAdminUser ? planDetails.adminPrice : planDetails.price;
     const normalizedAmount = normalizeMoney(finalAmount);
     if (normalizedAmount === null || normalizedAmount === '0.00') return jsonResponse({ error: '订单金额无效' }, 500);
@@ -207,6 +207,11 @@ async function ensurePaymentReceiptTable(env) {
       received_at TEXT NOT NULL
     )
   `).run();
+  await env.DB.prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_receipts_provider_trade_no
+    ON payment_receipts(provider, provider_trade_no)
+    WHERE provider_trade_no IS NOT NULL
+  `).run();
 }
 
 export async function handleAlipayNotify(request, env, db) {
@@ -234,6 +239,9 @@ export async function handleAlipayNotify(request, env, db) {
     if (!outTradeNo || outTradeNo.length > 160) return new Response('failure', { status: 400 });
     const order = await db.getOrder(outTradeNo);
     if (!order) return new Response('failure', { status: 404 });
+    // Historical orders that were already fulfilled before the receipt ledger
+    // existed must never be fulfilled a second time when Alipay retries them.
+    if (order.status === 'PAID') return new Response('success', { status: 200 });
     if (normalizeMoney(params.total_amount) !== normalizeMoney(order.amount)) {
       console.warn('Rejected Alipay callback with amount mismatch', outTradeNo);
       return new Response('failure', { status: 400 });
@@ -248,6 +256,14 @@ export async function handleAlipayNotify(request, env, db) {
     await ensurePaymentReceiptTable(env);
     const existing = await env.DB.prepare('SELECT order_id FROM payment_receipts WHERE order_id = ?').bind(outTradeNo).first();
     if (existing) return new Response('success', { status: 200 });
+    if (params.trade_no) {
+      const reusedTrade = await env.DB.prepare('SELECT order_id FROM payment_receipts WHERE provider = ? AND provider_trade_no = ?')
+        .bind('alipay', params.trade_no).first();
+      if (reusedTrade && reusedTrade.order_id !== outTradeNo) {
+        console.warn('Rejected Alipay trade number replay across orders');
+        return new Response('failure', { status: 409 });
+      }
+    }
 
     const now = new Date();
     const statements = [
@@ -281,8 +297,6 @@ export async function handleAlipayNotify(request, env, db) {
     try {
       await env.DB.batch(statements);
     } catch (error) {
-      // Concurrent duplicate callbacks race on payment_receipts.order_id. The
-      // winning batch is atomic; losers return success only after observing it.
       const receipt = await env.DB.prepare('SELECT order_id FROM payment_receipts WHERE order_id = ?').bind(outTradeNo).first();
       if (receipt) return new Response('success', { status: 200 });
       throw error;
