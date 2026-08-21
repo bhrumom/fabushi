@@ -1,0 +1,44 @@
+name: Mahayana kernel cutover
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/apply-mahayana-kernel-cutover.py
+      - .github/workflows/mahayana-kernel-cutover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cutover:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Apply guarded runtime cutover
+        run: python3 .github/scripts/apply-mahayana-kernel-cutover.py
+
+      - name: Format Rust workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: |
+          rustup component add rustfmt
+          cargo fmt --all
+
+      - name: Commit cutover
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Cutover already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs/mahayana-runtime/src/lib.rs
+          git commit -m "feat(mahayana): cut production conversations over to kernel"
+          git push origin "HEAD:${{ github.head_ref || github.ref_name }}"
