@@ -478,112 +478,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  github-release:
-    name: Publish accepted Apple packages to GitHub Release
-    needs: [resolve, macos-electron, ios-native]
-    if: >-
-      always() &&
-      needs.resolve.result == 'success' &&
-      (needs.resolve.outputs.macos != 'true' || needs.macos-electron.result == 'success') &&
-      (needs.resolve.outputs.ios != 'true' || needs.ios-native.result == 'success')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      actions: read
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      url: ${{ steps.release.outputs.url }}
-    steps:
-      - name: Download accepted macOS package
-        if: needs.resolve.outputs.macos == 'true'
-        uses: actions/download-artifact@v8
-        with:
-          name: apple-store-macos-${{ needs.resolve.outputs.build_number }}
-          path: github-release-assets/macos
-
-      - name: Download accepted iOS package
-        if: needs.resolve.outputs.ios == 'true'
-        uses: actions/download-artifact@v8
-        with:
-          name: apple-store-ios-${{ needs.resolve.outputs.build_number }}
-          path: github-release-assets/ios
-
-      - id: release
-        name: Publish immutable GitHub Release with Apple packages
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
-          APP_VERSION: ${{ needs.resolve.outputs.app_version }}
-          RELEASE_BUILD_NUMBER: ${{ needs.resolve.outputs.build_number }}
-          RELEASE_TARGET: ${{ inputs.target }}
-        run: |
-          set -euo pipefail
-          mkdir -p github-release-assets/final
-
-          if [ "$RELEASE_TARGET" = both ]; then
-            release_tag="apple-v${APP_VERSION}-${RELEASE_BUILD_NUMBER}"
-          else
-            release_tag="apple-v${APP_VERSION}-${RELEASE_BUILD_NUMBER}-${RELEASE_TARGET}"
-          fi
-
-          if gh release view "$release_tag" >/dev/null 2>&1; then
-            echo "GitHub Release $release_tag already exists. Published releases are immutable; choose a new Apple build number before rerunning this target." >&2
-            exit 2
-          fi
-
-          find github-release-assets -type f \( -name '*.pkg' -o -name '*.ipa' \) -exec cp {} github-release-assets/final/ \;
-          mapfile -t packages < <(find github-release-assets/final -maxdepth 1 -type f \( -name '*.pkg' -o -name '*.ipa' \) | sort)
-          if [ "${#packages[@]}" -eq 0 ]; then
-            echo 'No accepted Apple package was downloaded for GitHub Release publishing.' >&2
-            exit 1
-          fi
-
-          (
-            cd github-release-assets/final
-            find . -maxdepth 1 -type f \( -name '*.pkg' -o -name '*.ipa' \) -print0 \
-              | sort -z \
-              | xargs -0 sha256sum \
-              | sed 's#  \./#  #' > SHA256SUMS.txt
-          )
-
-          notes="$RUNNER_TEMP/apple-github-release-notes.md"
-          {
-            echo "# Fabushi Apple ${APP_VERSION}"
-            echo
-            echo "Apple build: \`${RELEASE_BUILD_NUMBER}\`"
-            echo
-            echo "Source: \`${SOURCE_SHA}\`"
-            echo
-            echo 'The attached Apple packages are the exact artifacts accepted by App Store Connect in this workflow run.'
-            echo
-            echo '## Packages'
-            for package in "${packages[@]}"; do
-              echo "- \`$(basename "$package")\`"
-            done
-            echo '- `SHA256SUMS.txt`'
-          } > "$notes"
-
-          mapfile -t assets < <(find github-release-assets/final -maxdepth 1 -type f -print | sort)
-          release_url="$(gh release create "$release_tag" "${assets[@]}" \
-            --target "$SOURCE_SHA" \
-            --title "Fabushi Apple ${APP_VERSION}+${RELEASE_BUILD_NUMBER}" \
-            --notes-file "$notes" \
-            --latest)"
-
-          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
-          echo "url=$release_url" >> "$GITHUB_OUTPUT"
-          {
-            echo '## GitHub Release published'
-            echo
-            echo "- Tag: \`$release_tag\`"
-            echo "- Release: $release_url"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   result:
     name: Apple Store delivery result
-    needs: [resolve, macos-electron, ios-native, github-release]
+    needs: [resolve, macos-electron, ios-native]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -595,7 +492,6 @@ jobs:
           IOS_SELECTED: ${{ needs.resolve.outputs.ios }}
           MAC_RESULT: ${{ needs.macos-electron.result }}
           IOS_RESULT: ${{ needs.ios-native.result }}
-          GITHUB_RELEASE_RESULT: ${{ needs.github-release.result }}
         run: |
           set -euo pipefail
           failed=false
@@ -607,9 +503,5 @@ jobs:
             echo "Native iOS delivery failed: $IOS_RESULT" >&2
             failed=true
           fi
-          if [ "$GITHUB_RELEASE_RESULT" != success ]; then
-            echo "GitHub Release publishing failed: $GITHUB_RELEASE_RESULT" >&2
-            failed=true
-          fi
           if [ "$failed" = true ]; then exit 1; fi
-          echo 'All selected Apple Store uploads were accepted by App Store Connect and published to GitHub Release.'
+          echo 'All selected Apple Store uploads were accepted by App Store Connect.'
