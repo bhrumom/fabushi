@@ -34,7 +34,9 @@ const ACP_HANDLE: &str = "acp.handle";
 #[async_trait]
 impl TerminalProvider for ToolHostAdapters {
     async fn open(&self, cwd: Option<&str>) -> HarnessResult<String> {
-        let value = self.invoke_value(TERMINAL_OPEN, json!({"cwd": cwd})).await?;
+        let value = self
+            .invoke_value(TERMINAL_OPEN, json!({"cwd": cwd}))
+            .await?;
         value
             .get("terminalId")
             .and_then(Value::as_str)
@@ -129,9 +131,7 @@ impl CompactionProvider for ToolHostAdapters {
             .and_then(Value::as_str)
             .or_else(|| value.as_str())
             .map(str::to_string)
-            .ok_or_else(|| {
-                HarnessError::ToolExecution("compaction.run returned no summary".into())
-            })
+            .ok_or_else(|| HarnessError::ToolExecution("compaction.run returned no summary".into()))
     }
 }
 
@@ -426,7 +426,8 @@ fn validate_logical_name(value: &str, field: &str) -> HarnessResult<()> {
 }
 
 fn has_parent_escape(path: &Path) -> bool {
-    path.components().any(|component| component == Component::ParentDir)
+    path.components()
+        .any(|component| component == Component::ParentDir)
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -475,7 +476,10 @@ mod tests {
     async fn memory_storage_round_trips() {
         let storage = MemoryStorageProvider::default();
         storage.put("session", "one", b"value").await.unwrap();
-        assert_eq!(storage.get("session", "one").await.unwrap(), Some(b"value".to_vec()));
+        assert_eq!(
+            storage.get("session", "one").await.unwrap(),
+            Some(b"value".to_vec())
+        );
         storage.delete("session", "one").await.unwrap();
         assert_eq!(storage.get("session", "one").await.unwrap(), None);
     }
