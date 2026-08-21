@@ -12,7 +12,14 @@ pub mod capability;
 pub const RUNTIME_ABI_VERSION: u32 = 1;
 pub const CONVERSATION_SCHEMA_VERSION: u32 = 1;
 pub const MODEL_RUNTIME_VERSION: u32 = 1;
-pub const CODEX_ASSISTANT_CONVERSATION_ID: &str = "codex:agent:assistant";
+pub const MAHAYANA_AGENT_CONVERSATION_ID: &str = "mahayana:agent:assistant";
+/// Read compatibility only. New Mahayana state must use
+/// [`MAHAYANA_AGENT_CONVERSATION_ID`].
+pub const LEGACY_CODEX_ASSISTANT_CONVERSATION_ID: &str = "codex:agent:assistant";
+/// Source compatibility for older downstream crates. This constant deliberately
+/// points at the canonical Mahayana id so new writes cannot create legacy ids.
+#[deprecated(note = "use MAHAYANA_AGENT_CONVERSATION_ID")]
+pub const CODEX_ASSISTANT_CONVERSATION_ID: &str = MAHAYANA_AGENT_CONVERSATION_ID;
 pub const DEFAULT_DEEPSEEK_MODEL: &str = "deepseek-chat";
 pub const DEFAULT_DACHENG_RESPONSES_BASE_URL: &str = "https://api.ombhrum.com/codex-deepseek/v1";
 
@@ -126,7 +133,8 @@ impl Default for RuntimeConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PeerKind {
-    CodexAi,
+    #[serde(alias = "codexAi")]
+    MahayanaAi,
     TelegramContact { user_id: i64 },
     MahayanaContact { contact_id: String },
     MiniApp { app_id: String },
@@ -135,7 +143,7 @@ pub enum PeerKind {
 impl PeerKind {
     pub fn provider_key(&self) -> &'static str {
         match self {
-            Self::CodexAi => "codex",
+            Self::MahayanaAi => "mahayana-agent",
             Self::TelegramContact { .. } => "telegram",
             Self::MahayanaContact { .. } => "mahayana-social",
             Self::MiniApp { .. } => "miniapp",
@@ -155,15 +163,20 @@ pub struct Conversation {
 }
 
 impl Conversation {
-    pub fn codex_assistant() -> Self {
+    pub fn mahayana_assistant() -> Self {
         Self {
-            id: ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()),
+            id: ConversationId(MAHAYANA_AGENT_CONVERSATION_ID.to_string()),
             title: "Mahayana（大乘 AI）".to_string(),
-            peer: PeerKind::CodexAi,
+            peer: PeerKind::MahayanaAi,
             pinned: true,
             unread_count: 0,
             updated_at_ms: 0,
         }
+    }
+
+    #[deprecated(note = "use Conversation::mahayana_assistant")]
+    pub fn codex_assistant() -> Self {
+        Self::mahayana_assistant()
     }
 }
 
@@ -422,8 +435,8 @@ pub struct RuntimeStatus {
     pub providers: Vec<String>,
 }
 
-/// Provider-reported model token counts. These values are projected from the
-/// Codex Responses usage event and are never estimated by the Mahayana host.
+/// Provider-reported model token counts. Mahayana never estimates these values
+/// when a backend does not provide authoritative usage.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelTokenUsage {
@@ -438,8 +451,8 @@ pub struct ModelTokenUsage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelTokenUsageSnapshot {
-    /// Codex supplies the cumulative thread total. Lightweight Responses-only
-    /// runtimes omit it instead of pretending a client-side estimate is authoritative.
+    /// Backends may supply a cumulative thread total. Lightweight runtimes omit
+    /// it instead of pretending a client-side estimate is authoritative.
     pub total: Option<ModelTokenUsage>,
     pub last: ModelTokenUsage,
     pub model_context_window: Option<i64>,
@@ -553,26 +566,36 @@ mod tests {
     }
 
     #[test]
-    fn command_wire_contract_uses_stable_type_and_camel_case_ids() {
+    fn command_wire_contract_writes_canonical_mahayana_identity() {
         let command = RuntimeCommand::SendMessage {
-            conversation_id: ConversationId(CODEX_ASSISTANT_CONVERSATION_ID.to_string()),
+            conversation_id: ConversationId(MAHAYANA_AGENT_CONVERSATION_ID.to_string()),
             text: "你好".to_string(),
             client_message_id: Some("client-1".to_string()),
             hidden: false,
         };
         let json = serde_json::to_value(command).expect("serialize command");
         assert_eq!(json["@type"], "mahayana.conversation.send");
-        assert_eq!(json["conversationId"], CODEX_ASSISTANT_CONVERSATION_ID);
+        assert_eq!(json["conversationId"], MAHAYANA_AGENT_CONVERSATION_ID);
         assert_eq!(json["clientMessageId"], "client-1");
     }
 
     #[test]
-    fn codex_assistant_is_a_pinned_conversation() {
-        let conversation = Conversation::codex_assistant();
-        assert_eq!(conversation.id.as_str(), CODEX_ASSISTANT_CONVERSATION_ID);
+    fn mahayana_assistant_is_a_pinned_canonical_conversation() {
+        let conversation = Conversation::mahayana_assistant();
+        assert_eq!(conversation.id.as_str(), MAHAYANA_AGENT_CONVERSATION_ID);
         assert_eq!(conversation.title, "Mahayana（大乘 AI）");
-        assert_eq!(conversation.peer, PeerKind::CodexAi);
+        assert_eq!(conversation.peer, PeerKind::MahayanaAi);
+        assert_eq!(conversation.peer.provider_key(), "mahayana-agent");
         assert!(conversation.pinned);
+    }
+
+    #[test]
+    fn legacy_peer_kind_deserializes_but_serializes_as_mahayana() {
+        let legacy = serde_json::json!({"type": "codexAi"});
+        let peer: PeerKind = serde_json::from_value(legacy).expect("legacy peer");
+        assert_eq!(peer, PeerKind::MahayanaAi);
+        let encoded = serde_json::to_value(peer).expect("serialize peer");
+        assert_eq!(encoded["type"], "mahayanaAi");
     }
 
     #[test]

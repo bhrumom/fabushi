@@ -5,12 +5,8 @@ on:
     paths:
       - native/global-dharma/**
       - third_party/mahayana/codex-rs/**
-      - third_party/mahayana/mahayana-rs/mahayana-agent-codex/**
-      - third_party/mahayana/mahayana-rs/mahayana-agent-responses/**
-      - third_party/mahayana/mahayana-rs/mahayana-cli/**
-      - third_party/mahayana/mahayana-rs/mahayana-core/**
-      - third_party/mahayana/mahayana-rs/mahayana-ffi/**
-      - third_party/mahayana/mahayana-rs/mahayana-runtime/**
+      - third_party/mahayana/mahayana-rs/**
+      - scripts/check-mahayana-source-boundary.py
       - scripts/install-mahayana.sh
       - scripts/test-install-mahayana.sh
       - .github/workflows/global-dharma-rust.yml
@@ -56,6 +52,8 @@ jobs:
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
+      - name: Enforce Mahayana vendor boundary and source provenance
+        run: python3 scripts/check-mahayana-source-boundary.py
       - name: Restore Mahayana Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -67,8 +65,10 @@ jobs:
           cargo test --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
           --package mahayana-core
+          --package mahayana-agent
           --package mahayana-agent-codex
           --package mahayana-agent-responses
+          --package mahayana-conversation
           --package mahayana-runtime
           --package mahayana-ffi
           --package mahayana-cli
@@ -104,6 +104,7 @@ jobs:
           cp third_party/mahayana/LICENSE dist/${{ matrix.target }}/share/licenses/codex/LICENSE
           cp third_party/mahayana/mahayana-rs/UPSTREAM.md dist/${{ matrix.target }}/share/mahayana/UPSTREAM.md
           cp third_party/mahayana/mahayana-rs/UPSTREAM.lock dist/${{ matrix.target }}/share/mahayana/UPSTREAM.lock
+          cp third_party/mahayana/mahayana-rs/SOURCES.lock dist/${{ matrix.target }}/share/mahayana/SOURCES.lock
           cp -R native/global-dharma/deploy native/global-dharma/config dist/${{ matrix.target }}/
           mkdir -p dist/${{ matrix.target }}/share/global-dharma
           cp native/global-dharma/deploy/install-systemd.sh dist/${{ matrix.target }}/share/global-dharma/
