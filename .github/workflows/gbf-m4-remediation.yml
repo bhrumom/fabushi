@@ -1,0 +1,138 @@
+name: GBF M4 one-shot cross-platform remediation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gbf-m4-remediation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.head_ref == 'gbf/m4-computer-control-convergence-20260822'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt
+
+      - name: Align portable adapter with canonical ComputerAction fields
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          computer = Path('third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs')
+          text = computer.read_text(encoding='utf-8')
+          replacements = {
+              'action.duration_ms.unwrap_or(300)': 'action.wait_ms.unwrap_or(300)',
+              'action.scroll_amount.unwrap_or(1)': 'action.amount.unwrap_or(1)',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one {old!r}, found {count}')
+              text = text.replace(old, new, 1)
+          computer.write_text(text, encoding='utf-8')
+
+          protocol = Path('third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs')
+          text = protocol.read_text(encoding='utf-8')
+          anchor = '''    #[test]\n    fn event_json_uses_camel_case_fields() {\n'''
+          test = r'''    #[test]
+    fn computer_action_duration_and_scroll_amount_match_the_react_contract() {
+        let action: ComputerAction = serde_json::from_str(
+            r#"{"action":"drag","x":1,"y":2,"x2":3,"y2":4,"durationMs":375,"amount":7}"#,
+        )
+        .expect("decode computer action");
+        assert_eq!(action.wait_ms, Some(375));
+        assert_eq!(action.amount, Some(7));
+        let value = serde_json::to_value(&action).expect("encode computer action");
+        assert_eq!(value["durationMs"], 375);
+        assert_eq!(value["amount"], 7);
+        assert!(value.get("waitMs").is_none());
+    }
+
+    #[test]
+    fn legacy_wait_ms_alias_remains_accepted() {
+        let action: ComputerAction = serde_json::from_str(
+            r#"{"action":"wait","waitMs":250}"#,
+        )
+        .expect("decode legacy wait action");
+        assert_eq!(action.wait_ms, Some(250));
+    }
+
+'''
+          if 'computer_action_duration_and_scroll_amount_match_the_react_contract' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit('protocol test anchor is not unique')
+              text = text.replace(anchor, test + anchor, 1)
+          protocol.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Provision Wayland PipeWire and X11 libraries in Mahayana fast checks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/mahayana-fast-checks.yml')
+          text = workflow.read_text(encoding='utf-8')
+          marker = '''      - name: Restore targeted Cargo cache\n'''
+          step = '''      - name: Install Linux native capture/input dependencies\n        shell: bash\n        run: |\n          sudo apt-get update\n          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \\\n            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev\n\n'''
+          if 'Install Linux native capture/input dependencies' not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit('Mahayana cache step anchor is not unique')
+              text = text.replace(marker, step + marker, 1)
+          workflow.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Remediate production computer-control dependency graph
+        working-directory: chatgpt-vps-control
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          npm audit fix --omit=dev
+          npm test
+          npm audit --omit=dev
+
+      - name: Format and verify canonical protocol tests
+        working-directory: third_party/mahayana/mahayana-rs
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo test --locked -p mahayana-host-protocol --profile ci
+
+      - name: Verify remediation diff
+        shell: bash
+        run: |
+          ! grep -q 'action\.duration_ms' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
+          ! grep -q 'action\.scroll_amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
+          grep -q 'action\.wait_ms' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
+          grep -q 'action\.amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
+          grep -q 'libwayland-dev' .github/workflows/mahayana-fast-checks.yml
+          git diff --check
+
+      - name: Commit remediation and remove one-shot workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/gbf-m4-remediation.yml
+          git config user.name 'fabushi-ci'
+          git config user.email 'fabushi-ci@users.noreply.github.com'
+          git add \
+            .github/workflows/mahayana-fast-checks.yml \
+            chatgpt-vps-control/package.json \
+            chatgpt-vps-control/package-lock.json \
+            third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+          git commit -m 'fix(gbf): close cross-platform computer-control gates'
+          git push origin HEAD:gbf/m4-computer-control-convergence-20260822
