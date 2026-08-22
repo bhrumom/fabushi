@@ -45,6 +45,8 @@ on:
 
 permissions:
   contents: write
+  actions: read
+  checks: read
 
 concurrency:
   group: google-play-delivery-${{ inputs.track }}
@@ -129,6 +131,14 @@ jobs:
             echo "- Track: ${{ inputs.track }}"
             echo "- Status: ${{ inputs.release_status }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require canonical release source gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+          RELEASE_TARGET: android
+        run: bash .github/scripts/require-release-source-gates.sh
 
       - uses: actions/setup-java@v5
         with:
