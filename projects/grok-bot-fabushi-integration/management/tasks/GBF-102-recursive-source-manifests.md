@@ -4,7 +4,7 @@
 - Project Key: GBF
 - Task ID: GBF-102
 - Stage: M1-source-inventory
-- Status: TESTED (merge/main closure pending)
+- Status: RELEASED
 - Objective: 对两个固定历史来源 head 递归枚举 Git mode/type/object/size/path，保证来源树 100% 可重建、可校验。
 - Source requirements: GBR-001, GBR-008
 - Dependencies: GBF-101 pinned refs.
@@ -26,3 +26,5 @@
 ## Result / next
 
 文件级清单已本地轻量验证。继续 GBF-103/104/105 并在同一 M1 PR 中接受 CI。
+
+- Completed: 2026-08-22 17:01+08

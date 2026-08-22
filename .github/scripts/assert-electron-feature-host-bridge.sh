@@ -44,7 +44,10 @@ done
 
 grep -Fq "defineEdge('mahayana-host'" "$edge" || { echo "Mahayana edge descriptor is not declared" >&2; exit 1; }
 grep -Fq "['runtime-event']" "$edge" || { echo "Mahayana runtime-event declaration is missing" >&2; exit 1; }
-grep -Fq 'const allowedHostMethods = new Set(Object.keys(MAHAYANA_EDGE.methods));' "$main" || { echo "Electron main does not derive its compatibility allowlist from MAHAYANA_EDGE" >&2; exit 1; }
+if grep -Fq "ipcMain.handle('fabushi:host'" "$main"; then
+  echo "Electron main must not expose the retired generic fabushi:host IPC channel" >&2
+  exit 1
+fi
 grep -Fq 'Object.keys(MAHAYANA_EDGE.methods).map((method)' "$main" || { echo "Electron main does not derive edge handlers from MAHAYANA_EDGE" >&2; exit 1; }
 grep -Fq 'serveMainEdge(ipcMain, MAHAYANA_EDGE, handlers' "$main" || { echo "Electron main does not serve MAHAYANA_EDGE through the shared edge runtime" >&2; exit 1; }
 grep -Fq "host.request('feature.receive', {})" "$main" || { echo "Electron main runtime event pump is missing" >&2; exit 1; }
@@ -55,6 +58,8 @@ if grep -Eq "require\(['\"]\./" "$preload"; then
   exit 1
 fi
 grep -Fq "const MAHAYANA_EDGE = 'mahayana-host';" "$preload" || { echo "Electron preload Mahayana edge name is missing" >&2; exit 1; }
+grep -Fq 'const EDGE_CONTRACT_VERSION = 1;' "$preload" || { echo "Electron preload edge contract version is missing" >&2; exit 1; }
+grep -Fq 'contractVersion: EDGE_CONTRACT_VERSION' "$preload" || { echo "Electron preload does not expose the edge contract version" >&2; exit 1; }
 grep -Fq 'return `fabushi-edge:${edge}:call:${method}`;' "$preload" || { echo "Electron preload edge call-channel construction is missing" >&2; exit 1; }
 grep -Fq "contextBridge.exposeInMainWorld('mahayana', mahayana)" "$preload" || { echo "Electron preload does not expose the Mahayana bridge" >&2; exit 1; }
 grep -Fq 'return subscribeEdge(MAHAYANA_EDGE, MAHAYANA_RUNTIME_EVENT, listener);' "$preload" || { echo "Electron preload runtime-event subscription is missing" >&2; exit 1; }
@@ -68,6 +73,11 @@ grep -Fq 'isElectronMahayanaHostAvailable()' "$host_client" || {
   echo "Host UI does not select production mode for Electron" >&2
   exit 1
 }
+grep -Fq 'window.mahayana?.contractVersion === ELECTRON_EDGE_CONTRACT_VERSION' "$electron_transport" || { echo "Electron transport does not bind to the versioned Mahayana bridge" >&2; exit 1; }
+if grep -Fq 'window.fabushi?.invoke' "$electron_transport"; then
+  echo "Electron transport must not route Host calls through the generic Fabushi shell facade" >&2
+  exit 1
+fi
 grep -Fq "ipcMain.handle('fabushi:window-focused'" "$main" || { echo "window focus IPC missing" >&2; exit 1; }
 grep -Fq "ipcMain.handle('fabushi:open-system-settings'" "$main" || { echo "system settings IPC missing" >&2; exit 1; }
 grep -Fq 'openSystemSettings(pane)' "$preload" || { echo "system settings preload bridge missing" >&2; exit 1; }

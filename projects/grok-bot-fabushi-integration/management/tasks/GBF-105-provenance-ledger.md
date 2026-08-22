@@ -4,7 +4,7 @@
 - Project Key: GBF
 - Task ID: GBF-105
 - Stage: M1-source-inventory
-- Status: TESTED (merge/main closure pending)
+- Status: RELEASED
 - Objective: 对 Grok 迁移变化面和 0.20 vendor 历史快照建立来源/许可状态/复用策略，保证不明授权代码不会静默进入产品。
 - Source requirements: GBR-008, GBR-009
 - Dependencies: GBF-102.
@@ -28,3 +28,5 @@
 ## Result / next
 
 来源阻塞已显式化且生产 main 不保留 vendor snapshot。后续 GBF-703 需要持续审计迁移 PR，确保 release retained-source blocking=0。
+
+- Completed: 2026-08-22 17:01+08
