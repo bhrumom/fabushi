@@ -7,8 +7,18 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 
+pub mod context;
 pub mod responses;
 
+pub use context::CompactionPlan;
+pub use context::CompactionRequest;
+pub use context::CompactionResult;
+pub use context::ContextBudget;
+pub use context::ContextError;
+pub use context::estimate_history_tokens;
+pub use context::estimate_json_tokens;
+pub use context::plan_compaction;
+pub use context::prepare_compaction;
 pub use responses::ResponsesModelConfig;
 pub use responses::ResponsesModelRuntime;
 
