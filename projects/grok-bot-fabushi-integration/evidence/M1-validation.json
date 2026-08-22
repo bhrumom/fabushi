@@ -1,0 +1,8 @@
+{
+  "refs_exact": true,
+  "latest_manifest_complete": true,
+  "legacy_manifest_complete": true,
+  "capability_zero_unclassified": true,
+  "diff_zero_empty_decision": true,
+  "provenance_zero_unknown": true
+}
