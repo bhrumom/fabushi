@@ -107,15 +107,21 @@ pub fn estimate_json_tokens(value: &Value) -> u64 {
         Value::Null | Value::Bool(_) => 1,
         Value::Number(number) => estimate_text_tokens(&number.to_string()).saturating_add(1),
         Value::String(text) => estimate_text_tokens(text).saturating_add(2),
-        Value::Array(values) => values.iter().fold(JSON_STRUCTURAL_TOKEN_COST, |sum, value| {
-            sum.saturating_add(estimate_json_tokens(value))
-                .saturating_add(JSON_STRUCTURAL_TOKEN_COST)
-        }),
-        Value::Object(values) => values.iter().fold(JSON_STRUCTURAL_TOKEN_COST, |sum, (key, value)| {
-            sum.saturating_add(estimate_text_tokens(key))
-                .saturating_add(estimate_json_tokens(value))
-                .saturating_add(2 * JSON_STRUCTURAL_TOKEN_COST)
-        }),
+        Value::Array(values) => values
+            .iter()
+            .fold(JSON_STRUCTURAL_TOKEN_COST, |sum, value| {
+                sum.saturating_add(estimate_json_tokens(value))
+                    .saturating_add(JSON_STRUCTURAL_TOKEN_COST)
+            }),
+        Value::Object(values) => {
+            values
+                .iter()
+                .fold(JSON_STRUCTURAL_TOKEN_COST, |sum, (key, value)| {
+                    sum.saturating_add(estimate_text_tokens(key))
+                        .saturating_add(estimate_json_tokens(value))
+                        .saturating_add(2 * JSON_STRUCTURAL_TOKEN_COST)
+                })
+        }
     }
 }
 
@@ -152,10 +158,7 @@ pub fn plan_compaction(history: &[Value], budget: ContextBudget) -> CompactionPl
     }
 }
 
-pub fn prepare_compaction(
-    history: &[Value],
-    budget: ContextBudget,
-) -> Option<CompactionRequest> {
+pub fn prepare_compaction(history: &[Value], budget: ContextBudget) -> Option<CompactionRequest> {
     let plan = plan_compaction(history, budget);
     if !plan.required() {
         return None;

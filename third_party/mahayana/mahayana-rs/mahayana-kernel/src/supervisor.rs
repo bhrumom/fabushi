@@ -56,7 +56,9 @@ impl VerificationOracle {
     fn new(name: impl Into<String>, required: bool) -> Result<Self, SupervisorError> {
         let name = name.into();
         if name.trim().is_empty() {
-            return Err(SupervisorError::InvalidOracle("oracle name is empty".into()));
+            return Err(SupervisorError::InvalidOracle(
+                "oracle name is empty".into(),
+            ));
         }
         Ok(Self {
             name,
@@ -842,12 +844,20 @@ mod tests {
         let mut ledger = PermissionLedger::default();
         ledger.remember(key.clone(), PermissionMemory::AllowForSession);
         assert_eq!(
-            ledger.evaluate(&ExecutionPolicy::interactive_default(), &key, RiskLevel::ReadOnly),
+            ledger.evaluate(
+                &ExecutionPolicy::interactive_default(),
+                &key,
+                RiskLevel::ReadOnly
+            ),
             PermissionDecision::Allow
         );
         ledger.remember(key.clone(), PermissionMemory::DenyPermanently);
         assert_eq!(
-            ledger.evaluate(&ExecutionPolicy::interactive_default(), &key, RiskLevel::ReadOnly),
+            ledger.evaluate(
+                &ExecutionPolicy::interactive_default(),
+                &key,
+                RiskLevel::ReadOnly
+            ),
             PermissionDecision::Deny
         );
     }

@@ -69,11 +69,7 @@ pub struct SessionDescriptor {
 }
 
 impl SessionDescriptor {
-    pub fn new(
-        id: SessionId,
-        origin: SessionOrigin,
-        created_at_ms: i64,
-    ) -> Self {
+    pub fn new(id: SessionId, origin: SessionOrigin, created_at_ms: i64) -> Self {
         Self {
             id,
             origin,
@@ -153,10 +149,7 @@ impl SessionRegistry {
         })
     }
 
-    pub fn register(
-        &mut self,
-        mut descriptor: SessionDescriptor,
-    ) -> Result<(), ResilienceError> {
+    pub fn register(&mut self, mut descriptor: SessionDescriptor) -> Result<(), ResilienceError> {
         let key = descriptor.id.as_str().to_string();
         if key.trim().is_empty() {
             return Err(ResilienceError::InvalidSessionId);
@@ -332,7 +325,10 @@ impl SessionRegistry {
             .session(id)
             .ok_or_else(|| ResilienceError::SessionNotFound(id.as_str().to_string()))?
             .state;
-        if !matches!(state, SessionLifecycleState::Active | SessionLifecycleState::Paused) {
+        if !matches!(
+            state,
+            SessionLifecycleState::Active | SessionLifecycleState::Paused
+        ) {
             return Err(ResilienceError::InvalidTransition {
                 session: id.as_str().to_string(),
                 from: state,

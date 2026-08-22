@@ -124,7 +124,8 @@ impl NetworkRule {
                 .host
                 .strip_prefix("*.")
                 .is_some_and(|suffix| host != suffix && host.ends_with(&format!(".{suffix}")));
-        host_matches && (self.ports.is_empty() || port.is_some_and(|port| self.ports.contains(&port)))
+        host_matches
+            && (self.ports.is_empty() || port.is_some_and(|port| self.ports.contains(&port)))
     }
 }
 
@@ -170,10 +171,7 @@ impl SandboxPolicy {
         Self::from_execution_policy(&ExecutionPolicy::mobile_default())
     }
 
-    pub fn with_workspace_root(
-        mut self,
-        root: impl Into<String>,
-    ) -> Result<Self, SandboxError> {
+    pub fn with_workspace_root(mut self, root: impl Into<String>) -> Result<Self, SandboxError> {
         let root = normalize_absolute_path(&root.into())?;
         if !self.workspace_roots.contains(&root) {
             self.workspace_roots.push(root);
@@ -193,11 +191,9 @@ impl SandboxPolicy {
         self
     }
 
-    pub fn allow_environment_read(
-        mut self,
-        name: impl Into<String>,
-    ) -> Result<Self, SandboxError> {
-        self.readable_environment.insert(normalize_env_name(&name.into())?);
+    pub fn allow_environment_read(mut self, name: impl Into<String>) -> Result<Self, SandboxError> {
+        self.readable_environment
+            .insert(normalize_env_name(&name.into())?);
         Ok(self)
     }
 
@@ -205,7 +201,8 @@ impl SandboxPolicy {
         mut self,
         name: impl Into<String>,
     ) -> Result<Self, SandboxError> {
-        self.writable_environment.insert(normalize_env_name(&name.into())?);
+        self.writable_environment
+            .insert(normalize_env_name(&name.into())?);
         Ok(self)
     }
 
@@ -216,9 +213,7 @@ impl SandboxPolicy {
             SandboxRequest::Network { access, host, port } => {
                 self.evaluate_network(*access, host, *port)
             }
-            SandboxRequest::Environment { name, write } => {
-                self.evaluate_environment(name, *write)
-            }
+            SandboxRequest::Environment { name, write } => self.evaluate_environment(name, *write),
             SandboxRequest::ComputerUse { operation } => {
                 if self.allow_computer_use {
                     SandboxVerdict::ask(
@@ -321,10 +316,16 @@ impl SandboxPolicy {
             );
         }
         let Ok(host) = normalize_host(host) else {
-            return SandboxVerdict::denied(RiskLevel::ExternalSideEffect, "network host is invalid");
+            return SandboxVerdict::denied(
+                RiskLevel::ExternalSideEffect,
+                "network host is invalid",
+            );
         };
         if !self.network_rules.is_empty()
-            && !self.network_rules.iter().any(|rule| rule.matches(&host, port))
+            && !self
+                .network_rules
+                .iter()
+                .any(|rule| rule.matches(&host, port))
         {
             return SandboxVerdict::denied(
                 RiskLevel::ExternalSideEffect,
@@ -374,11 +375,9 @@ impl SandboxPolicy {
 
     fn evaluate_capability(&self, capability: Capability, target: &str) -> SandboxVerdict {
         match capability {
-            Capability::Network | Capability::WebSearch => self.evaluate_network(
-                NetworkAccess::Connect,
-                target,
-                None,
-            ),
+            Capability::Network | Capability::WebSearch => {
+                self.evaluate_network(NetworkAccess::Connect, target, None)
+            }
             Capability::Process | Capability::Git => self.evaluate_process(target),
             Capability::ComputerUse => self.evaluate(&SandboxRequest::ComputerUse {
                 operation: target.to_owned(),
@@ -386,9 +385,7 @@ impl SandboxPolicy {
             Capability::FilesystemWrite | Capability::Workspace => {
                 self.evaluate_filesystem(FilesystemAccess::Write, target)
             }
-            Capability::FilesystemRead => {
-                self.evaluate_filesystem(FilesystemAccess::Read, target)
-            }
+            Capability::FilesystemRead => self.evaluate_filesystem(FilesystemAccess::Read, target),
             _ => SandboxVerdict::ask(
                 RiskLevel::ReadOnly,
                 format!("capability is delegated to its Mahayana adapter: {capability:?}"),
@@ -478,7 +475,10 @@ fn normalize_absolute_path_for_evaluation(path: &str) -> Option<String> {
 }
 
 fn path_within(path: &str, root: &str) -> bool {
-    path == root || path.strip_prefix(root).is_some_and(|suffix| suffix.starts_with('/'))
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -578,9 +578,8 @@ mod tests {
 
     #[test]
     fn host_rules_do_not_match_suffix_confusion() {
-        let policy = SandboxPolicy::desktop_default().allow_network_rule(
-            NetworkRule::new("*.example.com", [443]).unwrap(),
-        );
+        let policy = SandboxPolicy::desktop_default()
+            .allow_network_rule(NetworkRule::new("*.example.com", [443]).unwrap());
         assert_eq!(
             policy
                 .evaluate(&SandboxRequest::Network {
