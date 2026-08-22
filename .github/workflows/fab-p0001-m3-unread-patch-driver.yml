@@ -1,11 +1,9 @@
-name: FAB-P0001 M3 unread patch driver
+name: FAB-P0001 M3 explicit closure patch driver
 
 on:
-  workflow_run:
-    workflows:
-      - Electron desktop quality gate
+  issue_comment:
     types:
-      - completed
+      - created
 
 permissions:
   contents: write
@@ -13,30 +11,30 @@ permissions:
 jobs:
   patch:
     if: >-
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_branch == 'fix/fab-p0001-m3-e2e-closure' &&
-      github.event.workflow_run.conclusion == 'failure'
+      github.event.issue.number == 2022 &&
+      github.event.comment.user.login == 'bhrum' &&
+      github.event.comment.body == '/fab-p0001-m3-apply'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - name: Check out the exact M3 closure branch
+        uses: actions/checkout@v5
         with:
           ref: fix/fab-p0001-m3-e2e-closure
           fetch-depth: 1
-      - name: Apply exact actor-scoped unread patch
+
+      - name: Apply exact M3 closure patch
         shell: bash
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
-          engine = Path('native/mahayana-messaging/src/engine.rs')
-          if 'pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>' in engine.read_text():
-              print('actor-scoped unread patch is already present; nothing to change')
-              raise SystemExit(0)
 
           def replace_once(path: str, old: str, new: str) -> None:
               p = Path(path)
               text = p.read_text()
+              if new in text:
+                  return
               count = text.count(old)
               if count != 1:
                   raise SystemExit(f'{path}: expected exactly one match, got {count}')
@@ -98,6 +96,22 @@ jobs:
 
           replace_once(
               'native/mahayana-messaging/src/service.rs',
+              '''            ClientCommand::StopTyping { conversation_id } => {
+                self.typing_event(&actor_id, conversation_id, None, None, server_time_ms)
+            }
+''',
+              '''            ClientCommand::StopTyping { conversation_id } => self.typing_event(
+                &actor_id,
+                conversation_id,
+                None,
+                Some(server_time_ms.saturating_add(TYPING_TTL_MS)),
+                server_time_ms,
+            ),
+''',
+          )
+
+          replace_once(
+              'native/mahayana-messaging/src/service.rs',
               '''    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {
 ''',
               '''    fn project_conversation_for_actor(
@@ -125,8 +139,11 @@ jobs:
                 .cmp(&right.created_at_ms)
                 .then_with(|| left.id.cmp(&right.id))
         });
-        let read_index = last_read
-            .and_then(|message_id| ordered_messages.iter().position(|message| &message.id == message_id));
+        let read_index = last_read.and_then(|message_id| {
+            ordered_messages
+                .iter()
+                .position(|message| &message.id == message_id)
+        });
         let unread = ordered_messages
             .iter()
             .enumerate()
@@ -268,7 +285,180 @@ jobs:
 ''',
           )
 
-          Path('native/mahayana-messaging/tests/unread_projection_contract.rs').write_text(r'''use fabushi_messaging_core::*;
+          replace_once(
+              'desktop/e2e/messenger.spec.ts',
+              '''  await expect.poll(async () => {
+    const hostState = await page.getByTestId('host-status').getAttribute('data-state').catch(() => null);
+    if (hostState === 'ready') return true;
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    return page.getByTestId('open-messenger').isVisible().catch(() => false);
+  }, { timeout: 15_000 }).toBe(true);
+''',
+              '''  await expect.poll(async () => {
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    if (await page.getByTestId('open-messenger').isVisible().catch(() => false)) return true;
+    const hostStatus = page.getByTestId('host-status');
+    if (!await hostStatus.isVisible().catch(() => false)) return false;
+    return await hostStatus.getAttribute('data-state').catch(() => null) === 'ready';
+  }, { timeout: 15_000 }).toBe(true);
+''',
+          )
+
+          e2e = Path('desktop/e2e/messenger.spec.ts')
+          text = e2e.read_text()
+          start_marker = "test('desktop Messenger projects unread from another self-hosted actor and consumes it on open', async () => {"
+          if start_marker in text:
+              start = text.index(start_marker)
+              replacement = r'''test('desktop Messenger rejects self-hosted actor impersonation at the real Host boundary', async () => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-auth-boundary-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    const identity = await getMessagingIdentity(page);
+    const now = Date.now();
+    const peerActorId = `human:e2e:forged:${now}`;
+
+    await executeMessagingCommand(page, identity.actorId, {
+      type: 'upsertProfile',
+      actor: {
+        id: identity.actorId,
+        kind: 'human',
+        displayName: 'Authenticated E2E User',
+        capabilities: ['messages'],
+        presence: { status: 'online', lastSeenAtMs: now },
+        verified: false,
+      },
+    }, 'current-profile');
+
+    let rejection = '';
+    try {
+      await executeMessagingCommand(page, peerActorId, {
+        type: 'upsertProfile',
+        actor: {
+          id: peerActorId,
+          kind: 'human',
+          displayName: 'Forged Peer',
+          capabilities: ['messages'],
+          presence: { status: 'online', lastSeenAtMs: now },
+          verified: false,
+        },
+      }, 'forged-peer-profile');
+    } catch (cause) {
+      rejection = cause instanceof Error ? cause.message : String(cause);
+    }
+    expect(rejection).toContain('profile actor id does not match authenticated actor');
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+'''
+              # This is the final test in the file, so replace from its marker to EOF.
+              e2e.write_text(text[:start] + replacement)
+          elif 'rejects self-hosted actor impersonation at the real Host boundary' not in text:
+              raise SystemExit('desktop/e2e/messenger.spec.ts: unread test marker missing')
+
+          typing = Path('native/mahayana-messaging/tests/typing_contract.rs')
+          typing_text = typing.read_text()
+          typing_test_name = 'stop_typing_is_bounded_and_expires_from_delta_replay'
+          if typing_test_name not in typing_text:
+              typing.write_text(typing_text + r'''
+
+#[test]
+fn stop_typing_is_bounded_and_expires_from_delta_replay() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    for actor in ["human:a", "human:b"] {
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(actor, "profile-stop"),
+                    ClientCommand::UpsertProfile {
+                        actor: Actor::human(actor, actor),
+                    },
+                ),
+                1,
+            )
+            .unwrap();
+    }
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a", "conversation-stop"),
+                ClientCommand::CreateConversation {
+                    conversation: direct_conversation(),
+                },
+            ),
+            2,
+        )
+        .unwrap();
+    let before = service.cursor();
+    let stop = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a", "typing-stop"),
+                ClientCommand::StopTyping {
+                    conversation_id: ConversationId::new("chat:typing"),
+                },
+            ),
+            100,
+        )
+        .unwrap();
+    assert!(matches!(
+        &stop[0].event,
+        ServerEvent::TypingChanged {
+            actor_id,
+            action: None,
+            expires_at_ms: Some(5100),
+            ..
+        } if actor_id == &ActorId::new("human:a")
+    ));
+
+    let recent = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:b", "sync-stop-recent"),
+                ClientCommand::Sync {
+                    cursor: Some(before.to_string()),
+                    limit: 100,
+                },
+            ),
+            200,
+        )
+        .unwrap();
+    assert!(recent.iter().any(|event| matches!(
+        &event.event,
+        ServerEvent::TypingChanged {
+            actor_id,
+            action: None,
+            expires_at_ms: Some(5100),
+            ..
+        } if actor_id == &ActorId::new("human:a")
+    )));
+
+    let expired = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:b", "sync-stop-expired"),
+                ClientCommand::Sync {
+                    cursor: Some(before.to_string()),
+                    limit: 100,
+                },
+            ),
+            6_000,
+        )
+        .unwrap();
+    assert!(!expired
+        .iter()
+        .any(|event| matches!(event.event, ServerEvent::TypingChanged { .. })));
+}
+''')
+
+          unread = Path('native/mahayana-messaging/tests/unread_projection_contract.rs')
+          unread.write_text(r'''use fabushi_messaging_core::*;
 
 fn context(actor_id: &str, request_id: &str) -> RequestContext {
     RequestContext {
@@ -435,15 +625,25 @@ fn unread_projection_is_actor_scoped_and_read_cursor_survives_reload() {
 }
 ''')
           PY
-      - name: Commit patch back to the M3 branch
+
+          git diff --check
+
+      - name: Commit patch back to M3 branch
         shell: bash
         run: |
-          if git diff --quiet -- native/mahayana-messaging/src/engine.rs native/mahayana-messaging/src/service.rs desktop/src/messaging-shell-v2.tsx native/mahayana-messaging/tests/unread_projection_contract.rs; then
+          set -euo pipefail
+          if git diff --quiet; then
             echo "No patch required."
             exit 0
           fi
           git config user.name "fabushi-ci"
           git config user.email "fabushi-ci@users.noreply.github.com"
-          git add native/mahayana-messaging/src/engine.rs native/mahayana-messaging/src/service.rs desktop/src/messaging-shell-v2.tsx native/mahayana-messaging/tests/unread_projection_contract.rs
-          git commit -m "fix(tfi): make unread projection actor scoped"
+          git add \
+            native/mahayana-messaging/src/engine.rs \
+            native/mahayana-messaging/src/service.rs \
+            native/mahayana-messaging/tests/typing_contract.rs \
+            native/mahayana-messaging/tests/unread_projection_contract.rs \
+            desktop/src/messaging-shell-v2.tsx \
+            desktop/e2e/messenger.spec.ts
+          git commit -m "fix(tfi): close M3 unread typing and reload semantics"
           git push origin HEAD:fix/fab-p0001-m3-e2e-closure
