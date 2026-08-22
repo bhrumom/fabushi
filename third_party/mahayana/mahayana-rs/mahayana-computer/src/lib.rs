@@ -491,7 +491,7 @@ mod portable {
                 enigo
                     .button(button(action.button), Direction::Press)
                     .map_err(|error| ComputerError::Input(error.to_string()))?;
-                let duration = action.duration_ms.unwrap_or(300).max(1);
+                let duration = action.wait_ms.unwrap_or(300).max(1);
                 let slices = u64::try_from(points.len().saturating_sub(1))
                     .unwrap_or(1)
                     .max(1);
@@ -514,7 +514,7 @@ mod portable {
                 if let (Some(x), Some(y)) = (action.x, action.y) {
                     move_to(&mut enigo, x, y)?;
                 }
-                let magnitude = i32::try_from(action.scroll_amount.unwrap_or(1))
+                let magnitude = i32::try_from(action.amount.unwrap_or(1))
                     .unwrap_or(i32::MAX)
                     .max(1);
                 let (axis, value) = match action.direction.unwrap_or(ComputerScrollDirection::Down)
