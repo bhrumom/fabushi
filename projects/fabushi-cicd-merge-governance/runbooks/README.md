@@ -1,11 +1,14 @@
-# Runbooks
+# Runbooks — FAB-P0003
 
-## CI latency observation
+| Runbook | Purpose |
+|---|---|
+| `ci-latency-observation.md` | Inspect FCM-002 P50/P95, queue delay and raw Actions evidence |
+| `store-release-source-gate.md` | Operate/recover Apple/Google exact-SHA release gating |
 
-- Owner: FAB-P0003
-- Purpose: explain how CI latency evidence is collected and interpreted.
-- Source of truth: GitHub Actions workflow runs.
+## Ownership
 
-## Future operational procedures
+Fabushi maintainers own these procedures. GitHub Actions and protected `main` are the operational source of truth.
 
-Release rollback, deployment recovery, and incident procedures should link here when they become part of this governance project's operational scope.
+## N/A areas
+
+Application incident response and application data repair are outside this CI/CD governance project's runtime scope. Revisit if this project later owns persistent release metadata or production runtime services.
