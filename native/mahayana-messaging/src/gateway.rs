@@ -108,12 +108,9 @@ impl MessagingWebSocketGateway {
             let access_store = Arc::clone(&access_store);
             let config = self.config.clone();
             thread::spawn(move || {
-                if let Err(error) = handle_websocket_connection(
-                    stream,
-                    service,
-                    access_store,
-                    config,
-                ) {
+                if let Err(error) =
+                    handle_websocket_connection(stream, service, access_store, config)
+                {
                     eprintln!("Fabushi WebSocket connection failed: {error}");
                 }
             });
@@ -147,9 +144,9 @@ fn handle_websocket_connection(
     websocket_config.max_frame_size = websocket_config.max_message_size;
     let mut websocket = accept_with_config(stream, Some(websocket_config))
         .map_err(|error| MessagingGatewayError::Handshake(error.to_string()))?;
-    websocket.get_mut().set_read_timeout(Some(Duration::from_millis(
-        config.heartbeat_interval_ms,
-    )))?;
+    websocket
+        .get_mut()
+        .set_read_timeout(Some(Duration::from_millis(config.heartbeat_interval_ms)))?;
 
     let heartbeat_timeout = Duration::from_millis(config.heartbeat_timeout_ms);
     let mut last_peer_activity = Instant::now();
@@ -185,12 +182,8 @@ fn handle_websocket_connection(
                         continue;
                     }
                 };
-                let frame = execute_authenticated_frame(
-                    &service,
-                    &access_store,
-                    request,
-                    now_millis(),
-                )?;
+                let frame =
+                    execute_authenticated_frame(&service, &access_store, request, now_millis())?;
                 send_server_frame(&mut websocket, &frame)?;
             }
             Ok(Message::Binary(_)) => {
