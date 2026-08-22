@@ -24,14 +24,14 @@ try {
   const list = JSON.parse(runtime.execute(JSON.stringify({
     '@type': 'mahayana.conversation.list',
   })));
-  if (!list.data.data.some((item) => item.id === 'codex:agent:assistant')) {
+  if (!list.data.data.some((item) => item.id === 'mahayana-ai:agent:assistant')) {
     throw new Error(`Codex contact missing: ${JSON.stringify(list)}`);
   }
   let rejectedWithoutLogin = false;
   try {
     runtime.execute(JSON.stringify({
       '@type': 'mahayana.conversation.send',
-      conversationId: 'codex:agent:assistant',
+      conversationId: 'mahayana-ai:agent:assistant',
       text: '你好',
     }));
   } catch {
