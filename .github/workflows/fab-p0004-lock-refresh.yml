@@ -1,0 +1,42 @@
+name: FAB-P0004 lock refresh
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fab-p0004-lock-refresh.yml"
+      - "native/mahayana-messaging/Cargo.toml"
+      - "third_party/mahayana/mahayana-rs/Cargo.toml"
+      - "third_party/mahayana/mahayana-rs/Cargo.lock"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'fab-p0004-m3-ci-closure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FAB-P0004 branch
+        uses: actions/checkout@v4
+        with:
+          ref: fab-p0004-m3-ci-closure
+          fetch-depth: 0
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Resolve Mahayana workspace lock
+        run: cargo metadata --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --format-version 1 > /dev/null
+      - name: Commit lock refresh when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- third_party/mahayana/mahayana-rs/Cargo.lock; then
+            echo "Cargo.lock is already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git commit -m "chore(fab-p0004): refresh Mahayana Cargo.lock"
+          git push origin HEAD:fab-p0004-m3-ci-closure
