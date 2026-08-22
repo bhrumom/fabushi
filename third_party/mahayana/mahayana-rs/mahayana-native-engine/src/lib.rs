@@ -12,7 +12,7 @@ use mahayana_kernel::supervisor::{
 };
 use mahayana_kernel::telemetry::{RuntimeMetricsSnapshot, RuntimeTelemetry};
 use mahayana_kernel::{
-    ApprovalMode, ApprovalResolution, BackendDescriptor, Capability, CapabilitySet, EngineBackend,
+    ApprovalResolution, BackendDescriptor, Capability, CapabilitySet, EngineBackend,
     ExecutionPolicy, KernelError, KernelEvent, OpenSessionRequest, OperationId,
     ResumeOperationRequest, RiskLevel, RunRequest, SessionId,
     SessionSnapshot as KernelSessionSnapshot, SharedKernelEventSink, SuspendOperationRequest,
@@ -23,7 +23,7 @@ use mahayana_model::{
 };
 use mahayana_orchestrator::{
     HookEffect, HookPoint, HookRegistry, MemoryStore, PromptEntry, PromptPriority, PromptQueue,
-    SubagentScheduler, SubagentState, Workflow,
+    SubagentScheduler, Workflow,
 };
 use mahayana_workspace_engine::WorkspaceEngine;
 use serde::{Deserialize, Serialize};
@@ -1235,7 +1235,7 @@ impl EngineBackend for NativeEngine {
                 .map_err(|error| KernelError::Backend(error.to_string()))?;
             let prompt = session
                 .prompt_queue
-                .next()
+                .take_next()
                 .ok_or_else(|| KernelError::Backend("prompt queue unexpectedly empty".into()))?;
             if prompt.id != prompt_id {
                 return Err(KernelError::Backend(
