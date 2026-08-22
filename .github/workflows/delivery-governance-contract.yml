@@ -1,0 +1,112 @@
+name: Delivery governance contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/CODEOWNERS'
+      - '.github/BRANCH_PROTECTION.md'
+      - '.github/scripts/require-release-source-gates.sh'
+      - '.github/workflows/apple-store-delivery.yml'
+      - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/delivery-governance-contract.yml'
+      - '.github/workflows/automerge.yml'
+      - 'projects/fabushi-cicd-merge-governance/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/CODEOWNERS'
+      - '.github/BRANCH_PROTECTION.md'
+      - '.github/scripts/require-release-source-gates.sh'
+      - '.github/workflows/apple-store-delivery.yml'
+      - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/delivery-governance-contract.yml'
+      - '.github/workflows/automerge.yml'
+      - 'projects/fabushi-cicd-merge-governance/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Validate sensitive delivery governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout governance inputs only
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/CODEOWNERS
+            /.github/BRANCH_PROTECTION.md
+            /.github/scripts/require-release-source-gates.sh
+            /.github/workflows/apple-store-delivery.yml
+            /.github/workflows/google-play-delivery.yml
+            /.github/workflows/automerge.yml
+
+      - name: Validate release source gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate=.github/scripts/require-release-source-gates.sh
+          test -s "$gate"
+          grep -Fq "compare/main...\$SOURCE_SHA" "$gate"
+          for required in 'CI result' 'Electron desktop result' 'Native mobile result'; do
+            grep -Fq "$required" "$gate"
+          done
+
+          for workflow in .github/workflows/apple-store-delivery.yml .github/workflows/google-play-delivery.yml; do
+            grep -Fq 'checks: read' "$workflow"
+            grep -Fq 'actions: read' "$workflow"
+            grep -Fq 'Require canonical release source gates' "$workflow"
+            grep -Fq 'require-release-source-gates.sh' "$workflow"
+          done
+
+          grep -Fq 'RELEASE_TARGET: android' .github/workflows/google-play-delivery.yml
+          grep -Fq 'RELEASE_TARGET: ${{ inputs.target }}' .github/workflows/apple-store-delivery.yml
+
+      - name: Validate narrow CODEOWNERS coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          owners=.github/CODEOWNERS
+          test -s "$owners"
+          if grep -Eq '^\*+[[:space:]]+@' "$owners"; then
+            echo 'A repository-wide CODEOWNERS catch-all would add review tax to low-risk changes.' >&2
+            exit 1
+          fi
+          for required in \
+            '/.github/workflows/ @bhrum' \
+            '/.github/scripts/ @bhrum' \
+            '/.github/CODEOWNERS @bhrum' \
+            '/projects/fabushi-cicd-merge-governance/ @bhrum' \
+            '/third_party/mahayana/mahayana-rs/mahayana-pay-worker/ @bhrum'
+          do
+            grep -Fqx "$required" "$owners"
+          done
+
+      - name: Validate merge-queue and sensitive-automerge invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'CI result' .github/BRANCH_PROTECTION.md
+          grep -Fq 'merge queue' .github/BRANCH_PROTECTION.md
+          grep -Fq "'.github/workflows/'" .github/workflows/automerge.yml
+          grep -Fq "'.github/actions/'" .github/workflows/automerge.yml
+          grep -Fq "'.github/scripts/'" .github/workflows/automerge.yml
+
+      - name: Summarize governance contract
+        shell: bash
+        run: |
+          {
+            echo '## FAB-P0003 delivery governance contract'
+            echo
+            echo '- Canonical release-source gates: present'
+            echo '- Apple Store delivery gate: present'
+            echo '- Google Play delivery gate: present'
+            echo '- Sensitive CODEOWNERS coverage: present and narrow'
+            echo '- Merge queue invariant: retained'
+          } >> "$GITHUB_STEP_SUMMARY"
