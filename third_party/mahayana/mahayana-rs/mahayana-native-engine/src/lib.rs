@@ -756,13 +756,13 @@ impl EngineBackend for NativeEngine {
                     .map_err(|error| KernelError::Backend(error.to_string()))
             })
             .transpose()?;
-        if let Some(root) = workspace_root.as_deref() {
-            if !root.is_dir() {
-                return Err(KernelError::BackendUnavailable(format!(
-                    "workspace root is not a directory: {}",
-                    root.display()
-                )));
-            }
+        if let Some(root) = workspace_root.as_deref()
+            && !root.is_dir()
+        {
+            return Err(KernelError::BackendUnavailable(format!(
+                "workspace root is not a directory: {}",
+                root.display()
+            )));
         }
         let session_id = SessionId::new();
         self.sessions
