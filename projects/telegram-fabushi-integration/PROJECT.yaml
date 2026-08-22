@@ -4,10 +4,10 @@ legacy_project_ids:
   - FABUSHI-TELEGRAM-FUSION
 name: Fabushi Telegram 全量融合
 slug: telegram-fabushi-integration
-version: v1.1
+version: v1.2
 baseline_date: 2026-08-22
 status: IMPLEMENTATION_ACTIVE
-current_stage: M1
+current_stage: M2
 source_of_truth: source/完整telegram融合进fabushi.txt
 authoritative_path: projects/telegram-fabushi-integration
 architecture:
@@ -29,11 +29,11 @@ status_model:
   - E2E_VERIFIED
   - RELEASED
 active_work:
-  - task: M1.T06
-    pr: 1988
+  - task: M2-NET-001
+    pr: 2001
     state: IN_PROGRESS
-  - task: M1.T02
-    pr: 1990
+  - task: M2-SYNC-001
+    pr: 2002
     state: IN_PROGRESS
   - task: TFI-GOV-002
     state: IN_PROGRESS
