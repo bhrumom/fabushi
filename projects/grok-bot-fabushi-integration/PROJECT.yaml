@@ -1,0 +1,38 @@
+project_id: FABUSHI-GROK-BOT-FUSION
+name: Grok Bot -> Fabushi 全量能力与源码融合
+slug: grok-bot-fabushi-integration
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/grok-bot-fabushi-integration
+owner: Fabushi/Mahayana maintainers
+reviewers:
+  - Fabushi maintainers
+  - Security reviewer for high-risk capabilities
+current_stage: M0-project-baseline
+created_at: 2026-08-22
+updated_at: 2026-08-22
+source_requirement: source/grok-bot融合优化.txt
+source_branches:
+  - grok-bot-latest-source-fusion
+  - grok-bot-0.16-source-fusion
+target_architecture:
+  desktop: Electron
+  mobile: Native iOS + Native Android
+  core: Mahayana sovereign Rust kernel
+  execution: capability-gated host/local execution
+  agent_runtime: single Fabushi/Mahayana runtime
+  external_grok_runtime_dependency: false
+status_model:
+  - NOT_STARTED
+  - IN_PROGRESS
+  - IMPLEMENTED
+  - TESTED
+  - E2E_VERIFIED
+  - RELEASED
+governance:
+  source_branch_is_input_only: true
+  wholesale_branch_merge_forbidden: true
+  evidence_required_for_completion: true
+  ci_required: true
+  main_is_authoritative: true
