@@ -33,11 +33,11 @@ permissions:
 
 jobs:
   automerge:
-    name: Merge explicitly authorized green PRs
+    name: Authorize green PRs for protected merge
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Evaluate and merge authorized PR
+      - name: Evaluate and arm authorized PR
         uses: actions/github-script@v7
         with:
           script: |
@@ -124,6 +124,21 @@ jobs:
               });
             }
 
+            async function getProtectedMergeState(pullNumber) {
+              return github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      id
+                      autoMergeRequest { enabledAt }
+                      mergeQueueEntry { position }
+                    }
+                  }
+                }`,
+                { owner, repo, number: pullNumber },
+              );
+            }
+
             const pr = await findPr();
             if (!pr) {
               core.info('No open main-targeting PR found for automerge evaluation.');
@@ -151,7 +166,7 @@ jobs:
                 owner,
                 repo,
                 issue_number: pr.number,
-                body: 'Automerge skipped: this PR changes protected CI/CD, auth, payment, deployment, or database files and needs a human merge.',
+                body: 'Automerge skipped: this PR changes protected CI/CD, auth, payment, deployment, or database files and needs explicit human authorization before entering the merge queue.',
               });
               core.info(`PR #${pr.number} touches sensitive paths; skipping.`);
               return;
@@ -168,19 +183,32 @@ jobs:
               return;
             }
 
-            await github.rest.pulls.merge({
-              owner,
-              repo,
-              pull_number: pr.number,
-              merge_method: 'squash',
-              commit_title: freshPr.title,
-              commit_message: `Automerge PR #${pr.number} after successful CI.`,
-              sha: freshPr.head.sha,
-            });
+            const state = await getProtectedMergeState(pr.number);
+            const protectedPr = state.repository.pullRequest;
+            if (protectedPr.mergeQueueEntry) {
+              core.info(`PR #${pr.number} is already in the merge queue at position ${protectedPr.mergeQueueEntry.position}.`);
+              return;
+            }
+            if (protectedPr.autoMergeRequest) {
+              core.info(`PR #${pr.number} already has native auto-merge armed.`);
+              return;
+            }
+
+            await github.graphql(
+              `mutation($pullRequestId: ID!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId,
+                  mergeMethod: SQUASH
+                }) {
+                  pullRequest { number }
+                }
+              }`,
+              { pullRequestId: protectedPr.id },
+            );
 
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: pr.number,
-              body: `Automerge completed after successful ${requiredWorkflowName}. CD will run from main and gate production through staging E2E and native install smoke tests.`,
+              body: `Automerge authorized after successful ${requiredWorkflowName}. GitHub's protected merge/merge queue now owns the final merge and merge-group revalidation; this workflow does not directly merge into main.`,
             });
