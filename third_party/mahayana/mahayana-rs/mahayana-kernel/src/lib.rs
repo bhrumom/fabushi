@@ -4,6 +4,7 @@
 //! depend on these contracts instead of Codex, Grok Build, or model-provider
 //! protocol types.  External engines are adapters behind [`EngineBackend`].
 
+pub mod resilience;
 pub mod supervisor;
 
 use async_trait::async_trait;
