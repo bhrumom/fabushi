@@ -1,0 +1,30 @@
+project_id: FABUSHI-TELEGRAM-FUSION
+name: Fabushi Telegram 全量融合
+version: v1.0
+baseline_date: 2026-08-22
+status: PLANNING_BASELINE
+source_of_truth: source/完整telegram融合进fabushi.txt
+architecture:
+  core_language: Rust
+  desktop: Electron
+  ios: Native + UniFFI
+  android: Native + UniFFI/JNI
+  protocol: Self-hosted, versioned, event-driven
+  local_first: true
+  ai_native: true
+  telegram_api_dependency: false
+status_model:
+  - NOT_STARTED
+  - IN_PROGRESS
+  - IMPLEMENTED
+  - TESTED
+  - E2E_VERIFIED
+  - RELEASED
+
+governance:
+  repository: bhrumom/fabushi
+  authoritative_branch: main
+  authoritative_path: projects/telegram-fabushi-integration
+  external_mirrors_are_authoritative: false
+  task_record_required_before_completion: true
+  new_independent_workstream_requires_project_folder: true

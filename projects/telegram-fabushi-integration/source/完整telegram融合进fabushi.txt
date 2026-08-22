@@ -1,0 +1,17 @@
+完整 Telegram 融合进 Fabushi — 来源索引
+
+原始用户目标：把 Telegram 的所有功能使用 Rust 完全融合进 Fabushi。
+
+后续明确要求包括：自研/自建通信体系，不依赖 Telegram API；完整桌面能力与 UI 交互对标；真人、Bot、AI Agent 统一消息/联系人体系；Mini Apps、支付、音视频、群组、频道、Topic、媒体、搜索、通知、多端同步、安全/E2EE；Electron + iOS/Android 原生客户端共享 Rust Core；在现有 Fabushi 架构内持续优化并最终替换旧通信栈。
+
+完整展开计划为避免单文件过大，按原文顺序无损拆分到 `source/full-plan/`：
+- `source/full-plan/part-01.txt`
+- `source/full-plan/part-02.txt`
+- `source/full-plan/part-03.txt`
+- `source/full-plan/part-04.txt`
+- `source/full-plan/part-05.txt`
+- `source/full-plan/part-06.txt`
+- `source/full-plan/part-07.txt`
+- `source/full-plan/part-08.txt`
+
+以上 part 文件按编号拼接即为拆分前的完整展开计划。GitHub `main` 的本项目目录为权威版本。
