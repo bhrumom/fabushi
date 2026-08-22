@@ -427,7 +427,10 @@ impl NativeEngine {
             for call in calls {
                 ensure_operation_active(control)?;
                 let fingerprint = tool_fingerprint(&call);
-                match session.loop_state.observe(&fingerprint, LoopPolicy::default()) {
+                match session
+                    .loop_state
+                    .observe(&fingerprint, LoopPolicy::default())
+                {
                     LoopDisposition::Allow => {}
                     LoopDisposition::Warn => {
                         events.emit(KernelEvent::Activity {
@@ -529,8 +532,15 @@ impl NativeEngine {
     ) -> Pin<Box<dyn Future<Output = Result<Value, KernelError>> + Send + 'a>> {
         Box::pin(async move {
             let risk = tool_risk(&call.name);
-            self.authorize_tool(session, operation_id, call, risk, policy, Arc::clone(&events))
-                .await?;
+            self.authorize_tool(
+                session,
+                operation_id,
+                call,
+                risk,
+                policy,
+                Arc::clone(&events),
+            )
+            .await?;
             ensure_operation_active(control)?;
 
             match call.name.as_str() {
@@ -1336,7 +1346,8 @@ impl EngineBackend for NativeEngine {
         *self
             .subagents
             .lock()
-            .map_err(|_| KernelError::Backend("subagent scheduler poisoned".into()))? = state.subagents;
+            .map_err(|_| KernelError::Backend("subagent scheduler poisoned".into()))? =
+            state.subagents;
         *self
             .hooks
             .lock()
@@ -1351,10 +1362,7 @@ impl EngineBackend for NativeEngine {
         Ok(snapshot.session_id)
     }
 
-    async fn suspend_operation(
-        &self,
-        request: SuspendOperationRequest,
-    ) -> Result<(), KernelError> {
+    async fn suspend_operation(&self, request: SuspendOperationRequest) -> Result<(), KernelError> {
         let control = self
             .active_operations
             .lock()
@@ -2134,8 +2142,8 @@ mod tests {
                 "output": [{"type":"message", "content":[{"type":"output_text", "text":"remembered"}]}]
             })])),
         });
-        let engine = NativeEngine::new(model, NativeEngineConfig::embedded("model"))
-            .expect("create engine");
+        let engine =
+            NativeEngine::new(model, NativeEngineConfig::embedded("model")).expect("create engine");
         let session = engine
             .open_session(OpenSessionRequest {
                 profile: mahayana_kernel::RuntimeProfile::Headless,
@@ -2168,7 +2176,11 @@ mod tests {
             .pointer("/session/history")
             .and_then(Value::as_array)
             .expect("history in snapshot");
-        assert!(history.iter().any(|item| item.to_string().contains("persist me")));
+        assert!(
+            history
+                .iter()
+                .any(|item| item.to_string().contains("persist me"))
+        );
         let restored = engine
             .restore_session(snapshot)
             .await
