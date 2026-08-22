@@ -5,11 +5,11 @@
 | ID | Stage | Action | Dependency | Acceptance | Verification | Evidence | Status | Blocker | Next action |
 |---|---|---|---|---|---|---|---|---|---|
 | GBF-001 | M0 | 建立企业级项目基线 | none | 标准 scaffold + PR/CI/main 验证 | project audit + GitHub facts | evidence/GBF-001 | RELEASED | none | GBF-101 固定 source/main refs |
-| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | NOT_STARTED | none | 读取并记录 SHAs |
-| GBF-102 | M1 | 生成来源递归 file manifest | GBF-101 | 来源文件 path/hash/type 100% 入表 | manifest completeness check | evidence/GBF-102 | NOT_STARTED | GBF-101 | 扫描 latest/0.16 |
-| GBF-103 | M1 | 建立功能能力矩阵 | GBF-102 | 关键文件全部映射能力域 | zero-unclassified check | evidence/GBF-103 | NOT_STARTED | GBF-102 | 归类功能域 |
-| GBF-104 | M1 | 建立 main/source 差异矩阵 | GBF-102,103 | 每项有处理分类 | matrix enum validation | evidence/GBF-104 | NOT_STARTED | GBF-103 | 比较 main 与来源 |
-| GBF-105 | M1 | 建立 provenance ledger | GBF-102 | 来源/许可/复用/重写决策齐全 | zero unknown retained source | evidence/GBF-105 | NOT_STARTED | GBF-102 | 审计来源与许可 |
+| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
+| GBF-102 | M1 | 生成来源递归 file manifest | GBF-101 | 来源文件 path/hash/type 100% 入表 | manifest completeness check | evidence/GBF-102 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
+| GBF-103 | M1 | 建立功能能力矩阵 | GBF-102 | 关键文件全部映射能力域 | zero-unclassified check | evidence/GBF-103 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
+| GBF-104 | M1 | 建立 main/source 差异矩阵 | GBF-102,103 | 每项有处理分类 | matrix enum validation | evidence/GBF-104 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
+| GBF-105 | M1 | 建立 provenance ledger | GBF-102 | 来源/许可/复用/重写决策齐全 | zero unknown retained source | evidence/GBF-105 | TESTED | PR/CI/main closure pending | 审查迁移 PR；vendor snapshot 保持 reference-only |
 | GBF-201 | M2 | 审计 Electron main.cjs | GBF-104 | 生命周期/IPC 独有差异有决策 | file/behavior diff review | evidence/GBF-201 | NOT_STARTED | M1 | 建原子实施任务 |
 | GBF-202 | M2 | 收敛 preload/IPC contract | GBF-201 | 无通用 IPC；版本化 contract | allow/deny contract tests | evidence/GBF-202 | NOT_STARTED | GBF-201 | 设计最小 preload API |
 | GBF-203 | M2 | 收敛 host-process | GBF-201 | 单一 host lifecycle/health/restart | host integration/fault tests | evidence/GBF-203 | NOT_STARTED | GBF-201 | 比较并重构 host |
