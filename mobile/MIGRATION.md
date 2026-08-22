@@ -66,7 +66,6 @@ Current host methods include:
 - `runtime.start`
 - `runtime.stop`
 - `runtime.tools`
-- `runtime.callTool`
 
 The desktop sidecar, Android JNI bridge, and iOS C bridge all call this same host API.
 
