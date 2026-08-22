@@ -5,18 +5,18 @@
 | ID | Stage | Action | Dependency | Acceptance | Verification | Evidence | Status | Blocker | Next action |
 |---|---|---|---|---|---|---|---|---|---|
 | GBF-001 | M0 | 建立企业级项目基线 | none | 标准 scaffold + PR/CI/main 验证 | project audit + GitHub facts | evidence/GBF-001 | RELEASED | none | GBF-101 固定 source/main refs |
-| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
-| GBF-102 | M1 | 生成来源递归 file manifest | GBF-101 | 来源文件 path/hash/type 100% 入表 | manifest completeness check | evidence/GBF-102 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
-| GBF-103 | M1 | 建立功能能力矩阵 | GBF-102 | 关键文件全部映射能力域 | zero-unclassified check | evidence/GBF-103 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
-| GBF-104 | M1 | 建立 main/source 差异矩阵 | GBF-102,103 | 每项有处理分类 | matrix enum validation | evidence/GBF-104 | TESTED | PR/CI/main closure pending | M1 PR 验证并合并 |
-| GBF-105 | M1 | 建立 provenance ledger | GBF-102 | 来源/许可/复用/重写决策齐全 | zero unknown retained source | evidence/GBF-105 | TESTED | PR/CI/main closure pending | 审查迁移 PR；vendor snapshot 保持 reference-only |
-| GBF-201 | M2 | 审计 Electron main.cjs | GBF-104 | 生命周期/IPC 独有差异有决策 | file/behavior diff review | evidence/GBF-201 | NOT_STARTED | M1 | 建原子实施任务 |
-| GBF-202 | M2 | 收敛 preload/IPC contract | GBF-201 | 无通用 IPC；版本化 contract | allow/deny contract tests | evidence/GBF-202 | NOT_STARTED | GBF-201 | 设计最小 preload API |
-| GBF-203 | M2 | 收敛 host-process | GBF-201 | 单一 host lifecycle/health/restart | host integration/fault tests | evidence/GBF-203 | NOT_STARTED | GBF-201 | 比较并重构 host |
-| GBF-204 | M2 | 收敛 native capability handlers | GBF-202,203 | 所有高风险 handler 过 gate | capability unit/security tests | evidence/GBF-204 | NOT_STARTED | GBF-202/203 | 建 handler inventory |
-| GBF-205 | M2 | 收敛 native/edge IPC | GBF-202 | schema/error contract 唯一 | schema/version tests | evidence/GBF-205 | NOT_STARTED | GBF-202 | 统一 edge contracts |
-| GBF-206 | M2 | 评估并迁移 Offline ASR | GBF-104 | 产品归属、资源/性能证据清晰 | unit + runtime benchmark | evidence/GBF-206 | NOT_STARTED | M1 | 比较现有 ASR 路径 |
-| GBF-207 | M2 | 迁移有效 Electron E2E | GBF-201..206 | 当前 main 架构可运行 | Playwright/Electron E2E | evidence/GBF-207 | NOT_STARTED | M2 impl | 迁移/重写旧 E2E |
+| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | RELEASED | none | M2/M3/M5 downstream audit |
+| GBF-102 | M1 | 生成来源递归 file manifest | GBF-101 | 来源文件 path/hash/type 100% 入表 | manifest completeness check | evidence/GBF-102 | RELEASED | none | M2/M3/M5 downstream audit |
+| GBF-103 | M1 | 建立功能能力矩阵 | GBF-102 | 关键文件全部映射能力域 | zero-unclassified check | evidence/GBF-103 | RELEASED | none | M2/M3/M5 downstream audit |
+| GBF-104 | M1 | 建立 main/source 差异矩阵 | GBF-102,103 | 每项有处理分类 | matrix enum validation | evidence/GBF-104 | RELEASED | none | M2/M3/M5 downstream audit |
+| GBF-105 | M1 | 建立 provenance ledger | GBF-102 | 来源/许可/复用/重写决策齐全 | zero unknown retained source | evidence/GBF-105 | RELEASED | none | GBF-703 release provenance audit |
+| GBF-201 | M2 | 审计 Electron main.cjs | GBF-104 | 生命周期/IPC 独有差异有决策 | file/behavior diff review | evidence/GBF-201 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-202 | M2 | 收敛 preload/IPC contract | GBF-201 | 无通用 IPC；版本化 contract | allow/deny contract tests | evidence/GBF-202 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-203 | M2 | 收敛 host-process | GBF-201 | 单一 host lifecycle/health/restart | host integration/fault tests | evidence/GBF-203 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-204 | M2 | 收敛 native capability handlers | GBF-202,203 | 所有高风险 handler 过 gate | capability unit/security tests | evidence/GBF-204 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-205 | M2 | 收敛 native/edge IPC | GBF-202 | schema/error contract 唯一 | schema/version tests | evidence/GBF-205 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-206 | M2 | 评估并迁移 Offline ASR | GBF-104 | 产品归属、资源/性能证据清晰 | unit + runtime benchmark | evidence/GBF-206 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
+| GBF-207 | M2 | 迁移有效 Electron E2E | GBF-201..206 | 当前 main 架构可运行 | Playwright/Electron E2E | evidence/GBF-207 | IN_PROGRESS | GitHub packaged E2E pending | PR + Electron Actions/Playwright |
 | GBF-301 | M3 | 盘点 coordinator/supervisor/host 行为 | GBF-103,104 | 重复执行链全部识别 | architecture walk + call graph | evidence/GBF-301 | NOT_STARTED | M1 | 生成行为规格 |
 | GBF-302 | M3 | 统一 Agent loop 到 Mahayana | GBF-301 | 唯一正式 agent runtime | integration/call-path tests | evidence/GBF-302 | NOT_STARTED | GBF-301 | 收敛入口 |
 | GBF-303 | M3 | 统一 tool/MCP/extension dispatch | GBF-302 | 同一 policy/result contract | contract + integration tests | evidence/GBF-303 | NOT_STARTED | GBF-302 | 合并 dispatch contract |
