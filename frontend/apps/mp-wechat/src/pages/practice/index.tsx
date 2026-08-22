@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { leaderboardPreview, practicePlan, practiceSessionPresets } from "@fabushi/shared";
+import { practicePlan, practiceSessionPresets } from "@fabushi/shared";
 import "./index.scss";
 
 export default function PracticePage() {
@@ -99,19 +99,6 @@ export default function PracticePage() {
         ))}
       </View>
 
-      <View className="section">
-        <Text className="section-title">共修榜</Text>
-        {leaderboardPreview.map((item) => (
-          <View className="rank" key={item.name}>
-            <Text className="rank-no">{item.rank}</Text>
-            <View className="rank-body">
-              <Text className="card-title">{item.name}</Text>
-              <Text className="card-copy">{item.region}</Text>
-            </View>
-            <Text className="rank-value">{item.value}</Text>
-          </View>
-        ))}
-      </View>
     </View>
   );
 }
