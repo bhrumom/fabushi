@@ -46,9 +46,7 @@ pub mod token_data {
 
     /// Parses the standard JWT `exp` claim without accepting or depending on
     /// any provider-specific identity claims.
-    pub fn parse_jwt_expiration(
-        jwt: &str,
-    ) -> Result<Option<DateTime<Utc>>, TokenDataError> {
+    pub fn parse_jwt_expiration(jwt: &str) -> Result<Option<DateTime<Utc>>, TokenDataError> {
         let claims: StandardJwtClaims = decode_jwt_payload(jwt)?;
         Ok(claims
             .exp
@@ -61,8 +59,8 @@ pub mod token_data {
         use base64::Engine as _;
 
         fn jwt(payload: serde_json::Value) -> String {
-            let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(br#"{"alg":"none"}"#);
+            let header =
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
             let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .encode(serde_json::to_vec(&payload).expect("serialize JWT payload"));
             format!("{header}.{payload}.signature")
