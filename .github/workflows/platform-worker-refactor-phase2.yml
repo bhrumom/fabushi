@@ -1,21 +1,21 @@
-name: Platform Worker God-file phase 1
+name: Platform Worker God-file phase 2
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - '.github/scripts/refactor-platform-worker-phase1.py'
-      - '.github/workflows/platform-worker-refactor-phase1.yml'
+      - '.github/scripts/refactor-platform-worker-phase2.py'
+      - '.github/workflows/platform-worker-refactor-phase2.yml'
 
 concurrency:
-  group: platform-worker-refactor-phase1-${{ github.event.pull_request.number }}
+  group: platform-worker-refactor-phase2-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  split-and-verify:
+  split-clean-and-verify:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -30,8 +30,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt
-      - name: Apply semantics-preserving split
-        run: python3 .github/scripts/refactor-platform-worker-phase1.py
+      - name: Apply phase-2 domain split and retire leaderboard remnants
+        run: python3 .github/scripts/refactor-platform-worker-phase2.py
       - name: Format Rust workspace
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo fmt --all
@@ -44,17 +44,23 @@ jobs:
       - name: Verify architecture contract
         working-directory: fabushi/web
         run: node tests/platform-control-plane.test.js
-      - name: Commit the verified split once
+      - name: Commit the verified phase-2 refactor
         shell: bash
         run: |
           set -euo pipefail
           if git diff --quiet; then
-            echo 'Phase-1 split is already applied.'
+            echo 'Phase-2 split is already applied.'
             exit 0
           fi
           git diff --check
           git config user.name 'fabushi-platform-refactor[bot]'
           git config user.email 'fabushi-platform-refactor[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-platform-worker/src third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations
-          git commit -m 'refactor: split platform worker account and control domains'
+          git add -A \
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker/src \
+            fabushi/web/tests/platform-control-plane.test.js \
+            frontend/apps/web/src/app/page.tsx \
+            frontend/apps/web/src/lib/official-site-releases.ts \
+            frontend/packages/shared/src/app-experience.ts \
+            frontend/apps/web/public/product
+          git commit -m 'refactor: isolate platform domains and retire leaderboard UI'
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
