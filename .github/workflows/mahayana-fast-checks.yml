@@ -22,64 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  clean-continuation-materialize:
-    name: One-shot clean MSR continuation materializer
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-sovereign-runtime-final'
-    runs-on: ubuntu-latest
-    timeout-minutes: 7
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 1
-      - name: Replay only authoritative FAB-P0005 runtime files
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --depth=1 origin feat/msr-native-runtime-parity-clean
-          git checkout FETCH_HEAD -- \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-104-runtime-observability-slo.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-201-native-session-recovery.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-202-native-tool-policy-approval-bus.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-301-workspace-rewind-worktree-parity.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-302-production-orchestration-parity.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-401-extension-model-contracts.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-501-cross-surface-parity-e2e.md \
-            projects/mahayana-sovereign-runtime/management/tasks/MSR-601-upstream-isolation-final-acceptance.md \
-            scripts/check-mahayana-source-boundary.py \
-            third_party/mahayana/mahayana-rs/mahayana-cli/Cargo.toml \
-            third_party/mahayana/mahayana-rs/mahayana-cli/src/plugin_archive.rs \
-            third_party/mahayana/mahayana-rs/mahayana-kernel/src/extension.rs \
-            third_party/mahayana/mahayana-rs/mahayana-kernel/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-kernel/src/telemetry.rs \
-            third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/status.rs \
-            third_party/mahayana/mahayana-rs/mahayana-model/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-plugin-host/Cargo.toml \
-            third_party/mahayana/mahayana-rs/mahayana-plugin-host/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-plugin-host/src/plugin_host_tests.rs \
-            third_party/mahayana/mahayana-rs/mahayana-workspace-engine/src/lib.rs
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            projects/mahayana-sovereign-runtime/management/tasks \
-            scripts/check-mahayana-source-boundary.py \
-            third_party/mahayana/mahayana-rs/mahayana-cli/Cargo.toml \
-            third_party/mahayana/mahayana-rs/mahayana-cli/src/plugin_archive.rs \
-            third_party/mahayana/mahayana-rs/mahayana-kernel \
-            third_party/mahayana/mahayana-rs/mahayana-mcp-runtime \
-            third_party/mahayana/mahayana-rs/mahayana-model \
-            third_party/mahayana/mahayana-rs/mahayana-native-engine \
-            third_party/mahayana/mahayana-rs/mahayana-plugin-host \
-            third_party/mahayana/mahayana-rs/mahayana-workspace-engine
-          git diff --cached --check
-          git commit -m 'feat(mahayana): materialize sovereign runtime parity continuation'
-          git push origin HEAD:${{ github.head_ref }}
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
@@ -98,41 +43,114 @@ jobs:
             /native/mahayana-messaging/**
             /third_party/mahayana/**
             /scripts/check-mahayana-source-boundary.py
+
       - name: Verify Mahayana source ownership boundary
         run: python3 ../../../scripts/check-mahayana-source-boundary.py
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+
       - name: Restore targeted Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: mahayana-fast-v6
           cache-all-crates: true
+
       - name: Verify formatting
         run: cargo fmt --all -- --check
+
       - name: Test Mahayana-owned authentication and encrypted secrets
-        run: cargo test -p mahayana-auth -p mahayana-secrets --profile ci
+        run: >-
+          cargo test
+          -p mahayana-auth
+          -p mahayana-secrets
+          --profile ci
+
       - name: Compile product client against Mahayana-owned auth and secrets
-        run: cargo test -p mahayana-platform-client --profile ci
+        run: >-
+          cargo test
+          -p mahayana-platform-client
+          --profile ci
+
       - name: Test sovereign kernel, supervision, and legacy bridge
-        run: cargo test -p mahayana-kernel -p mahayana-agent-kernel-bridge --profile ci
+        run: >-
+          cargo test
+          -p mahayana-kernel
+          -p mahayana-agent-kernel-bridge
+          --profile ci
+
       - name: Test native orchestration and workspace engines
-        run: cargo test -p mahayana-orchestrator -p mahayana-workspace-engine --profile ci
+        run: >-
+          cargo test
+          -p mahayana-orchestrator
+          -p mahayana-workspace-engine
+          --profile ci
+
       - name: Test native model and coding agent engine
-        run: cargo test -p mahayana-model -p mahayana-native-engine --profile ci
+        run: >-
+          cargo test
+          -p mahayana-model
+          -p mahayana-native-engine
+          --profile ci
+
       - name: Test native MCP transport and Agent adapter
-        run: cargo test -p mahayana-mcp-runtime -p mahayana-native-agent --profile ci
+        run: >-
+          cargo test
+          -p mahayana-mcp-runtime
+          -p mahayana-native-agent
+          --profile ci
+
       - name: Test protocol and MiniApp bridge
-        run: cargo test -p mahayana-miniapp-protocol -p mahayana-miniapp-bridge -p mahayana-host-protocol --profile ci
+        run: >-
+          cargo test
+          -p mahayana-miniapp-protocol
+          -p mahayana-miniapp-bridge
+          -p mahayana-host-protocol
+          --profile ci
+
       - name: Test Rust-native Mahayana Harness
-        run: cargo test -p mahayana-harness -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-adapters -p mahayana-harness-agent -p mahayana-harness-protocol -p mahayana-unified-app-host --profile ci
+        run: >-
+          cargo test
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+          --profile ci
+
       - name: Test direct Mahayana Host
-        run: cargo test -p mahayana-host --profile ci --no-default-features --features local-only
+        run: >-
+          cargo test
+          -p mahayana-host
+          --profile ci
+          --no-default-features
+          --features local-only
+
       - name: Test deterministic feature Host without the production dependency graph
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+
       - name: Test production feature adapters over the cached direct Host
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features --features local-only production_uses_the_real_runtime_and_rust_owned_session_store
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+          --features local-only
+          production_uses_the_real_runtime_and_rust_owned_session_store
+
       - name: Check minimal embedded FFI boundary
-        run: cargo check -p mahayana-ffi --profile ci --no-default-features --features local-only
+        run: >-
+          cargo check
+          -p mahayana-ffi
+          --profile ci
+          --no-default-features
+          --features local-only
