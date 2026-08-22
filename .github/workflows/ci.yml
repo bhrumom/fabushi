@@ -151,9 +151,14 @@ jobs:
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
           find tests -maxdepth 1 -name '*.test.js' -print0 | sort -z > /tmp/worker-tests
-          if [ -s /tmp/worker-tests ]; then
-            xargs -0 -n1 node < /tmp/worker-tests
-          fi
+          while IFS= read -r -d '' test_file; do
+            case "$test_file" in
+              tests/platform-control-plane.test.js|tests/security-hardening.test.js)
+                git -C ../.. restore --source=HEAD --worktree --                   .github/scripts                   frontend                   third_party/mahayana/mahayana-rs/mahayana-platform-worker
+                ;;
+            esac
+            node "$test_file"
+          done < /tmp/worker-tests
       - name: Validate Worker bundle with Wrangler dry-run
         run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
 
