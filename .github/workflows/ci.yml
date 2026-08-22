@@ -130,8 +130,10 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /.github/scripts/assert-worker-security-secrets.sh
             /fabushi/web/**
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**
+            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -279,6 +281,7 @@ jobs:
             /third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
             /third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
             /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
+            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/**
             /third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
       - name: Require 100 percent FeatureCommand router coverage
         run: python3 .github/scripts/assert-feature-command-router-coverage.py
