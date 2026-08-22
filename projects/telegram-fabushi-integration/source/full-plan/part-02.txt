@@ -1,0 +1,220 @@
+
+必须先稳定以下核心 ID 与实体：
+
+1. UserId
+2. DeviceId
+3. ContactId
+4. AgentId
+5. BotId
+6. ConversationId
+7. MessageId
+8. TopicId
+9. ChannelId
+10. GroupId
+11. MediaId
+12. MiniAppId
+13. MerchantId
+14. PaymentIntentId
+15. OrderId
+16. CallId
+17. SyncCursor
+18. EventId
+
+Conversation 统一抽象：
+- DirectUser
+- DirectAgent
+- Group
+- Channel
+- Topic
+- System
+- MiniAppSession
+
+Participant 统一抽象：
+- User
+- Agent
+- Bot
+- Service
+
+Message 统一 Envelope：
+- message_id
+- conversation_id
+- sender
+- timestamp
+- client_sequence
+- server_sequence
+- reply_to
+- thread/topic
+- content
+- entities
+- attachments
+- reactions
+- edit_version
+- delivery_state
+- encryption metadata
+- permissions
+- metadata/extensions
+
+消息 Content 类型至少覆盖：
+- Text
+- Markdown/RichText
+- Image
+- Video
+- Audio
+- Voice
+- File
+- Sticker
+- GIF/Animation
+- Contact
+- Location
+- Poll
+- MiniApp
+- Payment
+- ServiceEvent
+- AgentToolEvent
+- CallEvent
+
+
+============================================================
+六、自研通信协议与网络层
+============================================================
+
+目标：构建 Fabushi 自己的高性能实时通信协议，不复用 Telegram 网络。
+
+第一优先级：
+- TLS 1.3
+- WebSocket 作为稳定基础通道
+- HTTP/2 或 HTTP/3 作为 API/下载通道
+- QUIC 作为后续高性能实时通道
+- protobuf/compact binary encoding
+- 请求 ID / trace ID
+- ack
+- retry
+- timeout
+- reconnect
+- exponential backoff
+- heartbeat
+- connection migration（后续）
+
+客户端发送状态：
+Draft -> Queued -> Sending -> ServerAccepted -> Delivered -> Read
+                             -> Failed -> Retrying
+
+必须解决：
+- 重复发送
+- 消息幂等
+- 网络断开
+- 乱序
+- 多端竞争
+- 编辑/删除竞争
+- 同一消息多设备 ack
+- 大量未读增量
+- 断线重连后的 gap recovery
+
+增量同步：
+- 全局 SyncCursor + conversation cursor
+- 每次客户端带 last cursor
+- 服务端返回 delta events
+- 发生 gap 时自动补洞
+- cursor 失效时支持 snapshot + delta 恢复
+
+
+============================================================
+七、账号、身份、设备与联系人
+============================================================
+
+账号系统必须完全使用 Fabushi Identity。
+
+功能：
+- 注册/登录
+- 邮箱/手机号/Passkey/OAuth 等身份入口按现有 Fabushi 登录体系融合
+- 用户名
+- 昵称
+- 头像/动态头像
+- 简介
+- 二维码
+- 设备列表
+- 登录会话管理
+- 远程退出设备
+- 新设备确认
+- 联系人添加/删除
+- 联系人备注
+- 联系人分组
+- 黑名单
+- 隐私设置
+- 最后上线时间权限
+- 手机号/邮箱可见权限
+- 群邀请权限
+- 通话权限
+
+统一联系人：
+联系人页面同时显示：
+- 真人联系人
+- AI Agent
+- Bot
+- 工作空间成员
+
+UI 上可区分身份类型，但底层使用统一 Participant 模型。
+
+
+============================================================
+八、私聊能力
+============================================================
+
+P0 必须具备：
+- 文本发送
+- Emoji
+- 回复
+- 引用
+- 转发
+- 编辑
+- 删除本地
+- 双向删除（按权限）
+- 已读
+- 未读计数
+- 输入状态
+- 草稿同步
+- 置顶
+- 静音
+- 搜索
+- 消息跳转
+- 日期跳转
+- 消息选择
+- 多选批量操作
+- 文件/图片/视频
+- 拖拽发送
+- 剪贴板图片发送
+- 下载管理
+- 链接识别
+- @mention
+- hashtag
+- code block
+- Markdown/RichText
+
+P1：
+- 语音消息
+- 波形
+- 录音
+- 播放速度
+- GIF/动画
+- Sticker
+- Reaction
+- Poll
+- 联系人卡片
+- 位置
+- 定时消息
+- 静默消息
+- 阅后/自动删除策略（根据安全模型实现）
+
+P2：
+- Secret Conversation / 强 E2EE 会话
+- 消息过期
+- 截屏提示能力（平台允许范围）
+
+
+============================================================
+九、群组、超级群组、频道与 Topic
+============================================================
+
+群组：
+- 创建群
+- 邀请成员
