@@ -26,11 +26,14 @@ mahayana-computer.workspace = true
 mahayana-host-protocol.workspace = true
 mahayana-platform-core.workspace = true
 mahayana-plugin-host.workspace = true
-# rama-core 0.3.0-alpha.4 declares a semver range that otherwise resolves to
-# stable rama-error 0.3.0, whose API removed OpaqueError. The embedded Codex
-# lockfile correctly uses the matching alpha.4 leaf; pin it at the explicit
-# compatibility adapter boundary so Mahayana-native crates remain Rama-free.
+# rama-core 0.3.0-alpha.4 declares semver ranges for sibling pre-release crates.
+# Cargo can otherwise resolve stable 0.3.0 siblings, whose APIs are incompatible
+# with alpha.4. Pin every sibling that drifted in CI to the exact audited Codex
+# lock versions at this explicit compatibility boundary. Mahayana-native crates
+# remain Rama-free.
 rama-error = "=0.3.0-alpha.4"
+rama-macros = "=0.3.0-alpha.4"
+rama-utils = "=0.3.0-alpha.4"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
