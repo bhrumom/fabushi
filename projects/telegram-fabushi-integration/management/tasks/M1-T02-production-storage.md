@@ -6,7 +6,7 @@
 - Status: `TESTED`
 - Started: `2026-08-22`
 - Updated: `2026-08-22`
-- Depends on: `M1.T06`
+- Depends on: `M1.T06` (landed in `main` via #1988)
 
 ## Objective
 
@@ -29,20 +29,31 @@ Switch the canonical `native/mahayana-messaging` production server from JSON sna
 2. Existing JSON snapshot can be imported once without changing persisted snapshot semantics: PASS.
 3. Existing SQLite state wins over stale JSON: PASS.
 4. Rust fmt/test/clippy and Feature Host/desktop contract gates: PASS.
-5. Project evidence is attached; WBS final landed status will be updated after dependency merge and retarget: IN PROGRESS.
+5. Dependency order M1.T06 -> M1.T02: PASS; #1988 is in canonical `main`.
+6. PR retargeted directly to current `main` and revalidated: PASS.
 
 ## CI evidence
 
+### Final main-based verification
+
 - PR: #1990 `feat(messaging): make SQLite production storage default`
-- Verified code head: `031f49d015f5d51900e6003a8f2c46c839a64d7c`
-- Messaging Product Gate run `32559372311`: SUCCESS.
-- Mahayana fast checks run `32559372278`: SUCCESS.
-- Explicit automerge run `32559372304`: SUCCESS.
+- Current PR head before this evidence-only update: `174e1a0fdae82914f1f6e1c295870282ba6abcb1`
+- Base: `main` after M1.T06 and enterprise-governance merges.
+- Messaging Product Gate run `32559833779`: SUCCESS.
+- Mahayana fast checks run `32559833770`: SUCCESS.
+- Explicit automerge run `32559833763`: SUCCESS.
+
+### Earlier stacked verification
+
+- Verified implementation head: `031f49d015f5d51900e6003a8f2c46c839a64d7c`.
+- Messaging Product Gate `32559372311`: SUCCESS.
+- Mahayana fast checks `32559372278`: SUCCESS.
+- Explicit automerge `32559372304`: SUCCESS.
 
 ## Branch / PR
 
 - Branch: `feat/telegram-m1-sqlite-default`
-- Current base: `feat/telegram-m1-sqlite-storage` until #1988 lands.
+- Base: `main`
 - PR: #1990
 
 ## Evidence
@@ -55,8 +66,8 @@ Switch the canonical `native/mahayana-messaging` production server from JSON sna
 
 ## Remaining landing gate
 
-The implementation is `TESTED`, but it must not merge before M1.T06. After #1988 enters `main`, retarget #1990 directly to `main`, re-run the required checks against that base, then use the protected merge queue and verify canonical `main`.
+The implementation is `TESTED` against current `main`. Remaining work is protected merge queue completion and canonical `main` verification; no implementation dependency remains.
 
 ## Next action
 
-Wait only for the dependency landing order: #1988 -> main, then retarget #1990 -> main and re-verify current-head checks before merge queue.
+Enter protected merge queue for #1990, then verify SQLite production default and this task record on canonical `main` before closing landed evidence.
