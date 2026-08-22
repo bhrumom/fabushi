@@ -22,31 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  rust-198-native-engine-repair:
-    name: One-shot Rust 1.98 native engine repair
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-103-native-auth-secrets-clean'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 1
-      - name: Collapse validated workspace guard
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs"); s=p.read_text(); old="        if let Some(root) = workspace_root.as_deref() {\n            if !root.is_dir() {\n                return Err(KernelError::BackendUnavailable(format!(\n                    \"workspace root is not a directory: {}\",\n                    root.display()\n                )));\n            }\n        }\n"; new="        if let Some(root) = workspace_root.as_deref()\n            && !root.is_dir()\n        {\n            return Err(KernelError::BackendUnavailable(format!(\n                \"workspace root is not a directory: {}\",\n                root.display()\n            )));\n        }\n"; count=s.count(old); assert count == 1, f"expected exactly one workspace directory guard, found {count}"; p.write_text(s.replace(old,new,1))'
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs
-          git diff --cached --check
-          git commit -m 'fix(mahayana): satisfy Rust 1.98 workspace guard lint'
-          git push origin HEAD:${{ github.head_ref }}
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
