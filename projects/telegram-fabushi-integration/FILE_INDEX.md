@@ -84,6 +84,8 @@
 - `source/完整telegram融合进fabushi.txt`
 - `source/full-plan/part-01.txt` … `part-08.txt`
 - `evidence/TFI-GOV-001/README.md`
+- `evidence/TFI-GOV-002/README.md`
+- `evidence/M1-T06/README.md` (on active implementation branch until merged)
 - `templates/ADR_TEMPLATE.md`
 - `templates/PR_ACCEPTANCE_TEMPLATE.md`
 - `templates/STATUS_REPORT_TEMPLATE.md`
@@ -95,4 +97,4 @@
 
 ## Maintenance rule
 
-This index describes the durable project structure on or intended for the authoritative project path. Task files created on implementation branches become canonical only after their PRs pass CI, merge through protected `main`, and are verified there.
+This index describes the durable project structure on or intended for the authoritative project path. Task/evidence files created on implementation branches become canonical only after their PRs pass CI, merge through protected `main`, and are verified there.
