@@ -1,0 +1,42 @@
+name: GBF M7 one-shot dependency remediation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gbf-m7-dependency-remediation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.head_ref == 'gbf/m7-security-provenance-closure-20260822-gh'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - name: Refresh vulnerable production dependency graph inside declared semver ranges
+        working-directory: chatgpt-vps-control
+        run: |
+          npm audit fix --omit=dev
+          npm test
+          npm audit --omit=dev
+      - name: Commit lockfile remediation when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- chatgpt-vps-control/package.json chatgpt-vps-control/package-lock.json; then
+            echo 'Dependency graph already clean; no commit required.'
+            exit 0
+          fi
+          git config user.name 'fabushi-ci'
+          git config user.email 'fabushi-ci@users.noreply.github.com'
+          git add chatgpt-vps-control/package.json chatgpt-vps-control/package-lock.json
+          git commit -m 'fix(gbf): remediate computer-control dependencies'
+          git push origin HEAD:gbf/m7-security-provenance-closure-20260822-gh
