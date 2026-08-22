@@ -38,9 +38,7 @@ export interface OfficialSiteScreenshots {
   "immersive-meditation"?: string | null;
   "main-sutra"?: string | null;
   "group-practice"?: string | null;
-  "global-ranking"?: string | null;
   "global-donation"?: string | null;
-  "global-donation-leaderboard"?: string | null;
   capturedAt?: string;
 }
 
@@ -66,9 +64,7 @@ export const FALLBACK_SCREENSHOTS: Record<string, string> = {
   "immersive-meditation": "/product/immersive-meditation.png",
   "main-sutra": "/product/main-sutra.png",
   "group-practice": "/product/group-practice.png",
-  "global-ranking": "/product/global-ranking.png",
   "global-donation": "/product/global-donation.png",
-  "global-donation-leaderboard": "/product/global-donation-leaderboard.png",
 };
 
 const CHANNEL_ORDER: Array<Pick<OfficialSiteChannel, "audience" | "platform">> = [

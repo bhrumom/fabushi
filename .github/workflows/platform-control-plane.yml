@@ -1,0 +1,63 @@
+name: Platform Control Plane
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'fabushi/web/src/router.js'
+      - 'fabushi/web/src/routes/**'
+      - 'fabushi/web/src/security/request-gate.js'
+      - 'fabushi/web/tests/platform-control-plane.test.js'
+      - 'frontend/packages/api-client/src/endpoints.ts'
+      - '.github/workflows/platform-control-plane.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-core/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'fabushi/web/src/router.js'
+      - 'fabushi/web/src/routes/**'
+      - 'fabushi/web/src/security/request-gate.js'
+      - 'fabushi/web/tests/platform-control-plane.test.js'
+      - 'frontend/packages/api-client/src/endpoints.ts'
+      - '.github/workflows/platform-control-plane.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: platform-control-plane-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  architecture:
+    name: Platform architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs
+          cache-on-failure: true
+      - name: Test Platform Worker schema and account invariants
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-platform-worker --locked
+      - name: Compile the production Worker target
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check -p mahayana-platform-worker --target wasm32-unknown-unknown --locked
+      - name: Guard one-control-plane architecture
+        working-directory: fabushi/web
+        run: node tests/platform-control-plane.test.js

@@ -164,6 +164,34 @@ final class MarketplaceModel {
         throw MahayanaHost.HostError.requestFailed("未收到 FeatureHost 事件 \(expectedType)")
     }
 
+    func completeBrowserLogin(attemptId: String) async {
+        message = "登录授权已完成，正在通过 Rust Host 同步账号状态"
+        do {
+            let result = try await host.request(
+                method: "feature.auth.browserPoll",
+                params: ["attemptId": attemptId]
+            )
+            guard let object = result.value as? [String: Any],
+                  let status = object["status"] as? String
+            else {
+                throw MahayanaHost.HostError.invalidResponse
+            }
+            switch status {
+            case "completed":
+                await refresh()
+                message = "登录成功，账号状态已同步"
+            case "cancelled":
+                message = "登录授权已取消"
+            case "failed":
+                message = "登录授权失败"
+            default:
+                message = "登录结果尚未可用，请返回浏览器重试"
+            }
+        } catch {
+            message = "登录状态同步失败：\(error.localizedDescription)"
+        }
+    }
+
     func refresh() async {
         loading = true
         defer { loading = false }
