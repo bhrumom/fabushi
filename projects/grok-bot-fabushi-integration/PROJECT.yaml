@@ -1,4 +1,7 @@
-project_id: FABUSHI-GROK-BOT-FUSION
+project_id: FAB-P0004
+project_key: GBF
+legacy_project_ids:
+  - FABUSHI-GROK-BOT-FUSION
 name: Grok Bot -> Fabushi 全量能力与源码融合
 slug: grok-bot-fabushi-integration
 status: active
