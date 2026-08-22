@@ -18,7 +18,7 @@
 | FPG-004.2 | 建立 `projects/PORTFOLIO.json` 与项目总览 | yes | 5 个 canonical project 全部登记，next_sequence=6 | validator | implemented |
 | FPG-004.3 | 回填全部 canonical `PROJECT.yaml` | yes | 5 个项目均有唯一 `project_id`、`project_key`、slug/path 一致 | validator | implemented |
 | FPG-004.4 | 建立自动 Project ID validator | yes | 校验格式、唯一性、连续性、folder parity、base immutability | `scripts/check-project-portfolio.py` | implemented |
-| FPG-004.5 | 将编号流程写入 AGENTS/governance Skill/lifecycle/standard | yes | 新项目必须先读取 registry 并原子分配 next_sequence | main file review | in-progress |
+| FPG-004.5 | 将编号流程写入 AGENTS/governance Skill/lifecycle/standard | yes | 新项目必须先读取 registry 并原子分配 next_sequence | branch file review | implemented |
 | FPG-004.6 | GitHub Actions portfolio governance gate | yes | PR 上 validator workflow success | Actions evidence | pending |
 | FPG-004.7 | Protected merge + canonical main verification | yes | 合并后 registry、5 项目 metadata、控制规则均可从 main 验证 | PR/merge/main fetch | pending |
 
