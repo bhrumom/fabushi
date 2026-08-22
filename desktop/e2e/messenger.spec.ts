@@ -125,9 +125,10 @@ test('desktop Messenger creates a self-hosted channel and executes message mutat
     await page.getByRole('button', { name: /^置顶$/ }).last().click();
     await expect(edited.locator('svg')).toHaveCount(2);
 
-    const answers = ['E2E 账单', '1.99'];
-    page.on('dialog', async (dialog) => dialog.accept(answers.shift() ?? ''));
     await page.getByTitle('发送账单').click();
+    await page.getByTestId('invoice-title-input').fill('E2E 账单');
+    await page.getByTestId('invoice-amount-input').fill('1.99');
+    await page.getByRole('button', { name: '创建账单' }).click();
     await expect(page.getByText('🧾 账单')).toBeVisible();
 
     await edited.click({ button: 'right' });
