@@ -4,61 +4,62 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M1.T02`
 - **Stage**: `M1 Rust Core 骨架`
-- **Status**: `IMPLEMENTED`
+- **Status**: `TESTED`
 - **Started**: `2026-08-22`
 - **Updated**: `2026-08-22`
+- **Completed**: `2026-08-22`
 - **Source**: `../../source/完整telegram融合进fabushi.txt`; `../wbs/M1.md`
-- **Depends on**: `M1.T06` (PR #1988, landed on canonical `main`)
+- **Depends on**: `M1.T06` — resolved by PR #1988
 
 ## Objective
 
 Make SQLite the authoritative production store for the canonical `native/mahayana-messaging` server while preserving a safe one-time import path for historical JSON snapshots.
 
-## Current-main reconciliation
-
-The original implementation PR #1990 had successful product CI on its implementation head, but its branch also carried project-document snapshots created before the repository-wide immutable `FAB-Pxxxx` portfolio-ID governance landed. Because those stale documents must not overwrite the canonical `FAB-P0001 / TFI` project state, this task is re-landed from the latest `main` on `feat/telegram-m1-sqlite-main-sync` with only the intended runtime changes plus current project evidence.
-
-## Implemented
+## Implemented result
 
 - `MessagingTcpServer` uses `SqliteStateStore` for authoritative durable product state.
-- `FABUSHI_MESSAGING_DATABASE` selects the production SQLite database; default is `fabushi-messaging.sqlite3`.
-- `FABUSHI_MESSAGING_SNAPSHOT` is a legacy import source, not the continuing production store.
-- If only a legacy snapshot path is supplied, the SQLite path is derived as the sibling `.sqlite3` file.
-- `SqliteStateStore::import_json_if_empty` imports only when SQLite has no state.
+- `FABUSHI_MESSAGING_DATABASE` selects the production SQLite database; default `fabushi-messaging.sqlite3`.
+- `FABUSHI_MESSAGING_SNAPSHOT` remains a legacy import source only.
+- `SqliteStateStore::import_json_if_empty` imports legacy state only when SQLite has no snapshot.
 - Existing SQLite state always wins over stale JSON on later starts.
-- `snapshot_path()` remains a compatibility accessor but resolves to the production database path.
-- Unit coverage includes one-time import and protection against stale legacy overwrite.
+- `snapshot_path()` remains a compatibility accessor resolving to the authoritative database path.
+- Config validation rejects empty database/access-registry paths.
 
-## Acceptance criteria
+## Acceptance result
 
-1. New production starts default to SQLite.
-2. Existing valid JSON state can be imported exactly once into an empty SQLite database.
-3. Existing SQLite state cannot be overwritten by stale legacy JSON.
-4. Database/access-registry configuration rejects invalid empty paths.
-5. Rust formatting, all-target messaging tests, Clippy and product bridge contracts pass in GitHub Actions.
-6. Required repository/project-governance checks pass.
-7. The change merges through the protected-main process and is verified on canonical `main`.
+1. New production starts default to SQLite — **PASS**.
+2. Existing JSON state imports exactly once into empty SQLite — **PASS**.
+3. Existing SQLite state cannot be overwritten by stale JSON — **PASS**.
+4. Invalid database/access-registry paths are rejected — **PASS**.
+5. Rust formatting, all-target messaging tests, Clippy and bridge contracts pass — **PASS**.
+6. Repository/project governance checks pass — **PASS**.
+7. Change is merged and verified on canonical `main` — **PASS**.
 
-## Verification
+## Current-head verification
 
-- Historical implementation evidence from #1990: Messaging Product Gate `32559833779` SUCCESS; Mahayana fast checks `32559833770` SUCCESS; Explicit automerge `32559833763` SUCCESS.
-- Historical evidence proves the intended code path was tested, but **does not replace current-head CI** for this clean main-based landing.
-- Current-head CI / PR / merge evidence: pending.
+Clean replacement PR #1998 passed:
 
-## Branch / PR
+- Messaging Product Gate `32563424543` — SUCCESS.
+- Mahayana fast checks `32563424539` — SUCCESS.
+- Repository CI `32563424556` — SUCCESS.
+- Project portfolio governance `32563424574` — SUCCESS.
+- Fabushi self-hosted messaging `32563424511` — SUCCESS.
+- Product Gate jobs `97008408512` and `97008408644` — SUCCESS.
 
-- Branch: `feat/telegram-m1-sqlite-main-sync`
-- Base: latest canonical `main`
-- Replacement PR: pending creation.
-- Supersedes landing path of PR #1990; #1990 remains historical implementation evidence until the replacement is merged.
+PR #1998 merged as `6ad86ccc809a6f00130888087f22cbb201e853fd`. A post-merge GitHub read confirmed canonical `main` production `MessagingTcpServer` uses `SqliteStateStore` and performs legacy import only while the database is empty.
 
-## Evidence locations
+## Historical provenance
 
+PR #1990 remains historical implementation/CI provenance and is closed as superseded for landing. Its stale project-document snapshot was intentionally not merged.
+
+## Evidence
+
+- `../../evidence/M1-T02-current-main/README.md`
+- `../../evidence/M1-ACCEPT-001/README.md`
 - `native/mahayana-messaging/src/store.rs`
 - `native/mahayana-messaging/src/server.rs`
 - `native/mahayana-messaging/src/bin/messaging-server.rs`
-- `../../evidence/M1-T02-current-main/README.md`
 
 ## Next action
 
-Open the clean current-main PR, obtain current GitHub Actions evidence, merge through protected-main governance, then verify and close the M1 storage gate on canonical `main`.
+No M1.T02 blocker remains. M2-SYNC-001 may migrate the same authoritative SQLite store to schema v2 durable event journaling through its own acceptance gate.
