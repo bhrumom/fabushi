@@ -1,6 +1,6 @@
 use crate::{
-    ApprovalResolution, Capability, CapabilitySet, ExecutionPolicy, OpenSessionRequest, OperationId,
-    ResumeOperationRequest, RunRequest, RuntimeProfile, SessionId, SessionSnapshot,
+    ApprovalResolution, Capability, CapabilitySet, ExecutionPolicy, OpenSessionRequest,
+    OperationId, ResumeOperationRequest, RunRequest, RuntimeProfile, SessionId, SessionSnapshot,
     SuspendOperationRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,9 @@ impl ProductSurface {
     pub fn execution_policy(self) -> ExecutionPolicy {
         match self {
             Self::Ios | Self::Android => ExecutionPolicy::mobile_default(),
-            Self::Electron | Self::Web | Self::CliHeadless => ExecutionPolicy::interactive_default(),
+            Self::Electron | Self::Web | Self::CliHeadless => {
+                ExecutionPolicy::interactive_default()
+            }
         }
     }
 }
@@ -128,11 +130,29 @@ mod tests {
             assert_eq!(journey.run.operation_id.as_str(), "surface-operation");
             assert_eq!(journey.suspend.operation_id.as_str(), "surface-operation");
             assert_eq!(journey.resume.operation_id.as_str(), "surface-operation");
-            assert_eq!(journey.status_snapshot.session_id.as_str(), "surface-session");
-            assert!(journey.run.required_capabilities.contains(Capability::Model));
-            assert!(journey.run.required_capabilities.contains(Capability::Workspace));
+            assert_eq!(
+                journey.status_snapshot.session_id.as_str(),
+                "surface-session"
+            );
+            assert!(
+                journey
+                    .run
+                    .required_capabilities
+                    .contains(Capability::Model)
+            );
+            assert!(
+                journey
+                    .run
+                    .required_capabilities
+                    .contains(Capability::Workspace)
+            );
             assert!(journey.run.required_capabilities.contains(Capability::Mcp));
-            assert!(journey.run.required_capabilities.contains(Capability::Plugins));
+            assert!(
+                journey
+                    .run
+                    .required_capabilities
+                    .contains(Capability::Plugins)
+            );
             assert_eq!(
                 journey.run.required_capabilities,
                 journey.resume.required_capabilities

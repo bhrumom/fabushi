@@ -8,6 +8,7 @@ pub mod extension;
 pub mod resilience;
 pub mod sandbox;
 pub mod supervisor;
+pub mod surface;
 pub mod telemetry;
 
 use async_trait::async_trait;
