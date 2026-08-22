@@ -1,6 +1,6 @@
 # FCM-003 Evidence Index
 
-Status: passed after protected merge and canonical `main` verification; closure smoke pending merge.
+Status: passed; implementation and post-fix governance smoke both passed protected PR + merge-group CI and merged to canonical `main`.
 
 ## Trigger
 
@@ -39,4 +39,10 @@ Status: passed after protected merge and canonical `main` verification; closure 
 
 ## Closure smoke
 
-This closure PR intentionally changes `.agent/skills/fabushi-project-governance/SKILL.md` plus `projects/**`. It must prove that governance-only Skill/project changes do not trigger Frontend, Worker, MCP, Electron, or workflow guardrail suites. Required aggregate `CI result` must still pass on both PR and merge-group events.
+- Closure/smoke PR: #1985.
+- Head commit: `c0b89c4c115d9065df57d7dd36d8510f05ce1182`.
+- PR CI run: `32558243330` — success.
+- Merge-group CI run: `32558267502` — success.
+- Both runs executed only `Classify CI changes` + required `CI result`; Frontend, Worker, MCP, Electron, and Canonical architecture guardrails were skipped.
+- Merge commit: `fc4e0521a0bac8729632432acb6149cad5ab403d`.
+- Result: real `.agent/skills/**` + `projects/**` changes now use the intended governance fast path in both PR and merge-group contexts.

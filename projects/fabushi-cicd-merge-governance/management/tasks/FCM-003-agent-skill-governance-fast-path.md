@@ -3,7 +3,7 @@
 - **Task ID:** FCM-003
 - **Status:** passed
 - **Started:** 2026-08-22T14:24:00+08:00
-- **Updated:** 2026-08-22T14:55:00+08:00
+- **Updated:** 2026-08-22T14:58:00+08:00
 - **Completed:** 2026-08-22T14:54:20+08:00
 
 ## Objective
@@ -65,6 +65,10 @@ Prevent repository-governance-only changes under `.agent/skills/**`, root Markdo
 - Merge-group CI: run `32558147639`, success; required `CI result` passed.
 - Merge queue commit on `main`: `3a06560ce2b9d8d850f6f15e008ae9b0cf1f997b`.
 - Post-merge `main` read verified the `.agent/skills/**` matcher.
+- Closure smoke PR: #1985.
+- Closure PR CI: run `32558243330`, success; only classifier + `CI result` ran.
+- Closure merge-group CI: run `32558267502`, success; product/workflow suites skipped.
+- Closure merge commit: `fc4e0521a0bac8729632432acb6149cad5ab403d`.
 
 ## Blockers / risks
 
@@ -73,4 +77,4 @@ Prevent repository-governance-only changes under `.agent/skills/**`, root Markdo
 
 ## Next action
 
-Merge this closure/smoke PR, verify the `.agent/skills/**`-only governance fast path on PR and merge-group CI, then verify canonical `main`.
+No remaining FCM-003 action. Continue with the next CI governance task only when prioritized.
