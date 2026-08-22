@@ -102,6 +102,10 @@ pub enum MessagingServerError {
     Poisoned,
 }
 
+/// Production self-hosted messaging server.
+///
+/// Durable product state is authoritative in SQLite. A configured legacy JSON
+/// snapshot is only an import source while that SQLite database is still empty.
 pub struct MessagingTcpServer {
     config: MessagingServerConfig,
     service: Arc<Mutex<MessagingService<SqliteStateStore>>>,
