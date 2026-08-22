@@ -1,0 +1,60 @@
+name: Mahayana Rama compatibility lock once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mahayana-rama-lock-materialize-pr.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/mahayana-native-auth-boundary'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Pin Rama compatibility leaf in Mahayana lockfile
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo update -p rama-error --precise 0.3.0-alpha.4
+
+      - name: Prove the lockfile matches embedded Codex Rama
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('third_party/mahayana/mahayana-rs/Cargo.lock').read_text()
+          start = text.index('name = "rama-error"')
+          block = text[start:text.index('[[package]]', start + 1)]
+          if 'version = "0.3.0-alpha.4"' not in block:
+              raise SystemExit(block)
+          print(block)
+          PY
+
+      - name: Remove one-shot lockfile materializer
+        run: rm -f .github/workflows/mahayana-rama-lock-materialize-pr.yml
+
+      - name: Commit lockfile and one-shot cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/Cargo.lock .github/workflows/mahayana-rama-lock-materialize-pr.yml
+          if git diff --cached --quiet; then
+            echo 'Rama lockfile is already materialized.'
+            exit 0
+          fi
+          git commit -m 'chore(mahayana): lock Codex Rama compatibility leaf'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
