@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - gbf/m4-computer-control-convergence-20260822
-    paths:
-      - '.github/workflows/gbf-m4-remediation.yml'
   workflow_dispatch:
 
 permissions:
@@ -28,89 +26,21 @@ jobs:
         with:
           toolchain: 1.92.0
           components: rustfmt
-
-      - name: Align portable adapter with canonical ComputerAction fields
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          computer = Path('third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs')
-          text = computer.read_text(encoding='utf-8')
-          text = text.replace('action.duration_ms.unwrap_or(300)', 'action.wait_ms.unwrap_or(300)')
-          text = text.replace('action.scroll_amount.unwrap_or(1)', 'action.amount.unwrap_or(1)')
-          if 'action.duration_ms' in text or 'action.scroll_amount' in text:
-              raise SystemExit('stale portable ComputerAction field remains')
-          computer.write_text(text, encoding='utf-8')
-
-          protocol = Path('third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs')
-          text = protocol.read_text(encoding='utf-8')
-          if 'computer_action_duration_and_scroll_amount_match_the_react_contract' not in text:
-              anchor = '''    #[test]\n    fn event_json_uses_camel_case_fields() {\n'''
-              test = r'''    #[test]
-    fn computer_action_duration_and_scroll_amount_match_the_react_contract() {
-        let action: ComputerAction = serde_json::from_str(
-            r#"{"action":"drag","x":1,"y":2,"x2":3,"y2":4,"durationMs":375,"amount":7}"#,
-        )
-        .expect("decode computer action");
-        assert_eq!(action.wait_ms, Some(375));
-        assert_eq!(action.amount, Some(7));
-        let value = serde_json::to_value(&action).expect("encode computer action");
-        assert_eq!(value["durationMs"], 375);
-        assert_eq!(value["amount"], 7);
-        assert!(value.get("waitMs").is_none());
-    }
-
-    #[test]
-    fn legacy_wait_ms_alias_remains_accepted() {
-        let action: ComputerAction = serde_json::from_str(
-            r#"{"action":"wait","waitMs":250}"#,
-        )
-        .expect("decode legacy wait action");
-        assert_eq!(action.wait_ms, Some(250));
-    }
-
-'''
-              if text.count(anchor) != 1:
-                  raise SystemExit('protocol test anchor is not unique')
-              text = text.replace(anchor, test + anchor, 1)
-          protocol.write_text(text, encoding='utf-8')
-          PY
-
-      - name: Provision Wayland PipeWire and X11 libraries in Mahayana fast checks
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          workflow = Path('.github/workflows/mahayana-fast-checks.yml')
-          text = workflow.read_text(encoding='utf-8')
-          if 'Install Linux native capture/input dependencies' not in text:
-              marker = '''      - name: Restore targeted Cargo cache\n'''
-              step = '''      - name: Install Linux native capture/input dependencies\n        shell: bash\n        run: |\n          sudo apt-get update\n          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \\\n            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev\n\n'''
-              if text.count(marker) != 1:
-                  raise SystemExit('Mahayana cache step anchor is not unique')
-              text = text.replace(marker, step + marker, 1)
-          workflow.write_text(text, encoding='utf-8')
-          PY
-
+      - name: Apply canonical M4 remediation patch
+        run: python3 .github/scripts/gbf-m4-remediate.py
       - name: Remediate production computer-control dependency graph
         working-directory: chatgpt-vps-control
-        shell: bash
         run: |
           npm ci --ignore-scripts
           npm audit fix --omit=dev
           npm test
           npm audit --omit=dev
-
       - name: Format and verify canonical protocol tests
         working-directory: third_party/mahayana/mahayana-rs
-        shell: bash
         run: |
           cargo fmt --all
           cargo test --locked -p mahayana-host-protocol --profile ci
-
       - name: Verify remediation diff
-        shell: bash
         run: |
           ! grep -q 'action\.duration_ms' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
           ! grep -q 'action\.scroll_amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
@@ -118,18 +48,11 @@ jobs:
           grep -q 'action\.amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
           grep -q 'libwayland-dev' .github/workflows/mahayana-fast-checks.yml
           git diff --check
-
-      - name: Commit remediation and remove one-shot workflow
-        shell: bash
+      - name: Commit remediation and remove one-shot files
         run: |
-          git rm .github/workflows/gbf-m4-remediation.yml
+          git rm .github/workflows/gbf-m4-remediation.yml .github/scripts/gbf-m4-remediate.py
           git config user.name 'fabushi-ci'
           git config user.email 'fabushi-ci@users.noreply.github.com'
-          git add \
-            .github/workflows/mahayana-fast-checks.yml \
-            chatgpt-vps-control/package.json \
-            chatgpt-vps-control/package-lock.json \
-            third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs \
-            third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+          git add .github/workflows/mahayana-fast-checks.yml chatgpt-vps-control/package.json chatgpt-vps-control/package-lock.json third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
           git commit -m 'fix(gbf): close cross-platform computer-control gates'
           git push origin HEAD:gbf/m4-computer-control-convergence-20260822
