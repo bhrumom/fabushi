@@ -1,0 +1,68 @@
+name: Mahayana embedded Clippy diagnose once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mahayana-embedded-clippy-diagnose-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/mahayana-native-auth-boundary'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Reproduce Embedded Runtime Clippy and capture first error
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --locked \
+            --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            --package mahayana-agent-codex \
+            --package mahayana-ffi \
+            --package mahayana-cli \
+            --all-targets -- -D warnings > /tmp/embedded-clippy.log 2>&1
+          status=$?
+          set -e
+          mkdir -p projects/mahayana-sovereign-runtime/evidence/MSR-103
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('/tmp/embedded-clippy.log').read_text(errors='replace').splitlines()
+          idx = next((i for i, line in enumerate(src) if 'error[' in line or line.lstrip().startswith('error:')), None)
+          if idx is None:
+              excerpt = src[-160:]
+          else:
+              excerpt = src[max(0, idx-40):min(len(src), idx+160)]
+          Path('projects/mahayana-sovereign-runtime/evidence/MSR-103/embedded-clippy-first-error.txt').write_text(
+              'Exact command: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-agent-codex --package mahayana-ffi --package mahayana-cli --all-targets -- -D warnings\n\n' + '\n'.join(excerpt) + '\n'
+          )
+          PY
+          printf '%s\n' "$status" > /tmp/clippy-status
+
+      - name: Remove one-shot diagnostic workflow
+        run: rm -f .github/workflows/mahayana-embedded-clippy-diagnose-once.yml
+
+      - name: Commit diagnostic evidence and cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add projects/mahayana-sovereign-runtime/evidence/MSR-103/embedded-clippy-first-error.txt .github/workflows/mahayana-embedded-clippy-diagnose-once.yml
+          git commit -m 'test(mahayana): capture embedded Clippy root error'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
