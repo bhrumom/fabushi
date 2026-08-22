@@ -1,3 +1,0 @@
-[submodule "fabushi/native_libs/llama.cpp"]
-	path = fabushi/native_libs/llama.cpp
-	url = https://github.com/ggml-org/llama.cpp

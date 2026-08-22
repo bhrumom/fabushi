@@ -1,5 +1,6 @@
 name: Mahayana Harness finalize once
 
+# merge-sync: main-60069c4
 on:
   push:
     branches:
@@ -27,7 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-harness-final-v2
+          shared-key: mahayana-harness-final-v3
           cache-all-crates: true
 
       - name: Materialize the already-validated Harness source
