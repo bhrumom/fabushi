@@ -8,8 +8,7 @@ on:
       - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
@@ -26,39 +25,201 @@ permissions:
 
 jobs:
   native-runtime-repair:
-    name: One-shot native runtime compatibility repair
+    name: One-shot native runtime and extension repair
     if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-native-runtime-parity-clean'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.head_ref }}
-      - name: Repair PromptQueue API and unused imports
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Materialize native runtime and MSR-401 contracts
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs')
-          text = path.read_text()
-          replacements = [
+
+          engine = Path('third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs')
+          text = engine.read_text()
+          for old, new in [
               ('.prompt_queue\n                .next()', '.prompt_queue\n                .take_next()'),
               ('    ApprovalMode, ApprovalResolution,', '    ApprovalResolution,'),
               ('    SubagentScheduler, SubagentState, Workflow,', '    SubagentScheduler, Workflow,'),
-          ]
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one exact match, found {count}: {old!r}')
-              text = text.replace(old, new, 1)
-          path.write_text(text)
+          ]:
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif new not in text:
+                  raise SystemExit(f'native engine repair precondition missing: {old!r}')
+          engine.write_text(text)
+
+          kernel = Path('third_party/mahayana/mahayana-rs/mahayana-kernel/src/lib.rs')
+          text = kernel.read_text()
+          if 'pub mod extension;' not in text:
+              text = text.replace('pub mod resilience;\n', 'pub mod extension;\npub mod resilience;\n', 1)
+          if '    Connectors,\n' not in text:
+              text = text.replace('    Plugins,\n', '    Plugins,\n    Connectors,\n    MiniApps,\n', 1)
+          kernel.write_text(text)
+
+          Path('third_party/mahayana/mahayana-rs/mahayana-kernel/src/extension.rs').write_text(r'''use crate::{Capability, CapabilitySet};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionKind {
+    Mcp,
+    Skill,
+    Plugin,
+    Connector,
+    MiniApp,
+}
+
+impl ExtensionKind {
+    pub fn capability(self) -> Capability {
+        match self {
+            Self::Mcp => Capability::Mcp,
+            Self::Skill => Capability::Skills,
+            Self::Plugin => Capability::Plugins,
+            Self::Connector => Capability::Connectors,
+            Self::MiniApp => Capability::MiniApps,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtensionDescriptor {
+    pub id: String,
+    pub kind: ExtensionKind,
+    pub capabilities: CapabilitySet,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, String>,
+}
+
+impl ExtensionDescriptor {
+    pub fn new(
+        id: impl Into<String>,
+        kind: ExtensionKind,
+        capabilities: impl IntoIterator<Item = Capability>,
+    ) -> Result<Self, String> {
+        let id = id.into();
+        if id.trim().is_empty() {
+            return Err("extension id must not be empty".into());
+        }
+        let mut values = capabilities.into_iter().collect::<Vec<_>>();
+        if !values.contains(&kind.capability()) {
+            values.push(kind.capability());
+        }
+        Ok(Self {
+            id,
+            kind,
+            capabilities: CapabilitySet::new(values),
+            metadata: BTreeMap::new(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_extension_kinds_map_to_mahayana_capabilities() {
+        for kind in [
+            ExtensionKind::Mcp,
+            ExtensionKind::Skill,
+            ExtensionKind::Plugin,
+            ExtensionKind::Connector,
+            ExtensionKind::MiniApp,
+        ] {
+            let descriptor = ExtensionDescriptor::new("example", kind, []).expect("descriptor");
+            assert!(descriptor.capabilities.contains(kind.capability()));
+        }
+    }
+
+    #[test]
+    fn rejects_empty_extension_identity() {
+        assert!(ExtensionDescriptor::new(" ", ExtensionKind::Plugin, []).is_err());
+    }
+}
+''')
+
+          mcp = Path('third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/lib.rs')
+          text = mcp.read_text()
+          if 'pub mod status;' not in text:
+              marker = 'use mahayana_platform_core::HostPlatform;'
+              if marker not in text:
+                  raise SystemExit('MCP module insertion marker missing')
+              text = text.replace(marker, 'pub mod status;\n\n' + marker, 1)
+          mcp.write_text(text)
+
+          Path('third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/status.rs').write_text(r'''use crate::{McpTransport, NativeMcpClient};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpRuntimeState {
+    Configured,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpTransportKind {
+    Stdio,
+    Http,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpRuntimeStatus {
+    pub state: McpRuntimeState,
+    pub transport: McpTransportKind,
+    pub endpoint: Option<String>,
+}
+
+impl NativeMcpClient {
+    /// Returns a passive runtime snapshot. This method never starts a process,
+    /// performs network I/O, initializes a session, or reconnects a transport.
+    pub fn status(&self) -> McpRuntimeStatus {
+        match &self.transport {
+            McpTransport::Stdio { command, .. } => McpRuntimeStatus {
+                state: McpRuntimeState::Configured,
+                transport: McpTransportKind::Stdio,
+                endpoint: Some(command.display().to_string()),
+            },
+            McpTransport::Http { url, .. } => McpRuntimeStatus {
+                state: McpRuntimeState::Configured,
+                transport: McpTransportKind::Http,
+                endpoint: Some(url.clone()),
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn http_status_is_passive_even_for_unreachable_endpoint() {
+        let client = NativeMcpClient::new(McpTransport::Http {
+            url: "https://127.0.0.1:9/mcp".into(),
+            headers: BTreeMap::new(),
+        });
+        let status = client.status();
+        assert_eq!(status.state, McpRuntimeState::Configured);
+        assert_eq!(status.transport, McpTransportKind::Http);
+        assert_eq!(status.endpoint.as_deref(), Some("https://127.0.0.1:9/mcp"));
+    }
+}
+''')
           PY
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-kernel -p mahayana-mcp-runtime -p mahayana-native-engine
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs
+          git add third_party/mahayana/mahayana-rs/mahayana-kernel/src third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs
           git diff --cached --check
-          git commit -m 'fix(mahayana): align native runtime with queue API'
+          git commit -m 'feat(mahayana): add observable extension runtime contracts'
           git push origin HEAD:${{ github.head_ref }}
 
   protocol-and-bridge:
@@ -71,49 +232,32 @@ jobs:
       run:
         working-directory: third_party/mahayana/mahayana-rs
     steps:
-      - name: Checkout Mahayana sources
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /native/mahayana-messaging/**
             /third_party/mahayana/**
             /scripts/check-mahayana-source-boundary.py
-      - name: Verify Mahayana source ownership boundary
-        run: python3 ../../../scripts/check-mahayana-source-boundary.py
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - run: python3 ../../../scripts/check-mahayana-source-boundary.py
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Restore targeted Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: mahayana-fast-v6
           cache-all-crates: true
-      - name: Verify formatting
-        run: cargo fmt --all -- --check
-      - name: Test Mahayana-owned authentication and encrypted secrets
-        run: cargo test -p mahayana-auth -p mahayana-secrets --profile ci
-      - name: Compile product client against Mahayana-owned auth and secrets
-        run: cargo test -p mahayana-platform-client --profile ci
-      - name: Test sovereign kernel, supervision, and legacy bridge
-        run: cargo test -p mahayana-kernel -p mahayana-agent-kernel-bridge --profile ci
-      - name: Test native orchestration and workspace engines
-        run: cargo test -p mahayana-orchestrator -p mahayana-workspace-engine --profile ci
-      - name: Test native model and coding agent engine
-        run: cargo test -p mahayana-model -p mahayana-native-engine --profile ci
-      - name: Test native MCP transport and Agent adapter
-        run: cargo test -p mahayana-mcp-runtime -p mahayana-native-agent --profile ci
-      - name: Test protocol and MiniApp bridge
-        run: cargo test -p mahayana-miniapp-protocol -p mahayana-miniapp-bridge -p mahayana-host-protocol --profile ci
-      - name: Test Rust-native Mahayana Harness
-        run: cargo test -p mahayana-harness -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-adapters -p mahayana-harness-agent -p mahayana-harness-protocol -p mahayana-unified-app-host --profile ci
-      - name: Test direct Mahayana Host
-        run: cargo test -p mahayana-host --profile ci --no-default-features --features local-only
-      - name: Test deterministic feature Host without the production dependency graph
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features
-      - name: Test production feature adapters over the cached direct Host
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features --features local-only production_uses_the_real_runtime_and_rust_owned_session_store
-      - name: Check minimal embedded FFI boundary
-        run: cargo check -p mahayana-ffi --profile ci --no-default-features --features local-only
+      - run: cargo fmt --all -- --check
+      - run: cargo test -p mahayana-auth -p mahayana-secrets --profile ci
+      - run: cargo test -p mahayana-platform-client --profile ci
+      - run: cargo test -p mahayana-kernel -p mahayana-agent-kernel-bridge --profile ci
+      - run: cargo test -p mahayana-orchestrator -p mahayana-workspace-engine --profile ci
+      - run: cargo test -p mahayana-model -p mahayana-native-engine --profile ci
+      - run: cargo test -p mahayana-mcp-runtime -p mahayana-native-agent --profile ci
+      - run: cargo test -p mahayana-miniapp-protocol -p mahayana-miniapp-bridge -p mahayana-host-protocol --profile ci
+      - run: cargo test -p mahayana-harness -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-adapters -p mahayana-harness-agent -p mahayana-harness-protocol -p mahayana-unified-app-host --profile ci
+      - run: cargo test -p mahayana-host --profile ci --no-default-features --features local-only
+      - run: cargo test -p mahayana-feature-host --profile ci --no-default-features
+      - run: cargo test -p mahayana-feature-host --profile ci --no-default-features --features local-only production_uses_the_real_runtime_and_rust_owned_session_store
+      - run: cargo check -p mahayana-ffi --profile ci --no-default-features --features local-only
