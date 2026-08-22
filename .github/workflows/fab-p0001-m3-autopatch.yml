@@ -1,0 +1,266 @@
+name: FAB-P0001 M3 isolated autopatch
+
+on:
+  push:
+    branches:
+      - fix/fab-p0001-m3-e2e-closure
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+      - name: Apply exact M3 unread and reload closure patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "native/mahayana-messaging/src/engine.rs",
+              """    pub conversations: BTreeMap<ConversationId, Conversation>,\n    pub folders: BTreeMap<String, ConversationFolder>,\n    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n""",
+              """    pub conversations: BTreeMap<ConversationId, Conversation>,\n    pub folders: BTreeMap<String, ConversationFolder>,\n    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n    pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,\n""",
+          )
+
+          replace_once(
+              "native/mahayana-messaging/src/engine.rs",
+              """            Event::ConversationRead {\n                conversation_id,\n                message_id,\n                ..\n            } => {\n                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {\n                    conversation.last_read_message_id = Some(message_id.0);\n                    conversation.unread_count = 0;\n                    conversation.marked_unread = false;\n                }\n            }\n""",
+              """            Event::ConversationRead {\n                conversation_id,\n                actor_id,\n                message_id,\n            } => {\n                self.state\n                    .read_cursors\n                    .entry(conversation_id.clone())\n                    .or_default()\n                    .insert(actor_id, message_id.clone());\n                // Keep the legacy conversation fields coherent for older snapshot readers.\n                // Actor-specific clients receive their authoritative read state from the\n                // projected sync view below, so another participant cannot clear their unread.\n                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {\n                    conversation.last_read_message_id = Some(message_id.0);\n                    conversation.unread_count = 0;\n                    conversation.marked_unread = false;\n                }\n            }\n""",
+          )
+
+          replace_once(
+              "native/mahayana-messaging/src/service.rs",
+              "use crate::conversation::{ConversationId, ConversationKind};\n",
+              "use crate::conversation::{Conversation, ConversationId, ConversationKind};\n",
+          )
+
+          replace_once(
+              "native/mahayana-messaging/src/service.rs",
+              """    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {\n""",
+              """    fn project_conversation_for_actor(\n        &self,\n        actor_id: &ActorId,\n        conversation: &Conversation,\n        server_time_ms: i64,\n    ) -> Conversation {\n        let state = self.engine.state();\n        let mut projected = conversation.clone();\n        let last_read = state\n            .read_cursors\n            .get(&conversation.id)\n            .and_then(|cursors| cursors.get(actor_id));\n        projected.last_read_message_id = last_read.map(|message_id| message_id.0.clone());\n\n        let mut ordered_messages = state\n            .messages\n            .get(&conversation.id)\n            .into_iter()\n            .flat_map(|messages| messages.values())\n            .collect::<Vec<_>>();\n        ordered_messages.sort_by(|left, right| {\n            left.created_at_ms\n                .cmp(&right.created_at_ms)\n                .then_with(|| left.id.cmp(&right.id))\n        });\n        let read_index = last_read\n            .and_then(|message_id| ordered_messages.iter().position(|message| &message.id == message_id));\n        let unread = ordered_messages\n            .iter()\n            .enumerate()\n            .filter(|(index, message)| {\n                let after_read = match read_index {\n                    Some(read_index) => *index > read_index,\n                    None => true,\n                };\n                let scheduled_is_visible = message\n                    .scheduled_at_ms\n                    .is_none_or(|scheduled_at_ms| scheduled_at_ms <= server_time_ms);\n                after_read\n                    && scheduled_is_visible\n                    && !message.deleted\n                    && &message.sender_id != actor_id\n            })\n            .count();\n        projected.unread_count = u32::try_from(unread).unwrap_or(u32::MAX);\n        projected\n    }\n\n    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {\n""",
+          )
+
+          replace_once(
+              "native/mahayana-messaging/src/service.rs",
+              """                conversations: visible_conversation_ids\n                    .iter()\n                    .filter_map(|id| state.conversations.get(id))\n                    .take(max_items)\n                    .cloned()\n                    .collect(),\n""",
+              """                conversations: visible_conversation_ids\n                    .iter()\n                    .filter_map(|id| state.conversations.get(id))\n                    .take(max_items)\n                    .map(|conversation| {\n                        self.project_conversation_for_actor(actor_id, conversation, server_time_ms)\n                    })\n                    .collect(),\n""",
+          )
+
+          replace_once(
+              "desktop/src/messaging-shell-v2.tsx",
+              """      case 'messageAdded':\n      case 'messageChanged': {\n        const message = (event as unknown as { message: MessagingMessage }).message;\n        setSelfMessages((current) => {\n          const list = upsertById(current[message.conversationId] ?? [], message)\n            .sort((a, b) => a.createdAtMs - b.createdAtMs);\n          const next = { ...current, [message.conversationId]: list };\n          if (activePeerKeyRef.current === `selfhosted:${message.conversationId}`) {\n            setMessages(list.filter((item) => !item.deleted).map(displaySelfMessage));\n          }\n          return next;\n        });\n        setPendingSend(false);\n        break;\n      }\n      case 'messagesDeleted': {\n""",
+              """      case 'messageAdded':\n      case 'messageChanged': {\n        const message = (event as unknown as { message: MessagingMessage }).message;\n        const isActiveConversation = activePeerKeyRef.current === `selfhosted:${message.conversationId}`;\n        const isIncoming = message.senderId !== selfHosted.actorId;\n        setSelfMessages((current) => {\n          const list = upsertById(current[message.conversationId] ?? [], message)\n            .sort((a, b) => a.createdAtMs - b.createdAtMs);\n          const next = { ...current, [message.conversationId]: list };\n          if (isActiveConversation) {\n            setMessages(list.filter((item) => !item.deleted).map(displaySelfMessage));\n          }\n          return next;\n        });\n        if (event.type === 'messageAdded') {\n          setSelfConversations((current) => current.map((conversation) => conversation.id === message.conversationId\n            ? {\n                ...conversation,\n                lastMessageId: message.id,\n                updatedAtMs: Math.max(conversation.updatedAtMs, message.createdAtMs),\n                unreadCount: isIncoming && !isActiveConversation\n                  ? conversation.unreadCount + 1\n                  : conversation.unreadCount,\n              }\n            : conversation));\n          if (isIncoming && isActiveConversation) {\n            void selfHosted.markRead(message.conversationId, message.id).catch(() => {});\n          }\n        }\n        setPendingSend(false);\n        break;\n      }\n      case 'readChanged': {\n        const payload = event as unknown as { conversationId: string; actorId: string; messageId: string };\n        if (payload.actorId === selfHosted.actorId) {\n          setSelfConversations((current) => current.map((conversation) => conversation.id === payload.conversationId\n            ? {\n                ...conversation,\n                lastReadMessageId: payload.messageId,\n                unreadCount: 0,\n                markedUnread: false,\n              }\n            : conversation));\n        }\n        break;\n      }\n      case 'messagesDeleted': {\n""",
+          )
+
+          replace_once(
+              "desktop/e2e/messenger.spec.ts",
+              """    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger'];\n""",
+              """    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger', 'messenger-workspace'];\n""",
+          )
+
+          replace_once(
+              "desktop/e2e/messenger.spec.ts",
+              """    if (hostState === 'ready') return true;\n    return page.getByTestId('open-messenger').isVisible().catch(() => false);\n""",
+              """    if (hostState === 'ready') return true;\n    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;\n    return page.getByTestId('open-messenger').isVisible().catch(() => false);\n""",
+          )
+
+          replace_once(
+              "desktop/e2e/messenger.spec.ts",
+              """async function openMessenger(page: Page): Promise<void> {\n  await page.getByTestId('open-messenger').click();\n  await expect(page.getByTestId('messenger-workspace')).toBeVisible();\n  await expect(page.getByTitle('聊天')).toBeVisible();\n}\n""",
+              """async function openMessenger(page: Page): Promise<void> {\n  const workspace = page.getByTestId('messenger-workspace');\n  if (!await workspace.isVisible().catch(() => false)) {\n    await page.getByTestId('open-messenger').click();\n  }\n  await expect(workspace).toBeVisible();\n  await expect(page.getByTitle('聊天')).toBeVisible();\n}\n""",
+          )
+
+          Path("native/mahayana-messaging/tests/unread_projection_contract.rs").write_text(r'''use fabushi_messaging_core::*;
+
+fn context(actor_id: &str, request_id: &str) -> RequestContext {
+    RequestContext {
+        request_id: request_id.into(),
+        device_id: format!("device:{actor_id}"),
+        actor_id: ActorId::new(actor_id),
+        session_id: format!("session:{actor_id}"),
+        sent_at_ms: 1,
+    }
+}
+
+fn handle(
+    service: &mut MessagingService<MemoryStateStore>,
+    actor_id: &str,
+    request_id: &str,
+    command: ClientCommand,
+    now_ms: i64,
+) -> Vec<ServerEnvelope> {
+    service
+        .handle(
+            ClientEnvelope::new(context(actor_id, request_id), command),
+            now_ms,
+        )
+        .unwrap()
+}
+
+fn synced_conversation(
+    service: &mut MessagingService<MemoryStateStore>,
+    actor_id: &str,
+    conversation_id: &str,
+    now_ms: i64,
+) -> Conversation {
+    let events = handle(
+        service,
+        actor_id,
+        "sync",
+        ClientCommand::Sync {
+            cursor: None,
+            limit: 100,
+        },
+        now_ms,
+    );
+    events
+        .into_iter()
+        .find_map(|envelope| match envelope.event {
+            ServerEvent::SyncBatch { conversations, .. } => conversations
+                .into_iter()
+                .find(|conversation| conversation.id == ConversationId::new(conversation_id)),
+            _ => None,
+        })
+        .expect("conversation should be visible in actor sync")
+}
+
+#[test]
+fn unread_projection_is_actor_scoped_and_read_cursor_survives_reload() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    let me = ActorId::new("human:me");
+    let peer = ActorId::new("human:peer");
+    let conversation_id = "direct:unread-contract";
+
+    handle(
+        &mut service,
+        "human:me",
+        "profile-me",
+        ClientCommand::UpsertProfile {
+            actor: Actor::human("human:me", "Me"),
+        },
+        1,
+    );
+    handle(
+        &mut service,
+        "human:peer",
+        "profile-peer",
+        ClientCommand::UpsertProfile {
+            actor: Actor::human("human:peer", "Peer"),
+        },
+        2,
+    );
+    handle(
+        &mut service,
+        "human:me",
+        "conversation",
+        ClientCommand::CreateConversation {
+            conversation: Conversation::direct(
+                conversation_id,
+                "Unread contract",
+                vec![
+                    Participant {
+                        actor_id: me.clone(),
+                        role: ParticipantRole::Owner,
+                        joined_at_ms: 3,
+                        muted_until_ms: None,
+                    },
+                    Participant {
+                        actor_id: peer.clone(),
+                        role: ParticipantRole::Member,
+                        joined_at_ms: 3,
+                        muted_until_ms: None,
+                    },
+                ],
+                3,
+            ),
+        },
+        3,
+    );
+
+    let incoming = handle(
+        &mut service,
+        "human:peer",
+        "send-1",
+        ClientCommand::SendMessage {
+            conversation_id: ConversationId::new(conversation_id),
+            client_message_id: ClientMessageId("client:unread:1".into()),
+            content: MessageContent::Text {
+                text: FormattedText::plain("first unread"),
+            },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: false,
+        },
+        4,
+    );
+    let first_message_id = incoming
+        .iter()
+        .find_map(|envelope| match &envelope.event {
+            ServerEvent::MessageAdded { message } => Some(message.id.clone()),
+            _ => None,
+        })
+        .expect("send should emit MessageAdded");
+
+    let my_projection = synced_conversation(&mut service, "human:me", conversation_id, 5);
+    assert_eq!(my_projection.unread_count, 1);
+    assert_eq!(my_projection.last_read_message_id, None);
+
+    let peer_projection = synced_conversation(&mut service, "human:peer", conversation_id, 6);
+    assert_eq!(peer_projection.unread_count, 0);
+
+    handle(
+        &mut service,
+        "human:me",
+        "read-1",
+        ClientCommand::MarkRead {
+            conversation_id: ConversationId::new(conversation_id),
+            message_id: first_message_id.clone(),
+        },
+        7,
+    );
+    let my_projection = synced_conversation(&mut service, "human:me", conversation_id, 8);
+    assert_eq!(my_projection.unread_count, 0);
+    assert_eq!(
+        my_projection.last_read_message_id.as_deref(),
+        Some(first_message_id.0.as_str())
+    );
+
+    let store = service.into_store();
+    let mut restored = MessagingService::load(store).unwrap();
+    let restored_projection = synced_conversation(&mut restored, "human:me", conversation_id, 9);
+    assert_eq!(restored_projection.unread_count, 0);
+    assert_eq!(
+        restored_projection.last_read_message_id.as_deref(),
+        Some(first_message_id.0.as_str())
+    );
+}
+''')
+
+          Path(".github/workflows/fab-p0001-m3-autopatch.yml").unlink()
+          PY
+      - name: Commit exact patch and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git add native/mahayana-messaging/src/engine.rs native/mahayana-messaging/src/service.rs native/mahayana-messaging/tests/unread_projection_contract.rs desktop/src/messaging-shell-v2.tsx desktop/e2e/messenger.spec.ts .github/workflows/fab-p0001-m3-autopatch.yml
+          git commit -m "fix(tfi): make unread projection actor scoped"
+          git push origin HEAD:${GITHUB_REF_NAME}
