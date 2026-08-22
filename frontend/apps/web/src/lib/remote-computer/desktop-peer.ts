@@ -1,6 +1,7 @@
 import type {
   ComputerAction,
   ComputerActionResult,
+  ComputerControlTarget,
   ComputerSnapshot,
   RemoteComputerClient,
   RemoteComputerRegistration,
@@ -150,14 +151,19 @@ async function remoteRequest(
   );
 }
 
+function remoteDesktopTarget(deviceId: string, generation: number): ComputerControlTarget {
+  return { protocolVersion: 1, kind: "desktop", deviceId, generation };
+}
+
 async function computerSnapshotRequest(
   transport: MahayanaHostTransport,
   sessionId: string,
+  target: ComputerControlTarget,
 ): Promise<ComputerSnapshot> {
   const id = requestId("remote-snapshot");
   const event = await awaitEvent(
     transport,
-    { type: "computer.screenshot", requestId: id, origin: "remote-mobile", sessionId },
+    { type: "computer.screenshot", requestId: id, origin: "remote-mobile", sessionId, target },
     (candidate): candidate is ComputerSnapshotEvent => candidate.type === "computer.snapshot" && candidate.requestId === id,
   );
   return event.snapshot;
@@ -166,13 +172,14 @@ async function computerSnapshotRequest(
 async function computerActionRequest(
   transport: MahayanaHostTransport,
   sessionId: string,
+  target: ComputerControlTarget,
   action: ComputerAction,
   then: ComputerAction[] = [],
 ): Promise<ComputerActionResult> {
   const id = requestId("remote-action");
   const event = await awaitEvent(
     transport,
-    { type: "computer.action", requestId: id, origin: "remote-mobile", sessionId, action, then },
+    { type: "computer.action", requestId: id, origin: "remote-mobile", sessionId, target, action, then },
     (candidate): candidate is ComputerResultEvent => candidate.type === "computer.result" && candidate.requestId === id,
   );
   return event.result;
@@ -505,6 +512,7 @@ export class RemoteComputerDesktopController {
         state: "active",
         clientId: String(activation.clientId ?? entry.session.clientId),
         expiresAt: Number(activation.expiresAt ?? entry.session.expiresAt),
+        generation: Number(activation.generation ?? entry.session.generation ?? 0),
       };
       if (entry.channel?.readyState === "open") {
         this.update({ channelOpen: true, connectionState: entry.peer.connectionState });
@@ -513,6 +521,7 @@ export class RemoteComputerDesktopController {
           protocol: 1,
           deviceId: this.deviceId,
           sessionId: entry.session.sessionId,
+          generation: entry.session.generation ?? 0,
         });
       }
       await remoteRequest(this.transport, {
@@ -586,7 +595,11 @@ export class RemoteComputerDesktopController {
     }
     if (message.type === "computer.snapshot.request") {
       try {
-        const snapshot = await computerSnapshotRequest(this.transport, entry.session.sessionId);
+        const snapshot = await computerSnapshotRequest(
+          this.transport,
+          entry.session.sessionId,
+          remoteDesktopTarget(this.deviceId, entry.session.generation ?? 0),
+        );
         await sendJson(channel, { type: "computer.ack", id: message.id, actionsExecuted: 0 });
         await sendSnapshotFrame(channel, message.id, snapshot);
       } catch (cause) {
@@ -599,6 +612,7 @@ export class RemoteComputerDesktopController {
         const result = await computerActionRequest(
           this.transport,
           entry.session.sessionId,
+          remoteDesktopTarget(this.deviceId, entry.session.generation ?? 0),
           message.action,
           Array.isArray(message.then) ? message.then : [],
         );
