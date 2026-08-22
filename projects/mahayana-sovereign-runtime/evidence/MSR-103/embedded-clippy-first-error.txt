@@ -1,0 +1,63 @@
+Exact command: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-agent-codex --package mahayana-ffi --package mahayana-cli --all-targets -- -D warnings
+
+[1m[92m    Checking[0m urlencoding v2.1.3
+[1m[92m   Compiling[0m rustversion v1.0.23
+[1m[92m    Checking[0m inventory v0.3.24
+[1m[92m    Checking[0m take_mut v0.2.2
+[1m[92m    Checking[0m sequence_trie v0.3.6
+[1m[92m   Compiling[0m starlark_map v0.14.2
+[1m[92m    Checking[0m indenter v0.3.4
+[1m[92m    Checking[0m csv v1.4.0
+[1m[92m    Checking[0m fluent-uri v0.1.4
+[1m[92m    Checking[0m pagable v0.4.1 (/home/runner/work/fabushi/fabushi/third_party/mahayana/codex-rs/patches/pagable-0.4.1)
+[1m[92m   Compiling[0m schemafy_lib v0.5.2
+[1m[92m   Compiling[0m derive_more-impl v1.0.0
+[1m[92m   Compiling[0m logos-derive v0.15.1
+[1m[92m    Checking[0m rama-dns v0.3.0-alpha.4
+[1m[92m    Checking[0m der-parser v10.0.0
+[1m[92m    Checking[0m fdeflate v0.3.7
+[1m[92m    Checking[0m serde_html_form v0.3.2
+[1m[92m    Checking[0m pem v3.0.6
+[1m[92m    Checking[0m pxfm v0.1.30
+[1m[92m    Checking[0m quick-error v2.0.1
+[1m[92m    Checking[0m byteorder-lite v0.1.0
+[1m[92m    Checking[0m http-range-header v0.4.2
+[1m[92m    Checking[0m weezl v0.1.12
+[1m[92m    Checking[0m endian-type v0.1.2
+[1m[92m    Checking[0m iri-string v0.7.14
+[1m[92m    Checking[0m zune-core v0.5.3
+[1m[92m    Checking[0m color_quant v1.1.0
+[1m[92m    Checking[0m matchit v0.9.2
+[1m[92m    Checking[0m gif v0.14.2
+[1m[92m    Checking[0m zune-jpeg v0.5.15
+[1m[92m    Checking[0m rama-http v0.3.0-alpha.4
+[1m[92m    Checking[0m radix_trie v0.2.1
+[1m[92m    Checking[0m image-webp v0.2.4
+[1m[92m    Checking[0m moxcms v0.8.1
+[1m[92m    Checking[0m derive_more v1.0.0
+[1m[92m    Checking[0m rama-tcp v0.3.0-alpha.4
+[1m[92m    Checking[0m png v0.18.1
+[1m[92m   Compiling[0m schemafy v0.5.2
+[1m[92m    Checking[0m logos v0.15.1
+[1m[92m    Checking[0m lsp-types v0.97.0
+[1m[91merror[E0308][0m[1m: mismatched types[0m
+   [1m[94m--> [0m/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rama-http-0.3.0-alpha.4/src/layer/har/spec.rs:104:36
+    [1m[94m|[0m
+[1m[94m104[0m [1m[94m|[0m             other => Self::Unknown(format!("{other:?}")),
+    [1m[94m|[0m                                    [1m[91m^^^^^^^^^^^^^^^^^^^^[0m [1m[91mexpected `Box<str>`, found `String`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: expected struct `[1m[35mBox<str>[0m`
+               found struct `[1m[35mstd::string::String[0m`
+[1m[96mhelp[0m: call `Into::into` on this expression to convert `std::string::String` into `Box<str>`
+    [1m[94m|[0m
+[1m[94m104[0m [1m[94m| [0m            other => Self::Unknown(format!("{other:?}")[92m.into()[0m),
+    [1m[94m|[0m                                                        [92m+++++++[0m
+
+[1m[92m   Compiling[0m derivative v2.2.0
+[1m[92m    Checking[0m annotate-snippets v0.9.2
+[1m[92m    Checking[0m tokio-test v0.4.5
+[1m[92m    Checking[0m globset v0.4.20
+[1m[92m    Checking[0m fd-lock v4.0.4
+[1mFor more information about this error, try `rustc --explain E0308`.[0m
+[1m[91merror[0m: could not compile `rama-http` (lib) due to 1 previous error
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
