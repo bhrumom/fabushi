@@ -22,43 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  native-runtime-repair:
-    name: One-shot MSR-401 module wiring
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-native-runtime-parity-clean'
-    runs-on: ubuntu-latest
-    timeout-minutes: 7
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 1
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Wire native runtime and extension contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs"); s=p.read_text(); old="        if let Some(root) = workspace_root.as_deref() {\n            if !root.is_dir() {\n                return Err(KernelError::BackendUnavailable(format!(\n                    \"workspace root is not a directory: {}\",\n                    root.display()\n                )));\n            }\n        }\n"; new="        if let Some(root) = workspace_root.as_deref()\n            && !root.is_dir()\n        {\n            return Err(KernelError::BackendUnavailable(format!(\n                \"workspace root is not a directory: {}\",\n                root.display()\n            )));\n        }\n"; assert old in s or new in s; p.write_text(s.replace(old,new,1) if old in s else s)'
-          python3 -c 'from pathlib import Path; p=Path("third_party/mahayana/mahayana-rs/mahayana-kernel/src/lib.rs"); s=p.read_text(); old="pub mod resilience;\n"; new="pub mod extension;\npub mod resilience;\n"; assert old in s or new in s; s=s.replace(old,new,1) if old in s and new not in s else s; old2="    Plugins,\n    Memory,\n"; new2="    Plugins,\n    Connectors,\n    MiniApps,\n    Memory,\n"; assert old2 in s or new2 in s; s=s.replace(old2,new2,1) if old2 in s and new2 not in s else s; p.write_text(s)'
-          python3 -c 'from pathlib import Path; p=Path("third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/lib.rs"); s=p.read_text(); old="use mahayana_platform_core::HostPlatform;\n"; new="pub mod status;\n\nuse mahayana_platform_core::HostPlatform;\n"; assert old in s or new in s; p.write_text(s.replace(old,new,1) if old in s and new not in s else s)'
-          cd third_party/mahayana/mahayana-rs
-          cargo fmt --all
-          cd ../../..
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-kernel/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/src/lib.rs
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo 'MSR-401 wiring already materialized'
-          else
-            git commit -m 'feat(mahayana): wire extension and MCP status contracts'
-            git push origin HEAD:${{ github.head_ref }}
-          fi
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
