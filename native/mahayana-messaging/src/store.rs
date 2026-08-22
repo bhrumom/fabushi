@@ -173,8 +173,7 @@ impl MessagingStateStore for SqliteStateStore {
         let connection = self.open_initialized()?;
         let row = connection
             .query_row(
-                "SELECT snapshot_schema_version, cursor, saved_at_ms, state_json\
-                 FROM messaging_snapshot WHERE singleton = 1",
+                "SELECT snapshot_schema_version, cursor, saved_at_ms, state_json FROM messaging_snapshot WHERE singleton = 1",
                 [],
                 |row| {
                     Ok((
@@ -206,14 +205,7 @@ impl MessagingStateStore for SqliteStateStore {
         let transaction = connection.transaction()?;
         let state_json = serde_json::to_string(&snapshot.state)?;
         transaction.execute(
-            "INSERT INTO messaging_snapshot (\
-                 singleton, snapshot_schema_version, cursor, saved_at_ms, state_json\
-             ) VALUES (1, ?1, ?2, ?3, ?4)\
-             ON CONFLICT(singleton) DO UPDATE SET\
-                 snapshot_schema_version = excluded.snapshot_schema_version,\
-                 cursor = excluded.cursor,\
-                 saved_at_ms = excluded.saved_at_ms,\
-                 state_json = excluded.state_json",
+            "INSERT INTO messaging_snapshot (singleton, snapshot_schema_version, cursor, saved_at_ms, state_json) VALUES (1, ?1, ?2, ?3, ?4) ON CONFLICT(singleton) DO UPDATE SET snapshot_schema_version = excluded.snapshot_schema_version, cursor = excluded.cursor, saved_at_ms = excluded.saved_at_ms, state_json = excluded.state_json",
             params![
                 snapshot.schema_version,
                 snapshot.cursor.to_string(),
@@ -246,15 +238,15 @@ fn migrate_sqlite(connection: &Connection) -> Result<(), StoreError> {
     }
     if actual == 0 {
         connection.execute_batch(
-            "BEGIN IMMEDIATE;\
-             CREATE TABLE IF NOT EXISTS messaging_snapshot (\
-                 singleton INTEGER PRIMARY KEY CHECK (singleton = 1),\
-                 snapshot_schema_version INTEGER NOT NULL,\
-                 cursor TEXT NOT NULL,\
-                 saved_at_ms INTEGER NOT NULL,\
-                 state_json TEXT NOT NULL\
-             );\
-             PRAGMA user_version = 1;\
+            "BEGIN IMMEDIATE;
+             CREATE TABLE IF NOT EXISTS messaging_snapshot (
+                 singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                 snapshot_schema_version INTEGER NOT NULL,
+                 cursor TEXT NOT NULL,
+                 saved_at_ms INTEGER NOT NULL,
+                 state_json TEXT NOT NULL
+             );
+             PRAGMA user_version = 1;
              COMMIT;",
         )?;
     }
