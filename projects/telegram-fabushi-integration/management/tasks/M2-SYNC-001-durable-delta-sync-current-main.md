@@ -1,65 +1,50 @@
-# M2-SYNC-001 — Durable idempotent delta sync on clean stack
+# M2-SYNC-001 — Durable idempotent delta sync on canonical main
 
 - **Project ID**: `FAB-P0001`
 - **Project Key**: `TFI`
 - **Task ID**: `M2-SYNC-001`
 - **WBS**: `M2.T05`–`M2.T09`
-- **Status**: `IN_PROGRESS`
-- **Started**: `2026-08-22`
-- **Updated**: `2026-08-22`
-- **Depends on**: M2-NET-001 / PR #2001
+- **Status**: `TESTED`
+- **Completed**: `2026-08-22`
+- **Depends on**: M2-NET-001 — resolved
 
-## Objective
+## Result
 
-Complete M2 realtime semantics on the canonical Rust messaging engine: durable reconnect recovery, idempotent send/ACK, durable server cursor, audience-scoped delta sync, and Sent/Delivered/Read state transitions.
+The canonical Rust messaging engine now provides durable reconnect recovery, idempotent send/ACK, durable server cursor, audience-scoped delta sync and Sent/Delivered/Read transitions.
 
-## Runtime implementation
+## Verified implementation
 
 - SQLite schema v2 durable event journal.
-- Snapshot + audience-scoped journal entries persist transactionally.
-- Cursor-group-aware pagination/pruning.
-- Stable server message IDs derived from authenticated sender + `client_message_id`.
-- Identical retries return the accepted message without duplicating state or advancing cursor again.
-- Conflicting reuse of a client message ID is rejected.
-- Successful send enters ACK path and reaches `Sent`.
-- Direct/secret recipient sync promotes `Sent -> Delivered`.
-- Recipient `MarkRead` promotes visible messages to `Read`.
-- `Sync.cursor` replays authorized delta events and emits checkpoint cursor.
-- Old/incomplete journal history falls back to actor-scoped full sync.
-- Journal audiences are captured at mutation time and filtered on replay.
+- transactional snapshot + audience-scoped journal entries.
+- complete cursor-group pagination/pruning.
+- deterministic stable message IDs from authenticated sender + client message id.
+- identical retry is idempotent; conflicting payload reuse is rejected.
+- successful send reaches `Sent`; recipient sync reaches `Delivered`; recipient `MarkRead` reaches `Read`.
+- cursor delta replay with checkpoint; old/incomplete history safely falls back to scoped full sync.
+- outsider isolation, process restart, second-device and migration-floor contracts.
 
-## Clean stack provenance
+## Current-main compatibility reconciliation
 
-Historical PR #1994 is implementation provenance only. The clean PR #2002 replays only the intended runtime blobs plus current task/evidence/WBS on top of the clean #2001 stack.
+Historical #1994 referenced a removed `Message.client_message_id`. The final clean implementation preserves the current canonical Message schema because deterministic stable-message lookup already binds actor + client message id. The obsolete field comparison was removed while all payload-conflict checks remain. Current rustfmt, all-target Rust tests and Clippy proved the reconciled implementation.
 
-After the final #2001 governance reconciliation, #2002 was restacked again with parent `1030a489a5b4ed12f93464c95325e5d6d2ca7535` and clean runtime replay commit `fd76ebd828f62b82ff0eecf34e85b24860e2a342`. This prevents stale lower-stack project records from entering the M2-SYNC diff.
+## Final GitHub evidence
 
-## Acceptance criteria
+PR #2002 final head `b4d56161a4b409e04e9a0a0850900ac9cf3fae08` passed:
 
-1. Process restart preserves state and delta journal sufficiently for reconnect recovery.
-2. Repeated identical `client_message_id` is idempotent; conflicting reuse is rejected.
-3. Server cursor never silently rolls backward across persisted state.
-4. Authorized second-device delta sync recovers changes after known cursor.
-5. Outsiders cannot observe journal events for unauthorized conversations.
-6. Missing/expired journal coverage falls back to actor-scoped full sync.
-7. Delivery/read transitions reach `Sent`, `Delivered`, `Read` in defined recipient flows.
-8. Final clean-head Messaging Product Gate, Mahayana fast checks and applicable repository/governance checks pass.
-9. #2001 lands first; #2002 is retargeted to final `main`, revalidated, merged and verified on canonical `main`.
+- Messaging Product Gate `32575120937` — SUCCESS.
+- Mahayana fast checks `32575120857` — SUCCESS.
+- Fabushi self-hosted messaging `32575120877` — SUCCESS.
+- Repository CI `32575120874` — SUCCESS.
+- Project portfolio governance `32575120961` — SUCCESS.
+- Explicit automerge `32575120853` — SUCCESS.
 
-## Branch / PR
-
-- Branch: `feat/telegram-m2-delta-main-sync`
-- PR: #2002
-- Temporary base: `feat/telegram-m2-websocket-main-sync` / #2001
-- Historical PR: #1994 — provenance only; to be closed as superseded after clean landing.
+PR #2002 merged as `d4611f9433eb4d6cbfa934c574cec1da96210edb`. Canonical-main re-read confirmed the corrected deterministic-idempotency code and all durable-sync artifacts.
 
 ## Evidence
 
-- `native/mahayana-messaging/src/store.rs`
-- `native/mahayana-messaging/src/service.rs`
-- `native/mahayana-messaging/tests/delta_sync_contract.rs`
 - `../../evidence/M2-SYNC-001-current-main/README.md`
+- `../../evidence/M2-ACCEPT-001/README.md`
 
 ## Next action
 
-Run final clean-stack CI. After #2001 lands, retarget #2002 to `main`, revalidate the final head/base pair, merge through protected-main governance, then perform canonical-main verification and close M2.T05-T09.
+No M2-SYNC blocker remains. M3 consumes these realtime semantics in the desktop interaction layer.
