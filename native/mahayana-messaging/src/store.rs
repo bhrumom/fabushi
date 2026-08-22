@@ -107,9 +107,10 @@ impl MessagingStateStore for MemoryStateStore {
 
     fn save(&mut self, snapshot: &MessagingSnapshot) -> Result<(), StoreError> {
         validate_snapshot_schema(snapshot.schema_version)?;
+        if self.journal.is_empty() {
+            self.journal_floor_cursor = self.journal_floor_cursor.max(snapshot.cursor);
+        }
         self.snapshot = Some(snapshot.clone());
-        self.journal.clear();
-        self.journal_floor_cursor = snapshot.cursor;
         Ok(())
     }
 
@@ -274,8 +275,14 @@ impl MessagingStateStore for SqliteStateStore {
         let mut connection = self.open_initialized()?;
         let transaction = connection.transaction()?;
         write_snapshot(&transaction, snapshot)?;
-        transaction.execute("DELETE FROM messaging_event_journal", [])?;
-        set_journal_floor(&transaction, snapshot.cursor)?;
+        let journal_count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM messaging_event_journal",
+            [],
+            |row| row.get(0),
+        )?;
+        if journal_count == 0 {
+            set_journal_floor(&transaction, snapshot.cursor)?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -462,18 +469,19 @@ fn set_journal_floor(transaction: &Transaction<'_>, cursor: u64) -> Result<(), S
 }
 
 fn prune_sqlite_journal(transaction: &Transaction<'_>) -> Result<(), StoreError> {
-    let count: usize = transaction.query_row(
+    let count: i64 = transaction.query_row(
         "SELECT COUNT(*) FROM messaging_event_journal",
         [],
         |row| row.get(0),
     )?;
-    if count <= MESSAGING_EVENT_JOURNAL_LIMIT {
+    let limit = i64::try_from(MESSAGING_EVENT_JOURNAL_LIMIT).unwrap_or(i64::MAX);
+    if count <= limit {
         return Ok(());
     }
-    let excess = count - MESSAGING_EVENT_JOURNAL_LIMIT;
+    let excess = count.saturating_sub(limit);
     let prune_cursor: String = transaction.query_row(
         "SELECT cursor FROM messaging_event_journal ORDER BY sequence ASC LIMIT 1 OFFSET ?1",
-        params![i64::try_from(excess.saturating_sub(1)).unwrap_or(i64::MAX)],
+        params![excess.saturating_sub(1)],
         |row| row.get(0),
     )?;
     let max_sequence: i64 = transaction.query_row(
@@ -659,6 +667,25 @@ mod tests {
             })
             .expect("count snapshots");
         assert_eq!(count, 1);
+        remove_db(&path);
+    }
+
+    #[test]
+    fn plain_snapshot_save_preserves_existing_journal() {
+        let path = temporary_db("journal-preserve");
+        let mut store = SqliteStateStore::new(&path);
+        let first = MessagingSnapshot::new(MessagingState::default(), 1, 10);
+        store
+            .save_with_events(&first, &[journal_entry(1, "human:a")])
+            .expect("save journal entry");
+        let second = MessagingSnapshot::new(MessagingState::default(), 2, 20);
+        store.save(&second).expect("save plain snapshot");
+        let slice = store
+            .load_event_journal_after(0, 100)
+            .expect("load preserved journal")
+            .expect("sqlite journal");
+        assert_eq!(slice.entries.len(), 1);
+        assert_eq!(slice.current_cursor, 2);
         remove_db(&path);
     }
 
