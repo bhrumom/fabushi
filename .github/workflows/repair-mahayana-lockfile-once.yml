@@ -1,0 +1,35 @@
+name: One-shot Mahayana lockfile repair
+
+on:
+  push:
+    branches:
+      - security/full-repo-hardening-20260821
+    paths:
+      - '.github/workflows/repair-mahayana-lockfile-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: security/full-repo-hardening-20260821
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Regenerate merged workspace lockfile
+        run: cargo generate-lockfile --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+      - name: Commit repaired lockfile and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/repair-mahayana-lockfile-once.yml
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(mahayana): refresh lockfile after main merge"
+          git push origin HEAD:security/full-repo-hardening-20260821
