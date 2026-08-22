@@ -5,6 +5,7 @@
 //! protocol types.  External engines are adapters behind [`EngineBackend`].
 
 pub mod resilience;
+pub mod sandbox;
 pub mod supervisor;
 
 use async_trait::async_trait;
