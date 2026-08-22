@@ -3,7 +3,7 @@
 - **Task ID:** MSR-103
 - **Status:** in-progress
 - **Started:** 2026-08-22T15:22:00+08:00
-- **Updated:** 2026-08-22T15:39:00+08:00
+- **Updated:** 2026-08-22T15:43:00+08:00
 - **Completed:** null
 
 ## Objective
@@ -39,29 +39,34 @@ MSR-102 capability mapping.
 8. Protected merge completes and canonical main is re-verified.
 
 ## Verification
-`Mahayana fast checks` source-boundary, rustfmt, `cargo test -p mahayana-auth -p mahayana-secrets`, and `cargo test -p mahayana-platform-client`; Platform Control Plane `--locked`; merge-group CI; main source audit.
+`Mahayana fast checks` source-boundary, rustfmt, `cargo test -p mahayana-auth -p mahayana-secrets`, and `cargo test -p mahayana-platform-client`; Platform Control Plane `--locked`; Embedded Runtime / Global Dharma compatibility; merge-group CI; main source audit.
 
 ## Branch / commit / PR
 Branch: `feat/mahayana-native-auth-boundary`
-Current implementation head before this record sync: `76d39d241552bc8dd5e1998968e9c98730dcb48a`
+Current materialized head before this record sync: `d0cb8465d94a5f8133e0b0de568fe566097dda19`
 PR: #1992
 
 ## Implementation summary
 Introduced native authentication/JWT and encrypted secret-storage crates, registered them in the Mahayana workspace, rewired the product client's two historical source aliases to Mahayana packages, extended the source-boundary gate, and added dedicated CI tests. The aliases are private transitional spellings only; actual dependency resolution is Mahayana-owned.
 
-A first PR CI round proved the source-boundary guard and exposed two objective integration issues: rustfmt-only changes and a stale workspace lockfile in an existing `--locked` Platform Control Plane test. The format delta was repaired. A one-shot, same-repository PR materializer then ran as workflow `Mahayana auth lockfile materialize once` / run `32560073991`, generated the exact Cargo dependency graph, removed its own workflow file, and pushed commit `76d39d241552bc8dd5e1998968e9c98730dcb48a` containing the updated `Cargo.lock`. The normal CI suite is now being retriggered against the committed lockfile.
+The first CI rounds proved the source boundary and exposed two integration-only issues: rustfmt deltas and lockfile drift. The initial lock materialization succeeded, but GitHub's PR merge ref later included a newer `main` (`a2e2d8ddc7fd6ed720dec486546d080db3dba494`), so Embedded Runtime and Global Dharma correctly rejected the older branch lock under `--locked`. The branch was fast-forwarded to GitHub's exact synthetic merge commit `32b53d13034560bb0621a91fa30ab32b3302627b`, then the one-shot materializer was re-run against that synchronized tree.
+
+Second materializer run `32560227491` passed and pushed `d0cb8465d94a5f8133e0b0de568fe566097dda19`. That commit removed the one-shot workflow and refreshed `Cargo.lock` for the synchronized dependency graph (including the `rusqlite` edge introduced on current main). Workflows emitted `action_required` on the bot-authored materializer commit, so this human/connector-authored project-record commit intentionally retriggers the normal required CI on the exact committed lockfile.
 
 ## Evidence
 - PR: #1992.
-- First fast-gate source-boundary check: passed.
-- First fast-gate formatter failure: repaired in `c6bc869a8ea249306143a54e688a7b9aa8b32dea` / `d3f557e0ffe15898830a39b87e1126e3efc7f12e`.
-- Platform Control Plane run `32559989042`: failed only because `cargo test -p mahayana-platform-worker --locked` detected an unmaterialized lockfile.
-- One-shot lock materializer run `32560073991`: success; generated lockfile and deleted its own workflow before commit.
-- Materialized lockfile commit: `76d39d241552bc8dd5e1998968e9c98730dcb48a`.
-- Final CI/merge/main evidence: pending.
+- Source-boundary checks: passed in prior Fast Gate / Global Dharma rounds.
+- Rustfmt-only failure: repaired before lock validation.
+- First Platform Control Plane lock failure: run `32559989042`; root cause was missing materialized lock for new workspace crates.
+- First materializer: run `32560073991`, success; lock commit `76d39d241552bc8dd5e1998968e9c98730dcb48a`.
+- Merge-ref audit: `32b53d13034560bb0621a91fa30ab32b3302627b` merged branch head into current main `a2e2d8ddc7fd6ed720dec486546d080db3dba494`.
+- Second materializer: run `32560227491`, success after main sync.
+- Synchronized materialized lock commit: `d0cb8465d94a5f8133e0b0de568fe566097dda19`.
+- One-shot workflow removed by its own successful materialization commit.
+- Final ordinary CI / protected merge / main evidence: pending.
 
 ## Blockers / risks
-Normal CI against the committed lockfile is now pending. Any Cargo/API/platform incompatibilities revealed next must be repaired before this task can pass.
+The remaining blocker is objective CI on the connector-authored head that follows `d0cb8465...`. Any real compile/test/platform failure must be repaired before passing MSR-103.
 
 ## Next action
-Inspect the retriggered Fast Gate and Platform/Electron/mobile/embedded-runtime checks, repair all failures, merge via protected queue, then verify the product graph on canonical main.
+Run the normal Fast Gate, Platform, Embedded Runtime, Global Dharma, Electron and native-mobile checks against the synchronized committed lockfile; repair all failures, merge through protected main, and re-verify the product graph on canonical main.
