@@ -1,6 +1,6 @@
 # FPG-002 Evidence Index
 
-Status: in-progress pending PR/CI/protected merge/canonical main verification.
+Status: in-progress pending CI/protected merge/canonical main verification.
 
 ## Source / requirements
 
@@ -20,7 +20,11 @@ Status: in-progress pending PR/CI/protected merge/canonical main verification.
 
 ## GitHub implementation evidence
 
-Branch: `project/fpg-002-enterprise-project-standard`
+- Branch: `project/fpg-002-enterprise-project-standard`
+- Implementation PR: #1980
+- PR URL: `https://github.com/bhrumom/fabushi/pull/1980`
+- Initial PR head at creation: `79d80ba3aab78fbdefd613802f194c5064473122`
+- Project-record update commit after PR creation: `8822003d4d84d18abaa66e17774e41ded202ba8a`
 
 Implemented on branch:
 
@@ -29,12 +33,17 @@ Implemented on branch:
 - governance `references/project-folder-standard.md`;
 - governance `references/task-lifecycle.md`;
 - `projects/fabushi-project-governance/` enterprise-standard self-migration;
-- ADR-0002 enterprise project-folder standard.
+- ADR-0002 enterprise project-folder standard;
+- FPG-002 task, acceptance traceability, risk/dependency/action, runbook and project-folder audit records.
+
+## Branch audit
+
+- `evidence/FPG-002/project-folder-audit.md` confirms all mandatory enterprise scaffold files exist on the implementation branch.
+- This proves branch structure only; canonical acceptance still requires protected merge and post-merge verification.
 
 ## Pending evidence
 
-- final branch head SHA before PR;
-- PR number/review state;
+- final PR head SHA after record updates;
 - required `CI result` run/job;
 - merge queue/protected merge result;
 - merge commit SHA;
