@@ -3,7 +3,7 @@
 - **Task ID:** FCM-001
 - **Status:** in-progress
 - **Started:** 2026-08-22T13:43:00+08:00
-- **Updated:** 2026-08-22T13:51:00+08:00
+- **Updated:** 2026-08-22T13:55:00+08:00
 
 ## Objective
 
@@ -21,7 +21,7 @@ See `../../docs/19-完成定义与验收.md`.
 
 - `.github/workflows/ci.yml`
   - merge-group now uses exact `base_sha..head_sha` impact classification instead of force-all;
-  - classifier no longer needs repository checkout for path discovery;
+  - classifier discovers changed paths through GitHub APIs without a repository checkout;
   - Tier-0 documentation/project paths select no unrelated product suites;
   - unknown non-document paths fail safe by selecting all canonical domains;
   - merge-group trigger is explicitly limited to `checks_requested`.
@@ -47,16 +47,20 @@ See `../../docs/19-完成定义与验收.md`.
 
 - Branch: `project/fabushi-cicd-merge-governance`
 - Bootstrap commit: `c7581c7b21070e17e3a344d1b079bec51f59d46a`
-- PR: pending creation.
+- PR: #1978
 
-## Evidence
+## Evidence so far
 
-Pending PR/CI/merge evidence.
+- PR #1978 opened with 24 changed files.
+- PR-head CI run `32555241279` parsed the new workflow successfully.
+- `Classify CI changes` completed successfully without checkout.
+- For this CI/CD-only diff, Frontend, Worker, MCP and Electron jobs were skipped; only `Canonical architecture guardrails` was selected and it passed.
+- Final required `CI result` / merge-group validation remain pending after this record update.
 
 ## Risks
 
-Workflow files are sensitive delivery infrastructure, so this task must not use unattended automerge. It requires explicit authorization plus required CI and merge-queue validation.
+Workflow files are sensitive delivery infrastructure, so this task must not use unattended automerge. The user's explicit request authorizes proceeding, but the change still requires successful required CI and GitHub merge-queue validation.
 
 ## Next action
 
-Create the implementation PR, inspect workflow parsing and required CI, fix any failures, then enqueue explicitly after green checks.
+Let the updated PR rerun required CI, then explicitly enqueue the green PR into the merge queue and inspect merge-group job selection before merge.
