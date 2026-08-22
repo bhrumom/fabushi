@@ -2756,6 +2756,27 @@ mod tests {
     }
 
     #[test]
+    fn computer_action_duration_and_scroll_amount_match_the_react_contract() {
+        let action: ComputerAction = serde_json::from_str(
+            r#"{"action":"drag","x":1,"y":2,"x2":3,"y2":4,"durationMs":375,"amount":7}"#,
+        )
+        .expect("decode computer action");
+        assert_eq!(action.wait_ms, Some(375));
+        assert_eq!(action.amount, Some(7));
+        let value = serde_json::to_value(&action).expect("encode computer action");
+        assert_eq!(value["durationMs"], 375);
+        assert_eq!(value["amount"], 7);
+        assert!(value.get("waitMs").is_none());
+    }
+
+    #[test]
+    fn legacy_wait_ms_alias_remains_accepted() {
+        let action: ComputerAction = serde_json::from_str(r#"{"action":"wait","waitMs":250}"#)
+            .expect("decode legacy wait action");
+        assert_eq!(action.wait_ms, Some(250));
+    }
+
+    #[test]
     fn event_json_uses_camel_case_fields() {
         let event = HostEvent::OperationStarted {
             timestamp: "0".into(),
