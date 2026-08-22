@@ -32,6 +32,8 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
+  checks: read
 
 jobs:
   resolve:
@@ -106,6 +108,14 @@ jobs:
             echo 'A successful upload is ingested by App Store Connect. After Apple processing, the same build is available for TestFlight and for App Store release selection; this workflow does not submit an App Review automatically.'
             echo 'After all selected App Store Connect uploads succeed, the exact signed store-distribution package(s) and SHA256SUMS.txt are also published to an immutable GitHub Release.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require canonical release source gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+          RELEASE_TARGET: ${{ inputs.target }}
+        run: bash .github/scripts/require-release-source-gates.sh
 
   macos-electron:
     name: Build and upload Electron macOS MAS package
