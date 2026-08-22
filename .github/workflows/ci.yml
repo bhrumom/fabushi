@@ -131,6 +131,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+      - name: Materialize cross-tree Worker contract inputs
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore --source=HEAD --worktree --             .github/scripts             frontend             third_party/mahayana/mahayana-rs/mahayana-platform-worker
+          test -f .github/scripts/assert-worker-security-secrets.sh
+          test -f third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
       - name: Check Worker JavaScript syntax
         shell: bash
         run: |
