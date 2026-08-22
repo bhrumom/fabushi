@@ -140,6 +140,7 @@ type LocalCall = {
 type MessageMenu = { message: DisplayMessage; x: number; y: number } | null;
 type ForwardDialogState = { sourceConversationId: string; message: DisplayMessage } | null;
 type EditDialogState = { conversationId: string; messageId: string; originalText: string; text: string } | null;
+type InvoiceDialogState = { conversationId: string; title: string; amount: string } | null;
 type InfoTab = 'media' | 'files' | 'links';
 
 const rootSurfaceKey = 'fabushi.desktop.root-surface.v2';
@@ -340,6 +341,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [messageMenu, setMessageMenu] = useState<MessageMenu>(null);
   const [forwardDialog, setForwardDialog] = useState<ForwardDialogState>(null);
   const [editDialog, setEditDialog] = useState<EditDialogState>(null);
+  const [invoiceDialog, setInvoiceDialog] = useState<InvoiceDialogState>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachmentProgress, setAttachmentProgress] = useState<string | null>(null);
   const [localCall, setLocalCall] = useState<LocalCall | null>(null);
@@ -1049,30 +1051,39 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
     setAttachmentMenuOpen(false);
   }
 
-  async function createInvoiceForActivePeer() {
-    if (!activePeer?.conversationId || activePeer.source !== 'selfhosted') {
-      setError('账单需要发送到 Fabushi 自建会话。');
-      return;
-    }
-    const title = window.prompt('账单名称', '订单');
-    if (!title) return;
-    const amount = Number(window.prompt('金额（例如 9.99）', '9.99'));
-    if (!Number.isFinite(amount) || amount < 0) {
-      setError('金额无效。');
-      return;
-    }
-    try {
-      await selfHosted.createInvoice({
-        conversationId: activePeer.conversationId,
-        title,
-        currency: 'USD',
-        amountMinor: Math.round(amount * 100),
-        providerId: 'fabushi-pay',
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
+  function createInvoiceForActivePeer() {
+  if (!activePeer?.conversationId || activePeer.source !== 'selfhosted') {
+    setError('账单需要发送到 Fabushi 自建会话。');
+    return;
   }
+  setInvoiceDialog({ conversationId: activePeer.conversationId, title: '订单', amount: '9.99' });
+}
+
+async function saveInvoiceDialog() {
+  if (!invoiceDialog) return;
+  const title = invoiceDialog.title.trim();
+  const amount = Number(invoiceDialog.amount);
+  if (!title) {
+    setError('账单名称不能为空。');
+    return;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setError('金额必须大于 0。');
+    return;
+  }
+  try {
+    await selfHosted.createInvoice({
+      conversationId: invoiceDialog.conversationId,
+      title,
+      currency: 'USD',
+      amountMinor: Math.round(amount * 100),
+      providerId: 'fabushi-pay',
+    });
+    setInvoiceDialog(null);
+  } catch (cause) {
+    setError(cause instanceof Error ? cause.message : String(cause));
+  }
+}
 
   async function handleMessageAction(action: 'copy' | 'reply' | 'forward' | 'checkout' | 'edit' | 'delete' | 'react' | 'pin') {
     const target = messageMenu?.message;
@@ -1500,6 +1511,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       {messageMenu ? <MessageContextMenu menu={messageMenu} onAction={(action) => void handleMessageAction(action)} /> : null}
       {forwardDialog ? <ForwardMessageDialog message={forwardDialog.message} peers={peers.filter((peer) => peer.source === 'selfhosted' && Boolean(peer.conversationId) && peer.conversationId !== forwardDialog.sourceConversationId)} onClose={() => setForwardDialog(null)} onSelect={(peer) => void forwardToPeer(peer)} /> : null}
       {editDialog ? <EditMessageDialog value={editDialog.text} onChange={(text) => setEditDialog((current) => current ? { ...current, text } : current)} onClose={() => setEditDialog(null)} onSave={() => void saveEditedMessage()} /> : null}
+      {invoiceDialog ? <InvoiceDialog dialog={invoiceDialog} onChange={setInvoiceDialog} onClose={() => setInvoiceDialog(null)} onSave={() => void saveInvoiceDialog()} /> : null}
       {newDialog ? <NewConversationDialog dialog={newDialog} bots={bots} onChange={setNewDialog} onClose={() => setNewDialog(null)} onSave={() => void saveNewDialog()} /> : null}
       {communityDialogPeer ? <CommunityAdminDialog peer={communityDialogPeer} community={selfCommunities.find((item) => item.conversationId === communityDialogPeer.conversationId) ?? defaultCommunityState(communityDialogPeer.conversationId!, selfHosted.actorId)} actors={selfActors} actorId={selfHosted.actorId} onClose={() => setCommunityDialogPeer(null)} onSave={(community) => void saveCommunity(community)} onSetMember={(conversationId, member) => void selfHosted.setCommunityMember(conversationId, member).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onCreateInvite={(community) => { const invite = { id: `invite:${crypto.randomUUID()}`, conversationId: community.conversationId, creatorId: selfHosted.actorId, token: crypto.randomUUID().replaceAll('-', ''), name: '邀请链接', createdAtMs: Date.now(), expiresAtMs: undefined, memberLimit: undefined, joinRequest: community.joinRequestRequired, revoked: false, joinedCount: 0 }; void selfHosted.createInviteLink(invite).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))); }} onRevokeInvite={(conversationId, inviteId) => void selfHosted.revokeInviteLink(conversationId, inviteId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onJoinDecision={(conversationId, requesterId, approved) => void selfHosted.respondCommunityJoin(conversationId, requesterId, approved).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onUpsertTopic={(topic) => void selfHosted.upsertForumTopic(topic).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onDeleteTopic={(conversationId, topicId) => void selfHosted.deleteForumTopic(conversationId, topicId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
       {activeStory ? <StoryViewer story={activeStory} owner={selfActors.find((actor) => actor.id === activeStory.ownerId)} own={activeStory.ownerId === selfHosted.actorId} onClose={() => setActiveStory(null)} onReact={(reaction) => void reactToActiveStory(reaction)} onDelete={() => void selfHosted.deleteStory(activeStory.id).then(() => setActiveStory(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
@@ -1554,6 +1566,17 @@ function EditMessageDialog({ value, onChange, onClose, onSave }: { value: string
     <header><div><strong>编辑消息</strong><small>修改后会同步到 Fabushi 自建会话</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
     <label><span>消息内容</span><textarea autoFocus data-testid="edit-message-input" value={value} onChange={(event) => onChange(event.target.value)} rows={4} placeholder="编辑消息内容" /></label>
     <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!value.trim()} onClick={onSave}>保存</button></footer>
+  </section></div>;
+}
+
+function InvoiceDialog({ dialog, onChange, onClose, onSave }: { dialog: Exclude<InvoiceDialogState, null>; onChange: React.Dispatch<React.SetStateAction<InvoiceDialogState>>; onClose: () => void; onSave: () => void }) {
+  const amount = Number(dialog.amount);
+  const validAmount = Number.isFinite(amount) && amount > 0;
+  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
+    <header><div><strong>发送账单</strong><small>Fabushi Pay · USD</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
+    <label><span>账单名称</span><input autoFocus data-testid="invoice-title-input" value={dialog.title} onChange={(event) => onChange((current) => current ? { ...current, title: event.target.value } : current)} placeholder="订单" /></label>
+    <label><span>金额（USD）</span><input data-testid="invoice-amount-input" inputMode="decimal" value={dialog.amount} onChange={(event) => onChange((current) => current ? { ...current, amount: event.target.value } : current)} placeholder="9.99" /></label>
+    <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!dialog.title.trim() || !validAmount} onClick={onSave}>创建账单</button></footer>
   </section></div>;
 }
 
