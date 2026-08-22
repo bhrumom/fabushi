@@ -1,4 +1,9 @@
-async fn listener_register(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+use super::*;
+
+pub(super) async fn listener_register(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => {
@@ -68,7 +73,10 @@ async fn listener_register(mut request: Request, context: RouteContext<()>) -> R
     Ok(Response::from_json(&json!({"registered": seen.len()}))?.with_headers(auth_headers()))
 }
 
-async fn listener_drain(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn listener_drain(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => {
@@ -145,7 +153,10 @@ async fn listener_drain(mut request: Request, context: RouteContext<()>) -> Resu
     Ok(Response::from_json(&json!({"events": events}))?.with_headers(auth_headers()))
 }
 
-async fn listener_ingest(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn listener_ingest(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let authorization = request.headers().get("Authorization")?.unwrap_or_default();
     let supplied = authorization.strip_prefix("Bearer ").unwrap_or_default();
     let expected = match context.env.secret("LISTENER_RELAY_INGEST_TOKEN") {

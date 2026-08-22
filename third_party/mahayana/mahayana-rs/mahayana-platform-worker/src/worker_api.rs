@@ -399,9 +399,21 @@ struct AuthenticatedAccount {
     is_test_account: bool,
 }
 
-// Structurally extracted from worker_api.rs. Keep this include as a
-// compatibility seam until this domain is promoted to an explicit module.
-include!("worker_api_parts/remote_types.inc.rs");
+mod account;
+mod ai_usage;
+mod commerce;
+mod listener_relay;
+mod marketplace;
+mod remote_computer;
+mod security;
+
+use account::*;
+use ai_usage::*;
+use commerce::*;
+use listener_relay::*;
+use marketplace::*;
+use remote_computer::*;
+use security::constant_time_eq;
 
 #[event(fetch, respond_with_errors)]
 pub async fn main(request: Request, env: Env, _context: Context) -> Result<Response> {
@@ -528,33 +540,6 @@ fn valid_relay_identifier(value: &str, max_len: usize) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
 }
-
-// Structurally extracted from worker_api.rs. Keep this include as a
-// compatibility seam until this domain is promoted to an explicit module.
-include!("worker_api_parts/remote_control.inc.rs");
-
-// Structurally extracted from worker_api.rs. Keep this include as a
-// compatibility seam until this domain is promoted to an explicit module.
-include!("worker_api_parts/listener_relay.inc.rs");
-
-// Structurally extracted from worker_api.rs. Keep this include as a
-// compatibility seam until this domain is promoted to an explicit module.
-include!("worker_api_parts/account_browser_auth.inc.rs");
-
-// Semantics-preserving extraction; phase 3 promotes this seam to a Rust module.
-include!("worker_api_parts/ai_usage.inc.rs");
-
-// Semantics-preserving extraction; phase 3 promotes this seam to a Rust module.
-include!("worker_api_parts/marketplace.inc.rs");
-
-// Semantics-preserving extraction; phase 3 promotes this seam to a Rust module.
-include!("worker_api_parts/commerce.inc.rs");
-
-// Semantics-preserving extraction; phase 3 promotes this seam to a Rust module.
-include!("worker_api_parts/ai_usage_support.inc.rs");
-
-// Semantics-preserving extraction; phase 3 promotes this seam to a Rust module.
-include!("worker_api_parts/account_support.inc.rs");
 
 fn marketplace_asset_url(deployment_url: &str, asset_path: &str) -> Result<String> {
     if !is_public_https_url(deployment_url) {

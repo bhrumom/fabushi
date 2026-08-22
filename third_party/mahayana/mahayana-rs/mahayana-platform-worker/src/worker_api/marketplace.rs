@@ -1,4 +1,9 @@
-async fn marketplace_plugins(request: Request, context: RouteContext<()>) -> Result<Response> {
+use super::*;
+
+pub(super) async fn marketplace_plugins(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let mut query = "%".to_string();
     let mut platform = None;
     for (key, value) in request.url()?.query_pairs() {
@@ -70,7 +75,7 @@ async fn marketplace_plugins(request: Request, context: RouteContext<()>) -> Res
     Response::from_json(&json!({"plugins": plugins}))
 }
 
-async fn marketplace_release_publish(
+pub(super) async fn marketplace_release_publish(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -352,7 +357,7 @@ async fn marketplace_release_publish(
     }))
 }
 
-async fn marketplace_external_release_publish(
+pub(super) async fn marketplace_external_release_publish(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -647,7 +652,7 @@ async fn marketplace_external_release_publish(
     }))
 }
 
-async fn marketplace_release_metadata(
+pub(super) async fn marketplace_release_metadata(
     _request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -729,7 +734,7 @@ async fn marketplace_release_metadata(
     }))
 }
 
-async fn marketplace_plugin_download(
+pub(super) async fn marketplace_plugin_download(
     _request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -825,7 +830,7 @@ async fn marketplace_plugin_download(
     Ok(response)
 }
 
-async fn marketplace_release_revoke(
+pub(super) async fn marketplace_release_revoke(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {

@@ -1,4 +1,9 @@
-async fn wallet_balance(request: Request, context: RouteContext<()>) -> Result<Response> {
+use super::*;
+
+pub(super) async fn wallet_balance(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let user_id = authenticated_user(&request, &context.env)?;
     let database = context.env.d1(DATABASE_BINDING)?;
     let row = worker::query!(
@@ -31,7 +36,10 @@ async fn wallet_balance(request: Request, context: RouteContext<()>) -> Result<R
     }))
 }
 
-async fn wallet_history(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn wallet_history(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let user_id = authenticated_user(&request, &context.env)?;
     let database = context.env.d1(DATABASE_BINDING)?;
     let account_id = format!("user:{user_id}:MBC");
@@ -50,7 +58,10 @@ async fn wallet_history(request: Request, context: RouteContext<()>) -> Result<R
     Response::from_json(&json!({"entries": rows, "nextCursor": null}))
 }
 
-async fn commerce_quote(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn commerce_quote(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let _user_id = authenticated_user(&request, &context.env)?;
     let plugin_id = route_identifier(&context, "plugin_id")?;
     let quote_request: QuoteRequest = request.json().await?;
@@ -70,7 +81,10 @@ async fn commerce_quote(mut request: Request, context: RouteContext<()>) -> Resu
     })
 }
 
-async fn commerce_purchase(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn commerce_purchase(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let user_id = authenticated_user(&request, &context.env)?;
     let plugin_id = route_identifier(&context, "plugin_id")?;
     let purchase: PurchaseRequest = request.json().await?;
@@ -280,7 +294,10 @@ async fn commerce_purchase(mut request: Request, context: RouteContext<()>) -> R
     }))
 }
 
-async fn commerce_entitlement(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn commerce_entitlement(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let user_id = authenticated_user(&request, &context.env)?;
     let plugin_id = route_identifier(&context, "plugin_id")?;
     let capability = route_identifier(&context, "capability")?;
@@ -318,7 +335,7 @@ async fn commerce_entitlement(request: Request, context: RouteContext<()>) -> Re
     Response::from_json(&json!({"entitlement": entitlement}))
 }
 
-async fn delegated_plugin_token(
+pub(super) async fn delegated_plugin_token(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -382,12 +399,15 @@ fn validate_delegated_request(request: &DelegatedTokenRequest) -> Result<()> {
     Ok(())
 }
 
-async fn purchases(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn purchases(request: Request, context: RouteContext<()>) -> Result<Response> {
     let user_id = authenticated_user(&request, &context.env)?;
     purchases_response(&context.env, &user_id).await
 }
 
-async fn purchases_restore(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn purchases_restore(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     if request.method() != Method::Post {
         return error_response(405, "method_not_allowed", "POST required");
     }
@@ -395,7 +415,7 @@ async fn purchases_restore(request: Request, context: RouteContext<()>) -> Resul
     purchases_response(&context.env, &user_id).await
 }
 
-async fn purchases_response(env: &Env, user_id: &str) -> Result<Response> {
+pub(super) async fn purchases_response(env: &Env, user_id: &str) -> Result<Response> {
     let database = env.d1(DATABASE_BINDING)?;
     let rows = worker::query!(
         &database,
@@ -409,7 +429,7 @@ async fn purchases_response(env: &Env, user_id: &str) -> Result<Response> {
     Response::from_json(&json!({"purchases": rows, "nextCursor": null}))
 }
 
-async fn active_price(
+pub(super) async fn active_price(
     database: &worker::D1Database,
     plugin_id: &str,
     sku: &str,
@@ -431,7 +451,7 @@ async fn active_price(
     .await
 }
 
-async fn order_by_idempotency(
+pub(super) async fn order_by_idempotency(
     database: &worker::D1Database,
     user_id: &str,
     idempotency_key: &str,
@@ -447,7 +467,7 @@ async fn order_by_idempotency(
     .await
 }
 
-async fn entitlement_for_order(
+pub(super) async fn entitlement_for_order(
     database: &worker::D1Database,
     order_id: &str,
 ) -> Result<Option<Entitlement>> {
