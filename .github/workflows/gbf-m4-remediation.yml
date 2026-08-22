@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - gbf/m4-computer-control-convergence-20260822
+    paths:
+      - '.github/workflows/gbf-m4-remediation.yml'
   workflow_dispatch:
 
 permissions:
@@ -40,19 +42,17 @@ jobs:
         run: |
           cargo fmt --all
           cargo test --locked -p mahayana-host-protocol --profile ci
-      - name: Verify remediation diff
+      - name: Verify product remediation diff
         run: |
           ! grep -q 'action\.duration_ms' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
           ! grep -q 'action\.scroll_amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
           grep -q 'action\.wait_ms' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
           grep -q 'action\.amount' third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs
-          grep -q 'libwayland-dev' .github/workflows/mahayana-fast-checks.yml
           git diff --check
-      - name: Commit remediation and remove one-shot files
+      - name: Commit only product and lockfile remediation
         run: |
-          git rm .github/workflows/gbf-m4-remediation.yml .github/scripts/gbf-m4-remediate.py
           git config user.name 'fabushi-ci'
           git config user.email 'fabushi-ci@users.noreply.github.com'
-          git add .github/workflows/mahayana-fast-checks.yml chatgpt-vps-control/package.json chatgpt-vps-control/package-lock.json third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
-          git commit -m 'fix(gbf): close cross-platform computer-control gates'
+          git add chatgpt-vps-control/package.json chatgpt-vps-control/package-lock.json third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs
+          git commit -m 'fix(gbf): close cross-platform computer-control product gates'
           git push origin HEAD:gbf/m4-computer-control-convergence-20260822
