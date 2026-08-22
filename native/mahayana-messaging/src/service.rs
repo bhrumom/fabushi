@@ -1135,7 +1135,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
     fn journal_entries(&self, initiator: &ActorId, responses: &[ServerEnvelope]) -> Vec<JournalEntry> {
         responses
             .iter()
-            .filter(|response| !matches!(response.event, ServerEvent::SyncBatch { .. }))
+            .filter(|response| !matches!(&response.event, ServerEvent::SyncBatch { .. }))
             .map(|response| JournalEntry {
                 envelope: response.clone(),
                 audience: self.event_audience(initiator, &response.event),
@@ -1148,23 +1148,35 @@ impl<S: MessagingStateStore> MessagingService<S> {
         match event {
             ServerEvent::ActorChanged { actor } => {
                 audience.insert(actor.id.clone());
-                for conversation in self.engine.state().conversations.values().filter(|conversation| {
-                    conversation
-                        .participants
-                        .iter()
-                        .any(|participant| participant.actor_id == actor.id)
-                }) {
+                for conversation in self
+                    .engine
+                    .state()
+                    .conversations
+                    .values()
+                    .filter(|conversation| {
+                        conversation
+                            .participants
+                            .iter()
+                            .any(|participant| participant.actor_id == actor.id)
+                    })
+                {
                     Self::extend_conversation_audience(&mut audience, conversation);
                 }
             }
             ServerEvent::PresenceChanged { actor_id, .. } => {
                 audience.insert(actor_id.clone());
-                for conversation in self.engine.state().conversations.values().filter(|conversation| {
-                    conversation
-                        .participants
-                        .iter()
-                        .any(|participant| &participant.actor_id == actor_id)
-                }) {
+                for conversation in self
+                    .engine
+                    .state()
+                    .conversations
+                    .values()
+                    .filter(|conversation| {
+                        conversation
+                            .participants
+                            .iter()
+                            .any(|participant| &participant.actor_id == actor_id)
+                    })
+                {
                     Self::extend_conversation_audience(&mut audience, conversation);
                 }
             }
