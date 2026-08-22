@@ -82,7 +82,8 @@ jobs:
           sudo apt-get update
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
-            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev
       - name: Check computer-control crates
         working-directory: third_party/mahayana/mahayana-rs
         run: cargo check --locked -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host
