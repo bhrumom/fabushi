@@ -25,6 +25,7 @@ PRODUCT_CRATES = (
     "mahayana-native-agent",
     "mahayana-native-engine",
     "mahayana-computer",
+    "mahayana-platform-core",
     "mahayana-plugin-runtime",
     "mahayana-js-runtime",
 )
