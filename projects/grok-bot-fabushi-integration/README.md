@@ -2,24 +2,39 @@
 
 本目录是 Grok Bot 能力/源码进入 Fabushi 的唯一长期项目基线。目标不是在 Fabushi 中长期保留一个平行的 `Grok Bot` 子产品，而是对已有 Grok Bot 融合源码进行逐项盘点、差异分析、重构和验证，把有价值的产品能力归入 Fabushi/Mahayana 的正式架构。
 
+## 当前已验证状态
+
+- 当前阶段：**M0 — 项目基线与治理**。
+- 已确认历史输入分支：`grok-bot-latest-source-fusion`、`grok-bot-0.16-source-fusion`。
+- 已确认 latest 分支包含 Electron main/preload/host/native-capability/native-edge/offline-ASR/desktop-E2E 等输入。
+- 已确认当前 `main` 对部分同名 Electron 文件已有后续演进，因此历史 Grok 分支是只读审计输入，禁止整分支覆盖 `main`。
+- 当前下一验收门：GBF-001 项目基线 PR -> required CI -> protected main -> post-merge main verification。
+- **M1–M8 的运行时代码迁移尚未被宣称完成。**
+
 ## 权威位置
 
 - Repository: `bhrumom/fabushi`
-- Authoritative branch: `main`
+- Branch after merge: `main`
 - Project path: `projects/grok-bot-fabushi-integration/`
+- Source precedence: `SOURCE_OF_TRUTH.md`
 
-## 已确认的代码输入
+## Owner / Review
 
-仓库存在 `grok-bot-latest-source-fusion` 与 `grok-bot-0.16-source-fusion` 分支。最新融合分支中可见 Electron 主进程、preload、host process、native capability handlers、native edge、离线 ASR、桌面 E2E 等代码。当前 `main` 对若干相同文件已有进一步演进，所以历史融合分支只作为审计输入，禁止整分支覆盖 `main`。
+- Accountable/execution owner: Fabushi/Mahayana maintainers
+- Required review: Fabushi maintainers；computer-control、敏感输入、本机执行等高风险能力还需安全审查
+- 详细职责：`OWNERS.md`
 
-## 核心原则
+## 项目级验收
 
-1. 一个能力只允许有一个正式归属；不得长期保留 Grok/Fabushi 两套并行执行通道。
-2. 任何源码迁移必须先比较 `main` 与来源分支，优先保留 `main` 的后续修复。
-3. “文件存在”不等于“功能完成”。完成必须至少有实现、测试、E2E/集成验证、权限边界、错误处理、可观测和 CI 证据。
-4. Grok Bot 作为能力研究/迁移来源；最终产品身份、API、数据模型、权限和运行时必须是 Fabushi/Mahayana 自有。
-5. 许可证、来源和可复用边界必须逐项记录；无法确认来源权利的代码不得静默当作自有原创代码发布。
+最终“Grok Bot 所有功能、所有源码已融合”必须满足 `docs/19-完成定义与验收.md`：来源 100% 分类、单一正式 runtime、保留能力有自动化/E2E 证据、安全/来源阻塞清零、受保护 main 与发布证据完整。
 
-## 推荐阅读顺序
+## 目录导航
 
-`SOURCE_OF_TRUTH.md` -> `REQUIREMENTS.md` -> `ARCHITECTURE.md` -> `docs/02-Grok-Bot能力目录.md` -> `management/01-WBS原子任务.md` -> `management/03-验收追踪矩阵.md` -> `docs/15-完成定义.md`。
+- 原始需求/来源：`source/`
+- 标准产品与工程规范：`docs/00..07`、`docs/19`
+- 深入专题规范：`docs/02-Grok-Bot能力目录.md` 到 `docs/15-完成定义.md`
+- 执行管理：`management/`
+- ADR：`decisions/`
+- 验收证据：`evidence/`
+- 运维/回滚/恢复：`runbooks/`
+- 可复用模板：`templates/`
