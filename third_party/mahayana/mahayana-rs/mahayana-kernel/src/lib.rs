@@ -4,6 +4,8 @@
 //! depend on these contracts instead of Codex, Grok Build, or model-provider
 //! protocol types.  External engines are adapters behind [`EngineBackend`].
 
+pub mod supervisor;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

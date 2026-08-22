@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - third_party/mahayana/mahayana-rs/**
+      - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
       - main
     paths:
       - third_party/mahayana/mahayana-rs/**
+      - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -37,6 +39,10 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /third_party/mahayana/**
+            /scripts/check-mahayana-source-boundary.py
+
+      - name: Verify Mahayana source ownership boundary
+        run: python3 ../../../scripts/check-mahayana-source-boundary.py
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -53,7 +59,7 @@ jobs:
       - name: Verify formatting
         run: cargo fmt --all -- --check
 
-      - name: Test sovereign kernel and legacy bridge
+      - name: Test sovereign kernel, supervision, and legacy bridge
         run: >-
           cargo test
           -p mahayana-kernel
