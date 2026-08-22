@@ -452,6 +452,126 @@ pub enum PermissionMemory {
     Clear,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalOutcome {
+    Approved,
+    Rejected,
+    TimedOut,
+    Interrupted,
+}
+
+impl ApprovalOutcome {
+    pub fn allows_execution(self) -> bool {
+        matches!(self, Self::Approved)
+    }
+
+    pub fn permission_decision(self) -> PermissionDecision {
+        if self.allows_execution() {
+            PermissionDecision::Allow
+        } else {
+            PermissionDecision::Deny
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalRecord {
+    pub approval_id: String,
+    pub key: PermissionKey,
+    pub risk: RiskLevel,
+    pub requested_at_ms: i64,
+    pub resolved_at_ms: i64,
+    pub outcome: ApprovalOutcome,
+    pub memory: Option<PermissionMemory>,
+}
+
+impl ApprovalRecord {
+    pub fn new(
+        approval_id: impl Into<String>,
+        key: PermissionKey,
+        risk: RiskLevel,
+        requested_at_ms: i64,
+        resolved_at_ms: i64,
+        outcome: ApprovalOutcome,
+        memory: Option<PermissionMemory>,
+    ) -> Result<Self, SupervisorError> {
+        let approval_id = approval_id.into();
+        if approval_id.trim().is_empty() {
+            return Err(SupervisorError::InvalidApproval(
+                "approval id is empty".into(),
+            ));
+        }
+        if resolved_at_ms < requested_at_ms {
+            return Err(SupervisorError::InvalidApproval(
+                "approval resolved before it was requested".into(),
+            ));
+        }
+        match (outcome, memory) {
+            (ApprovalOutcome::Approved, Some(PermissionMemory::DenyPermanently)) => {
+                return Err(SupervisorError::InvalidApproval(
+                    "approved outcome cannot create a permanent denial".into(),
+                ));
+            }
+            (ApprovalOutcome::Rejected, Some(PermissionMemory::AllowForSession)) => {
+                return Err(SupervisorError::InvalidApproval(
+                    "rejected outcome cannot create a session allow".into(),
+                ));
+            }
+            (ApprovalOutcome::TimedOut, Some(_)) | (ApprovalOutcome::Interrupted, Some(_)) => {
+                return Err(SupervisorError::InvalidApproval(
+                    "timeout/interruption cannot mutate permission memory".into(),
+                ));
+            }
+            _ => {}
+        }
+        Ok(Self {
+            approval_id,
+            key,
+            risk,
+            requested_at_ms,
+            resolved_at_ms,
+            outcome,
+            memory,
+        })
+    }
+
+    fn apply(&self, permissions: &mut PermissionLedger) -> PermissionDecision {
+        if let Some(memory) = self.memory {
+            permissions.remember(self.key.clone(), memory);
+        }
+        self.outcome.permission_decision()
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ApprovalLedger {
+    records: BTreeMap<String, ApprovalRecord>,
+}
+
+impl ApprovalLedger {
+    pub fn record(
+        &mut self,
+        record: ApprovalRecord,
+        permissions: &mut PermissionLedger,
+    ) -> Result<PermissionDecision, SupervisorError> {
+        if self.records.contains_key(&record.approval_id) {
+            return Err(SupervisorError::ApprovalExists(record.approval_id));
+        }
+        let decision = record.apply(permissions);
+        self.records.insert(record.approval_id.clone(), record);
+        Ok(decision)
+    }
+
+    pub fn get(&self, approval_id: &str) -> Option<&ApprovalRecord> {
+        self.records.get(approval_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ApprovalRecord> {
+        self.records.values()
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PermissionLedger {
     session_allows: BTreeSet<PermissionKey>,
@@ -525,6 +645,8 @@ pub struct SessionSnapshot {
     pub backend_id: String,
     pub supervisor: TaskSupervisor,
     pub permissions: PermissionLedger,
+    #[serde(default)]
+    pub approvals: ApprovalLedger,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -549,6 +671,7 @@ impl SessionSnapshot {
             backend_id,
             supervisor: TaskSupervisor::default(),
             permissions: PermissionLedger::default(),
+            approvals: ApprovalLedger::default(),
             created_at_ms,
             updated_at_ms: created_at_ms,
         })
@@ -639,6 +762,10 @@ pub enum SupervisorError {
     AttemptNotFound(String),
     #[error("permission target is empty")]
     InvalidPermissionTarget,
+    #[error("invalid approval: {0}")]
+    InvalidApproval(String),
+    #[error("approval already recorded: {0}")]
+    ApprovalExists(String),
     #[error("invalid recovery snapshot: {0}")]
     InvalidSnapshot(String),
     #[error("unsupported snapshot version: {0}")]
@@ -726,6 +853,107 @@ mod tests {
     }
 
     #[test]
+    fn approval_terminal_outcomes_are_distinct_and_fail_closed() {
+        assert!(ApprovalOutcome::Approved.allows_execution());
+        for outcome in [
+            ApprovalOutcome::Rejected,
+            ApprovalOutcome::TimedOut,
+            ApprovalOutcome::Interrupted,
+        ] {
+            assert!(!outcome.allows_execution());
+            assert_eq!(outcome.permission_decision(), PermissionDecision::Deny);
+        }
+        assert_eq!(
+            serde_json::to_string(&ApprovalOutcome::TimedOut).unwrap(),
+            "\"timed_out\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ApprovalOutcome::Interrupted).unwrap(),
+            "\"interrupted\""
+        );
+    }
+
+    #[test]
+    fn approval_memory_cannot_override_terminal_outcome() {
+        let key = PermissionKey::new(Capability::Network, "api.example.com").unwrap();
+        let mut permissions = PermissionLedger::default();
+        let mut approvals = ApprovalLedger::default();
+        let mut policy = ExecutionPolicy::interactive_default();
+        policy.approval_mode = ApprovalMode::Always;
+
+        let approved = ApprovalRecord::new(
+            "approval-1",
+            key.clone(),
+            RiskLevel::ExternalSideEffect,
+            10,
+            11,
+            ApprovalOutcome::Approved,
+            Some(PermissionMemory::AllowForSession),
+        )
+        .unwrap();
+        assert_eq!(
+            approvals.record(approved, &mut permissions).unwrap(),
+            PermissionDecision::Allow
+        );
+        assert_eq!(
+            permissions.evaluate(&policy, &key, RiskLevel::ExternalSideEffect),
+            PermissionDecision::Allow
+        );
+
+        let rejected = ApprovalRecord::new(
+            "approval-2",
+            key.clone(),
+            RiskLevel::ExternalSideEffect,
+            12,
+            13,
+            ApprovalOutcome::Rejected,
+            Some(PermissionMemory::DenyPermanently),
+        )
+        .unwrap();
+        assert_eq!(
+            approvals.record(rejected, &mut permissions).unwrap(),
+            PermissionDecision::Deny
+        );
+        assert_eq!(
+            permissions.evaluate(&policy, &key, RiskLevel::ReadOnly),
+            PermissionDecision::Deny
+        );
+        assert_eq!(
+            approvals.get("approval-2").unwrap().outcome,
+            ApprovalOutcome::Rejected
+        );
+    }
+
+    #[test]
+    fn timeout_and_interruption_cannot_create_permission_memory() {
+        let key = PermissionKey::new(Capability::Process, "cargo test").unwrap();
+        assert!(matches!(
+            ApprovalRecord::new(
+                "approval-timeout",
+                key.clone(),
+                RiskLevel::SystemWrite,
+                1,
+                2,
+                ApprovalOutcome::TimedOut,
+                Some(PermissionMemory::AllowForSession),
+            ),
+            Err(SupervisorError::InvalidApproval(_))
+        ));
+        assert!(matches!(
+            ApprovalRecord::new(
+                "approval-interrupted",
+                key,
+                RiskLevel::SystemWrite,
+                1,
+                2,
+                ApprovalOutcome::Interrupted,
+                Some(PermissionMemory::DenyPermanently),
+            ),
+            Err(SupervisorError::InvalidApproval(_))
+        ));
+    }
+
+    #[test]
     fn recovery_is_provider_neutral_and_revision_checked() {
         let snapshot = SessionSnapshot::new("session-1", "mahayana-native", 10).unwrap();
         let encoded = serde_json::to_string(&snapshot).unwrap().to_lowercase();
@@ -739,6 +967,35 @@ mod tests {
                 expected: 0,
                 actual: 1
             })
+        );
+    }
+
+    #[test]
+    fn recovery_snapshot_preserves_approval_terminal_state() {
+        let mut snapshot = SessionSnapshot::new("session-2", "mahayana-native", 20).unwrap();
+        let key = PermissionKey::new(Capability::FilesystemWrite, "src/lib.rs").unwrap();
+        let record = ApprovalRecord::new(
+            "approval-timeout",
+            key,
+            RiskLevel::WorkspaceWrite,
+            20,
+            25,
+            ApprovalOutcome::TimedOut,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot
+                .approvals
+                .record(record, &mut snapshot.permissions)
+                .unwrap(),
+            PermissionDecision::Deny
+        );
+        let encoded = serde_json::to_string(&snapshot).unwrap();
+        let decoded: SessionSnapshot = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(
+            decoded.approvals.get("approval-timeout").unwrap().outcome,
+            ApprovalOutcome::TimedOut
         );
     }
 }
