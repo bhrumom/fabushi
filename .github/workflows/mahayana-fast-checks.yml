@@ -22,61 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  orchestrator-rust198-repair:
-    name: One-shot Rust 1.98 orchestrator repair
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-103-native-auth-secrets-clean'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 2
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Apply exact lint repairs
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('third_party/mahayana/mahayana-rs/mahayana-orchestrator/src/lib.rs')
-          text = path.read_text()
-          replacements = [
-              (
-                  '''        if let Some(key) = dedupe_key.as_deref() {\n            if let Some(existing) = self.entries.iter_mut().find(|entry| {\n                entry.state == PromptState::Pending && entry.dedupe_key.as_deref() == Some(key)\n            }) {\n                existing.text = text.to_string();\n                existing.priority = existing.priority.max(priority);\n                existing.metadata.extend(metadata);\n                return Ok(existing.id.clone());\n            }\n        }''',
-                  '''        if let Some(key) = dedupe_key.as_deref()\n            && let Some(existing) = self.entries.iter_mut().find(|entry| {\n                entry.state == PromptState::Pending && entry.dedupe_key.as_deref() == Some(key)\n            })\n        {\n            existing.text = text.to_string();\n            existing.priority = existing.priority.max(priority);\n            existing.metadata.extend(metadata);\n            return Ok(existing.id.clone());\n        }''',
-              ),
-              ('    pub fn next(&mut self) -> Option<PromptEntry> {', '    pub fn take_next(&mut self) -> Option<PromptEntry> {'),
-              ('        records.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));', '        records.sort_by_key(|record| std::cmp::Reverse(record.updated_at_ms));'),
-              (
-                  '''        if let Some(parent_id) = parent_id.as_deref() {\n            if !self.tasks.contains_key(parent_id) {\n                return Err(OrchestratorError::SubagentNotFound(parent_id.to_string()));\n            }\n        }''',
-                  '''        if let Some(parent_id) = parent_id.as_deref()\n            && !self.tasks.contains_key(parent_id)\n        {\n            return Err(OrchestratorError::SubagentNotFound(parent_id.to_string()));\n        }''',
-              ),
-          ]
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one exact match, found {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
-          if text.count('queue.next()') != 2:
-              raise SystemExit(f'expected exactly two PromptQueue test calls, found {text.count("queue.next()")})')
-          text = text.replace('queue.next()', 'queue.take_next()')
-          path.write_text(text)
-          PY
-          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-orchestrator
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-orchestrator/src/lib.rs
-          git diff --cached --check
-          git commit -m 'fix(mahayana): satisfy Rust 1.98 orchestrator lints'
-          git push origin HEAD:${{ github.head_ref }}
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
