@@ -25,6 +25,8 @@ export type NativeDesktopEvent =
   | "skip-onboarding"
   | "theme-changed"
   | "update-status"
+  | "messaging-call-signal"
+  | "messaging-call-status"
 ;
 
 export interface NativeDesktopBridge {

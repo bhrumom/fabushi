@@ -3,12 +3,14 @@ name: Mahayana fast checks
 on:
   pull_request:
     paths:
+      - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
       - main
     paths:
+      - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
@@ -36,6 +38,7 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /native/mahayana-messaging/**
             /third_party/mahayana/**
 
       - name: Set up Rust
@@ -47,7 +50,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v3
+          shared-key: mahayana-fast-v4
           cache-all-crates: true
 
       - name: Verify formatting
@@ -59,6 +62,18 @@ jobs:
           -p mahayana-miniapp-protocol
           -p mahayana-miniapp-bridge
           -p mahayana-host-protocol
+          --profile ci
+
+      - name: Test Rust-native Mahayana Harness
+        run: >-
+          cargo test
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
           --profile ci
 
       - name: Test direct Mahayana Host
