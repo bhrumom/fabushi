@@ -79,6 +79,7 @@ jobs:
             const isDocsSafe = (filename) =>
               /^projects\//.test(filename) ||
               /^docs\//.test(filename) ||
+              /^\.agent\/skills\//.test(filename) ||
               /^[^/]+\.md$/.test(filename) ||
               /^\.github\/[^/]+\.md$/.test(filename);
 
