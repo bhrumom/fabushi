@@ -4,6 +4,7 @@
 //! depend on these contracts instead of Codex, Grok Build, or model-provider
 //! protocol types.  External engines are adapters behind [`EngineBackend`].
 
+pub mod extension;
 pub mod resilience;
 pub mod sandbox;
 pub mod supervisor;
@@ -79,6 +80,8 @@ pub enum Capability {
     Mcp,
     Skills,
     Plugins,
+    Connectors,
+    MiniApps,
     Memory,
     Workspace,
     Checkpoint,
