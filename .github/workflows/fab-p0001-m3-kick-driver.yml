@@ -1,0 +1,75 @@
+name: FAB-P0001 M3 one-shot driver kick
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fab-p0001-m3-kick-driver.yml
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  kick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact M3 closure branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/fab-p0001-m3-e2e-closure
+          fetch-depth: 1
+      - name: Repair the reload readiness predicate exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('desktop/e2e/messenger.spec.ts')
+          text = path.read_text()
+          old = '''  await expect.poll(async () => {
+    const hostState = await page.getByTestId('host-status').getAttribute('data-state').catch(() => null);
+    if (hostState === 'ready') return true;
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    return page.getByTestId('open-messenger').isVisible().catch(() => false);
+  }, { timeout: 15_000 }).toBe(true);
+'''
+          new = '''  await expect.poll(async () => {
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    if (await page.getByTestId('open-messenger').isVisible().catch(() => false)) return true;
+    const hostStatus = page.getByTestId('host-status');
+    if (!await hostStatus.isVisible().catch(() => false)) return false;
+    return await hostStatus.getAttribute('data-state').catch(() => null) === 'ready';
+  }, { timeout: 15_000 }).toBe(true);
+'''
+          if new in text:
+              print('reload predicate already repaired')
+          else:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one reload predicate block, got {count}')
+              path.write_text(text.replace(old, new, 1))
+          PY
+          if ! git diff --quiet -- desktop/e2e/messenger.spec.ts; then
+            git config user.name "fabushi-ci"
+            git config user.email "fabushi-ci@users.noreply.github.com"
+            git add desktop/e2e/messenger.spec.ts
+            git commit -m "test(tfi): avoid blocking on absent host status after reload"
+            git push origin HEAD:fix/fab-p0001-m3-e2e-closure
+          fi
+      - name: Re-run the exact failed Electron job once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPOSITORY}/actions/jobs/97042650261/rerun"
