@@ -74,7 +74,14 @@ fn principal_schema_keeps_profile_identity_and_connected_accounts_separate() {
         .nth(1)
         .and_then(|rest| rest.split("CREATE").next())
         .expect("principal table");
-    for forbidden in ["password", "apple", "alipay", "firebase", "membership", "payment"] {
+    for forbidden in [
+        "password",
+        "apple",
+        "alipay",
+        "firebase",
+        "membership",
+        "payment",
+    ] {
         assert!(
             !principal_table.to_ascii_lowercase().contains(forbidden),
             "principal row must not contain provider/product field {forbidden}"
@@ -93,12 +100,18 @@ fn workspace_schema_unifies_human_and_agent_messaging() {
         validate_workspace_messaging_schema(WORKSPACE_MESSAGING_SCHEMA_V7),
         Ok(())
     );
-    assert!(WORKSPACE_MESSAGING_SCHEMA_V7.contains("peer_type IN ('principal', 'agent', 'system')"));
+    assert!(
+        WORKSPACE_MESSAGING_SCHEMA_V7.contains("peer_type IN ('principal', 'agent', 'system')")
+    );
     assert!(WORKSPACE_MESSAGING_SCHEMA_V7.contains("UNIQUE (conversation_id, seq)"));
     assert!(WORKSPACE_MESSAGING_SCHEMA_V7.contains("UNIQUE (conversation_id, client_nonce)"));
     assert!(WORKSPACE_MESSAGING_SCHEMA_V7.contains("last_read_seq"));
     assert!(WORKSPACE_MESSAGING_SCHEMA_V7.contains("capability_policy_json"));
-    assert!(!WORKSPACE_MESSAGING_SCHEMA_V7.to_ascii_lowercase().contains("leaderboard"));
+    assert!(
+        !WORKSPACE_MESSAGING_SCHEMA_V7
+            .to_ascii_lowercase()
+            .contains("leaderboard")
+    );
 }
 
 #[test]
