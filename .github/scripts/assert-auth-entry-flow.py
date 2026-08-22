@@ -11,9 +11,12 @@ def read_source(path: str, *, optional: bool = False):
 
 
 host = read_source('frontend/apps/web/src/app/host/host-client.tsx')
+account_auth_path = 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/account.rs'
+if not Path(account_auth_path).exists():
+    account_auth_path = 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/account_browser_auth.inc.rs'
 worker = '\n'.join([
     read_source('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'),
-    read_source('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/account_browser_auth.inc.rs'),
+    read_source(account_auth_path),
 ])
 product = read_source('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
 feature = read_source('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
