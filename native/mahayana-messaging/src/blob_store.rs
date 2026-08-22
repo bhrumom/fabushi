@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -173,6 +174,9 @@ impl FileBlobStore {
                 actual,
             });
         }
+        if let Some(expected) = metadata.content_hash.as_deref() {
+            verify_sha256(&part_path, id, expected)?;
+        }
         let final_path = self.blob_path(id);
         fs::rename(&part_path, &final_path)?;
         let final_metadata_path = self.metadata_path(id);
@@ -277,6 +281,39 @@ impl FileBlobStore {
     }
 }
 
+fn verify_sha256(path: &Path, id: &BlobId, expected: &str) -> Result<(), BlobStoreError> {
+    let Some(expected_hex) = expected.strip_prefix("sha256:") else {
+        return Err(BlobStoreError::InvalidContentHash(expected.to_string()));
+    };
+    if expected_hex.len() != 64
+        || !expected_hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err(BlobStoreError::InvalidContentHash(expected.to_string()));
+    }
+
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = format!("sha256:{:x}", hasher.finalize());
+    if actual != expected {
+        return Err(BlobStoreError::ContentHashMismatch {
+            id: id.clone(),
+            expected: expected.to_string(),
+            actual,
+        });
+    }
+    Ok(())
+}
+
 fn validate_metadata(metadata: &BlobMetadata) -> Result<(), BlobStoreError> {
     BlobId::new(metadata.id.0.clone())?;
     if metadata.file_name.trim().is_empty() {
@@ -330,6 +367,14 @@ pub enum BlobStoreError {
         expected: u64,
         actual: u64,
     },
+    #[error("blob content hash format is invalid: {0}")]
+    InvalidContentHash(String),
+    #[error("blob {id:?} content hash mismatch: expected {expected}, got {actual}")]
+    ContentHashMismatch {
+        id: BlobId,
+        expected: String,
+        actual: String,
+    },
     #[error("blob range length {0} is invalid")]
     InvalidRangeLength(u64),
     #[error("blob {id:?} range starts at {offset}, file size is {size}")]
@@ -375,6 +420,92 @@ mod tests {
         store.finish_upload(&id).unwrap();
         assert_eq!(store.read_range(&id, 6, 5).unwrap(), b"world");
         store.delete(&id).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resumes_after_store_reopen_and_verifies_sha256_before_publish() {
+        let root = temporary_root();
+        let id = BlobId::new("resume-hash").unwrap();
+        let payload = b"hello resumable media";
+        let expected = format!("sha256:{:x}", Sha256::digest(payload));
+        let metadata = BlobMetadata {
+            id: id.clone(),
+            file_name: "resume.bin".into(),
+            mime_type: "application/octet-stream".into(),
+            size_bytes: payload.len() as u64,
+            content_hash: Some(expected.clone()),
+            created_at_ms: 1,
+        };
+
+        {
+            let store = FileBlobStore::new(&root);
+            store.begin_upload(&metadata).unwrap();
+            store.append_chunk(&id, 0, &payload[..7]).unwrap();
+        }
+
+        let reopened = FileBlobStore::new(&root);
+        assert_eq!(reopened.upload_status(&id).unwrap().uploaded_bytes, 7);
+        assert!(matches!(
+            reopened.append_chunk(&id, 6, b"wrong"),
+            Err(BlobStoreError::UnexpectedOffset {
+                expected: 7,
+                actual: 6,
+                ..
+            })
+        ));
+        reopened.append_chunk(&id, 7, &payload[7..]).unwrap();
+        let completed = reopened.finish_upload(&id).unwrap();
+        assert_eq!(completed.content_hash.as_deref(), Some(expected.as_str()));
+        assert_eq!(reopened.read_range(&id, 6, 9).unwrap(), &payload[6..15]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn hash_mismatch_never_publishes_partial_blob() {
+        let root = temporary_root();
+        let store = FileBlobStore::new(&root);
+        let id = BlobId::new("bad-hash").unwrap();
+        let payload = b"tampered";
+        let metadata = BlobMetadata {
+            id: id.clone(),
+            file_name: "bad.bin".into(),
+            mime_type: "application/octet-stream".into(),
+            size_bytes: payload.len() as u64,
+            content_hash: Some(format!("sha256:{}", "0".repeat(64))),
+            created_at_ms: 1,
+        };
+        store.begin_upload(&metadata).unwrap();
+        store.append_chunk(&id, 0, payload).unwrap();
+        assert!(matches!(
+            store.finish_upload(&id),
+            Err(BlobStoreError::ContentHashMismatch { .. })
+        ));
+        let status = store.upload_status(&id).unwrap();
+        assert!(!status.complete);
+        assert_eq!(status.uploaded_bytes, payload.len() as u64);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_noncanonical_content_hash_format() {
+        let root = temporary_root();
+        let store = FileBlobStore::new(&root);
+        let id = BlobId::new("invalid-hash").unwrap();
+        let metadata = BlobMetadata {
+            id: id.clone(),
+            file_name: "bad.bin".into(),
+            mime_type: "application/octet-stream".into(),
+            size_bytes: 1,
+            content_hash: Some("SHA256:00".into()),
+            created_at_ms: 1,
+        };
+        store.begin_upload(&metadata).unwrap();
+        store.append_chunk(&id, 0, b"x").unwrap();
+        assert!(matches!(
+            store.finish_upload(&id),
+            Err(BlobStoreError::InvalidContentHash(_))
+        ));
         let _ = fs::remove_dir_all(root);
     }
 
