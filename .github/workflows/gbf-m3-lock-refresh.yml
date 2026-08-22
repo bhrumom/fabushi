@@ -1,0 +1,47 @@
+name: GBF M3 one-shot Cargo lock refresh
+
+on:
+  push:
+    branches:
+      - gbf/m3-runtime-convergence-20260822
+    paths:
+      - '.github/workflows/gbf-m3-lock-refresh.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: gbf/m3-runtime-convergence-20260822
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Resolve the current workspace without building the product
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo metadata --format-version 1 > /dev/null
+      - name: Prove the embedded runtime passes with the refreshed lock
+        run: cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-agent-codex --package mahayana-ffi --package mahayana-cli --all-targets -- -D warnings
+      - name: Show the lockfile-only resolution diff
+        run: |
+          git diff -- third_party/mahayana/mahayana-rs/Cargo.lock
+          if git diff --name-only | grep -v '^third_party/mahayana/mahayana-rs/Cargo.lock$' | grep -q .; then
+            echo 'Cargo metadata changed files other than Cargo.lock.' >&2
+            exit 1
+          fi
+      - name: Commit refreshed lock when required
+        run: |
+          if git diff --quiet -- third_party/mahayana/mahayana-rs/Cargo.lock; then
+            echo 'Cargo.lock already current; no commit required.'
+            exit 0
+          fi
+          git config user.name 'fabushi-ci'
+          git config user.email 'fabushi-ci@users.noreply.github.com'
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          git commit -m 'fix(gbf): refresh Mahayana Cargo lock'
+          git push origin HEAD:gbf/m3-runtime-convergence-20260822
