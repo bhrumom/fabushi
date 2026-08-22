@@ -88,8 +88,7 @@ fn collect_entries(
     directory: &Path,
     entries: &mut Vec<(PathBuf, PathBuf, bool)>,
 ) -> Result<(), PluginArchiveError> {
-    let mut children = fs::read_dir(directory)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut children = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
     children.sort_by_key(|entry| entry.file_name());
 
     for child in children {
