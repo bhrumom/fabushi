@@ -4,8 +4,8 @@
 
 | ID | Stage | Action | Dependency | Acceptance | Verification | Evidence | Status | Blocker | Next action |
 |---|---|---|---|---|---|---|---|---|---|
-| GBF-001 | M0 | 建立企业级项目基线 | none | 标准 scaffold + PR/CI/main 验证 | project audit + GitHub facts | evidence/GBF-001 | IN_PROGRESS | PR/CI/main pending | 完成标准对齐并开 PR |
-| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | NOT_STARTED | GBF-001 | 读取并记录 SHAs |
+| GBF-001 | M0 | 建立企业级项目基线 | none | 标准 scaffold + PR/CI/main 验证 | project audit + GitHub facts | evidence/GBF-001 | RELEASED | none | GBF-101 固定 source/main refs |
+| GBF-101 | M1 | 固定 source/main 基线 ref | GBF-001 | 3 个权威 ref/commit 固化 | GitHub ref read | evidence/GBF-101 | NOT_STARTED | none | 读取并记录 SHAs |
 | GBF-102 | M1 | 生成来源递归 file manifest | GBF-101 | 来源文件 path/hash/type 100% 入表 | manifest completeness check | evidence/GBF-102 | NOT_STARTED | GBF-101 | 扫描 latest/0.16 |
 | GBF-103 | M1 | 建立功能能力矩阵 | GBF-102 | 关键文件全部映射能力域 | zero-unclassified check | evidence/GBF-103 | NOT_STARTED | GBF-102 | 归类功能域 |
 | GBF-104 | M1 | 建立 main/source 差异矩阵 | GBF-102,103 | 每项有处理分类 | matrix enum validation | evidence/GBF-104 | NOT_STARTED | GBF-103 | 比较 main 与来源 |
