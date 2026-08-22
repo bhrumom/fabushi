@@ -36,16 +36,11 @@ const MAHAYANA_AUTH_KEYRING_SERVICE: &str = "mahayana-cli";
 const MAHAYANA_MANAGED_KEYRING_SERVICE: &str = "mahayana-managed-secrets";
 const LEGACY_CODEX_KEYRING_SERVICE: &str = "codex";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LocalSecretsNamespace {
+    #[default]
     ManagedSecrets,
     MahayanaAuth,
-}
-
-impl Default for LocalSecretsNamespace {
-    fn default() -> Self {
-        Self::ManagedSecrets
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
