@@ -19,9 +19,14 @@ import type {
   RuntimeEventListener,
 } from "./transport";
 
-type ElectronBridge = {
+type MahayanaElectronBridge = {
+  contractVersion: number;
   invoke<T>(method: string, params?: Record<string, unknown>): Promise<T>;
   subscribe?(listener: RuntimeEventListener): () => void;
+};
+
+type ElectronShellBridge = {
+  contractVersion: number;
   notify(title: string, body: string): Promise<boolean | void>;
   openExternal(url: string): Promise<boolean | void>;
   openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<boolean | void>;
@@ -30,10 +35,12 @@ type ElectronBridge = {
 
 declare global {
   interface Window {
-    fabushi: ElectronBridge;
-    mahayana?: Pick<ElectronBridge, "invoke" | "subscribe">;
+    fabushi: ElectronShellBridge;
+    mahayana?: MahayanaElectronBridge;
   }
 }
+
+const ELECTRON_EDGE_CONTRACT_VERSION = 1;
 
 const idle = (milliseconds = 10) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
@@ -41,13 +48,21 @@ const idle = (milliseconds = 10) =>
 export function isElectronMahayanaHostAvailable(): boolean {
   return (
     typeof window !== "undefined" &&
-    typeof window.fabushi?.invoke === "function"
+    window.mahayana?.contractVersion === ELECTRON_EDGE_CONTRACT_VERSION &&
+    typeof window.mahayana.invoke === "function"
   );
 }
 
-function bridge(): ElectronBridge {
-  if (typeof window === "undefined" || typeof window.fabushi?.invoke !== "function") {
-    throw new Error("Electron Mahayana Host is not available");
+function mahayanaBridge(): MahayanaElectronBridge {
+  if (!isElectronMahayanaHostAvailable() || !window.mahayana) {
+    throw new Error("Electron Mahayana Host is not available or uses an unsupported bridge contract");
+  }
+  return window.mahayana;
+}
+
+function shellBridge(): ElectronShellBridge {
+  if (typeof window === "undefined" || window.fabushi?.contractVersion !== ELECTRON_EDGE_CONTRACT_VERSION) {
+    throw new Error("Electron shell bridge is not available or uses an unsupported contract");
   }
   return window.fabushi;
 }
@@ -64,7 +79,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   async initialize(_config: HostConfig): Promise<HostInfo> {
-    const info = await bridge().invoke<HostInfo>("feature.info");
+    const info = await mahayanaBridge().invoke<HostInfo>("feature.info");
     this.closed = false;
     this.attachRuntimeEvents();
     // The main process owns the long-lived event pump and may observe the
@@ -81,47 +96,47 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   execute(command: RuntimeCommand): Promise<CommandAccepted> {
-    return bridge().invoke<CommandAccepted>("feature.execute", { command });
+    return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command });
   }
 
   authStatus(): Promise<AuthState> {
-    return bridge().invoke<AuthState>("feature.auth.status");
+    return mahayanaBridge().invoke<AuthState>("feature.auth.status");
   }
 
   authProviders(): Promise<AuthProvider[]> {
-    return bridge().invoke<AuthProvider[]>("feature.auth.providers");
+    return mahayanaBridge().invoke<AuthProvider[]>("feature.auth.providers");
   }
 
   browserLoginStart(): Promise<BrowserLoginAttempt> {
-    return bridge().invoke<BrowserLoginAttempt>("feature.auth.browserStart");
+    return mahayanaBridge().invoke<BrowserLoginAttempt>("feature.auth.browserStart");
   }
 
   browserLoginPoll(attemptId: string): Promise<BrowserLoginPollResult> {
-    return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserPoll", { attemptId });
+    return mahayanaBridge().invoke<BrowserLoginPollResult>("feature.auth.browserPoll", { attemptId });
   }
 
   browserLoginCancel(attemptId: string): Promise<BrowserLoginPollResult> {
-    return bridge().invoke<BrowserLoginPollResult>("feature.auth.browserCancel", { attemptId });
+    return mahayanaBridge().invoke<BrowserLoginPollResult>("feature.auth.browserCancel", { attemptId });
   }
 
   browserLoginReopen(attemptId: string): Promise<BrowserLoginReopenResult> {
-    return bridge().invoke<BrowserLoginReopenResult>("feature.auth.browserReopen", { attemptId });
+    return mahayanaBridge().invoke<BrowserLoginReopenResult>("feature.auth.browserReopen", { attemptId });
   }
 
   passwordLogin(username: string, password: string): Promise<AuthState> {
-    return bridge().invoke<AuthState>("feature.auth.passwordLogin", { username, password });
+    return mahayanaBridge().invoke<AuthState>("feature.auth.passwordLogin", { username, password });
   }
 
   oauthStart(provider: AuthProviderId): Promise<OAuthAttempt> {
-    return bridge().invoke<OAuthAttempt>("feature.auth.oauthStart", { provider });
+    return mahayanaBridge().invoke<OAuthAttempt>("feature.auth.oauthStart", { provider });
   }
 
   oauthPoll(attemptId: string): Promise<OAuthPollResult> {
-    return bridge().invoke<OAuthPollResult>("feature.auth.oauthPoll", { attemptId });
+    return mahayanaBridge().invoke<OAuthPollResult>("feature.auth.oauthPoll", { attemptId });
   }
 
   logout(): Promise<AuthState> {
-    return bridge().invoke<AuthState>("feature.auth.logout");
+    return mahayanaBridge().invoke<AuthState>("feature.auth.logout");
   }
 
   openExternal(url: string): Promise<void> {
@@ -135,27 +150,27 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     ) {
       return Promise.resolve();
     }
-    return bridge().openExternal(url).then(() => undefined);
+    return shellBridge().openExternal(url).then(() => undefined);
   }
 
   openSystemSettings(pane: "screen-recording" | "accessibility"): Promise<void> {
-    return bridge().openSystemSettings(pane).then(() => undefined);
+    return shellBridge().openSystemSettings(pane).then(() => undefined);
   }
 
   windowFocused(): Promise<boolean> {
-    return bridge().windowFocused();
+    return shellBridge().windowFocused();
   }
 
   showNotification(title: string, body: string): Promise<void> {
-    return bridge().notify(title, body).then(() => undefined);
+    return shellBridge().notify(title, body).then(() => undefined);
   }
 
   interrupt(operationId: string): Promise<void> {
-    return bridge().invoke<void>("feature.interrupt", { operationId });
+    return mahayanaBridge().invoke<void>("feature.interrupt", { operationId });
   }
 
   resolveApproval(resolution: ApprovalResolution): Promise<void> {
-    return bridge().invoke<void>("feature.approval.resolve", { resolution });
+    return mahayanaBridge().invoke<void>("feature.approval.resolve", { resolution });
   }
 
   async close(): Promise<void> {
@@ -172,7 +187,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     this.unsubscribeBridge?.();
     this.unsubscribeBridge = null;
 
-    const electronBridge = bridge();
+    const electronBridge = mahayanaBridge();
     if (typeof electronBridge.subscribe === "function") {
       this.unsubscribeBridge = electronBridge.subscribe((event) => this.dispatchEvent(event));
       return;
@@ -193,7 +208,7 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     try {
       while (!this.closed) {
         try {
-          const event = await bridge().invoke<RuntimeEvent | null>("feature.receive");
+          const event = await mahayanaBridge().invoke<RuntimeEvent | null>("feature.receive");
           if (event) this.dispatchEvent(event);
           else await idle(10);
         } catch (error) {

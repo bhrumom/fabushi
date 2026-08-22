@@ -4,7 +4,7 @@
 - Project Key: GBF
 - Task ID: GBF-103
 - Stage: M1-source-inventory
-- Status: TESTED (merge/main closure pending)
+- Status: RELEASED
 - Objective: 将共同基线到两个历史 Grok 输入 head 的全部变化文件映射到稳定 capability domain，避免功能漏盘点。
 - Source requirements: GBR-001, GBR-002
 - Dependencies: GBF-102.
@@ -26,3 +26,5 @@
 ## Result / next
 
 能力映射已建立；继续 GBF-104 将每一个 source/main path difference 赋予处理决策。
+
+- Completed: 2026-08-22 17:01+08
