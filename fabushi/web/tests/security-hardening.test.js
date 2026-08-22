@@ -14,7 +14,8 @@ const worker = read('worker-modular.js');
 const requestGate = read('src/security/request-gate.js');
 const wrangler = read('wrangler.toml');
 const sms = read('src/handlers/sms.js');
-const marketplace = read('src/handlers/marketplace.js');
+const marketplaceWorker = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs');
+const marketplaceRoutes = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/marketplace.inc.rs');
 
 assert.match(authUtils, /resolveJwtSecret/);
 assert.match(authUtils, /secret\.length < 32/);
@@ -45,9 +46,9 @@ assert.doesNotMatch(sms, /Math\.random\s*\(/);
 assert.doesNotMatch(sms, /console\.log\([^\n]*code/i);
 assert.match(sms, /generateToken/);
 
-assert.match(marketplace, /redirect:\s*'manual'/);
-assert.match(marketplace, /isPrivateHost/);
-assert.match(marketplace, /169\.254\.169\.254/);
-assert.match(marketplace, /MAX_PACKAGE_BYTES/);
+assert.match(marketplaceWorker, /fn is_public_https_url\(value: &str\) -> bool/);
+assert.match(marketplaceWorker, /url\.scheme\(\) != \"https\"/);
+assert.match(marketplaceWorker, /domain\.ends_with\(\"\.workers\.dev\"\) \|\| domain\.ends_with\(\"\.pages\.dev\"\)/);
+assert.match(marketplaceRoutes, /MAX_PACKAGE_BYTES: usize = 50 \* 1024 \* 1024/);
 
 console.log('Worker security hardening regression gate passed.');

@@ -5,11 +5,8 @@ import {
   handleCheckPurchaseEntitlement,
 } from '../handlers/payment.js';
 import { handleVerifyAppleReceipt } from '../handlers/apple-iap.js';
-import {
-  handleCreateRedeemCode,
-  handleListRedeemCodes,
-  handleDeleteRedeemCode,
-} from '../handlers/redeem.js';
+import { handleCreateRedeemCode } from '../handlers/redeem.js';
+import { handleListRedeemCodes, handleDeleteRedeemCode } from '../handlers/admin.js';
 
 export async function routeCommerceRequest({ pathname, method, request, env, db }) {
   if (pathname === '/api/alipay/create-order' && method === 'POST') return handleCreateAlipayOrder(request, env, db);
