@@ -60,6 +60,16 @@ assert.ok(
   `worker_api.rs is a shrinking migration budget and must not grow (got ${rustWorkerBytes} bytes)`,
 );
 
+const rustModuleRoot = '../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api';
+for (const moduleName of ['account', 'ai_usage', 'commerce', 'listener_relay', 'marketplace', 'remote_computer', 'security']) {
+  const moduleSource = read(`${rustModuleRoot}/${moduleName}.rs`);
+  assert.doesNotMatch(moduleSource, /include!\(/, `${moduleName}.rs must be a real module, not another include seam`);
+}
+assert.doesNotMatch(rustWorker, /worker_api_parts|include!\(/, 'worker_api.rs must not retain transitional include seams');
+
+const identityAuth = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/identity_auth.rs');
+assert.doesNotMatch(identityAuth, /offline_access/, 'sign-in gatekeepers must not request durable provider access');
+
 const accountMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0005_principals_connections.sql');
 const workspaceMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0007_workspace_messaging.sql');
 for (const table of ['account_principals', 'account_contact_points', 'account_connections', 'account_connection_grants']) {

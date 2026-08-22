@@ -1,3 +1,145 @@
+use super::*;
+
+const REMOTE_PAIRING_SECONDS: i64 = 10 * 60;
+const REMOTE_CONTROL_SESSION_SECONDS: i64 = 2 * 60 * 60;
+const REMOTE_SIGNAL_SECONDS: i64 = 5 * 60;
+const REMOTE_SIGNAL_MAX_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerRegisterRequest {
+    device_id: String,
+    label: String,
+    device_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerHeartbeatRequest {
+    device_id: String,
+    device_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerPairRequest {
+    pairing_code: String,
+    label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerSessionCreateRequest {
+    client_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerDesktopAuthRequest {
+    device_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerSignalRequest {
+    session_id: String,
+    sender_role: String,
+    #[serde(default)]
+    device_secret: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    mobile_token: Option<String>,
+    kind: String,
+    payload: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerSignalDrainRequest {
+    session_id: String,
+    receiver_role: String,
+    #[serde(default)]
+    device_secret: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    mobile_token: Option<String>,
+    #[serde(default)]
+    after_signal_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteComputerSessionCloseRequest {
+    role: String,
+    #[serde(default)]
+    device_secret: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    mobile_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerRow {
+    device_id: String,
+    label: String,
+    last_seen_at: i64,
+    created_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerPairRow {
+    device_id: String,
+    label: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerExistsRow {
+    ok: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerSecretRow {
+    device_secret_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerClientRow {
+    client_id: String,
+    label: String,
+    paired_at: i64,
+    last_seen_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerSessionRow {
+    client_id: String,
+    mobile_token_hash: String,
+    state: String,
+    expires_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerSessionListRow {
+    session_id: String,
+    client_id: String,
+    client_label: String,
+    state: String,
+    created_at: i64,
+    expires_at: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteComputerSignalRow {
+    signal_id: i64,
+    sender_role: String,
+    kind: String,
+    payload_json: String,
+    created_at: i64,
+}
+
 fn remote_secret_hash(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"fabushi-remote-computer-v1\0");
@@ -91,7 +233,10 @@ fn remote_ice_servers(env: &Env) -> Vec<Value> {
     servers
 }
 
-async fn remote_computer_list(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn remote_computer_list(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => {
@@ -130,7 +275,7 @@ async fn remote_computer_list(request: Request, context: RouteContext<()>) -> Re
     Ok(Response::from_json(&json!({"computers": computers}))?.with_headers(auth_headers()))
 }
 
-async fn remote_computer_register(
+pub(super) async fn remote_computer_register(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -212,7 +357,7 @@ async fn remote_computer_register(
     .with_headers(auth_headers()))
 }
 
-async fn remote_computer_heartbeat(
+pub(super) async fn remote_computer_heartbeat(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -256,7 +401,10 @@ async fn remote_computer_heartbeat(
     Ok(Response::from_json(&json!({"ok": true, "lastSeenAt": now}))?.with_headers(auth_headers()))
 }
 
-async fn remote_computer_pair(mut request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn remote_computer_pair(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => {
@@ -336,7 +484,10 @@ async fn remote_computer_pair(mut request: Request, context: RouteContext<()>) -
     .with_headers(auth_headers()))
 }
 
-async fn remote_computer_clients(request: Request, context: RouteContext<()>) -> Result<Response> {
+pub(super) async fn remote_computer_clients(
+    request: Request,
+    context: RouteContext<()>,
+) -> Result<Response> {
     let account = match authenticated_account(&request, &context.env) {
         Ok(account) => account,
         Err(_) => return error_response(401, "unauthorized", "A valid account token is required."),
@@ -374,7 +525,7 @@ async fn remote_computer_clients(request: Request, context: RouteContext<()>) ->
     )
 }
 
-async fn remote_computer_client_revoke(
+pub(super) async fn remote_computer_client_revoke(
     request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -414,7 +565,7 @@ async fn remote_computer_client_revoke(
     )
 }
 
-async fn remote_computer_sessions(
+pub(super) async fn remote_computer_sessions(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -492,7 +643,7 @@ async fn remote_computer_sessions(
     .with_headers(auth_headers()))
 }
 
-async fn remote_computer_session_create(
+pub(super) async fn remote_computer_session_create(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -579,7 +730,7 @@ async fn remote_computer_session_create(
     .with_headers(auth_headers()))
 }
 
-async fn remote_computer_session_activate(
+pub(super) async fn remote_computer_session_activate(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -692,7 +843,7 @@ fn remote_session_actor_allowed(
     }
 }
 
-async fn remote_computer_session_close(
+pub(super) async fn remote_computer_session_close(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -771,7 +922,7 @@ async fn remote_computer_session_close(
     )
 }
 
-async fn remote_computer_signal(
+pub(super) async fn remote_computer_signal(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
@@ -879,7 +1030,7 @@ async fn remote_computer_signal(
     )
 }
 
-async fn remote_computer_signal_drain(
+pub(super) async fn remote_computer_signal_drain(
     mut request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
