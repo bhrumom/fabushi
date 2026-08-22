@@ -8,7 +8,31 @@ All durable Fabushi project folders live under:
 
 Use lowercase kebab-case. A project folder represents one coherent objective/workstream, not a chat session, branch, or individual PR.
 
-Reuse an existing project when the request is a continuation, fix, migration, release, verification round, or refinement of the same objective. Create a new project only when scope, success criteria, and lifecycle are materially independent.
+Portfolio identity is governed by:
+
+- `projects/PORTFOLIO.json` — authoritative machine-readable allocation registry;
+- `projects/PROJECT_ID_POLICY.md` — immutable Project ID lifecycle and allocation policy;
+- `projects/README.md` — human portfolio index.
+
+Every canonical project has:
+
+- an immutable global `project_id` in the form `FAB-P0001`;
+- a stable mnemonic `project_key` such as `TFI`, `FPG`, `FCM`, `GBF`, or `MSR` for requirement/task namespaces;
+- zero or more `legacy_project_ids` that preserve historical aliases and are never reassigned.
+
+Reuse an existing project and its existing Project ID when the request is a continuation, fix, migration, release, verification round, or refinement of the same objective. Create a new project only when scope, success criteria, and lifecycle are materially independent.
+
+### New-project allocation gate
+
+Before creating a new project:
+
+1. Re-read canonical GitHub `main` `projects/PORTFOLIO.json`; never allocate from chat memory or a stale branch.
+2. Search existing registry/project folders and reuse a matching project if one exists.
+3. If the work is genuinely independent, allocate exactly the current `next_sequence` as `FAB-P%04d`.
+4. In the same change, append the registry entry, increment `next_sequence`, and create `projects/<slug>/PROJECT.yaml` with the same `project_id`, `project_key`, slug, and authoritative path.
+5. Never edit, swap, compact, recycle, or reassign an allocated Project ID. Lifecycle changes update status/history, not identity.
+6. Preserve historical identifiers in `legacy_project_ids`.
+7. If concurrent project creation causes a registry conflict, re-read canonical `main` and allocate the later project from the new high-water mark. The conflict is intentional allocation serialization.
 
 ## 2. Mandatory standard scaffold
 
@@ -58,7 +82,9 @@ Do not leave required files blank. If a standard document is genuinely not appli
 `PROJECT.yaml` must include at least:
 
 ```yaml
-project_id: <stable-id>
+project_id: FAB-P0006
+project_key: XYZ
+legacy_project_ids: []
 name: <human-readable name>
 slug: <project-slug>
 status: active
@@ -71,6 +97,10 @@ current_stage: <stage-id-or-name>
 created_at: YYYY-MM-DD
 updated_at: YYYY-MM-DD
 ```
+
+`project_id` is the cross-project surrogate identity and is immutable after allocation. `project_key` is the human-readable namespace for project-internal IDs such as `XYZ-001`; it does not replace the portfolio Project ID. `legacy_project_ids` preserves identifiers used before or during migrations and must never be reassigned to another project.
+
+The example `FAB-P0006` is illustrative only. Always read the live registry and use its actual `next_sequence` for a new project.
 
 Recommended optional fields:
 
@@ -88,7 +118,7 @@ Never store credentials, tokens, signing material, or other secrets.
 
 ### README.md
 
-Provide an onboarding-quality entry point containing objective, current verified status, current stage and next gate, scope/non-goals summary, source-of-truth pointer, owners/reviewers, primary acceptance definition, and navigation to specs, management, ADRs, evidence, and runbooks.
+Provide an onboarding-quality entry point containing Project ID/Project Key, objective, current verified status, current stage and next gate, scope/non-goals summary, source-of-truth pointer, owners/reviewers, primary acceptance definition, and navigation to specs, management, ADRs, evidence, and runbooks.
 
 A new engineer or agent must be able to understand the project without reading the originating chat.
 
@@ -96,7 +126,9 @@ A new engineer or agent must be able to understand the project without reading t
 
 State:
 
+- immutable `FAB-Pxxxx` Project ID and mnemonic Project Key;
 - authoritative repository, branch, and project path;
+- portfolio registry/policy as the authority for identity allocation;
 - original source/requirement files or external references;
 - precedence among latest persisted user requirements, source files, specs, ADRs, management state, GitHub/CI facts, external mirrors, and chat memory;
 - implementation-fact rule: code/PR/CI/release/deployment state must be verified from live systems;
@@ -134,7 +166,7 @@ Describe current state, target state, components, interfaces, data/control flow,
 
 ### `04-质量与测试策略.md`
 
-Define unit/contract/integration/E2E/security/performance tests as applicable, test data strategy, environments, required CI checks, flaky-test handling, and evidence retention.
+Define unit/contract/integration/E2E/security/performance tests as applicable, test data strategy, environments, required CI checks, flaky-test handling, and evidence retention. Project/registry changes must include the `Project portfolio governance` validator or its successor.
 
 ### `05-发布迁移与回滚.md`
 
@@ -160,7 +192,7 @@ Use a stage-based roadmap with entry/exit gates and explicit ordering/dependenci
 
 ### `01-WBS原子任务.md`
 
-Use stable task IDs. Every required task includes action, dependency, acceptance criterion, verification method, evidence requirement, status, blocker, and next action. Avoid subjective completion percentages.
+Use stable task IDs inside the project-key namespace where practical. Every required task includes action, dependency, acceptance criterion, verification method, evidence requirement, status, blocker, and next action. Avoid subjective completion percentages.
 
 ### `02-里程碑.md`
 
@@ -202,6 +234,7 @@ Create one durable record for each substantial atomic task:
 
 Minimum fields:
 
+- immutable portfolio Project ID and Project Key;
 - stable Task ID;
 - objective;
 - source requirement IDs/references;
@@ -241,7 +274,7 @@ Use `runbooks/` for deploy, rollback, recovery, migration, incident response, da
 
 Repository meta/governance changes must follow the same project standard as product code.
 
-The following require an existing matching project folder or a newly created one **before substantial work**:
+The following require an existing matching project folder or a newly allocated Project ID + project folder **before substantial work**:
 
 - root or nested `AGENTS.md` changes;
 - Skill creation, update, removal, packaging, or installation work;
@@ -252,22 +285,23 @@ The following require an existing matching project folder or a newly created one
 - build/release tooling changes;
 - security/governance automation.
 
-If a matching governance project already exists, reuse it. Otherwise create a separate governance project with its own source, scope, WBS, acceptance criteria, evidence, and completion gate.
+If a matching governance project already exists, reuse it. Otherwise allocate the next global Project ID and create a separate governance project with its own source, scope, WBS, acceptance criteria, evidence, and completion gate.
 
 ## 12. Completion gate
 
 Before declaring a repository task complete:
 
 1. Execute the defined acceptance check.
-2. Update the task record with actual result/evidence.
-3. Update WBS.
-4. Update acceptance traceability.
-5. Append status report.
-6. Append material changelog.
-7. Update risks/dependencies/issues/roadmap/ADRs/specs when affected.
-8. Record commit/PR/CI/release/deployment evidence.
-9. Merge through the repository's required protected-main process.
-10. Verify canonical state on `main`.
+2. Run/inspect portfolio identity validation when project registry/metadata is touched.
+3. Update the task record with actual result/evidence.
+4. Update WBS.
+5. Update acceptance traceability.
+6. Append status report.
+7. Append material changelog.
+8. Update risks/dependencies/issues/roadmap/ADRs/specs when affected.
+9. Record commit/PR/CI/release/deployment evidence.
+10. Merge through the repository's required protected-main process.
+11. Verify canonical state on `main`, including portfolio registry/project metadata parity when applicable.
 
 If any required gate is pending, keep the task `in-progress`, `blocked`, or `failed`.
 
@@ -275,6 +309,8 @@ If any required gate is pending, keep the task `in-progress`, `blocked`, or `fai
 
 A project folder passes audit only when:
 
+- its `FAB-Pxxxx` Project ID exists in `projects/PORTFOLIO.json` and matches `PROJECT.yaml`;
+- Project ID, Project Key, slug, and authoritative path are unique/consistent;
 - a new engineer/agent can reconstruct objective, scope, current state, and next action without chat history;
 - every required task has stable identity and objective acceptance;
 - requirements trace to implementation and evidence;
@@ -284,4 +320,4 @@ A project folder passes audit only when:
 - status/change history is append-only;
 - release/migration/rollback and SLO/runbook material exists where operational risk requires it;
 - secrets/private data are absent;
-- project and external control views use the same stable IDs.
+- project and external control views use the same immutable Project ID and stable scoped IDs.
