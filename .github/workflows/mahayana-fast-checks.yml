@@ -56,11 +56,24 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v5
+          shared-key: mahayana-fast-v6
           cache-all-crates: true
 
       - name: Verify formatting
         run: cargo fmt --all -- --check
+
+      - name: Test Mahayana-owned authentication and encrypted secrets
+        run: >-
+          cargo test
+          -p mahayana-auth
+          -p mahayana-secrets
+          --profile ci
+
+      - name: Compile product client against Mahayana-owned auth and secrets
+        run: >-
+          cargo test
+          -p mahayana-platform-client
+          --profile ci
 
       - name: Test sovereign kernel, supervision, and legacy bridge
         run: >-
