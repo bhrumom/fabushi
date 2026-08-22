@@ -1,11 +1,17 @@
 # FPG-001 Evidence
 
-Status: pending PR/CI/merge.
+Status: PR open; CI/merge pending.
 
-Expected evidence:
+## Current evidence
 
-- branch and commit SHA;
-- PR number;
+- Branch: `project/fabushi-project-governance-agents`
+- Initial commit: `b537329ed9fc0bdadcd8c51e27a92956b09181fd`
+- PR: #1976
+- Root instruction changed: `AGENTS.md`
+- Governance project created: `projects/fabushi-project-governance/`
+
+## Pending evidence
+
 - required `CI result` success;
 - merge queue completion;
-- canonical `main` paths for `AGENTS.md` and `projects/fabushi-project-governance/`.
+- canonical `main` verification for `AGENTS.md` and `projects/fabushi-project-governance/`.
