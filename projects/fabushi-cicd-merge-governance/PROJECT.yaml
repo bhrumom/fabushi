@@ -7,4 +7,4 @@ authoritative_branch: main
 authoritative_path: projects/fabushi-cicd-merge-governance
 created_at: 2026-08-22
 updated_at: 2026-08-22
-current_stage: g0-fast-safe-merge
+current_stage: g1-ci-latency-budget
