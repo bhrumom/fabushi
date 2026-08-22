@@ -4,45 +4,63 @@
 - Execution task: `M2-NET-001`
 - WBS coverage: `M2.T01 gateway`, `M2.T03 websocket connection`, `M2.T04 heartbeat`
 - Stage: `M2 自建实时网络 + 1:1 文本消息`
-- Status: `IN_PROGRESS`
+- Status: `TESTED`
 - Started: `2026-08-22`
 - Updated: `2026-08-22`
-- Depends on: M1.T06 / M1.T02
+- Depends on: M1.T02 production SQLite landing
 
 ## Objective
 
-Add a Fabushi-owned WebSocket transport in front of the canonical Messaging Protocol v2 without creating a second messaging state machine. The gateway must reuse account/device/session-scoped access tokens, enforce frame limits, support RFC 6455 ping/pong heartbeat, and preserve the existing server-side MessagingService/SQLite state.
+Add a Fabushi-owned WebSocket transport in front of the canonical Messaging Protocol v2 without creating a second messaging state machine. The gateway reuses account/device/session-scoped access tokens, enforces frame limits, supports RFC 6455 ping/pong heartbeat, and preserves the existing server-side MessagingService/SQLite state.
 
-## Scope
+## Implemented
 
-- synchronous Rust WebSocket gateway using the canonical `ClientEnvelope` / `ServerEnvelope` JSON schema;
-- same `AuthenticatedClientFrame` and scope authorization used by the existing self-hosted server;
-- bounded WebSocket message size;
-- Ping/Pong heartbeat and clean close handling;
-- text JSON frames; binary application frames explicitly rejected rather than silently interpreted;
-- listener API that supports production bind and deterministic localhost integration tests;
-- tests for authorized message flow, unauthorized access, heartbeat, and frame-size protection;
-- no Telegram API/MTProto network dependency.
+- `tungstenite 0.30` synchronous RFC 6455 server transport;
+- `MessagingWebSocketGatewayConfig` with heartbeat interval/timeout validation;
+- production `serve`, injectable listener `serve_listener`, deterministic one-client `serve_one` for real socket tests;
+- shared authenticated command executor used by both TCP and WebSocket transports;
+- exact reuse of `MessagingService<SqliteStateStore>` and Messaging Protocol v2 envelopes;
+- scoped access-token authorization for actor/device/session and command scope;
+- bounded WebSocket message/frame configuration plus exact application payload limit;
+- text JSON application protocol; binary application frames explicitly rejected;
+- Ping/Pong liveness and heartbeat timeout;
+- clean close handling;
+- real localhost integration tests for authorized Sync, session mismatch, server heartbeat, oversized text frame, binary frame rejection.
 
-## Acceptance criteria
+## Acceptance result
 
-1. A WebSocket client can connect to a Fabushi-owned listener and execute Messaging Protocol v2 commands.
-2. Actor/device/session token mismatch is rejected.
-3. Ping receives/queues a valid Pong and the connection remains usable.
-4. Oversized application messages are rejected under the configured gateway limit.
-5. The gateway uses the same `MessagingService<SqliteStateStore>` state as the production messaging server; no duplicate chat engine exists.
-6. Rust fmt/test/clippy and existing Host/desktop contracts remain green.
+1. Real WebSocket client handshake + Protocol v2 command execution: PASS.
+2. Actor/device/session mismatch rejection: PASS.
+3. Ping/Pong liveness with connection still usable afterward: PASS.
+4. Oversized application frame rejection: PASS.
+5. Same canonical messaging service/state, no second chat engine: PASS.
+6. Rust fmt/test/clippy, Feature Host/contact projection and Electron Messenger contract regression: PASS.
+
+## CI evidence
+
+- PR: #1993 `feat(messaging): add self-hosted WebSocket gateway`
+- Verified implementation head: `c31943c34b0fbf1b1378f39855cb6e2150d2a33e`
+- Messaging Product Gate `32560118577`: SUCCESS.
+- Mahayana fast checks `32560118567`: SUCCESS.
+- Explicit automerge `32560118574`: SUCCESS.
 
 ## Branch / PR
 
 - Branch: `feat/telegram-m2-websocket-gateway`
-- Base: `feat/telegram-m1-sqlite-default` while M1 lands in dependency order.
-- PR: pending
+- Current base: `feat/telegram-m1-sqlite-default` until #1990 lands.
+- PR: #1993
 
 ## Evidence
 
-Pending implementation and GitHub Actions.
+- `../../evidence/M2-NET-001/README.md`
+- `native/mahayana-messaging/src/gateway.rs`
+- `native/mahayana-messaging/src/server.rs`
+- `native/mahayana-messaging/tests/websocket_gateway_contract.rs`
+
+## Remaining landing gate
+
+Implementation is `TESTED` on the stacked branch. After #1990 enters canonical `main`, retarget #1993 directly to `main`, re-run required gates, then use protected merge queue and verify canonical main.
 
 ## Next action
 
-Implement the WebSocket transport, add integration tests, then run the Messaging Product Gate and Mahayana fast checks.
+Maintain dependency order: #1990 -> main, then #1993 -> main. Continue M2-SYNC-001 on top for reconnect/idempotency/server-sequence/delta-sync semantics.
