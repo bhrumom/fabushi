@@ -22,9 +22,7 @@ const SCREENSHOT_KEYS = [
   "immersive-meditation",
   "main-sutra",
   "group-practice",
-  "global-ranking",
   "global-donation",
-  "global-donation-leaderboard",
 ] as const;
 type ProductScreenshotKey = (typeof SCREENSHOT_KEYS)[number];
 
@@ -86,28 +84,12 @@ const APP_SCREENSHOTS: ProductScreenshot[] = [
     alt: "Fabushi group practice screenshot",
   },
   {
-    titleZh: "全球修行排行",
-    titleEn: "Global Rankings",
-    descriptionZh: "更直观看见修行进度与同行者节奏。",
-    descriptionEn: "See progress and community rhythm more clearly.",
-    screenshot: "global-ranking",
-    alt: "Fabushi global rankings screenshot",
-  },
-  {
     titleZh: "全球法布施入口",
     titleEn: "Giving Entry",
     descriptionZh: "把善意送往世界各地，而不是只停在本地。",
     descriptionEn: "Let giving travel farther than one local circle.",
     screenshot: "global-donation",
     alt: "Fabushi global donation screenshot",
-  },
-  {
-    titleZh: "法布施榜单",
-    titleEn: "Giving Leaderboard",
-    descriptionZh: "看见法布施参与的持续性与回响。",
-    descriptionEn: "See the continuity and response around giving.",
-    screenshot: "global-donation-leaderboard",
-    alt: "Fabushi donation leaderboard screenshot",
   },
 ] as const;
 
