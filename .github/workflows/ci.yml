@@ -5,6 +5,8 @@ on:
     branches:
       - main
   merge_group:
+    types:
+      - checks_requested
     branches:
       - main
   push:
@@ -13,7 +15,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,45 +35,170 @@ jobs:
       mcp: ${{ steps.classify.outputs.mcp }}
       workflows: ${{ steps.classify.outputs.workflows }}
       electron: ${{ steps.classify.outputs.electron }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      unknown: ${{ steps.classify.outputs.unknown }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
       - id: classify
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' }}
-        run: |
-          set -euo pipefail
-          if [ "$FORCE_ALL" = "true" ] || [ -z "$BASE_SHA" ]; then
-            frontend=true
-            worker=true
-            mcp=true
-            workflows=true
-            electron=true
-          else
-            git fetch --no-tags --depth=1 origin "$BASE_SHA"
-            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-            printf '%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
-            frontend=false
-            worker=false
-            mcp=false
-            workflows=false
-            electron=false
-            if printf '%s\n' "$changed" | grep -Eq '^(frontend/|contracts/automation/cross-platform-journeys\.json$)'; then frontend=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(fabushi/web/|third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/)'; then worker=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(\.agents/plugins/|ai-backend/|frontend/packages/mcp-app-sdk/|plugins/)'; then mcp=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^\.github/workflows/'; then workflows=true; fi
-            if printf '%s\n' "$changed" | grep -Eq '^(\.github/scripts/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py)$|desktop/electron/|desktop/src/|frontend/apps/host/|frontend/apps/web/src/app/(host|remote-computer)/|frontend/apps/web/src/lib/(fabushi-runtime|mahayana-host|remote-computer)/|third_party/mahayana/mahayana-rs/(mahayana-agent-codex/|mahayana-app-host/|mahayana-computer/|mahayana-feature-host/|mahayana-host-protocol/))'; then electron=true; fi
-          fi
-          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
-          echo "worker=$worker" >> "$GITHUB_OUTPUT"
-          echo "mcp=$mcp" >> "$GITHUB_OUTPUT"
-          echo "workflows=$workflows" >> "$GITHUB_OUTPUT"
-          echo "electron=$electron" >> "$GITHUB_OUTPUT"
-          printf 'frontend=%s worker=%s mcp=%s workflows=%s electron=%s\n' "$frontend" "$worker" "$mcp" "$workflows" "$electron" >> "$GITHUB_STEP_SUMMARY"
+        name: Classify changed paths without checkout
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const eventName = context.eventName;
+
+            const domainMatchers = {
+              frontend: [
+                /^frontend\//,
+                /^contracts\/automation\/cross-platform-journeys\.json$/,
+              ],
+              worker: [
+                /^fabushi\/web\//,
+                /^third_party\/mahayana\/mahayana-rs\/mahayana-platform-worker\/migrations\//,
+              ],
+              mcp: [
+                /^\.agents\/plugins\//,
+                /^ai-backend\//,
+                /^frontend\/packages\/mcp-app-sdk\//,
+                /^plugins\//,
+              ],
+              workflows: [
+                /^\.github\/workflows\//,
+              ],
+              electron: [
+                /^\.github\/scripts\/(assert-electron-feature-host-bridge\.sh|assert-feature-command-router-coverage\.py|assert-fabushi-desktop-architecture\.py)$/,
+                /^desktop\/electron\//,
+                /^desktop\/src\//,
+                /^frontend\/apps\/host\//,
+                /^frontend\/apps\/web\/src\/app\/(host|remote-computer)\//,
+                /^frontend\/apps\/web\/src\/lib\/(fabushi-runtime|mahayana-host|remote-computer)\//,
+                /^third_party\/mahayana\/mahayana-rs\/(mahayana-agent-codex\/|mahayana-app-host\/|mahayana-computer\/|mahayana-feature-host\/|mahayana-host-protocol\/)/,
+              ],
+            };
+
+            const isDocsSafe = (filename) =>
+              /^projects\//.test(filename) ||
+              /^docs\//.test(filename) ||
+              /^[^/]+\.md$/.test(filename) ||
+              /^\.github\/[^/]+\.md$/.test(filename);
+
+            async function compareFiles(base, head) {
+              if (!base || !head || /^0+$/.test(base)) {
+                return { files: [], forceAll: true, reason: 'missing or zero base/head SHA' };
+              }
+              const { data } = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${base}...${head}`,
+                per_page: 100,
+              });
+              const files = (data.files || []).map((file) => file.filename);
+              const forceAll = files.length >= 300;
+              return {
+                files,
+                forceAll,
+                reason: forceAll ? 'compare API reached the 300-file safety limit' : '',
+              };
+            }
+
+            let files = [];
+            let forceAll = false;
+            let forceReason = '';
+            let source = eventName;
+
+            if (eventName === 'workflow_dispatch') {
+              forceAll = true;
+              forceReason = 'manual dispatch intentionally validates all canonical domains';
+            } else if (eventName === 'pull_request') {
+              const pullNumber = context.payload.pull_request.number;
+              const changed = await github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: pullNumber,
+                per_page: 100,
+              });
+              files = changed.map((file) => file.filename);
+              source = `pull_request #${pullNumber}`;
+            } else if (eventName === 'merge_group') {
+              const mergeGroup = context.payload.merge_group || {};
+              const compared = await compareFiles(mergeGroup.base_sha, mergeGroup.head_sha);
+              files = compared.files;
+              forceAll = compared.forceAll;
+              forceReason = compared.reason;
+              source = `merge_group ${mergeGroup.base_sha || '?'}..${mergeGroup.head_sha || '?'}`;
+            } else if (eventName === 'push') {
+              const compared = await compareFiles(context.payload.before, context.payload.after || context.sha);
+              files = compared.files;
+              forceAll = compared.forceAll;
+              forceReason = compared.reason;
+              source = `push ${context.payload.before || '?'}..${context.payload.after || context.sha}`;
+            } else {
+              forceAll = true;
+              forceReason = `unsupported event ${eventName}`;
+            }
+
+            const selected = {
+              frontend: false,
+              worker: false,
+              mcp: false,
+              workflows: false,
+              electron: false,
+            };
+
+            const matchesAnyDomain = (filename) => {
+              let matched = false;
+              for (const [domain, matchers] of Object.entries(domainMatchers)) {
+                if (matchers.some((matcher) => matcher.test(filename))) {
+                  selected[domain] = true;
+                  matched = true;
+                }
+              }
+              return matched;
+            };
+
+            const unknownFiles = [];
+            if (!forceAll) {
+              for (const filename of files) {
+                const matched = matchesAnyDomain(filename);
+                if (!matched && !isDocsSafe(filename)) {
+                  unknownFiles.push(filename);
+                }
+              }
+
+              if (unknownFiles.length > 0) {
+                forceAll = true;
+                forceReason = `unclassified non-document paths: ${unknownFiles.join(', ')}`;
+              }
+            }
+
+            if (forceAll) {
+              for (const domain of Object.keys(selected)) {
+                selected[domain] = true;
+              }
+            }
+
+            const docsOnly = !forceAll && files.length > 0 && files.every(isDocsSafe);
+            const unknown = unknownFiles.length > 0;
+
+            for (const [domain, value] of Object.entries(selected)) {
+              core.setOutput(domain, value ? 'true' : 'false');
+            }
+            core.setOutput('docs_only', docsOnly ? 'true' : 'false');
+            core.setOutput('unknown', unknown ? 'true' : 'false');
+
+            await core.summary
+              .addHeading('CI impact classification')
+              .addTable([
+                [{ data: 'Source', header: true }, source],
+                [{ data: 'Changed files', header: true }, String(files.length)],
+                [{ data: 'Docs-only fast path', header: true }, String(docsOnly)],
+                [{ data: 'Unknown non-doc paths', header: true }, String(unknown)],
+                [{ data: 'Force all canonical domains', header: true }, String(forceAll)],
+                [{ data: 'Reason', header: true }, forceReason || 'exact changed-path classification'],
+              ])
+              .addRaw(`\nfrontend=${selected.frontend} worker=${selected.worker} mcp=${selected.mcp} workflows=${selected.workflows} electron=${selected.electron}\n`)
+              .addDetails('Changed files', files.length ? files.map((file) => `- ${file}`).join('\n') : '(none)')
+              .write();
 
   frontend:
     name: Frontend checks
