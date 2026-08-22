@@ -2,14 +2,25 @@ name: Computer control security gate
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - 'chatgpt-vps-control/**'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - '.github/workflows/computer-control-security.yml'
   push:
     branches: [main]
     paths:
       - 'chatgpt-vps-control/**'
+      - 'frontend/apps/web/src/lib/remote-computer/**'
+      - 'frontend/apps/web/src/lib/mahayana-host/contracts.ts'
+      - 'third_party/mahayana/mahayana-rs/mahayana-computer/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-host-protocol/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-feature-host/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
       - '.github/workflows/computer-control-security.yml'
   workflow_dispatch:
 
@@ -21,17 +32,87 @@ permissions:
   contents: read
 
 jobs:
-  security:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  node-security:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - run: npm ci --ignore-scripts
       - name: Check JavaScript syntax
-        working-directory: chatgpt-vps-control
         run: npm run check
       - name: Verify OAuth and credential boundary
-        working-directory: chatgpt-vps-control
         run: node security-gate.mjs
+      - name: Run browser, target, sensitive-input and native broker tests
+        run: node --test tests/browser-extension.test.js tests/browser-session.test.js tests/secure-input.test.js tests/native-request-service.test.js tests/tool-descriptors.test.js tests/semantic-computer.test.js tests/linux-helper-source.test.js tests/macos-helper-source.test.js
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+  rust-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          cache-on-failure: true
+      - name: Install Linux native capture/input dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev
+      - name: Check computer-control crates
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check --locked -p mahayana-host-protocol -p mahayana-computer -p mahayana-feature-host
+      - name: Run protocol and computer-control unit tests
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test --locked -p mahayana-host-protocol -p mahayana-computer
+
+  linux-managed-semantic-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: chatgpt-vps-control
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: chatgpt-vps-control/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Install X11 and AT-SPI test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xdotool wmctrl ffmpeg x11-utils x11-xserver-utils xvfb x11vnc xfwm4 dbus-x11 \
+            at-spi2-core python3-pyatspi gir1.2-atspi-2.0 libglib2.0-bin python3-gi gir1.2-gtk-3.0
+      - name: Verify Linux helper and managed-desktop contracts
+        shell: bash
+        run: |
+          node --test tests/linux-helper-source.test.js tests/semantic-computer.test.js tests/browser-session.test.js
+          xvfb-run -a node scripts/check.mjs

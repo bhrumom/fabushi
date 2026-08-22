@@ -23,13 +23,13 @@
 | GBF-304 | M3 | 统一 session/checkpoint/resume/cancel | GBF-302 | crash/resume/cancel 语义唯一 | fault/recovery integration | evidence/GBF-304 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
 | GBF-305 | M3 | 统一 local exec | GBF-303 | 无绕过 capability gate 的执行口 | deny-path + code-path audit | evidence/GBF-305 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
 | GBF-306 | M3 | 统一错误/重试/超时/并发 | GBF-303..305 | 行为确定且可取消 | deterministic integration suite | evidence/GBF-306 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
-| GBF-401 | M4 | 定义 computer-control capability schema | GBF-204,305 | versioned target-bound contract | schema/threat review | evidence/GBF-401 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-402 | M4 | 实现/验证 macOS adapter | GBF-401 | observe/input/window 能力受控 | macOS E2E | evidence/GBF-402 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-403 | M4 | 实现/验证 Windows adapter | GBF-401 | observe/input/window 能力受控 | Windows E2E | evidence/GBF-403 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-404 | M4 | 实现/验证 Linux adapter | GBF-401 | X11/Wayland 能力与降级明确 | Linux E2E | evidence/GBF-404 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-405 | M4 | 浏览器标签页级控制 | GBF-401 | 控制目标 tab 不干扰其它 tab | browser isolation E2E | evidence/GBF-405 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-406 | M4 | 敏感输入一次性安全通道 | GBF-401 | approve/deny/expire/replay 安全 | security E2E | evidence/GBF-406 | IN_PROGRESS | none | implement/verify cross-platform |
-| GBF-407 | M4 | computer-control crash/reconnect | GBF-402..406 | 恢复无重复副作用 | fault/idempotency E2E | evidence/GBF-407 | IN_PROGRESS | none | implement/verify cross-platform |
+| GBF-401 | M4 | 定义 computer-control capability schema | GBF-204,305 | versioned target-bound contract | schema/threat review | evidence/GBF-401 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
+| GBF-402 | M4 | 实现/验证 macOS adapter | GBF-401 | observe/input/window 能力受控 | macOS E2E | evidence/GBF-402 | IMPLEMENTED | target-platform CI pending | macOS/Windows/Linux matrix |
+| GBF-403 | M4 | 实现/验证 Windows adapter | GBF-401 | observe/input/window 能力受控 | Windows E2E | evidence/GBF-403 | IMPLEMENTED | target-platform CI pending | macOS/Windows/Linux matrix |
+| GBF-404 | M4 | 实现/验证 Linux adapter | GBF-401 | X11/Wayland 能力与降级明确 | Linux E2E | evidence/GBF-404 | IMPLEMENTED | target-platform CI pending | macOS/Windows/Linux matrix |
+| GBF-405 | M4 | 浏览器标签页级控制 | GBF-401 | 控制目标 tab 不干扰其它 tab | browser isolation E2E | evidence/GBF-405 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
+| GBF-406 | M4 | 敏感输入一次性安全通道 | GBF-401 | approve/deny/expire/replay 安全 | security E2E | evidence/GBF-406 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
+| GBF-407 | M4 | computer-control crash/reconnect | GBF-402..406 | 恢复无重复副作用 | fault/idempotency E2E | evidence/GBF-407 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
 | GBF-501 | M5 | Grok UI/交互能力盘点 | GBF-103 | UI 能力 100% 有保留/重写/废弃决策 | parity table review | evidence/GBF-501 | NOT_STARTED | M1 | 建视觉/交互矩阵 |
 | GBF-502 | M5 | Fabushi 动态头像语义状态机 | GBF-501 | idle/listening/thinking/tool/speaking/result/error | state contract tests | evidence/GBF-502 | NOT_STARTED | GBF-501 | 定义状态事件 |
 | GBF-503 | M5 | 动画 timeline/composition engine | GBF-502 | 可组合可确定渲染 | deterministic animation tests | evidence/GBF-503 | NOT_STARTED | GBF-502 | 实现时间线/曲线 |
