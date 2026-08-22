@@ -22,37 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  macos-temp-path-repair:
-    name: One-shot portable temp-path assertion repair
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-103-native-auth-secrets-clean'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 1
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Replace hard-coded /tmp assertion
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -c 'from pathlib import Path; import re; p=Path("third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs"); s=p.read_text(); pattern=r"assert!\s*\(\s*abs_path\.to_string_lossy\(\)\.starts_with\(\s*\"/tmp/\"\s*\)\s*\)\s*;"; new="let canonical_abs_path = abs_path\n            .canonicalize()\n            .unwrap_or_else(|_| abs_path.clone());\n        let temp_root = std::env::temp_dir();\n        let canonical_temp_root = temp_root.canonicalize().unwrap_or(temp_root);\n        assert!(\n            canonical_abs_path.starts_with(&canonical_temp_root),\n            \"artifact path {} must stay under temporary root {}\",\n            canonical_abs_path.display(),\n            canonical_temp_root.display()\n        );"; s,n=re.subn(pattern,new,s,count=1,flags=re.S); assert n == 1, f"expected one formatted /tmp assertion, found {n}"; p.write_text(s)'
-          cd third_party/mahayana/mahayana-rs
-          cargo fmt --all
-          cd ../../..
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
-          git diff --cached --check
-          git commit -m 'test(mahayana): make temp-path assertion portable on macOS'
-          git push origin HEAD:${{ github.head_ref }}
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
@@ -71,41 +43,114 @@ jobs:
             /native/mahayana-messaging/**
             /third_party/mahayana/**
             /scripts/check-mahayana-source-boundary.py
+
       - name: Verify Mahayana source ownership boundary
         run: python3 ../../../scripts/check-mahayana-source-boundary.py
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+
       - name: Restore targeted Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
           shared-key: mahayana-fast-v6
           cache-all-crates: true
+
       - name: Verify formatting
         run: cargo fmt --all -- --check
+
       - name: Test Mahayana-owned authentication and encrypted secrets
-        run: cargo test -p mahayana-auth -p mahayana-secrets --profile ci
+        run: >-
+          cargo test
+          -p mahayana-auth
+          -p mahayana-secrets
+          --profile ci
+
       - name: Compile product client against Mahayana-owned auth and secrets
-        run: cargo test -p mahayana-platform-client --profile ci
+        run: >-
+          cargo test
+          -p mahayana-platform-client
+          --profile ci
+
       - name: Test sovereign kernel, supervision, and legacy bridge
-        run: cargo test -p mahayana-kernel -p mahayana-agent-kernel-bridge --profile ci
+        run: >-
+          cargo test
+          -p mahayana-kernel
+          -p mahayana-agent-kernel-bridge
+          --profile ci
+
       - name: Test native orchestration and workspace engines
-        run: cargo test -p mahayana-orchestrator -p mahayana-workspace-engine --profile ci
+        run: >-
+          cargo test
+          -p mahayana-orchestrator
+          -p mahayana-workspace-engine
+          --profile ci
+
       - name: Test native model and coding agent engine
-        run: cargo test -p mahayana-model -p mahayana-native-engine --profile ci
+        run: >-
+          cargo test
+          -p mahayana-model
+          -p mahayana-native-engine
+          --profile ci
+
       - name: Test native MCP transport and Agent adapter
-        run: cargo test -p mahayana-mcp-runtime -p mahayana-native-agent --profile ci
+        run: >-
+          cargo test
+          -p mahayana-mcp-runtime
+          -p mahayana-native-agent
+          --profile ci
+
       - name: Test protocol and MiniApp bridge
-        run: cargo test -p mahayana-miniapp-protocol -p mahayana-miniapp-bridge -p mahayana-host-protocol --profile ci
+        run: >-
+          cargo test
+          -p mahayana-miniapp-protocol
+          -p mahayana-miniapp-bridge
+          -p mahayana-host-protocol
+          --profile ci
+
       - name: Test Rust-native Mahayana Harness
-        run: cargo test -p mahayana-harness -p mahayana-harness-services -p mahayana-harness-advanced -p mahayana-harness-adapters -p mahayana-harness-agent -p mahayana-harness-protocol -p mahayana-unified-app-host --profile ci
+        run: >-
+          cargo test
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+          --profile ci
+
       - name: Test direct Mahayana Host
-        run: cargo test -p mahayana-host --profile ci --no-default-features --features local-only
+        run: >-
+          cargo test
+          -p mahayana-host
+          --profile ci
+          --no-default-features
+          --features local-only
+
       - name: Test deterministic feature Host without the production dependency graph
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+
       - name: Test production feature adapters over the cached direct Host
-        run: cargo test -p mahayana-feature-host --profile ci --no-default-features --features local-only production_uses_the_real_runtime_and_rust_owned_session_store
+        run: >-
+          cargo test
+          -p mahayana-feature-host
+          --profile ci
+          --no-default-features
+          --features local-only
+          production_uses_the_real_runtime_and_rust_owned_session_store
+
       - name: Check minimal embedded FFI boundary
-        run: cargo check -p mahayana-ffi --profile ci --no-default-features --features local-only
+        run: >-
+          cargo check
+          -p mahayana-ffi
+          --profile ci
+          --no-default-features
+          --features local-only
