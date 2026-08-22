@@ -3,46 +3,43 @@
 - **Project ID:** FAB-P0003
 - **Project Key:** FCM
 - **Task ID:** FCM-004
-- **Status:** in-progress
+- **Status:** completed
 - **Started:** 2026-08-22
-- **Updated:** 2026-08-22
+- **Completed:** 2026-08-22
 
 ## Objective
 
-Align manual store delivery workflows with canonical release validation evidence so a store upload cannot start from an unprotected or platform-unverified source commit.
+Prevent Apple/Google store delivery from starting expensive build/sign/upload work from an unprotected or platform-unverified source commit.
 
-## Acceptance criteria
+## Implemented
 
-1. Store delivery workflows resolve an exact source SHA and verify it belongs to protected `main` history.
-2. macOS delivery requires successful `CI result` and `Electron desktop result` for that exact SHA.
-3. iOS/Android delivery requires successful `CI result` and `Native mobile result` for that exact SHA.
-4. Apple `both` requires all three canonical gates.
-5. Gate failure occurs before expensive build/sign/upload work.
-6. GitHub Release evidence continues to target the exact delivered source SHA.
-7. Delivery remains manually dispatched and does not weaken protected main.
-8. Delivery-governance contract and canonical PR/merge-group CI pass before merge.
+- `.github/scripts/require-release-source-gates.sh` validates exact source SHA against protected `main` history.
+- macOS requires successful `CI result` + `Electron desktop result` for that SHA.
+- iOS/Android require successful `CI result` + `Native mobile result`.
+- Apple `both` requires all three.
+- Apple and Google workflows call the gate before platform build/sign/upload stages.
+- Delivery remains explicit `workflow_dispatch`; immutable GitHub Release targeting remains unchanged.
 
-## Implementation
+## Acceptance evidence
 
-- Added `.github/scripts/require-release-source-gates.sh` with protected-main ancestry and exact-SHA check-run validation.
-- Updated `.github/workflows/apple-store-delivery.yml` with `actions: read`, `checks: read`, and pre-build release-source gate.
-- Updated `.github/workflows/google-play-delivery.yml` with the same permissions and Android pre-build gate.
-- Added `.github/workflows/delivery-governance-contract.yml` to statically assert required release invariants.
+- PR #1999 head `9878d7a50e96dd38679ace5c53ad4b594f322c53`
+- Delivery governance contract `32564046827` — success
+- Canonical CI `32564046924` — success
+- Project portfolio governance `32564046818` — success
+- Merge queue branch observed: `gh-readonly-queue/main/pr-1999-d8b502726dc14f0a7963f67f58e44ebfb9887b01`
+- PR #1999 merged as `3a39dfef0ef30f1e6ae2d53602fa862bf28ddae6`
+- Post-merge canonical gate script blob: `7701fa190d25f551f873e2e201df6a063d674e89`
+- Post-merge Apple workflow blob: `062e2b32ec682fa7a5c9b076d3e8a394f3e4dd91`
+- Post-merge Google workflow blob: `d817a961824568269428d49845761bfcc57b4c29`
 
-## Branch / PR
+## Important scope note
 
-- Branch: `fcm/fab-p0003-finalize`
-- PR: #1999
+This task accepts the release **governance gate**, not a new App Store/Play Store upload. Actual publishing remains a manual release operation requiring signing/store credentials and a deliberately selected release source.
 
-## Evidence
+## Blockers
 
-Implementation commits are present on PR #1999. GitHub Actions and merge-queue acceptance evidence pending.
-
-## Risks
-
-- Store delivery from a historical main commit predating the gate script is intentionally prevented unless that source also contains the current release-governance script; the default supported release source is current protected `main`/post-policy history.
-- Missing/failed quality gates are a release blocker, not a reason to bypass the check.
+None for the governance implementation.
 
 ## Next action
 
-Run PR contract/canonical CI, resolve failures, merge through protected queue, then verify the exact workflows on canonical `main`.
+None. Future store-delivery regressions reopen a new FCM task.

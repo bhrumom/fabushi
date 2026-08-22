@@ -35,7 +35,7 @@
       "slug": "fabushi-cicd-merge-governance",
       "name": "Fabushi CI/CD & Merge Governance",
       "authoritative_path": "projects/fabushi-cicd-merge-governance",
-      "status": "active",
+      "status": "completed",
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "ac94b40d4a05a0211146c2bb5904aa936a7bc928",
       "legacy_project_ids": ["FCM"]
