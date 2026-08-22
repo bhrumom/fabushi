@@ -3,6 +3,7 @@ name: Mahayana fast checks
 on:
   pull_request:
     paths:
+      - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
@@ -10,6 +11,7 @@ on:
     branches:
       - main
     paths:
+      - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
       - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
@@ -38,6 +40,7 @@ jobs:
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            /native/mahayana-messaging/**
             /third_party/mahayana/**
             /scripts/check-mahayana-source-boundary.py
 
