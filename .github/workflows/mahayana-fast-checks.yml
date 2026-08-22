@@ -22,41 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  prompt-queue-api-repair:
-    name: One-shot PromptQueue API repair
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msr-103-native-auth-secrets-clean'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 1
-      - name: Repair native engine call site
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs')
-          text = path.read_text()
-          old = '.prompt_queue\n                .next()'
-          new = '.prompt_queue\n                .take_next()'
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one native PromptQueue next call, found {count}')
-          path.write_text(text.replace(old, new, 1))
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs
-          git diff --cached --check
-          git commit -m 'fix(mahayana): use explicit PromptQueue dequeue API'
-          git push origin HEAD:${{ github.head_ref }}
-
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
