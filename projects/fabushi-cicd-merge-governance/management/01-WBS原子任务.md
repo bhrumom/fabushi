@@ -10,4 +10,4 @@
 | FCM-001.6 | Update enterprise branch/merge policy | yes | policy matches implementation | passed |
 | FCM-001.7 | Validate PR + merge queue + record timing | yes | required CI success and merge through queue | passed |
 | FCM-002 | Establish CI latency SLO dashboard/measurement | no | P50/P95 by change tier tracked | not-started |
-| FCM-003 | Classify remaining unknown runtime paths | no | common runtime paths mapped to dedicated checks | not-started |
+| FCM-003 | Classify Agent/Skill governance paths without weakening runtime fail-safe | yes | `.agent/skills/**` is governance-safe; `.agents/plugins/**`, workflows, and unknown runtime paths retain dedicated/fail-safe checks | in-progress |
