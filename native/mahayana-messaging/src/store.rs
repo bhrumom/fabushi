@@ -303,7 +303,9 @@ mod tests {
         assert_eq!(store.load().expect("load replacement"), Some(second));
         let connection = Connection::open(&path).expect("open database");
         let count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM messaging_snapshot", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM messaging_snapshot", [], |row| {
+                row.get(0)
+            })
             .expect("count snapshots");
         assert_eq!(count, 1);
         remove_db(&path);
