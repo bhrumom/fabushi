@@ -219,18 +219,19 @@ impl WorkspaceEngine {
             .iter()
             .map(|snapshot| snapshot.path.clone())
             .collect::<BTreeSet<_>>();
-
-        for current in self.collect_files()? {
-            let relative = self.relative_path(&current)?;
-            let relative_string = path_string(&relative);
-            if !expected.contains(&relative_string) {
-                ensure_no_symlink_components(&self.root, &relative)?;
-                fs::remove_file(&current).map_err(|error| WorkspaceError::Io(error.to_string()))?;
-            }
+        if expected.len() != manifest.files.len() {
+            return Err(WorkspaceError::CheckpointCorrupt(
+                "checkpoint manifest contains duplicate file paths".into(),
+            ));
         }
 
+        // Validate every source snapshot and every destination path before
+        // mutating the live workspace. A corrupt checkpoint must fail
+        // closed without leaving a partially restored tree behind.
+        let mut validated = Vec::with_capacity(manifest.files.len());
         for snapshot in &manifest.files {
             let relative = safe_relative(Path::new(&snapshot.path))?;
+            ensure_no_symlink_components(&files_dir, &relative)?;
             ensure_no_symlink_components(&self.root, &relative)?;
             let source = files_dir.join(&relative);
             if !source.is_file() {
@@ -247,7 +248,23 @@ impl WorkspaceEngine {
                     snapshot.path
                 )));
             }
-            let destination = self.root.join(&relative);
+            validated.push((source, self.root.join(&relative)));
+        }
+
+        let mut removals = Vec::new();
+        for current in self.collect_files()? {
+            let relative = self.relative_path(&current)?;
+            let relative_string = path_string(&relative);
+            if !expected.contains(&relative_string) {
+                ensure_no_symlink_components(&self.root, &relative)?;
+                removals.push(current);
+            }
+        }
+
+        for current in removals {
+            fs::remove_file(&current).map_err(|error| WorkspaceError::Io(error.to_string()))?;
+        }
+        for (source, destination) in validated {
             if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|error| WorkspaceError::Io(error.to_string()))?;
@@ -367,15 +384,23 @@ impl WorkspaceEngine {
         let descriptor_path = metadata_dir.join("worktree.json");
         if descriptor_path.is_file() {
             let descriptor: WorktreeDescriptor = read_json(&descriptor_path)?;
+            let expected_path = if descriptor.git_managed {
+                self.external_git_worktree_path(id)?
+            } else {
+                metadata_dir.join("workspace")
+            };
+            if Path::new(&descriptor.path) != expected_path.as_path() {
+                return Err(WorkspaceError::WorktreeDescriptorMismatch(id.to_string()));
+            }
             if descriptor.git_managed {
                 let output = Command::new("git")
                     .arg("-C")
                     .arg(&self.root)
                     .args(["worktree", "remove", "--force"])
-                    .arg(&descriptor.path)
+                    .arg(&expected_path)
                     .output()
                     .map_err(|error| WorkspaceError::Io(error.to_string()))?;
-                if !output.status.success() && Path::new(&descriptor.path).exists() {
+                if !output.status.success() && expected_path.exists() {
                     return Err(WorkspaceError::Git(format!(
                         "git worktree remove failed: {}",
                         String::from_utf8_lossy(&output.stderr).trim()
@@ -386,8 +411,8 @@ impl WorkspaceEngine {
                     .arg(&self.root)
                     .args(["worktree", "prune"])
                     .status();
-            } else if Path::new(&descriptor.path).exists() {
-                fs::remove_dir_all(&descriptor.path)
+            } else if expected_path.exists() {
+                fs::remove_dir_all(&expected_path)
                     .map_err(|error| WorkspaceError::Io(error.to_string()))?;
             }
         }
@@ -870,6 +895,8 @@ pub enum WorkspaceError {
     InvalidStorageId(String),
     #[error("checkpoint is corrupt: {0}")]
     CheckpointCorrupt(String),
+    #[error("worktree descriptor path does not match managed location: {0}")]
+    WorktreeDescriptorMismatch(String),
     #[error("git workspace operation failed: {0}")]
     Git(String),
     #[error("workspace I/O failed: {0}")]
@@ -923,6 +950,72 @@ mod tests {
         assert!(root.join("src/main.ts").is_file());
         assert!(!root.join("src/created-after.txt").exists());
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn corrupt_checkpoint_does_not_mutate_live_workspace() {
+        let root = fixture_root();
+        let engine = WorkspaceEngine::open(&root).expect("open workspace");
+        let checkpoint = engine.create_checkpoint(None).expect("checkpoint");
+        fs::write(root.join("src/lib.rs"), "live edit").expect("mutate live source");
+        fs::write(root.join("src/created-after.txt"), "keep me").expect("create live source");
+        fs::write(
+            engine
+                .checkpoint_dir(&checkpoint.id)
+                .join("files/src/main.ts"),
+            "corrupt snapshot",
+        )
+        .expect("corrupt checkpoint");
+
+        let result = engine.restore_checkpoint(&checkpoint.id);
+        assert!(matches!(result, Err(WorkspaceError::CheckpointCorrupt(_))));
+        assert_eq!(
+            fs::read_to_string(root.join("src/lib.rs")).expect("read live edit"),
+            "live edit"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("src/created-after.txt")).expect("read created file"),
+            "keep me"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn tampered_worktree_descriptor_cannot_delete_arbitrary_directory() {
+        let root = fixture_root();
+        let engine = WorkspaceEngine::open(&root).expect("open workspace");
+        let checkpoint = engine.create_checkpoint(None).expect("checkpoint");
+        let worktree = engine
+            .create_worktree(Some(&checkpoint.id))
+            .expect("create projected worktree");
+        let victim = root
+            .parent()
+            .expect("root parent")
+            .join(format!("mahayana-worktree-victim-{}", Uuid::new_v4()));
+        fs::create_dir_all(&victim).expect("create victim");
+        fs::write(victim.join("keep.txt"), "keep").expect("write victim marker");
+
+        let descriptor_path = engine.worktree_dir(&worktree.id).join("worktree.json");
+        let mut descriptor: WorktreeDescriptor =
+            read_json(&descriptor_path).expect("read descriptor");
+        let original_path = descriptor.path.clone();
+        descriptor.path = path_string(&victim);
+        write_json(&descriptor_path, &descriptor).expect("tamper descriptor");
+
+        let result = engine.remove_worktree(&worktree.id);
+        assert!(matches!(
+            result,
+            Err(WorkspaceError::WorktreeDescriptorMismatch(_))
+        ));
+        assert!(victim.join("keep.txt").is_file());
+
+        descriptor.path = original_path;
+        write_json(&descriptor_path, &descriptor).expect("restore descriptor");
+        engine
+            .remove_worktree(&worktree.id)
+            .expect("remove managed worktree");
+        fs::remove_dir_all(victim).expect("cleanup victim");
+        fs::remove_dir_all(root).expect("cleanup root");
     }
 
     #[test]
