@@ -5484,6 +5484,7 @@ dependencies = [
  "getrandom 0.2.17",
  "hkdf 0.12.4",
  "hmac 0.12.1",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8679,6 +8680,9 @@ dependencies = [
  "mahayana-platform-core",
  "mahayana-plugin-host",
  "openssl-sys",
+ "rama-error",
+ "rama-macros",
+ "rama-utils",
  "serde",
  "serde_json",
  "tokio",
@@ -8739,6 +8743,17 @@ dependencies = [
  "mahayana-app-host",
  "mahayana-unified-app-host",
  "serde_json",
+]
+
+[[package]]
+name = "mahayana-auth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -9097,10 +9112,10 @@ name = "mahayana-platform-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "codex-login",
- "codex-secrets",
+ "mahayana-auth",
  "mahayana-host-protocol",
  "mahayana-platform-core",
+ "mahayana-secrets",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -9189,6 +9204,20 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+]
+
+[[package]]
+name = "mahayana-secrets"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "anyhow",
+ "base64 0.22.1",
+ "keyring",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
