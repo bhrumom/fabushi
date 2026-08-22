@@ -1,0 +1,10 @@
+project_id: FPG
+name: Fabushi Project Governance
+slug: fabushi-project-governance
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-project-governance
+created_at: 2026-08-22
+updated_at: 2026-08-22
+current_stage: repository-wide-bootstrap
