@@ -1,0 +1,29 @@
+{
+  "latest-0.20": {
+    "source_ref": "7174a70567ae98ef534b0eebcbe66935f1471cc1",
+    "main_ref": "e621c65314319dab313f13a3bab0195f112ef66f",
+    "entries": 2046,
+    "decision_counts": {
+      "DEPRECATE": 1125,
+      "MAIN_HAS": 420,
+      "MAIN_SUPERSEDES_REVIEW": 131,
+      "MIGRATE_REWRITE_REVIEW": 1,
+      "SOURCE_BETTER_REVIEW": 369
+    },
+    "sha256": "a470ae604fad7edcdd6307c14c5cb72218c5c4b9a99d35134d71a0a3fa834d11"
+  },
+  "legacy-0.16": {
+    "source_ref": "a8bd854b512a3eaf20be9518767ab593724d67dc",
+    "main_ref": "e621c65314319dab313f13a3bab0195f112ef66f",
+    "entries": 2118,
+    "decision_counts": {
+      "DEPRECATE": 1125,
+      "DEPRECATE_OR_REWRITE": 17,
+      "MAIN_HAS": 461,
+      "MAIN_SUPERSEDES_REVIEW": 144,
+      "MIGRATE_REWRITE_REVIEW": 1,
+      "SOURCE_BETTER_REVIEW": 370
+    },
+    "sha256": "8a18779ea9643a352874b373ce1e237e97ab8205c10d874daaf2f31e9572792c"
+  }
+}
