@@ -144,7 +144,10 @@ impl MessagingStateStore for MemoryStateStore {
         cursor: u64,
         cursor_group_limit: usize,
     ) -> Result<Option<EventJournalSlice>, StoreError> {
-        let current_cursor = self.snapshot.as_ref().map_or(0, |snapshot| snapshot.cursor);
+        let current_cursor = self
+            .snapshot
+            .as_ref()
+            .map_or(0, |snapshot| snapshot.cursor);
         Ok(Some(slice_journal(
             &self.journal,
             self.journal_floor_cursor,
@@ -325,7 +328,8 @@ impl MessagingStateStore for SqliteStateStore {
                 |row| row.get::<_, String>(0),
             )?
             .parse()?;
-        let current_cursor = load_sqlite_snapshot(&connection)?.map_or(0, |snapshot| snapshot.cursor);
+        let current_cursor =
+            load_sqlite_snapshot(&connection)?.map_or(0, |snapshot| snapshot.cursor);
         let mut statement = connection.prepare(
             "SELECT audience_json, envelope_json FROM messaging_event_journal ORDER BY sequence ASC",
         )?;
@@ -416,7 +420,9 @@ fn slice_journal(
     })
 }
 
-fn load_sqlite_snapshot(connection: &Connection) -> Result<Option<MessagingSnapshot>, StoreError> {
+fn load_sqlite_snapshot(
+    connection: &Connection,
+) -> Result<Option<MessagingSnapshot>, StoreError> {
     let row = connection
         .query_row(
             "SELECT snapshot_schema_version, cursor, saved_at_ms, state_json FROM messaging_snapshot WHERE singleton = 1",
@@ -726,7 +732,10 @@ mod tests {
         store
             .save_with_events(
                 &snapshot,
-                &[journal_entry(2, "human:a"), journal_entry(3, "human:b")],
+                &[
+                    journal_entry(2, "human:a"),
+                    journal_entry(3, "human:b"),
+                ],
             )
             .expect("save snapshot and journal");
         drop(store);
@@ -740,7 +749,10 @@ mod tests {
         assert_eq!(slice.current_cursor, 3);
         assert_eq!(slice.checkpoint_cursor, 3);
         assert_eq!(slice.entries.len(), 2);
-        assert_eq!(slice.entries[0].audience, vec![ActorId::new("human:a")]);
+        assert_eq!(
+            slice.entries[0].audience,
+            vec![ActorId::new("human:a")]
+        );
         remove_db(&path);
     }
 
