@@ -291,6 +291,23 @@ export interface TeachRecordingResult {
 }
 
 export type ComputerControlOrigin = "local-ui" | "remote-mobile" | "ai";
+export const COMPUTER_CONTROL_PROTOCOL_VERSION = 1 as const;
+export type ComputerTargetKind = "desktop" | "window" | "browser-tab";
+export interface ComputerControlTarget {
+  protocolVersion: typeof COMPUTER_CONTROL_PROTOCOL_VERSION;
+  kind: ComputerTargetKind;
+  deviceId?: string;
+  windowId?: string;
+  browserSessionId?: string;
+  browserTargetId?: string;
+  tabId?: string;
+  generation: number;
+}
+export const localDesktopComputerTarget = (): ComputerControlTarget => ({
+  protocolVersion: COMPUTER_CONTROL_PROTOCOL_VERSION,
+  kind: "desktop",
+  generation: 0,
+});
 export type ComputerActionKind = "screenshot" | "click" | "move" | "drag" | "type" | "key" | "scroll" | "wait";
 export type ComputerMouseButton = "left" | "right" | "middle";
 export type ComputerScrollDirection = "up" | "down" | "left" | "right";
@@ -354,6 +371,7 @@ export interface RemoteComputerSession {
   state: "pending" | "active" | "closed";
   createdAt?: number;
   expiresAt: number;
+  generation?: number;
 }
 export interface RemoteComputerSignal {
   signalId: number;
@@ -689,8 +707,8 @@ export type RuntimeCommand =
   | (CommandBase & { type: "teach.start"; agentId: string; entryPoint: TeachEntryPoint })
   | (CommandBase & { type: "teach.stop"; agentId: string; save: boolean })
   | (CommandBase & { type: "computer.status" })
-  | (CommandBase & { type: "computer.screenshot"; origin?: ComputerControlOrigin; sessionId?: string })
-  | (CommandBase & { type: "computer.action"; origin?: ComputerControlOrigin; agentId?: string; sessionId?: string; action: ComputerAction; then?: ComputerAction[] })
+  | (CommandBase & { type: "computer.screenshot"; origin?: ComputerControlOrigin; sessionId?: string; target?: ComputerControlTarget })
+  | (CommandBase & { type: "computer.action"; origin?: ComputerControlOrigin; agentId?: string; sessionId?: string; target?: ComputerControlTarget; action: ComputerAction; then?: ComputerAction[] })
   | (CommandBase & { type: "remoteComputer.register"; deviceId: string; label: string })
   | (CommandBase & { type: "remoteComputer.heartbeat"; deviceId: string })
   | (CommandBase & { type: "remoteComputer.clients"; deviceId: string })
