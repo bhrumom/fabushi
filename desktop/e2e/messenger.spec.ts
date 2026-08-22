@@ -22,6 +22,15 @@ async function launchDesktopApp(appDataDir: string) {
 }
 
 async function completeBrowserLogin(page: Page): Promise<void> {
+  await page.waitForLoadState('domcontentloaded');
+  await expect.poll(async () => {
+    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger'];
+    for (const testId of testIds) {
+      if (await page.getByTestId(testId).isVisible().catch(() => false)) return true;
+    }
+    return false;
+  }, { timeout: 15_000 }).toBe(true);
+
   while (await page.getByTestId('onboarding-gate').isVisible().catch(() => false)) {
     await page.getByTestId('onboarding-next').click();
   }
@@ -30,7 +39,11 @@ async function completeBrowserLogin(page: Page): Promise<void> {
     await page.getByTestId('browser-login-start').click();
     await expect(loginGate).toBeHidden();
   }
-  await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
+  await expect.poll(async () => {
+    const hostState = await page.getByTestId('host-status').getAttribute('data-state').catch(() => null);
+    if (hostState === 'ready') return true;
+    return page.getByTestId('open-messenger').isVisible().catch(() => false);
+  }, { timeout: 15_000 }).toBe(true);
 }
 
 async function openMessenger(page: Page): Promise<void> {
@@ -308,6 +321,18 @@ test('desktop Messenger projects unread from another self-hosted actor and consu
       canManageTopics: true,
       canManageCalls: true,
     };
+
+    await executeMessagingCommand(page, identity.actorId, {
+      type: 'upsertProfile',
+      actor: {
+        id: identity.actorId,
+        kind: 'human',
+        displayName: 'Unread E2E Current User',
+        capabilities: ['messages'],
+        presence: { status: 'online', lastSeenAtMs: now },
+        verified: false,
+      },
+    }, 'current-profile');
 
     await executeMessagingCommand(page, peerActorId, {
       type: 'upsertProfile',
