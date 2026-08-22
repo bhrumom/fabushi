@@ -9,18 +9,23 @@
 
 ## Runtime provenance
 
-Historical #1994 runtime blobs are replayed exactly; historical project-document snapshots are not imported:
+Historical #1994 supplied the original durable-sync implementation, but stale historical project-document snapshots are not imported. The final current-main landing keeps the canonical current `Message` schema and reuses the intended durable store/service/test behavior.
 
-- `native/mahayana-messaging/src/service.rs` → `24037aa3892ad61c17f95441185e612b02a2ee43`
-- `native/mahayana-messaging/src/store.rs` → `1e46a1c52931ed58da10b803c9d0cf8231e17618`
-- `native/mahayana-messaging/tests/delta_sync_contract.rs` → `6a437b8ce7c4d2266b152fff26639774e670d632`
+## Current-main compatibility reconciliation
 
-## Final clean-stack restack
+Final current-head CI on the historical replay exposed two real compatibility deltas:
 
-- Lower-stack parent: #2001 head `1030a489a5b4ed12f93464c95325e5d6d2ca7535`.
-- Clean runtime replay commit: `fd76ebd828f62b82ff0eecf34e85b24860e2a342`.
-- Subsequent #2002 commits only refresh current FAB-P0001 task/evidence records before final CI.
-- PR compare against #2001 remains intended M2-SYNC runtime/test/task/evidence/WBS scope.
+1. Rust stable/rustfmt advanced to 1.98; the three M2-SYNC Rust files were reformatted with current stable rustfmt.
+2. Current canonical `Message` no longer has a `client_message_id` field. Idempotent replay already derives a deterministic `stable_message_id(actor_id, client_message_id)` (with legacy local-key lookup), so the obsolete field comparison was removed without extending or reverting `Message` schema. Sender/content/reply/thread/schedule/silent/protected-content conflict checks remain.
+
+## Final clean landing
+
+- M2-NET prerequisite: PR #2001 merged through the protected queue as `2a4124a7b4b769be1320f88621e4eb3ad7f1a3f6`.
+- Final base: canonical `main` at `2a4124a7b4b769be1320f88621e4eb3ad7f1a3f6`.
+- Clean runtime commit: `5602f96bcb806b2c09981241ab88d99c15f07fc9`.
+- Compare immediately after rebuild: ahead by 1, behind by 0, exactly six changed files.
+- Final runtime blobs include corrected `service.rs` blob `d05ec7160997ff449bbfcf5aa4151ce7938d8a03`, formatted `store.rs` blob `2ffb60eab5986e92e6a296a9c8c90e05ba37fb8a`, and formatted `delta_sync_contract.rs` blob `3e31d0a0e3f566b0b7606d12ece863ed535048b9`.
+- Temporary workflow experiments are absent from the final current-main commit history.
 
 ## Behavior covered
 
@@ -36,4 +41,4 @@ Historical #1994 runtime blobs are replayed exactly; historical project-document
 
 ## Completion rule
 
-M2-SYNC-001 is not complete merely because historical code was replayed. The final #2002 head must pass current GitHub Actions, #2001 must land, #2002 must be retargeted/revalidated on `main`, then merged and verified on canonical `main`.
+M2-SYNC-001 is not complete merely because historical code was replayed. The final #2002 head must pass fresh current GitHub Actions on canonical `main`, merge through protected-main governance, and be re-read from canonical `main` before M2.T05-T09 or the M2 stage can be closed.
