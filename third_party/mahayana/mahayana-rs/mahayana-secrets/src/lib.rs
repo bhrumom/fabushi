@@ -153,9 +153,12 @@ impl CredentialStore for DefaultCredentialStore {
     fn save(&self, service: &str, account: &str, value: &str) -> Result<()> {
         let entry = keyring::Entry::new(service, account)
             .with_context(|| format!("failed to open keyring entry for {service}/{account}"))?;
-        entry.set_password(value).map_err(anyhow::Error::new).with_context(|| {
-            format!("failed to persist secrets key in keyring for {service}/{account}")
-        })
+        entry
+            .set_password(value)
+            .map_err(anyhow::Error::new)
+            .with_context(|| {
+                format!("failed to persist secrets key in keyring for {service}/{account}")
+            })
     }
 }
 
@@ -225,12 +228,17 @@ impl LocalSecretsBackend {
     fn set(&self, scope: &SecretScope, name: &SecretName, value: &str) -> Result<()> {
         anyhow::ensure!(!value.is_empty(), "secret value must not be empty");
         let mut file = self.load_file()?;
-        file.secrets.insert(scope.canonical_key(name), value.to_owned());
+        file.secrets
+            .insert(scope.canonical_key(name), value.to_owned());
         self.save_file(&file)
     }
 
     fn get(&self, scope: &SecretScope, name: &SecretName) -> Result<Option<String>> {
-        Ok(self.load_file()?.secrets.get(&scope.canonical_key(name)).cloned())
+        Ok(self
+            .load_file()?
+            .secrets
+            .get(&scope.canonical_key(name))
+            .cloned())
     }
 
     fn delete(&self, scope: &SecretScope, name: &SecretName) -> Result<bool> {
@@ -316,7 +324,10 @@ impl LocalSecretsBackend {
 
     fn load_or_create_passphrase(&self) -> Result<SecretString> {
         let account = compute_keyring_account(&self.home);
-        if let Some(value) = self.credential_store.load(self.keyring_service(), &account)? {
+        if let Some(value) = self
+            .credential_store
+            .load(self.keyring_service(), &account)?
+        {
             return Ok(SecretString::from(value));
         }
 
@@ -334,11 +345,8 @@ impl LocalSecretsBackend {
         }
 
         let generated = generate_passphrase()?;
-        self.credential_store.save(
-            self.keyring_service(),
-            &account,
-            generated.expose_secret(),
-        )?;
+        self.credential_store
+            .save(self.keyring_service(), &account, generated.expose_secret())?;
         Ok(generated)
     }
 }
@@ -444,7 +452,11 @@ fn write_file_atomically(path: &Path, contents: &[u8]) -> Result<()> {
                 fs::remove_file(path)
                     .with_context(|| format!("failed to remove {}", path.display()))?;
                 fs::rename(&temporary, path).with_context(|| {
-                    format!("failed to replace {} from {}", path.display(), temporary.display())
+                    format!(
+                        "failed to replace {} from {}",
+                        path.display(),
+                        temporary.display()
+                    )
                 })?;
                 return Ok(());
             }
@@ -579,9 +591,10 @@ mod tests {
         );
         let name = SecretName::new("MAHAYANA_REQUESTED_SECRET_123")?;
         let mut secrets = SecretsFile::empty();
-        secrets
-            .secrets
-            .insert(SecretScope::Global.canonical_key(&name), "preserved".to_owned());
+        secrets.secrets.insert(
+            SecretScope::Global.canonical_key(&name),
+            "preserved".to_owned(),
+        );
         let plaintext = serde_json::to_vec(&secrets)?;
         fs::write(
             backend.secrets_path(),
@@ -611,10 +624,16 @@ mod tests {
         auth.set(&SecretScope::Global, &auth_name, "auth-value")?;
         managed.set(&SecretScope::Global, &managed_name, "managed-value")?;
         let account = compute_keyring_account(&root);
-        assert!(store.value(MAHAYANA_AUTH_KEYRING_SERVICE, &account).is_some());
-        assert!(store
-            .value(MAHAYANA_MANAGED_KEYRING_SERVICE, &account)
-            .is_some());
+        assert!(
+            store
+                .value(MAHAYANA_AUTH_KEYRING_SERVICE, &account)
+                .is_some()
+        );
+        assert!(
+            store
+                .value(MAHAYANA_MANAGED_KEYRING_SERVICE, &account)
+                .is_some()
+        );
         assert_ne!(
             store.value(MAHAYANA_AUTH_KEYRING_SERVICE, &account),
             store.value(MAHAYANA_MANAGED_KEYRING_SERVICE, &account)
