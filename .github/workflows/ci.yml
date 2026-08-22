@@ -264,6 +264,7 @@ jobs:
             /desktop/electron/**
             /desktop/src/edge/**
             /desktop/src/main.tsx
+            /desktop/src/messaging-shell-v2.tsx
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**
             /frontend/apps/web/src/app/remote-computer/**

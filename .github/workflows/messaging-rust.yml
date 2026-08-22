@@ -1,0 +1,73 @@
+name: Fabushi self-hosted messaging
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/Cargo.lock'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - 'desktop/src/messaging-shell.tsx'
+      - 'desktop/src/messaging-shell.module.css'
+      - 'desktop/e2e/messenger.spec.ts'
+      - '.github/workflows/messaging-rust.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'native/mahayana-messaging/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-social/**'
+      - '.github/workflows/messaging-rust.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: selfhosted-messaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Rust messaging core
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/mahayana-messaging -> target
+          shared-key: fabushi-selfhosted-messaging-v1
+      - name: Rustfmt
+        run: cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml -- --check
+      - name: Unit and contract tests
+        run: cargo test --manifest-path native/mahayana-messaging/Cargo.toml
+      - name: Clippy
+        run: cargo clippy --manifest-path native/mahayana-messaging/Cargo.toml --all-targets -- -D warnings
+
+  social-projection:
+    name: Mahayana social → messaging Actor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: fabushi-social-messaging-v1
+      - name: Resolve workspace and reject lock drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --format-version 1 --no-deps >/dev/null
+          git diff --exit-code -- third_party/mahayana/mahayana-rs/Cargo.lock
+      - name: Test real contact projection
+        run: cargo test --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social
+      - name: Clippy contact integration
+        run: cargo clippy --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-social --all-targets -- -D warnings
