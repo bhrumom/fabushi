@@ -29,7 +29,7 @@ env:
 
 jobs:
   resolve-source:
-    name: Resolve Worker source
+    name: Resolve Worker source and deployment impact
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
+      should_deploy: ${{ steps.impact.outputs.should_deploy }}
     steps:
       - name: Resolve source commit
         id: source
@@ -54,10 +55,46 @@ jobs:
           fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "Resolved Worker source: $source_sha"
+      - name: Check whether Worker deployment inputs changed
+        id: impact
+        uses: actions/github-script@v7
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          FORCE_DEPLOY: ${{ github.event_name == 'workflow_dispatch' }}
+        with:
+          script: |
+            if (process.env.FORCE_DEPLOY === 'true') {
+              core.setOutput('should_deploy', 'true');
+              core.info('Manual dispatch explicitly requests a Worker deployment.');
+              return;
+            }
+
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.SOURCE_SHA,
+              per_page: 100,
+            });
+            const files = (commit.files || []).map((file) => file.filename);
+            const safetyLimitReached = files.length >= 300;
+            const relevant = files.some((filename) =>
+              filename.startsWith('fabushi/web/') ||
+              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/'),
+            );
+            const shouldDeploy = safetyLimitReached || relevant;
+            core.setOutput('should_deploy', shouldDeploy ? 'true' : 'false');
+            await core.summary
+              .addHeading('Worker deployment impact')
+              .addRaw(`source=${process.env.SOURCE_SHA}\n`)
+              .addRaw(`changed_files=${files.length}\n`)
+              .addRaw(`should_deploy=${shouldDeploy}\n`)
+              .addRaw(safetyLimitReached ? 'reason=300-file safety limit reached; fail-safe deploy\n' : '')
+              .write();
 
   deploy-staging:
     name: Deploy staging Worker
     needs: resolve-source
+    if: needs.resolve-source.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:

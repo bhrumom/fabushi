@@ -27,7 +27,7 @@ env:
 
 jobs:
   resolve-source:
-    name: Resolve Fabushi Pay source
+    name: Resolve Fabushi Pay source and deployment impact
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
@@ -35,6 +35,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
+      should_deploy: ${{ steps.impact.outputs.should_deploy }}
     steps:
       - id: source
         name: Resolve source commit
@@ -51,10 +52,47 @@ jobs:
             source_sha="${{ github.sha }}"
           fi
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - id: impact
+        name: Check whether Fabushi Pay deployment inputs changed
+        uses: actions/github-script@v7
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          FORCE_DEPLOY: ${{ github.event_name == 'workflow_dispatch' }}
+        with:
+          script: |
+            if (process.env.FORCE_DEPLOY === 'true') {
+              core.setOutput('should_deploy', 'true');
+              core.info('Manual dispatch explicitly requests a Fabushi Pay deployment.');
+              return;
+            }
+
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.SOURCE_SHA,
+              per_page: 100,
+            });
+            const files = (commit.files || []).map((file) => file.filename);
+            const safetyLimitReached = files.length >= 300;
+            const relevant = files.some((filename) =>
+              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-pay-worker/') ||
+              filename.startsWith('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/') ||
+              filename === 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs',
+            );
+            const shouldDeploy = safetyLimitReached || relevant;
+            core.setOutput('should_deploy', shouldDeploy ? 'true' : 'false');
+            await core.summary
+              .addHeading('Fabushi Pay deployment impact')
+              .addRaw(`source=${process.env.SOURCE_SHA}\n`)
+              .addRaw(`changed_files=${files.length}\n`)
+              .addRaw(`should_deploy=${shouldDeploy}\n`)
+              .addRaw(safetyLimitReached ? 'reason=300-file safety limit reached; fail-safe deploy\n' : '')
+              .write();
 
   deploy-production:
     name: Migrate and deploy Fabushi Pay
     needs: resolve-source
+    if: needs.resolve-source.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
