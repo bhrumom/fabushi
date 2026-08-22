@@ -5,6 +5,17 @@ status: active
 repository: bhrumom/fabushi
 authoritative_branch: main
 authoritative_path: projects/fabushi-project-governance
+owner: repository-governance
+reviewers:
+  - repository-maintainers
+current_stage: enterprise-standardization
+risk_tier: tier-2
+security_classification: internal
 created_at: 2026-08-22
 updated_at: 2026-08-22
-current_stage: adoption
+target_finish: null
+related_projects:
+  - fabushi-cicd-merge-governance
+source_systems:
+  - GitHub
+  - ChatGPT Task Orchestration
