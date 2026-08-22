@@ -1,0 +1,54 @@
+name: Project portfolio governance
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "projects/**"
+      - "AGENTS.md"
+      - ".agent/skills/fabushi-project-governance/**"
+      - "scripts/check-project-portfolio.py"
+      - ".github/workflows/project-portfolio-governance.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "projects/**"
+      - "AGENTS.md"
+      - ".agent/skills/fabushi-project-governance/**"
+      - "scripts/check-project-portfolio.py"
+      - ".github/workflows/project-portfolio-governance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-project-portfolio:
+    name: Validate immutable Project IDs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Materialize baseline registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f /tmp/fabushi-portfolio-baseline.json
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            git show "origin/${GITHUB_BASE_REF}:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git show "HEAD^:projects/PORTFOLIO.json" > /tmp/fabushi-portfolio-baseline.json 2>/dev/null || true
+          fi
+
+      - name: Validate portfolio registry and project metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s /tmp/fabushi-portfolio-baseline.json ]]; then
+            python3 scripts/check-project-portfolio.py --baseline /tmp/fabushi-portfolio-baseline.json
+          else
+            python3 scripts/check-project-portfolio.py
+          fi
