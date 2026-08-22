@@ -64,6 +64,18 @@ jobs:
           -p mahayana-host-protocol
           --profile ci
 
+      - name: Test Rust-native Mahayana Harness
+        run: >-
+          cargo test
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+          --profile ci
+
       - name: Test direct Mahayana Host
         run: >-
           cargo test
