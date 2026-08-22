@@ -1,0 +1,29 @@
+# Fabushi sensitive-path ownership
+#
+# Intentionally no repository-wide catch-all owner: ordinary product changes should
+# not acquire a governance review tax. These entries target delivery, governance,
+# payment and authentication surfaces where explicit review ownership is valuable.
+
+# CI/CD, merge policy, automation and governance
+/.github/CODEOWNERS @bhrum
+/.github/BRANCH_PROTECTION.md @bhrum
+/.github/workflows/ @bhrum
+/.github/actions/ @bhrum
+/.github/scripts/ @bhrum
+/projects/fabushi-cicd-merge-governance/ @bhrum
+
+# Release identity and store-delivery inputs
+/app-version.json @bhrum
+/desktop/resources/mas/ @bhrum
+/mobile/ios/project.yml @bhrum
+
+# Payment, auth, deployment and database-sensitive surfaces
+/fabushi/web/wrangler.toml @bhrum
+/fabushi/web/*auth*.js @bhrum
+/fabushi/web/*payment*.js @bhrum
+/fabushi/web/*alipay*.js @bhrum
+/fabushi/lib/services/*auth*.dart @bhrum
+/fabushi/lib/services/*payment*.dart @bhrum
+/fabushi/lib/services/*alipay*.dart @bhrum
+/third_party/mahayana/mahayana-rs/mahayana-pay-worker/ @bhrum
+/third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/ @bhrum
