@@ -555,7 +555,6 @@ impl AppHost {
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
         serde_json::to_value(tools).map_err(|error| AppHostError::Operation(error.to_string()))
     }
-
 }
 
 fn configured_feature_host_mode() -> Result<AppHostFeatureMode, AppHostError> {
