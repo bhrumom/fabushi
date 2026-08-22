@@ -5,7 +5,7 @@ on:
     branches:
       - feat/mahayana-deepseek-harness-rust
     paths:
-      - .github/workflows/mahayana-harness-finalize-once.yml
+      - '.github/workflows/mahayana-harness-finalize-once.yml'
 
 permissions:
   contents: write
@@ -13,7 +13,7 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
@@ -24,625 +24,68 @@ jobs:
         with:
           components: rustfmt,clippy
 
-      - name: Finalize Harness semantics and product bridges
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-harness-final-v2
+          cache-all-crates: true
 
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              if old not in text:
-                  raise SystemExit(f"missing anchor: {label}")
-              return text.replace(old, new, 1)
+      - name: Materialize the already-validated Harness source
+        run: python3 scripts/mahayana_harness_finalize.py
 
-          root = Path('third_party/mahayana/mahayana-rs')
-
-          # 1. Core approval semantics: one-shot Accept and session-scoped AcceptForSession.
-          path = root / 'mahayana-harness/src/lib.rs'
-          text = path.read_text()
-          text = replace_once(
-              text,
-              '    approved_tools: BTreeSet<String>,\n',
-              '    approved_once: BTreeSet<(Option<String>, String)>,\n    approved_for_session: BTreeMap<String, BTreeSet<String>>,\n',
-              'approval state fields',
-          )
-          text = replace_once(
-              text,
-              '            approved_tools: BTreeSet::new(),\n',
-              '            approved_once: BTreeSet::new(),\n            approved_for_session: BTreeMap::new(),\n',
-              'approval state init',
-          )
-          text = replace_once(
-              text,
-              '        harness\n    }\n\n    pub fn register_service',
-              '        harness\n    }\n\n    pub fn shares_state_with(&self, other: &Self) -> bool {\n        Arc::ptr_eq(&self.state, &other.state)\n    }\n\n    pub fn register_service',
-              'shares_state_with',
-          )
-          old = '''        let (registered, interceptors, approved) = {
-            let state = self.state()?;
-            let registered = state
-                .tools
-                .get(&request.name)
-                .cloned()
-                .ok_or_else(|| HarnessError::ToolNotFound(request.name.clone()))?;
-            let approved = state.approved_tools.contains(&request.name);
-            (registered, state.interceptors.clone(), approved)
-        };
-
-        if registered.definition.requires_approval && !registered.definition.read_only && !approved
-        {
-'''
-          new = '''        let (registered, interceptors, approved) = {
-            let mut state = self.state()?;
-            let registered = state
-                .tools
-                .get(&request.name)
-                .cloned()
-                .ok_or_else(|| HarnessError::ToolNotFound(request.name.clone()))?;
-            let approved = if registered.definition.requires_approval
-                && !registered.definition.read_only
-            {
-                let session_approved = session_id
-                    .and_then(|id| state.approved_for_session.get(id))
-                    .is_some_and(|tools| tools.contains(&request.name));
-                let one_shot_approved = state.approved_once.remove(&(
-                    session_id.map(ToOwned::to_owned),
-                    request.name.clone(),
-                ));
-                session_approved || one_shot_approved
-            } else {
-                true
-            };
-            (registered, state.interceptors.clone(), approved)
-        };
-
-        if registered.definition.requires_approval && !registered.definition.read_only && !approved
-        {
-'''
-          text = replace_once(text, old, new, 'execute_tool approval block')
-          old = '''        let mut state = self.state()?;
-        let approval = state
-            .approvals
-            .remove(approval_id)
-            .ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
-        if matches!(
-            decision,
-            ApprovalDecision::Accept | ApprovalDecision::AcceptForSession
-        ) {
-            state.approved_tools.insert(approval.tool.clone());
-        }
-        drop(state);
-'''
-          new = '''        let mut state = self.state()?;
-        let approval = state
-            .approvals
-            .get(approval_id)
-            .cloned()
-            .ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
-        match decision {
-            ApprovalDecision::Accept => {
-                state
-                    .approved_once
-                    .insert((approval.session_id.clone(), approval.tool.clone()));
-            }
-            ApprovalDecision::AcceptForSession => {
-                let session_id = approval.session_id.clone().ok_or_else(|| {
-                    HarnessError::InvalidConfig(
-                        "AcceptForSession requires a session-scoped approval".into(),
-                    )
-                })?;
-                state
-                    .approved_for_session
-                    .entry(session_id)
-                    .or_default()
-                    .insert(approval.tool.clone());
-            }
-            ApprovalDecision::Decline | ApprovalDecision::Cancel => {}
-        }
-        state.approvals.remove(approval_id);
-        drop(state);
-'''
-          text = replace_once(text, old, new, 'resolve_approval semantics')
-          text = replace_once(
-              text,
-              'mod tests {\n    use super::*;\n',
-              '''mod tests {
-    use super::*;
-    use async_trait::async_trait;
-    use mahayana_tool_host::{ToolCapabilities, ToolError};
-
-    struct EchoToolHost;
-
-    #[async_trait]
-    impl ToolHost for EchoToolHost {
-        async fn execute(&self, request: ToolRequest) -> Result<ToolResult, ToolError> {
-            Ok(ToolResult {
-                content: request.arguments,
-                is_error: false,
-            })
-        }
-
-        fn capabilities(&self) -> ToolCapabilities {
-            ToolCapabilities::for_profile(BuildProfile::DesktopFull)
-        }
-    }
-
-    fn guarded_tool() -> ToolDefinition {
-        ToolDefinition {
-            name: "guarded.write".into(),
-            description: "approval semantics test".into(),
-            input_schema: Value::Null,
-            read_only: false,
-            requires_approval: true,
-            tags: Vec::new(),
-        }
-    }
-''',
-              'test helpers',
-          )
-          marker = '''    #[test]
-    fn content_address_is_stable() {
-'''
-          tests = '''    #[tokio::test]
-    async fn accept_is_consumed_after_one_tool_execution() {
-        let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
-        let session = harness.create_session("one-shot").unwrap();
-        harness
-            .register_tool(guarded_tool(), Arc::new(EchoToolHost))
-            .unwrap();
-        let request = ToolRequest {
-            name: "guarded.write".into(),
-            arguments: serde_json::json!({"value": 1}),
-        };
-        let approval_id = match harness
-            .execute_tool(Some(&session.id), request.clone())
-            .await
-        {
-            Err(HarnessError::ApprovalRequired(id)) => id,
-            other => panic!("expected approval request, got {other:?}"),
-        };
-        harness
-            .resolve_approval(&approval_id, ApprovalDecision::Accept)
-            .unwrap();
-        assert!(harness
-            .execute_tool(Some(&session.id), request.clone())
-            .await
-            .is_ok());
-        assert!(matches!(
-            harness.execute_tool(Some(&session.id), request).await,
-            Err(HarnessError::ApprovalRequired(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn accept_for_session_never_leaks_to_another_session() {
-        let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
-        let session_a = harness.create_session("session-a").unwrap();
-        let session_b = harness.create_session("session-b").unwrap();
-        harness
-            .register_tool(guarded_tool(), Arc::new(EchoToolHost))
-            .unwrap();
-        let request = ToolRequest {
-            name: "guarded.write".into(),
-            arguments: serde_json::json!({"value": 2}),
-        };
-        let approval_id = match harness
-            .execute_tool(Some(&session_a.id), request.clone())
-            .await
-        {
-            Err(HarnessError::ApprovalRequired(id)) => id,
-            other => panic!("expected approval request, got {other:?}"),
-        };
-        harness
-            .resolve_approval(&approval_id, ApprovalDecision::AcceptForSession)
-            .unwrap();
-        assert!(harness
-            .execute_tool(Some(&session_a.id), request.clone())
-            .await
-            .is_ok());
-        assert!(harness
-            .execute_tool(Some(&session_a.id), request.clone())
-            .await
-            .is_ok());
-        assert!(matches!(
-            harness.execute_tool(Some(&session_b.id), request).await,
-            Err(HarnessError::ApprovalRequired(_))
-        ));
-    }
-
-'''
-          text = replace_once(text, marker, tests + marker, 'approval tests')
-          path.write_text(text)
-
-          # 2. Service schedule CRUD and Clippy cleanup.
-          path = root / 'mahayana-harness-services/src/lib.rs'
-          text = path.read_text()
-          text = replace_once(
-              text,
-              'use std::collections::{BTreeMap, BTreeSet, VecDeque};',
-              'use std::collections::{BTreeMap, VecDeque};',
-              'unused BTreeSet import',
-          )
-          marker = '    pub fn record_feedback(\n'
-          schedule_methods = '''    pub fn list_schedules(&self) -> HarnessResult<Vec<ScheduleEntry>> {
-        Ok(self.state()?.schedules.values().cloned().collect())
-    }
-
-    pub fn get_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
-        self.state()?
-            .schedules
-            .get(schedule_id)
-            .cloned()
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
-    }
-
-    pub fn delete_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
-        self.state()?
-            .schedules
-            .remove(schedule_id)
-            .ok_or_else(|| HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
-    }
-
-'''
-          if 'pub fn list_schedules(&self)' not in text:
-              text = replace_once(text, marker, schedule_methods + marker, 'schedule CRUD marker')
-          path.write_text(text)
-
-          # 3. Protocol shared-runtime invariant and schedule CRUD surface.
-          path = root / 'mahayana-harness-protocol/src/lib.rs'
-          text = path.read_text()
-          old = '''    pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        Ok(Self {
-            advanced: AdvancedHarnessServices::new(harness.clone()),
-            harness,
-            services,
-        })
-    }
-'''
-          new = '''    pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        if !harness.shares_state_with(services.harness()) {
-            return Err(HarnessError::InvalidConfig(
-                "HarnessApi parts must share one MahayanaHarness runtime".into(),
-            ));
-        }
-        Ok(Self {
-            advanced: AdvancedHarnessServices::new(harness.clone()),
-            harness,
-            services,
-        })
-    }
-'''
-          text = replace_once(text, old, new, 'HarnessApi shared runtime')
-          marker = '            "feedback.record" => to_value(self.services.record_feedback(\n'
-          schedule_protocol = '''            "schedule.list" => to_value(self.services.list_schedules()?),
-            "schedule.get" => to_value(
-                self.services
-                    .get_schedule(required_str(&payload, "scheduleId")?)?,
-            ),
-            "schedule.delete" => to_value(
-                self.services
-                    .delete_schedule(required_str(&payload, "scheduleId")?)?,
-            ),
-'''
-          if '"schedule.list"' not in text:
-              text = replace_once(text, marker, schedule_protocol + marker, 'schedule protocol marker')
-          marker = '''    #[test]
-    fn unknown_operation_returns_stable_error() {
-'''
-          protocol_test = '''    #[test]
-    fn from_parts_rejects_split_harness_state() {
-        let harness = MahayanaHarness::new(BuildProfile::DesktopFull);
-        let services = HarnessServices::new(MahayanaHarness::new(BuildProfile::DesktopFull));
-        assert!(matches!(
-            HarnessApi::from_parts(harness, services),
-            Err(HarnessError::InvalidConfig(_))
-        ));
-    }
-
-'''
-          if 'fn from_parts_rejects_split_harness_state()' not in text:
-              text = replace_once(text, marker, protocol_test + marker, 'protocol shared-state test')
-          path.write_text(text)
-
-          # 4. Unified product host: bridge Harness schedules into the existing Automation runtime.
-          path = root / 'mahayana-unified-app-host/src/lib.rs'
-          text = path.read_text()
-          old = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
-        self.journal
-            .lock()
-            .map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?
-            .execute(&self.harness, operation, payload)
-    }
-'''
-          new = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
-        match operation {
-            "schedule.create" => self.harness_schedule_create(payload),
-            "schedule.setEnabled" => self.harness_schedule_set_enabled(payload),
-            "schedule.delete" => self.harness_schedule_delete(payload),
-            "schedule.run" => self.harness_schedule_run(payload),
-            _ => self.execute_harness_state(operation, payload),
-        }
-    }
-
-    fn execute_harness_state(
-        &self,
-        operation: &str,
-        payload: Value,
-    ) -> Result<Value, AppHostError> {
-        self.journal
-            .lock()
-            .map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?
-            .execute(&self.harness, operation, payload)
-    }
-
-    fn harness_schedule_create(&self, payload: Value) -> Result<Value, AppHostError> {
-        let created = self.execute_harness_state("schedule.create", payload)?;
-        let schedule_id = required_string(&created, "id")?;
-        let session_id = required_string(&created, "sessionId")?;
-        let instruction = required_string(&created, "instruction")?;
-        let schedule = required_string(&created, "schedule")?;
-        let command = json!({
-            "command": {
-                "type": "automation.upsert",
-                "requestId": format!("harness-schedule-upsert:{}:{}", schedule_id, now_ms()),
-                "id": schedule_id.clone(),
-                "name": format!("Harness schedule · {session_id}"),
-                "prompt": instruction,
-                "schedule": schedule.clone(),
-                "trigger": {"kind": "schedule", "schedule": schedule},
-                "enabled": true
-            }
-        });
-        if let Err(error) = self.delegate("feature.execute", command) {
-            let _ = self.execute_harness_state(
-                "schedule.delete",
-                json!({"scheduleId": schedule_id}),
-            );
-            return Err(error);
-        }
-        Ok(created)
-    }
-
-    fn harness_schedule_set_enabled(&self, payload: Value) -> Result<Value, AppHostError> {
-        let schedule_id = required_string(&payload, "scheduleId")?;
-        let enabled = payload
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .ok_or_else(|| AppHostError::InvalidRequest("enabled is required".into()))?;
-        self.delegate(
-            "feature.execute",
-            json!({
-                "command": {
-                    "type": "automation.setEnabled",
-                    "requestId": format!("harness-schedule-enabled:{}:{}", schedule_id, now_ms()),
-                    "id": schedule_id.clone(),
-                    "enabled": enabled
-                }
-            }),
-        )?;
-        self.execute_harness_state("schedule.setEnabled", payload)
-    }
-
-    fn harness_schedule_delete(&self, payload: Value) -> Result<Value, AppHostError> {
-        let schedule_id = required_string(&payload, "scheduleId")?;
-        self.delegate(
-            "feature.execute",
-            json!({
-                "command": {
-                    "type": "automation.delete",
-                    "requestId": format!("harness-schedule-delete:{}:{}", schedule_id, now_ms()),
-                    "id": schedule_id.clone()
-                }
-            }),
-        )?;
-        self.execute_harness_state("schedule.delete", payload)
-    }
-
-    fn harness_schedule_run(&self, payload: Value) -> Result<Value, AppHostError> {
-        let schedule_id = required_string(&payload, "scheduleId")?;
-        let schedule = self.execute_harness_state(
-            "schedule.get",
-            json!({"scheduleId": schedule_id.clone()}),
-        )?;
-        let session_id = required_string(&schedule, "sessionId")?;
-        let accepted = self.delegate(
-            "feature.execute",
-            json!({
-                "command": {
-                    "type": "automation.run",
-                    "requestId": format!("harness-schedule-run:{}:{}", schedule_id, now_ms()),
-                    "id": schedule_id.clone()
-                }
-            }),
-        )?;
-        self.execute_harness_state(
-            "session.appendEvent",
-            json!({
-                "sessionId": session_id,
-                "kind": "schedule/run",
-                "eventPayload": {
-                    "scheduleId": schedule_id,
-                    "accepted": accepted.clone()
-                }
-            }),
-        )?;
-        Ok(json!({"schedule": schedule, "accepted": accepted}))
-    }
-'''
-          text = replace_once(text, old, new, 'Unified schedule bridge')
-          old = '''            | "schedule.create"
-            | "schedule.setEnabled"
-            | "feedback.record"
-'''
-          new = '''            | "schedule.create"
-            | "schedule.setEnabled"
-            | "schedule.delete"
-            | "feedback.record"
-'''
-          text = replace_once(text, old, new, 'journal schedule delete')
-          old = '''            | "skill.register"
-            | "command.register"
-    )
-}
-'''
-          new = '''            | "skill.register"
-            | "command.register"
-            | "interaction.permissionPreset.register"
-            | "interaction.permissionPreset.activate"
-            | "interaction.question.create"
-            | "interaction.question.answer"
-            | "agentPlan.enter"
-            | "agentPlan.exit"
-            | "bundle.register"
-            | "preset.register"
-            | "extension.register"
-            | "extension.setEnabled"
-            | "hook.register"
-    )
-}
-'''
-          text = replace_once(text, old, new, 'advanced journal operations')
-          marker = '''    #[test]
-    fn harness_state_survives_host_restart_with_stable_ids() {
-'''
-          schedule_test = '''    #[test]
-    fn harness_schedule_uses_existing_product_automation_runtime() {
-        let root = unique_test_dir();
-        let host = UnifiedAppHost::new_with_feature_mode(&root, AppHostFeatureMode::Test)
-            .expect("create unified test host");
-        let session = call(
-            &host,
-            "harness.execute",
-            json!({
-                "operation": "session.create",
-                "payload": {"title": "scheduled"}
-            }),
-        );
-        let session_id = session["id"].as_str().unwrap().to_string();
-        let schedule = call(
-            &host,
-            "harness.execute",
-            json!({
-                "operation": "schedule.create",
-                "payload": {
-                    "sessionId": session_id,
-                    "instruction": "summarize the session",
-                    "schedule": "0 8 * * *"
-                }
-            }),
-        );
-        let schedule_id = schedule["id"].as_str().unwrap().to_string();
-        assert_eq!(schedule["enabled"], true);
-
-        let run = call(
-            &host,
-            "harness.execute",
-            json!({
-                "operation": "schedule.run",
-                "payload": {"scheduleId": schedule_id}
-            }),
-        );
-        assert_eq!(run["schedule"]["id"], schedule_id);
-
-        let disabled = call(
-            &host,
-            "harness.execute",
-            json!({
-                "operation": "schedule.setEnabled",
-                "payload": {"scheduleId": schedule_id, "enabled": false}
-            }),
-        );
-        assert_eq!(disabled["enabled"], false);
-
-        let deleted = call(
-            &host,
-            "harness.execute",
-            json!({
-                "operation": "schedule.delete",
-                "payload": {"scheduleId": schedule_id}
-            }),
-        );
-        assert_eq!(deleted["id"], schedule_id);
-        let response = host.dispatch(HostRequest {
-            id: Some(json!(2)),
-            method: "harness.execute".into(),
-            params: json!({
-                "operation": "schedule.get",
-                "payload": {"scheduleId": schedule_id}
-            }),
-        });
-        assert!(!response.ok);
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-'''
-          if 'fn harness_schedule_uses_existing_product_automation_runtime()' not in text:
-              text = replace_once(text, marker, schedule_test + marker, 'Unified schedule bridge test')
-          path.write_text(text)
-
-          # 5. Make Advanced Harness part of the permanent fast gate.
-          path = Path('.github/workflows/mahayana-fast-checks.yml')
-          text = path.read_text()
-          old = '''            -p mahayana-harness-services \\
-            -p mahayana-harness-adapters \\
-'''
-          new = '''            -p mahayana-harness-services \\
-            -p mahayana-harness-advanced \\
-            -p mahayana-harness-adapters \\
-'''
-          if '-p mahayana-harness-advanced' not in text:
-              text = replace_once(text, old, new, 'advanced fast gate')
-          path.write_text(text)
-
-          # 6. Fix Android cargo-ndk cache/install race exposed by this PR's native gate.
-          path = Path('.github/workflows/native-mobile.yml')
-          text = path.read_text()
-          text = replace_once(
-              text,
-              '        run: cargo install cargo-ndk --locked\n',
-              '        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked\n',
-              'cargo-ndk idempotent install',
-          )
-          path.write_text(text)
-          PY
-
-      - name: Format, refresh lockfile, test and lint Harness stack
-        shell: bash
+      - name: Format Rust workspace
         working-directory: third_party/mahayana/mahayana-rs
-        run: |
-          set -euo pipefail
-          cargo fmt --all
-          cargo generate-lockfile
-          cargo test --profile ci \
-            -p mahayana-harness \
-            -p mahayana-harness-services \
-            -p mahayana-harness-advanced \
-            -p mahayana-harness-adapters \
-            -p mahayana-harness-agent \
-            -p mahayana-harness-protocol \
-            -p mahayana-unified-app-host
-          cargo clippy \
-            -p mahayana-harness \
-            -p mahayana-harness-services \
-            -p mahayana-harness-advanced \
-            -p mahayana-harness-adapters \
-            -p mahayana-harness-agent \
-            -p mahayana-harness-protocol \
-            -p mahayana-unified-app-host \
-            --all-targets -- -D warnings
+        run: cargo fmt --all
 
-      - name: Commit finalized runtime and remove temporary workflows
+      - name: Test complete Harness stack
+        working-directory: third_party/mahayana/mahayana-rs
+        run: >-
+          cargo test --profile ci
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+
+      - name: Strict Clippy complete Harness stack
+        working-directory: third_party/mahayana/mahayana-rs
+        run: >-
+          cargo clippy
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+          --all-targets -- -D warnings
+
+      - name: Remove one-shot migration scaffolding
+        shell: bash
+        run: |
+          rm -f \
+            .github/mahayana-harness-finalize.marker \
+            .github/workflows/mahayana-harness-clippy-diagnostics.yml \
+            .github/workflows/mahayana-harness-finalize-once.yml \
+            .github/workflows/mahayana-harness-finalize-pr-once.yml \
+            .github/workflows/mahayana-harness-marker-finalize.yml \
+            .github/workflows/mahayana-harness-schedule-bridge-once.yml \
+            scripts/mahayana_harness_finalize.py \
+            scripts/mahayana_harness_finalize_tail.py \
+            scripts/mahayana_harness_finalize_tail2.py
+
+      - name: Commit verified product source and cleanup
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/mahayana-harness-schedule-bridge.yml
-          rm -f .github/workflows/mahayana-harness-finalize-once.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           if git diff --cached --quiet; then
+            echo 'Verified Harness source is already materialized.'
             exit 0
           fi
-          git commit -m 'feat(mahayana): finalize Rust-native Harness product integration'
+          git commit -m 'feat(mahayana): finalize verified Rust-native Harness integration'
           git push origin HEAD:feat/mahayana-deepseek-harness-rust
