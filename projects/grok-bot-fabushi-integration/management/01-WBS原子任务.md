@@ -30,11 +30,11 @@
 | GBF-405 | M4 | 浏览器标签页级控制 | GBF-401 | 控制目标 tab 不干扰其它 tab | browser isolation E2E | evidence/GBF-405 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
 | GBF-406 | M4 | 敏感输入一次性安全通道 | GBF-401 | approve/deny/expire/replay 安全 | security E2E | evidence/GBF-406 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
 | GBF-407 | M4 | computer-control crash/reconnect | GBF-402..406 | 恢复无重复副作用 | fault/idempotency E2E | evidence/GBF-407 | TESTED | cross-platform CI/merge pending | stacked PR + platform matrix |
-| GBF-501 | M5 | Grok UI/交互能力盘点 | GBF-103 | UI 能力 100% 有保留/重写/废弃决策 | parity table review | evidence/GBF-501 | NOT_STARTED | M1 | 建视觉/交互矩阵 |
-| GBF-502 | M5 | Fabushi 动态头像语义状态机 | GBF-501 | idle/listening/thinking/tool/speaking/result/error | state contract tests | evidence/GBF-502 | NOT_STARTED | GBF-501 | 定义状态事件 |
-| GBF-503 | M5 | 动画 timeline/composition engine | GBF-502 | 可组合可确定渲染 | deterministic animation tests | evidence/GBF-503 | NOT_STARTED | GBF-502 | 实现时间线/曲线 |
-| GBF-504 | M5 | 动画性能与无障碍 | GBF-503 | offscreen/reduced-motion/预算可验证 | perf + accessibility tests | evidence/GBF-504 | NOT_STARTED | GBF-503 | 测量 frame baseline |
-| GBF-505 | M5 | 移除生产 Grok 视觉/runtime 依赖 | GBF-501..504 | production dependency audit clean | dependency/source audit | evidence/GBF-505 | NOT_STARTED | M5 | 替换剩余依赖 |
+| GBF-501 | M5 | Grok UI/交互能力盘点 | GBF-103 | UI 能力 100% 有保留/重写/废弃决策 | parity table review | evidence/GBF-501 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
+| GBF-502 | M5 | Fabushi 动态头像语义状态机 | GBF-501 | idle/listening/thinking/tool/speaking/result/error | state contract tests | evidence/GBF-502 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
+| GBF-503 | M5 | 动画 timeline/composition engine | GBF-502 | 可组合可确定渲染 | deterministic animation tests | evidence/GBF-503 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
+| GBF-504 | M5 | 动画性能与无障碍 | GBF-503 | offscreen/reduced-motion/预算可验证 | perf + accessibility tests | evidence/GBF-504 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
+| GBF-505 | M5 | 移除生产 Grok 视觉/runtime 依赖 | GBF-501..504 | production dependency audit clean | dependency/source audit | evidence/GBF-505 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
 | GBF-601 | M6 | canonical data model 映射 | GBF-104,302 | 无长期重复会话/tool/permission model | schema review/migration test | evidence/GBF-601 | NOT_STARTED | M1/M3 | 建 schema map |
 | GBF-602 | M6 | crash/restart 恢复 | GBF-304,601 | 关键状态可恢复且无重复副作用 | fault injection | evidence/GBF-602 | NOT_STARTED | GBF-304/601 | 建恢复矩阵 |
 | GBF-603 | M6 | 统一 correlation/structured logging | GBF-203,303 | renderer->tool 链路可追踪且无秘密 | trace assertions/log audit | evidence/GBF-603 | NOT_STARTED | runtime | 统一 event fields |
