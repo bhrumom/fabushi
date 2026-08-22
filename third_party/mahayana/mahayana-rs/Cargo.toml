@@ -72,7 +72,7 @@ codex-core = { path = "../codex-rs/core" }
 codex-core-plugins = { path = "../codex-rs/core-plugins" }
 codex-exec-server = { path = "../codex-rs/exec-server" }
 codex-feedback = { path = "../codex-rs/feedback" }
-codex-login = { path = "../codex-rs/login" }
+codex-login = { path = "../codex-rs/login", default-features = false }
 codex-model-provider-info = { path = "../codex-rs/model-provider-info" }
 codex-protocol = { path = "../codex-rs/protocol" }
 codex-rmcp-client = { path = "../codex-rs/rmcp-client" }
