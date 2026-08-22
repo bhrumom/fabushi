@@ -43,13 +43,20 @@ assert.doesNotMatch(endpoints, /leaderboard/i, 'retired leaderboard client endpo
 assert.match(endpoints, /\/api\/auth\/browser\/start/, 'client must expose canonical browser-first auth');
 assert.match(endpoints, /https:\/\/api\.ombhrum\.com/, 'packaged API client must default to the stable public control-plane origin');
 
+const marketingSources = [
+  read('../../frontend/apps/web/src/app/page.tsx'),
+  read('../../frontend/apps/web/src/lib/official-site-releases.ts'),
+  read('../../frontend/packages/shared/src/app-experience.ts'),
+].join('\n');
+assert.doesNotMatch(marketingSources, /leaderboard|global-ranking/i, 'retired leaderboard must not return to active product or marketing data');
+
 const platformWrangler = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/wrangler.toml');
 assert.match(platformWrangler, /AUTH_PUBLIC_BASE_URL = "https:\/\/api\.ombhrum\.com"/, 'OAuth callback origin must use the stable public API domain');
 
 const rustWorker = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs');
 const rustWorkerBytes = Buffer.byteLength(rustWorker, 'utf8');
 assert.ok(
-  rustWorkerBytes <= 244255,
+  rustWorkerBytes <= 65000,
   `worker_api.rs is a shrinking migration budget and must not grow (got ${rustWorkerBytes} bytes)`,
 );
 

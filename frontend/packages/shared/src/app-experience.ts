@@ -47,7 +47,7 @@ export const miniProgramParity = [
     source: "Native practice experience",
     miniProgram: "pages/practice/index",
     title: "禅室修行",
-    reused: "零摩擦开始修行、计时、念诵计数、回向和榜单入口",
+    reused: "零摩擦开始修行、计时、念诵计数、回向和个人记录",
     nativeScope: "微信原生计时器、计数器、本地草稿保存",
   },
   {
@@ -111,15 +111,6 @@ export const appModules = [
     action: "浏览法流",
     tone: "rose",
     screenshot: "/product/group-practice.png",
-  },
-  {
-    id: "leaderboard",
-    title: "共修榜单",
-    shortTitle: "榜单",
-    summary: "看见同行者的法布施与禅修节奏，也保留个人边界。",
-    action: "查看榜单",
-    tone: "violet",
-    screenshot: "/product/global-ranking.png",
   },
   {
     id: "ai",
@@ -217,13 +208,6 @@ export const globalDharmaActions = [
   { label: "发送经文", detail: "选择公共领域经文，生成可分享资料" },
   { label: "AI 找资源", detail: "调用大乘 AI 网关检索可公开传播来源" },
   { label: "加入共修", detail: "选择一门功课，开始计时与念诵计数" },
-] as const;
-
-export const leaderboardPreview = [
-  { name: "明净", region: "中国", value: "328 分钟", rank: 1 },
-  { name: "善行", region: "新加坡", value: "271 分钟", rank: 2 },
-  { name: "慧灯", region: "加拿大", value: "236 分钟", rank: 3 },
-  { name: "净愿", region: "马来西亚", value: "219 分钟", rank: 4 },
 ] as const;
 
 export const miniProgramTabs = [
