@@ -3,7 +3,7 @@
 - **Task ID:** FPG-001
 - **Status:** in-progress
 - **Started:** 2026-08-22T13:32:00+08:00
-- **Updated:** 2026-08-22T13:32:00+08:00
+- **Updated:** 2026-08-22T13:34:00+08:00
 
 ## Objective
 
@@ -50,20 +50,26 @@ Make root `AGENTS.md` require every Fabushi repository task to locate/reuse a pr
 
 ## Branch / PR
 
-Pending creation.
+- Branch: `project/fabushi-project-governance-agents`
+- Initial commit: `b537329ed9fc0bdadcd8c51e27a92956b09181fd`
+- PR: #1976
 
 ## Implementation summary
 
-Prepared new root governance section and standard governance project scaffold.
+- Added repository-wide Project-First task governance to root `AGENTS.md`.
+- Added the canonical `projects/fabushi-project-governance/` project scaffold.
+- Linked the root governance gate to the existing `.agent/skills/fabushi-project-governance/SKILL.md` and lifecycle references.
+- Preserved existing local-disk and Faliu workflow instructions.
 
 ## Evidence
 
-Pending PR/CI/main verification.
+- PR #1976 contains 19 changed files and the complete initial governance bootstrap.
+- CI and canonical `main` verification are still pending.
 
 ## Blockers / risks
 
-None currently; task remains in-progress until canonical merge verification.
+None currently; task remains in-progress until required CI and merge-queue verification complete.
 
 ## Next action
 
-Create PR and complete required GitHub checks.
+Run required GitHub checks, enter merge queue, then verify canonical `main` and close project records.
