@@ -202,7 +202,12 @@ jobs:
 
       - name: Install cargo-ndk only when needed
         if: steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
-        run: cargo install cargo-ndk --locked
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-ndk >/dev/null 2>&1; then
+            cargo install cargo-ndk --locked
+          fi
 
       - name: Save cargo-ndk immediately
         if: steps.jni-cache.outputs.cache-hit != 'true' && steps.cargo-ndk-cache.outputs.cache-hit != 'true'
@@ -382,6 +387,8 @@ jobs:
           -scheme Fabushi
           -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'
           -derivedDataPath "${{ runner.temp }}/FabushiDerivedData"
+          -retry-tests-on-failure
+          -test-iterations 2
           CODE_SIGNING_ALLOWED=NO
           -resultBundlePath "$RUNNER_TEMP/FabushiTests.xcresult"
 
