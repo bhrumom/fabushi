@@ -122,7 +122,7 @@ test('desktop Messenger creates a self-hosted channel and executes message mutat
 
     const edited = page.locator('article').filter({ hasText: '编辑后的频道消息' }).last();
     await edited.click({ button: 'right' });
-    await page.getByRole('button', { name: /^置顶$/ }).click();
+    await page.getByRole('button', { name: /^置顶$/ }).last().click();
     await expect(edited.locator('svg')).toHaveCount(2);
 
     const answers = ['E2E 账单', '1.99'];
