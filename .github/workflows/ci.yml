@@ -425,8 +425,8 @@ jobs:
         run: python3 .github/scripts/assert-product-ui-contracts.py
       - name: Reject native capability stubs
         run: python3 .github/scripts/assert-native-capability-semantics.py
-      - name: Verify offline ASR provider contracts
-        run: node --test desktop/electron/offline-asr.test.cjs
+      - name: Verify Electron edge, host lifecycle, and offline ASR contracts
+        run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
       - name: Verify Electron to Rust Feature Host bridge
         shell: bash
         run: bash .github/scripts/assert-electron-feature-host-bridge.sh

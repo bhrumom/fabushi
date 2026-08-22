@@ -4,7 +4,7 @@
 - Project Key: GBF
 - Task ID: GBF-104
 - Stage: M1-source-inventory
-- Status: TESTED (merge/main closure pending)
+- Status: RELEASED
 - Objective: 对每个固定 source head 与固定 main 的全部 path difference 给出明确处理分类，禁止无决策的大规模覆盖。
 - Source requirements: GBR-001, GBR-002, GBR-009
 - Dependencies: GBF-102, GBF-103.
@@ -26,3 +26,5 @@
 ## Result / next
 
 差异已无空处理分类；继续 GBF-105 provenance，之后按 capability domain 进入 M2-M7 原子审计/实现。
+
+- Completed: 2026-08-22 17:01+08
