@@ -15,7 +15,13 @@ const requestGate = read('src/security/request-gate.js');
 const wrangler = read('wrangler.toml');
 const sms = read('src/handlers/sms.js');
 const marketplaceWorker = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs');
-const marketplaceRoutes = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/marketplace.inc.rs');
+const marketplaceRoutes = (() => {
+  try {
+    return read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/marketplace.rs');
+  } catch {
+    return read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/marketplace.inc.rs');
+  }
+})();
 
 assert.match(authUtils, /resolveJwtSecret/);
 assert.match(authUtils, /secret\.length < 32/);

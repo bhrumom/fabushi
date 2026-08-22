@@ -121,7 +121,7 @@ async fn expire_usage_reservations(
     Ok(())
 }
 
-fn d1_changes(result: Option<&worker::D1Result>) -> usize {
+pub(super) fn d1_changes(result: Option<&worker::D1Result>) -> usize {
     result
         .and_then(|result| result.meta().ok().flatten())
         .and_then(|meta| meta.changes)
