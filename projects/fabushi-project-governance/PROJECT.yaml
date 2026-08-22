@@ -1,4 +1,7 @@
-project_id: FPG
+project_id: FAB-P0002
+project_key: FPG
+legacy_project_ids:
+  - FPG
 name: Fabushi Project Governance
 slug: fabushi-project-governance
 status: active

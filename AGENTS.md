@@ -12,16 +12,36 @@ There are **no meta-work exemptions**. Work that changes this `AGENTS.md`, `.age
 
 Before substantial work:
 
-1. Inspect current GitHub `main` under `projects/`.
+1. Inspect current GitHub `main` under `projects/` and read canonical `projects/PORTFOLIO.json`.
 2. Decide whether the request belongs to an existing project or is a genuinely independent objective/workstream.
-3. If a matching project exists, **reuse it**. Do not create a duplicate because the chat, branch, PR, or agent session is new.
-4. Read the matching project's `SOURCE_OF_TRUTH.md` first, then `README.md`, `PROJECT.yaml`, `OWNERS.md`, relevant `source/`, `docs/`, `decisions/`, `management/`, `evidence/`, and `runbooks/` files.
-5. Read current roadmap, WBS, milestones, acceptance matrix, risk register, dependency/blocker register, status report, changelog, open issues/actions, active task record, and relevant ADRs before deciding what to implement next.
-6. Verify code, branch, PR, CI, release, deployment, and migration facts against live GitHub/engineering systems rather than assuming project documentation is current.
+3. If a matching project exists, **reuse it and its registered `FAB-Pxxxx` Project ID**. Do not create a duplicate because the chat, branch, PR, or agent session is new.
+4. Resolve the project's `project_id`, `project_key`, slug, and authoritative path from the registry and `PROJECT.yaml`.
+5. Read the matching project's `SOURCE_OF_TRUTH.md` first, then `README.md`, `PROJECT.yaml`, `OWNERS.md`, relevant `source/`, `docs/`, `decisions/`, `management/`, `evidence/`, and `runbooks/` files.
+6. Read current roadmap, WBS, milestones, acceptance matrix, risk register, dependency/blocker register, status report, changelog, open issues/actions, active task record, and relevant ADRs before deciding what to implement next.
+7. Verify code, branch, PR, CI, release, deployment, and migration facts against live GitHub/engineering systems rather than assuming project documentation is current.
+
+### 1A. Global Project ID allocation gate
+
+Fabushi has one immutable portfolio identity namespace for projects:
+
+- `project_id`: global cross-project identity in the form `FAB-P0001`, `FAB-P0002`, ... . It is immutable and never reused.
+- `project_key`: stable mnemonic namespace such as `TFI`, `FPG`, `FCM`, `GBF`, or `MSR`; use this for human-readable requirement/task IDs. It is not the portfolio Project ID.
+- `legacy_project_ids`: historical aliases preserved for traceability; never reassign an alias to another project.
+- `projects/PORTFOLIO.json`: authoritative machine-readable registry and allocation high-water mark.
+- `projects/PROJECT_ID_POLICY.md`: authoritative lifecycle/allocation policy.
+
+If no matching project exists and the work is genuinely independent:
+
+1. Re-read `projects/PORTFOLIO.json` from canonical GitHub `main` immediately before allocation. Never allocate from chat memory or a stale branch.
+2. Allocate **exactly** the registry's current `next_sequence` using `FAB-P%04d`.
+3. In the same branch/PR, append the new registry entry, increment `next_sequence`, and create `projects/<project-slug>/PROJECT.yaml` with the identical `project_id`, a unique stable `project_key`, slug, and authoritative path.
+4. Never edit, swap, compact, recycle, or reassign an allocated Project ID. Rename, archive, cancellation, split, merge, or supersession changes project status/history, not its historical identity.
+5. If concurrent project creation causes a `PORTFOLIO.json` merge conflict, re-read canonical `main` and reallocate the later project from the new high-water mark. Do not force, duplicate, or reuse the losing sequence.
+6. Project/registry changes must pass the `Project portfolio governance` GitHub Actions validator before completion.
 
 ### 2. If no project folder exists, create the enterprise standard before implementation
 
-If the request does not belong to an existing project, create a lowercase kebab-case folder under:
+If the request does not belong to an existing project, first allocate the portfolio Project ID under the gate above, then create a lowercase kebab-case folder under:
 
 `projects/<project-slug>/`
 
@@ -72,8 +92,8 @@ Every project must be reconstructable by a new engineer/agent without the origin
 
 At minimum:
 
-- `README.md`: objective, current verified status, current stage/next gate, scope summary, owners, source-of-truth pointer, acceptance summary, navigation.
-- `PROJECT.yaml`: stable project identity, slug, status, repository, authoritative branch/path, owner/reviewers, current stage, timestamps; optional risk/security classification.
+- `README.md`: immutable Project ID/Project Key, objective, current verified status, current stage/next gate, scope summary, owners, source-of-truth pointer, acceptance summary, navigation.
+- `PROJECT.yaml`: registered `project_id: FAB-Pxxxx`, stable `project_key`, `legacy_project_ids`, slug, status, repository, authoritative branch/path, owner/reviewers, current stage, timestamps; optional risk/security classification. These identity fields must match `projects/PORTFOLIO.json`.
 - `SOURCE_OF_TRUTH.md`: authoritative source precedence and conflict-resolution rules.
 - `OWNERS.md`: accountable/execution owners, reviewers, consulted stakeholders, escalation path.
 - `source/`: original requirements and durable source references; do not silently rewrite source history.
@@ -99,6 +119,7 @@ Create or update:
 
 The task record must include at least:
 
+- immutable portfolio Project ID and Project Key;
 - stable Task ID;
 - objective and source requirement IDs/references;
 - in-scope / out-of-scope;
@@ -115,9 +136,9 @@ The task record must include at least:
 
 ### 5. Drive implementation from the project folder
 
-The GitHub project folder is the durable working context. Use it to decide what comes next rather than relying on chat memory.
+The GitHub portfolio registry and project folder are the durable working context. Use them to decide what comes next rather than relying on chat memory.
 
-- Reconstruct current state from the project folder at the start of each task/round.
+- Reconstruct current state from `projects/PORTFOLIO.json` and the project folder at the start of each task/round.
 - Advance the existing roadmap/WBS instead of inventing a parallel plan in chat.
 - Record newly discovered requirements in `source/` and/or normalized specs.
 - Record scope/design/governance changes in `management/07-变更日志.md`.
@@ -125,6 +146,7 @@ The GitHub project folder is the durable working context. Use it to decide what 
 - Update risk, dependency/blocker, issue/action, release/rollback, security, SLO, and runbook records when affected.
 - Keep planned work and verified completed work clearly separated.
 - Prefer the same branch/PR for implementation and its project-record updates.
+- Never mutate an existing registered Project ID to make a registry conflict disappear.
 
 ### 6. Task completion is blocked until project records and evidence are current
 
@@ -132,7 +154,7 @@ Do **not** report a task as complete merely because code was written, pushed, or
 
 Before saying a task is finished:
 
-1. Run or inspect the defined acceptance checks.
+1. Run or inspect the defined acceptance checks, including `Project portfolio governance` when project identity/registry metadata is affected.
 2. Update the task record with actual results and evidence.
 3. Update `management/01-WBS原子任务.md` for affected task states.
 4. Update `management/02-里程碑.md` when milestone gates change.
@@ -143,7 +165,7 @@ Before saying a task is finished:
 9. Record commit SHA, PR/review, CI run/job/check, test, release, deployment, migration, blockers, and next action where applicable.
 10. Commit project-record changes to GitHub in the same task change stream when possible.
 11. Merge through required protected-main checks/merge queue.
-12. Verify canonical state on GitHub `main` after merge.
+12. Verify canonical state on GitHub `main` after merge, including registry/project metadata parity when applicable.
 
 If any required review/CI/merge/release/deployment/migration/acceptance gate is pending, keep the task `in-progress`, `blocked`, or `failed`; do not mark it complete.
 
@@ -152,14 +174,15 @@ If any required review/CI/merge/release/deployment/migration/acceptance gate is 
 Unless a project defines a stricter rule, use this precedence:
 
 1. the user's latest explicit requirement **after it is persisted into the GitHub project folder**;
-2. `projects/<project-slug>/SOURCE_OF_TRUTH.md` and designated source files;
-3. accepted ADRs and current project specs;
-4. current WBS/milestone/status/acceptance records;
-5. GitHub code/PR/CI/release/deployment facts for implementation state;
-6. external mirrors/control views such as Google Drive/Sheets;
-7. conversation memory.
+2. for portfolio identity/allocation, canonical `projects/PORTFOLIO.json` and `projects/PROJECT_ID_POLICY.md` on GitHub `main`;
+3. `projects/<project-slug>/SOURCE_OF_TRUTH.md` and designated source files;
+4. accepted ADRs and current project specs;
+5. current WBS/milestone/status/acceptance records;
+6. GitHub code/PR/CI/release/deployment facts for implementation state;
+7. external mirrors/control views such as Google Drive/Sheets;
+8. conversation memory.
 
-External systems are intake, scheduling, reporting, portfolio, or mirror systems unless explicitly promoted. They must not silently override the GitHub `main` project folder for Fabushi engineering work.
+External systems are intake, scheduling, reporting, portfolio, or mirror systems unless explicitly promoted. They must not silently override the GitHub `main` portfolio registry/project folder for Fabushi engineering work.
 
 ### 8. Required governance skill and Task Orchestration alignment
 
@@ -172,9 +195,9 @@ and:
 - `.agent/skills/fabushi-project-governance/references/project-folder-standard.md`
 - `.agent/skills/fabushi-project-governance/references/task-lifecycle.md`
 
-When Task Orchestration is used, preserve the same Project ID, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub project folder and live GitHub/CI facts remain authoritative.
+When Task Orchestration is used, preserve the same immutable `FAB-Pxxxx` Project ID, Project Key, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub portfolio registry/project folder and live GitHub/CI facts remain authoritative.
 
-The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass project-folder creation/reuse, task records, acceptance evidence, or completion closure.
+The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, acceptance evidence, or completion closure.
 
 ## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
 

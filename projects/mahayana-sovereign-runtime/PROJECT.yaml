@@ -1,4 +1,7 @@
-project_id: MSR
+project_id: FAB-P0005
+project_key: MSR
+legacy_project_ids:
+  - MSR
 name: Mahayana Sovereign Runtime
 slug: mahayana-sovereign-runtime
 status: active

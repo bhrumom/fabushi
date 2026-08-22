@@ -1,4 +1,7 @@
-project_id: FCM
+project_id: FAB-P0003
+project_key: FCM
+legacy_project_ids:
+  - FCM
 name: Fabushi CI/CD & Merge Governance
 slug: fabushi-cicd-merge-governance
 status: active
