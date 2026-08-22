@@ -20,8 +20,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|path| path.with_extension("sqlite3"))
         })
         .unwrap_or_else(|| PathBuf::from("fabushi-messaging.sqlite3"));
-    let legacy_snapshot = legacy_snapshot_env
-        .unwrap_or_else(|| PathBuf::from("fabushi-messaging-snapshot.json"));
+    let legacy_snapshot =
+        legacy_snapshot_env.unwrap_or_else(|| PathBuf::from("fabushi-messaging-snapshot.json"));
     let access_registry = env::var_os("FABUSHI_MESSAGING_ACCESS_REGISTRY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("fabushi-messaging-access.json"));
