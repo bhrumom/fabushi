@@ -1,44 +1,37 @@
-# M2-SYNC-001 clean-stack evidence
+# M2-SYNC-001 canonical-main evidence
 
 - **Project ID**: `FAB-P0001`
 - **Project Key**: `TFI`
 - **Task**: `M2-SYNC-001`
-- **Status**: `IN_PROGRESS / FINAL-HEAD CI PENDING`
+- **Status**: `TESTED / LANDED`
 - **PR**: #2002
-- **Branch**: `feat/telegram-m2-delta-main-sync`
+- **Merge**: `d4611f9433eb4d6cbfa934c574cec1da96210edb`
 
-## Runtime provenance
+## Runtime evidence
 
-Historical #1994 supplied the original durable-sync implementation, but stale historical project-document snapshots are not imported. The final current-main landing keeps the canonical current `Message` schema and reuses the intended durable store/service/test behavior.
+- `native/mahayana-messaging/src/store.rs`: SQLite schema v2 journal, transactional snapshot+journal, cursor-group pagination/pruning.
+- `native/mahayana-messaging/src/service.rs`: stable-message idempotency, ACK/Delivered/Read, authorized delta replay/fallback.
+- `native/mahayana-messaging/tests/delta_sync_contract.rs`: restart, second-device, outsider isolation, idempotency, delivery/read and migration-floor contracts.
 
 ## Current-main compatibility reconciliation
 
-Final current-head CI on the historical replay exposed two real compatibility deltas:
+Current stable rustfmt required reformatting. Historical code also referenced removed `Message.client_message_id`; the final implementation retained current `Message` schema and relies on deterministic `stable_message_id(actor_id, client_message_id)` plus legacy local-key lookup. All payload-conflict checks remain.
 
-1. Rust stable/rustfmt advanced to 1.98; the three M2-SYNC Rust files were reformatted with current stable rustfmt.
-2. Current canonical `Message` no longer has a `client_message_id` field. Idempotent replay already derives a deterministic `stable_message_id(actor_id, client_message_id)` (with legacy local-key lookup), so the obsolete field comparison was removed without extending or reverting `Message` schema. Sender/content/reply/thread/schedule/silent/protected-content conflict checks remain.
+## Final-head GitHub Actions
 
-## Final clean landing
+| Gate | Run | Result |
+|---|---:|---|
+| Messaging Product Gate | `32575120937` | SUCCESS |
+| Mahayana fast checks | `32575120857` | SUCCESS |
+| Fabushi self-hosted messaging | `32575120877` | SUCCESS |
+| Repository CI | `32575120874` | SUCCESS |
+| Project portfolio governance | `32575120961` | SUCCESS |
+| Explicit automerge | `32575120853` | SUCCESS |
 
-- M2-NET prerequisite: PR #2001 merged through the protected queue as `2a4124a7b4b769be1320f88621e4eb3ad7f1a3f6`.
-- Final base: canonical `main` at `2a4124a7b4b769be1320f88621e4eb3ad7f1a3f6`.
-- Clean runtime commit: `5602f96bcb806b2c09981241ab88d99c15f07fc9`.
-- Compare immediately after rebuild: ahead by 1, behind by 0, exactly six changed files.
-- Final runtime blobs include corrected `service.rs` blob `d05ec7160997ff449bbfcf5aa4151ce7938d8a03`, formatted `store.rs` blob `2ffb60eab5986e92e6a296a9c8c90e05ba37fb8a`, and formatted `delta_sync_contract.rs` blob `3e31d0a0e3f566b0b7606d12ece863ed535048b9`.
-- Temporary workflow experiments are absent from the final current-main commit history.
+## Canonical-main verification
 
-## Behavior covered
+After protected landing, `main` head `d4611f9433eb4d6cbfa934c574cec1da96210edb` was re-read. It contains corrected stable-message idempotency and all durable-sync artifacts.
 
-- SQLite schema v2 event journal and migration from v1.
-- Transactional snapshot + journal persistence.
-- Restart/reconnect recovery and journal-floor fallback.
-- Idempotent send/ACK and conflicting client-message-ID rejection.
-- Durable server cursor/checkpoint semantics.
-- Audience-scoped delta replay and outsider isolation.
-- Second-device synchronization.
-- `Sent -> Delivered -> Read` transitions.
-- Cursor-group-aware journal pagination and pruning.
+## Result
 
-## Completion rule
-
-M2-SYNC-001 is not complete merely because historical code was replayed. The final #2002 head must pass fresh current GitHub Actions on canonical `main`, merge through protected-main governance, and be re-read from canonical `main` before M2.T05-T09 or the M2 stage can be closed.
+M2.T05-T09 satisfy their stage acceptance gate at `TESTED`. See `../M2-ACCEPT-001/README.md` for full M2 closure.
