@@ -1,0 +1,10 @@
+project_id: FCM
+name: Fabushi CI/CD & Merge Governance
+slug: fabushi-cicd-merge-governance
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-cicd-merge-governance
+created_at: 2026-08-22
+updated_at: 2026-08-22
+current_stage: g0-fast-safe-merge
