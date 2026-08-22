@@ -35,7 +35,10 @@ mod worker_api {
             .map_err(jwt_error)?
             .claims;
         if claims.token_use != "access"
-            || !claims.scope.iter().any(|scope| scope == "commerce.purchase")
+            || !claims
+                .scope
+                .iter()
+                .any(|scope| scope == "commerce.purchase")
         {
             return Err(worker::Error::RustError(
                 "access token cannot perform payment operations".into(),
@@ -123,9 +126,16 @@ mod payment_api {
             return error_response(404, "payment_not_found", "payment intent was not found");
         };
         if payment.user_id != user_id || payment.rail != "apple_in_app_purchase" {
-            return error_response(404, "payment_not_found", "Apple payment intent was not found");
+            return error_response(
+                404,
+                "payment_not_found",
+                "Apple payment intent was not found",
+            );
         }
-        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+        if matches!(
+            payment.status.as_str(),
+            "succeeded" | "partially_refunded" | "refunded"
+        ) {
             return payment_response(&payment);
         }
 
@@ -167,7 +177,9 @@ mod payment_api {
         )
         .await?;
         mark_webhook_processed(&database, "apple", &event_id, &payment_id, now_seconds()).await?;
-        let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+        let updated = payment_by_id(&database, &payment_id)
+            .await?
+            .unwrap_or(payment);
         payment_response(&updated)
     }
 
@@ -184,9 +196,16 @@ mod payment_api {
             return error_response(404, "payment_not_found", "payment intent was not found");
         };
         if payment.user_id != user_id || payment.rail != "google_play_billing" {
-            return error_response(404, "payment_not_found", "Google Play payment intent was not found");
+            return error_response(
+                404,
+                "payment_not_found",
+                "Google Play payment intent was not found",
+            );
         }
-        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+        if matches!(
+            payment.status.as_str(),
+            "succeeded" | "partially_refunded" | "refunded"
+        ) {
             return payment_response(&payment);
         }
         let expected_product = payment.provider_product_ref.as_deref().ok_or_else(|| {
@@ -211,8 +230,9 @@ mod payment_api {
             )
             .await?
         };
-        let response_json: Value = serde_json::from_slice(&body)
-            .map_err(|_| worker::Error::RustError("invalid Google Play purchase response".into()))?;
+        let response_json: Value = serde_json::from_slice(&body).map_err(|_| {
+            worker::Error::RustError("invalid Google Play purchase response".into())
+        })?;
         let bound_account = if payment.product_kind == "subscription" {
             response_json
                 .get("externalAccountIdentifiers")
@@ -251,7 +271,9 @@ mod payment_api {
         )
         .await?;
         mark_webhook_processed(&database, "google", &event_id, &payment_id, now_seconds()).await?;
-        let updated = payment_by_id(&database, &payment_id).await?.unwrap_or(payment);
+        let updated = payment_by_id(&database, &payment_id)
+            .await?
+            .unwrap_or(payment);
         payment_response(&updated)
     }
 
@@ -269,8 +291,9 @@ mod payment_api {
             );
         }
         let body = request.bytes().await?;
-        let event: NormalizedProviderWebhook = serde_json::from_slice(&body)
-            .map_err(|_| worker::Error::RustError("invalid normalized provider webhook JSON".into()))?;
+        let event: NormalizedProviderWebhook = serde_json::from_slice(&body).map_err(|_| {
+            worker::Error::RustError("invalid normalized provider webhook JSON".into())
+        })?;
         validate_identifier(&event.event_id)?;
         let database = context.env.d1(DATABASE_BINDING)?;
         let occurred_at = event.occurred_at.unwrap_or_else(now_seconds);
@@ -332,10 +355,8 @@ mod payment_api {
 
         let result = if event.event_type == "paymentSucceeded" {
             let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
-            let provider_reference = required_event_value(
-                event.provider_reference.as_deref(),
-                "providerReference",
-            )?;
+            let provider_reference =
+                required_event_value(event.provider_reference.as_deref(), "providerReference")?;
             let payment = payment_by_id(&database, payment_id)
                 .await?
                 .ok_or_else(|| worker::Error::RustError("webhook payment not found".into()))?;
@@ -397,7 +418,10 @@ mod payment_api {
         event_id: &str,
         occurred_at: i64,
     ) -> Result<()> {
-        if matches!(payment.status.as_str(), "succeeded" | "partially_refunded" | "refunded") {
+        if matches!(
+            payment.status.as_str(),
+            "succeeded" | "partially_refunded" | "refunded"
+        ) {
             if payment.provider_reference.as_deref() == Some(provider_reference) {
                 return Ok(());
             }
@@ -405,7 +429,10 @@ mod payment_api {
                 "provider reference conflicts with successful payment".into(),
             ));
         }
-        if !matches!(payment.status.as_str(), "created" | "requires_action" | "processing") {
+        if !matches!(
+            payment.status.as_str(),
+            "created" | "requires_action" | "processing"
+        ) {
             return Err(worker::Error::RustError("payment is not capturable".into()));
         }
         let fee = platform_fee(payment, payment.amount);
@@ -790,10 +817,7 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             "/v1/pay/providers/:provider/webhook",
             payment_api::provider_webhook_bound,
         )
-        .post_async(
-            "/v1/pay/admin/products",
-            payment_api::admin_upsert_product,
-        )
+        .post_async("/v1/pay/admin/products", payment_api::admin_upsert_product)
         .post_async(
             "/v1/pay/admin/settlements/release",
             payment_api::admin_release_settlement,
