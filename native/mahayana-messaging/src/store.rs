@@ -316,7 +316,10 @@ mod tests {
         assert!(store
             .import_json_if_empty(&legacy)
             .expect("import legacy snapshot"));
-        assert_eq!(store.load().expect("load imported snapshot"), Some(original));
+        assert_eq!(
+            store.load().expect("load imported snapshot"),
+            Some(original)
+        );
 
         let replacement = MessagingSnapshot::new(MessagingState::default(), 99, 200);
         legacy
@@ -325,7 +328,10 @@ mod tests {
         assert!(!store
             .import_json_if_empty(&legacy)
             .expect("skip second legacy import"));
-        assert_eq!(store.load().expect("keep sqlite snapshot").unwrap().cursor, 41);
+        assert_eq!(
+            store.load().expect("keep sqlite snapshot").unwrap().cursor,
+            41
+        );
 
         remove_db(&path);
         let _ = fs::remove_file(legacy_path);
