@@ -4,55 +4,94 @@ This repository contains the Fabushi app and website. Follow the user's request 
 
 ## CRITICAL: Project-First Task Governance — Every Task Must Use `projects/`
 
-These rules are mandatory for **every task** performed in this repository, including implementation, bug fixes, refactors, reviews, investigations, releases, documentation changes, CI/CD work, migrations, and follow-up rounds.
+These rules are mandatory for **every task** performed in this repository, including product implementation, bug fixes, refactors, reviews, investigations, releases, migrations, documentation changes, CI/CD work, repository governance, `AGENTS.md` changes, Skill creation/update, architecture standards, branch/merge policy, and follow-up rounds.
+
+There are **no meta-work exemptions**. Work that changes this `AGENTS.md`, `.agent/skills/**`, `.github/**`, project standards, build/release tooling, security/governance automation, or other repository-control files must itself belong to a governed project folder.
 
 ### 1. Start every task by locating its project folder
 
 Before substantial work:
 
-1. Inspect the current GitHub `main` branch under `projects/`.
-2. Decide whether the request belongs to an existing project or is a genuinely different objective/workstream.
-3. If a matching project exists, **reuse it**. Do not create a duplicate folder merely because the chat/session is new.
-4. Read the matching project's `SOURCE_OF_TRUTH.md` first, then `README.md`, `PROJECT.yaml`, relevant `source/`, `docs/`, `decisions/`, and `management/` files.
-5. Read the current WBS, acceptance matrix, status report, changelog, risks, and active task record before deciding what to implement next.
-6. Verify code, branch, PR, CI, release, and deployment facts against GitHub rather than assuming documentation is current.
+1. Inspect current GitHub `main` under `projects/`.
+2. Decide whether the request belongs to an existing project or is a genuinely independent objective/workstream.
+3. If a matching project exists, **reuse it**. Do not create a duplicate because the chat, branch, PR, or agent session is new.
+4. Read the matching project's `SOURCE_OF_TRUTH.md` first, then `README.md`, `PROJECT.yaml`, `OWNERS.md`, relevant `source/`, `docs/`, `decisions/`, `management/`, `evidence/`, and `runbooks/` files.
+5. Read current roadmap, WBS, milestones, acceptance matrix, risk register, dependency/blocker register, status report, changelog, open issues/actions, active task record, and relevant ADRs before deciding what to implement next.
+6. Verify code, branch, PR, CI, release, deployment, and migration facts against live GitHub/engineering systems rather than assuming project documentation is current.
 
-### 2. If no project folder exists, create one before implementation
+### 2. If no project folder exists, create the enterprise standard before implementation
 
-If the request does not belong to an existing project, create a new lowercase kebab-case folder under:
+If the request does not belong to an existing project, create a lowercase kebab-case folder under:
 
 `projects/<project-slug>/`
 
-At minimum create and populate:
+Create and populate this standard scaffold **before substantial implementation**:
 
 ```text
 projects/<project-slug>/
 ├── README.md
 ├── PROJECT.yaml
 ├── SOURCE_OF_TRUTH.md
+├── OWNERS.md
 ├── source/
 │   └── README.md
 ├── docs/
 │   ├── 00-项目章程.md
 │   ├── 01-范围与非目标.md
+│   ├── 02-需求与成功指标.md
+│   ├── 03-架构与实现策略.md
+│   ├── 04-质量与测试策略.md
+│   ├── 05-发布迁移与回滚.md
+│   ├── 06-运维可观测性与SLO.md
+│   ├── 07-安全隐私与合规.md
 │   └── 19-完成定义与验收.md
 ├── management/
 │   ├── 00-路线图.md
 │   ├── 01-WBS原子任务.md
+│   ├── 02-里程碑.md
 │   ├── 03-验收追踪矩阵.md
 │   ├── 04-风险登记.md
 │   ├── 05-状态报告.md
+│   ├── 06-依赖与阻塞.md
 │   ├── 07-变更日志.md
+│   ├── 08-问题与行动项.md
 │   └── tasks/
 ├── decisions/
 │   └── README.md
-└── evidence/
+├── evidence/
+│   └── README.md
+└── runbooks/
     └── README.md
 ```
 
-Do this **before substantial implementation** so the task has a durable scope, acceptance definition, and execution record from the beginning.
+Do not create blank ceremony. If a mandatory standard document is genuinely not applicable, keep the file and state `N/A`, why it is not applicable, who owns revisiting it, and what condition would make it applicable.
 
-### 3. Every substantial task must have a durable task record
+### 3. Enterprise project-document requirements
+
+Every project must be reconstructable by a new engineer/agent without the originating chat.
+
+At minimum:
+
+- `README.md`: objective, current verified status, current stage/next gate, scope summary, owners, source-of-truth pointer, acceptance summary, navigation.
+- `PROJECT.yaml`: stable project identity, slug, status, repository, authoritative branch/path, owner/reviewers, current stage, timestamps; optional risk/security classification.
+- `SOURCE_OF_TRUTH.md`: authoritative source precedence and conflict-resolution rules.
+- `OWNERS.md`: accountable/execution owners, reviewers, consulted stakeholders, escalation path.
+- `source/`: original requirements and durable source references; do not silently rewrite source history.
+- `docs/00-项目章程.md`: problem, objective, stakeholders, value, constraints, deliverables, success definition.
+- `docs/01-范围与非目标.md`: explicit in-scope, out-of-scope, deferred items.
+- `docs/02-需求与成功指标.md`: stable requirement IDs, functional/non-functional requirements, measurable success metrics.
+- `docs/03-架构与实现策略.md`: current/target state, components, interfaces, data/control flow, deployment/migration strategy, tradeoffs.
+- `docs/04-质量与测试策略.md`: unit/contract/integration/E2E/security/performance strategy as applicable, environments, required CI/evidence.
+- `docs/05-发布迁移与回滚.md`: rollout, migration, canary/flags when used, rollback triggers/steps, release validation.
+- `docs/06-运维可观测性与SLO.md`: SLI/SLO, logs/metrics/traces, alerts, capacity, runbook links for runtime systems; otherwise N/A with reason.
+- `docs/07-安全隐私与合规.md`: data classification, auth boundaries, threats, secrets handling, privacy/compliance, supply-chain/security review.
+- `docs/19-完成定义与验收.md`: objective project Definition of Done with evidence type for every required gate.
+- `management/`: roadmap, WBS, milestones, acceptance traceability, RAID/risk, append-only status, dependencies/blockers, append-only changelog, open issues/actions, per-task records.
+- `decisions/`: ADRs for expensive-to-reverse architecture/protocol/data/security/deployment/CI/CD/governance/vendor decisions.
+- `evidence/`: durable evidence indexes for commits, PRs, reviews, CI checks, tests, releases, deployments, migrations.
+- `runbooks/`: deploy/rollback/recovery/migration/incident/data-repair/key-rotation or other repeatable operational procedures when applicable.
+
+### 4. Every substantial task must have a durable task record
 
 Create or update:
 
@@ -61,32 +100,33 @@ Create or update:
 The task record must include at least:
 
 - stable Task ID;
-- objective and source requirement;
+- objective and source requirement IDs/references;
 - in-scope / out-of-scope;
 - dependencies;
 - acceptance criteria;
-- verification method;
+- verification method/checks;
 - branch / commit / PR;
 - status;
 - implementation summary;
-- CI / E2E / release / deployment evidence when applicable;
+- CI / E2E / security / performance / release / deployment / migration evidence when applicable;
 - blockers and risks;
 - next action;
 - started, updated, and completed timestamps.
 
-### 4. Drive implementation from the project folder
+### 5. Drive implementation from the project folder
 
 The GitHub project folder is the durable working context. Use it to decide what comes next rather than relying on chat memory.
 
-- Reconstruct the current state from the project folder at the start of each task/round.
+- Reconstruct current state from the project folder at the start of each task/round.
 - Advance the existing roadmap/WBS instead of inventing a parallel plan in chat.
-- Record newly discovered requirements in `source/` or the appropriate spec.
-- Record scope/design changes in `management/07-变更日志.md`.
-- Record long-lived architecture decisions under `decisions/` as ADRs.
-- Keep planned work and completed work clearly separated.
+- Record newly discovered requirements in `source/` and/or normalized specs.
+- Record scope/design/governance changes in `management/07-变更日志.md`.
+- Record durable architecture/governance decisions as ADRs.
+- Update risk, dependency/blocker, issue/action, release/rollback, security, SLO, and runbook records when affected.
+- Keep planned work and verified completed work clearly separated.
 - Prefer the same branch/PR for implementation and its project-record updates.
 
-### 5. Task completion is blocked until the project folder is updated
+### 6. Task completion is blocked until project records and evidence are current
 
 Do **not** report a task as complete merely because code was written, pushed, or a test passed.
 
@@ -95,40 +135,46 @@ Before saying a task is finished:
 1. Run or inspect the defined acceptance checks.
 2. Update the task record with actual results and evidence.
 3. Update `management/01-WBS原子任务.md` for affected task states.
-4. Update `management/03-验收追踪矩阵.md` when acceptance status changed.
-5. Append the round/result to `management/05-状态报告.md`.
-6. Append material changes to `management/07-变更日志.md`.
-7. Update risks, roadmap, specs, and ADRs when affected.
-8. Record commit SHA, PR number, CI run/job, release/deployment evidence, blockers, and next action where applicable.
-9. Commit the project-record changes to GitHub in the same task change stream when possible.
-10. Verify the canonical result on GitHub `main` after merge. If CI/merge/release is still pending, keep the task `in-progress`, `blocked`, or `failed`; do not mark it complete.
+4. Update `management/02-里程碑.md` when milestone gates change.
+5. Update `management/03-验收追踪矩阵.md` when acceptance status changes.
+6. Append the round/result to `management/05-状态报告.md`.
+7. Append material changes to `management/07-变更日志.md`.
+8. Update risks, dependencies/blockers, issues/actions, roadmap, specs, ADRs, security docs, release/rollback docs, SLOs, and runbooks when affected.
+9. Record commit SHA, PR/review, CI run/job/check, test, release, deployment, migration, blockers, and next action where applicable.
+10. Commit project-record changes to GitHub in the same task change stream when possible.
+11. Merge through required protected-main checks/merge queue.
+12. Verify canonical state on GitHub `main` after merge.
 
-### 6. Source-of-truth precedence
+If any required review/CI/merge/release/deployment/migration/acceptance gate is pending, keep the task `in-progress`, `blocked`, or `failed`; do not mark it complete.
+
+### 7. Source-of-truth precedence
 
 Unless a project defines a stricter rule, use this precedence:
 
 1. the user's latest explicit requirement **after it is persisted into the GitHub project folder**;
-2. `projects/<project-slug>/SOURCE_OF_TRUTH.md` and the source files it designates;
+2. `projects/<project-slug>/SOURCE_OF_TRUTH.md` and designated source files;
 3. accepted ADRs and current project specs;
-4. current WBS/status/acceptance records;
+4. current WBS/milestone/status/acceptance records;
 5. GitHub code/PR/CI/release/deployment facts for implementation state;
-6. external mirrors such as Google Drive;
+6. external mirrors/control views such as Google Drive/Sheets;
 7. conversation memory.
 
-Google Drive, chat history, email, local notes, and other external copies are intake/reference material unless the project explicitly promotes them. They must not silently override the GitHub `main` project folder.
+External systems are intake, scheduling, reporting, portfolio, or mirror systems unless explicitly promoted. They must not silently override the GitHub `main` project folder for Fabushi engineering work.
 
-### 7. Required governance skill
+### 8. Required governance skill and Task Orchestration alignment
 
-For project/task lifecycle details, follow:
+For lifecycle details, follow:
 
 `.agent/skills/fabushi-project-governance/SKILL.md`
 
-and its references:
+and:
 
 - `.agent/skills/fabushi-project-governance/references/project-folder-standard.md`
 - `.agent/skills/fabushi-project-governance/references/task-lifecycle.md`
 
-The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass the requirement to locate/create a project folder and keep its task records current.
+When Task Orchestration is used, preserve the same Project ID, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub project folder and live GitHub/CI facts remain authoritative.
+
+The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass project-folder creation/reuse, task records, acceptance evidence, or completion closure.
 
 ## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
 
