@@ -39,8 +39,7 @@ function hydratePaymentSparseCheckout() {
     '/.github/scripts/**',
     '/fabushi/web/**',
     '/frontend/**',
-    '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**',
-    '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**',
+    '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/**',
     '/third_party/mahayana/mahayana-rs/mahayana-pay-worker/**',
   ]);
 }
