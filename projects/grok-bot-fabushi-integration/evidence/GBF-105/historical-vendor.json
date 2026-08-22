@@ -1,0 +1,9 @@
+{
+  "vendor_commit": "8bb9f6a093f17189010e5f5231c8694d53ccf190",
+  "parent_0_16": "a8bd854b512a3eaf20be9518767ab593724d67dc",
+  "removal_commit": "25e02683d0c2a8767faabee8df0d0c0668931b8f",
+  "entries": 148,
+  "present_in_latest_head": false,
+  "present_in_main": false,
+  "policy": "PROVENANCE_BLOCKED_REFERENCE_ONLY"
+}
