@@ -128,12 +128,11 @@ jobs:
       - name: Checkout Worker inputs
         uses: actions/checkout@v5
         with:
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /.github/scripts/assert-worker-security-secrets.sh
-            /fabushi/web/**
-            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**
-            /third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**
+            .github/scripts
+            fabushi/web
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker/src
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
