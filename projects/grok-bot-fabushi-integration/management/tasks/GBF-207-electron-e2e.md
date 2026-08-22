@@ -1,40 +1,23 @@
-# GBF-207 — 验证当前 Electron 架构关键 Grok/Fabushi 用户旅程
+# GBF-207 — Electron E2E closure
 
 - Project ID: FAB-P0004
-- Project Key: GBF
 - Task ID: GBF-207
-- Objective: 验证当前 Electron 架构关键 Grok/Fabushi 用户旅程。
-- Source requirement IDs/references: GBR-002, GBR-007; `source/grok-bot融合优化.txt`; M1 evidence.
 - Stage: M2
-- Status: IN_PROGRESS (E2E defects fixed; rerun pending)
-- In scope: 当前 `main` 与 pinned Grok source 的能力级差异、正式 Fabushi/Mahayana 归属、实现/测试/CI/证据。
-- Out of scope: wholesale merge 历史 Grok 分支；把 vendor 0.20 二进制/构建产物重新带回生产。
+- Status: RELEASED
+- Objective: 用真实 Electron sandbox + Rust Host + 三平台 packaged application user journeys 证明当前桌面架构可运行。
 - Dependencies: GBF-201..206.
-- Implementation branch: `gbf/m2-electron-host-convergence-20260822`
-- PR: pending
-- Started: 2026-08-22 17:03+08
-- Updated: 2026-08-22 17:51+08
-- Completed: —
+- Implementation PRs: #2005, #2009
+- Completed: 2026-08-22 20:12+08
 
-## Acceptance criteria
-
-- [ ] Playwright Electron smoke/surfaces 可运行；桥/Host/ASR/renderer 受 CI 覆盖。
-- [ ] 相关拒绝/错误/恢复路径有客观验证。
-- [ ] GitHub Actions required checks 通过。
-- [ ] merge queue 合入 main 并完成 post-merge verification。
-
-## Verification
-
-GitHub Actions Electron E2E + required CI.
+## Acceptance
+- [x] Messenger edit 使用应用内受控对话框，不依赖原生 `prompt()`。
+- [x] AI 群组创建必须选择 Bot；Host 零 Agent 拒绝路径保持 fail-closed。
+- [x] message pin selector 与 invoice flow 均按真实产品 UI 修复。
+- [x] Electron Host simulated user smoke SUCCESS。
+- [x] macOS / Windows / Linux package + packaged user journey 全部 SUCCESS。
+- [x] `Electron desktop result` SUCCESS；CI #6212 / Messaging #57 / Self-hosted Messaging #121 / Portfolio #65 SUCCESS。
+- [x] PR #2009 merge queue 合入 main，merge `dcdc329cb76e609c469eaabbcccb707c0005f56d`。
+- [x] post-main canonical verification 完成。
 
 ## Evidence
-
-`evidence/GBF-207/`（实现后补 commit/PR/CI/test/main verification）。
-
-## Risks
-
-R1/R3/R4/R9/R10；涉及本机能力时同时受 R5/R6。
-
-## Next action
-
-执行当前 main/source audit，修复真实缺口并补最小自动化测试。
+`evidence/GBF-207/`; Electron run #521; PR #2009; canonical main `dcdc329c...`.
