@@ -8852,7 +8852,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "tokio",
  "uuid",
 ]
@@ -8903,7 +8903,7 @@ dependencies = [
  "mahayana-harness-services",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -8917,7 +8917,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "thiserror 2.0.18",
+ "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -8932,9 +8932,9 @@ dependencies = [
  "mahayana-agent-codex",
  "mahayana-conversation",
  "mahayana-core",
+ "mahayana-harness",
  "mahayana-kernel",
  "mahayana-mcp-runtime",
- "mahayana-harness",
  "mahayana-miniapp",
  "mahayana-model",
  "mahayana-native-agent",
