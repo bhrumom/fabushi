@@ -1,6 +1,6 @@
 # FPG-002 Evidence Index
 
-Status: in-progress pending CI/protected merge/canonical main verification.
+Status: passed after protected merge and canonical `main` verification.
 
 ## Source / requirements
 
@@ -10,41 +10,31 @@ Status: in-progress pending CI/protected merge/canonical main verification.
 
 ## Task Orchestration Skill evidence
 
-- Complete updated Skill bundle generated: `skill.zip`
+- Updated complete Skill bundle: `skill.zip`
 - Size: `16128 bytes`
 - SHA-256: `95385f836c2c10eaf6e5ae0e22a4b04a91b4924cfdc215e021e199b0154efd61`
-- Skill Creator `quick_validate.py /mnt/data/task-orchestration`: `Skill is valid!`
-- Skill Creator `package_skill.py /mnt/data/task-orchestration /mnt/data/task-orchestration-dist`: validation and packaging succeeded.
-- Bundle contains `task-orchestration/SKILL.md`, existing agents/assets/references, plus new `references/project-folder-standard.md`.
-- Installation/activation in the user's current ChatGPT Skill library is **not** asserted by this evidence; delivery/install remains an external action.
+- Skill Creator `quick_validate.py`: `Skill is valid!`
+- Skill Creator `package_skill.py`: succeeded.
+- Bundle contains original agents/assets/references plus new repository enterprise project-folder standard.
+- Installation/activation in the user's current ChatGPT Skill library is not asserted; that remains an external action.
 
 ## GitHub implementation evidence
 
 - Branch: `project/fpg-002-enterprise-project-standard`
-- Implementation PR: #1980
-- PR URL: `https://github.com/bhrumom/fabushi/pull/1980`
-- Initial PR head at creation: `79d80ba3aab78fbdefd613802f194c5064473122`
-- Project-record update commit after PR creation: `8822003d4d84d18abaa66e17774e41ded202ba8a`
+- PR: #1980
+- Final PR head: `b6c15759f110228b982846baabdb48ef8f44ba68`
+- Required CI: run `32556780549`, `CI result` success.
+- Merge queue/protected merge: passed.
+- Merge commit: `e77e11d4cb4e96e59ae35859cc159874bb93180d`.
 
-Implemented on branch:
+## Canonical main verification
 
-- root `AGENTS.md` enterprise project-folder enforcement;
-- `.agent/skills/fabushi-project-governance/SKILL.md`;
-- governance `references/project-folder-standard.md`;
-- governance `references/task-lifecycle.md`;
-- `projects/fabushi-project-governance/` enterprise-standard self-migration;
-- ADR-0002 enterprise project-folder standard;
-- FPG-002 task, acceptance traceability, risk/dependency/action, runbook and project-folder audit records.
+Verified after merge:
 
-## Branch audit
+- root `AGENTS.md` includes enterprise scaffold and explicit no-meta-work exemptions;
+- `.agent/skills/fabushi-project-governance/SKILL.md` includes the same enterprise/no-meta model;
+- `projects/fabushi-project-governance/evidence/FPG-002/project-folder-audit.md` exists on main with all mandatory scaffold items checked.
 
-- `evidence/FPG-002/project-folder-audit.md` confirms all mandatory enterprise scaffold files exist on the implementation branch.
-- This proves branch structure only; canonical acceptance still requires protected merge and post-merge verification.
+## CI optimization observation
 
-## Pending evidence
-
-- final PR head SHA after record updates;
-- required `CI result` run/job;
-- merge queue/protected merge result;
-- merge commit SHA;
-- canonical `main` verification of root AGENTS, governance Skill/reference, and governance project standard files.
+PR #1980 also proved `.agent/skills/**` currently enters the unknown-path fail-safe and selected unrelated product suites. This is intentionally tracked in the separate `projects/fabushi-cicd-merge-governance/` task FCM-003 so CI policy and governance policy remain separate concerns.
