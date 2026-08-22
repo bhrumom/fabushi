@@ -216,7 +216,11 @@ fn recipient_sync_marks_direct_message_delivered_and_mark_read_moves_it_to_read(
     setup_direct_conversation(&mut service);
     let sent = service
         .handle(
-            envelope("human:alice", "send:delivery", send_text("client:delivery", "hello bob")),
+            envelope(
+                "human:alice",
+                "send:delivery",
+                send_text("client:delivery", "hello bob"),
+            ),
             20,
         )
         .expect("send message");
@@ -254,10 +258,9 @@ fn recipient_sync_marks_direct_message_delivered_and_mark_read_moves_it_to_read(
             22,
         )
         .expect("mark read");
-    assert!(read_events.iter().any(|event| matches!(
-        event.event,
-        ServerEvent::ReadChanged { .. }
-    )));
+    assert!(read_events
+        .iter()
+        .any(|event| matches!(&event.event, ServerEvent::ReadChanged { .. })));
     assert_eq!(
         service.engine().state().messages[&ConversationId::new("chat:direct")][&message_id]
             .delivery_state,
@@ -304,7 +307,11 @@ fn durable_delta_sync_survives_restart_and_is_audience_scoped() {
 
     let sent = service
         .handle(
-            envelope("human:alice", "send:delta", send_text("client:delta", "after baseline")),
+            envelope(
+                "human:alice",
+                "send:delta",
+                send_text("client:delta", "after baseline"),
+            ),
             22,
         )
         .expect("send delta message");
@@ -365,9 +372,10 @@ fn cursor_older_than_migrated_journal_floor_falls_back_to_scoped_full_sync() {
     let path = temporary_db("floor-fallback");
     let mut legacy = SqliteStateStore::new(&path);
     let mut state = MessagingState::default();
-    state
-        .actors
-        .insert(ActorId::new("human:alice"), Actor::human("human:alice", "Alice"));
+    state.actors.insert(
+        ActorId::new("human:alice"),
+        Actor::human("human:alice", "Alice"),
+    );
     legacy
         .save(&MessagingSnapshot::new(state, 41, 100))
         .expect("seed snapshot without journal");
@@ -389,7 +397,7 @@ fn cursor_older_than_migrated_journal_floor_falls_back_to_scoped_full_sync() {
         )
         .expect("fallback full sync");
     assert_eq!(events.len(), 1);
-    assert!(matches!(events[0].event, ServerEvent::SyncBatch { .. }));
+    assert!(matches!(&events[0].event, ServerEvent::SyncBatch { .. }));
     assert_eq!(events[0].cursor.as_deref(), Some("41"));
     remove_db(&path);
 }
