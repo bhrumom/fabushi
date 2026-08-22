@@ -13,302 +13,79 @@ jobs:
   finalize:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
-      - name: Patch source
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-harness-final-v2
+          cache-all-crates: true
+
+      - name: Materialize the already-validated Harness source
+        run: python3 scripts/mahayana_harness_finalize.py
+
+      - name: Format Rust workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+
+      - name: Test complete Harness stack
+        working-directory: third_party/mahayana/mahayana-rs
+        run: >-
+          cargo test --profile ci
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+
+      - name: Strict Clippy complete Harness stack
+        working-directory: third_party/mahayana/mahayana-rs
+        run: >-
+          cargo clippy
+          -p mahayana-harness
+          -p mahayana-harness-services
+          -p mahayana-harness-advanced
+          -p mahayana-harness-adapters
+          -p mahayana-harness-agent
+          -p mahayana-harness-protocol
+          -p mahayana-unified-app-host
+          --all-targets -- -D warnings
+
+      - name: Remove one-shot migration scaffolding
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          rm -f \
+            .github/mahayana-harness-finalize.marker \
+            .github/workflows/mahayana-harness-clippy-diagnostics.yml \
+            .github/workflows/mahayana-harness-finalize-once.yml \
+            .github/workflows/mahayana-harness-finalize-pr-once.yml \
+            .github/workflows/mahayana-harness-marker-finalize.yml \
+            .github/workflows/mahayana-harness-schedule-bridge-once.yml \
+            scripts/mahayana_harness_finalize.py \
+            scripts/mahayana_harness_finalize_tail.py \
+            scripts/mahayana_harness_finalize_tail2.py
 
-          root = Path('third_party/mahayana/mahayana-rs')
-
-          # Core: approval lifetime is one-shot or per-session, never global.
-          p = root / 'mahayana-harness/src/lib.rs'
-          s = p.read_text()
-          if 'approved_once:' not in s:
-              s = s.replace('    approved_tools: BTreeSet<String>,\n', '    approved_once: BTreeSet<(Option<String>, String)>,\n    approved_for_session: BTreeMap<String, BTreeSet<String>>,\n', 1)
-              s = s.replace('            approved_tools: BTreeSet::new(),\n', '            approved_once: BTreeSet::new(),\n            approved_for_session: BTreeMap::new(),\n', 1)
-          if 'pub fn shares_state_with' not in s:
-              a = '    pub fn register_service(&self, id: impl Into<String>) -> HarnessResult<()> {'
-              if a not in s: raise SystemExit('core/register_service')
-              s = s.replace(a, '    pub fn shares_state_with(&self, other: &Self) -> bool {\n        Arc::ptr_eq(&self.state, &other.state)\n    }\n\n' + a, 1)
-          if 'state.approved_once.remove' not in s:
-              pattern = re.compile(r'        let \(registered, interceptors, approved\) = \{\n.*?        \};\n\n        if registered\.definition\.requires_approval', re.S)
-              repl = '''        let (registered, interceptors, approved) = {
-            let mut state = self.state()?;
-            let registered = state
-                .tools
-                .get(&request.name)
-                .cloned()
-                .ok_or_else(|| HarnessError::ToolNotFound(request.name.clone()))?;
-            let approved = if registered.definition.requires_approval
-                && !registered.definition.read_only
-            {
-                let session_approved = session_id
-                    .and_then(|id| state.approved_for_session.get(id))
-                    .is_some_and(|tools| tools.contains(&request.name));
-                let one_shot_approved = state.approved_once.remove(&(
-                    session_id.map(ToOwned::to_owned),
-                    request.name.clone(),
-                ));
-                session_approved || one_shot_approved
-            } else {
-                true
-            };
-            (registered, state.interceptors.clone(), approved)
-        };
-
-        if registered.definition.requires_approval'''
-              s, n = pattern.subn(repl, s, count=1)
-              if n != 1: raise SystemExit(f'core/execute_tool:{n}')
-          if 'approved_for_session.entry' not in s:
-              old = '''        let mut state = self.state()?;
-        let approval = state
-            .approvals
-            .remove(approval_id)
-            .ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
-        if matches!(
-            decision,
-            ApprovalDecision::Accept | ApprovalDecision::AcceptForSession
-        ) {
-            state.approved_tools.insert(approval.tool.clone());
-        }
-        drop(state);
-'''
-              new = '''        let mut state = self.state()?;
-        let approval = state
-            .approvals
-            .get(approval_id)
-            .cloned()
-            .ok_or_else(|| HarnessError::ApprovalNotFound(approval_id.into()))?;
-        match decision {
-            ApprovalDecision::Accept => {
-                state
-                    .approved_once
-                    .insert((approval.session_id.clone(), approval.tool.clone()));
-            }
-            ApprovalDecision::AcceptForSession => {
-                let session_id = approval.session_id.clone().ok_or_else(|| {
-                    HarnessError::InvalidConfig(
-                        "AcceptForSession requires a session-scoped approval".into(),
-                    )
-                })?;
-                state
-                    .approved_for_session
-                    .entry(session_id)
-                    .or_default()
-                    .insert(approval.tool.clone());
-            }
-            ApprovalDecision::Decline | ApprovalDecision::Cancel => {}
-        }
-        state.approvals.remove(approval_id);
-        drop(state);
-'''
-              if old not in s: raise SystemExit('core/resolve_approval')
-              s = s.replace(old, new, 1)
-          p.write_text(s)
-
-          t = root / 'mahayana-harness/tests/approval_scope.rs'
-          t.parent.mkdir(parents=True, exist_ok=True)
-          t.write_text(r'''use async_trait::async_trait;
-use mahayana_core::{ApprovalDecision, BuildProfile};
-use mahayana_harness::{HarnessError, MahayanaHarness, ToolDefinition};
-use mahayana_tool_host::{ToolCapabilities, ToolError, ToolHost, ToolRequest, ToolResult};
-use serde_json::{json, Value};
-use std::sync::Arc;
-
-struct EchoHost;
-#[async_trait]
-impl ToolHost for EchoHost {
-    async fn execute(&self, request: ToolRequest) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult { content: request.arguments, is_error: false })
-    }
-    fn capabilities(&self) -> ToolCapabilities {
-        ToolCapabilities::for_profile(BuildProfile::DesktopFull)
-    }
-}
-fn tool() -> ToolDefinition {
-    ToolDefinition { name: "guarded.write".into(), description: "approval test".into(), input_schema: Value::Null, read_only: false, requires_approval: true, tags: Vec::new() }
-}
-fn req() -> ToolRequest { ToolRequest { name: "guarded.write".into(), arguments: json!({"v": 1}) } }
-
-#[tokio::test]
-async fn approval_lifetimes_are_scoped() {
-    let h = MahayanaHarness::new(BuildProfile::DesktopFull);
-    let a = h.create_session("a").unwrap();
-    let b = h.create_session("b").unwrap();
-    h.register_tool(tool(), Arc::new(EchoHost)).unwrap();
-    let id = match h.execute_tool(Some(&a.id), req()).await { Err(HarnessError::ApprovalRequired(id)) => id, x => panic!("expected approval: {x:?}") };
-    h.resolve_approval(&id, ApprovalDecision::Accept).unwrap();
-    assert!(h.execute_tool(Some(&a.id), req()).await.is_ok());
-    assert!(matches!(h.execute_tool(Some(&a.id), req()).await, Err(HarnessError::ApprovalRequired(_))));
-    let id = match h.execute_tool(Some(&a.id), req()).await { Err(HarnessError::ApprovalRequired(id)) => id, x => panic!("expected approval: {x:?}") };
-    h.resolve_approval(&id, ApprovalDecision::AcceptForSession).unwrap();
-    assert!(h.execute_tool(Some(&a.id), req()).await.is_ok());
-    assert!(h.execute_tool(Some(&a.id), req()).await.is_ok());
-    assert!(matches!(h.execute_tool(Some(&b.id), req()).await, Err(HarnessError::ApprovalRequired(_))));
-}
-
-#[tokio::test]
-async fn session_approval_requires_session() {
-    let h = MahayanaHarness::new(BuildProfile::DesktopFull);
-    h.register_tool(tool(), Arc::new(EchoHost)).unwrap();
-    let id = match h.execute_tool(None, req()).await { Err(HarnessError::ApprovalRequired(id)) => id, x => panic!("expected approval: {x:?}") };
-    assert!(matches!(h.resolve_approval(&id, ApprovalDecision::AcceptForSession), Err(HarnessError::InvalidConfig(_))));
-}
-''')
-
-          # Services + protocol.
-          p = root / 'mahayana-harness-services/src/lib.rs'
-          s = p.read_text().replace('use std::collections::{BTreeMap, BTreeSet, VecDeque};', 'use std::collections::{BTreeMap, VecDeque};')
-          if 'pub fn list_schedules(&self)' not in s:
-              a = '    pub fn record_feedback(\n'
-              if a not in s: raise SystemExit('services/feedback')
-              methods = '''    pub fn list_schedules(&self) -> HarnessResult<Vec<ScheduleEntry>> {
-        Ok(self.state()?.schedules.values().cloned().collect())
-    }
-
-    pub fn get_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
-        self.state()?.schedules.get(schedule_id).cloned().ok_or_else(||
-            HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
-    }
-
-    pub fn delete_schedule(&self, schedule_id: &str) -> HarnessResult<ScheduleEntry> {
-        self.state()?.schedules.remove(schedule_id).ok_or_else(||
-            HarnessError::ServiceNotFound(format!("schedule:{schedule_id}")))
-    }
-
-'''
-              s = s.replace(a, methods + a, 1)
-          p.write_text(s)
-
-          p = root / 'mahayana-harness-protocol/src/lib.rs'
-          s = p.read_text()
-          if 'parts must share one MahayanaHarness runtime' not in s:
-              old = '''    pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        Ok(Self {
-            advanced: AdvancedHarnessServices::new(harness.clone()),
-            harness,
-            services,
-        })
-    }
-'''
-              new = '''    pub fn from_parts(harness: MahayanaHarness, services: HarnessServices) -> HarnessResult<Self> {
-        if !harness.shares_state_with(services.harness()) {
-            return Err(HarnessError::InvalidConfig(
-                "HarnessApi parts must share one MahayanaHarness runtime".into(),
-            ));
-        }
-        Ok(Self {
-            advanced: AdvancedHarnessServices::new(harness.clone()),
-            harness,
-            services,
-        })
-    }
-'''
-              if old not in s: raise SystemExit('protocol/from_parts')
-              s = s.replace(old, new, 1)
-          if '"schedule.list"' not in s:
-              a = '            "feedback.record" => to_value(self.services.record_feedback(\n'
-              if a not in s: raise SystemExit('protocol/feedback')
-              routes = '''            "schedule.list" => to_value(self.services.list_schedules()?),
-            "schedule.get" => to_value(self.services.get_schedule(required_str(&payload, "scheduleId")?)?),
-            "schedule.delete" => to_value(self.services.delete_schedule(required_str(&payload, "scheduleId")?)?),
-'''
-              s = s.replace(a, routes + a, 1)
-          p.write_text(s)
-
-          # UnifiedHost schedule -> existing FeatureHost Automation.
-          p = root / 'mahayana-unified-app-host/src/lib.rs'
-          s = p.read_text()
-          if 'fn harness_schedule_create' not in s:
-              old = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
-        self.journal
-            .lock()
-            .map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?
-            .execute(&self.harness, operation, payload)
-    }
-'''
-              new = '''    fn execute_harness(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
-        match operation {
-            "schedule.create" => self.harness_schedule_create(payload),
-            "schedule.setEnabled" => self.harness_schedule_set_enabled(payload),
-            "schedule.delete" => self.harness_schedule_delete(payload),
-            "schedule.run" => self.harness_schedule_run(payload),
-            _ => self.execute_harness_state(operation, payload),
-        }
-    }
-
-    fn execute_harness_state(&self, operation: &str, payload: Value) -> Result<Value, AppHostError> {
-        self.journal.lock().map_err(|_| AppHostError::Operation("harness journal lock poisoned".into()))?.execute(&self.harness, operation, payload)
-    }
-
-    fn harness_schedule_create(&self, payload: Value) -> Result<Value, AppHostError> {
-        let created = self.execute_harness_state("schedule.create", payload)?;
-        let id = required_string(&created, "id")?;
-        let session_id = required_string(&created, "sessionId")?;
-        let instruction = required_string(&created, "instruction")?;
-        let schedule = required_string(&created, "schedule")?;
-        let command = json!({"command": {"type": "automation.upsert", "requestId": format!("harness-schedule-upsert:{}:{}", id, now_ms()), "id": id.clone(), "name": format!("Harness schedule · {session_id}"), "prompt": instruction, "schedule": schedule.clone(), "trigger": {"kind": "schedule", "schedule": schedule}, "enabled": true}});
-        if let Err(error) = self.delegate("feature.execute", command) {
-            let _ = self.execute_harness_state("schedule.delete", json!({"scheduleId": id}));
-            return Err(error);
-        }
-        Ok(created)
-    }
-
-    fn harness_schedule_set_enabled(&self, payload: Value) -> Result<Value, AppHostError> {
-        let id = required_string(&payload, "scheduleId")?;
-        let enabled = payload.get("enabled").and_then(Value::as_bool).ok_or_else(|| AppHostError::InvalidRequest("enabled is required".into()))?;
-        self.delegate("feature.execute", json!({"command": {"type": "automation.setEnabled", "requestId": format!("harness-schedule-enabled:{}:{}", id, now_ms()), "id": id.clone(), "enabled": enabled}}))?;
-        self.execute_harness_state("schedule.setEnabled", payload)
-    }
-
-    fn harness_schedule_delete(&self, payload: Value) -> Result<Value, AppHostError> {
-        let id = required_string(&payload, "scheduleId")?;
-        self.delegate("feature.execute", json!({"command": {"type": "automation.delete", "requestId": format!("harness-schedule-delete:{}:{}", id, now_ms()), "id": id.clone()}}))?;
-        self.execute_harness_state("schedule.delete", payload)
-    }
-
-    fn harness_schedule_run(&self, payload: Value) -> Result<Value, AppHostError> {
-        let id = required_string(&payload, "scheduleId")?;
-        let schedule = self.execute_harness_state("schedule.get", json!({"scheduleId": id.clone()}))?;
-        let session_id = required_string(&schedule, "sessionId")?;
-        let accepted = self.delegate("feature.execute", json!({"command": {"type": "automation.run", "requestId": format!("harness-schedule-run:{}:{}", id, now_ms()), "id": id.clone()}}))?;
-        self.execute_harness_state("session.appendEvent", json!({"sessionId": session_id, "kind": "schedule/run", "eventPayload": {"scheduleId": id, "accepted": accepted.clone()}}))?;
-        Ok(json!({"schedule": schedule, "accepted": accepted}))
-    }
-'''
-              if old not in s: raise SystemExit('unified/execute_harness')
-              s = s.replace(old, new, 1)
-          if '| "schedule.delete"' not in s:
-              s = s.replace('            | "schedule.setEnabled"\n            | "feedback.record"', '            | "schedule.setEnabled"\n            | "schedule.delete"\n            | "feedback.record"', 1)
-          tail = s[s.index('fn is_journaled_operation'):]
-          if '"interaction.permissionPreset.register"' not in tail:
-              a = '            | "command.register"\n    )'
-              if a not in s: raise SystemExit('unified/journal-tail')
-              ops = ['interaction.permissionPreset.register','interaction.permissionPreset.activate','interaction.question.create','interaction.question.answer','agentPlan.enter','agentPlan.exit','bundle.register','preset.register','extension.register','extension.setEnabled','hook.register']
-              extra = ''.join(f'            | "{op}"\n' for op in ops)
-              s = s.replace(a, '            | "command.register"\n' + extra + '    )', 1)
-          p.write_text(s)
-
-          # Permanent gates.
-          p = Path('.github/workflows/mahayana-fast-checks.yml')
-          s = p.read_text()
-          if '-p mahayana-harness-advanced' not in s:
-              a = '          -p mahayana-harness-services\n          -p mahayana-harness-adapters\n'
-              if a not in s: raise SystemExit('ci/fast')
-              s = s.replace(a, '          -p mahayana-harness-services\n          -p mahayana-harness-advanced\n          -p mahayana-harness-adapters\n', 1)
-          p.write_text(s)
-
-          p = Path('.github/workflows/native-mobile.yml')
-          s = p.read_text()
-          old = '        run: cargo install cargo-ndk --locked\n'
-          new = '        run: command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked\n'
-          if old in s: s = s.replace(old, new, 1)
-          elif new not in s: raise SystemExit('ci/cargo-ndk')
-          p.write_text(s)
-          print('all idempotent Harness source patches applied')
-          PY
+      - name: Commit verified product source and cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Verified Harness source is already materialized.'
+            exit 0
+          fi
+          git commit -m 'feat(mahayana): finalize verified Rust-native Harness integration'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
