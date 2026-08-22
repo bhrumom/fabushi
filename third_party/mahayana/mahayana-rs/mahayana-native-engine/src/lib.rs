@@ -811,7 +811,7 @@ impl EngineBackend for NativeEngine {
                 .map_err(|error| KernelError::Backend(error.to_string()))?;
             let prompt = session
                 .prompt_queue
-                .next()
+                .take_next()
                 .ok_or_else(|| KernelError::Backend("prompt queue unexpectedly empty".into()))?;
             let result = self
                 .run_prompt(
