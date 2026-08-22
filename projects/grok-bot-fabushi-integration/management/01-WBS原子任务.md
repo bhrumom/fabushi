@@ -35,10 +35,10 @@
 | GBF-503 | M5 | 动画 timeline/composition engine | GBF-502 | 可组合可确定渲染 | deterministic animation tests | evidence/GBF-503 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
 | GBF-504 | M5 | 动画性能与无障碍 | GBF-503 | offscreen/reduced-motion/预算可验证 | perf + accessibility tests | evidence/GBF-504 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
 | GBF-505 | M5 | 移除生产 Grok 视觉/runtime 依赖 | GBF-501..504 | production dependency audit clean | dependency/source audit | evidence/GBF-505 | TESTED | frontend CI/merge pending | avatar PR + frontend gates |
-| GBF-601 | M6 | canonical data model 映射 | GBF-104,302 | 无长期重复会话/tool/permission model | schema review/migration test | evidence/GBF-601 | NOT_STARTED | M1/M3 | 建 schema map |
-| GBF-602 | M6 | crash/restart 恢复 | GBF-304,601 | 关键状态可恢复且无重复副作用 | fault injection | evidence/GBF-602 | NOT_STARTED | GBF-304/601 | 建恢复矩阵 |
-| GBF-603 | M6 | 统一 correlation/structured logging | GBF-203,303 | renderer->tool 链路可追踪且无秘密 | trace assertions/log audit | evidence/GBF-603 | NOT_STARTED | runtime | 统一 event fields |
-| GBF-604 | M6 | 性能基线与 regression gate | GBF-207,407,504 | 真实 baseline 固化并可阻止严重回归 | benchmark + CI gate | evidence/GBF-604 | NOT_STARTED | feature E2E | 收集 baseline |
+| GBF-601 | M6 | canonical data model 映射 | GBF-104,302 | 无长期重复会话/tool/permission model | schema review/migration test | evidence/GBF-601 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
+| GBF-602 | M6 | crash/restart 恢复 | GBF-304,601 | 关键状态可恢复且无重复副作用 | fault injection | evidence/GBF-602 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
+| GBF-603 | M6 | 统一 correlation/structured logging | GBF-203,303 | renderer->tool 链路可追踪且无秘密 | trace assertions/log audit | evidence/GBF-603 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
+| GBF-604 | M6 | 性能基线与 regression gate | GBF-207,407,504 | 真实 baseline 固化并可阻止严重回归 | benchmark + CI gate | evidence/GBF-604 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
 | GBF-701 | M7 | IPC/host threat model | GBF-201..205 | 威胁/缓解/残余风险齐全 | security review | evidence/GBF-701 | NOT_STARTED | M2 | 建 threat inventory |
 | GBF-702 | M7 | 权限/拒绝路径安全测试 | GBF-401..407,701 | high-risk denial suite green | security test suite | evidence/GBF-702 | NOT_STARTED | M4/M7 | 扩充安全用例 |
 | GBF-703 | M7 | 来源/许可证阻塞清零 | GBF-105 + impl | retained source blocking=0 | provenance audit | evidence/GBF-703 | NOT_STARTED | GBF-105 | 审查每个迁移 PR |

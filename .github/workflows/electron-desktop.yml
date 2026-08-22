@@ -122,6 +122,8 @@ jobs:
         run: python3 .github/scripts/assert-native-capability-semantics.py
       - name: Verify Electron edge, host lifecycle, and offline ASR contracts
         run: node --test desktop/electron/edge-ipc.test.cjs desktop/electron/host-process.test.cjs desktop/electron/native-capability-handlers.test.cjs desktop/electron/offline-asr.test.cjs
+      - name: Enforce Electron edge performance budget
+        run: node desktop/electron/edge-ipc.bench.cjs
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
