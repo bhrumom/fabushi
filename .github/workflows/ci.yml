@@ -191,7 +191,7 @@ jobs:
         run: npm test
 
   workflow-guardrails:
-    name: Post-Flutter migration guardrails
+    name: Canonical architecture guardrails
     needs: changes
     if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
@@ -204,7 +204,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/workflows/**
-      - name: Reject retired Flutter workflows and commands
+      - name: Reject retired Flutter/Tauri/Capacitor workflows and commands
         shell: bash
         run: |
           set -euo pipefail
@@ -215,20 +215,27 @@ jobs:
             .github/workflows/android-real-device-e2e.yml
             .github/workflows/publish-cd-release.yml
             .github/workflows/rollback-production.yml
+            .github/workflows/mobile-tauri.yml
+            .github/workflows/tauri-host-fast-checks.yml
+            .github/workflows/tauri-macos-app-store.yml
+            .github/workflows/tauri-macos-package.yml
           )
           for path in "${retired[@]}"; do
             if [ -e "$path" ]; then
-              echo "Retired Flutter workflow was reintroduced: $path" >&2
+              echo "Retired client workflow was reintroduced: $path" >&2
               exit 1
             fi
           done
           flutter_action='subosito/'"flutter-action"
+          tauri_action='tauri-apps/'"tauri-action"
           flutter_command='flutter '"(pub get|build|test|analyze)"
-          if grep -R -n -E "${flutter_action}|${flutter_command}" .github/workflows; then
-            echo "Flutter commands are not allowed in the migrated automatic workflow set." >&2
+          tauri_command='(^|[[:space:]])tauri '"(build|android|ios)"
+          capacitor_command='npx cap '"(sync|copy|update|build)"
+          if grep -R -n -E "${flutter_action}|${tauri_action}|${flutter_command}|${tauri_command}|${capacitor_command}" .github/workflows; then
+            echo "Retired Flutter/Tauri/Capacitor commands are not allowed in canonical workflows." >&2
             exit 1
           fi
-          echo "No Flutter Actions remain in the migrated workflow set."
+          echo "Canonical workflows contain no retired Flutter/Tauri/Capacitor build commands."
 
   electron-feature-host-contract:
     name: Electron Feature Host contract
@@ -248,8 +255,6 @@ jobs:
             /.github/scripts/assert-fabushi-desktop-architecture.py
             /.github/scripts/assert-native-capability-semantics.py
             /.github/scripts/assert-auth-entry-flow.py
-            /apps/fabushi-tauri/src-tauri/src/lib.rs
-            /apps/fabushi-tauri/src-tauri/src/e2e.rs
             /.github/scripts/assert-bot-mark-motion.py
             /.github/scripts/assert-product-ui-contracts.py
             /.github/scripts/build-offline-asr-engine.mjs
@@ -259,6 +264,7 @@ jobs:
             /desktop/electron/**
             /desktop/src/edge/**
             /desktop/src/main.tsx
+            /desktop/src/messaging-shell-v2.tsx
             /frontend/apps/host/**
             /frontend/apps/web/src/app/host/**
             /frontend/apps/web/src/app/remote-computer/**
@@ -326,4 +332,4 @@ jobs:
               exit 1
             fi
           done
-          echo "Diff-selected post-Flutter migration CI checks passed."
+          echo "Diff-selected canonical architecture CI checks passed."

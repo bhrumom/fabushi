@@ -7,17 +7,15 @@ This mini program is a native WeChat/Taro implementation. It does not use
 
 - Runtime: WeChat native components through Taro.
 - Shared layer: `@fabushi/shared` and `@fabushi/api-client`.
-- Flutter parity sources:
-  - `fabushi/lib/core/design_system/colors.dart`
-  - `fabushi/lib/core/design_system/app_theme.dart`
-  - `fabushi/lib/screens/globe_home_screen.dart`
-  - `fabushi/lib/screens/meditation_room_screen.dart`
-  - `fabushi/lib/screens/my_profile_screen.dart`
+- Product parity sources:
+  - `frontend/packages/shared/src/app-experience.ts`
+  - `frontend/apps/web/src/app/host/host-client.tsx`
+  - `mobile/android/app/src/main/java/com/ombhrum/fabushi/FabushiScreen.kt`
+  - `mobile/ios/Fabushi/FabushiApp.swift`
 
-Flutter does not officially compile a standard Flutter app to WeChat Mini
-Program native components. This app therefore reuses Flutter information
-architecture, design tokens, product copy, API contracts, and domain data while
-rendering the UI with native mini-program components.
+The mini program reuses the canonical product information architecture, design
+tokens, copy, API contracts, and domain data while rendering with native WeChat
+components. It does not embed any retired Flutter/Tauri/Capacitor application shell.
 
 ## Commands
 

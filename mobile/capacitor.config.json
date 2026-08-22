@@ -1,5 +1,0 @@
-{
-  "retired": true,
-  "replacement": "./src-tauri/tauri.conf.json",
-  "message": "Capacitor is retired. Fabushi mobile and desktop use the unified Tauri 2 + Mahayana Rust Host shell."
-}

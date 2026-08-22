@@ -14,6 +14,7 @@ test -f app-version.json || fail 'canonical app-version.json is missing'
 test -f .github/workflows/electron-desktop.yml || fail 'Electron desktop quality workflow is missing'
 test -f .github/workflows/native-mobile.yml || fail 'native mobile quality workflow is missing'
 test -f .github/workflows/native-electron-release.yml || fail 'native Electron release workflow is missing'
+test -f .github/workflows/google-play-delivery.yml || fail 'native Android Google Play delivery workflow is missing'
 
 grep -q '"electron"' desktop/package.json || fail 'desktop does not declare Electron'
 grep -q 'mahayana-app-host-desktop' desktop/package.json || fail 'Electron must build the desktop-only Rust sidecar wrapper'

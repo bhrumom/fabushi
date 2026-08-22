@@ -2,7 +2,7 @@ import { Button, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import {
   brand,
-  miniProgramFlutterParity,
+  miniProgramParity,
   miniProgramNativeLimitations,
 } from "@fabushi/shared";
 import "./index.scss";
@@ -10,7 +10,7 @@ import "./index.scss";
 const entries = [
   ["修行记录", "本地记录已接入，云端同步等待微信登录"],
   ["账号登录", "后续接入微信 code 换取大乘账号会话"],
-  ["隐私与设置", "复用 Flutter 设置页的信息架构"],
+  ["隐私与设置", "复用当前桌面/原生端设置的信息架构"],
   ["支持邮箱", "support@ombhrum.com"],
 ] as const;
 
@@ -48,8 +48,8 @@ export default function MePage() {
 
       <View className="section">
         <Text className="section-title">复用边界</Text>
-        {miniProgramFlutterParity.map((item) => (
-          <View className="item" key={item.flutter}>
+        {miniProgramParity.map((item) => (
+          <View className="item" key={item.source}>
             <Text className="item-title">{item.title}</Text>
             <Text className="copy">{item.nativeScope}</Text>
           </View>
