@@ -39,10 +39,10 @@
 | GBF-602 | M6 | crash/restart 恢复 | GBF-304,601 | 关键状态可恢复且无重复副作用 | fault injection | evidence/GBF-602 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
 | GBF-603 | M6 | 统一 correlation/structured logging | GBF-203,303 | renderer->tool 链路可追踪且无秘密 | trace assertions/log audit | evidence/GBF-603 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
 | GBF-604 | M6 | 性能基线与 regression gate | GBF-207,407,504 | 真实 baseline 固化并可阻止严重回归 | benchmark + CI gate | evidence/GBF-604 | TESTED | CI/merge pending | M6 PR + benchmark/contract gates |
-| GBF-701 | M7 | IPC/host threat model | GBF-201..205 | 威胁/缓解/残余风险齐全 | security review | evidence/GBF-701 | NOT_STARTED | M2 | 建 threat inventory |
-| GBF-702 | M7 | 权限/拒绝路径安全测试 | GBF-401..407,701 | high-risk denial suite green | security test suite | evidence/GBF-702 | NOT_STARTED | M4/M7 | 扩充安全用例 |
-| GBF-703 | M7 | 来源/许可证阻塞清零 | GBF-105 + impl | retained source blocking=0 | provenance audit | evidence/GBF-703 | NOT_STARTED | GBF-105 | 审查每个迁移 PR |
-| GBF-704 | M7 | secret/log/privacy 审计 | GBF-603,702 | 无秘密泄漏/多余持久化 | log/privacy tests | evidence/GBF-704 | NOT_STARTED | GBF-603/702 | 扫描 telemetry |
+| GBF-701 | M7 | IPC/host threat model | GBF-201..205 | 威胁/缓解/残余风险齐全 | security review + closure validator | evidence/GBF-701 | TESTED | GitHub CI/merge pending | M7 security PR + Actions |
+| GBF-702 | M7 | 权限/拒绝路径安全测试 | GBF-401..407,701 | high-risk denial suite green | security test suite | evidence/GBF-702 | TESTED | GitHub CI/merge pending | M7 security PR + Actions |
+| GBF-703 | M7 | 来源/许可证阻塞清零 | GBF-105 + impl | retained production source blocking=0; historical ambiguous source remains reference-only | provenance audit | evidence/GBF-703 | TESTED | GitHub CI/merge pending | M7 provenance gate + Actions |
+| GBF-704 | M7 | secret/log/privacy 审计 | GBF-603,702 | 无秘密泄漏/多余持久化 | log/privacy tests + closure validator | evidence/GBF-704 | TESTED | GitHub CI/merge pending | M7 security PR + Actions |
 | GBF-801 | M8 | 全平台回归 | M2..M7 | affected suites 全绿 | CI + platform E2E | evidence/GBF-801 | NOT_STARTED | M2-M7 | 启动 release candidate |
 | GBF-802 | M8 | 灰度与回滚演练 | GBF-801 | rollback 在目标环境验证 | runbook drill | evidence/GBF-802 | NOT_STARTED | GBF-801 | 执行回滚演练 |
 | GBF-803 | M8 | 正式发布 | GBF-801,802 | release/post-release smoke 通过 | GitHub release/deploy evidence | evidence/GBF-803 | NOT_STARTED | GBF-802 | 发布目标版本 |
