@@ -56,7 +56,6 @@ pub mod token_data {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use base64::Engine as _;
 
         fn jwt(payload: serde_json::Value) -> String {
             let header =
