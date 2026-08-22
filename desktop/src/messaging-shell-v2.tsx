@@ -139,6 +139,7 @@ type LocalCall = {
 
 type MessageMenu = { message: DisplayMessage; x: number; y: number } | null;
 type ForwardDialogState = { sourceConversationId: string; message: DisplayMessage } | null;
+type EditDialogState = { conversationId: string; messageId: string; originalText: string; text: string } | null;
 type InfoTab = 'media' | 'files' | 'links';
 
 const rootSurfaceKey = 'fabushi.desktop.root-surface.v2';
@@ -338,6 +339,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
   const [newDialog, setNewDialog] = useState<NewDialog>(null);
   const [messageMenu, setMessageMenu] = useState<MessageMenu>(null);
   const [forwardDialog, setForwardDialog] = useState<ForwardDialogState>(null);
+  const [editDialog, setEditDialog] = useState<EditDialogState>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachmentProgress, setAttachmentProgress] = useState<string | null>(null);
   const [localCall, setLocalCall] = useState<LocalCall | null>(null);
@@ -1120,9 +1122,28 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
       if (action === 'react') await selfHosted.setReaction(activePeer.conversationId, target.id, '👍');
       if (action === 'pin') await selfHosted.pinMessage(activePeer.conversationId, target.id, !target.pinned);
       if (action === 'edit') {
-        const text = window.prompt('编辑消息', target.text);
-        if (text && text !== target.text) await selfHosted.editText(activePeer.conversationId, target.id, text);
+        setEditDialog({
+          conversationId: activePeer.conversationId,
+          messageId: target.id,
+          originalText: target.text,
+          text: target.text,
+        });
       }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function saveEditedMessage() {
+    if (!editDialog) return;
+    const text = editDialog.text.trim();
+    if (!text || text === editDialog.originalText) {
+      setEditDialog(null);
+      return;
+    }
+    try {
+      await selfHosted.editText(editDialog.conversationId, editDialog.messageId, text);
+      setEditDialog(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -1478,6 +1499,7 @@ function MessengerWorkspace({ onOpenAi }: { onOpenAi: () => void }) {
 
       {messageMenu ? <MessageContextMenu menu={messageMenu} onAction={(action) => void handleMessageAction(action)} /> : null}
       {forwardDialog ? <ForwardMessageDialog message={forwardDialog.message} peers={peers.filter((peer) => peer.source === 'selfhosted' && Boolean(peer.conversationId) && peer.conversationId !== forwardDialog.sourceConversationId)} onClose={() => setForwardDialog(null)} onSelect={(peer) => void forwardToPeer(peer)} /> : null}
+      {editDialog ? <EditMessageDialog value={editDialog.text} onChange={(text) => setEditDialog((current) => current ? { ...current, text } : current)} onClose={() => setEditDialog(null)} onSave={() => void saveEditedMessage()} /> : null}
       {newDialog ? <NewConversationDialog dialog={newDialog} bots={bots} onChange={setNewDialog} onClose={() => setNewDialog(null)} onSave={() => void saveNewDialog()} /> : null}
       {communityDialogPeer ? <CommunityAdminDialog peer={communityDialogPeer} community={selfCommunities.find((item) => item.conversationId === communityDialogPeer.conversationId) ?? defaultCommunityState(communityDialogPeer.conversationId!, selfHosted.actorId)} actors={selfActors} actorId={selfHosted.actorId} onClose={() => setCommunityDialogPeer(null)} onSave={(community) => void saveCommunity(community)} onSetMember={(conversationId, member) => void selfHosted.setCommunityMember(conversationId, member).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onCreateInvite={(community) => { const invite = { id: `invite:${crypto.randomUUID()}`, conversationId: community.conversationId, creatorId: selfHosted.actorId, token: crypto.randomUUID().replaceAll('-', ''), name: '邀请链接', createdAtMs: Date.now(), expiresAtMs: undefined, memberLimit: undefined, joinRequest: community.joinRequestRequired, revoked: false, joinedCount: 0 }; void selfHosted.createInviteLink(invite).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))); }} onRevokeInvite={(conversationId, inviteId) => void selfHosted.revokeInviteLink(conversationId, inviteId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onJoinDecision={(conversationId, requesterId, approved) => void selfHosted.respondCommunityJoin(conversationId, requesterId, approved).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onUpsertTopic={(topic) => void selfHosted.upsertForumTopic(topic).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} onDeleteTopic={(conversationId, topicId) => void selfHosted.deleteForumTopic(conversationId, topicId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
       {activeStory ? <StoryViewer story={activeStory} owner={selfActors.find((actor) => actor.id === activeStory.ownerId)} own={activeStory.ownerId === selfHosted.actorId} onClose={() => setActiveStory(null)} onReact={(reaction) => void reactToActiveStory(reaction)} onDelete={() => void selfHosted.deleteStory(activeStory.id).then(() => setActiveStory(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
@@ -1527,6 +1549,14 @@ function ForwardMessageDialog({ message, peers, onClose, onSelect }: { message: 
   </section></div>;
 }
 
+function EditMessageDialog({ value, onChange, onClose, onSave }: { value: string; onChange: (value: string) => void; onClose: () => void; onSave: () => void }) {
+  return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
+    <header><div><strong>编辑消息</strong><small>修改后会同步到 Fabushi 自建会话</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
+    <label><span>消息内容</span><textarea autoFocus data-testid="edit-message-input" value={value} onChange={(event) => onChange(event.target.value)} rows={4} placeholder="编辑消息内容" /></label>
+    <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!value.trim()} onClick={onSave}>保存</button></footer>
+  </section></div>;
+}
+
 function NewConversationDialog({ dialog, bots, onChange, onClose, onSave }: { dialog: Exclude<NewDialog, null>; bots: BotSummary[]; onChange: React.Dispatch<React.SetStateAction<NewDialog>>; onClose: () => void; onSave: () => void }) {
   return <div className={styles.backdrop} onMouseDown={onClose}><section className={styles.dialog} onMouseDown={(event) => event.stopPropagation()}>
     <header><div><strong>{dialog.type === 'group' ? '新建群组' : '新建频道'}</strong><small>{dialog.type === 'group' ? '现有 AI 群组 Host 会执行 Bot 多轮协作' : 'Fabushi 自建广播会话'}</small></div><button type="button" onClick={onClose}><X size={17} /></button></header>
@@ -1534,14 +1564,14 @@ function NewConversationDialog({ dialog, bots, onChange, onClose, onSave }: { di
     {dialog.type === 'channel' ? <label><span>描述</span><textarea value={dialog.description} onChange={(event) => onChange((current) => current?.type === 'channel' ? { ...current, description: event.target.value } : current)} rows={3} placeholder="频道简介" /></label> : null}
     {dialog.type === 'group' ? <div className={styles.memberPicker}><span>选择 AI Bot</span>{bots.map((bot) => {
       const selected = dialog.selectedBotIds.has(bot.id);
-      return <button key={bot.id} type="button" data-selected={selected} onClick={() => onChange((current) => {
+      return <button key={bot.id} type="button" data-testid={`group-bot-${bot.id}`} data-selected={selected} onClick={() => onChange((current) => {
         if (!current || current.type !== 'group') return current;
         const selectedBotIds = new Set(current.selectedBotIds);
         if (selectedBotIds.has(bot.id)) selectedBotIds.delete(bot.id); else selectedBotIds.add(bot.id);
         return { ...current, selectedBotIds };
       })}><span className={styles.avatarSmall}>{avatarText(bot.name)}</span><div><strong>{bot.name}</strong><small>{bot.description}</small></div>{selected ? <Check size={16} /> : <Plus size={16} />}</button>;
     })}</div> : null}
-    <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!dialog.name.trim()} onClick={onSave}>{dialog.type === 'group' ? '创建群组' : '创建频道'}</button></footer>
+    <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primaryButton} disabled={!dialog.name.trim() || (dialog.type === 'group' && dialog.selectedBotIds.size === 0)} onClick={onSave}>{dialog.type === 'group' ? '创建群组' : '创建频道'}</button></footer>
   </section></div>;
 }
 
