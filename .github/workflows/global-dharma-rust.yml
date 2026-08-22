@@ -5,12 +5,21 @@ on:
     paths:
       - native/global-dharma/**
       - third_party/mahayana/codex-rs/**
+      - third_party/mahayana/mahayana-rs/SOURCES.lock
       - third_party/mahayana/mahayana-rs/mahayana-agent-codex/**
       - third_party/mahayana/mahayana-rs/mahayana-agent-responses/**
       - third_party/mahayana/mahayana-rs/mahayana-cli/**
       - third_party/mahayana/mahayana-rs/mahayana-core/**
       - third_party/mahayana/mahayana-rs/mahayana-ffi/**
+      - third_party/mahayana/mahayana-rs/mahayana-kernel/**
+      - third_party/mahayana/mahayana-rs/mahayana-mcp-runtime/**
+      - third_party/mahayana/mahayana-rs/mahayana-model/**
+      - third_party/mahayana/mahayana-rs/mahayana-native-agent/**
+      - third_party/mahayana/mahayana-rs/mahayana-native-engine/**
+      - third_party/mahayana/mahayana-rs/mahayana-orchestrator/**
       - third_party/mahayana/mahayana-rs/mahayana-runtime/**
+      - third_party/mahayana/mahayana-rs/mahayana-workspace-engine/**
+      - scripts/check-mahayana-source-boundary.py
       - scripts/install-mahayana.sh
       - scripts/test-install-mahayana.sh
       - .github/workflows/global-dharma-rust.yml
@@ -55,6 +64,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+      - name: Verify Mahayana source ownership boundary
+        run: python3 scripts/check-mahayana-source-boundary.py
       - uses: dtolnay/rust-toolchain@stable
       - name: Restore Mahayana Cargo cache
         uses: Swatinem/rust-cache@v2
@@ -66,6 +77,7 @@ jobs:
       - run: >-
           cargo test --locked
           --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml
+          --package mahayana-kernel
           --package mahayana-core
           --package mahayana-agent-codex
           --package mahayana-agent-responses
