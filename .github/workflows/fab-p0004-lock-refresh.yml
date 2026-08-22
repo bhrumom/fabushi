@@ -1,6 +1,12 @@
 name: FAB-P0004 lock refresh
 
 on:
+  push:
+    branches:
+      - fab-p0004-m3-ci-closure
+    paths:
+      - ".github/workflows/fab-p0004-lock-refresh.yml"
+      - "third_party/mahayana/mahayana-rs/Cargo.lock"
   pull_request:
     branches: [main]
     paths:
@@ -15,8 +21,10 @@ permissions:
 jobs:
   refresh-lock:
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'fab-p0004-m3-ci-closure'
+      (github.event_name == 'push' && github.ref_name == 'fab-p0004-m3-ci-closure') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.head_ref == 'fab-p0004-m3-ci-closure')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout FAB-P0004 branch
