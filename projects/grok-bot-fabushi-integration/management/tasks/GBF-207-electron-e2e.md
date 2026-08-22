@@ -6,14 +6,14 @@
 - Objective: 验证当前 Electron 架构关键 Grok/Fabushi 用户旅程。
 - Source requirement IDs/references: GBR-002, GBR-007; `source/grok-bot融合优化.txt`; M1 evidence.
 - Stage: M2
-- Status: IN_PROGRESS (GitHub E2E pending)
+- Status: IN_PROGRESS (E2E defects fixed; rerun pending)
 - In scope: 当前 `main` 与 pinned Grok source 的能力级差异、正式 Fabushi/Mahayana 归属、实现/测试/CI/证据。
 - Out of scope: wholesale merge 历史 Grok 分支；把 vendor 0.20 二进制/构建产物重新带回生产。
 - Dependencies: GBF-201..206.
 - Implementation branch: `gbf/m2-electron-host-convergence-20260822`
 - PR: pending
 - Started: 2026-08-22 17:03+08
-- Updated: 2026-08-22 17:09+08
+- Updated: 2026-08-22 17:51+08
 - Completed: —
 
 ## Acceptance criteria
