@@ -36,9 +36,11 @@ function hydratePaymentSparseCheckout() {
     'sparse-checkout',
     'set',
     '--no-cone',
+    '/.github/scripts/**',
     '/fabushi/web/**',
+    '/frontend/**',
     '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/**',
-    '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs',
+    '/third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**',
     '/third_party/mahayana/mahayana-rs/mahayana-pay-worker/**',
   ]);
 }
