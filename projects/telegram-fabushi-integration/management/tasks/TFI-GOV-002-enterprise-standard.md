@@ -2,7 +2,7 @@
 
 - Project: `FABUSHI-TELEGRAM-FUSION`
 - Task ID: `TFI-GOV-002`
-- Status: `IN_PROGRESS`
+- Status: `IMPLEMENTED`
 - Started: `2026-08-22`
 - Updated: `2026-08-22`
 
@@ -10,34 +10,41 @@
 
 Bring the existing Telegram integration project folder up to the repository's current enterprise project-folder standard without changing the project's product scope or source-of-truth rules.
 
-## Scope
+## Implemented
 
-- add explicit ownership;
-- add dependency/blocker register;
-- add issue/action register;
-- add runbook index and initial operational runbooks;
-- close M0 post-merge bookkeeping with canonical `main` evidence;
-- move project metadata from planning-only to active implementation;
-- preserve existing roadmap/WBS/ADR history.
+- added `OWNERS.md` with product/architecture/client/CI/project-record accountability;
+- added `management/06-依赖与阻塞.md` without replacing the existing PR/branch rules file;
+- added `management/08-问题与行动项.md`;
+- added `runbooks/README.md`, messaging-server, SQLite migration and rollback runbooks;
+- moved `PROJECT.yaml` from `PLANNING_BASELINE` to `IMPLEMENTATION_ACTIVE`, current stage M1;
+- closed M0 records against PR #1987 protected merge-queue evidence;
+- refreshed status report, DOC-20 and file index;
+- recorded active M1 tasks #1988 and #1990 as dependencies/actions.
 
 ## Acceptance criteria
 
-1. Required enterprise project files exist under the same authoritative project folder.
-2. M0 reflects PR #1987 merged through the protected merge queue and verified on `main`.
-3. Active M1 work (#1988/#1990) is represented as current dependencies/actions, not hidden in chat.
-4. `PROJECT.yaml`, status report, file index and project evidence agree on active implementation state.
-5. Governance-only CI/merge-queue checks pass and the files are verified on `main`.
+1. Required enterprise project files exist under the same authoritative project folder: IMPLEMENTED.
+2. M0 reflects PR #1987 merged through protected merge queue and verified on `main`: IMPLEMENTED.
+3. Active M1 work (#1988/#1990) is represented as current dependencies/actions: IMPLEMENTED.
+4. `PROJECT.yaml`, status report and file index agree on active implementation state: IMPLEMENTED.
+5. Governance-only CI/merge-queue checks pass and files are verified on `main`: PENDING PR CI/MERGE.
 
 ## Branch / PR
 
 - Branch: `project/telegram-enterprise-standard`
-- PR: pending
+- PR: pending creation
 
 ## Evidence
 
-- M0 audit PR #1987 merged at `5aeca75a1e9f6c5bd9fc376cf697012004c0766c`.
-- `projects/telegram-fabushi-integration/` is the repository-authoritative source of truth.
+- M0 audit PR #1987 merge: `5aeca75a1e9f6c5bd9fc376cf697012004c0766c`.
+- Canonical project: `projects/telegram-fabushi-integration/`.
+- New governance files: `OWNERS.md`, dependency/blocker register, action register, `runbooks/`.
+- Active implementation: M1.T06 #1988; M1.T02 #1990.
+
+## Remaining gate
+
+Do not promote this task to `TESTED` until its PR is green, merges through protected `main`, and the canonical files are re-read from `main`.
 
 ## Next action
 
-Add missing standard files and reconcile project status after M0 merge.
+Create governance PR, pass repository checks, merge through protected main, then close TFI-GOV-002 in canonical project evidence.
