@@ -5,7 +5,7 @@
 - **Task ID:** MSR-104
 - **Status:** in-progress
 - **Started:** 2026-08-22T16:55:00+08:00
-- **Updated:** 2026-08-22T16:55:00+08:00
+- **Updated:** 2026-08-22T22:20:00+08:00
 - **Completed:** null
 
 ## Objective
@@ -33,19 +33,21 @@ MSR-102.
 ## Verification
 `cargo test -p mahayana-kernel -p mahayana-native-engine --profile ci`; source-boundary check; project acceptance trace.
 
+The normative SLI/SLO and alert-threshold specification is `projects/mahayana-sovereign-runtime/docs/09-runtime-observability-slo.md`.
+
 ## Branch / commit / PR
-Branch: `feat/msr-native-runtime-parity`
-Commit: pending
-PR: pending
+Branch: `feat/msr-sovereign-runtime-final`
+Commit: SLO specification introduced at `f14858f48914589d7dd371cf437d88d3a5bbff37`; final implementation head pending.
+PR: #2017
 
 ## Implementation summary
-Pending implementation.
+Provider-neutral telemetry primitives and native runtime instrumentation exist in `mahayana-kernel::telemetry` / `mahayana-native-engine`. The product-owned SLI/SLO, alerting, error-classification and privacy rules are now documented in `docs/09-runtime-observability-slo.md`.
 
 ## Evidence
-Pending CI/merge evidence.
+Implementation/CI evidence remains pending exact-final-head Actions and canonical-main verification. This task must not be marked passed before those gates complete.
 
 ## Blockers / risks
 Telemetry must not capture prompts, secrets or raw tool payloads by default.
 
 ## Next action
-Add kernel telemetry primitives and instrument the native execution path.
+Run the final kernel/native-engine telemetry tests and source-boundary gate on the exact #2017 final head, then record merge/main evidence.
