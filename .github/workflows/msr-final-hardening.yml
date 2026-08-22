@@ -1,0 +1,525 @@
+name: MSR Final Runtime Hardening
+
+on:
+  push:
+    branches:
+      - feat/msr-sovereign-runtime-final
+    paths:
+      - .github/workflows/msr-final-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - name: Patch final acceptance gaps
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''use mahayana_kernel::supervisor::{
+              ApprovalLedger, ApprovalOutcome, ApprovalRecord, LoopDisposition, LoopPolicy, LoopState,
+              PermissionDecision, PermissionKey, PermissionLedger, PermissionMemory,
+          };''',
+          '''use mahayana_kernel::supervisor::{
+              ApprovalLedger, ApprovalOutcome, ApprovalRecord, LoopDisposition, LoopPolicy, LoopState,
+              OracleStatus, PermissionDecision, PermissionKey, PermissionLedger, PermissionMemory,
+              TaskRecord, TaskSupervisor, VerificationMode, VerificationOracle,
+          };''', 'supervisor imports')
+
+          replace_once(
+          '''struct NativeSnapshotState {
+              session: NativeSession,
+              memory: MemoryStore,
+              workflows: HashMap<String, Workflow>,
+              subagents: SubagentScheduler,
+              hooks: HookRegistry,
+          }''',
+          '''struct NativeSnapshotState {
+              session: NativeSession,
+              memory: MemoryStore,
+              workflows: HashMap<String, Workflow>,
+              subagents: SubagentScheduler,
+              hooks: HookRegistry,
+              #[serde(default)]
+              supervisor: TaskSupervisor,
+          }''', 'snapshot supervisor')
+
+          replace_once(
+          '''    subagents: Mutex<SubagentScheduler>,
+              hooks: Mutex<HookRegistry>,
+              telemetry: Arc<RuntimeTelemetry>,''',
+          '''    subagents: Mutex<SubagentScheduler>,
+              hooks: Mutex<HookRegistry>,
+              supervisor: Mutex<TaskSupervisor>,
+              telemetry: Arc<RuntimeTelemetry>,''', 'engine supervisor field')
+
+          replace_once(
+          '''            hooks: Mutex::new(HookRegistry::default()),
+                      telemetry: Arc::new(RuntimeTelemetry::default()),''',
+          '''            hooks: Mutex::new(HookRegistry::default()),
+                      supervisor: Mutex::new(TaskSupervisor::default()),
+                      telemetry: Arc::new(RuntimeTelemetry::default()),''', 'engine supervisor init')
+
+          marker = '''    async fn execute_active_prompt(
+                  &self,'''
+          helpers = '''    fn start_supervised_attempt(
+                  &self,
+                  prompt: &PromptEntry,
+                  resumed: bool,
+              ) -> Result<String, KernelError> {
+                  let mut supervisor = self
+                      .supervisor
+                      .lock()
+                      .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))?;
+                  if supervisor.task(&prompt.id).is_none() {
+                      let mut task = TaskRecord::new(
+                          prompt.id.clone(),
+                          prompt.text.clone(),
+                          Vec::<String>::new(),
+                          VerificationMode::ObjectiveRequired,
+                      )
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                      task.add_oracle(
+                          VerificationOracle::required("model_completion")
+                              .map_err(|error| KernelError::Backend(error.to_string()))?,
+                      )
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                      supervisor
+                          .add_task(task)
+                          .map_err(|error| KernelError::Backend(error.to_string()))?;
+                      supervisor
+                          .start_task(&prompt.id)
+                          .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  } else if resumed {
+                      supervisor
+                          .resume_task(&prompt.id)
+                          .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  }
+                  let (attempt_id, disposition) = supervisor
+                      .begin_attempt(&prompt.id, format!("prompt:{}", prompt.id), now_ms())
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  if disposition == LoopDisposition::Interrupt {
+                      return Err(KernelError::PolicyDenied(
+                          "Mahayana supervisor interrupted a repeated production attempt".into(),
+                      ));
+                  }
+                  Ok(attempt_id)
+              }
+
+              fn pause_supervised_task(&self, prompt_id: &str) -> Result<(), KernelError> {
+                  self.supervisor
+                      .lock()
+                      .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))?
+                      .pause_task(prompt_id)
+                      .map_err(|error| KernelError::Backend(error.to_string()))
+              }
+
+              fn complete_supervised_task(
+                  &self,
+                  prompt_id: &str,
+                  attempt_id: &str,
+              ) -> Result<(), KernelError> {
+                  let mut supervisor = self
+                      .supervisor
+                      .lock()
+                      .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))?;
+                  supervisor
+                      .finish_attempt(prompt_id, attempt_id, now_ms(), true)
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  supervisor
+                      .begin_verification(prompt_id)
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  supervisor
+                      .task_mut(prompt_id)
+                      .map_err(|error| KernelError::Backend(error.to_string()))?
+                      .record_oracle(
+                          "model_completion",
+                          OracleStatus::Passed,
+                          Some("native production turn completed".into()),
+                      )
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  supervisor
+                      .complete_task(prompt_id)
+                      .map_err(|error| KernelError::Backend(error.to_string()))
+              }
+
+              fn fail_supervised_task(
+                  &self,
+                  prompt_id: &str,
+                  attempt_id: &str,
+                  reason: &str,
+              ) -> Result<(), KernelError> {
+                  let mut supervisor = self
+                      .supervisor
+                      .lock()
+                      .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))?;
+                  supervisor
+                      .finish_attempt(prompt_id, attempt_id, now_ms(), false)
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  supervisor
+                      .task_mut(prompt_id)
+                      .map_err(|error| KernelError::Backend(error.to_string()))?
+                      .record_oracle("model_completion", OracleStatus::Failed, Some(reason.into()))
+                      .map_err(|error| KernelError::Backend(error.to_string()))?;
+                  supervisor
+                      .fail_task(prompt_id, reason)
+                      .map_err(|error| KernelError::Backend(error.to_string()))
+              }
+
+          ''' + marker
+          replace_once(marker, helpers, 'supervisor helpers')
+
+          replace_once(
+          '''    ) -> Result<(), KernelError> {
+                  let attempt_id = Self::start_attempt(session, operation_id, &prompt.id);''',
+          '''    ) -> Result<(), KernelError> {
+                  let supervisor_attempt_id =
+                      self.start_supervised_attempt(&prompt, !append_user_prompt)?;
+                  let attempt_id = Self::start_attempt(session, operation_id, &prompt.id);''', 'start production supervision')
+
+          replace_once(
+          '''        if control.suspended.load(Ordering::SeqCst) {
+                      Self::finish_attempt(session, &attempt_id, OperationAttemptState::Suspended);''',
+          '''        if control.suspended.load(Ordering::SeqCst) {
+                      self.pause_supervised_task(&prompt.id)?;
+                      Self::finish_attempt(session, &attempt_id, OperationAttemptState::Suspended);''', 'pause supervision')
+
+          replace_once(
+          '''            Ok(_) => {
+                          session
+                              .prompt_queue''',
+          '''            Ok(_) => {
+                          self.complete_supervised_task(&prompt.id, &supervisor_attempt_id)?;
+                          session
+                              .prompt_queue''', 'complete supervision')
+
+          replace_once(
+          '''            Err(error) => {
+                          session
+                              .prompt_queue''',
+          '''            Err(error) => {
+                          self.fail_supervised_task(
+                              &prompt.id,
+                              &supervisor_attempt_id,
+                              &error.to_string(),
+                          )?;
+                          session
+                              .prompt_queue''', 'fail supervision')
+
+          replace_once(
+          '''            hooks: self
+                          .hooks
+                          .lock()
+                          .map_err(|_| KernelError::Backend("hook registry poisoned".into()))?
+                          .clone(),
+                  };''',
+          '''            hooks: self
+                          .hooks
+                          .lock()
+                          .map_err(|_| KernelError::Backend("hook registry poisoned".into()))?
+                          .clone(),
+                      supervisor: self
+                          .supervisor
+                          .lock()
+                          .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))?
+                          .clone(),
+                  };''', 'snapshot supervisor clone')
+
+          replace_once(
+          '''            metadata: json!({"snapshotVersion": 1}),''',
+          '''            metadata: json!({"snapshotVersion": 2}),''', 'snapshot version')
+
+          replace_once(
+          '''        *self
+                      .hooks
+                      .lock()
+                      .map_err(|_| KernelError::Backend("hook registry poisoned".into()))? = state.hooks;
+                  self.sessions''',
+          '''        *self
+                      .hooks
+                      .lock()
+                      .map_err(|_| KernelError::Backend("hook registry poisoned".into()))? = state.hooks;
+                  *self
+                      .supervisor
+                      .lock()
+                      .map_err(|_| KernelError::Backend("task supervisor poisoned".into()))? =
+                      state.supervisor;
+                  self.sessions''', 'restore supervisor')
+
+          replace_once(
+          '''    use std::collections::VecDeque;''',
+          '''    use std::collections::VecDeque;
+              use std::sync::atomic::AtomicUsize;
+              use tokio::sync::Notify;''', 'test imports')
+
+          replace_once(
+          '''    #[derive(Default)]
+              struct Events(Mutex<Vec<KernelEvent>>);''',
+          '''    #[derive(Default)]
+              struct BlockingModel {
+                  calls: AtomicUsize,
+                  first_started: Notify,
+                  release_first: Notify,
+              }
+
+              #[async_trait]
+              impl ModelRuntime for BlockingModel {
+                  async fn infer(
+                      &self,
+                      _request: ModelRequest,
+                      events: SharedModelEventSink,
+                  ) -> Result<(), ModelError> {
+                      let call = self.calls.fetch_add(1, Ordering::SeqCst);
+                      if call == 0 {
+                          self.first_started.notify_one();
+                          self.release_first.notified().await;
+                      }
+                      let text = if call == 0 { "discarded" } else { "resumed" };
+                      events.emit(ModelEvent::Completed {
+                          output: json!({
+                              "output": [{"type":"message", "content":[{"type":"output_text", "text":text}]}]
+                          }),
+                      })
+                  }
+
+                  fn provider_mode(&self) -> ModelProviderMode {
+                      ModelProviderMode::LocalModel
+                  }
+              }
+
+              #[derive(Default)]
+              struct Events(Mutex<Vec<KernelEvent>>);''', 'blocking model')
+
+          replace_once(
+          '''        assert_eq!(restored, session);
+              }
+          }''',
+          '''        assert_eq!(restored, session);
+                  let tasks = snapshot
+                      .state
+                      .pointer("/supervisor/tasks")
+                      .and_then(Value::as_object)
+                      .expect("supervisor tasks in snapshot");
+                  assert_eq!(tasks.len(), 1);
+                  let task = tasks.values().next().expect("production task");
+                  assert_eq!(task.get("state").and_then(Value::as_str), Some("succeeded"));
+                  assert_eq!(
+                      task.pointer("/oracles/model_completion/status")
+                          .and_then(Value::as_str),
+                      Some("passed")
+                  );
+              }
+
+              #[tokio::test]
+              async fn suspended_prompt_is_reclaimed_without_duplicate_user_input() {
+                  let model = Arc::new(BlockingModel::default());
+                  let engine = Arc::new(
+                      NativeEngine::new(model.clone(), NativeEngineConfig::embedded("model"))
+                          .expect("create engine"),
+                  );
+                  let session = engine
+                      .open_session(OpenSessionRequest {
+                          profile: mahayana_kernel::RuntimeProfile::Headless,
+                          workspace_root: None,
+                          model: None,
+                          metadata: Value::Null,
+                      })
+                      .await
+                      .expect("open session");
+                  let first_operation = OperationId::new();
+                  let run_engine = engine.clone();
+                  let run_session = session.clone();
+                  let run_operation = first_operation.clone();
+                  let run_task = tokio::spawn(async move {
+                      run_engine
+                          .run(
+                              RunRequest {
+                                  session_id: run_session,
+                                  operation_id: run_operation,
+                                  input: "resume once".into(),
+                                  policy: ExecutionPolicy::default(),
+                                  required_capabilities: CapabilitySet::new([Capability::Model]),
+                                  metadata: json!({"clientMessageId":"resume-once"}),
+                              },
+                              Arc::new(Events::default()),
+                          )
+                          .await
+                  });
+
+                  model.first_started.notified().await;
+                  engine
+                      .suspend_operation(SuspendOperationRequest {
+                          operation_id: first_operation,
+                          reason: Some("acceptance-test".into()),
+                          metadata: Value::Null,
+                      })
+                      .await
+                      .expect("suspend active operation");
+                  model.release_first.notify_one();
+                  run_task
+                      .await
+                      .expect("join suspended run")
+                      .expect("suspended run is reclaimable");
+
+                  let suspended = engine
+                      .snapshot_session(&session)
+                      .await
+                      .expect("snapshot suspended session");
+                  assert_eq!(
+                      suspended
+                          .state
+                          .pointer("/session/active_prompt/text")
+                          .and_then(Value::as_str),
+                      Some("resume once")
+                  );
+                  let suspended_history = suspended
+                      .state
+                      .pointer("/session/history")
+                      .and_then(Value::as_array)
+                      .expect("suspended history");
+                  assert_eq!(
+                      suspended_history
+                          .iter()
+                          .filter(|item| {
+                              item.get("role").and_then(Value::as_str) == Some("user")
+                                  && item.get("content").and_then(Value::as_str)
+                                      == Some("resume once")
+                          })
+                          .count(),
+                      1
+                  );
+
+                  engine
+                      .resume_operation(
+                          ResumeOperationRequest {
+                              session_id: session.clone(),
+                              operation_id: OperationId::new(),
+                              policy: ExecutionPolicy::default(),
+                              required_capabilities: CapabilitySet::new([Capability::Model]),
+                              metadata: Value::Null,
+                          },
+                          Arc::new(Events::default()),
+                      )
+                      .await
+                      .expect("resume reclaimed prompt");
+                  let resumed = engine
+                      .snapshot_session(&session)
+                      .await
+                      .expect("snapshot resumed session");
+                  assert!(
+                      resumed
+                          .state
+                          .pointer("/session/active_prompt")
+                          .is_some_and(Value::is_null)
+                  );
+                  let resumed_history = resumed
+                      .state
+                      .pointer("/session/history")
+                      .and_then(Value::as_array)
+                      .expect("resumed history");
+                  assert_eq!(
+                      resumed_history
+                          .iter()
+                          .filter(|item| {
+                              item.get("role").and_then(Value::as_str) == Some("user")
+                                  && item.get("content").and_then(Value::as_str)
+                                      == Some("resume once")
+                          })
+                          .count(),
+                      1
+                  );
+                  assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+              }
+          }''', 'native acceptance tests')
+
+          path.write_text(text)
+
+          workspace = Path('third_party/mahayana/mahayana-rs/mahayana-workspace-engine/src/lib.rs')
+          wtext = workspace.read_text()
+          needle = '''    #[test]
+              fn rejects_parent_traversal() {
+                  assert!(safe_relative(Path::new("../outside")).is_err());
+              }
+          }'''
+          addition = '''    #[cfg(unix)]
+              #[test]
+              fn restore_rejects_symlink_escape_without_touching_external_target() {
+                  use std::os::unix::fs::symlink;
+
+                  let root = fixture_root();
+                  let engine = WorkspaceEngine::open(&root).expect("open workspace");
+                  let checkpoint = engine.create_checkpoint(None).expect("checkpoint");
+                  fs::remove_dir_all(root.join("src")).expect("remove managed source dir");
+                  let victim = root
+                      .parent()
+                      .expect("root parent")
+                      .join(format!("mahayana-symlink-victim-{}", Uuid::new_v4()));
+                  fs::create_dir_all(&victim).expect("create external target");
+                  fs::write(victim.join("keep.txt"), "external").expect("seed external target");
+                  symlink(&victim, root.join("src")).expect("install malicious symlink");
+
+                  let result = engine.restore_checkpoint(&checkpoint.id);
+                  assert!(matches!(result, Err(WorkspaceError::UnsafeRelativePath(_))));
+                  assert_eq!(
+                      fs::read_to_string(victim.join("keep.txt")).expect("read external marker"),
+                      "external"
+                  );
+                  assert!(!victim.join("lib.rs").exists());
+
+                  fs::remove_file(root.join("src")).expect("remove malicious symlink");
+                  fs::remove_dir_all(victim).expect("cleanup external target");
+                  fs::remove_dir_all(root).expect("cleanup workspace");
+              }
+
+              #[test]
+              fn rejects_parent_traversal() {
+                  assert!(safe_relative(Path::new("../outside")).is_err());
+              }
+          }'''
+          if wtext.count(needle) != 1:
+              raise SystemExit(f'workspace symlink test: expected exactly one marker, found {wtext.count(needle)}')
+          workspace.write_text(wtext.replace(needle, addition, 1))
+          PY
+
+      - name: Format and verify acceptance tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-native-engine --package mahayana-workspace-engine
+          cargo clippy --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --package mahayana-native-engine --package mahayana-workspace-engine --all-targets -- -D warnings
+
+      - name: Commit verified hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/mahayana-native-engine/src/lib.rs third_party/mahayana/mahayana-rs/mahayana-workspace-engine/src/lib.rs
+          git commit -m "feat(msr): persist supervision and prove safe recovery"
+          git push origin HEAD:feat/msr-sovereign-runtime-final
