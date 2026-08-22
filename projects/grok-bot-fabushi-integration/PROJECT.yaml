@@ -1,0 +1,26 @@
+project_id: FABUSHI-GROK-BOT-FUSION
+name: Grok Bot 全功能融合进 Fabushi
+version: v1.0
+baseline_date: 2026-08-22
+status: PLANNING_BASELINE
+source_of_truth: source/grok-bot融合优化.txt
+architecture:
+  target_product: Fabushi
+  desktop: Electron
+  mobile: Native
+  core: Rust Mahayana Kernel
+  ai_native: true
+  local_first: true
+  self_owned_architecture: true
+status_model:
+  - NOT_STARTED
+  - IN_PROGRESS
+  - IMPLEMENTED
+  - TESTED
+  - E2E_VERIFIED
+  - RELEASED
+governance:
+  repository: bhrumom/fabushi
+  authoritative_branch: main
+  project_path: projects/grok-bot-fabushi-integration
+  task_record_required_before_completion: true
