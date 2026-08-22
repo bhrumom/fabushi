@@ -196,10 +196,8 @@ mod tests {
     #[test]
     fn capability_negotiation_fails_before_provider_execution() {
         let available = ModelCapabilities::new([ModelFeature::StreamingText]);
-        let required = ModelCapabilities::new([
-            ModelFeature::StreamingText,
-            ModelFeature::ToolCalls,
-        ]);
+        let required =
+            ModelCapabilities::new([ModelFeature::StreamingText, ModelFeature::ToolCalls]);
         assert!(matches!(
             available.require(&required),
             Err(ModelError::CapabilityUnavailable(_))

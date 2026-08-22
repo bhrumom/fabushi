@@ -469,9 +469,7 @@ pub enum KernelError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Capability, CapabilitySet, ExecutionPolicy, ResumeOperationRequest, SessionId,
-    };
+    use super::{Capability, CapabilitySet, ExecutionPolicy, ResumeOperationRequest, SessionId};
 
     #[test]
     fn identifiers_are_product_owned_and_unique() {

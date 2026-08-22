@@ -225,8 +225,7 @@ impl WorkspaceEngine {
             let relative_string = path_string(&relative);
             if !expected.contains(&relative_string) {
                 ensure_no_symlink_components(&self.root, &relative)?;
-                fs::remove_file(&current)
-                    .map_err(|error| WorkspaceError::Io(error.to_string()))?;
+                fs::remove_file(&current).map_err(|error| WorkspaceError::Io(error.to_string()))?;
             }
         }
 
@@ -939,7 +938,9 @@ mod tests {
         let worktree_content = fs::read_to_string(Path::new(&worktree.path).join("src/lib.rs"))
             .expect("read worktree");
         assert!(worktree_content.contains("pub struct App"));
-        engine.remove_worktree(&worktree.id).expect("remove worktree");
+        engine
+            .remove_worktree(&worktree.id)
+            .expect("remove worktree");
         fs::remove_dir_all(root).expect("cleanup");
     }
 
@@ -976,7 +977,11 @@ mod tests {
             ])
             .output()
             .expect("commit fixture");
-        assert!(output.status.success(), "commit failed: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         let engine = WorkspaceEngine::open(&root).expect("open workspace");
         let worktree = engine.create_worktree(None).expect("create git worktree");
@@ -989,9 +994,14 @@ mod tests {
             .output()
             .expect("list worktrees");
         assert!(String::from_utf8_lossy(&list.stdout).contains(&worktree.path));
-        engine.remove_worktree(&worktree.id).expect("remove git worktree");
+        engine
+            .remove_worktree(&worktree.id)
+            .expect("remove git worktree");
         assert!(!Path::new(&worktree.path).exists());
-        let parent = root.parent().expect("root parent").join(EXTERNAL_WORKTREE_DIRECTORY);
+        let parent = root
+            .parent()
+            .expect("root parent")
+            .join(EXTERNAL_WORKTREE_DIRECTORY);
         let _ = fs::remove_dir_all(parent);
         fs::remove_dir_all(root).expect("cleanup");
     }
