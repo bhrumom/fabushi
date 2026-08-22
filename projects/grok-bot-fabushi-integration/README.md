@@ -4,17 +4,18 @@
 
 ## 当前已验证状态
 
-- 当前阶段：**M0 — 项目基线与治理**。
+- **M0 企业级项目基线已完成**：PR #1982 经 required `CI result` 成功并通过 merge queue 合入 `main`，merge commit `6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c`；随后已从 `main` 重新读取项目元数据和原始需求验证 canonical state。
+- 当前阶段：**M1 — 全量源码/功能/来源盘点**。
 - 已确认历史输入分支：`grok-bot-latest-source-fusion`、`grok-bot-0.16-source-fusion`。
 - 已确认 latest 分支包含 Electron main/preload/host/native-capability/native-edge/offline-ASR/desktop-E2E 等输入。
 - 已确认当前 `main` 对部分同名 Electron 文件已有后续演进，因此历史 Grok 分支是只读审计输入，禁止整分支覆盖 `main`。
-- 当前下一验收门：GBF-001 项目基线 PR -> required CI -> protected main -> post-merge main verification。
+- 当前下一验收门：GBF-101 固定 `main`、latest、0.16 三个精确 ref/commit，随后 GBF-102..105 完成文件/能力/diff/provenance 100% 盘点。
 - **M1–M8 的运行时代码迁移尚未被宣称完成。**
 
 ## 权威位置
 
 - Repository: `bhrumom/fabushi`
-- Branch after merge: `main`
+- Branch: `main`
 - Project path: `projects/grok-bot-fabushi-integration/`
 - Source precedence: `SOURCE_OF_TRUTH.md`
 
