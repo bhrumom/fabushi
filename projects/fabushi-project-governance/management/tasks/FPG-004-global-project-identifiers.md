@@ -1,14 +1,16 @@
 # FPG-004 — Global Project Identifiers
 
+- Portfolio Project ID: `FAB-P0002`
+- Project Key: `FPG`
 - Task ID: `FPG-004`
 - Project: Fabushi Project Governance
 - Status: `in-progress`
 - Started: 2026-08-22T16:06:00+08:00
-- Updated: 2026-08-22T16:06:00+08:00
+- Updated: 2026-08-22T16:18:00+08:00
 - Completed: pending
 - Branch: `governance/global-project-identifiers`
-- Commit: pending
-- PR: pending
+- Implementation head before PR evidence update: `9d11de5d90b9e284904071845bd4c391f2785a2b`
+- PR: `#1996`
 
 ## Objective
 
@@ -45,7 +47,7 @@ Existing projects are ordered by the first formal project-folder commit merged t
 4. Grok Bot fusion — PR #1982 / commit `6d1e9cd7a475e8058d5d8512f5c3a0c21da8ed9c`.
 5. Mahayana sovereign runtime — PR #1989 / commit `88db63c328c3cba39971f3942509cb0b582502bc`.
 
-## Planned allocation
+## Allocation
 
 | Portfolio Project ID | Project Key | Slug |
 |---|---|---|
@@ -56,6 +58,15 @@ Existing projects are ordered by the first formal project-folder commit merged t
 | FAB-P0005 | MSR | mahayana-sovereign-runtime |
 
 Next allocatable ID after migration: `FAB-P0006`.
+
+## Implementation summary
+
+- Added authoritative `projects/PORTFOLIO.json`, human index, and Project ID policy.
+- Added ADR-0003 for immutable global Project IDs and stable Project Keys.
+- Backfilled all five canonical project `PROJECT.yaml` files while retaining historical aliases.
+- Added stdlib-only `scripts/check-project-portfolio.py` for format/uniqueness/sequence/folder-parity/base-immutability checks.
+- Added `Project portfolio governance` GitHub Actions workflow.
+- Updated root `AGENTS.md`, governance Skill, project-folder standard, task lifecycle, requirements, architecture, WBS, acceptance, status, changelog, evidence, and source-of-truth records.
 
 ## Acceptance criteria
 
@@ -71,22 +82,25 @@ Next allocatable ID after migration: `FAB-P0006`.
 
 - Static registry validator in GitHub Actions.
 - Review all `PROJECT.yaml` files and registry entries.
-- PR required checks / merge queue.
+- PR #1996 required checks / merge queue.
 - Post-merge `main` verification.
 
-## Evidence plan
+## Evidence
 
 - `projects/fabushi-project-governance/evidence/FPG-004/README.md`
-- Branch commit SHAs.
-- PR number and review/check evidence.
-- Workflow run/job for portfolio validator.
-- Post-merge main file reads.
+- Implementation branch head before PR evidence update: `9d11de5d90b9e284904071845bd4c391f2785a2b`.
+- PR #1996.
+- CI/run/merge/main evidence: pending.
 
 ## Risks
 
-- Historical references may call old values “project_id”; mitigate by preserving aliases and documenting `project_key` versus canonical portfolio `project_id`.
+- Historical references may call old values “project_id”; mitigated by preserving aliases and documenting `project_key` versus canonical portfolio `project_id`.
 - Concurrent new project creation can race for the same next sequence; registry merge conflicts are intentional serialization and must be resolved before merge.
+
+## Blockers
+
+- PR #1996 CI and merge/main verification are pending.
 
 ## Next action
 
-Implement registry/policy, backfill all canonical project metadata, add validator + CI, align repository governance instructions, then run GitHub Actions and close only after protected merge/main verification.
+Wait for GitHub Actions on the current PR head, fix any portfolio/governance failure without weakening the checks, merge through the normal protected process, then re-fetch canonical `main` and close FPG-004 only after evidence is complete.
