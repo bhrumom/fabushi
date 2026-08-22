@@ -1,22 +1,24 @@
 name: GBF M4 one-shot cross-platform remediation
 
 on:
-  pull_request:
+  push:
+    branches:
+      - gbf/m4-computer-control-convergence-20260822
     paths:
       - '.github/workflows/gbf-m4-remediation.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   remediate:
-    if: github.head_ref == 'gbf/m4-computer-control-convergence-20260822'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.head_ref }}
+          ref: gbf/m4-computer-control-convergence-20260822
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -35,21 +37,17 @@ jobs:
 
           computer = Path('third_party/mahayana/mahayana-rs/mahayana-computer/src/lib.rs')
           text = computer.read_text(encoding='utf-8')
-          replacements = {
-              'action.duration_ms.unwrap_or(300)': 'action.wait_ms.unwrap_or(300)',
-              'action.scroll_amount.unwrap_or(1)': 'action.amount.unwrap_or(1)',
-          }
-          for old, new in replacements.items():
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one {old!r}, found {count}')
-              text = text.replace(old, new, 1)
+          text = text.replace('action.duration_ms.unwrap_or(300)', 'action.wait_ms.unwrap_or(300)')
+          text = text.replace('action.scroll_amount.unwrap_or(1)', 'action.amount.unwrap_or(1)')
+          if 'action.duration_ms' in text or 'action.scroll_amount' in text:
+              raise SystemExit('stale portable ComputerAction field remains')
           computer.write_text(text, encoding='utf-8')
 
           protocol = Path('third_party/mahayana/mahayana-rs/mahayana-host-protocol/src/lib.rs')
           text = protocol.read_text(encoding='utf-8')
-          anchor = '''    #[test]\n    fn event_json_uses_camel_case_fields() {\n'''
-          test = r'''    #[test]
+          if 'computer_action_duration_and_scroll_amount_match_the_react_contract' not in text:
+              anchor = '''    #[test]\n    fn event_json_uses_camel_case_fields() {\n'''
+              test = r'''    #[test]
     fn computer_action_duration_and_scroll_amount_match_the_react_contract() {
         let action: ComputerAction = serde_json::from_str(
             r#"{"action":"drag","x":1,"y":2,"x2":3,"y2":4,"durationMs":375,"amount":7}"#,
@@ -73,7 +71,6 @@ jobs:
     }
 
 '''
-          if 'computer_action_duration_and_scroll_amount_match_the_react_contract' not in text:
               if text.count(anchor) != 1:
                   raise SystemExit('protocol test anchor is not unique')
               text = text.replace(anchor, test + anchor, 1)
@@ -87,9 +84,9 @@ jobs:
           from pathlib import Path
           workflow = Path('.github/workflows/mahayana-fast-checks.yml')
           text = workflow.read_text(encoding='utf-8')
-          marker = '''      - name: Restore targeted Cargo cache\n'''
-          step = '''      - name: Install Linux native capture/input dependencies\n        shell: bash\n        run: |\n          sudo apt-get update\n          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \\\n            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev\n\n'''
           if 'Install Linux native capture/input dependencies' not in text:
+              marker = '''      - name: Restore targeted Cargo cache\n'''
+              step = '''      - name: Install Linux native capture/input dependencies\n        shell: bash\n        run: |\n          sudo apt-get update\n          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \\\n            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev\n\n'''
               if text.count(marker) != 1:
                   raise SystemExit('Mahayana cache step anchor is not unique')
               text = text.replace(marker, step + marker, 1)
