@@ -196,3 +196,42 @@ test('installed Mini App opens from the unified Messenger surface', async () => 
     await rm(appDataDir, { recursive: true, force: true });
   }
 });
+
+test('desktop Messenger persists per-peer drafts and performs real in-conversation search', async () => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-draft-search-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    const assistant = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
+    await assistant.click();
+    const input = page.getByTestId('messenger-input');
+    const draft = '每个会话独立保存的草稿';
+    await input.fill(draft);
+
+    await page.reload();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+    await page.getByTestId('peer-legacy:conversation:codex:agent:assistant').click();
+    await expect(page.getByTestId('messenger-input')).toHaveValue(draft);
+
+    const marker = `会话搜索唯一标记-${Date.now()}`;
+    await page.getByTestId('messenger-input').fill(marker);
+    await page.getByTestId('messenger-send').click();
+    await expect(page.getByText(marker, { exact: true })).toBeVisible();
+
+    await page.getByTitle('搜索当前会话').click();
+    const search = page.getByTestId('conversation-search-input');
+    await search.fill(marker);
+    await expect(page.locator('article').filter({ hasText: marker })).toHaveCount(1);
+
+    await search.fill('绝对不存在的会话内搜索结果-20260822');
+    await expect(page.getByTestId('message-search-empty')).toBeVisible();
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
