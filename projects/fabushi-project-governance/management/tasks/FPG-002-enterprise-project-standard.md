@@ -3,7 +3,7 @@
 - **Task ID:** FPG-002
 - **Status:** in-progress
 - **Started:** 2026-08-22T14:09:00+08:00
-- **Updated:** 2026-08-22T14:09:00+08:00
+- **Updated:** 2026-08-22T14:22:00+08:00
 - **Completed:** pending
 
 ## Objective
@@ -61,13 +61,15 @@ See `../06-依赖与阻塞.md`.
 ## Branch / PR
 
 - Branch: `project/fpg-002-enterprise-project-standard`
-- PR: pending creation
+- Implementation PR: #1980
+- Initial PR head before this evidence update: `79d80ba3aab78fbdefd613802f194c5064473122`
+- Current branch head: this task-record update and subsequent project-record commits; final PR head will be read from GitHub before CI/merge evidence is closed.
 
 ## Implementation summary
 
-In progress. The branch now contains enterprise standard changes to root `AGENTS.md`, governance Skill/reference/lifecycle, expanded project metadata/source/ownership, new governance engineering documents, milestones/dependencies/issues, ADR-0002, and runbook index.
+In progress. The branch contains enterprise standard changes to root `AGENTS.md`, governance Skill/reference/lifecycle, expanded project metadata/source/ownership, new governance engineering documents, milestones/dependencies/issues, ADR-0002, runbook index, FPG-002 task/evidence, and a branch project-folder audit.
 
-The Task Orchestration Skill has been rebuilt as a complete bundle with the new standard and validated locally with Skill Creator tooling.
+The Task Orchestration Skill has been rebuilt as a complete bundle with the new standard and validated with Skill Creator tooling.
 
 ## Skill package evidence
 
@@ -84,8 +86,8 @@ See `../../evidence/FPG-002/README.md`.
 
 ## Blockers / risks
 
-No implementation blocker. Canonical completion remains blocked on GitHub PR required checks, protected merge, post-merge verification, and project-record closure.
+No implementation blocker. Canonical completion remains blocked on GitHub PR #1980 required checks, protected merge, post-merge verification, and project-record closure.
 
 ## Next action
 
-Finish standard project self-migration records, create PR, run required CI, merge through repository policy, verify `main`, and then close FPG-002.
+Run PR #1980 required CI, inspect selected/skipped jobs, merge through repository policy, verify `main`, then close FPG-002 in a final records-only change if required.
