@@ -1,0 +1,46 @@
+name: Mahayana auth lockfile materialize once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mahayana-auth-lock-materialize-pr.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/mahayana-native-auth-boundary'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Materialize reproducible Mahayana lockfile
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo generate-lockfile
+
+      - name: Remove one-shot lockfile materializer
+        run: rm -f .github/workflows/mahayana-auth-lock-materialize-pr.yml
+
+      - name: Commit lockfile and one-shot cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/Cargo.lock .github/workflows/mahayana-auth-lock-materialize-pr.yml
+          if git diff --cached --quiet; then
+            echo 'Cargo.lock is already materialized.'
+            exit 0
+          fi
+          git commit -m 'chore(mahayana): refresh native auth lockfile after main sync'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
