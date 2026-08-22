@@ -12,9 +12,8 @@ shift
 case "$environment" in
   production)
     # Production currently has Apple IAP and Alipay enabled, so their server
-    # credentials are mandatory. The standalone /api/sms provider is optional:
-    # when it is not configured the handler returns 503 and Firebase Phone Auth
-    # remains independently available.
+    # credentials are mandatory. The retired leaderboard/transfer-statistics
+    # subsystem is intentionally absent from this list.
     required=(
       JWT_SIGNING_SECRET
       ADMIN_EMAILS
@@ -25,7 +24,6 @@ case "$environment" in
       APPLE_PRIVATE_KEY
       APPLE_BUNDLE_ID
       FIREBASE_PROJECT_ID
-      TRANSFER_RECEIPT_SECRET
     )
     ;;
   development)
@@ -34,7 +32,6 @@ case "$environment" in
     required=(
       JWT_SIGNING_SECRET
       ADMIN_EMAILS
-      TRANSFER_RECEIPT_SECRET
     )
     ;;
   *)
