@@ -24,7 +24,7 @@ async function launchDesktopApp(appDataDir: string) {
 async function completeBrowserLogin(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded');
   await expect.poll(async () => {
-    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger'];
+    const testIds = ['onboarding-gate', 'login-gate', 'host-status', 'open-messenger', 'messenger-workspace'];
     for (const testId of testIds) {
       if (await page.getByTestId(testId).isVisible().catch(() => false)) return true;
     }
@@ -42,13 +42,17 @@ async function completeBrowserLogin(page: Page): Promise<void> {
   await expect.poll(async () => {
     const hostState = await page.getByTestId('host-status').getAttribute('data-state').catch(() => null);
     if (hostState === 'ready') return true;
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
     return page.getByTestId('open-messenger').isVisible().catch(() => false);
   }, { timeout: 15_000 }).toBe(true);
 }
 
 async function openMessenger(page: Page): Promise<void> {
-  await page.getByTestId('open-messenger').click();
-  await expect(page.getByTestId('messenger-workspace')).toBeVisible();
+  const workspace = page.getByTestId('messenger-workspace');
+  if (!await workspace.isVisible().catch(() => false)) {
+    await page.getByTestId('open-messenger').click();
+  }
+  await expect(workspace).toBeVisible();
   await expect(page.getByTitle('聊天')).toBeVisible();
 }
 
