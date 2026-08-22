@@ -1,10 +1,10 @@
 # FCM-003 — Agent/Skill Governance CI Classification
 
 - **Task ID:** FCM-003
-- **Status:** in-progress
+- **Status:** passed
 - **Started:** 2026-08-22T14:24:00+08:00
-- **Updated:** 2026-08-22T14:50:00+08:00
-- **Completed:** pending
+- **Updated:** 2026-08-22T14:55:00+08:00
+- **Completed:** 2026-08-22T14:54:20+08:00
 
 ## Objective
 
@@ -55,18 +55,22 @@ Prevent repository-governance-only changes under `.agent/skills/**`, root Markdo
 ## Branch / PR
 
 - Branch: `project/fcm-003-agent-skill-ci-classification`
-- PR: pending
+- PR: #1984
 
 ## Evidence
 
 - Trigger: PR #1980 / CI run `32556780549`.
-- Implementation/CI/merge evidence: pending.
+- Implementation commit: `9187fb6f8cfbca8e9ac1f25a61aa12bb6a4fa0a5`.
+- PR CI: run `32558117683`, success.
+- Merge-group CI: run `32558147639`, success; required `CI result` passed.
+- Merge queue commit on `main`: `3a06560ce2b9d8d850f6f15e008ae9b0cf1f997b`.
+- Post-merge `main` read verified the `.agent/skills/**` matcher.
 
 ## Blockers / risks
 
-- No implementation blocker.
-- Local repository disk is nearly full; repository policy forbids local builds/tests, so verification is delegated to GitHub Actions.
+- No remaining blocker.
+- Local heavy verification was intentionally not run; repository policy delegates builds/tests to GitHub Actions.
 
 ## Next action
 
-Commit and push the classifier + project records, open PR, verify required CI and merge queue, then close FCM-003 on canonical `main`.
+Merge this closure/smoke PR, verify the `.agent/skills/**`-only governance fast path on PR and merge-group CI, then verify canonical `main`.

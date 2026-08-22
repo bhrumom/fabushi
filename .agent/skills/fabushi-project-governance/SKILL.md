@@ -83,6 +83,7 @@ Do not rely on remembered requirements when the project folder can resolve them.
 - Track dependencies/blockers in `management/06-依赖与阻塞.md` and open questions/actions in `management/08-问题与行动项.md`.
 - Store durable evidence or indexes under `evidence/<task-id>/`; link large build artifacts, workflow runs, releases, PRs, commits, or deployment checks instead of copying binaries.
 - Update runbooks when a task changes repeatable operational procedures.
+- CI classification note: repository-governance files under `.agent/skills/**` are governance/docs-safe inputs; runtime plugin code under `.agents/plugins/**` remains an MCP product-domain input and unknown non-document paths must continue to fail safe.
 
 ## Completion gate
 
