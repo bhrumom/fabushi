@@ -3,11 +3,11 @@
 - **Project ID**: `FAB-P0001`
 - **Project Key**: `TFI`
 - **Task ID**: `M2-NET-001`
-- **WBS**: `M2.T01`, `M2.T03`, `M2.T04` (and reuses existing `M2.T02` auth/session foundation)
-- **Status**: `IMPLEMENTED`
+- **WBS**: `M2.T01`, `M2.T02`, `M2.T03`, `M2.T04`
+- **Status**: `IN_PROGRESS`
 - **Started**: `2026-08-22`
 - **Updated**: `2026-08-22`
-- **Depends on**: `M1.T02` current-main SQLite landing
+- **Depends on**: M1 tested foundation — resolved
 
 ## Objective
 
@@ -15,43 +15,39 @@ Expose the canonical Rust `MessagingService<SqliteStateStore>` over a self-hoste
 
 ## Implementation
 
-- Adds `tungstenite 0.30` WebSocket transport.
-- Reuses Messaging Protocol v2 text/JSON envelopes.
-- Reuses scoped `FileAccessTokenStore` actor/device/session authorization.
-- TCP and WebSocket share the same authenticated command executor.
-- Bounded application/message frame size.
-- Explicit binary application-frame rejection.
-- Server heartbeat Ping/Pong with inactivity timeout.
-- Deterministic `serve_one` entrypoint for real localhost socket contract tests.
-- Production durable state remains the M1 SQLite store.
+- `tungstenite 0.30` self-hosted WebSocket transport.
+- Messaging Protocol v2 text/JSON envelopes.
+- Existing scoped `FileAccessTokenStore` actor/device/session authorization.
+- TCP and WebSocket share one authenticated command executor and one `MessagingService<SqliteStateStore>` loader.
+- Bounded application/message frames and explicit binary-frame rejection.
+- Server Ping/Pong heartbeat with inactivity timeout.
+- Deterministic `serve_one` entrypoint for real localhost socket contracts.
+
+## Clean-current-main landing
+
+Historical PR #1993 contained the intended implementation and passed its product gates, but it was stacked on older project history. Clean PR #2001 was created instead.
+
+After #1998 landed, unrelated Fabushi projects advanced `main`; therefore #2001 was rebuilt again from canonical `main` commit `c9bfa320ac4e3e27cc2dee3e80bbd558c08f4cb5`. Runtime/project delta was replayed into one clean code commit `c1ddb97a16df5eccab7310ba1fb3fe17b161a003`, after which project governance/acceptance records were reconciled on the same branch.
+
+The clean compare at that point was `main` + one M2-NET delta with only the intended gateway/server/test/project files; no historical M1 commit stack remained.
 
 ## Acceptance criteria
 
-1. A valid account/device/session token can execute Protocol v2 over a real WebSocket connection.
-2. Actor/device/session mismatch is rejected as unauthorized.
-3. Ping/Pong heartbeat keeps a live connection healthy and timeout logic is configured defensively.
-4. Oversized application frames are rejected.
-5. Binary application frames are rejected because Protocol v2 is UTF-8 JSON.
-6. TCP and WebSocket use the same messaging service and authorization executor.
-7. Messaging Product Gate and Mahayana fast checks pass on the clean current stack.
-8. Protected merge and canonical-main verification complete.
-
-## Historical evidence
-
-The earlier implementation PR #1993 passed:
-- Messaging Product Gate `32560118577`: SUCCESS
-- Mahayana fast checks `32560118567`: SUCCESS
-- Explicit automerge `32560118574`: SUCCESS
-- verified implementation head: `c31943c34b0fbf1b1378f39855cb6e2150d2a33e`
-
-Historical evidence does not replace current clean-stack CI.
+1. Valid actor/device/session token executes Protocol v2 over a real WebSocket — implementation present; current-head CI required.
+2. Identity mismatch is rejected — contract test present; current-head CI required.
+3. Ping/Pong keeps healthy connection alive and invalid heartbeat configuration is rejected — contract/unit tests present.
+4. Oversized application frames are rejected — contract test present.
+5. Binary application frames are rejected — contract test present.
+6. TCP/WebSocket share one messaging service and authorization executor — implementation present.
+7. Messaging Product Gate, Mahayana fast checks, repository/self-hosted/governance checks pass on the final clean head — **PENDING final-head results**.
+8. Protected merge and canonical-main verification complete — **PENDING**.
 
 ## Branch / PR
 
 - Branch: `feat/telegram-m2-websocket-main-sync`
-- Base while stacked: `feat/telegram-m1-sqlite-main-sync`
-- Clean replacement PR: pending creation.
-- Historical PR #1993 will be superseded for landing after the clean PR is accepted.
+- PR: #2001
+- Base: `main`
+- Historical PR: #1993 — provenance only; to be closed as superseded after #2001 lands.
 
 ## Evidence
 
@@ -62,4 +58,4 @@ Historical evidence does not replace current clean-stack CI.
 
 ## Next action
 
-Open clean stacked PR, run current-head CI, then retarget to `main` after M1.T02 lands and merge through protected-main governance.
+Use the final branch head after governance reconciliation, require fresh current-head GitHub Actions, merge #2001, re-read canonical `main`, then update this record to `TESTED` and retarget #2002.
