@@ -30,6 +30,7 @@ mahayana-conversation.workspace = true
 mahayana-core.workspace = true
 mahayana-kernel.workspace = true
 mahayana-mcp-runtime.workspace = true
+mahayana-harness.workspace = true
 mahayana-miniapp.workspace = true
 mahayana-model.workspace = true
 mahayana-native-agent.workspace = true
