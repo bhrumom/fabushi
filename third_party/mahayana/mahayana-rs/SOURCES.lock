@@ -24,3 +24,4 @@ vendor_types_allowed=adapter-boundaries-only
 legacy_codex_ids=read-compatible-only
 canonical_agent_provider=mahayana-agent
 canonical_agent_conversation=mahayana:agent:assistant
+convergence_pr=1971
