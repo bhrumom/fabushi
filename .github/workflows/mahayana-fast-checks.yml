@@ -5,6 +5,7 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - native/mahayana-messaging/**
       - third_party/mahayana/mahayana-rs/**
+      - scripts/check-mahayana-source-boundary.py
       - .github/workflows/mahayana-fast-checks.yml
   workflow_dispatch:
 
@@ -26,7 +28,7 @@ jobs:
   protocol-and-bridge:
     name: Rust protocol, Host, and bridge fast gate
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     env:
       CARGO_INCREMENTAL: "1"
     defaults:
@@ -40,6 +42,10 @@ jobs:
           sparse-checkout: |
             /native/mahayana-messaging/**
             /third_party/mahayana/**
+            /scripts/check-mahayana-source-boundary.py
+
+      - name: Verify Mahayana source ownership boundary
+        run: python3 ../../../scripts/check-mahayana-source-boundary.py
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -50,11 +56,39 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: mahayana-fast-v4
+          shared-key: mahayana-fast-v5
           cache-all-crates: true
 
       - name: Verify formatting
         run: cargo fmt --all -- --check
+
+      - name: Test sovereign kernel, supervision, and legacy bridge
+        run: >-
+          cargo test
+          -p mahayana-kernel
+          -p mahayana-agent-kernel-bridge
+          --profile ci
+
+      - name: Test native orchestration and workspace engines
+        run: >-
+          cargo test
+          -p mahayana-orchestrator
+          -p mahayana-workspace-engine
+          --profile ci
+
+      - name: Test native model and coding agent engine
+        run: >-
+          cargo test
+          -p mahayana-model
+          -p mahayana-native-engine
+          --profile ci
+
+      - name: Test native MCP transport and Agent adapter
+        run: >-
+          cargo test
+          -p mahayana-mcp-runtime
+          -p mahayana-native-agent
+          --profile ci
 
       - name: Test protocol and MiniApp bridge
         run: >-
