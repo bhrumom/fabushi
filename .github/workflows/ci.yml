@@ -127,18 +127,17 @@ jobs:
     steps:
       - name: Checkout Worker inputs
         uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github/scripts
+            fabushi/web
+            frontend
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker
+            third_party/mahayana/mahayana-rs/mahayana-pay-worker
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Materialize cross-tree Worker contract inputs
-        working-directory: .
-        shell: bash
-        run: |
-          set -euo pipefail
-          git restore --source=HEAD --worktree --             .github/scripts             frontend             third_party/mahayana/mahayana-rs/mahayana-platform-worker
-          test -f .github/scripts/assert-worker-security-secrets.sh
-          test -f third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs
       - name: Check Worker JavaScript syntax
         shell: bash
         run: |
@@ -151,14 +150,9 @@ jobs:
           set -euo pipefail
           printf '{"type":"module"}\n' > package.json
           find tests -maxdepth 1 -name '*.test.js' -print0 | sort -z > /tmp/worker-tests
-          while IFS= read -r -d '' test_file; do
-            case "$test_file" in
-              tests/platform-control-plane.test.js|tests/security-hardening.test.js)
-                git -C ../.. restore --source=HEAD --worktree --                   .github/scripts                   frontend                   third_party/mahayana/mahayana-rs/mahayana-platform-worker
-                ;;
-            esac
-            node "$test_file"
-          done < /tmp/worker-tests
+          if [ -s /tmp/worker-tests ]; then
+            xargs -0 -n1 node < /tmp/worker-tests
+          fi
       - name: Validate Worker bundle with Wrangler dry-run
         run: npx --yes wrangler@latest deploy --dry-run --outdir ../../worker-dry-run
 
