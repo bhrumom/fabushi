@@ -3,55 +3,72 @@
 - **Project**: `FABUSHI-TELEGRAM-FUSION`
 - **Task ID**: `M1.T06`
 - **Stage**: `M1 Rust Core 骨架`
-- **Status**: `IN_PROGRESS`
+- **Status**: `TESTED`
 - **Started**: `2026-08-22`
 - **Updated**: `2026-08-22`
 - **Source**: `../../source/完整telegram融合进fabushi.txt`; `../wbs/M1.md`
 
 ## Objective
 
-补齐 canonical `native/mahayana-messaging` 的 SQLite 持久化，使项目不再只依赖 Memory/JSON snapshot，并为后续 local-first 会话/消息索引和跨端恢复建立版本化数据库基础。
+补齐 canonical `native/mahayana-messaging` 的 SQLite 持久化，使项目不再只依赖 Memory/JSON snapshot，并为 local-first 恢复建立版本化数据库基础。
 
 ## Implemented
 
-- 新增 bundled `rusqlite` dependency；
-- 新增 `MESSAGING_SQLITE_SCHEMA_VERSION = 1`；
-- 新增 `SqliteStateStore`，直接实现既有 `MessagingStateStore`，不创建第二套消息核心；
+- `rusqlite 0.39`，与 Mahayana/Codex workspace 的 `libsqlite3-sys 0.37` 对齐；
+- `MESSAGING_SQLITE_SCHEMA_VERSION = 1`；
+- `SqliteStateStore` 实现既有 `MessagingStateStore`；
 - SQLite `PRAGMA user_version` migration；
 - singleton snapshot schema；
-- transaction + UPSERT 覆盖保存；
-- cursor 以十进制文本保存，避免 `u64` 被 SQLite signed integer 截断；
-- snapshot schema 与 database schema 显式兼容性错误；
-- Memory / JSON store 同步增加 snapshot schema write validation；
-- Rust tests：空库初始化、重开 round-trip、singleton overwrite、future DB schema reject、unknown snapshot schema reject。
+- transaction + UPSERT；
+- cursor 以 decimal text 持久化，完整覆盖 `u64`；
+- snapshot/database schema compatibility errors；
+- Memory / JSON write schema validation；
+- tests：empty DB initialization、reopen round-trip、singleton overwrite、future DB schema rejection、unknown snapshot schema rejection。
 
-## Acceptance criteria
+## Acceptance result
 
-1. 新数据库可自动创建明确版本的 SQLite schema。**IMPLEMENTED**
-2. `MessagingSnapshot` 可事务性保存并在重新打开数据库后完整恢复。**IMPLEMENTED / CI PENDING**
-3. 重复 save 覆盖 singleton snapshot，不产生多份冲突状态。**IMPLEMENTED / CI PENDING**
-4. 不支持的 DB schema / snapshot schema 返回显式错误。**IMPLEMENTED / CI PENDING**
-5. `cargo fmt`、`cargo test --all-targets`、`cargo clippy --all-targets -D warnings`。**GITHUB ACTIONS PENDING**
+1. 新数据库自动创建明确版本 schema：PASS。
+2. `MessagingSnapshot` 事务保存并在重开后恢复：PASS。
+3. 重复 save 只保留 singleton state：PASS。
+4. 不支持的 DB/snapshot schema 显式拒绝：PASS。
+5. Rust fmt/test all-targets/clippy `-D warnings`：PASS。
+6. Production Feature Host/contact projection compatibility：PASS。
+7. Electron Messenger contract / Native Edge parity / TypeScript bridge：PASS。
+
+## CI evidence
+
+- PR: #1988 `feat(messaging): add SQLite state storage`
+- Head verified: `fc8197a8b5b1d738ae1a4d1d6110cd3bf5a92f39`
+- Messaging Product Gate run: `32559222693` — SUCCESS
+  - Rustfmt: success
+  - messaging all-target tests: success
+  - Clippy: success
+  - Feature Host/contact projection: success
+  - Electron Messenger contract: success
+- Mahayana fast checks run: `32559222679` — SUCCESS
+- Explicit automerge workflow run: `32559222681` — SUCCESS
+
+## CI issue resolved
+
+Initial CI exposed a single-native-link conflict: `rusqlite 0.32` required `libsqlite3-sys 0.30`, while Mahayana/Codex uses `libsqlite3-sys 0.37`. The dependency was aligned to `rusqlite 0.39`, after which both required product gates passed.
 
 ## Branch / PR
 
 - Branch: `feat/telegram-m1-sqlite-storage`
-- Base: `project/telegram-m0-live-audit` (stacked after PR #1987)
-- PR: #1988 `feat(messaging): add SQLite state storage`
+- Base: `main`
+- PR: #1988
 
-## Evidence
+## Evidence files
 
 - `native/mahayana-messaging/Cargo.toml`
 - `native/mahayana-messaging/src/store.rs`
 - `management/wbs/M1.md`
-- PR #1988
-- Current head at time of update: preceding implementation commit `488bba7f251407b4e9535c3d1d0990599a6c9402`; subsequent documentation commits only update project records.
+- `evidence/M1-T06/README.md`
 
-## Blockers / risks
+## Remaining gate
 
-- GitHub Actions status has not appeared yet for the current stacked PR head, so the task remains `IN_PROGRESS` and is not called `TESTED`.
-- JSON store remains available intentionally; switching product default to SQLite should be a separate verified cutover after storage CI is green.
+`TESTED` reflects current-head CI. Task closure as landed work still requires protected merge queue completion and canonical `main` verification.
 
 ## Next action
 
-Wait for the repository's normal PR event to expose Messaging Product Gate results; once available, fix any rustfmt/test/clippy issue, then promote M1.T06 only with the actual CI evidence. After that, normalize conversation/message indexes and product-default SQLite cutover in the next atomic task.
+Enter protected merge queue for #1988. After merge, verify the SQLite code and task record on `main`, then let M1.T02 / #1990 make SQLite the production default with one-time legacy JSON migration.
