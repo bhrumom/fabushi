@@ -17,12 +17,12 @@
 | GBF-205 | M2 | 收敛 native/edge IPC | GBF-202 | schema/error contract 唯一 | schema/version tests | evidence/GBF-205 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
 | GBF-206 | M2 | 评估并迁移 Offline ASR | GBF-104 | 产品归属、资源/性能证据清晰 | unit + runtime benchmark | evidence/GBF-206 | TESTED | GitHub CI/merge pending | PR + Actions + merge queue |
 | GBF-207 | M2 | 迁移有效 Electron E2E | GBF-201..206 | 当前 main 架构可运行 | Playwright/Electron E2E | evidence/GBF-207 | IN_PROGRESS | GitHub packaged E2E pending | PR + Electron Actions/Playwright |
-| GBF-301 | M3 | 盘点 coordinator/supervisor/host 行为 | GBF-103,104 | 重复执行链全部识别 | architecture walk + call graph | evidence/GBF-301 | NOT_STARTED | M1 | 生成行为规格 |
-| GBF-302 | M3 | 统一 Agent loop 到 Mahayana | GBF-301 | 唯一正式 agent runtime | integration/call-path tests | evidence/GBF-302 | NOT_STARTED | GBF-301 | 收敛入口 |
-| GBF-303 | M3 | 统一 tool/MCP/extension dispatch | GBF-302 | 同一 policy/result contract | contract + integration tests | evidence/GBF-303 | NOT_STARTED | GBF-302 | 合并 dispatch contract |
-| GBF-304 | M3 | 统一 session/checkpoint/resume/cancel | GBF-302 | crash/resume/cancel 语义唯一 | fault/recovery integration | evidence/GBF-304 | NOT_STARTED | GBF-302 | 规范 session lifecycle |
-| GBF-305 | M3 | 统一 local exec | GBF-303 | 无绕过 capability gate 的执行口 | deny-path + code-path audit | evidence/GBF-305 | NOT_STARTED | GBF-303 | 删除/桥接绕过入口 |
-| GBF-306 | M3 | 统一错误/重试/超时/并发 | GBF-303..305 | 行为确定且可取消 | deterministic integration suite | evidence/GBF-306 | NOT_STARTED | GBF-303/304/305 | 定义错误状态机 |
+| GBF-301 | M3 | 盘点 coordinator/supervisor/host 行为 | GBF-103,104 | 重复执行链全部识别 | architecture walk + call graph | evidence/GBF-301 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
+| GBF-302 | M3 | 统一 Agent loop 到 Mahayana | GBF-301 | 唯一正式 agent runtime | integration/call-path tests | evidence/GBF-302 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
+| GBF-303 | M3 | 统一 tool/MCP/extension dispatch | GBF-302 | 同一 policy/result contract | contract + integration tests | evidence/GBF-303 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
+| GBF-304 | M3 | 统一 session/checkpoint/resume/cancel | GBF-302 | crash/resume/cancel 语义唯一 | fault/recovery integration | evidence/GBF-304 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
+| GBF-305 | M3 | 统一 local exec | GBF-303 | 无绕过 capability gate 的执行口 | deny-path + code-path audit | evidence/GBF-305 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
+| GBF-306 | M3 | 统一错误/重试/超时/并发 | GBF-303..305 | 行为确定且可取消 | deterministic integration suite | evidence/GBF-306 | TESTED | GitHub CI/merge pending | stacked PR + Mahayana/CI gates |
 | GBF-401 | M4 | 定义 computer-control capability schema | GBF-204,305 | versioned target-bound contract | schema/threat review | evidence/GBF-401 | NOT_STARTED | M2/M3 | 定义 capability IDs |
 | GBF-402 | M4 | 实现/验证 macOS adapter | GBF-401 | observe/input/window 能力受控 | macOS E2E | evidence/GBF-402 | NOT_STARTED | GBF-401 | 对齐平台 API |
 | GBF-403 | M4 | 实现/验证 Windows adapter | GBF-401 | observe/input/window 能力受控 | Windows E2E | evidence/GBF-403 | NOT_STARTED | GBF-401 | 对齐平台 API |
