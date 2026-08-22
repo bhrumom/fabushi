@@ -24,6 +24,9 @@ PRODUCT_CRATES = (
     "mahayana-mcp-runtime",
     "mahayana-native-agent",
     "mahayana-native-engine",
+    "mahayana-computer",
+    "mahayana-plugin-runtime",
+    "mahayana-js-runtime",
 )
 
 FORBIDDEN_SOURCE_PATTERNS = (
@@ -43,7 +46,7 @@ REQUIRED_LOCK_VALUES = (
     "repository=https://github.com/xai-org/grok-build.git",
     "license=Apache-2.0",
     "canonical_agent_provider=mahayana-agent",
-    "canonical_agent_conversation=mahayana:agent:assistant",
+    "canonical_agent_conversation=mahayana-ai:agent:assistant",
 )
 
 
