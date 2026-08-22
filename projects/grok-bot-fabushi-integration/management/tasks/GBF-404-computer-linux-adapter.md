@@ -6,12 +6,12 @@
 - Objective: 实现/验证 Linux X11/Wayland adapter 与降级。
 - Source requirement IDs: GBR-005.
 - Stage: M4
-- Status: IN_PROGRESS
+- Status: IMPLEMENTED (target-platform CI pending)
 - Dependencies: GBF-401.
 - Implementation branch: `gbf/m4-computer-control-convergence-20260822`
 - PR: pending
 - Started: 2026-08-22 17:22+08
-- Updated: 2026-08-22 17:22+08
+- Updated: 2026-08-22 17:38+08
 - Completed: —
 
 ## Acceptance criteria

@@ -6,12 +6,12 @@
 - Objective: 定义 versioned / target-bound computer-control capability schema。
 - Source requirement IDs: GBR-005, GBR-007.
 - Stage: M4
-- Status: IN_PROGRESS
+- Status: TESTED (cross-platform CI/merge pending)
 - Dependencies: GBF-204, GBF-305.
 - Implementation branch: `gbf/m4-computer-control-convergence-20260822`
 - PR: pending
 - Started: 2026-08-22 17:22+08
-- Updated: 2026-08-22 17:22+08
+- Updated: 2026-08-22 17:38+08
 - Completed: —
 
 ## Acceptance criteria
