@@ -1,0 +1,62 @@
+name: Platform Worker module promotion phase 3
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/refactor-platform-worker-phase3.py'
+      - '.github/workflows/platform-worker-refactor-phase3.yml'
+
+concurrency:
+  group: platform-worker-refactor-phase3-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote-and-verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Set up Rust 1.98
+        uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+      - name: Promote include seams to Rust modules
+        run: python3 .github/scripts/refactor-platform-worker-phase3.py
+      - name: Format Rust workspace
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo fmt --all
+      - name: Verify Platform Worker tests
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo test -p mahayana-platform-worker --locked
+      - name: Verify production Worker target
+        working-directory: third_party/mahayana/mahayana-rs
+        run: cargo check -p mahayana-platform-worker --target wasm32-unknown-unknown --locked
+      - name: Verify architecture contract
+        working-directory: fabushi/web
+        run: node tests/platform-control-plane.test.js
+      - name: Commit verified module promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'Phase-3 module promotion is already applied.'
+            exit 0
+          fi
+          git diff --check
+          git config user.name 'fabushi-platform-refactor[bot]'
+          git config user.email 'fabushi-platform-refactor[bot]@users.noreply.github.com'
+          git add -A \
+            third_party/mahayana/mahayana-rs/mahayana-platform-worker/src \
+            fabushi/web/tests/platform-control-plane.test.js
+          git commit -m 'refactor: promote platform domains to Rust modules'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}

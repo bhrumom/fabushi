@@ -11,7 +11,13 @@ def read_source(path: str, *, optional: bool = False):
 
 
 host = read_source('frontend/apps/web/src/app/host/host-client.tsx')
-worker = read_source('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs')
+account_auth_path = 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/account.rs'
+if not Path(account_auth_path).exists():
+    account_auth_path = 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api_parts/account_browser_auth.inc.rs'
+worker = '\n'.join([
+    read_source('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'),
+    read_source(account_auth_path),
+])
 product = read_source('third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs')
 feature = read_source('third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs')
 app_host = read_source('third_party/mahayana/mahayana-rs/mahayana-app-host/src/lib.rs')
@@ -80,7 +86,8 @@ required = {
     'renderer browser poll': (host, 'transport.browserLoginPoll(attempt.attemptId)'),
     'renderer single browser CTA': (host, 'data-testid="browser-login-start"'),
     'feature browser credential-boundary regression': (feature, 'deterministic_browser_login_keeps_credentials_out_of_the_presentation_boundary'),
-    'desktop defaults to Rust staging Product API': (host_process, "DEFAULT_DESKTOP_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev'"),
+    'desktop packaged Product API uses production origin': (host_process, "PRODUCTION_PRODUCT_API_BASE_URL = 'https://api.ombhrum.com'"),
+    'desktop packaged/runtime environment selects production explicitly': (host_process, 'return app.isPackaged ? PRODUCTION_PRODUCT_API_BASE_URL : DEVELOPMENT_PRODUCT_API_BASE_URL;'),
     'desktop forwards Product API override to Host': (host_process, 'MAHAYANA_API_BASE_URL:'),
     'browser registration code route': (worker, '/api/auth/browser/register/code'),
     'browser registration submit route': (worker, '/api/auth/browser/register'),
@@ -91,7 +98,7 @@ if full_contract:
     required.update({
         'provider PKCE challenge': (identity_auth, 'code_challenge_method'),
         'Mahayana Host honors Product API override with explicit state paths': (mahayana_host, 'env::var("MAHAYANA_API_BASE_URL")'),
-        'staging browser origin': (worker_config, 'AUTH_PUBLIC_BASE_URL = "https://mahayana-platform.bhrumom.workers.dev"'),
+        'stable public browser origin': (worker_config, 'AUTH_PUBLIC_BASE_URL = "https://api.ombhrum.com"'),
         'oauth failed terminal schema': (account_status_migration, "'cancelled', 'failed'"),
         'staging auth repair applies account auth migrations': (staging_auth_repair, 'd1 migrations apply ACCOUNT_DB --remote'),
         'staging auth repair verifies browser broker': (staging_auth_repair, 'Verify browser login, registration, and Alipay broker lifecycle'),
@@ -120,6 +127,8 @@ for label, (text, marker) in required.items():
     if marker not in text:
         raise SystemExit(f'auth entry gate: missing {label}: {marker}')
 
+if 'DEFAULT_DESKTOP_PRODUCT_API_BASE_URL' in host_process:
+    raise SystemExit('auth entry gate: obsolete staging desktop default compatibility marker must not return')
 
 if '.find_map(|(key, value)| (key == "pollSecret")' in worker or '&[("pollSecret", poll_secret.as_str())]' in product:
     raise SystemExit('auth entry gate: browser poll verifier must not be sent in a URL query string')

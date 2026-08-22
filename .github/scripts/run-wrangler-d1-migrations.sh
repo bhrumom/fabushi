@@ -10,6 +10,15 @@ binding="$1"
 environment="$2"
 shift 2
 
+# The account DB migration is the first mutating step in both staging and
+# production deployment. Refuse to mutate or deploy if the Worker would boot
+# without the security configuration required by the hardened authentication,
+# payment, and administrator boundaries.
+if [ "$binding" = "DB" ]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  bash "$script_dir/assert-worker-security-secrets.sh" "$environment" "$@"
+fi
+
 max_attempts="${WRANGLER_D1_MAX_ATTEMPTS:-4}"
 delay_seconds="${WRANGLER_D1_RETRY_DELAY_SECONDS:-15}"
 log_file="$(mktemp)"
