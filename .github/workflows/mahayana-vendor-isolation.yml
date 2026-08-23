@@ -1,0 +1,103 @@
+name: Mahayana Vendor Isolation
+
+on:
+  pull_request:
+    paths:
+      - third_party/mahayana/mahayana-rs/**
+      - third_party/mahayana/codex-rs/**
+      - scripts/check-mahayana-source-boundary.py
+      - .github/workflows/mahayana-vendor-isolation.yml
+  push:
+    branches:
+      - main
+    paths:
+      - third_party/mahayana/mahayana-rs/**
+      - third_party/mahayana/codex-rs/**
+      - scripts/check-mahayana-source-boundary.py
+      - .github/workflows/mahayana-vendor-isolation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-runtime-without-vendor-tree:
+    name: Native runtime builds with Codex sources quarantined
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux native dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
+      - name: Quarantine vendor sources and assemble native-only workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv third_party/mahayana/codex-rs /tmp/msr-codex-quarantine
+          test -d /tmp/msr-codex-quarantine
+          test ! -e third_party/mahayana/codex-rs
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import shutil
+
+          source = Path('third_party/mahayana/mahayana-rs')
+          target = Path('/tmp/msr-native-repo/third_party/mahayana/mahayana-rs')
+          selected = [
+              'mahayana-core',
+              'mahayana-agent',
+              'mahayana-kernel',
+              'mahayana-model',
+              'mahayana-orchestrator',
+              'mahayana-workspace-engine',
+              'mahayana-platform-core',
+              'mahayana-plugin-runtime',
+              'mahayana-plugin-host',
+              'mahayana-mcp-runtime',
+              'mahayana-native-engine',
+              'mahayana-native-agent',
+          ]
+          target.mkdir(parents=True, exist_ok=True)
+          for crate in selected:
+              shutil.copytree(source / crate, target / crate)
+
+          # Do not copy repository-level plugin fixtures into this hermetic tree.
+          # They are integration fixtures, not runtime dependencies. Keeping them
+          # out proves the Mahayana-owned Rust graph stands on its own.
+          manifest = (source / 'Cargo.toml').read_text()
+          members = '[workspace]\nmembers = [\n' + ''.join(f'    "{crate}",\n' for crate in selected) + ']\nresolver = "2"'
+          manifest = re.sub(r'(?s)\[workspace\]\nmembers = \[.*?\]\nresolver = "2"', members, manifest, count=1)
+          manifest = '\n'.join(
+              line for line in manifest.splitlines()
+              if '../codex-rs/' not in line
+              and not line.startswith('fabushi-messaging-core = ')
+          ) + '\n'
+          (target / 'Cargo.toml').write_text(manifest)
+          PY
+
+      - name: Verify native-owned runtime graph without Codex tree
+        shell: bash
+        run: >-
+          cargo test
+          --manifest-path /tmp/msr-native-repo/third_party/mahayana/mahayana-rs/Cargo.toml
+          -p mahayana-kernel
+          -p mahayana-model
+          -p mahayana-orchestrator
+          -p mahayana-workspace-engine
+          -p mahayana-mcp-runtime
+          -p mahayana-plugin-host
+          -p mahayana-native-engine
+          -p mahayana-native-agent
