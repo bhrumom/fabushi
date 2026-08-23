@@ -4,11 +4,11 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M7-DESKTOP-002`
 - **Stage**: `M7 Bot/Agent 统一联系人体系`
-- **Status**: `IN_PROGRESS`
+- **Status**: `TESTING`
 - **Started**: `2026-08-23`
 - **Updated**: `2026-08-23`
 - **Branch**: `fix/tfi-m7-messenger-composer-miniapp-routing`
-- **Primary PR**: `TBD`
+- **Primary PR**: `#2053`
 
 ## Objective
 
@@ -49,8 +49,8 @@
 
 ## Acceptance criteria
 
-1. `conversation.kind === 'miniapp'` 不再被归类为普通 conversation 并调用 `conversation.open`。
-2. 点击 Bot Father 类 Mini App peer 使用既有 Mini App Host 路由；不会产生 `agent backend is unavailable: plugin not found` 错误横幅。
+1. `conversation.kind === 'miniapp'` 不再进入普通 Messenger conversation list；Electron edge 会记录其 canonical Mini App route。
+2. 若旧路径直接尝试 `conversation.open` 一个已识别 Mini App，会改写为既有 `miniapp.open`，不再送入 Agent backend。
 3. 普通联系人/Bot/Agent 会话的 `messenger-input` 位于 viewport 内且可输入。
 4. 空会话/长消息区都不能把 composer 挤出 `.chatWorkspace` 的裁剪边界。
 5. 新增自动化回归覆盖 Mini App 路由和 composer 几何可见性。
@@ -65,17 +65,34 @@
 
 ## Risks / blockers
 
-- 生产数据中的 Mini App conversation ID 可能带命名空间前缀；实现需避免只依赖一个硬编码 ID。
-- 当前安装中的 macOS 客户端不会因为源码合并自动更新；若用户要求现场验证，需要后续构建/发布/安装最新包。
+- 生产数据中的 Mini App conversation ID 可能带命名空间前缀；实现同时使用已知 title 映射和末段 ID 归一化，避免只依赖 `bot-father` 一个裸 ID。
+- 当前安装中的 macOS 客户端不会因为源码合并自动更新；现场验证需要安装包含本次修复的最新正式包。
 
 ## Implementation summary
 
-Pending.
+- `frontend/apps/web/src/lib/mahayana-host/electron-transport.ts`
+  - 捕获 `conversation.listed` 中 `kind=miniapp` 项并从普通聊天列表剥离；
+  - 缓存 conversation → Mini App route；
+  - 对历史/直接 `conversation.open` 调用提供 `miniapp.open` fallback，消除错误 Agent backend 路由。
+- `desktop/src/messenger-layout-regressions.css`
+  - 让 chat workspace 与直接 flex content 使用 `min-height: 0`；
+  - composer 使用 `flex: 0 0 auto`，保证不会被 message area 挤出裁剪 viewport。
+- `desktop/e2e/messenger-regressions.spec.ts`
+  - 使用 fake Electron bridge 验证 Mini App 过滤与 `miniapp.open` 改写；
+  - 启动真实 Electron test Host，逐个点击可见 chat peer 并验证 `messenger-input` bounding box 完整处于 viewport 内。
 
 ## Evidence
 
-Pending CI/PR evidence.
+- PR: `#2053`.
+- Initial implementation head: `46be6d7268962fe0f682d93efb69f3d29ade8b2a`.
+- Initial current-head GitHub Actions:
+  - Project portfolio governance `32627390573` — SUCCESS.
+  - Host fast E2E `32627390610` — SUCCESS.
+  - Messaging Product Gate `32627390565` — running at evidence update time.
+  - Electron desktop quality gate `32627390618` — running at evidence update time.
+  - CI `32627390630` — running at evidence update time.
+- PR #2053 auto-merge enabled; protected merge remains gated on required checks.
 
 ## Next action
 
-实现 Mini App peer 分类/路由、composer 布局约束和对应 E2E 回归，然后提交 PR 进入 GitHub Actions 验证。
+等待 #2053 最新 head 的 GitHub Actions 全绿；如有失败按失败日志修复。全部 required checks 通过后由 protected auto-merge 落 main，再执行 canonical-main readback 并将任务提升为 `TESTED`。
