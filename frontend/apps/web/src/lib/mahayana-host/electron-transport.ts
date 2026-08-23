@@ -119,20 +119,35 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     return info;
   }
 
-  execute(command: RuntimeCommand): Promise<CommandAccepted> {
+  async execute(command: RuntimeCommand): Promise<CommandAccepted> {
+    let normalizedCommand = command;
     if (command.type === "conversation.open") {
       const miniAppId = this.miniAppConversations.get(command.conversationId);
       if (miniAppId) {
-        return mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
-          command: {
-            type: "miniapp.open",
-            requestId: command.requestId,
-            miniAppId,
-          },
-        });
+        normalizedCommand = {
+          type: "miniapp.open",
+          requestId: command.requestId,
+          miniAppId,
+        };
       }
     }
-    return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command });
+
+    if (normalizedCommand.type === "miniapp.open") {
+      // Official Mini Apps are first-party product surfaces. The legacy Host
+      // client disabled its Open button until marketplace.install had run,
+      // while the unified Messenger intentionally exposes them directly.
+      // Preserve that one-click product behavior by making installation an
+      // idempotent prerequisite at the Electron edge before opening the app.
+      await mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+        command: {
+          type: "marketplace.install",
+          requestId: `${normalizedCommand.requestId}-install`,
+          miniAppId: normalizedCommand.miniAppId,
+        },
+      });
+    }
+
+    return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command: normalizedCommand });
   }
 
   authStatus(): Promise<AuthState> {
