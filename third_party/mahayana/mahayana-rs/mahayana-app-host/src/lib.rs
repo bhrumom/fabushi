@@ -142,6 +142,7 @@ impl AppHost {
             "plugin.install" => self.install_plugin(params),
             "plugin.uninstall" => self.uninstall_plugin(params),
             "plugin.active" => self.active_plugin(params),
+            "plugin.listInstalled" => self.list_installed_plugins(),
             "plugin.permissions" => self.plugin_permissions(params),
             "plugin.permission.grant" => self.set_permission(params, true),
             "plugin.permission.revoke" => self.set_permission(params, false),
@@ -386,6 +387,38 @@ impl AppHost {
         serde_json::to_value(pointer).map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
+    fn list_installed_plugins(&self) -> Result<Value, AppHostError> {
+        let root = self.plugin_root();
+        let installer = self.installer()?;
+        let mut plugins = Vec::new();
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(json!({"plugins": plugins}));
+            }
+            Err(error) => return Err(AppHostError::Operation(error.to_string())),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| AppHostError::Operation(error.to_string()))?;
+            if !entry
+                .file_type()
+                .map_err(|error| AppHostError::Operation(error.to_string()))?
+                .is_dir()
+            {
+                continue;
+            }
+            let plugin_id = entry.file_name().to_string_lossy().into_owned();
+            if let Some(pointer) = installer
+                .active(&plugin_id)
+                .map_err(|error| AppHostError::Operation(error.to_string()))?
+            {
+                plugins.push(pointer);
+            }
+        }
+        plugins.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
+        Ok(json!({"plugins": plugins}))
+    }
+
     fn plugin_permissions(&self, params: Value) -> Result<Value, AppHostError> {
         let plugin_id = string_param(&params, "pluginId")?;
         let pointer = self
@@ -459,20 +492,24 @@ impl AppHost {
             .ok_or_else(|| {
                 AppHostError::Operation(format!("plugin {plugin_id} is not installed"))
             })?;
-        if pointer.runtime != "local-web" {
-            return Err(AppHostError::Operation(format!(
-                "plugin runtime {} does not expose a local Web document",
-                pointer.runtime
-            )));
-        }
         let root = std::fs::canonicalize(&pointer.installed_path)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
-        let entry = pointer
-            .entry
-            .as_deref()
-            .unwrap_or("index.html")
-            .trim_start_matches("./");
-        let relative = PathBuf::from(entry);
+        let requested_entry = pointer.entry.as_deref().map(|value| value.trim_start_matches("./"));
+        let entry = requested_entry
+            .filter(|value| value.to_ascii_lowercase().ends_with(".html"))
+            .map(str::to_string)
+            .or_else(|| {
+                ["ui/index.html", "web/index.html", "index.html"]
+                    .into_iter()
+                    .find(|candidate| root.join(candidate).is_file())
+                    .map(str::to_string)
+            })
+            .ok_or_else(|| {
+                AppHostError::Operation(format!(
+                    "installed plugin {plugin_id} does not expose an HTML Mini App entry"
+                ))
+            })?;
+        let relative = PathBuf::from(&entry);
         if relative.components().any(|component| {
             matches!(
                 component,
