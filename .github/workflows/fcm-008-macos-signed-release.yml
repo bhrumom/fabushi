@@ -132,8 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           export CSC_IDENTITY_AUTO_DISCOVERY=true
-          export CSC_NAME="$EFFECTIVE_MACOS_CODESIGN_IDENTITY"
-          npx --no-install electron-builder --mac --arm64
+          npx --no-install electron-builder --mac --arm64 --publish never
 
       - id: package
         name: Verify real Developer ID app signature
@@ -161,7 +160,6 @@ jobs:
       - name: Notarize and staple DMG with Apple
         shell: bash
         env:
-          MACOS_CODESIGN_IDENTITY: ${{ env.EFFECTIVE_MACOS_CODESIGN_IDENTITY }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
