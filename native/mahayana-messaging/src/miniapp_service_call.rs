@@ -1,6 +1,8 @@
 use crate::actor::ActorId;
 use crate::conversation::ConversationId;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -75,28 +77,34 @@ impl MiniAppServiceCallInput {
 
     pub fn transcript_text(&self) -> Option<&str> {
         match self {
-            Self::Dtmf { .. } => None,
+            Self::Dtmf { digits } => Some(digits),
             Self::SpeechTranscript { text, .. } | Self::ChatText { text } => Some(text),
         }
     }
 
-    pub fn requires_intent_resolution(&self) -> bool {
+    pub fn normalized_dtmf_digits(&self) -> Option<&str> {
+        match self {
+            Self::Dtmf { digits } => Some(digits.as_str()),
+            Self::ChatText { text } => {
+                let trimmed = text.trim();
+                valid_dtmf(trimmed).then_some(trimmed)
+            }
+            Self::SpeechTranscript { .. } => None,
+        }
+    }
+
+    pub fn requires_mcp_resolution(&self) -> bool {
         match self {
             Self::Dtmf { .. } => false,
             Self::SpeechTranscript { is_final, .. } => *is_final,
-            Self::ChatText { .. } => true,
+            Self::ChatText { text } => !valid_dtmf(text.trim()),
         }
     }
 
     fn validate(&self) -> Result<(), MiniAppServiceCallError> {
         match self {
             Self::Dtmf { digits } => {
-                if digits.is_empty()
-                    || digits.len() > 32
-                    || !digits
-                        .chars()
-                        .all(|ch| ch.is_ascii_digit() || matches!(ch, '*' | '#'))
-                {
+                if !valid_dtmf(digits) {
                     return Err(MiniAppServiceCallError::InvalidDtmf);
                 }
             }
@@ -122,6 +130,51 @@ impl MiniAppServiceCallInput {
     }
 }
 
+fn valid_dtmf(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 32
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '*' | '#'))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MiniAppMcpToolAnnotations {
+    pub read_only_hint: bool,
+    pub destructive_hint: bool,
+    pub open_world_hint: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniAppMcpToolCapability {
+    pub name: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub input_schema: Option<Value>,
+    #[serde(default)]
+    pub annotations: MiniAppMcpToolAnnotations,
+}
+
+impl MiniAppMcpToolCapability {
+    pub fn is_valid(&self) -> bool {
+        let name = self.name.trim();
+        !name.is_empty() && name.len() <= 200
+    }
+}
+
+pub type MiniAppMcpArguments = BTreeMap<String, Value>;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniAppMcpDtmfRoute {
+    pub digits: String,
+    pub tool_name: String,
+    #[serde(default)]
+    pub arguments: MiniAppMcpArguments,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MiniAppServiceCallTurn {
@@ -131,41 +184,77 @@ pub struct MiniAppServiceCallTurn {
     pub created_at_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MiniAppServiceActionRequest {
+pub struct MiniAppMcpResolveRequest {
     pub call_id: MiniAppServiceCallId,
     pub mini_app_id: String,
     pub conversation_id: ConversationId,
     pub turn_sequence: u64,
     pub input: MiniAppServiceCallInput,
+    pub available_tools: Vec<MiniAppMcpToolCapability>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
+pub enum MiniAppMcpToolResolution {
+    Invoke {
+        tool_name: String,
+        #[serde(default)]
+        arguments: MiniAppMcpArguments,
+    },
+    Unavailable {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MiniAppServiceActionResult {
-    pub action_id: String,
-    pub intent: String,
+pub struct MiniAppMcpInvocationRequest {
+    pub call_id: MiniAppServiceCallId,
+    pub mini_app_id: String,
+    pub conversation_id: ConversationId,
+    pub turn_sequence: u64,
+    pub tool_name: String,
+    #[serde(default)]
+    pub arguments: MiniAppMcpArguments,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniAppMcpInvocationResult {
+    pub invocation_id: String,
+    pub tool_name: String,
     pub success: bool,
+    pub structured_content: Option<Value>,
+    pub error: Option<String>,
     pub spoken_response: Option<String>,
     pub display_response: Option<String>,
     pub completed_at_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     rename_all = "camelCase",
     rename_all_fields = "camelCase",
     tag = "type"
 )]
 pub enum MiniAppServiceCallEffect {
-    RouteDtmf {
-        call_id: MiniAppServiceCallId,
-        digits: String,
-        turn_sequence: u64,
+    ResolveMcpTool {
+        request: MiniAppMcpResolveRequest,
     },
-    ResolveIntent {
-        request: MiniAppServiceActionRequest,
+    InvokeMcpTool {
+        request: MiniAppMcpInvocationRequest,
+    },
+    McpCapabilityUnavailable {
+        call_id: MiniAppServiceCallId,
+        mini_app_id: String,
+        turn_sequence: u64,
+        reason: String,
     },
     AppendConversationTranscript {
         conversation_id: ConversationId,
@@ -177,7 +266,7 @@ pub enum MiniAppServiceCallEffect {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MiniAppServiceCallSession {
     pub id: MiniAppServiceCallId,
@@ -188,8 +277,10 @@ pub struct MiniAppServiceCallSession {
     pub service_actor_id: Option<ActorId>,
     pub mode: MiniAppServiceCallMode,
     pub state: MiniAppServiceCallState,
+    pub mcp_tools: Vec<MiniAppMcpToolCapability>,
+    pub dtmf_routes: Vec<MiniAppMcpDtmfRoute>,
     pub turns: Vec<MiniAppServiceCallTurn>,
-    pub action_results: Vec<MiniAppServiceActionResult>,
+    pub mcp_results: Vec<MiniAppMcpInvocationResult>,
     pub started_at_ms: i64,
     pub updated_at_ms: i64,
     pub ended_at_ms: Option<i64>,
@@ -205,12 +296,35 @@ impl MiniAppServiceCallSession {
         caller_actor_id: ActorId,
         service_actor_id: Option<ActorId>,
         mode: MiniAppServiceCallMode,
+        mcp_tools: Vec<MiniAppMcpToolCapability>,
+        dtmf_routes: Vec<MiniAppMcpDtmfRoute>,
         started_at_ms: i64,
     ) -> Result<Self, MiniAppServiceCallError> {
         let mini_app_id = mini_app_id.into();
         if !id.is_valid() || mini_app_id.trim().is_empty() || mini_app_id.len() > 200 {
             return Err(MiniAppServiceCallError::InvalidSession);
         }
+
+        let mut tool_names = BTreeSet::new();
+        for tool in &mcp_tools {
+            if !tool.is_valid() {
+                return Err(MiniAppServiceCallError::InvalidMcpTool);
+            }
+            if !tool_names.insert(tool.name.clone()) {
+                return Err(MiniAppServiceCallError::DuplicateMcpTool(tool.name.clone()));
+            }
+        }
+
+        let mut route_digits = BTreeSet::new();
+        for route in &dtmf_routes {
+            if !valid_dtmf(&route.digits)
+                || !tool_names.contains(&route.tool_name)
+                || !route_digits.insert(route.digits.clone())
+            {
+                return Err(MiniAppServiceCallError::InvalidDtmfRoute);
+            }
+        }
+
         Ok(Self {
             id,
             mini_app_id,
@@ -220,8 +334,10 @@ impl MiniAppServiceCallSession {
             service_actor_id,
             mode,
             state: MiniAppServiceCallState::Connecting,
+            mcp_tools,
+            dtmf_routes,
             turns: Vec::new(),
-            action_results: Vec::new(),
+            mcp_results: Vec::new(),
             started_at_ms,
             updated_at_ms: started_at_ms,
             ended_at_ms: None,
@@ -268,9 +384,12 @@ impl MiniAppServiceCallSession {
         let mut effects = Vec::new();
         match &input {
             MiniAppServiceCallInput::Dtmf { digits } => {
-                effects.push(MiniAppServiceCallEffect::RouteDtmf {
-                    call_id: self.id.clone(),
-                    digits: digits.clone(),
+                effects.push(MiniAppServiceCallEffect::AppendConversationTranscript {
+                    conversation_id: self.conversation_id.clone(),
+                    actor_id: actor_id.clone(),
+                    source: MiniAppServiceCallInputSource::Dtmf,
+                    text: digits.clone(),
+                    final_segment: true,
                     turn_sequence: sequence,
                 });
             }
@@ -296,23 +415,92 @@ impl MiniAppServiceCallSession {
             }
         }
 
-        if input.requires_intent_resolution() {
-            effects.push(MiniAppServiceCallEffect::ResolveIntent {
-                request: MiniAppServiceActionRequest {
-                    call_id: self.id.clone(),
-                    mini_app_id: self.mini_app_id.clone(),
-                    conversation_id: self.conversation_id.clone(),
-                    turn_sequence: sequence,
-                    input,
-                },
-            });
+        if let Some(digits) = input.normalized_dtmf_digits() {
+            effects.push(self.route_dtmf_to_mcp(sequence, digits));
+            return Ok(effects);
+        }
+
+        if input.requires_mcp_resolution() {
+            if self.mcp_tools.is_empty() {
+                effects.push(self.mcp_unavailable(
+                    sequence,
+                    "当前 MiniApp 没有暴露任何 MCP Tool，无法执行该需求".into(),
+                ));
+            } else {
+                effects.push(MiniAppServiceCallEffect::ResolveMcpTool {
+                    request: MiniAppMcpResolveRequest {
+                        call_id: self.id.clone(),
+                        mini_app_id: self.mini_app_id.clone(),
+                        conversation_id: self.conversation_id.clone(),
+                        turn_sequence: sequence,
+                        input,
+                        available_tools: self.mcp_tools.clone(),
+                    },
+                });
+            }
         }
         Ok(effects)
     }
 
-    pub fn record_action_result(
+    pub fn apply_mcp_resolution(
+        &self,
+        turn_sequence: u64,
+        resolution: MiniAppMcpToolResolution,
+    ) -> Result<MiniAppServiceCallEffect, MiniAppServiceCallError> {
+        if self.state != MiniAppServiceCallState::Active {
+            return Err(MiniAppServiceCallError::InvalidState(self.state));
+        }
+        let turn = self
+            .turns
+            .iter()
+            .find(|turn| turn.sequence == turn_sequence)
+            .ok_or(MiniAppServiceCallError::TurnNotFound(turn_sequence))?;
+        if !turn.input.requires_mcp_resolution() {
+            return Err(MiniAppServiceCallError::TurnDoesNotRequireMcpResolution(
+                turn_sequence,
+            ));
+        }
+
+        match resolution {
+            MiniAppMcpToolResolution::Invoke {
+                tool_name,
+                arguments,
+            } => self.prepare_mcp_invocation(turn_sequence, tool_name, arguments),
+            MiniAppMcpToolResolution::Unavailable { reason } => {
+                let reason = reason.trim();
+                if reason.is_empty() {
+                    return Err(MiniAppServiceCallError::InvalidMcpResolution);
+                }
+                Ok(self.mcp_unavailable(turn_sequence, reason.to_string()))
+            }
+        }
+    }
+
+    pub fn prepare_mcp_invocation(
+        &self,
+        turn_sequence: u64,
+        tool_name: impl Into<String>,
+        arguments: MiniAppMcpArguments,
+    ) -> Result<MiniAppServiceCallEffect, MiniAppServiceCallError> {
+        let tool_name = tool_name.into();
+        if !self.mcp_tools.iter().any(|tool| tool.name == tool_name) {
+            return Err(MiniAppServiceCallError::McpToolUnavailable(tool_name));
+        }
+        Ok(MiniAppServiceCallEffect::InvokeMcpTool {
+            request: MiniAppMcpInvocationRequest {
+                call_id: self.id.clone(),
+                mini_app_id: self.mini_app_id.clone(),
+                conversation_id: self.conversation_id.clone(),
+                turn_sequence,
+                tool_name,
+                arguments,
+            },
+        })
+    }
+
+    pub fn record_mcp_result(
         &mut self,
-        result: MiniAppServiceActionResult,
+        result: MiniAppMcpInvocationResult,
     ) -> Result<(), MiniAppServiceCallError> {
         if matches!(
             self.state,
@@ -320,11 +508,17 @@ impl MiniAppServiceCallSession {
         ) {
             return Err(MiniAppServiceCallError::InvalidState(self.state));
         }
-        if result.action_id.trim().is_empty() || result.intent.trim().is_empty() {
-            return Err(MiniAppServiceCallError::InvalidActionResult);
+        if result.invocation_id.trim().is_empty()
+            || result.tool_name.trim().is_empty()
+            || !self
+                .mcp_tools
+                .iter()
+                .any(|tool| tool.name == result.tool_name)
+        {
+            return Err(MiniAppServiceCallError::InvalidMcpResult);
         }
         self.updated_at_ms = result.completed_at_ms;
-        self.action_results.push(result);
+        self.mcp_results.push(result);
         Ok(())
     }
 
@@ -339,6 +533,34 @@ impl MiniAppServiceCallSession {
         self.updated_at_ms = now_ms;
         self.ended_at_ms = Some(now_ms);
         Ok(())
+    }
+
+    fn route_dtmf_to_mcp(&self, turn_sequence: u64, digits: &str) -> MiniAppServiceCallEffect {
+        if let Some(route) = self.dtmf_routes.iter().find(|route| route.digits == digits) {
+            return MiniAppServiceCallEffect::InvokeMcpTool {
+                request: MiniAppMcpInvocationRequest {
+                    call_id: self.id.clone(),
+                    mini_app_id: self.mini_app_id.clone(),
+                    conversation_id: self.conversation_id.clone(),
+                    turn_sequence,
+                    tool_name: route.tool_name.clone(),
+                    arguments: route.arguments.clone(),
+                },
+            };
+        }
+        self.mcp_unavailable(
+            turn_sequence,
+            format!("当前 MiniApp 没有为数字 {digits} 配置可调用的 MCP Tool"),
+        )
+    }
+
+    fn mcp_unavailable(&self, turn_sequence: u64, reason: String) -> MiniAppServiceCallEffect {
+        MiniAppServiceCallEffect::McpCapabilityUnavailable {
+            call_id: self.id.clone(),
+            mini_app_id: self.mini_app_id.clone(),
+            turn_sequence,
+            reason,
+        }
     }
 }
 
@@ -356,13 +578,42 @@ pub enum MiniAppServiceCallError {
     InvalidTranscript,
     #[error("speech confidence must be between 0 and 10000 basis points")]
     InvalidConfidence,
-    #[error("MiniApp action result is invalid")]
-    InvalidActionResult,
+    #[error("MiniApp MCP Tool is invalid")]
+    InvalidMcpTool,
+    #[error("MiniApp MCP Tool is duplicated: {0}")]
+    DuplicateMcpTool(String),
+    #[error("MiniApp DTMF route is invalid or references a Tool not exposed by this MiniApp")]
+    InvalidDtmfRoute,
+    #[error("MiniApp MCP Tool is not available for this MiniApp: {0}")]
+    McpToolUnavailable(String),
+    #[error("service call turn does not exist: {0}")]
+    TurnNotFound(u64),
+    #[error("service call turn does not require MCP semantic resolution: {0}")]
+    TurnDoesNotRequireMcpResolution(u64),
+    #[error("MCP Tool resolution is invalid")]
+    InvalidMcpResolution,
+    #[error("MiniApp MCP invocation result is invalid")]
+    InvalidMcpResult,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn tool(name: &str, description: &str, read_only: bool) -> MiniAppMcpToolCapability {
+        MiniAppMcpToolCapability {
+            name: name.into(),
+            title: None,
+            description: Some(description.into()),
+            input_schema: Some(json!({"type": "object"})),
+            annotations: MiniAppMcpToolAnnotations {
+                read_only_hint: read_only,
+                destructive_hint: false,
+                open_world_hint: false,
+            },
+        }
+    }
 
     fn session() -> MiniAppServiceCallSession {
         MiniAppServiceCallSession::new(
@@ -373,33 +624,69 @@ mod tests {
             ActorId("actor:user".into()),
             Some(ActorId("actor:carrier-service".into())),
             MiniAppServiceCallMode::Hybrid,
+            vec![
+                tool("query_allowance", "查询套餐余量", true),
+                tool("change_plan", "变更套餐", false),
+            ],
+            vec![
+                MiniAppMcpDtmfRoute {
+                    digits: "1".into(),
+                    tool_name: "query_allowance".into(),
+                    arguments: BTreeMap::new(),
+                },
+                MiniAppMcpDtmfRoute {
+                    digits: "2".into(),
+                    tool_name: "change_plan".into(),
+                    arguments: BTreeMap::new(),
+                },
+            ],
             100,
         )
         .expect("valid session")
     }
 
     #[test]
-    fn dtmf_routes_without_ai_intent_resolution() {
+    fn dtmf_routes_directly_to_mcp_tool_call() {
         let mut call = session();
         call.activate(110).expect("activate");
         let effects = call
             .submit_input(
                 ActorId("actor:user".into()),
-                MiniAppServiceCallInput::Dtmf {
-                    digits: "12#".into(),
-                },
+                MiniAppServiceCallInput::Dtmf { digits: "1".into() },
                 120,
             )
             .expect("submit dtmf");
-        assert_eq!(effects.len(), 1);
-        assert!(matches!(
-            &effects[0],
-            MiniAppServiceCallEffect::RouteDtmf { digits, .. } if digits == "12#"
-        ));
+        assert_eq!(effects.len(), 2);
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            MiniAppServiceCallEffect::InvokeMcpTool { request }
+                if request.tool_name == "query_allowance"
+        )));
+        assert!(!effects
+            .iter()
+            .any(|effect| matches!(effect, MiniAppServiceCallEffect::ResolveMcpTool { .. })));
     }
 
     #[test]
-    fn final_speech_is_transcribed_and_sent_to_ai_intent_resolution() {
+    fn chat_numeric_input_uses_same_dtmf_mcp_route() {
+        let mut call = session();
+        call.activate(110).expect("activate");
+        let effects = call
+            .submit_input(
+                ActorId("actor:user".into()),
+                MiniAppServiceCallInput::ChatText { text: "2".into() },
+                120,
+            )
+            .expect("submit chat digit");
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            MiniAppServiceCallEffect::InvokeMcpTool { request }
+                if request.tool_name == "change_plan"
+        )));
+    }
+
+    #[test]
+    fn final_speech_is_transcribed_and_sent_to_mcp_tool_resolution() {
         let mut call = session();
         call.activate(110).expect("activate");
         let effects = call
@@ -424,7 +711,9 @@ mod tests {
         )));
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            MiniAppServiceCallEffect::ResolveIntent { request } if request.mini_app_id == "miniapp:carrier"
+            MiniAppServiceCallEffect::ResolveMcpTool { request }
+                if request.mini_app_id == "miniapp:carrier"
+                    && request.available_tools.len() == 2
         )));
     }
 
@@ -454,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_text_uses_same_intent_pipeline_as_final_speech() {
+    fn chat_text_uses_same_mcp_resolution_pipeline_as_final_speech() {
         let mut call = session();
         call.activate(110).expect("activate");
         let effects = call
@@ -468,7 +757,80 @@ mod tests {
             .expect("submit chat text");
         assert!(effects
             .iter()
-            .any(|effect| matches!(effect, MiniAppServiceCallEffect::ResolveIntent { .. })));
+            .any(|effect| matches!(effect, MiniAppServiceCallEffect::ResolveMcpTool { .. })));
+    }
+
+    #[test]
+    fn resolver_cannot_select_tool_not_exposed_by_miniapp() {
+        let mut call = session();
+        call.activate(110).expect("activate");
+        call.submit_input(
+            ActorId("actor:user".into()),
+            MiniAppServiceCallInput::ChatText {
+                text: "帮我注销账户".into(),
+            },
+            120,
+        )
+        .expect("submit chat text");
+        let error = call
+            .apply_mcp_resolution(
+                1,
+                MiniAppMcpToolResolution::Invoke {
+                    tool_name: "delete_account".into(),
+                    arguments: BTreeMap::new(),
+                },
+            )
+            .expect_err("unexposed tool must be rejected");
+        assert_eq!(
+            error,
+            MiniAppServiceCallError::McpToolUnavailable("delete_account".into())
+        );
+    }
+
+    #[test]
+    fn no_matching_mcp_tool_is_reported_without_execution() {
+        let mut call = session();
+        call.activate(110).expect("activate");
+        call.submit_input(
+            ActorId("actor:user".into()),
+            MiniAppServiceCallInput::ChatText {
+                text: "帮我办理一个当前没有的业务".into(),
+            },
+            120,
+        )
+        .expect("submit chat text");
+        let effect = call
+            .apply_mcp_resolution(
+                1,
+                MiniAppMcpToolResolution::Unavailable {
+                    reason: "当前 MiniApp 没有对应 MCP Tool".into(),
+                },
+            )
+            .expect("unavailable is a valid resolution");
+        assert!(matches!(
+            effect,
+            MiniAppServiceCallEffect::McpCapabilityUnavailable { .. }
+        ));
+    }
+
+    #[test]
+    fn unmapped_dtmf_returns_unavailable_without_direct_execution() {
+        let mut call = session();
+        call.activate(110).expect("activate");
+        let effects = call
+            .submit_input(
+                ActorId("actor:user".into()),
+                MiniAppServiceCallInput::Dtmf { digits: "9".into() },
+                120,
+            )
+            .expect("submit dtmf");
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            MiniAppServiceCallEffect::McpCapabilityUnavailable { .. }
+        )));
+        assert!(!effects
+            .iter()
+            .any(|effect| matches!(effect, MiniAppServiceCallEffect::InvokeMcpTool { .. })));
     }
 
     #[test]
@@ -492,19 +854,43 @@ mod tests {
     }
 
     #[test]
-    fn action_results_are_auditable_on_the_call_session() {
+    fn mcp_results_are_auditable_on_the_call_session() {
         let mut call = session();
         call.activate(110).expect("activate");
-        call.record_action_result(MiniAppServiceActionResult {
-            action_id: "action:1".into(),
-            intent: "query_allowance".into(),
+        call.record_mcp_result(MiniAppMcpInvocationResult {
+            invocation_id: "mcp-call:1".into(),
+            tool_name: "query_allowance".into(),
             success: true,
+            structured_content: Some(json!({"remainingGb": 20})),
+            error: None,
             spoken_response: Some("本月还剩 20GB".into()),
             display_response: Some("剩余流量 20GB".into()),
             completed_at_ms: 130,
         })
         .expect("record result");
-        assert_eq!(call.action_results.len(), 1);
-        assert_eq!(call.action_results[0].intent, "query_allowance");
+        assert_eq!(call.mcp_results.len(), 1);
+        assert_eq!(call.mcp_results[0].tool_name, "query_allowance");
+    }
+
+    #[test]
+    fn dtmf_route_cannot_reference_unexposed_mcp_tool() {
+        let error = MiniAppServiceCallSession::new(
+            MiniAppServiceCallId::new("svc-call:1"),
+            "miniapp:carrier",
+            Some("miniapp-session:1".into()),
+            ConversationId("conversation:carrier".into()),
+            ActorId("actor:user".into()),
+            None,
+            MiniAppServiceCallMode::Text,
+            vec![tool("query_allowance", "查询套餐余量", true)],
+            vec![MiniAppMcpDtmfRoute {
+                digits: "1".into(),
+                tool_name: "missing_tool".into(),
+                arguments: BTreeMap::new(),
+            }],
+            100,
+        )
+        .expect_err("route to unexposed tool must fail");
+        assert_eq!(error, MiniAppServiceCallError::InvalidDtmfRoute);
     }
 }
