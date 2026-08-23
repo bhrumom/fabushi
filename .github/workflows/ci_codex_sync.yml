@@ -27,7 +27,9 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          # Keep CI deterministic. Advance this pin only in a PR that proves the
+          # full Mahayana clippy/test matrix on all three desktop runner families.
+          toolchain: 1.97.1
           components: clippy, rustfmt
       - name: Install Linux native capture/input dependencies
         if: runner.os == 'Linux'
