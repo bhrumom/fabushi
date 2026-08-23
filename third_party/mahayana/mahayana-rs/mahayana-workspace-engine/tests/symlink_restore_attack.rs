@@ -32,7 +32,10 @@ fn restore_rejects_live_symlink_escape_before_mutating_external_files() {
 
     let result = engine.restore_checkpoint(&checkpoint.id);
     assert!(matches!(result, Err(WorkspaceError::UnsafeRelativePath(_))));
-    assert_eq!(fs::read_to_string(&victim).expect("read victim"), "untouched");
+    assert_eq!(
+        fs::read_to_string(&victim).expect("read victim"),
+        "untouched"
+    );
     assert!(!external.join("lib.rs").exists());
 
     fs::remove_file(root.join("src")).expect("remove symlink");
