@@ -1,0 +1,119 @@
+name: FAB-P0004 one-shot orchestrator lint repair
+
+on:
+  push:
+    branches:
+      - gbf/m6-postmerge-stabilization-20260823
+    paths:
+      - .github/workflows/fab-p0004-orchestrator-lint-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: gbf/m6-postmerge-stabilization-20260823
+          fetch-depth: 1
+      - name: Apply four strict-clippy repairs
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-orchestrator/src/lib.rs')
+          s = p.read_text()
+          replacements = [
+              ('''        if let Some(key) = dedupe_key.as_deref() {
+            if let Some(existing) = self.entries.iter_mut().find(|entry| {
+                entry.state == PromptState::Pending && entry.dedupe_key.as_deref() == Some(key)
+            }) {
+                existing.text = text;
+                existing.priority = existing.priority.max(priority);
+                existing.metadata = metadata;
+                return Ok(existing.id.clone());
+            }
+        }
+''', '''        if let Some(key) = dedupe_key.as_deref()
+            && let Some(existing) = self.entries.iter_mut().find(|entry| {
+                entry.state == PromptState::Pending && entry.dedupe_key.as_deref() == Some(key)
+            })
+        {
+            existing.text = text;
+            existing.priority = existing.priority.max(priority);
+            existing.metadata = metadata;
+            return Ok(existing.id.clone());
+        }
+'''),
+              ('''    pub fn next(&mut self) -> Option<PromptEntry> {
+        let index = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.state == PromptState::Pending)
+            .max_by(|(_, left), (_, right)| {
+                left.priority
+                    .cmp(&right.priority)
+                    .then_with(|| right.created_at_ms.cmp(&left.created_at_ms))
+            })
+            .map(|(index, _)| index)?;
+        let entry = self.entries.get_mut(index)?;
+        entry.state = PromptState::Running;
+        Some(entry.clone())
+    }
+''', '''    fn pop_next(&mut self) -> Option<PromptEntry> {
+        let index = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.state == PromptState::Pending)
+            .max_by(|(_, left), (_, right)| {
+                left.priority
+                    .cmp(&right.priority)
+                    .then_with(|| right.created_at_ms.cmp(&left.created_at_ms))
+            })
+            .map(|(index, _)| index)?;
+        let entry = self.entries.get_mut(index)?;
+        entry.state = PromptState::Running;
+        Some(entry.clone())
+    }
+'''),
+              ('''        records.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
+''', '''        records.sort_by_key(|record| std::cmp::Reverse(record.updated_at_ms));
+'''),
+              ('''        if let Some(parent_id) = parent_id.as_deref() {
+            if !self.tasks.contains_key(parent_id) {
+                return Err(OrchestratorError::SubagentNotFound(parent_id.to_string()));
+            }
+        }
+''', '''        if let Some(parent_id) = parent_id.as_deref()
+            && !self.tasks.contains_key(parent_id)
+        {
+            return Err(OrchestratorError::SubagentNotFound(parent_id.to_string()));
+        }
+'''),
+          ]
+          for old, new in replacements:
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one replacement target, got {count}')
+              s = s.replace(old, new)
+          marker = '''}\n\n#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\npub struct MemoryRecord'''
+          iterator_impl = '''}\n\nimpl Iterator for PromptQueue {\n    type Item = PromptEntry;\n\n    fn next(&mut self) -> Option<Self::Item> {\n        self.pop_next()\n    }\n}\n\n#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]\npub struct MemoryRecord'''
+          count = s.count(marker)
+          if count != 1:
+              raise SystemExit(f'expected PromptQueue impl boundary once, got {count}')
+          s = s.replace(marker, iterator_impl)
+          p.write_text(s)
+      - name: Commit deterministic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add third_party/mahayana/mahayana-rs/mahayana-orchestrator/src/lib.rs
+          git diff --cached --check
+          git commit -m 'fix(runtime): satisfy strict orchestrator clippy contract'
+          git push origin HEAD:gbf/m6-postmerge-stabilization-20260823
