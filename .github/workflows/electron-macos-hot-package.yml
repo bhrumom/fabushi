@@ -104,6 +104,7 @@ jobs:
           echo "asr_changed=$asr_changed" >> "$GITHUB_OUTPUT"
           echo "full_required=$full_required" >> "$GITHUB_OUTPUT"
           printf '\nsource=%s\nbase=%s\nhost=%s asr=%s full=%s\n' "$source_sha" "$base_sha" "$host_changed" "$asr_changed" "$full_required" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Hot payloads are developer overlays only; sealed Developer ID production apps require a fresh signed/notarized full package.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Explain full-package fallback
         if: steps.classify.outputs.full_required == 'true'
@@ -244,7 +245,7 @@ jobs:
           fi
           [ -n "$identity" ] || { echo 'Developer ID Application identity was not found.' >&2; exit 1; }
           host=desktop/resources/bin/mahayana-app-host
-          codesign --force --options runtime --timestamp=none --sign "$identity" "$host"
+          codesign --force --options runtime --timestamp --sign "$identity" "$host"
           codesign --verify --strict --verbose=2 "$host"
           cp "$host" "$RUNNER_TEMP/fabushi-hot/mahayana-app-host"
 

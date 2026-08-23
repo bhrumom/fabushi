@@ -10,6 +10,7 @@
 - **Primary implementation PR**: `#2046`
 - **Product-gate repair PR**: `#2048`
 - **Auth gateway repair PR**: `#2049`
+- **macOS Keychain/formal package repair PR**: pending
 
 ## Objective
 
@@ -31,6 +32,7 @@
 - 复用 Fabushi Motion v2 / BotMark 作为 AI Bot/Agent 动态身份头像，并把执行状态映射到视觉状态。
 - 将 Messenger 视觉层收敛为 Fabushi/Grok 深色、玻璃、动态层次，同时保留 Telegram 的高密度信息架构与成熟交互。
 - 修复生产 browser-first auth 网关并建立部署 smoke 防回归。
+- 修复 macOS browser-login 回跳触发历史 `mahayana-cli` Keychain 密码弹窗；正式安装包必须使用稳定 Developer ID、Apple notarization/stapling，并完整携带 Host、ASR、图标与隐私说明。
 
 ## Out of scope
 
@@ -47,6 +49,8 @@
 5. 生产 `POST /api/auth/browser/start` 返回 200 且 payload 含 `attemptId` / `pollSecret` / `loginUrl`，不得返回 legacy/Cloudflare 404。
 6. Desktop/Messaging/Platform relevant GitHub Actions 通过。
 7. 受保护 main 合并、production CD 与 canonical/live readback 后才允许关闭任务。
+8. Electron 桌面认证不得读取历史 `mahayana-cli` / `codex` Keychain ACL；升级后允许一次 browser-first 登录建立新的 Fabushi desktop secret namespace，但不得要求用户输入 macOS 登录钥匙串密码。
+9. 正式 macOS 包中 App、`mahayana-app-host`、离线 ASR 必须归属于同一个非空 Apple TeamIdentifier；App 与 DMG 均须 notarize + staple + Gatekeeper 验证，且签名后的生产 App 禁止原地 hot-patch。
 
 ## Implementation summary
 
@@ -75,6 +79,15 @@
 - #2049 在 `fabushi/web/wrangler.toml` 为 default/development/production 增加 `MAHAYANA_PLATFORM -> mahayana-platform` Cloudflare Service Binding；gateway 优先使用 `env.MAHAYANA_PLATFORM.fetch()`，只保留 public HTTPS 作为 fallback。
 - `platform-control-plane.test.js` 新增 service-binding 与 production/development binding 静态契约，防止未来回退到 public workers.dev hop。
 
+### macOS Keychain prompt + formal package hardening — current repair
+
+- 现场检查确认当前 `/Applications/fabushi.app` 与内置 `mahayana-app-host` 均为 ad-hoc 签名，`TeamIdentifier=not set`；同时登录钥匙串存在历史 `mahayana-cli` / `secrets|…` 项，因此回跳后的 Host 访问旧 ACL 会触发 macOS 密码授权弹窗。
+- Electron Host 现在显式选择 `fabushi-desktop-v2` secret boundary：桌面 auth 与 managed/requested secrets 使用新的 Fabushi-owned Keychain services 和新的加密 `.age` 文件，不读取历史 `mahayana-cli`/`codex` ACL。旧桌面会话不会通过读取旧 Keychain 静默迁移；升级后最多需要重新完成一次 browser-first 登录。
+- `desktop/package.json` 补齐正式 macOS Developer ID 构建配置：Hardened Runtime、显式 entitlements、1024px 正式 App icon、麦克风/摄像头用途说明、规范 artifact naming，以及 `afterSign` App notarization/stapling。
+- `native-electron-release.yml` 与 canonical `electron-desktop.yml` 的 main/macOS 路径都会导入稳定 Developer ID、签名 Host 与离线 ASR、签名整个 Electron App、notarize/staple App，再 notarize/staple DMG。正式 release 仍生成 SHA256SUMS 并发布 GitHub Release。
+- 新的 `verify-electron-macos-package.sh` fail-closed 验证 bundle id、App/Host/ASR TeamIdentifier 一致、`app.asar`、App icon、ASR license、隐私用途说明、code signature、stapler 和 Gatekeeper。
+- 生产签名 App 不再允许 `app.asar`/Host 原地 hot patch；hot package 明确降级为开发 overlay，避免破坏 sealed code signature 后再次触发 Keychain/Notary 信任问题。
+
 ## Verification / evidence
 
 - UI source + E2E: PR #2046 merged, `fea29e5c...`。
@@ -88,8 +101,8 @@
 ## Risks / blockers
 
 - #2049 current-head CI、protected merge、production CD 和 live endpoint readback 尚未完成，因此登录修复仍不可宣称完成。
-- 当前用户安装的 Mac 客户端要看到新的统一 UI，还需要对应 Electron package/release 安装验证；源码合并不等于已安装版本自动变化。
+- 当前用户安装的 Mac 客户端仍是 ad-hoc 包；必须在本修复合并后安装由 canonical main 产出的 Developer ID + notarized 完整包，并现场验证 browser-first 回跳不再出现 Keychain 密码弹窗。
 
 ## Next action
 
-等待 PR #2049 Platform Control Plane/CI 通过并合并；随后观察 Worker production CD，要求 staging E2E、production deploy、production smoke 全绿；再 live probe `api.ombhrum.com/api/auth/browser/start`。之后更新 WBS/验收矩阵/status/changelog/evidence 并决定是否触发最新 Electron macOS 安装包发布验证。
+完成 macOS Keychain/formal-package repair 的 GitHub Actions 与 protected merge；等待 canonical main 产出 Developer ID + notarized macOS artifact，下载并替换 `/Applications/fabushi.app`，验证 App/Host/ASR TeamIdentifier、stapler/Gatekeeper、browser-first 登录回跳和最终统一 Messenger UI；无 Keychain 密码弹窗后再关闭 M7-DESKTOP-001。
