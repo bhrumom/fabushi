@@ -8,6 +8,7 @@ use crate::payment::Money;
 use crate::protocol::{
     ClientCommand, ClientEnvelope, ServerEnvelope, ServerEvent, FABUSHI_MESSAGING_PROTOCOL_VERSION,
 };
+use crate::search::{SearchIndex, SearchQuery};
 use crate::settlement::{SettlementError, SettlementVerifier, SignedSettlement};
 use crate::store::{JournalEntry, MessagingSnapshot, MessagingStateStore, StoreError};
 use crate::wallet::{LedgerEntry, WalletAccountId};
@@ -175,6 +176,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 self.mark_direct_messages_delivered(&actor_id, server_time_ms)?;
                 self.sync_response(&actor_id, cursor.as_deref(), limit, server_time_ms)
             }
+            ClientCommand::Search { query } => {
+                Ok(vec![self.search_envelope(&actor_id, query, server_time_ms)])
+            }
             ClientCommand::StartTyping {
                 conversation_id,
                 action,
@@ -235,6 +239,60 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 self.persist_with_events(server_time_ms, &journal)?;
                 Ok(responses)
             }
+        }
+    }
+
+    fn search_envelope(
+        &self,
+        actor_id: &ActorId,
+        query: SearchQuery,
+        server_time_ms: i64,
+    ) -> ServerEnvelope {
+        let state = self.engine.state();
+        let visible_conversations = state
+            .conversations
+            .values()
+            .filter(|conversation| {
+                conversation.owner_id.as_ref() == Some(actor_id)
+                    || conversation
+                        .participants
+                        .iter()
+                        .any(|participant| &participant.actor_id == actor_id)
+                    || state
+                        .communities
+                        .get(&conversation.id)
+                        .and_then(|community| community.public_username.as_ref())
+                        .is_some()
+            })
+            .map(|conversation| conversation.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut index = SearchIndex::default();
+        for actor in state.actors.values().cloned() {
+            index.index_actor(actor);
+        }
+        for conversation in state
+            .conversations
+            .values()
+            .filter(|conversation| visible_conversations.contains(&conversation.id))
+            .cloned()
+        {
+            index.index_conversation(conversation);
+        }
+        for message in visible_conversations
+            .iter()
+            .filter_map(|conversation_id| state.messages.get(conversation_id))
+            .flat_map(|messages| messages.values())
+            .filter(|message| !message.deleted)
+            .cloned()
+        {
+            index.index_message(message);
+        }
+        let results = index.search(&query);
+        ServerEnvelope {
+            protocol_version: FABUSHI_MESSAGING_PROTOCOL_VERSION,
+            cursor: Some(self.cursor.to_string()),
+            server_time_ms,
+            event: ServerEvent::SearchResults { query, results },
         }
     }
 

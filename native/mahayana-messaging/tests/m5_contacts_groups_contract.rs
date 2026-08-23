@@ -263,8 +263,8 @@ fn admin_rights_are_operation_specific() {
         .unwrap_err();
     assert_eq!(member_denied, EngineError::CommunityPermissionDenied);
 
-    let mut promoted = engine.state().communities[&ConversationId::new("group:m5-admin")]
-        .members[&ActorId::new("human:admin")]
+    let mut promoted = engine.state().communities[&ConversationId::new("group:m5-admin")].members
+        [&ActorId::new("human:admin")]
         .clone();
     promoted.admin_rights.manage_topics = true;
     engine
