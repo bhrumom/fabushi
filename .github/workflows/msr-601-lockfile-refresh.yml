@@ -1,6 +1,11 @@
 name: MSR-601 lockfile refresh
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/msr-601-lockfile-refresh.yml'
   push:
     branches:
       - fix/msr-601-cli-vendor-boundary-20260823
@@ -12,6 +17,7 @@ permissions:
 
 jobs:
   refresh:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
