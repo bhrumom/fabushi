@@ -34,13 +34,13 @@ methods=(
   feature.auth.oauthStart
   feature.auth.oauthPoll
   feature.auth.logout
-  marketplace.browse
-  marketplace.release
-  plugin.install
-  plugin.uninstall
-  plugin.active
-  plugin.listInstalled
-  plugin.uiDocument
+  feature.marketplace.browse
+  feature.marketplace.release
+  feature.plugin.install
+  feature.plugin.uninstall
+  feature.plugin.active
+  feature.plugin.listInstalled
+  feature.plugin.uiDocument
 )
 
 for method in "${methods[@]}"; do

@@ -114,40 +114,14 @@ impl AppHost {
         match method {
             "host.platform" => Ok(json!({"platform": host_platform()})),
             method if method.starts_with("feature.") => self.handle_feature(method, params),
-            "marketplace.browse" => {
-                let query = params.get("query").and_then(Value::as_str);
-                let requested_platform = params
-                    .get("platform")
-                    .and_then(Value::as_str)
-                    .unwrap_or(host_platform());
-                let marketplace_platform = match requested_platform {
-                    "ios" | "android" => "mobile",
-                    other => other,
-                };
-                self.product
-                    .marketplace_browse(query, Some(marketplace_platform))
-                    .map_err(|error| AppHostError::Operation(error.to_string()))
-            }
-            "marketplace.release" => {
-                let plugin_id = string_param(&params, "pluginId")?;
-                let version = string_param(&params, "version")?;
-                self.product
-                    .marketplace_release_metadata(plugin_id, version)
-                    .map_err(|error| AppHostError::Operation(error.to_string()))
-            }
             "platform.request" => self
                 .product
                 .execute("mahayana.platform.request", &params)
                 .map_err(|error| AppHostError::Operation(error.to_string())),
-            "plugin.install" => self.install_plugin(params),
-            "plugin.uninstall" => self.uninstall_plugin(params),
-            "plugin.active" => self.active_plugin(params),
-            "plugin.listInstalled" => self.list_installed_plugins(),
             "plugin.permissions" => self.plugin_permissions(params),
             "plugin.permission.grant" => self.set_permission(params, true),
             "plugin.permission.revoke" => self.set_permission(params, false),
             "plugin.compatibility" => self.plugin_compatibility(params),
-            "plugin.uiDocument" => self.plugin_ui_document(params),
             "runtime.start" => self.start_runtime(params),
             "runtime.stop" => self.stop_runtime(params),
             "runtime.tools" => self.runtime_tools(),
@@ -187,6 +161,13 @@ impl AppHost {
                 .feature
                 .logout()
                 .map_err(|error| AppHostError::Operation(error.to_string())),
+            "feature.marketplace.browse" => self.marketplace_browse(params),
+            "feature.marketplace.release" => self.marketplace_release(params),
+            "feature.plugin.install" => self.install_plugin(params),
+            "feature.plugin.uninstall" => self.uninstall_plugin(params),
+            "feature.plugin.active" => self.active_plugin(params),
+            "feature.plugin.listInstalled" => self.list_installed_plugins(),
+            "feature.plugin.uiDocument" => self.plugin_ui_document(params),
             "feature.messaging.access.issue" => self.feature_messaging_access_issue(params),
             other => Err(AppHostError::InvalidRequest(format!(
                 "unknown feature method {other}"
@@ -296,6 +277,29 @@ impl AppHost {
     fn feature_oauth_poll(&self, params: Value) -> Result<Value, AppHostError> {
         self.feature
             .oauth_poll(string_param(&params, "attemptId")?.to_string())
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn marketplace_browse(&self, params: Value) -> Result<Value, AppHostError> {
+        let query = params.get("query").and_then(Value::as_str);
+        let requested_platform = params
+            .get("platform")
+            .and_then(Value::as_str)
+            .unwrap_or(host_platform());
+        let marketplace_platform = match requested_platform {
+            "ios" | "android" => "mobile",
+            other => other,
+        };
+        self.product
+            .marketplace_browse(query, Some(marketplace_platform))
+            .map_err(|error| AppHostError::Operation(error.to_string()))
+    }
+
+    fn marketplace_release(&self, params: Value) -> Result<Value, AppHostError> {
+        let plugin_id = string_param(&params, "pluginId")?;
+        let version = string_param(&params, "version")?;
+        self.product
+            .marketplace_release_metadata(plugin_id, version)
             .map_err(|error| AppHostError::Operation(error.to_string()))
     }
 
@@ -494,7 +498,10 @@ impl AppHost {
             })?;
         let root = std::fs::canonicalize(&pointer.installed_path)
             .map_err(|error| AppHostError::Operation(error.to_string()))?;
-        let requested_entry = pointer.entry.as_deref().map(|value| value.trim_start_matches("./"));
+        let requested_entry = pointer
+            .entry
+            .as_deref()
+            .map(|value| value.trim_start_matches("./"));
         let entry = requested_entry
             .filter(|value| value.to_ascii_lowercase().ends_with(".html"))
             .map(str::to_string)
