@@ -51,13 +51,17 @@ pub enum MiniAppServiceCallInputSource {
     tag = "type"
 )]
 pub enum MiniAppServiceCallInput {
-    Dtmf { digits: String },
+    Dtmf {
+        digits: String,
+    },
     SpeechTranscript {
         text: String,
         is_final: bool,
         confidence_bps: Option<u16>,
     },
-    ChatText { text: String },
+    ChatText {
+        text: String,
+    },
 }
 
 impl MiniAppServiceCallInput {
@@ -270,11 +274,7 @@ impl MiniAppServiceCallSession {
                     turn_sequence: sequence,
                 });
             }
-            MiniAppServiceCallInput::SpeechTranscript {
-                text,
-                is_final,
-                ..
-            } => {
+            MiniAppServiceCallInput::SpeechTranscript { text, is_final, .. } => {
                 effects.push(MiniAppServiceCallEffect::AppendConversationTranscript {
                     conversation_id: self.conversation_id.clone(),
                     actor_id: actor_id.clone(),
@@ -385,7 +385,9 @@ mod tests {
         let effects = call
             .submit_input(
                 ActorId("actor:user".into()),
-                MiniAppServiceCallInput::Dtmf { digits: "12#".into() },
+                MiniAppServiceCallInput::Dtmf {
+                    digits: "12#".into(),
+                },
                 120,
             )
             .expect("submit dtmf");
@@ -414,7 +416,11 @@ mod tests {
         assert_eq!(effects.len(), 2);
         assert!(effects.iter().any(|effect| matches!(
             effect,
-            MiniAppServiceCallEffect::AppendConversationTranscript { source: MiniAppServiceCallInputSource::Speech, final_segment: true, .. }
+            MiniAppServiceCallEffect::AppendConversationTranscript {
+                source: MiniAppServiceCallInputSource::Speech,
+                final_segment: true,
+                ..
+            }
         )));
         assert!(effects.iter().any(|effect| matches!(
             effect,
@@ -440,7 +446,10 @@ mod tests {
         assert_eq!(effects.len(), 1);
         assert!(matches!(
             &effects[0],
-            MiniAppServiceCallEffect::AppendConversationTranscript { final_segment: false, .. }
+            MiniAppServiceCallEffect::AppendConversationTranscript {
+                final_segment: false,
+                ..
+            }
         ));
     }
 
@@ -457,10 +466,9 @@ mod tests {
                 120,
             )
             .expect("submit chat text");
-        assert!(effects.iter().any(|effect| matches!(
-            effect,
-            MiniAppServiceCallEffect::ResolveIntent { .. }
-        )));
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, MiniAppServiceCallEffect::ResolveIntent { .. })));
     }
 
     #[test]
@@ -471,7 +479,9 @@ mod tests {
         let error = call
             .submit_input(
                 ActorId("actor:user".into()),
-                MiniAppServiceCallInput::ChatText { text: "继续".into() },
+                MiniAppServiceCallInput::ChatText {
+                    text: "继续".into(),
+                },
                 130,
             )
             .expect_err("ended call must reject input");
