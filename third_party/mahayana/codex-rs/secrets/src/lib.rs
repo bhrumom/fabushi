@@ -22,6 +22,8 @@ pub use sanitizer::redact_secrets;
 
 const KEYRING_SERVICE: &str = "codex";
 const MAHAYANA_KEYRING_SERVICE: &str = "mahayana-cli";
+const FABUSHI_DESKTOP_KEYRING_SERVICE: &str = "com.ombhrum.fabushi.auth.v2";
+const FABUSHI_DESKTOP_MANAGED_KEYRING_SERVICE: &str = "com.ombhrum.fabushi.managed-secrets.v2";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SecretName(String);
@@ -218,6 +220,8 @@ pub fn compute_keyring_account(codex_home: &Path) -> String {
 pub(crate) fn keyring_service(namespace: LocalSecretsNamespace) -> &'static str {
     match namespace {
         LocalSecretsNamespace::MahayanaAuth => MAHAYANA_KEYRING_SERVICE,
+        LocalSecretsNamespace::FabushiDesktopAuth => FABUSHI_DESKTOP_KEYRING_SERVICE,
+        LocalSecretsNamespace::FabushiDesktopManagedSecrets => FABUSHI_DESKTOP_MANAGED_KEYRING_SERVICE,
         LocalSecretsNamespace::ManagedSecrets
         | LocalSecretsNamespace::CodexAuth
         | LocalSecretsNamespace::McpOAuth => KEYRING_SERVICE,
