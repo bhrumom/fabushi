@@ -12,7 +12,43 @@ on:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
 
+permissions:
+  contents: write
+
 jobs:
+  refresh-gbf-rama-lock:
+    name: One-shot GBF Rama lock refresh
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'gbf/m5-avatar-engine-main-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Resolve and persist pinned Rama alpha family
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST=third_party/mahayana/mahayana-rs/Cargo.toml
+          LOCK=third_party/mahayana/mahayana-rs/Cargo.lock
+          cargo update --manifest-path "$MANIFEST" -p rama-error --precise 0.3.0-alpha.4
+          cargo update --manifest-path "$MANIFEST" -p rama-macros --precise 0.3.0-alpha.4
+          cargo update --manifest-path "$MANIFEST" -p rama-utils --precise 0.3.0-alpha.4
+          cargo metadata --locked --manifest-path "$MANIFEST" --no-deps >/dev/null
+          if git diff --quiet -- "$LOCK"; then
+            echo 'Rama lock graph already coherent.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$LOCK"
+          git commit -m 'fix(ci): lock Rama alpha dependency family on current main'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   test-mahayana-runtime:
     name: Test embedded Codex Runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
