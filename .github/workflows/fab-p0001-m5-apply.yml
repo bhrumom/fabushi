@@ -1,0 +1,76 @@
+name: FAB-P0001 M5 product patch
+
+on:
+  push:
+    branches:
+      - feat/fab-p0001-m5-contacts-groups
+    paths:
+      - .github/workflows/fab-p0001-m5-apply.yml
+      - scripts/fab-p0001-m5-apply.py
+  pull_request:
+    branches:
+      - feat/fab-p0001-m4-media-closure
+    paths:
+      - .github/workflows/fab-p0001-m5-apply.yml
+      - scripts/fab-p0001-m5-apply.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'bhrumom/fabushi' && (github.event_name == 'push' || github.head_ref == 'feat/fab-p0001-m5-contacts-groups')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/fab-p0001-m5-contacts-groups
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply M5 product patch
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/fab-p0001-m5-apply.py 2>&1 | tee "$RUNNER_TEMP/m5-patch.log"
+      - name: Format shared messaging crate
+        if: success()
+        run: cargo fmt --manifest-path native/mahayana-messaging/Cargo.toml
+      - name: Persist patch diagnostic on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/m5-patch.log" .github/fab-p0001-m5-patch-error.txt
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git add .github/fab-p0001-m5-patch-error.txt
+          git commit -m "ci(tfi): record M5 patch diagnostic" || exit 0
+          git push origin HEAD:feat/fab-p0001-m5-contacts-groups
+      - name: Validate M5 patch allowlist
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          test -n "$changed"
+          while IFS= read -r path; do
+            case "$path" in
+              native/mahayana-messaging/src/engine.rs|native/mahayana-messaging/src/protocol.rs|native/mahayana-messaging/src/service.rs|native/mahayana-messaging/tests/m5_contacts_groups_contract.rs|native/mahayana-messaging/tests/m4_media_contract.rs|native/mahayana-messaging/tests/typing_contract.rs) ;;
+              *) echo "Unexpected M5 changed path: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+      - name: Commit M5 product patch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git add native/mahayana-messaging
+          git commit -m "feat(tfi): close M5 contacts groups and permissions"
+          git push origin HEAD:feat/fab-p0001-m5-contacts-groups
