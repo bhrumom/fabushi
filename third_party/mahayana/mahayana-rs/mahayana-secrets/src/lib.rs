@@ -649,11 +649,7 @@ mod tests {
         auth.set(&SecretScope::Global, &auth_name, "auth-value")?;
         managed.set(&SecretScope::Global, &managed_name, "managed-value")?;
         desktop_auth.set(&SecretScope::Global, &auth_name, "desktop-auth-value")?;
-        desktop_managed.set(
-            &SecretScope::Global,
-            &managed_name,
-            "desktop-managed-value",
-        )?;
+        desktop_managed.set(&SecretScope::Global, &managed_name, "desktop-managed-value")?;
         let account = compute_keyring_account(&root);
         assert!(
             store
