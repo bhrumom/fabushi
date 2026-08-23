@@ -11,3 +11,9 @@
 ## GitHub evidence
 
 Pending PR and GitHub Actions evidence.
+
+
+## Canonical-main package repair evidence
+
+- Main Electron run `32648194025`: runtime smoke passed; Linux package failed solely because `electron-builder` auto-detected CI publishing after the GitHub updater provider was configured, with `GitHub Personal Access Token is not set`.
+- The package matrix now explicitly uses `--publish never`; immutable publishing remains in the dedicated release workflow.

@@ -30,3 +30,11 @@ Apply the 2026-08-23 Telegram/Grok UI correction: keep all search activity in th
 - Local lightweight checks only: `git diff --check`, BotMark static contract script, source marker checks, PNG alpha/dimension inspection.
 - GitHub Actions: Electron desktop quality gate and any repository-required checks selected for the PR.
 - After merge: canonical `main` readback. Release workflow validates immutable GitHub Release updater assets on the next tagged release.
+
+
+## Canonical-main package repair — 2026-08-23
+
+- PR #2073 merged through the protected merge queue as canonical main `ed1535aaeb835c2819a8cb8be77bf3519b349bd1`.
+- Main Electron run `32648194025` exposed a packaging-only regression after adding the GitHub updater provider: `electron-builder` implicitly attempted to publish from ordinary CI because the package matrix did not pass `--publish never`, then failed without `GH_TOKEN`.
+- Release publication remains exclusively owned by `native-electron-release.yml`; ordinary desktop quality/package CI must only build artifacts.
+- Repair: canonical Electron package matrix now invokes `electron-builder --<target> --publish never`, preventing CI from mutating GitHub Releases while still generating updater metadata/assets for later release publication.
