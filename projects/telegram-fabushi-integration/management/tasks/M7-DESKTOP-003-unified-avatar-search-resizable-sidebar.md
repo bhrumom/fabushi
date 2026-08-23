@@ -99,3 +99,15 @@ PR #2057 merged to `main` as `ebfb1e090cb677b6d9d35edff3ad912819f3fba6`, but two
 - A final E2E assertion now verifies the bottom-left personal navigation avatar itself is rendered by `fabushi-motion-v2`.
 - The E2E-file change deliberately enters the canonical Electron package matrix; after protected merge, the `main` push must produce the signed/notarized macOS package used for local installation acceptance.
 - Task remains `TESTING` until packaged-main macOS artifact is installed and opened on the user's Mac and canonical project evidence is updated.
+
+
+## Runtime-smoke integration repair — 2026-08-23
+
+- PR #2059 merged to `main` as `ae70c06f4286097d2f90c43d047b77845173d9cf` while deeper Electron runtime/package checks were still executing.
+- Electron runtime smoke from the preceding repair run `32638060949` exposed three integration defects that are now treated as blocking before installation:
+  1. Application global search had no deterministic Marketplace catalog in `FABUSHI_FEATURE_HOST_MODE=test`, so `global-search-app-global-dharma` never appeared.
+  2. native capability handlers still called obsolete unprefixed `marketplace.*` / `plugin.*` Host methods, causing `getMcpCatalog` to fail with `unknown method marketplace.browse`.
+  3. application-menu E2E armed its native-event listener and clicked the menu through independent Electron/renderer channels without a registration handshake, so `open-offline-asr` could be missed.
+- Repair branch `fix/tfi-m7-marketplace-runtime-smoke` adds a deterministic AppHost test Marketplace/install seam while production continues to use the real online Product API; native capability calls are normalized to canonical `feature.marketplace.*` / `feature.plugin.*`; menu E2E now confirms listener registration before the click.
+- Global Application-search tests now exercise the real search → install → open UI flow instead of assuming an already-installed Mini App.
+- Task remains `TESTING` until repaired runtime smoke, package matrix, protected merge, signed/notarized main artifact installation and local Mac open verification all pass.
