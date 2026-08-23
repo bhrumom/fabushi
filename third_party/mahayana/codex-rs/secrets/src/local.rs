@@ -158,7 +158,9 @@ impl LocalSecretsBackend {
             LocalSecretsNamespace::McpOAuth => MCP_OAUTH_SECRETS_FILENAME,
             LocalSecretsNamespace::MahayanaAuth => MAHAYANA_AUTH_SECRETS_FILENAME,
             LocalSecretsNamespace::FabushiDesktopAuth => FABUSHI_DESKTOP_AUTH_SECRETS_FILENAME,
-            LocalSecretsNamespace::FabushiDesktopManagedSecrets => FABUSHI_DESKTOP_MANAGED_SECRETS_FILENAME,
+            LocalSecretsNamespace::FabushiDesktopManagedSecrets => {
+                FABUSHI_DESKTOP_MANAGED_SECRETS_FILENAME
+            }
         };
         self.secrets_dir().join(filename)
     }

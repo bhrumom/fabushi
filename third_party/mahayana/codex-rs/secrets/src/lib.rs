@@ -221,7 +221,9 @@ pub(crate) fn keyring_service(namespace: LocalSecretsNamespace) -> &'static str 
     match namespace {
         LocalSecretsNamespace::MahayanaAuth => MAHAYANA_KEYRING_SERVICE,
         LocalSecretsNamespace::FabushiDesktopAuth => FABUSHI_DESKTOP_KEYRING_SERVICE,
-        LocalSecretsNamespace::FabushiDesktopManagedSecrets => FABUSHI_DESKTOP_MANAGED_KEYRING_SERVICE,
+        LocalSecretsNamespace::FabushiDesktopManagedSecrets => {
+            FABUSHI_DESKTOP_MANAGED_KEYRING_SERVICE
+        }
         LocalSecretsNamespace::ManagedSecrets
         | LocalSecretsNamespace::CodexAuth
         | LocalSecretsNamespace::McpOAuth => KEYRING_SERVICE,
