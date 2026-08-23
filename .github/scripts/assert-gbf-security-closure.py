@@ -6,7 +6,9 @@ from pathlib import Path
 root = Path('.')
 project = root / 'projects/grok-bot-fabushi-integration'
 
-threats = json.loads((project / 'evidence/GBF-701/threat-model.json').read_text(encoding='utf-8'))
+# GBF-701 keeps the machine-readable threat model in threat-model.md so the
+# project evidence has one canonical copy that is both reviewable and executable.
+threats = json.loads((project / 'evidence/GBF-701/threat-model.md').read_text(encoding='utf-8'))
 if len(threats.get('boundaries', [])) < 7 or len(threats.get('threats', [])) < 8:
     raise SystemExit('GBF security closure: threat model is incomplete')
 for item in threats['threats']:
