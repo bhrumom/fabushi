@@ -74,6 +74,6 @@ jobs:
           python3 scripts/check-official-plugin-marketplace.py
 
   cloud-marketplace-e2e:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request'
     uses: ./.github/workflows/mahayana-cloud-marketplace-e2e.yml
     secrets: inherit
