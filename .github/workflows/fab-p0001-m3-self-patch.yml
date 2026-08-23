@@ -34,6 +34,22 @@ jobs:
           git fetch --depth=1 origin main
           git show origin/main:.github/workflows/fab-p0001-m3-unread-patch-driver.yml > "$RUNNER_TEMP/canonical-driver.yml"
 
+      - name: Normalize actor read cursor anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          path = Path('native/mahayana-messaging/src/engine.rs')
+          text = path.read_text()
+          field = '    pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,\n'
+          if field not in text:
+              anchor = '    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n'
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'engine read cursor anchor count={text.count(anchor)}')
+              path.write_text(text.replace(anchor, anchor + field, 1))
+          PYTHON
+
       - name: Apply canonical patch implementation
         shell: bash
         run: |
