@@ -3,52 +3,57 @@
 - **Project ID:** FAB-P0003
 - **Project Key:** FCM
 - **Task ID:** FCM-008
-- **Status:** passed
+- **Status:** in-progress
 - **Started:** 2026-08-23
 - **Updated:** 2026-08-23
-- **Completed:** 2026-08-23
 
 ## Objective
 
-Build the latest canonical Fabushi macOS Electron package from GitHub `main` and provide a downloadable artifact/release link.
+Build the latest canonical Fabushi macOS Electron package from GitHub `main` and provide a downloadable package that passes macOS Gatekeeper distribution checks.
 
-## Source requirement
+## Source requirements
 
-User request: “构建最新的mac版本，把下载链接给我”。
+1. User request: “构建最新的mac版本，把下载链接给我”。
+2. Post-delivery defect report: “安装后无法打开显示已经损坏”。
 
-## Final source
+## Canonical product source
 
-- Canonical product source SHA: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`.
-- Product version emitted by electron-builder: `1.0.2`.
-- Architecture: macOS arm64.
+- `main`: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`.
+- Electron app version: `1.0.2`.
+- Target architecture: macOS arm64.
 
-## Execution
+## Reopened defect evidence
 
-1. Manual canonical `Electron desktop quality gate` run `32619314508` used the exact source SHA and exposed two deterministic Messenger E2E regressions before package jobs. No package was claimed from that failed gate.
-2. A one-shot GitHub Actions build on `macos-15` then reused the production package recipe while explicitly checking out and asserting the exact canonical source SHA. Run `32619653455` completed successfully and produced the DMG/ZIP artifact.
-3. Because the intermediary VPS had insufficient free space for a 284 MB artifact copy, the package was not routed through the VPS. A second GitHub-native run `32619943578`, with the macOS Host cache hit, rebuilt the exact same source and published immutable prerelease assets directly from the GitHub runner.
-4. The one-shot workflow is not part of canonical product source and is removed from the record branch before governance closure.
+The first prerelease package was built successfully but was not a valid external macOS distribution package. Direct inspection of the downloaded DMG on the target Mac found:
 
-## Verified release
+- app signature: `Signature=adhoc`, `TeamIdentifier=not set`;
+- `spctl -a -vvv -t exec` on the mounted app: rejected (`code has no resources but signature indicates they must be present`);
+- `spctl -a -vvv -t open --context context:primary-signature` on the DMG: rejected (`source=no usable signature`).
 
-- Tag: `macos-main-67b70fff-20260823`
-- Release: `Fabushi macOS latest main 67b70fff`
-- Target commit: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
-- Prerelease: yes
-- DMG asset: `-1.0.2-arm64.dmg` — 142,142,859 bytes
-- ZIP asset: `-1.0.2-arm64-mac.zip` — 142,332,921 bytes
-- Checksums: `SHA256SUMS.txt`
+Root cause: the one-shot package workflow intentionally set `CSC_IDENTITY_AUTO_DISCOVERY=false`, so electron-builder created an unsigned/ad-hoc app and unsigned DMG. This violates the acceptance requirement for an installable end-user macOS package.
+
+## Remediation
+
+- Import the repository's configured Developer ID Application certificate into an ephemeral GitHub Actions keychain.
+- Build with Electron hardened runtime and real Developer ID signing enabled.
+- Verify the `.app` with `codesign --verify --deep --strict`.
+- Sign the DMG, submit it to Apple notarization using the configured App Store Connect API key, wait for `Accepted`, and staple the ticket.
+- Require `xcrun stapler validate` and Gatekeeper `spctl` acceptance before publishing.
+- Publish a new immutable prerelease tag rather than mutating the rejected package.
+- Mark the previous prerelease as broken/deprecated so it is not accidentally reused.
 
 ## Acceptance criteria
 
-1. Build source equals the latest canonical `main` SHA at task execution time. **Passed.**
-2. GitHub Actions produces a macOS Fabushi package successfully. **Passed** in runs `32619653455` and `32619943578`.
-3. The package is retrievable and a stable GitHub Release download entry point exists. **Passed.**
-4. FCM task/WBS/evidence are synchronized. **Passed by the closure record.**
+1. Build source equals canonical `main@67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`.
+2. App is signed by a valid Developer ID Application identity (not ad-hoc; Team ID present).
+3. Apple notarization finishes with `Accepted` and the DMG has a valid stapled ticket.
+4. `spctl` accepts the final DMG as a primary-signature distribution image.
+5. Final DMG is published on GitHub Release and downloadable.
+6. The final DMG is re-downloaded/checked on the target Mac before FCM-008 returns to `passed`.
 
-## Important validation note
+## Validation boundary
 
-This task accepts the requested **build artifact**, not the full Messenger E2E product gate. The first canonical quality-gate run exposed two existing FAB-P0001 Messaging regressions (duplicate in-conversation message projection and missing renderer-to-Host actor binding). They are explicitly recorded as product blockers and are not hidden by this build task. The prerelease notes make the same distinction.
+The earlier Messenger E2E regressions remain separate FAB-P0001/TFI product issues. FCM-008 is specifically reopened because the delivered installer itself failed macOS distribution trust checks.
 
 ## Evidence
 
