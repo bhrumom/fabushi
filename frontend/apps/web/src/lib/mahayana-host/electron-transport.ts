@@ -45,6 +45,29 @@ const ELECTRON_EDGE_CONTRACT_VERSION = 1;
 const idle = (milliseconds = 10) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
+function isMiniAppConversation(kind: string): boolean {
+  return kind.trim().toLocaleLowerCase() === "miniapp";
+}
+
+function miniAppIdForConversation(conversation: { id: string; title: string }): string {
+  const exactTitle = conversation.title.trim().toLocaleLowerCase();
+  const knownByTitle: Record<string, string> = {
+    "bot father": "bot-father",
+    "chatgpt 自动确认": "chatgpt-auto-confirm",
+    "全球法布施": "global-dharma",
+    "法流记忆卡": "faliu-flashcards",
+    "平台发布": "platform-publish",
+    "hermes 安装器": "hermes-installer",
+    "大乘助手": "mahayana-assistant",
+  };
+  const known = knownByTitle[exactTitle];
+  if (known) return known;
+
+  const cleanId = conversation.id.trim();
+  const namespaced = cleanId.match(/(?:^|:)([a-z0-9][a-z0-9-]*)$/i)?.[1];
+  return namespaced || cleanId;
+}
+
 export function isElectronMahayanaHostAvailable(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -69,6 +92,7 @@ function shellBridge(): ElectronShellBridge {
 
 export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   private readonly listeners = new Set<RuntimeEventListener>();
+  private readonly miniAppConversations = new Map<string, string>();
   private closed = false;
   private pumping = false;
   private unsubscribeBridge: (() => void) | null = null;
@@ -96,6 +120,18 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   execute(command: RuntimeCommand): Promise<CommandAccepted> {
+    if (command.type === "conversation.open") {
+      const miniAppId = this.miniAppConversations.get(command.conversationId);
+      if (miniAppId) {
+        return mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+          command: {
+            type: "miniapp.open",
+            requestId: command.requestId,
+            miniAppId,
+          },
+        });
+      }
+    }
     return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command });
   }
 
@@ -177,9 +213,26 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     this.closed = true;
     this.unsubscribeBridge?.();
     this.unsubscribeBridge = null;
+    this.miniAppConversations.clear();
   }
 
   private dispatchEvent(event: RuntimeEvent): void {
+    if (event.type === "conversation.listed") {
+      const messengerConversations = event.conversations.filter((conversation) => {
+        if (!isMiniAppConversation(conversation.kind)) return true;
+        this.miniAppConversations.set(
+          conversation.id,
+          miniAppIdForConversation(conversation),
+        );
+        return false;
+      });
+      const normalizedEvent: RuntimeEvent = {
+        ...event,
+        conversations: messengerConversations,
+      };
+      for (const listener of this.listeners) listener(normalizedEvent);
+      return;
+    }
     for (const listener of this.listeners) listener(event);
   }
 
