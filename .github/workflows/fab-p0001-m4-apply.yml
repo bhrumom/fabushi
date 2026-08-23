@@ -7,13 +7,19 @@ on:
     paths:
       - .github/workflows/fab-p0001-m4-apply.yml
       - scripts/fab-p0001-m4-apply.py
+  pull_request:
+    branches:
+      - fix/fab-p0001-m3-e2e-closure
+    paths:
+      - .github/workflows/fab-p0001-m4-apply.yml
+      - scripts/fab-p0001-m4-apply.py
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.repository == 'bhrumom/fabushi'
+    if: github.repository == 'bhrumom/fabushi' && (github.event_name == 'push' || github.head_ref == 'feat/fab-p0001-m4-media-closure')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
