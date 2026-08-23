@@ -68,3 +68,11 @@ Per repository policy, no local Electron build, Playwright, Cargo, package build
   - Native Electron capabilities call `feature.marketplace.*` / `feature.plugin.*` only, with desktop plugin platform normalization.
   - Global search E2E performs visible online-app discovery, installation and opening through the same UI users see.
   - Native-menu probe is fully registered before the main-process menu click.
+
+
+## Final E2E contract-alignment evidence
+
+- #2060 merge: `bcd0951396a7efe9f5f37aaa5b0ea38c35ec6220`.
+- Electron runtime run `32638779651` artifact `electron-runtime-smoke-failure-32638779651-1` shows the Mini App did open successfully: `全球法布施`, subtitle `Mini App · 已安装线上包 · 受控宿主容器`, and iframe are present in the failure snapshot.
+- Therefore the remaining Mini App failure was an obsolete expected string (`Mini App · 受控宿主容器`), not a Host/Marketplace/UI-open defect.
+- The personal navigation failure is a Playwright strict-mode ambiguity because the Motion-v2 wrapper and its SVG both expose `data-engine`; selecting `.first()` preserves the intended engine assertion.
