@@ -1,0 +1,98 @@
+name: GBF release candidate regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gbf-release-candidate.yml'
+      - 'projects/grok-bot-fabushi-integration/**'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: gbf-release-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-regression:
+    name: Canonical seven-gate regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RC_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+      RC_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Dispatch canonical workflows against the exact RC branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflows=(
+            ci.yml
+            electron-desktop.yml
+            native-mobile.yml
+            computer-control-security.yml
+            gbf-security-closure.yml
+            mahayana-fast-checks.yml
+            messaging-product-gate.yml
+          )
+          printf 'RC branch=%s\nRC sha=%s\n' "$RC_BRANCH" "$RC_SHA" >> "$GITHUB_STEP_SUMMARY"
+          for workflow in "${workflows[@]}"; do
+            echo "Dispatching $workflow at $RC_BRANCH"
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$RC_BRANCH"
+          done
+
+      - name: Require every dispatched workflow to complete successfully on the same head
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflows=(
+            ci.yml
+            electron-desktop.yml
+            native-mobile.yml
+            computer-control-security.yml
+            gbf-security-closure.yml
+            mahayana-fast-checks.yml
+            messaging-product-gate.yml
+          )
+          for workflow in "${workflows[@]}"; do
+            run_id=''
+            for attempt in $(seq 1 60); do
+              run_id="$(gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$workflow" \
+                --branch "$RC_BRANCH" \
+                --event workflow_dispatch \
+                --limit 30 \
+                --json databaseId,headSha,createdAt \
+                --jq ".[] | select(.headSha == \"$RC_SHA\") | .databaseId" | head -n 1)"
+              if [ -n "$run_id" ]; then break; fi
+              sleep 5
+            done
+            if [ -z "$run_id" ]; then
+              echo "No workflow_dispatch run for $workflow on $RC_SHA" >&2
+              exit 1
+            fi
+            echo "$workflow -> run $run_id" >> "$GITHUB_STEP_SUMMARY"
+            for attempt in $(seq 1 540); do
+              status="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)"
+              if [ "$status" = completed ]; then
+                conclusion="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+                url="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+                printf '%s run=%s conclusion=%s %s\n' "$workflow" "$run_id" "$conclusion" "$url" | tee -a "$GITHUB_STEP_SUMMARY"
+                if [ "$conclusion" != success ]; then
+                  echo "$workflow failed canonical RC regression: $conclusion" >&2
+                  exit 1
+                fi
+                break
+              fi
+              if [ "$attempt" -eq 540 ]; then
+                echo "$workflow did not complete inside the RC gate window." >&2
+                exit 1
+              fi
+              sleep 10
+            done
+          done
+          echo 'All seven canonical workflows passed on one RC head.' >> "$GITHUB_STEP_SUMMARY"
