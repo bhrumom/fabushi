@@ -94,7 +94,7 @@ pub fn shared_conformance_journey(surface: ProductSurface) -> SurfaceConformance
         },
         resume: ResumeOperationRequest {
             session_id: session_id.clone(),
-            operation_id: operation_id,
+            operation_id,
             policy,
             required_capabilities,
             metadata: metadata.clone(),
