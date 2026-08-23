@@ -8,7 +8,10 @@ fn temporary_root(label: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("fabushi-m4-{label}-{}-{suffix}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "fabushi-m4-{label}-{}-{suffix}",
+        std::process::id()
+    ))
 }
 
 fn media(id: &str, thumbnail_id: Option<&str>) -> MediaRef {
@@ -47,8 +50,7 @@ fn blob_store_resumes_ranges_and_verifies_sha256_before_publish() {
         mime_type: "text/plain".into(),
         size_bytes: 11,
         content_hash: Some(
-            "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-                .into(),
+            "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".into(),
         ),
         created_at_ms: 1,
     };
@@ -84,7 +86,9 @@ fn blob_store_resumes_ranges_and_verifies_sha256_before_publish() {
 fn media_cache_is_bounded_lru_and_preserves_thumbnail_metadata() {
     let mut cache = MediaCache::new(10).unwrap();
     let first = media("first", Some("thumb:first"));
-    cache.insert(first.clone(), "/cache/first", 6, 1, false).unwrap();
+    cache
+        .insert(first.clone(), "/cache/first", 6, 1, false)
+        .unwrap();
     assert_eq!(
         cache.entries()["first"].media.thumbnail_id.as_deref(),
         Some("thumb:first")

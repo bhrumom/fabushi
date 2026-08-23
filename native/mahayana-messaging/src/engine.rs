@@ -616,7 +616,8 @@ impl MessagingEngine {
                         conversation_id.clone(),
                     ));
                 }
-                if message_content_uses_media(&content) && !conversation.permissions.can_send_media {
+                if message_content_uses_media(&content) && !conversation.permissions.can_send_media
+                {
                     return Err(EngineError::MediaSendPermissionDenied(
                         conversation_id.clone(),
                     ));
