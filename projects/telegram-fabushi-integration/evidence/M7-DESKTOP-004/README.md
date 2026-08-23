@@ -12,6 +12,10 @@ This proved the remaining defect was above the Apple signing boundary and inside
 
 Production account responses serialize `user.id`, `userId`, and `userNo` as JSON numbers. `issue_messaging_access` previously selected the first present field and then called `Value::as_str()` once. A present numeric `user.id` therefore stopped resolution and produced `None` even when later compatible identity fields existed.
 
+## Current-head follow-up
+
+PR #2068 merged the functional repair before its final one-line rustfmt cleanup had reached the branch head. PR #2069 carries that formatting correction; this evidence update intentionally creates a post-open synchronize event so the complete current head is exercised by the repository pull-request gates before merge.
+
 ## Repair evidence required before TESTED
 
 - current-head Rust/Host/CI gates green;
