@@ -17,7 +17,9 @@ pub mod plugin_bundle_archive {
         UnsupportedEntry(PathBuf),
         #[error("plugin archive exceeds {limit} unpacked bytes ({actual} bytes)")]
         TooLarge { limit: u64, actual: u64 },
-        #[error("plugin archive entry size mismatch for {path}: expected {expected}, copied {actual}")]
+        #[error(
+            "plugin archive entry size mismatch for {path}: expected {expected}, copied {actual}"
+        )]
         SizeMismatch {
             path: PathBuf,
             expected: u64,
