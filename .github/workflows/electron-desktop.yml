@@ -359,7 +359,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
-        run: npx electron-builder --${{ matrix.target }}
+        run: npx electron-builder --${{ matrix.target }} --publish never
 
       - name: Notarize, staple, and verify canonical main macOS package
         if: matrix.target == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
