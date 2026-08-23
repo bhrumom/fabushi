@@ -385,6 +385,17 @@ pub enum EngineError {
     EmptyMessageList,
     #[error("message is protected from forwarding")]
     ProtectedContent,
+    #[error("actor {actor_id:?} is not a participant of conversation {conversation_id:?}")]
+    SenderNotParticipant {
+        conversation_id: ConversationId,
+        actor_id: ActorId,
+    },
+    #[error("conversation {0:?} does not allow sending messages")]
+    MessageSendPermissionDenied(ConversationId),
+    #[error("conversation {0:?} does not allow sending media")]
+    MediaSendPermissionDenied(ConversationId),
+    #[error("conversation {0:?} does not allow sending polls")]
+    PollSendPermissionDenied(ConversationId),
     #[error("secret conversations must contain exactly two participants")]
     InvalidSecretConversation,
     #[error("secret conversations only accept encrypted secret content or service messages")]
@@ -460,6 +471,20 @@ fn require_community_admin(
     } else {
         Err(EngineError::CommunityPermissionDenied)
     }
+}
+
+fn message_content_uses_media(content: &MessageContent) -> bool {
+    matches!(
+        content,
+        MessageContent::Photo { .. }
+            | MessageContent::Video { .. }
+            | MessageContent::Animation { .. }
+            | MessageContent::Audio { .. }
+            | MessageContent::Voice { .. }
+            | MessageContent::VideoNote { .. }
+            | MessageContent::Document { .. }
+            | MessageContent::Sticker { .. }
+    )
 }
 
 fn wallet_account_id(actor_id: &ActorId) -> WalletAccountId {
@@ -575,6 +600,34 @@ impl MessagingEngine {
             } => {
                 let conversation = self.require_conversation(&conversation_id)?;
                 self.require_actor(&sender_id)?;
+                let sender_is_participant = conversation
+                    .participants
+                    .iter()
+                    .any(|participant| participant.actor_id == sender_id)
+                    || conversation.owner_id.as_ref() == Some(&sender_id);
+                if !sender_is_participant {
+                    return Err(EngineError::SenderNotParticipant {
+                        conversation_id: conversation_id.clone(),
+                        actor_id: sender_id.clone(),
+                    });
+                }
+                if !conversation.permissions.can_send_messages {
+                    return Err(EngineError::MessageSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
+                if message_content_uses_media(&content) && !conversation.permissions.can_send_media {
+                    return Err(EngineError::MediaSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
+                if matches!(&content, MessageContent::Poll { .. })
+                    && !conversation.permissions.can_send_polls
+                {
+                    return Err(EngineError::PollSendPermissionDenied(
+                        conversation_id.clone(),
+                    ));
+                }
                 let is_secret_conversation = matches!(
                     conversation.kind,
                     crate::conversation::ConversationKind::Secret
