@@ -74,8 +74,12 @@ pub enum MiniAppRequest {
     Ready,
     Expand,
     Close,
-    SetHeaderColor { value: String },
-    SetBackgroundColor { value: String },
+    SetHeaderColor {
+        value: String,
+    },
+    SetBackgroundColor {
+        value: String,
+    },
     RequestTheme,
     RequestViewport,
     RequestIdentity,
@@ -83,12 +87,24 @@ pub enum MiniAppRequest {
     RequestContact,
     RequestWriteAccess,
     ReadClipboard,
-    WriteClipboard { text: String },
-    OpenExternal { url: String },
-    OpenInvoice { invoice_id: String },
-    SendData { data: String },
-    SendMessage { text: String },
-    Haptic { kind: String },
+    WriteClipboard {
+        text: String,
+    },
+    OpenExternal {
+        url: String,
+    },
+    OpenInvoice {
+        invoice_id: String,
+    },
+    SendData {
+        data: String,
+    },
+    SendMessage {
+        text: String,
+    },
+    Haptic {
+        kind: String,
+    },
     StartServiceCall {
         call_id: MiniAppServiceCallId,
         mode: MiniAppServiceCallMode,
@@ -210,7 +226,10 @@ mod tests {
         };
         assert_eq!(
             request.required_permissions(),
-            vec![MiniAppPermission::ServiceCall, MiniAppPermission::Microphone]
+            vec![
+                MiniAppPermission::ServiceCall,
+                MiniAppPermission::Microphone
+            ]
         );
     }
 
