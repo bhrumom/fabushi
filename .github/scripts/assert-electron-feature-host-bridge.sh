@@ -34,6 +34,13 @@ methods=(
   feature.auth.oauthStart
   feature.auth.oauthPoll
   feature.auth.logout
+  marketplace.browse
+  marketplace.release
+  plugin.install
+  plugin.uninstall
+  plugin.active
+  plugin.listInstalled
+  plugin.uiDocument
 )
 
 for method in "${methods[@]}"; do
@@ -99,6 +106,11 @@ if grep -Fq 'MahayanaProductClient::default()' "$app_host"; then
   echo "Electron Rust app host must not probe the shared Mahayana container during startup" >&2
   exit 1
 fi
+if test -n "$desktop_shell" && grep -Fq 'defaultMiniApps' "$desktop_shell"; then
+  echo "Unified Messenger must discover Mini Apps from the online marketplace, not a bundled defaultMiniApps registry" >&2
+  exit 1
+fi
+
 for file in "$desktop_renderer" ${desktop_shell:+"$desktop_shell"}; do
   if grep -Eq 'PluginRuntimeApp|desktop-mode-switch|open-plugin-runtime|open-agent-host' "$file"; then
     echo "Canonical Electron renderer must not expose the retired PluginRuntime surface: $file" >&2

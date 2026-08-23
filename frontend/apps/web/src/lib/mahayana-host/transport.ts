@@ -17,9 +17,64 @@ import type {
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
 
+export type MarketplacePluginSummary = {
+  pluginId: string;
+  displayName: string;
+  description: string;
+  latestVersion: string;
+  platforms?: string[];
+  releaseStatus?: string;
+  releaseManifest?: Record<string, unknown>;
+  source?: Record<string, unknown>;
+};
+
+export type MarketplaceBrowseResult = {
+  plugins: MarketplacePluginSummary[];
+};
+
+export type MarketplaceReleaseMetadata = {
+  pluginId: string;
+  version: string;
+  releaseStatus?: string;
+  releaseManifest: Record<string, unknown>;
+};
+
+export type InstalledPluginPointer = {
+  pluginId: string;
+  version: string;
+  artifactId: string;
+  artifactSha256: string;
+  runtime: string;
+  entry?: string;
+  requestedPermissions?: string[];
+  installedPath: string;
+};
+
+export type InstalledPluginList = {
+  plugins: InstalledPluginPointer[];
+};
+
+export type PluginUninstallResult = {
+  pluginId: string;
+  removed: boolean;
+  permissionsRemoved?: boolean;
+};
+
+export type PluginUiDocument = {
+  pluginId: string;
+  html: string;
+};
+
 export interface MahayanaHostTransport {
   initialize(config: HostConfig): Promise<HostInfo>;
   execute(command: RuntimeCommand): Promise<CommandAccepted>;
+  marketplaceBrowse(query?: string): Promise<MarketplaceBrowseResult>;
+  marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata>;
+  pluginInstall(release: Record<string, unknown>, platform?: string): Promise<InstalledPluginPointer>;
+  pluginUninstall(pluginId: string): Promise<PluginUninstallResult>;
+  pluginActive(pluginId: string): Promise<InstalledPluginPointer | null>;
+  pluginListInstalled(): Promise<InstalledPluginList>;
+  pluginUiDocument(pluginId: string): Promise<PluginUiDocument>;
   authStatus(): Promise<AuthState>;
   authProviders(): Promise<AuthProvider[]>;
   browserLoginStart(): Promise<BrowserLoginAttempt>;
