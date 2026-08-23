@@ -139,18 +139,30 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v7-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Set up Rust on Host cache miss
         if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+
+      - name: Install Linux native Host dependencies on cache miss
+        if: steps.host-binary-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
 
       - name: Restore Rust compiler cache on Host cache miss
         if: steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: electron-desktop-host-ci-v5
+          shared-key: electron-desktop-host-ci-v6-rust-1.97.1
 
       - name: Build and stage CI Mahayana Host on cache miss
         if: steps.host-binary-cache.outputs.cache-hit != 'true'
@@ -162,7 +174,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v7-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Hand off Linux Host binary to package job in the same run
         uses: actions/upload-artifact@v7
@@ -255,18 +267,20 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v7-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Set up Rust on Host cache miss
         if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
 
       - name: Restore Rust compiler cache on Host cache miss
         if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: third_party/mahayana/mahayana-rs -> target
-          shared-key: electron-package-ci-${{ runner.os }}-v5
+          shared-key: electron-package-ci-${{ runner.os }}-v6-rust-1.97.1
 
       - name: Build and stage CI native Host on cache miss
         if: matrix.target != 'linux' && steps.host-binary-cache.outputs.cache-hit != 'true'
@@ -278,7 +292,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: desktop/resources/bin
-          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v6-${{ steps.host-source-key.outputs.hash }}
+          key: electron-host-${{ runner.os }}-${{ runner.arch }}-v7-rust-1.97.1-${{ steps.host-source-key.outputs.hash }}
 
       - name: Build pinned offline ASR engine
         working-directory: ${{ github.workspace }}
