@@ -172,7 +172,6 @@ fn non_member_cannot_publish_typing_state() {
     ));
 }
 
-
 #[test]
 fn stop_typing_is_bounded_and_expires_from_delta_replay() {
     let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
