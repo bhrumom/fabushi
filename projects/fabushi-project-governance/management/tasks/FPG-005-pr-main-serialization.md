@@ -5,10 +5,10 @@
 - Task ID: `FPG-005`
 - Original source: `source/2026-08-24-FPG-005-pr-main-serialization.md`
 - Clarification source: `source/2026-08-24-FPG-005-parallel-pr-clarification.md`
-- Status: `in-progress`
+- Status: `passed`
 - Started: `2026-08-24`
 - Updated: `2026-08-24`
-- Completed: pending
+- Completed: `2026-08-24`
 
 ## Objective
 
@@ -41,12 +41,16 @@ The initial FPG-005 interpretation made task/PR execution strictly serial. The u
 4. If a task's PR cannot yet merge, that task remains `in-progress`, `blocked`, or `failed`, but other independent tasks may continue in parallel.
 5. This FPG-005 correction itself must pass required checks, protected merge, and canonical-main verification before FPG-005 is marked passed.
 
+All acceptance criteria passed.
+
 ## Verification
 
-- GitHub PR diff review;
-- required GitHub Actions checks;
-- protected merge/merge-queue result;
-- post-merge fetch of canonical `main` `AGENTS.md` and project records.
+- GitHub PR diff review: passed.
+- Repository CI run `32652232551`: `success`.
+- Project portfolio governance run `32652232596`: `success`.
+- Explicit automerge run `32652232562`: `success`.
+- Protected merge/merge queue: PR #2077 merged.
+- Post-merge canonical `main` readback: `AGENTS.md` section 1B verified; blob `b76cf3e85584cb7144190bf37d0edef2474a2fcc`.
 
 ## Branch / commit / PR evidence
 
@@ -63,28 +67,31 @@ The initial FPG-005 interpretation made task/PR execution strictly serial. The u
 - Branch: `governance/fpg-005-parallel-closure-gate`
 - Corrected AGENTS commit: `20b8636e613c3f6918a99a8b2175e0c367a36130`
 - Clarification source commit: `6be18160f1c69402214bbef17a274ceca6507220`
+- Final correction head: `227931d3688119d1affd77ee11acc1330592c29e`
 - Correction PR: `#2077`
-- Required checks: pending
-- Protected merge: pending
-- Canonical-main readback: pending
+- Required CI: run `32652232551` success.
+- Project portfolio governance: run `32652232596` success.
+- Protected merge: merge commit `faef2af404dd7e89db4bcaf9f417369566c179c3`.
+- Canonical-main readback: corrected `AGENTS.md` section 1B present on `main`.
 
 ## Implementation summary
 
-Root `AGENTS.md` now defines parallelism as normal: multiple independent tasks/PRs may advance concurrently, especially during CI/review/merge waits. The strict rule is moved to the completion boundary: each task must return to its own PR, resolve blockers where possible, merge through protected `main`, and verify canonical `main` before that task can be declared finished.
+Root `AGENTS.md` now defines parallelism as normal: multiple independent tasks/PRs may advance concurrently, especially during CI/review/merge waits. The strict rule is at the completion boundary: each task must return to its own PR, resolve blockers where possible, merge through protected `main`, and verify canonical `main` before that task can be declared finished.
 
 ## Evidence
 
-- Initial PR #2076 merged, proving the first interpretation reached `main`.
-- User clarification recorded separately without rewriting source history.
-- Corrected branch contains updated root `AGENTS.md` and project traceability.
-- Correction PR #2077 is open and targets `main`.
-- Required CI / final merge / canonical-main evidence: pending.
+- Initial PR #2076 preserved as historical evidence of the superseded strict-serialization interpretation.
+- User clarification is recorded separately without rewriting source history.
+- PR #2077 corrected the repository-wide rule.
+- All required checks for #2077 passed.
+- PR #2077 merged to `main` as `faef2af404dd7e89db4bcaf9f417369566c179c3`.
+- Canonical `main` readback confirms the corrected parallel-work/per-task-closure rule is active.
 
 ## Blockers / risks
 
-- Until PR #2077 merges, canonical `main` still contains the over-serial interpretation from #2076.
-- Parallel work increases the need to keep each active task's branch/PR/evidence state distinct and current.
+- None for FPG-005.
+- Operational note: parallel work increases the need to keep each active task's branch/PR/evidence state distinct and current.
 
 ## Next action
 
-Drive PR #2077 through required checks and the protected merge queue, merge it to `main`, then verify canonical `main` before closing FPG-005.
+FPG-005 is functionally complete. Future Fabushi repository tasks may proceed in parallel, but each individual task must satisfy its own PR-to-main merge and canonical-main verification gate before being marked or reported complete.
