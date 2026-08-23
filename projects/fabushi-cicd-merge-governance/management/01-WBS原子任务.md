@@ -15,6 +15,6 @@
 | FCM-005 | Add narrow sensitive-path ownership and governance contract | yes | CODEOWNERS covers Tier-3 paths without catch-all; contract validates invariants | passed |
 | FCM-006 | Close project records and verify canonical main | yes | full enterprise scaffold + PR/CI/merge evidence + post-merge main verification | passed |
 | FCM-007 | Converge all 2026-08-23 intake PRs into canonical main | yes | every intake PR merged or proven superseded; no accepted change lost; final intake open count = 0 | passed |
-| FCM-008 | Build latest canonical macOS Electron package and provide download | yes | exact main SHA built on GitHub macOS runner; DMG/ZIP prerelease assets published | passed |
+| FCM-008 | Build latest canonical macOS Electron package and provide download | yes | exact main SHA; Developer ID signed; Apple notarized + stapled; Gatekeeper accepted; downloadable DMG | in-progress |
 
-All required FCM tasks are passed. FCM-008 records a build-only prerelease; separate Messenger E2E regressions discovered during the first quality-gate attempt remain product work under FAB-P0001 and are not represented as accepted here.
+FCM-008 was reopened after the delivered ad-hoc-signed prerelease was rejected by macOS Gatekeeper as damaged. It must not return to `passed` until the replacement DMG is Developer ID signed, notarized, stapled, Gatekeeper-accepted, and rechecked on the target Mac.
