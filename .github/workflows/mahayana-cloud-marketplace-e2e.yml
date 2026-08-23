@@ -61,6 +61,15 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
+      - name: Install Linux native capture/input dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
       - name: Restore Marketplace Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -517,45 +526,3 @@ jobs:
           ARTIFACT_KEY: ${{ steps.publish.outputs.artifact_key }}
         run: >-
           npx --yes wrangler@4 r2 object delete "bushi-dev/$ARTIFACT_KEY" --remote
-
-      - name: Record end-to-end evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mahayana-cloud-marketplace-e2e-${{ github.run_id }}
-          if-no-files-found: warn
-          retention-days: 14
-          path: |
-            ${{ runner.temp }}/platform-deploy.log
-            ${{ runner.temp }}/platform-health.json
-            ${{ runner.temp }}/artifact-r2-put.log
-            ${{ runner.temp }}/source-plugin.tar.gz
-            ${{ runner.temp }}/served-plugin.tar.gz
-            ${{ runner.temp }}/publish.log
-            ${{ runner.temp }}/publish.json
-            ${{ runner.temp }}/plugin-index.html
-            ${{ runner.temp }}/plugin-site.json
-            ${{ runner.temp }}/plugin-source.json
-            ${{ runner.temp }}/release-manifest.json
-            ${{ runner.temp }}/site-plugin.tar.gz
-            ${{ runner.temp }}/browse.json
-            ${{ runner.temp }}/browse.stderr
-            ${{ runner.temp }}/download.json
-            ${{ runner.temp }}/download.stderr
-            ${{ runner.temp }}/install.json
-            ${{ runner.temp }}/install.stderr
-            ${{ runner.temp }}/run.txt
-            ${{ runner.temp }}/run.stderr
-            ${{ runner.temp }}/duplicate-version.tar.gz
-            ${{ runner.temp }}/duplicate-version-response.json
-            ${{ runner.temp }}/duplicate-version.stdout
-            ${{ runner.temp }}/duplicate-version.stderr
-            ${{ runner.temp }}/revoke.json
-            ${{ runner.temp }}/after-revoke-browse.json
-            ${{ runner.temp }}/after-revoke-browse.stderr
-            ${{ runner.temp }}/after-revoke-metadata.json
-            ${{ runner.temp }}/after-revoke-download.json
-            ${{ runner.temp }}/after-revoke-cli-download.stdout
-            ${{ runner.temp }}/after-revoke-cli-download.stderr
-            ${{ runner.temp }}/after-revoke-cli-install.stdout
-            ${{ runner.temp }}/after-revoke-cli-install.stderr
