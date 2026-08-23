@@ -167,9 +167,9 @@ jobs:
           set -euo pipefail
           host=desktop/resources/bin/mahayana-app-host
           test -x "$host"
-          codesign --force --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" "$host"
+          codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$MACOS_CODESIGN_IDENTITY" "$host"
           while IFS= read -r binary; do
-            codesign --force --options runtime --timestamp --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
+            codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
           done < <(find desktop/resources/asr -type f -name whisper-cli -print)
           codesign --verify --strict --verbose=2 "$host"
 

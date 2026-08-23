@@ -245,7 +245,7 @@ jobs:
           fi
           [ -n "$identity" ] || { echo 'Developer ID Application identity was not found.' >&2; exit 1; }
           host=desktop/resources/bin/mahayana-app-host
-          codesign --force --options runtime --timestamp --sign "$identity" "$host"
+          codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$identity" "$host"
           codesign --verify --strict --verbose=2 "$host"
           cp "$host" "$RUNNER_TEMP/fabushi-hot/mahayana-app-host"
 
