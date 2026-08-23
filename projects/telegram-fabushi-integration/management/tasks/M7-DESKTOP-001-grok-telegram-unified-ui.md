@@ -88,6 +88,15 @@
 - 新的 `verify-electron-macos-package.sh` fail-closed 验证 bundle id、App/Host/ASR TeamIdentifier 一致、`app.asar`、App icon、ASR license、隐私用途说明、code signature、stapler 和 Gatekeeper。
 - 生产签名 App 不再允许 `app.asar`/Host 原地 hot patch；hot package 明确降级为开发 overlay，避免破坏 sealed code signature 后再次触发 Keychain/Notary 信任问题。
 
+### Unified Electron gate repair after formal-package merge
+
+- Canonical main Electron run `32627198688` proved the final unified Messenger is already the post-login surface, but the quality gate still asserted retired HostClient DOM (`host-status`, `agent-mode`, computer panel, old marketplace), so Linux smoke failed before the macOS package matrix could exercise Developer ID signing/notarization.
+- Failure evidence from the uploaded Playwright artifact shows one Telegram-class rail, Grok/Fabushi Motion-v2 agent identity, the assistant conversation, and the unified composer; the failure was a test/product-contract mismatch rather than a duplicate-rail regression.
+- The unified Messenger Mini App path now owns install + open: it refreshes `marketplace.install` before `miniapp.open`, satisfying the real production Host requirement without routing users back to the retired Host marketplace UI.
+- `smoke.spec.ts` now drives the declared cross-platform journeys through the final Messenger and direct Electron→Mahayana edge where a feature has no final Messenger control yet; it still validates real Rust commands/events for capability approval, operation interrupt, session clear, and all official Mini Apps.
+- `surfaces.spec.ts` now validates the final single-shell navigation, Motion-v2 agent identity, Host capability availability, native application-menu event routing, and safe native reads without racing against the deliberate HostClient→Messenger post-login replacement.
+- This repair is required before the formal macOS package job can run and produce the Developer ID + notarized artifact for local installation and Keychain-prompt acceptance.
+
 ## Verification / evidence
 
 - UI source + E2E: PR #2046 merged, `fea29e5c...`。
