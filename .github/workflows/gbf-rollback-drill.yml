@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      # The rollback proof is intentionally performed against published release
+      # assets below. Do not call the legacy tracked dry-run verifier here: that
+      # helper is for manual local checks and exits non-zero in CI by design.
       - name: Resolve the latest published rollback target
         id: target
         shell: bash
