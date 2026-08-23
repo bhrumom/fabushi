@@ -15,7 +15,13 @@ import type {
   RuntimeEvent,
 } from "./contracts";
 import type {
+  InstalledPluginList,
+  InstalledPluginPointer,
   MahayanaHostTransport,
+  MarketplaceBrowseResult,
+  MarketplaceReleaseMetadata,
+  PluginUiDocument,
+  PluginUninstallResult,
   RuntimeEventListener,
 } from "./transport";
 
@@ -133,6 +139,40 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
       }
     }
     return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command });
+  }
+
+  marketplaceBrowse(query?: string): Promise<MarketplaceBrowseResult> {
+    return mahayanaBridge().invoke<MarketplaceBrowseResult>("feature.marketplace.browse", {
+      query: query?.trim() || undefined,
+      platform: "desktop",
+    });
+  }
+
+  marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata> {
+    return mahayanaBridge().invoke<MarketplaceReleaseMetadata>("feature.marketplace.release", { pluginId, version });
+  }
+
+  pluginInstall(
+    release: Record<string, unknown>,
+    platform = "desktop",
+  ): Promise<InstalledPluginPointer> {
+    return mahayanaBridge().invoke<InstalledPluginPointer>("feature.plugin.install", { release, platform });
+  }
+
+  pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
+    return mahayanaBridge().invoke<PluginUninstallResult>("feature.plugin.uninstall", { pluginId });
+  }
+
+  pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
+    return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.active", { pluginId });
+  }
+
+  pluginListInstalled(): Promise<InstalledPluginList> {
+    return mahayanaBridge().invoke<InstalledPluginList>("feature.plugin.listInstalled");
+  }
+
+  pluginUiDocument(pluginId: string): Promise<PluginUiDocument> {
+    return mahayanaBridge().invoke<PluginUiDocument>("feature.plugin.uiDocument", { pluginId });
   }
 
   authStatus(): Promise<AuthState> {
