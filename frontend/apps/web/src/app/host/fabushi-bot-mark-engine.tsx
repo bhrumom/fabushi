@@ -339,6 +339,7 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
     const surfaceId = `fabushi-mark-surface-${uniqueId}`;
     const shadeId = `fabushi-mark-shade-${uniqueId}`;
     const inkId = `fabushi-mark-ink-${uniqueId}`;
+    const depthId = `fabushi-mark-depth-${uniqueId}`;
 
     const propsRef = useRef({
       state,
@@ -670,8 +671,8 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
         <defs>
           <clipPath id={clipId}><path d={shapePath} /></clipPath>
           <radialGradient ref={surfaceGradientRef} id={surfaceId} cx="34%" cy="26%" r="72%" fx="31%" fy="21%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
-            <stop offset="26%" stopColor="#ffffff" stopOpacity="0.11" />
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.46" />
+            <stop offset="22%" stopColor="#ffffff" stopOpacity="0.16" />
             <stop offset="62%" stopColor="#ffffff" stopOpacity="0.025" />
             <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
           </radialGradient>
@@ -680,6 +681,10 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
             <stop offset="58%" stopColor="#000000" stopOpacity="0.015" />
             <stop offset="100%" stopColor="#000000" stopOpacity="0.22" />
           </linearGradient>
+          <filter id={depthId} x="-28%" y="-28%" width="156%" height="164%" colorInterpolationFilters="sRGB">
+            <feDropShadow dx="0.8" dy="2.6" stdDeviation="2.6" floodColor="#000000" floodOpacity="0.28" />
+            <feDropShadow dx="-0.7" dy="-0.8" stdDeviation="1.1" floodColor="#ffffff" floodOpacity="0.08" />
+          </filter>
           {inkGradient ? (
             <linearGradient id={inkId} x1="0" y1="0" x2="1" y2="1" gradientTransform={`rotate(${inkGradient.angle ?? 45} .5 .5)`}>
               <stop offset={`${inkGradient.fromPos ?? 0}%`} stopColor={inkGradient.from} />
@@ -691,12 +696,12 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
         <circle ref={accentRingRef} cx="50" cy="50" r="43" fill="none" stroke="var(--fg)" strokeWidth="1.35" opacity="0" />
         <line ref={radarSweepRef} x1="50" y1="50" x2="50" y2="8" stroke="var(--fg)" strokeWidth="1.2" strokeLinecap="round" opacity="0" />
 
-        <g ref={bodyRef}>
+        <g ref={bodyRef} filter={`url(#${depthId})`}>
           <path d={shapePath} fill="var(--fg)" opacity="0.12" transform="translate(2.2 3.2) scale(.982)" />
           <path d={shapePath} fill={bodyFill} />
           <path d={shapePath} fill={`url(#${surfaceId})`} clipPath={`url(#${clipId})`} opacity={emphasis ? 0.82 : 0.64} />
           <path d={shapePath} fill={`url(#${shadeId})`} clipPath={`url(#${clipId})`} opacity="0.55" />
-          <path d={shapePath} fill="none" stroke="#ffffff" strokeWidth="0.75" strokeOpacity="0.13" />
+          <path d={shapePath} fill="none" stroke="#ffffff" strokeWidth="0.72" strokeOpacity="0.18" />
 
           <path ref={topologyRef} d="" fill="none" stroke="var(--bg)" strokeWidth="1.15" strokeLinecap="round" opacity="0.08" />
           <path ref={leftEyeRef} d="M37 49h7v4h-7z" fill="var(--bg)" />
