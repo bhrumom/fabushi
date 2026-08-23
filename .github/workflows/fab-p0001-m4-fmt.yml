@@ -1,3 +1,4 @@
+# Branch-local one-shot formatter; remove after it commits the exact rustfmt delta.
 name: FAB-P0001 M4 rustfmt fix
 
 on:
