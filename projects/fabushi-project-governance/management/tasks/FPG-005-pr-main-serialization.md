@@ -63,7 +63,10 @@ The initial FPG-005 interpretation made task/PR execution strictly serial. The u
 - Branch: `governance/fpg-005-parallel-closure-gate`
 - Corrected AGENTS commit: `20b8636e613c3f6918a99a8b2175e0c367a36130`
 - Clarification source commit: `6be18160f1c69402214bbef17a274ceca6507220`
-- Correction PR: pending
+- Correction PR: `#2077`
+- Required checks: pending
+- Protected merge: pending
+- Canonical-main readback: pending
 
 ## Implementation summary
 
@@ -74,13 +77,14 @@ Root `AGENTS.md` now defines parallelism as normal: multiple independent tasks/P
 - Initial PR #2076 merged, proving the first interpretation reached `main`.
 - User clarification recorded separately without rewriting source history.
 - Corrected branch contains updated root `AGENTS.md` and project traceability.
-- Required CI / correction PR / final merge / canonical-main evidence: pending.
+- Correction PR #2077 is open and targets `main`.
+- Required CI / final merge / canonical-main evidence: pending.
 
 ## Blockers / risks
 
-- Until the correction PR merges, canonical `main` still contains the over-serial interpretation from #2076.
+- Until PR #2077 merges, canonical `main` still contains the over-serial interpretation from #2076.
 - Parallel work increases the need to keep each active task's branch/PR/evidence state distinct and current.
 
 ## Next action
 
-Update WBS/acceptance/status/changelog to the clarified rule, open the correction PR, enable/enter the protected merge process, inspect required checks, merge, and verify canonical `main` before closing FPG-005.
+Drive PR #2077 through required checks and the protected merge queue, merge it to `main`, then verify canonical `main` before closing FPG-005.
