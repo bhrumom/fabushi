@@ -55,8 +55,7 @@ jobs:
           import shutil
 
           source = Path('third_party/mahayana/mahayana-rs')
-          repo_root = Path('/tmp/msr-native-repo')
-          target = repo_root / 'third_party/mahayana/mahayana-rs'
+          target = Path('/tmp/msr-native-repo/third_party/mahayana/mahayana-rs')
           selected = [
               'mahayana-core',
               'mahayana-agent',
@@ -75,13 +74,9 @@ jobs:
           for crate in selected:
               shutil.copytree(source / crate, target / crate)
 
-          # Keep repo-relative official-plugin fixtures available to plugin-host tests
-          # without restoring any quarantined vendor implementation source.
-          shutil.copytree(
-              Path('.agents/plugins/plugins'),
-              repo_root / '.agents/plugins/plugins',
-          )
-
+          # Do not copy repository-level plugin fixtures into this hermetic tree.
+          # They are integration fixtures, not runtime dependencies. Keeping them
+          # out proves the Mahayana-owned Rust graph stands on its own.
           manifest = (source / 'Cargo.toml').read_text()
           members = '[workspace]\nmembers = [\n' + ''.join(f'    "{crate}",\n' for crate in selected) + ']\nresolver = "2"'
           manifest = re.sub(r'(?s)\[workspace\]\nmembers = \[.*?\]\nresolver = "2"', members, manifest, count=1)
