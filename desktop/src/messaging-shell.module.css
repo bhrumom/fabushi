@@ -1014,3 +1014,14 @@
 .fabushiUnified .globalSearchEmpty { min-height: 240px; padding: 24px 12px; }
 .fabushiUnified .globalSearchEmpty strong { font-size: 12px; }
 .fabushiUnified .globalSearchEmpty small { max-width: 210px; font-size: 9.5px; line-height: 1.45; }
+
+/* Keep the create popover above the first conversation row; the second action
+   otherwise overlaps the peer list hit target even though it is visually shown. */
+.fabushiUnified .listHeader {
+  position: relative;
+  z-index: 70;
+}
+.fabushiUnified .createMenuWrap,
+.fabushiUnified .createMenu {
+  z-index: 80;
+}
