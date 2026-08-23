@@ -15,5 +15,6 @@
 | FCM-005 | Add narrow sensitive-path ownership and governance contract | yes | CODEOWNERS covers Tier-3 paths without catch-all; contract validates invariants | passed |
 | FCM-006 | Close project records and verify canonical main | yes | full enterprise scaffold + PR/CI/merge evidence + post-merge main verification | passed |
 | FCM-007 | Converge all 2026-08-23 intake PRs into canonical main | yes | every intake PR merged or proven superseded; no accepted change lost; final intake open count = 0 | passed |
+| FCM-008 | Build latest canonical macOS Electron package and provide download | yes | latest main source; macOS package job success; retrievable artifact/release link recorded | in-progress |
 
-All required FAB-P0003 tasks are passed. No hidden percentage-based work remains.
+FCM-008 is an active follow-up release/build execution task under the completed CI/CD governance project. Existing completed tasks remain accepted.
