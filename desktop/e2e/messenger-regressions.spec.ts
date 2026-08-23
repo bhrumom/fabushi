@@ -48,10 +48,14 @@ async function expectComposerInsideViewport(page: Page): Promise<void> {
   const input = page.getByTestId('messenger-input');
   await expect(input).toBeVisible();
   const box = await input.boundingBox();
-  const viewport = page.viewportSize();
+  const viewport = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
   expect(box, 'composer input must have a rendered bounding box').not.toBeNull();
-  expect(viewport, 'desktop page must expose a viewport').not.toBeNull();
-  if (!box || !viewport) return;
+  if (!box) return;
+  expect(viewport.width).toBeGreaterThan(0);
+  expect(viewport.height).toBeGreaterThan(0);
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
