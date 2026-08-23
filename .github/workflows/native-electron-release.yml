@@ -399,6 +399,15 @@ jobs:
         with:
           path: release
           merge-multiple: true
+      - name: Verify desktop install and auto-update assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(find release -type f -name '*.dmg' -print -quit)"
+          test -n "$(find release -type f -name 'fabushi-*-macos-*.zip' -print -quit)"
+          test -n "$(find release -type f -name 'latest-mac.yml' -print -quit)"
+          test -n "$(find release -type f -name '*.zip.blockmap' -print -quit)"
+          echo 'Verified GitHub Release contains DMG plus electron-updater macOS feed assets.' >> "$GITHUB_STEP_SUMMARY"
       - name: Generate release checksums
         shell: bash
         run: |
