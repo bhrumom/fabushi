@@ -8,7 +8,7 @@
 - **Started**: `2026-08-23`
 - **Updated**: `2026-08-23`
 - **Branch**: `feat/tfi-m7-unified-search-resizable-sidebar`
-- **Primary PR**: pending
+- **Primary PR**: `#2057`
 
 ## Objective
 
