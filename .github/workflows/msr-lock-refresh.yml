@@ -1,9 +1,7 @@
 name: MSR lock refresh
 
 on:
-  push:
-    branches:
-      - feat/msr-sovereign-runtime-final
+  pull_request:
     paths:
       - .github/workflows/msr-lock-refresh.yml
   workflow_dispatch:
@@ -13,6 +11,7 @@ permissions:
 
 jobs:
   refresh-lock:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
