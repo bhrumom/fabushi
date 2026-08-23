@@ -4,11 +4,13 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M3-DESKTOP-002`
 - **Stage**: `M3 桌面聊天完整交互`
-- **Status**: `IN_PROGRESS`
+- **Status**: `TESTING`
 - **Started**: `2026-08-24`
 - **Updated**: `2026-08-24`
 - **Branch**: `feat/telegram-local-first-settings`
 - **Source**: `source/2026-08-24-local-first-startup-and-settings.md`
+- **Implementation commit**: `cda0bbc37c7f8b2623384fc5a9c1542aef5fcffa`
+- **PR**: `#2079`
 
 ## Objective
 
@@ -62,6 +64,28 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 - auth-invalid returning users must still land in login/HostClient path after validation.
 - settings breadth can imply functionality not present; mitigation: explicit availability metadata and disabled rows.
 
+## Implementation summary
+
+- Added bounded renderer fast-start projection (`fabushi.desktop.messenger-projection.v1`) for returning-user first paint while Rust SQLite/Host remains authoritative.
+- Changed first self-hosted sync to 20 records and cursor-based background batches to 100; delta sync batches merge instead of replacing projected state.
+- Restores last active self-hosted conversation and bounded recent messages.
+- Fixed the <=1280 responsive third-column mismatch by allocating the 286px column only when the info panel is actually visible.
+- Added Telegram-inspired Settings navigation and detail workspace for account, notifications, privacy/security, data/storage, chat, folders, devices, calls, language, advanced, and Fabushi AI/Mini Apps.
+- Wired real desktop preferences for message preview, video autoplay, info-panel visibility, Enter-to-send and reduced motion; unsupported server-backed options are explicitly marked planned.
+- Added Playwright coverage for settings/preferences and reload-from-projection.
+
+## Verification / evidence
+
+- `git diff --check`: PASS before push.
+- Local application build/test: intentionally NOT RUN per repository disk-safety policy.
+- GitHub Actions: pending on PR #2079.
+- Protected merge + canonical-main verification: pending.
+- Evidence index: `evidence/M3-DESKTOP-002/README.md`.
+
+## Blockers
+
+- Required GitHub Actions / protected-main gates have not completed yet; task remains `TESTING`.
+
 ## Next action
 
-Implement the shell/startup projection and settings surface, then open PR and drive GitHub Actions/merge gates.
+Drive PR #2079 through current-head CI, fix any failures, merge through protected `main`, then re-read canonical main and update acceptance/project records before closure.
