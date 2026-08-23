@@ -54,3 +54,17 @@ Per repository policy, no local Electron build, Playwright, Cargo, package build
 - PR #2058 Electron Messenger contract reached successful TypeScript typecheck after switching to canonical `active`.
 - Follow-up E2E guard verifies `profile-navigation-trigger` contains a `data-engine="fabushi-motion-v2"` identity.
 - Because `desktop/e2e/**` is a canonical package-classifier path, the follow-up PR and its eventual main merge exercise the package matrix needed for macOS installation evidence.
+
+
+## Runtime-smoke failure and repair evidence
+
+- #2059 main merge: `ae70c06f4286097d2f90c43d047b77845173d9cf`.
+- Electron runtime smoke run `32638060949` failed with three concrete errors:
+  - Messenger Mini App global search: `global-search-app-global-dharma` not found.
+  - Smoke Mini App journey: legacy UI locator for `全球法布施` timed out after the permanent navigation/Marketplace convergence.
+  - Native surface: `getMcpCatalog` returned `bridge/invoke-failed: invalid request: unknown method marketplace.browse`; first attempt also demonstrated the native-menu event registration race on `open-offline-asr`.
+- Current repair:
+  - AppHost stores its explicit feature mode and exposes deterministic Marketplace browse/release/install behavior only in `Test`; Production remains backed by `MahayanaProductClient` and verified external releases.
+  - Native Electron capabilities call `feature.marketplace.*` / `feature.plugin.*` only, with desktop plugin platform normalization.
+  - Global search E2E performs visible online-app discovery, installation and opening through the same UI users see.
+  - Native-menu probe is fully registered before the main-process menu click.
