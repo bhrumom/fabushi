@@ -39,22 +39,22 @@ If no matching project exists and the work is genuinely independent:
 5. If concurrent project creation causes a `PORTFOLIO.json` merge conflict, re-read canonical `main` and reallocate the later project from the new high-water mark. Do not force, duplicate, or reuse the losing sequence.
 6. Project/registry changes must pass the `Project portfolio governance` GitHub Actions validator before completion.
 
-### 1B. CRITICAL: PR-to-main serialization gate — finish and merge before the next PR task
+### 1B. CRITICAL: PR-to-main completion gate — parallel work allowed, merge required before task closure
 
-Fabushi repository work is **serial at the task/PR completion boundary by default**. An agent must not leave one independent task's PR unmerged and then start or advance the next independent PR task.
+Fabushi repository work **may proceed in parallel across independent tasks and PRs**. Waiting for CI, review, branch protection, or a merge queue on one task must not prevent productive work on another independent task. The hard gate applies to **task completion**, not to task start.
 
 For every repository task that uses a PR:
 
-1. Finish the current task's implementation, project records, and objective acceptance checks on the current task branch/PR.
-2. Wait for and inspect all required review, CI, branch-protection, and merge-queue gates for that PR.
-3. Resolve failures, conflicts, or requested changes on **that same task** until the PR is mergeable. If it cannot be merged, keep the task `in-progress`, `blocked`, or `failed`; do not treat it as complete.
-4. Merge the current PR into canonical `main` through the repository's required protected-main process.
-5. Re-read/verify the relevant files and engineering facts from canonical GitHub `main` after merge. A PR being open, approved, green, queued, or merely pushed is not enough.
-6. Only after the merge and canonical-main verification are complete may the agent begin or advance the next independent PR task.
+1. Finish that task's implementation, project records, and objective acceptance checks on its own branch/PR.
+2. Open and manage the task PR. While that PR is waiting on required review, CI, branch protection, or merge queue state, the agent may create, switch to, implement, and advance other independent tasks/PRs in parallel.
+3. Keep tracking the pending PR and return to it to resolve failures, conflicts, or requested changes. Parallel work is not permission to abandon a pending PR or lose its durable task/evidence state.
+4. **Before declaring that task complete or ending it as finished**, actively drive its PR through all required review/CI/protected-main/merge-queue gates and merge it into canonical `main`. If it cannot yet merge, keep that task `in-progress`, `blocked`, or `failed` rather than calling it complete.
+5. Re-read/verify the relevant files and engineering facts from canonical GitHub `main` after merge. A PR being open, approved, green, queued, or merely pushed is not enough for task completion.
+6. Only after merge plus canonical-main verification may that individual task be marked `passed` / `completed` and reported as finished.
 
-**Default prohibition:** while the current task has an unmerged PR, do not create, switch to, implement, or advance another independent PR task merely to keep work moving in parallel.
+**Parallelism is explicitly allowed:** multiple independent tasks and PRs may be active at the same time, including while another PR is waiting on CI or the merge queue.
 
-**Narrow exception:** a truly urgent security/incident fix may run in parallel only when the user explicitly authorizes it or an existing higher-priority emergency policy requires it. Record the exception and reason in both tasks' durable project records. This exception must never be used as a convenience bypass for ordinary CI waits, review waits, conflicts, or merge queues.
+**Closure is still strict:** every active task owns its own PR-to-main closure gate. Before finishing a task, the agent must return to that task, push its PR toward merge, resolve merge blockers when possible, and verify the result on `main`. Pending PRs must remain visible in project/task records until closed.
 
 ### 2. If no project folder exists, create the enterprise standard before implementation
 
@@ -164,7 +164,7 @@ The GitHub portfolio registry and project folder are the durable working context
 - Keep planned work and verified completed work clearly separated.
 - Prefer the same branch/PR for implementation and its project-record updates.
 - Never mutate an existing registered Project ID to make a registry conflict disappear.
-- Do not begin or advance a different independent PR task until the current task's PR has been merged and verified on canonical `main`, except for the narrow documented emergency exception in §1B.
+- Parallel independent task/PR work is permitted. Keep each task separately tracked, and do not mark any task complete until that task's own PR satisfies the §1B merge-and-main-verification closure gate.
 
 ### 6. Task completion is blocked until project records and evidence are current
 
@@ -184,9 +184,9 @@ Before saying a task is finished:
 10. Commit project-record changes to GitHub in the same task change stream when possible.
 11. Merge through required protected-main checks/merge queue.
 12. Verify canonical state on GitHub `main` after merge, including registry/project metadata parity when applicable.
-13. Do not begin or advance the next independent PR task until steps 11–12 for the current task are complete.
+13. Do not mark or report that task as finished until steps 11–12 are complete. Other independent tasks may proceed in parallel while these gates are pending.
 
-If any required review/CI/merge/release/deployment/migration/acceptance gate is pending, keep the task `in-progress`, `blocked`, or `failed`; do not mark it complete and do not use the pending state as a reason to advance the next independent PR task.
+If any required review/CI/merge/release/deployment/migration/acceptance gate is pending, keep that task `in-progress`, `blocked`, or `failed` rather than marking it complete. This pending state does **not** prohibit work on other independently tracked tasks/PRs.
 
 ### 7. Source-of-truth precedence
 
@@ -216,7 +216,7 @@ and:
 
 When Task Orchestration is used, preserve the same immutable `FAB-Pxxxx` Project ID, Project Key, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub portfolio registry/project folder and live GitHub/CI facts remain authoritative.
 
-The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, acceptance evidence, PR-to-main serialization, or completion closure.
+The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, acceptance evidence, the PR-to-main completion gate, or completion closure.
 
 ## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
 
