@@ -1,4 +1,5 @@
-project_id: DHRF
+project_id: FAB-P0007
+project_key: DHRF
 name: DeepSeek Harness Rust Fusion
 slug: deepseek-harness-rust-fusion
 status: active
@@ -9,7 +10,7 @@ owner: Fabushi engineering
 reviewers: []
 current_stage: M0-source-audit-and-gap-baseline
 created_at: 2026-08-22
-updated_at: 2026-08-22
+updated_at: 2026-08-23
 risk_tier: tier-1
 security_classification: public
 target_finish: null
