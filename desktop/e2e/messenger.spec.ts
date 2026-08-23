@@ -167,7 +167,9 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await expect(page.getByTitle('开启通知')).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
-    await expect(page.getByPlaceholder('在当前会话中搜索')).toBeVisible();
+    await expect(page.getByTestId('conversation-search-scope')).toContainText('此聊天');
+    await expect(page.getByTestId('global-search-input')).toBeFocused();
+    await expect(page.getByTestId('global-search-surface')).toHaveAttribute('data-scoped', 'true');
   } finally {
     await app.close();
     await rm(appDataDir, { recursive: true, force: true });
@@ -183,7 +185,8 @@ test('desktop Messenger creates a self-hosted channel and executes message mutat
     await completeBrowserLogin(page);
     await openMessenger(page);
 
-    await page.getByRole('button', { name: '新建频道' }).first().click();
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建频道' }).click();
     await expect(page.getByText('Fabushi 自建广播会话')).toBeVisible();
     await page.getByPlaceholder('频道名称').fill('自建频道验收');
     await page.getByPlaceholder('频道简介').fill('不依赖 Telegram API');
@@ -237,7 +240,8 @@ test('desktop Messenger creates a real Bot collaboration group and sends into it
     await completeBrowserLogin(page);
     await openMessenger(page);
 
-    await page.getByRole('button', { name: '新建群组' }).first().click();
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建群组' }).click();
     await expect(page.getByText('现有 AI 群组 Host 会执行 Bot 多轮协作')).toBeVisible();
     await page.getByPlaceholder('群组名称').fill('人机协作验收群');
 
