@@ -1081,7 +1081,9 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 message_id,
                 pinned,
             }],
-            ClientCommand::StartTyping { .. } | ClientCommand::StopTyping { .. } => Vec::new(),
+            ClientCommand::Search { .. }
+            | ClientCommand::StartTyping { .. }
+            | ClientCommand::StopTyping { .. } => Vec::new(),
             ClientCommand::CreateInvoice { invoice } => vec![Command::CreateInvoice { invoice }],
             ClientCommand::CheckoutInvoice {
                 invoice_id,
@@ -1427,6 +1429,7 @@ impl<S: MessagingStateStore> MessagingService<S> {
                 }
             }
             ServerEvent::SyncBatch { .. }
+            | ServerEvent::SearchResults { .. }
             | ServerEvent::FolderChanged { .. }
             | ServerEvent::FolderDeleted { .. }
             | ServerEvent::BlobUploadChanged { .. }
