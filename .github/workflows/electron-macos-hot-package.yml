@@ -191,6 +191,7 @@ jobs:
           sparse-checkout: |
             .github/scripts
             desktop
+            native/mahayana-messaging
             third_party/mahayana/codex-rs
             third_party/mahayana/mahayana-rs
 
