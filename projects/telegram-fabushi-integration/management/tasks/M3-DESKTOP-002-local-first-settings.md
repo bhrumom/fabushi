@@ -4,13 +4,14 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M3-DESKTOP-002`
 - **Stage**: `M3 桌面聊天完整交互`
-- **Status**: `TESTING`
+- **Status**: `COMPLETED`
 - **Started**: `2026-08-24`
 - **Updated**: `2026-08-24`
 - **Branch**: `feat/telegram-local-first-settings`
 - **Source**: `source/2026-08-24-local-first-startup-and-settings.md`
 - **Implementation commit**: `cda0bbc37c7f8b2623384fc5a9c1542aef5fcffa`
 - **PR**: `#2079`
+- **Merge commit**: `01b33d60f7d7d9add41a5fba84d21014094cb5dc`
 
 ## Objective
 
@@ -78,14 +79,18 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 
 - `git diff --check`: PASS before push.
 - Local application build/test: intentionally NOT RUN per repository disk-safety policy.
-- GitHub Actions: pending on PR #2079.
-- Protected merge + canonical-main verification: pending.
+- GitHub Actions: PASS — CI `32673731408`, Messaging Product Gate `32673731405`, self-hosted messaging `32673731410`, Electron desktop quality gate `32673731418`.
+- Electron renderer `tsc --noEmit && vite build`: PASS in the quality gate.
+- Messenger Playwright: PASS, including the new Telegram Settings + fast-start projection reload test.
+- macOS packaged E2E had one unrelated Mini App flake on the first attempt; the job rerun passed fully.
+- Protected merge queue: PASS — PR #2079 merged as `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
+- Canonical-main verification: PASS — `main` re-read at `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
 - Evidence index: `evidence/M3-DESKTOP-002/README.md`.
 
 ## Blockers
 
-- Required GitHub Actions / protected-main gates have not completed yet; task remains `TESTING`.
+- None.
 
-## Next action
+## Closure
 
-Drive PR #2079 through current-head CI, fix any failures, merge through protected `main`, then re-read canonical main and update acceptance/project records before closure.
+All acceptance gates passed. PR #2079 entered the protected merge queue at position 1, passed merge-group revalidation, merged to `main`, and canonical `main` was re-read at `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
