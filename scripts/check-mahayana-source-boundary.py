@@ -14,6 +14,7 @@ SOURCE_LOCK = MAHAYANA / "SOURCES.lock"
 PRODUCT_CRATES = (
     "mahayana-core",
     "mahayana-agent",
+    "mahayana-auth",
     "mahayana-conversation",
     "mahayana-runtime",
     "mahayana-tool-host",
@@ -28,6 +29,7 @@ PRODUCT_CRATES = (
     "mahayana-platform-core",
     "mahayana-plugin-runtime",
     "mahayana-js-runtime",
+    "mahayana-secrets",
 )
 
 FORBIDDEN_SOURCE_PATTERNS = (
@@ -49,6 +51,20 @@ REQUIRED_LOCK_VALUES = (
     "canonical_agent_provider=mahayana-agent",
     "canonical_agent_conversation=mahayana-ai:agent:assistant",
 )
+
+PRODUCT_CLIENT = MAHAYANA / "mahayana-product"
+PRODUCT_CLIENT_REQUIRED_ALIASES = (
+    'codex-login = { package = "mahayana-auth", path = "../mahayana-auth" }',
+    'codex-secrets = { package = "mahayana-secrets", path = "../mahayana-secrets" }',
+)
+PRODUCT_CLIENT_ALLOWED_LEGACY_IMPORTS = {
+    "use codex_login::token_data::parse_jwt_expiration;",
+    "use codex_secrets::LocalSecretsNamespace;",
+    "use codex_secrets::SecretName;",
+    "use codex_secrets::SecretScope;",
+    "use codex_secrets::SecretsBackendKind;",
+    "use codex_secrets::SecretsManager;",
+}
 
 
 def fail(message: str) -> None:
@@ -95,6 +111,46 @@ def check_product_crate(crate: str) -> list[str]:
     return violations
 
 
+def check_product_client_native_auth_boundary() -> list[str]:
+    """Allow only temporary source aliases that resolve to Mahayana packages.
+
+    `mahayana-product/src/lib.rs` is intentionally migrated in two mechanical
+    steps: first the dependency graph is cut away from upstream packages; then
+    the six private alias spellings are renamed. The alias gate keeps the first
+    step safe: any additional Codex/xAI import or any alias pointing back at an
+    upstream path fails CI.
+    """
+    violations: list[str] = []
+    manifest = PRODUCT_CLIENT / "Cargo.toml"
+    source = PRODUCT_CLIENT / "src" / "lib.rs"
+    if not manifest.is_file() or not source.is_file():
+        return ["mahayana-product manifest/source is missing"]
+
+    manifest_text = manifest.read_text(encoding="utf-8")
+    if "../codex-rs" in manifest_text or "../grok" in manifest_text:
+        violations.append(
+            f"{manifest.relative_to(ROOT)}: product client must not depend on upstream source paths"
+        )
+    for required in PRODUCT_CLIENT_REQUIRED_ALIASES:
+        if required not in manifest_text:
+            violations.append(
+                f"{manifest.relative_to(ROOT)}: missing Mahayana-owned compatibility alias: {required}"
+            )
+
+    source_text = source.read_text(encoding="utf-8")
+    vendor_imports = {
+        line.strip()
+        for line in source_text.splitlines()
+        if line.strip().startswith(("use codex_", "use xai_"))
+    }
+    unexpected = sorted(vendor_imports - PRODUCT_CLIENT_ALLOWED_LEGACY_IMPORTS)
+    if unexpected:
+        violations.append(
+            f"{source.relative_to(ROOT)}: unexpected vendor-style imports: {', '.join(unexpected)}"
+        )
+    return violations
+
+
 def check_adapter_exists() -> None:
     codex_adapter = MAHAYANA / "mahayana-agent-codex"
     if not codex_adapter.is_dir():
@@ -110,14 +166,16 @@ def main() -> None:
     violations: list[str] = []
     for crate in PRODUCT_CRATES:
         violations.extend(check_product_crate(crate))
+    violations.extend(check_product_client_native_auth_boundary())
     if violations:
         print("Mahayana vendor-boundary violations:", file=sys.stderr)
         for violation in violations:
             print(f"- {violation}", file=sys.stderr)
         raise SystemExit(1)
     print(
-        "Mahayana source boundary OK: product crates are provider-neutral; "
-        "vendor implementation imports remain adapter-only."
+        "Mahayana source boundary OK: native crates are provider-neutral; "
+        "the product auth/secrets graph resolves only to Mahayana-owned packages; "
+        "vendor implementations remain adapter-only."
     )
 
 
