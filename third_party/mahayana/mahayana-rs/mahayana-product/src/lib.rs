@@ -498,7 +498,6 @@ fn safe_skill_directory_name(skill_id: &str) -> Result<String, ProductError> {
     Ok(value.to_string())
 }
 
-
 fn product_auth_secrets_namespace(configured: Option<&str>) -> LocalSecretsNamespace {
     match configured.map(str::trim) {
         Some("fabushi-desktop-v2") => LocalSecretsNamespace::FabushiDesktopAuth,
