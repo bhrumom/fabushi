@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
@@ -11,7 +10,7 @@ def replace_or_verify(path: str, old: str, new: str) -> None:
         return
     count = text.count(old)
     if count != 1:
-        raise RuntimeError(f"{path}: normalize expected one match, got {count}")
+        raise RuntimeError(f"{path}: expected one match, got {count}")
     target.write_text(text.replace(old, new, 1))
 
 
@@ -265,15 +264,322 @@ replace_or_verify(
 """,
 )
 
-driver = Path(os.environ["CANONICAL_DRIVER"])
-text = driver.read_text()
-start_marker = "          python3 - <<'PY'\n"
-end_marker = "          PY\n"
-if start_marker not in text:
-    raise RuntimeError("canonical M3 driver Python start marker missing")
-body = text.split(start_marker, 1)[1]
-if end_marker not in body:
-    raise RuntimeError("canonical M3 driver Python end marker missing")
-body = body.split(end_marker, 1)[0]
-code = "\n".join(line[10:] if line.startswith("          ") else line for line in body.splitlines()) + "\n"
-exec(compile(code, str(driver), "exec"), {"__name__": "__main__"})
+e2e = Path("desktop/e2e/messenger.spec.ts")
+e2e_text = e2e.read_text()
+old_test = "test('desktop Messenger projects unread from another self-hosted actor and consumes it on open', async () => {"
+new_test_name = "rejects self-hosted actor impersonation at the real Host boundary"
+if old_test in e2e_text:
+    start = e2e_text.index(old_test)
+    replacement = r'''test('desktop Messenger rejects self-hosted actor impersonation at the real Host boundary', async () => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-auth-boundary-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    const identity = await getMessagingIdentity(page);
+    const now = Date.now();
+    const peerActorId = `human:e2e:forged:${now}`;
+
+    await executeMessagingCommand(page, identity.actorId, {
+      type: 'upsertProfile',
+      actor: {
+        id: identity.actorId,
+        kind: 'human',
+        displayName: 'Authenticated E2E User',
+        capabilities: ['messages'],
+        presence: { status: 'online', lastSeenAtMs: now },
+        verified: false,
+      },
+    }, 'current-profile');
+
+    let rejection = '';
+    try {
+      await executeMessagingCommand(page, peerActorId, {
+        type: 'upsertProfile',
+        actor: {
+          id: peerActorId,
+          kind: 'human',
+          displayName: 'Forged Peer',
+          capabilities: ['messages'],
+          presence: { status: 'online', lastSeenAtMs: now },
+          verified: false,
+        },
+      }, 'forged-peer-profile');
+    } catch (cause) {
+      rejection = cause instanceof Error ? cause.message : String(cause);
+    }
+    expect(rejection).toContain('profile actor id does not match authenticated actor');
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+'''
+    e2e.write_text(e2e_text[:start] + replacement)
+elif new_test_name not in e2e_text:
+    raise RuntimeError("desktop/e2e/messenger.spec.ts: unread test marker missing")
+
+typing = Path("native/mahayana-messaging/tests/typing_contract.rs")
+typing_text = typing.read_text()
+if "stop_typing_is_bounded_and_expires_from_delta_replay" not in typing_text:
+    typing.write_text(typing_text + r'''
+
+#[test]
+fn stop_typing_is_bounded_and_expires_from_delta_replay() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    for actor in ["human:a", "human:b"] {
+        service
+            .handle(
+                ClientEnvelope::new(
+                    context(actor, "profile-stop"),
+                    ClientCommand::UpsertProfile {
+                        actor: Actor::human(actor, actor),
+                    },
+                ),
+                1,
+            )
+            .unwrap();
+    }
+    service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a", "conversation-stop"),
+                ClientCommand::CreateConversation {
+                    conversation: direct_conversation(),
+                },
+            ),
+            2,
+        )
+        .unwrap();
+    let before = service.cursor();
+    let stop = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:a", "typing-stop"),
+                ClientCommand::StopTyping {
+                    conversation_id: ConversationId::new("chat:typing"),
+                },
+            ),
+            100,
+        )
+        .unwrap();
+    assert!(matches!(
+        &stop[0].event,
+        ServerEvent::TypingChanged {
+            actor_id,
+            action: None,
+            expires_at_ms: Some(5100),
+            ..
+        } if actor_id == &ActorId::new("human:a")
+    ));
+
+    let recent = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:b", "sync-stop-recent"),
+                ClientCommand::Sync {
+                    cursor: Some(before.to_string()),
+                    limit: 100,
+                },
+            ),
+            200,
+        )
+        .unwrap();
+    assert!(recent.iter().any(|event| matches!(
+        &event.event,
+        ServerEvent::TypingChanged {
+            actor_id,
+            action: None,
+            expires_at_ms: Some(5100),
+            ..
+        } if actor_id == &ActorId::new("human:a")
+    )));
+
+    let expired = service
+        .handle(
+            ClientEnvelope::new(
+                context("human:b", "sync-stop-expired"),
+                ClientCommand::Sync {
+                    cursor: Some(before.to_string()),
+                    limit: 100,
+                },
+            ),
+            6_000,
+        )
+        .unwrap();
+    assert!(!expired
+        .iter()
+        .any(|event| matches!(event.event, ServerEvent::TypingChanged { .. })));
+}
+''')
+
+unread = Path("native/mahayana-messaging/tests/unread_projection_contract.rs")
+unread.write_text(r'''use fabushi_messaging_core::*;
+
+fn context(actor_id: &str, request_id: &str) -> RequestContext {
+    RequestContext {
+        request_id: request_id.into(),
+        device_id: format!("device:{actor_id}"),
+        actor_id: ActorId::new(actor_id),
+        session_id: format!("session:{actor_id}"),
+        sent_at_ms: 1,
+    }
+}
+
+fn handle(
+    service: &mut MessagingService<MemoryStateStore>,
+    actor_id: &str,
+    request_id: &str,
+    command: ClientCommand,
+    now_ms: i64,
+) -> Vec<ServerEnvelope> {
+    service
+        .handle(
+            ClientEnvelope::new(context(actor_id, request_id), command),
+            now_ms,
+        )
+        .unwrap()
+}
+
+fn synced_conversation(
+    service: &mut MessagingService<MemoryStateStore>,
+    actor_id: &str,
+    conversation_id: &str,
+    now_ms: i64,
+) -> Conversation {
+    handle(
+        service,
+        actor_id,
+        "sync",
+        ClientCommand::Sync {
+            cursor: None,
+            limit: 100,
+        },
+        now_ms,
+    )
+    .into_iter()
+    .find_map(|envelope| match envelope.event {
+        ServerEvent::SyncBatch { conversations, .. } => conversations
+            .into_iter()
+            .find(|conversation| conversation.id == ConversationId::new(conversation_id)),
+        _ => None,
+    })
+    .expect("conversation should be visible in actor sync")
+}
+
+#[test]
+fn unread_projection_is_actor_scoped_and_read_cursor_survives_reload() {
+    let mut service = MessagingService::load(MemoryStateStore::default()).unwrap();
+    let me = ActorId::new("human:me");
+    let peer = ActorId::new("human:peer");
+    let conversation_id = "direct:unread-contract";
+
+    handle(
+        &mut service,
+        "human:me",
+        "profile-me",
+        ClientCommand::UpsertProfile {
+            actor: Actor::human("human:me", "Me"),
+        },
+        1,
+    );
+    handle(
+        &mut service,
+        "human:peer",
+        "profile-peer",
+        ClientCommand::UpsertProfile {
+            actor: Actor::human("human:peer", "Peer"),
+        },
+        2,
+    );
+    handle(
+        &mut service,
+        "human:me",
+        "conversation",
+        ClientCommand::CreateConversation {
+            conversation: Conversation::direct(
+                conversation_id,
+                "Unread contract",
+                vec![
+                    Participant {
+                        actor_id: me.clone(),
+                        role: ParticipantRole::Owner,
+                        joined_at_ms: 3,
+                        muted_until_ms: None,
+                    },
+                    Participant {
+                        actor_id: peer.clone(),
+                        role: ParticipantRole::Member,
+                        joined_at_ms: 3,
+                        muted_until_ms: None,
+                    },
+                ],
+                3,
+            ),
+        },
+        3,
+    );
+
+    let incoming = handle(
+        &mut service,
+        "human:peer",
+        "send-1",
+        ClientCommand::SendMessage {
+            conversation_id: ConversationId::new(conversation_id),
+            client_message_id: ClientMessageId("client:unread:1".into()),
+            content: MessageContent::Text {
+                text: FormattedText::plain("first unread"),
+            },
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            scheduled_at_ms: None,
+            silent: false,
+            protected_content: false,
+        },
+        4,
+    );
+    let first_message_id = incoming
+        .iter()
+        .find_map(|envelope| match &envelope.event {
+            ServerEvent::MessageAdded { message } => Some(message.id.clone()),
+            _ => None,
+        })
+        .expect("send should emit MessageAdded");
+
+    let my_projection = synced_conversation(&mut service, "human:me", conversation_id, 5);
+    assert_eq!(my_projection.unread_count, 1);
+    assert_eq!(my_projection.last_read_message_id, None);
+
+    let peer_projection = synced_conversation(&mut service, "human:peer", conversation_id, 6);
+    assert_eq!(peer_projection.unread_count, 0);
+
+    handle(
+        &mut service,
+        "human:me",
+        "read-1",
+        ClientCommand::MarkRead {
+            conversation_id: ConversationId::new(conversation_id),
+            message_id: first_message_id.clone(),
+        },
+        7,
+    );
+    let my_projection = synced_conversation(&mut service, "human:me", conversation_id, 8);
+    assert_eq!(my_projection.unread_count, 0);
+    assert_eq!(
+        my_projection.last_read_message_id.as_deref(),
+        Some(first_message_id.0.as_str())
+    );
+
+    let store = service.into_store();
+    let mut restored = MessagingService::load(store).unwrap();
+    let restored_projection = synced_conversation(&mut restored, "human:me", conversation_id, 9);
+    assert_eq!(restored_projection.unread_count, 0);
+    assert_eq!(
+        restored_projection.last_read_message_id.as_deref(),
+        Some(first_message_id.0.as_str())
+    );
+}
+''')
