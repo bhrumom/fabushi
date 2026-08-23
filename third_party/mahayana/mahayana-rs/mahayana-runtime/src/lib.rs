@@ -24,11 +24,9 @@ use mahayana_core::CONVERSATION_SCHEMA_VERSION;
 use mahayana_core::Conversation;
 use mahayana_core::ConversationId;
 use mahayana_core::MODEL_RUNTIME_VERSION;
-use mahayana_core::Message;
 use mahayana_core::OperationId;
 use mahayana_core::PluginCommandDescriptor;
 use mahayana_core::RUNTIME_ABI_VERSION;
-use mahayana_core::RuntimeActivityStatus;
 use mahayana_core::RuntimeCommand;
 use mahayana_core::RuntimeConfig;
 use mahayana_core::RuntimeEvent;
@@ -782,6 +780,7 @@ mod tests {
     use mahayana_core::AgentThreadId;
     use mahayana_core::ApprovalDecision;
     use mahayana_core::CODEX_ASSISTANT_CONVERSATION_ID;
+    use mahayana_core::Message;
     use mahayana_core::MessageId;
     use mahayana_core::MessageRole;
 
