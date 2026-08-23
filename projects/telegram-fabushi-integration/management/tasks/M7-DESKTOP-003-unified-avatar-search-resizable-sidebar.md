@@ -90,3 +90,12 @@ PR #2057 merged to `main` as `ebfb1e090cb677b6d9d35edff3ad912819f3fba6`, but two
 - Messaging Product Gate run `32637615272`: Electron Messenger contract failed at the same TS2367; Rust self-hosted product passed.
 - Repair branch `fix/tfi-m7-unified-ui-ci` changes the visual call-state mapping from `connected` to canonical `active`; no protocol/runtime behavior changes.
 - Task remains `TESTING` until the repair PR is green, merged, and canonical main is re-read.
+
+
+## Final package-verification follow-up — 2026-08-23
+
+- CI repair PR #2058 merged to `main` as `947f537f8ebe4c762a09c6ac66150d50b5bda724`.
+- Electron Messenger typecheck on PR #2058 passed, confirming the `active` call-state repair.
+- A final E2E assertion now verifies the bottom-left personal navigation avatar itself is rendered by `fabushi-motion-v2`.
+- The E2E-file change deliberately enters the canonical Electron package matrix; after protected merge, the `main` push must produce the signed/notarized macOS package used for local installation acceptance.
+- Task remains `TESTING` until packaged-main macOS artifact is installed and opened on the user's Mac and canonical project evidence is updated.

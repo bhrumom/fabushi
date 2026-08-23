@@ -46,3 +46,11 @@ Per repository policy, no local Electron build, Playwright, Cargo, package build
 - Electron desktop quality gate `32637615241` failed only at renderer typecheck: TS2367 comparing `WebRtcCallStatus` with unsupported literal `connected`.
 - Messaging Product Gate `32637615272` failed only at the same Electron typecheck; Rust self-hosted product passed.
 - Canonical `WebRtcCallStatus` = `idle | ringing | connecting | active | ended | failed`; repair maps live-call BotMark state from `active` to `speaking`.
+
+
+## Final package-verification evidence
+
+- Repair PR #2058 merged: `947f537f8ebe4c762a09c6ac66150d50b5bda724`.
+- PR #2058 Electron Messenger contract reached successful TypeScript typecheck after switching to canonical `active`.
+- Follow-up E2E guard verifies `profile-navigation-trigger` contains a `data-engine="fabushi-motion-v2"` identity.
+- Because `desktop/e2e/**` is a canonical package-classifier path, the follow-up PR and its eventual main merge exercise the package matrix needed for macOS installation evidence.
