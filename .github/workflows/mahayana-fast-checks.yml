@@ -72,6 +72,13 @@ jobs:
       - name: Verify formatting
         run: cargo fmt --all -- --check
 
+      - name: Test Mahayana-owned CLI compatibility surfaces
+        run: >-
+          cargo test
+          -p mahayana-tui-compat
+          -p mahayana-plugin-archive-compat
+          --profile ci
+
       - name: Test Mahayana-owned authentication and encrypted secrets
         run: >-
           cargo test
