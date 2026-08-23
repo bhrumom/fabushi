@@ -39,6 +39,9 @@ pub struct LocalPlugin {
     /// The file name may remain `.codex-plugin/plugin.json` for installed
     /// packages, but no Codex runtime or protocol type crosses this boundary.
     pub legacy: LegacyPluginManifest,
+    /// Transitional field alias for CLI compatibility call sites. This is the
+    /// same Mahayana-owned DTO as `legacy`, not a Codex runtime/protocol type.
+    pub codex: LegacyPluginManifest,
     pub mahayana: Option<MahayanaPluginManifest>,
 }
 
@@ -69,7 +72,11 @@ impl LocalPlugin {
             ));
         }
         let mahayana = MahayanaPluginManifest::load(plugin_root)?;
-        Ok(Self { legacy, mahayana })
+        Ok(Self {
+            codex: legacy.clone(),
+            legacy,
+            mahayana,
+        })
     }
 
     pub fn command(&self, name: &str) -> Option<&CommandDeclaration> {
