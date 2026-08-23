@@ -14,5 +14,6 @@
 | FCM-004 | Align Apple/Google store delivery with canonical release gates | yes | exact SHA is on protected main and required CI/platform gates are green before build/upload | passed |
 | FCM-005 | Add narrow sensitive-path ownership and governance contract | yes | CODEOWNERS covers Tier-3 paths without catch-all; contract validates invariants | passed |
 | FCM-006 | Close project records and verify canonical main | yes | full enterprise scaffold + PR/CI/merge evidence + post-merge main verification | passed |
+| FCM-007 | Converge all 2026-08-23 intake PRs into canonical main | yes | every intake PR merged or proven superseded; protected checks preserved; final open-PR verification clean | in-progress |
 
-All required FAB-P0003 tasks are passed. No hidden percentage-based work remains.
+FCM-007 is an active follow-up convergence task. Prior FCM tasks remain passed; project closure is temporarily reopened until FCM-007 acceptance evidence is complete.
