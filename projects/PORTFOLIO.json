@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 7,
+  "next_sequence": 8,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -72,6 +72,17 @@
       "registered_at": "2026-08-23",
       "first_canonical_main_commit": "173e7f793987b6d0a9303b55e2060e2584552da9",
       "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0007",
+      "project_key": "DHRF",
+      "slug": "deepseek-harness-rust-fusion",
+      "name": "DeepSeek Harness Rust Fusion",
+      "authoritative_path": "projects/deepseek-harness-rust-fusion",
+      "status": "active",
+      "registered_at": "2026-08-23",
+      "first_canonical_main_commit": "11fd9d32d5b7edf09882ff5308be55b566e1a6d4",
+      "legacy_project_ids": ["DHRF"]
     }
   ]
 }
