@@ -78,7 +78,9 @@ impl ComposerInput {
                 return ComposerAction::Submitted(submitted);
             }
             KeyCode::Char(character)
-                if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER) =>
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER) =>
             {
                 self.insert_text(&character.to_string());
             }
@@ -143,10 +145,7 @@ impl ComposerInput {
                 if index > 0 {
                     spans.push(Span::raw("   "));
                 }
-                spans.push(Span::styled(
-                    key.clone(),
-                    Style::default().fg(Color::Cyan),
-                ));
+                spans.push(Span::styled(key.clone(), Style::default().fg(Color::Cyan)));
                 spans.push(Span::styled(
                     format!(" {label}"),
                     Style::default().fg(Color::DarkGray),
