@@ -4,7 +4,7 @@ legacy_project_ids:
   - FCM
 name: Fabushi CI/CD & Merge Governance
 slug: fabushi-cicd-merge-governance
-status: completed
+status: active
 repository: bhrumom/fabushi
 authoritative_branch: main
 authoritative_path: projects/fabushi-cicd-merge-governance
@@ -15,4 +15,4 @@ risk_tier: tier-3
 security_classification: internal
 created_at: 2026-08-22
 updated_at: 2026-08-23
-current_stage: completed
+current_stage: G4-incremental-build-test-efficiency
