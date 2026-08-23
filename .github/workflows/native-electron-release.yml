@@ -119,11 +119,59 @@ jobs:
           shared-key: release-electron-${{ runner.os }}-v2
       - working-directory: desktop
         run: npm ci --prefer-offline
+      - name: Install Developer ID Application identity
+        if: matrix.target == 'mac'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CONFIGURED_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          cert="$RUNNER_TEMP/fabushi-developer-id.p12"
+          keychain="$RUNNER_TEMP/fabushi-developer-id.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          identity="$CONFIGURED_IDENTITY"
+          if [ -z "$identity" ]; then
+            identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          case "$identity" in
+            *'Developer ID Application:'*) ;;
+            *) echo 'Developer ID Application identity is required for macOS release packaging.' >&2; exit 1 ;;
+          esac
+          security find-identity -v -p codesigning "$keychain" | grep -F -- "$identity" >/dev/null
+          echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
       - name: Package canonical Electron application
         working-directory: desktop
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run package -- --${{ matrix.target }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.target == 'mac' && 'true' || 'false' }}
+        run: npm run package -- --${{ matrix.target }} --publish never
+      - name: Notarize and staple macOS DMG
+        if: matrix.target == 'mac'
+        shell: bash
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          MACOS_NOTARIZATION_TIMEOUT_MINUTES: '60'
+          MACOS_NOTARIZATION_POLL_SECONDS: '20'
+        run: |
+          set -euo pipefail
+          dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          bash .github/scripts/notarize-macos-dmg.sh "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl -a -vvv -t open --context context:primary-signature "$dmg"
       - uses: actions/upload-artifact@v7
         with:
           name: electron-${{ matrix.target }}
