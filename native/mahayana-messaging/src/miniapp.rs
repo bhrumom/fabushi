@@ -167,7 +167,10 @@ impl MiniAppRequest {
             Self::Haptic { .. } => vec![MiniAppPermission::Haptics],
             Self::StartServiceCall { mode, .. } => {
                 let mut permissions = vec![MiniAppPermission::ServiceCall];
-                if matches!(mode, MiniAppServiceCallMode::Voice | MiniAppServiceCallMode::Hybrid) {
+                if matches!(
+                    mode,
+                    MiniAppServiceCallMode::Voice | MiniAppServiceCallMode::Hybrid
+                ) {
                     permissions.push(MiniAppPermission::Microphone);
                 }
                 permissions
@@ -215,7 +218,9 @@ mod tests {
     fn text_service_call_does_not_require_microphone() {
         let request = MiniAppRequest::SubmitServiceCallInput {
             call_id: MiniAppServiceCallId::new("svc-call:1"),
-            input: MiniAppServiceCallInput::ChatText { text: "查询余额".into() },
+            input: MiniAppServiceCallInput::ChatText {
+                text: "查询余额".into(),
+            },
         };
         assert_eq!(
             request.required_permissions(),
