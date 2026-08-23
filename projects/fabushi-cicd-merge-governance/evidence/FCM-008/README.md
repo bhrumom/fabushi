@@ -1,20 +1,67 @@
 # FCM-008 evidence — latest macOS build
 
-## Build source
+## Canonical source
 
-- Canonical main SHA: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
+- `main`: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
+- Electron app version: `1.0.2`
+- macOS target: arm64
+
+## Round 1 — canonical quality gate
+
 - Workflow: `Electron desktop quality gate`
-- Workflow run: `32619314508`
+- Run: `32619314508`
+- Exact source SHA: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
+- Architecture/bridge/login/BotMark/UI/native-capability checks: success.
+- Real Electron Messenger smoke: failure.
+- Package jobs: correctly skipped.
 
-## Round 1 result
+Deterministic Messenger blockers:
 
-The manual workflow dispatch used the exact canonical main SHA. Preflight architecture, Feature Host bridge, desktop architecture, browser login, BotMark, product UI, native capability, Electron edge/host lifecycle/offline-ASR checks all passed. Linux Host binary reuse also succeeded.
+1. unique in-conversation search marker projected into two message `<article>` nodes;
+2. forged renderer messaging envelope actor ID was not rebound/rejected at the desktop Host boundary.
 
-The real Electron user smoke failed before packaging, so GitHub correctly skipped all package jobs. No macOS artifact was produced and no download link is claimed from this run.
+No package from this failed gate is represented as accepted.
 
-Deterministic blockers from the Playwright failure evidence:
+## Round 2 — exact-source GitHub macOS build
 
-1. `desktop Messenger persists per-peer drafts and performs real in-conversation search` — the unique sent marker rendered in two message `<article>` nodes while the contract expects one; retry reproduced the duplicate.
-2. `desktop Messenger rejects self-hosted actor impersonation at the real Host boundary` — a renderer-supplied forged envelope actor ID was accepted, so the expected Host authorization error was not returned.
+- One-shot run: `32619653455`
+- Runner: GitHub `macos-15`
+- Workflow explicitly checked out `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c` and asserted `git rev-parse HEAD == SOURCE_SHA` before building.
+- Native Mahayana Host: success.
+- Pinned offline ASR engine: success.
+- Electron renderer: success.
+- `electron-builder --mac`: success.
+- Packaged application/installers verification: success.
+- Actions artifact: `fabushi-macos-main-67b70fff`, artifact ID `9488034188`, approximately 284 MB.
 
-These are Messaging product blockers and are handed to the existing FAB-P0001 / TFI project for repair. FCM-008 remains `in-progress`; packaging will be re-run only after the protected product fix reaches canonical main.
+Produced assets observed in the build log:
+
+- `全球法布施-1.0.2-arm64.dmg`
+- `全球法布施-1.0.2-arm64-mac.zip`
+- blockmaps / `latest-mac.yml`
+
+## Round 3 — direct immutable GitHub prerelease
+
+The intermediary VPS could not download the ~284 MB Actions artifact because its temporary filesystem reported `no space left on device`. No user/VPS files were deleted to work around that unrelated capacity issue.
+
+A second GitHub-native macOS run reused the newly-created native Host cache and published the same exact canonical source directly from the runner:
+
+- Run: `32619943578` — success.
+- Tag: `macos-main-67b70fff-20260823`.
+- Release title: `Fabushi macOS latest main 67b70fff`.
+- Target commit: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`.
+- Prerelease: true.
+- DMG release asset: `-1.0.2-arm64.dmg` — 142,142,859 bytes.
+- ZIP release asset: `-1.0.2-arm64-mac.zip` — 142,332,921 bytes.
+- Checksum asset: `SHA256SUMS.txt`.
+
+## Download entry points
+
+- Release page: `https://github.com/bhrumom/fabushi/releases/tag/macos-main-67b70fff-20260823`
+- DMG: `https://github.com/bhrumom/fabushi/releases/download/macos-main-67b70fff-20260823/-1.0.2-arm64.dmg`
+- ZIP: `https://github.com/bhrumom/fabushi/releases/download/macos-main-67b70fff-20260823/-1.0.2-arm64-mac.zip`
+- SHA256: `https://github.com/bhrumom/fabushi/releases/download/macos-main-67b70fff-20260823/SHA256SUMS.txt`
+
+## Validation boundary
+
+FCM-008 is accepted as the requested **latest macOS build and download delivery**. It does not claim the existing Messenger product E2E regressions are resolved. Those failures remain separately owned by FAB-P0001/TFI and are explicitly called out in the prerelease notes.
