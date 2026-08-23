@@ -34,7 +34,7 @@ jobs:
           git fetch --depth=1 origin main
           git show origin/main:.github/workflows/fab-p0001-m3-unread-patch-driver.yml > "$RUNNER_TEMP/canonical-driver.yml"
 
-      - name: Normalize actor read cursor anchor
+      - name: Normalize actor read cursor anchors
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,33 @@ jobs:
               anchor = '    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n'
               if text.count(anchor) != 1:
                   raise SystemExit(f'engine read cursor anchor count={text.count(anchor)}')
-              path.write_text(text.replace(anchor, anchor + field, 1))
+              text = text.replace(anchor, anchor + field, 1)
+          new_block = '''            Event::ConversationRead {
+                conversation_id,
+                actor_id,
+                message_id,
+            } => {
+                self.state
+                    .read_cursors
+                    .entry(conversation_id.clone())
+                    .or_default()
+                    .insert(actor_id, message_id.clone());
+                // Keep legacy snapshot fields coherent for older readers. Actor-specific
+                // clients receive the authoritative read state from the projected sync view.
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.last_read_message_id = Some(message_id.0);
+                    conversation.unread_count = 0;
+                    conversation.marked_unread = false;
+                }
+            }
+'''
+          if new_block not in text:
+              start = text.find('            Event::ConversationRead {\n')
+              end = text.find('            Event::ReactionUpdated {\n', start)
+              if start < 0 or end < 0:
+                  raise SystemExit('engine ConversationRead anchors missing')
+              text = text[:start] + new_block + text[end:]
+          path.write_text(text)
           PYTHON
 
       - name: Apply canonical patch implementation
