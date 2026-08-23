@@ -111,3 +111,12 @@ PR #2057 merged to `main` as `ebfb1e090cb677b6d9d35edff3ad912819f3fba6`, but two
 - Repair branch `fix/tfi-m7-marketplace-runtime-smoke` adds a deterministic AppHost test Marketplace/install seam while production continues to use the real online Product API; native capability calls are normalized to canonical `feature.marketplace.*` / `feature.plugin.*`; menu E2E now confirms listener registration before the click.
 - Global Application-search tests now exercise the real search → install → open UI flow instead of assuming an already-installed Mini App.
 - Task remains `TESTING` until repaired runtime smoke, package matrix, protected merge, signed/notarized main artifact installation and local Mac open verification all pass.
+
+
+## Final E2E contract alignment — 2026-08-23
+
+- Runtime repair PR #2060 merged to `main` as `bcd0951396a7efe9f5f37aaa5b0ea38c35ec6220`.
+- Electron runtime run `32638779651` proved the product path itself works: Marketplace discovery/install/open completed and the failure snapshot contains the installed `global-dharma` Mini App dialog/iframe. Two remaining failures are stale Playwright assertions, not product/runtime failures.
+- Personal BotMark assertion matched both the wrapper and SVG because both intentionally carry `data-engine="fabushi-motion-v2"`; the final contract selects the first matching engine node.
+- Mini App dialog canonical subtitle is `Mini App · 已安装线上包 · 受控宿主容器`; Messenger/smoke assertions now match that actual product text.
+- Task stays `TESTING` until this final contract repair is green/merged and the canonical main macOS package is installed and opened locally.
