@@ -3,7 +3,7 @@
 - Project: `FAB-P0001 / TFI`
 - Task: `M7-DESKTOP-003`
 - Branch: `feat/tfi-m7-unified-search-resizable-sidebar`
-- Status: `IMPLEMENTED` (GitHub CI / protected merge pending)
+- Status: `TESTING` (post-merge CI repair in progress)
 - Date: 2026-08-23
 
 ## Implementation evidence
@@ -38,3 +38,11 @@ Per repository policy, no local Electron build, Playwright, Cargo, package build
 - protected PR merge.
 - canonical `main` readback.
 - final packaged desktop visual acceptance.
+
+
+## Post-merge gate evidence
+
+- #2057 merged: `ebfb1e090cb677b6d9d35edff3ad912819f3fba6`.
+- Electron desktop quality gate `32637615241` failed only at renderer typecheck: TS2367 comparing `WebRtcCallStatus` with unsupported literal `connected`.
+- Messaging Product Gate `32637615272` failed only at the same Electron typecheck; Rust self-hosted product passed.
+- Canonical `WebRtcCallStatus` = `idle | ringing | connecting | active | ended | failed`; repair maps live-call BotMark state from `active` to `speaking`.
