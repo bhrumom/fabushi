@@ -21,8 +21,8 @@
 | FPG-004.5 | 将编号流程写入 AGENTS/governance Skill/lifecycle/standard | yes | 新项目必须先读取 registry 并原子分配 next_sequence | canonical main file review | passed |
 | FPG-004.6 | GitHub Actions portfolio governance gate | yes | PR 上 validator workflow success | run 32561929188 | passed |
 | FPG-004.7 | Protected merge + canonical main verification | yes | 合并后 registry、5 项目 metadata、控制规则均可从 main 验证 | PR #1996 / merge 87462b14 / main fetch | passed |
-| FPG-005 | 强制当前 PR 合并 main 后才能进入下一个 PR 任务 | yes | AGENTS 明确 PR->required gates->merge main->main verify->next task 串行门禁 | PR + required checks + protected merge + main readback | in-progress |
+| FPG-005 | 允许并行 PR 工作，但每个任务结束前必须完成自身 PR-to-main 闭环 | yes | AGENTS 明确 parallel work allowed；每个任务在 `passed/completed` 前必须完成 required gates -> merge main -> canonical main verify | correction PR + required checks + protected merge + main readback | in-progress |
 
 ## Status rule
 
-`passed` 只用于 objective acceptance evidence 已存在的原子任务。`implemented` 仅表示 branch 上实现已存在但最终 CI/merge/main gate 尚未完成。后续治理改动继续遵守同一规则。
+`passed` 只用于 objective acceptance evidence 已存在的原子任务。`implemented` 仅表示 branch 上实现已存在但最终 CI/merge/main gate 尚未完成。一个任务等待 PR/CI/merge 时可以并行推进其他独立任务，但等待中的任务本身不得因此标记为完成。后续治理改动继续遵守同一规则。
