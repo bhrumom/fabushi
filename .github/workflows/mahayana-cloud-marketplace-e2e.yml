@@ -61,6 +61,15 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
+      - name: Install Linux native capture/input dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev libgbm-dev
+
       - name: Restore Marketplace Rust cache
         uses: Swatinem/rust-cache@v2
         with:
