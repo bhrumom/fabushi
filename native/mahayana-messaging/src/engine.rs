@@ -347,6 +347,7 @@ pub struct MessagingState {
     pub conversations: BTreeMap<ConversationId, Conversation>,
     pub folders: BTreeMap<String, ConversationFolder>,
     pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,
+    pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,
     pub invoices: BTreeMap<String, Invoice>,
     pub orders: BTreeMap<String, PaymentOrder>,
     pub wallet: WalletLedger,
@@ -1406,9 +1407,16 @@ impl MessagingEngine {
             }
             Event::ConversationRead {
                 conversation_id,
+                actor_id,
                 message_id,
-                ..
             } => {
+                self.state
+                    .read_cursors
+                    .entry(conversation_id.clone())
+                    .or_default()
+                    .insert(actor_id, message_id.clone());
+                // Keep legacy snapshot fields coherent for older readers. Actor-specific
+                // clients receive the authoritative read state from the projected sync view.
                 if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
                     conversation.last_read_message_id = Some(message_id.0);
                     conversation.unread_count = 0;
