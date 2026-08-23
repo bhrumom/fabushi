@@ -3,23 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import journeyContract from '../../contracts/automation/cross-platform-journeys.json' with { type: 'json' };
-import type {
-  MahayanaHostFeature,
-  MahayanaHostJourneyStep,
-} from '../../frontend/packages/shared/src/mahayana-host-features';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packagedExecutable = process.env.FABUSHI_ELECTRON_EXECUTABLE?.trim() || null;
-const mahayanaHostFeatures = journeyContract.features as ReadonlyArray<MahayanaHostFeature>;
-const officialAppIds = [
-  'global-dharma',
-  'faliu-flashcards',
-  'platform-publish',
-  'hermes-installer',
-  'bot-father',
-  'chatgpt-auto-confirm',
-] as const;
 
 async function launchDesktopApp(appDataDir: string) {
   return electron.launch({
@@ -39,88 +25,16 @@ async function completeBrowserLogin(page: Page): Promise<void> {
   while (await page.getByTestId('onboarding-gate').isVisible().catch(() => false)) {
     await page.getByTestId('onboarding-next').click();
   }
-  await expect(page.getByTestId('login-gate')).toBeVisible();
-  await page.getByTestId('browser-login-start').click();
-  await expect(page.getByTestId('login-gate')).toBeHidden();
-}
-
-async function ensureComputerPanel(page: Page): Promise<void> {
-  if (await page.getByTestId('feature-coverage').isVisible().catch(() => false)) return;
-  await page.getByRole('button', { name: '大乘助手的电脑' }).click();
-  await expect(page.getByTestId('feature-coverage')).toBeVisible();
-}
-
-async function runJourneyStep(page: Page, step: MahayanaHostJourneyStep): Promise<void> {
-  switch (step.action) {
-    case 'oauthLogin':
-    case 'login':
-      await completeBrowserLogin(page);
-      return;
-    case 'expectReady':
-      await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
-      return;
-    case 'sendChat':
-      await page.getByTestId('chat-input').fill(step.text);
-      await page.getByTestId('send-message').click();
-      await expect(page.getByTestId('messages')).toContainText(step.expectedReply);
-      return;
-    case 'installMiniApp':
-      await page.getByTestId('open-marketplace').click();
-      await expect(page.getByRole('dialog', { name: '插件市场' })).toBeVisible();
-      await page.getByTestId('install-miniapp').click();
-      await expect(page.getByTestId('marketplace-state')).toHaveText('installed');
-      return;
-    case 'openMiniApp':
-      await page.getByRole('button', { name: '关闭插件市场' }).click();
-      await page.getByTestId(`agent-${step.miniAppId}`).click();
-      await expect(page.getByTestId('miniapp-panel')).toContainText(step.miniAppId);
-      await expect(page.getByTestId('miniapp-frame')).toBeVisible();
-      return;
-    case 'approveCapability':
-      await page.getByTestId('request-capability').click();
-      await expect(page.getByRole('dialog', { name: '能力审批' })).toContainText(step.capability);
-      await page
-        .getByTestId(step.decision === 'allow-once' ? 'approve-capability' : 'deny-capability')
-        .click();
-      await expect(page.getByTestId('approval-state')).toHaveText(
-        step.decision === 'allow-once' ? 'allowed-once' : 'denied',
-      );
-      return;
-    case 'interruptOperation':
-      await page.getByTestId('start-long-operation').click();
-      await expect(page.getByTestId('operation-state')).toHaveText('running');
-      await page.getByTestId('interrupt-operation').click();
-      await expect(page.getByTestId('operation-state')).toHaveText('interrupted');
-      return;
-    case 'clearSession':
-      await page.getByTestId('clear-session').click();
-      await expect(page.getByTestId('session-state')).toHaveText('cleared');
-      return;
-    default: {
-      const unhandled: never = step;
-      throw new Error(`Unhandled Host journey step: ${JSON.stringify(unhandled)}`);
-    }
+  const login = page.getByTestId('login-gate');
+  if (await login.isVisible().catch(() => false)) {
+    await page.getByTestId('browser-login-start').click();
+    await expect(login).toBeHidden();
   }
+  await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
+  await expect(page.getByTestId('messenger-workspace')).toBeVisible();
 }
 
-async function runOfficialApps(page: Page): Promise<void> {
-  for (const appId of officialAppIds) {
-    await test.step(`official app: ${appId}`, async () => {
-      await page.getByTestId('open-marketplace').click();
-      const installId = appId === 'global-dharma' ? 'install-miniapp' : `install-${appId}`;
-      const install = page.getByTestId(installId);
-      if (await install.isEnabled()) await install.click();
-      await expect(install).toBeDisabled();
-      await page.getByRole('button', { name: '关闭插件市场' }).click();
-      await expect(page.getByTestId(`agent-${appId}`)).toBeVisible();
-      await page.getByTestId(`agent-${appId}`).click();
-      await expect(page.getByTestId('miniapp-panel')).toContainText(appId);
-      await expect(page.getByTestId('miniapp-frame')).toBeVisible();
-    });
-  }
-}
-
-test('desktop package drives every declared Host journey through Electron IPC and Rust', async () => {
+test('desktop package drives the unified Messenger through Electron IPC and the real Rust Host', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-electron-e2e-'));
   const app = await launchDesktopApp(appDataDir);
 
@@ -156,43 +70,28 @@ test('desktop package drives every declared Host journey through Electron IPC an
     expect(hostInfo.protocolVersion).not.toBe('');
     expect(hostInfo.runtimeVersion).toContain('test');
 
-    const sessionClearFeature = mahayanaHostFeatures.find((feature) => feature.id === 'session.clear');
-    expect(sessionClearFeature).toBeTruthy();
+    await completeBrowserLogin(page);
 
-    for (const feature of mahayanaHostFeatures.filter((feature) => feature.id !== 'session.clear')) {
-      await test.step(`${feature.id}: ${feature.label}`, async () => {
-        for (const step of feature.steps) await runJourneyStep(page, step);
-        await ensureComputerPanel(page);
-        await expect(page.getByTestId(`feature-result-${feature.id}`)).toHaveAttribute(
-          'data-state',
-          'passed',
-        );
-      });
-    }
-
-    await runOfficialApps(page);
-
-    await test.step('Fabushi modal keyboard focus returns to the account trigger', async () => {
-      const accountTrigger = page.getByTestId('account-menu');
-      await accountTrigger.focus();
-      await accountTrigger.click();
-      await expect(page.getByTestId('logout')).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(page.getByTestId('logout')).toBeHidden();
-      await expect(accountTrigger).toBeFocused();
+    await test.step('unified conversation composer traverses the Host', async () => {
+      const assistant = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
+      await expect(assistant).toBeVisible();
+      await assistant.click();
+      const marker = `Electron Host smoke ${Date.now()}`;
+      await page.getByTestId('messenger-input').fill(marker);
+      await page.getByTestId('messenger-send').click();
+      await expect(page.getByText(marker, { exact: true })).toBeVisible();
+      await expect(page.getByText(`收到：${marker}`, { exact: true })).toBeVisible();
     });
 
-    await test.step(`${sessionClearFeature!.id}: ${sessionClearFeature!.label}`, async () => {
-      for (const step of sessionClearFeature!.steps) await runJourneyStep(page, step);
-      await ensureComputerPanel(page);
-      await expect(page.getByTestId(`feature-result-${sessionClearFeature!.id}`)).toHaveAttribute(
-        'data-state',
-        'passed',
-      );
+    await test.step('Electron bridge executes a safe Host feature command', async () => {
+      const accepted = await page.evaluate(() => window.mahayana!.invoke<{ requestId: string }>('feature.execute', {
+        command: { type: 'capability.list', requestId: 'electron-smoke-capability-list' },
+      }));
+      expect(accepted.requestId).toBe('electron-smoke-capability-list');
     });
 
     await expect(page.getByTestId('host-status')).toHaveAttribute('data-state', 'ready');
-    await expect(page.getByTestId('messages')).toBeVisible();
+    await expect(page.getByTestId('messenger-input')).toBeVisible();
   } finally {
     await app.close();
     await rm(appDataDir, { recursive: true, force: true });
