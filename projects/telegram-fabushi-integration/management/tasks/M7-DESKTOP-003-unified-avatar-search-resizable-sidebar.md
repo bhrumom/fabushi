@@ -4,7 +4,7 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M7-DESKTOP-003`
 - **Stage**: `M7 Bot/Agent 统一联系人体系`
-- **Status**: `IMPLEMENTED`
+- **Status**: `TESTING`
 - **Started**: `2026-08-23`
 - **Updated**: `2026-08-23`
 - **Branch**: `feat/tfi-m7-unified-search-resizable-sidebar`
@@ -80,3 +80,13 @@
 ## Next action
 
 提交 branch/PR，等待 GitHub current-head relevant checks；失败则按 CI 证据修复，全部通过后 protected merge，并回读 canonical `main` 后再提升为 `TESTED`。
+
+
+## Post-merge CI repair — 2026-08-23
+
+PR #2057 merged to `main` as `ebfb1e090cb677b6d9d35edff3ad912819f3fba6`, but two non-blocking product gates exposed the same TypeScript defect after merge: `WebRtcCallStatus` uses `active`, while the new call BotMark expression compared against nonexistent `connected`.
+
+- Electron desktop quality gate run `32637615241`: renderer typecheck failed at `messaging-shell-v2.tsx` with TS2367.
+- Messaging Product Gate run `32637615272`: Electron Messenger contract failed at the same TS2367; Rust self-hosted product passed.
+- Repair branch `fix/tfi-m7-unified-ui-ci` changes the visual call-state mapping from `connected` to canonical `active`; no protocol/runtime behavior changes.
+- Task remains `TESTING` until the repair PR is green, merged, and canonical main is re-read.
