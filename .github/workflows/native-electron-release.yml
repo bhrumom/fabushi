@@ -101,7 +101,7 @@ jobs:
             label: Linux
             target: linux
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
         with:
@@ -119,6 +119,15 @@ jobs:
           shared-key: release-electron-${{ runner.os }}-v2
       - working-directory: desktop
         run: npm ci --prefer-offline
+      - name: Build and stage release Mahayana Host
+        working-directory: desktop
+        run: npm run build:host
+      - name: Build pinned offline ASR engine
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/build-offline-asr-engine.mjs
+      - name: Build release renderer
+        working-directory: desktop
+        run: npm run build:renderer
       - name: Install Developer ID Application identity
         if: matrix.target == 'mac'
         shell: bash
@@ -151,15 +160,38 @@ jobs:
           esac
           security find-identity -v -p codesigning "$keychain" | grep -F -- "$identity" >/dev/null
           echo "MACOS_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      - name: Sign bundled native macOS executables before app sealing
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+          host=desktop/resources/bin/mahayana-app-host
+          test -x "$host"
+          codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.mahayana-app-host --sign "$MACOS_CODESIGN_IDENTITY" "$host"
+          while IFS= read -r binary; do
+            codesign --force --options runtime --timestamp --identifier com.ombhrum.fabushi.whisper-cli --sign "$MACOS_CODESIGN_IDENTITY" "$binary"
+          done < <(find desktop/resources/asr -type f -name whisper-cli -print)
+          codesign --verify --strict --verbose=2 "$host"
+
       - name: Package canonical Electron application
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.target == 'mac' && 'true' || 'false' }}
-        run: npm run package -- --${{ matrix.target }} --publish never
+          FABUSHI_MACOS_NOTARIZE: ${{ matrix.target == 'mac' && '1' || '0' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: npx electron-builder --${{ matrix.target }} --publish never
       - name: Notarize and staple macOS DMG
         if: matrix.target == 'mac'
         shell: bash
         env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
@@ -170,8 +202,10 @@ jobs:
           dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           test -n "$dmg"
           bash .github/scripts/notarize-macos-dmg.sh "$dmg"
-          xcrun stapler validate "$dmg"
-          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+          app="$(find desktop/release -maxdepth 3 -type d -name '*.app' -print -quit)"
+          test -n "$app"
+          chmod +x .github/scripts/verify-electron-macos-package.sh
+          bash .github/scripts/verify-electron-macos-package.sh "$app" "$dmg"
       - uses: actions/upload-artifact@v7
         with:
           name: electron-${{ matrix.target }}
