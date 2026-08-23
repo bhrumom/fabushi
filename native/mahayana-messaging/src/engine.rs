@@ -416,6 +416,12 @@ pub enum EngineError {
     CommunityNotFound(ConversationId),
     #[error("community administration permission denied")]
     CommunityPermissionDenied,
+    #[error("community {0:?} member is not allowed to send messages")]
+    CommunitySendRestricted(ConversationId),
+    #[error("community {0:?} member is not allowed to send media")]
+    CommunityMediaRestricted(ConversationId),
+    #[error("community {0:?} member is not allowed to send polls")]
+    CommunityPollRestricted(ConversationId),
     #[error(transparent)]
     Community(#[from] CommunityError),
     #[error("bot operation permission denied")]
@@ -453,18 +459,41 @@ pub struct MessagingEngine {
     state: MessagingState,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum CommunityAdminAction {
+    ChangeInfo,
+    InviteMembers,
+    BanMembers,
+    ManageTopics,
+    AddAdmins,
+}
+
+fn is_community_owner(community: &CommunityState, actor_id: &ActorId) -> bool {
+    community
+        .members
+        .get(actor_id)
+        .is_some_and(|member| matches!(member.status, MemberStatus::Owner))
+}
+
 fn require_community_admin(
     community: &CommunityState,
     actor_id: &ActorId,
+    action: CommunityAdminAction,
 ) -> Result<(), EngineError> {
     let allowed = community.members.get(actor_id).is_some_and(|member| {
-        matches!(member.status, MemberStatus::Owner)
-            || (matches!(member.status, MemberStatus::Administrator)
-                && (member.admin_rights.change_info
-                    || member.admin_rights.ban_members
-                    || member.admin_rights.invite_members
-                    || member.admin_rights.manage_topics
-                    || member.admin_rights.add_admins))
+        if matches!(member.status, MemberStatus::Owner) {
+            return true;
+        }
+        if !matches!(member.status, MemberStatus::Administrator) {
+            return false;
+        }
+        match action {
+            CommunityAdminAction::ChangeInfo => member.admin_rights.change_info,
+            CommunityAdminAction::InviteMembers => member.admin_rights.invite_members,
+            CommunityAdminAction::BanMembers => member.admin_rights.ban_members,
+            CommunityAdminAction::ManageTopics => member.admin_rights.manage_topics,
+            CommunityAdminAction::AddAdmins => member.admin_rights.add_admins,
+        }
     });
     if allowed {
         Ok(())
@@ -616,7 +645,8 @@ impl MessagingEngine {
                         conversation_id.clone(),
                     ));
                 }
-                if message_content_uses_media(&content) && !conversation.permissions.can_send_media {
+                if message_content_uses_media(&content) && !conversation.permissions.can_send_media
+                {
                     return Err(EngineError::MediaSendPermissionDenied(
                         conversation_id.clone(),
                     ));
@@ -627,6 +657,37 @@ impl MessagingEngine {
                     return Err(EngineError::PollSendPermissionDenied(
                         conversation_id.clone(),
                     ));
+                }
+                if let Some(member) = self
+                    .state
+                    .communities
+                    .get(&conversation_id)
+                    .and_then(|community| community.members.get(&sender_id))
+                {
+                    if matches!(member.status, MemberStatus::Left | MemberStatus::Banned)
+                        || (matches!(member.status, MemberStatus::Restricted)
+                            && member.restrictions.send_messages)
+                    {
+                        return Err(EngineError::CommunitySendRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
+                    if message_content_uses_media(&content)
+                        && matches!(member.status, MemberStatus::Restricted)
+                        && member.restrictions.send_media
+                    {
+                        return Err(EngineError::CommunityMediaRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
+                    if matches!(&content, MessageContent::Poll { .. })
+                        && matches!(member.status, MemberStatus::Restricted)
+                        && member.restrictions.send_polls
+                    {
+                        return Err(EngineError::CommunityPollRestricted(
+                            conversation_id.clone(),
+                        ));
+                    }
                 }
                 let is_secret_conversation = matches!(
                     conversation.kind,
@@ -1070,7 +1131,7 @@ impl MessagingEngine {
                     return Err(EngineError::CommunityPermissionDenied);
                 }
                 if let Some(existing) = self.state.communities.get(&community.conversation_id) {
-                    require_community_admin(existing, &actor_id)?;
+                    require_community_admin(existing, &actor_id, CommunityAdminAction::ChangeInfo)?;
                 } else if conversation.owner_id.as_ref() != Some(&actor_id)
                     && !conversation.participants.iter().any(|participant| {
                         participant.actor_id == actor_id
@@ -1093,7 +1154,26 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                let caller_is_owner = is_community_owner(&community, &actor_id);
+                let target_is_owner = community
+                    .members
+                    .get(&member.actor_id)
+                    .is_some_and(|existing| matches!(existing.status, MemberStatus::Owner));
+                if (target_is_owner || matches!(member.status, MemberStatus::Owner))
+                    && !caller_is_owner
+                {
+                    return Err(EngineError::CommunityPermissionDenied);
+                }
+                let action = match member.status {
+                    MemberStatus::Owner | MemberStatus::Administrator => {
+                        CommunityAdminAction::AddAdmins
+                    }
+                    MemberStatus::Restricted | MemberStatus::Left | MemberStatus::Banned => {
+                        CommunityAdminAction::BanMembers
+                    }
+                    MemberStatus::Member => CommunityAdminAction::InviteMembers,
+                };
+                require_community_admin(&community, &actor_id, action)?;
                 community.upsert_member(member);
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1106,7 +1186,11 @@ impl MessagingEngine {
                     .ok_or_else(|| {
                         EngineError::CommunityNotFound(invite.conversation_id.clone())
                     })?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 if invite.creator_id != actor_id
                     || invite.id.trim().is_empty()
                     || invite.token.trim().is_empty()
@@ -1128,7 +1212,11 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 community.revoke_invite(&invite_id)?;
                 Ok(vec![Event::CommunityChanged { community }])
             }
@@ -1160,7 +1248,11 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(
+                    &community,
+                    &actor_id,
+                    CommunityAdminAction::InviteMembers,
+                )?;
                 if approved {
                     community.approve_join(&requester_id, &actor_id, decided_at_ms)?;
                 } else {
@@ -1178,7 +1270,7 @@ impl MessagingEngine {
                     .get(&topic.conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(topic.conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(&community, &actor_id, CommunityAdminAction::ManageTopics)?;
                 if topic.id.trim().is_empty() {
                     return Err(EngineError::CommunityPermissionDenied);
                 }
@@ -1196,7 +1288,7 @@ impl MessagingEngine {
                     .get(&conversation_id)
                     .cloned()
                     .ok_or_else(|| EngineError::CommunityNotFound(conversation_id.clone()))?;
-                require_community_admin(&community, &actor_id)?;
+                require_community_admin(&community, &actor_id, CommunityAdminAction::ManageTopics)?;
                 community.topics.remove(&topic_id);
                 Ok(vec![Event::CommunityChanged { community }])
             }
