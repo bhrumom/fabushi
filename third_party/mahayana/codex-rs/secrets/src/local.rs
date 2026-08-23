@@ -38,8 +38,6 @@ const LOCAL_SECRETS_FILENAME: &str = "local.age";
 const CODEX_AUTH_SECRETS_FILENAME: &str = "codex_auth.age";
 const MCP_OAUTH_SECRETS_FILENAME: &str = "mcp_oauth.age";
 const MAHAYANA_AUTH_SECRETS_FILENAME: &str = "mahayana_auth.age";
-const FABUSHI_DESKTOP_AUTH_SECRETS_FILENAME: &str = "fabushi_desktop_auth_v2.age";
-const FABUSHI_DESKTOP_MANAGED_SECRETS_FILENAME: &str = "fabushi_desktop_managed_v2.age";
 
 /// Selects the local encrypted file used by a `LocalSecretsBackend`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -51,15 +49,8 @@ pub enum LocalSecretsNamespace {
     CodexAuth,
     /// OAuth credentials for external MCP servers.
     McpOAuth,
-    /// Mahayana account credentials shared by the Mahayana CLI and compatible app hosts.
+    /// Mahayana account credentials shared by the Mahayana CLI and app hosts.
     MahayanaAuth,
-    /// Fabushi desktop account credentials. This deliberately uses a fresh keyring
-    /// service and ciphertext file so the signed Electron host never touches the
-    /// historical `mahayana-cli` Keychain ACL that can trigger a password prompt.
-    FabushiDesktopAuth,
-    /// Fabushi desktop managed/requested secrets. Kept separate from the historical
-    /// `codex` keyring service for the same prompt-free signed-app boundary.
-    FabushiDesktopManagedSecrets,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -157,10 +148,6 @@ impl LocalSecretsBackend {
             LocalSecretsNamespace::CodexAuth => CODEX_AUTH_SECRETS_FILENAME,
             LocalSecretsNamespace::McpOAuth => MCP_OAUTH_SECRETS_FILENAME,
             LocalSecretsNamespace::MahayanaAuth => MAHAYANA_AUTH_SECRETS_FILENAME,
-            LocalSecretsNamespace::FabushiDesktopAuth => FABUSHI_DESKTOP_AUTH_SECRETS_FILENAME,
-            LocalSecretsNamespace::FabushiDesktopManagedSecrets => {
-                FABUSHI_DESKTOP_MANAGED_SECRETS_FILENAME
-            }
         };
         self.secrets_dir().join(filename)
     }
@@ -486,18 +473,8 @@ mod tests {
         );
         let mahayana_backend = LocalSecretsBackend::new_with_namespace(
             codex_home.path().to_path_buf(),
-            keyring.clone(),
-            LocalSecretsNamespace::MahayanaAuth,
-        );
-        let desktop_backend = LocalSecretsBackend::new_with_namespace(
-            codex_home.path().to_path_buf(),
-            keyring.clone(),
-            LocalSecretsNamespace::FabushiDesktopAuth,
-        );
-        let desktop_managed_backend = LocalSecretsBackend::new_with_namespace(
-            codex_home.path().to_path_buf(),
             keyring,
-            LocalSecretsNamespace::FabushiDesktopManagedSecrets,
+            LocalSecretsNamespace::MahayanaAuth,
         );
         let scope = SecretScope::Global;
         let name = SecretName::new("TEST_SECRET")?;
@@ -505,8 +482,6 @@ mod tests {
         codex_auth_backend.set(&scope, &name, "codex-auth-value")?;
         mcp_backend.set(&scope, &name, "mcp-value")?;
         mahayana_backend.set(&scope, &name, "mahayana-value")?;
-        desktop_backend.set(&scope, &name, "desktop-value")?;
-        desktop_managed_backend.set(&scope, &name, "desktop-managed-value")?;
 
         assert_eq!(
             codex_auth_backend.get(&scope, &name)?,
@@ -519,14 +494,6 @@ mod tests {
         assert_eq!(
             mahayana_backend.get(&scope, &name)?,
             Some("mahayana-value".to_string())
-        );
-        assert_eq!(
-            desktop_backend.get(&scope, &name)?,
-            Some("desktop-value".to_string())
-        );
-        assert_eq!(
-            desktop_managed_backend.get(&scope, &name)?,
-            Some("desktop-managed-value".to_string())
         );
         assert!(
             codex_home
@@ -547,20 +514,6 @@ mod tests {
                 .path()
                 .join("secrets")
                 .join("mahayana_auth.age")
-                .exists()
-        );
-        assert!(
-            codex_home
-                .path()
-                .join("secrets")
-                .join("fabushi_desktop_auth_v2.age")
-                .exists()
-        );
-        assert!(
-            codex_home
-                .path()
-                .join("secrets")
-                .join("fabushi_desktop_managed_v2.age")
                 .exists()
         );
         assert!(!codex_home.path().join("secrets").join("local.age").exists());
