@@ -142,37 +142,37 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   }
 
   marketplaceBrowse(query?: string): Promise<MarketplaceBrowseResult> {
-    return mahayanaBridge().invoke<MarketplaceBrowseResult>("marketplace.browse", {
+    return mahayanaBridge().invoke<MarketplaceBrowseResult>("feature.marketplace.browse", {
       query: query?.trim() || undefined,
       platform: "desktop",
     });
   }
 
   marketplaceRelease(pluginId: string, version: string): Promise<MarketplaceReleaseMetadata> {
-    return mahayanaBridge().invoke<MarketplaceReleaseMetadata>("marketplace.release", { pluginId, version });
+    return mahayanaBridge().invoke<MarketplaceReleaseMetadata>("feature.marketplace.release", { pluginId, version });
   }
 
   pluginInstall(
     release: Record<string, unknown>,
     platform = "desktop",
   ): Promise<InstalledPluginPointer> {
-    return mahayanaBridge().invoke<InstalledPluginPointer>("plugin.install", { release, platform });
+    return mahayanaBridge().invoke<InstalledPluginPointer>("feature.plugin.install", { release, platform });
   }
 
   pluginUninstall(pluginId: string): Promise<PluginUninstallResult> {
-    return mahayanaBridge().invoke<PluginUninstallResult>("plugin.uninstall", { pluginId });
+    return mahayanaBridge().invoke<PluginUninstallResult>("feature.plugin.uninstall", { pluginId });
   }
 
   pluginActive(pluginId: string): Promise<InstalledPluginPointer | null> {
-    return mahayanaBridge().invoke<InstalledPluginPointer | null>("plugin.active", { pluginId });
+    return mahayanaBridge().invoke<InstalledPluginPointer | null>("feature.plugin.active", { pluginId });
   }
 
   pluginListInstalled(): Promise<InstalledPluginList> {
-    return mahayanaBridge().invoke<InstalledPluginList>("plugin.listInstalled");
+    return mahayanaBridge().invoke<InstalledPluginList>("feature.plugin.listInstalled");
   }
 
   pluginUiDocument(pluginId: string): Promise<PluginUiDocument> {
-    return mahayanaBridge().invoke<PluginUiDocument>("plugin.uiDocument", { pluginId });
+    return mahayanaBridge().invoke<PluginUiDocument>("feature.plugin.uiDocument", { pluginId });
   }
 
   authStatus(): Promise<AuthState> {
