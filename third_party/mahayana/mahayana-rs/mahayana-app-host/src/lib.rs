@@ -24,9 +24,17 @@ const TEST_MARKETPLACE_PLUGINS: &[(&str, &str, &str)] = &[
     ("global-dharma", "全球法布施", "任务、日志与部署"),
     ("faliu-flashcards", "法流记忆卡", "经文牌组与复习"),
     ("platform-publish", "平台发布", "内容发布与自动化"),
-    ("hermes-installer", "Hermes Installer", "插件安装与运行时管理"),
+    (
+        "hermes-installer",
+        "Hermes Installer",
+        "插件安装与运行时管理",
+    ),
     ("bot-father", "Bot Father", "创建和管理机器人"),
-    ("chatgpt-auto-confirm", "ChatGPT Auto Confirm", "受控自动确认与任务协作"),
+    (
+        "chatgpt-auto-confirm",
+        "ChatGPT Auto Confirm",
+        "受控自动确认与任务协作",
+    ),
 ];
 
 impl From<AppHostFeatureMode> for HostMode {
@@ -300,7 +308,8 @@ impl AppHost {
             let plugins = TEST_MARKETPLACE_PLUGINS
                 .iter()
                 .filter_map(|(plugin_id, display_name, description)| {
-                    let searchable = format!("{plugin_id} {display_name} {description}").to_lowercase();
+                    let searchable =
+                        format!("{plugin_id} {display_name} {description}").to_lowercase();
                     if !term.is_empty() && !searchable.contains(&term) {
                         return None;
                     }
