@@ -40,7 +40,7 @@ jobs:
           printf '%s\n' "$changed"
           while IFS= read -r path; do
             case "$path" in
-              native/mahayana-messaging/src/engine.rs|native/mahayana-messaging/src/media_cache.rs|native/mahayana-messaging/src/blob_store.rs|native/mahayana-messaging/src/lib.rs|native/mahayana-messaging/tests/m4_media_contract.rs) ;;
+              native/mahayana-messaging/src/engine.rs|native/mahayana-messaging/src/media_cache.rs|native/mahayana-messaging/src/blob_store.rs|native/mahayana-messaging/src/lib.rs|native/mahayana-messaging/tests/m4_media_contract.rs|native/mahayana-messaging/tests/typing_contract.rs) ;;
               *) echo "Unexpected formatted path: $path" >&2; exit 1 ;;
             esac
           done <<< "$changed"
