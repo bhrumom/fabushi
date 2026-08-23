@@ -75,10 +75,10 @@ assert.doesNotMatch(identityAuth, /offline_access/, 'sign-in gatekeepers must no
 const accountMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0005_principals_connections.sql');
 const workspaceMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0007_workspace_messaging.sql');
 for (const table of ['account_principals', 'account_contact_points', 'account_connections', 'account_connection_grants']) {
-  assert.match(accountMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\b`), `missing ${table}`);
+  assert.match(accountMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`), `missing ${table}`);
 }
 for (const table of ['platform_workspaces', 'platform_agents', 'platform_peers', 'platform_conversations', 'platform_messages']) {
-  assert.match(workspaceMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\b`), `missing ${table}`);
+  assert.match(workspaceMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`), `missing ${table}`);
 }
 assert.match(workspaceMigration, /UNIQUE \(conversation_id, seq\)/, 'messages need stable per-conversation ordering');
 assert.match(workspaceMigration, /UNIQUE \(conversation_id, client_nonce\)/, 'message retries need idempotency');
