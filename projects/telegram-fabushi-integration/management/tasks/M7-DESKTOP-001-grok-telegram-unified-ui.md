@@ -10,7 +10,7 @@
 - **Primary implementation PR**: `#2046`
 - **Product-gate repair PR**: `#2048`
 - **Auth gateway repair PR**: `#2049`
-- **macOS Keychain/formal package repair PR**: pending
+- **macOS Keychain/formal package repair PR**: `#2052`
 
 ## Objective
 
