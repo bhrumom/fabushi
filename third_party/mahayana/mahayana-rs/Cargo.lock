@@ -8907,6 +8907,9 @@ dependencies = [
  "mahayana-platform-core",
  "mahayana-plugin-host",
  "openssl-sys",
+ "rama-error",
+ "rama-macros",
+ "rama-utils",
  "serde",
  "serde_json",
  "tokio",
@@ -8967,6 +8970,17 @@ dependencies = [
  "mahayana-app-host",
  "mahayana-unified-app-host",
  "serde_json",
+]
+
+[[package]]
+name = "mahayana-auth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -9328,10 +9342,10 @@ name = "mahayana-platform-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "codex-login",
- "codex-secrets",
+ "mahayana-auth",
  "mahayana-host-protocol",
  "mahayana-platform-core",
+ "mahayana-secrets",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -9420,6 +9434,20 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+]
+
+[[package]]
+name = "mahayana-secrets"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "anyhow",
+ "base64 0.22.1",
+ "keyring",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -11318,9 +11346,9 @@ dependencies = [
 
 [[package]]
 name = "rama-error"
-version = "0.3.0"
+version = "0.3.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f33187d746dc897b7cdbae9628b0c1c783f98f25206b2b5eeac442128c0b745e"
+checksum = "3c452aba1beb7e29b873ff32f304536164cffcc596e786921aea64e858ff8f40"
 
 [[package]]
 name = "rama-http"
@@ -11456,9 +11484,9 @@ dependencies = [
 
 [[package]]
 name = "rama-macros"
-version = "0.3.0"
+version = "0.3.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d90ecfc0103cccc2beefe84dac28cccafea616c0243cef021c5fc6a7e92ce624"
+checksum = "ea18a110bcf21e35c5f194168e6914ccea45ffdd0fea51bc4b169fbeafef6428"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -11572,12 +11600,11 @@ dependencies = [
 
 [[package]]
 name = "rama-utils"
-version = "0.3.0"
+version = "0.3.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c651f73d8cec6a44f9717725640490bbdd43813f337d10c7c72877e316d1471"
+checksum = "bf28b18ba4a57f8334d7992d3f8020194ea359b246ae6f8f98b8df524c7a14ef"
 dependencies = [
  "const_format",
- "memchr",
  "parking_lot",
  "pin-project-lite",
  "rama-macros",
@@ -11586,7 +11613,6 @@ dependencies = [
  "smallvec",
  "smol_str",
  "tokio",
- "tracing",
  "wildcard",
 ]
 
