@@ -1,0 +1,42 @@
+name: MSR-601 lockfile refresh
+
+on:
+  push:
+    branches:
+      - fix/msr-601-cli-vendor-boundary-20260823
+    paths:
+      - '.github/workflows/msr-601-lockfile-refresh.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/msr-601-cli-vendor-boundary-20260823
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve workspace and update only the checked-in lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata \
+            --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml \
+            --format-version 1 \
+            >/dev/null
+          git diff -- third_party/mahayana/mahayana-rs/Cargo.lock
+          test -n "$(git status --short -- third_party/mahayana/mahayana-rs/Cargo.lock)"
+      - name: Commit resolved lockfile to the PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add third_party/mahayana/mahayana-rs/Cargo.lock
+          test "$(git diff --cached --name-only)" = "third_party/mahayana/mahayana-rs/Cargo.lock"
+          git commit -m 'chore(msr): refresh CLI compatibility lockfile'
+          git push origin HEAD:fix/msr-601-cli-vendor-boundary-20260823
