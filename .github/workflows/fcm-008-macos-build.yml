@@ -8,10 +8,11 @@ on:
       - '.github/workflows/fcm-008-macos-build.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   SOURCE_SHA: 67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c
+  RELEASE_TAG: macos-main-67b70fff-20260823
 
 jobs:
   package-macos:
@@ -101,7 +102,30 @@ jobs:
           set -euo pipefail
           find desktop/release -maxdepth 4 -type f -print | sort >> "$GITHUB_STEP_SUMMARY"
           test -n "$(find desktop/release -type d -name '*.app' -print -quit)"
-          test -n "$(find desktop/release -type f \( -name '*.dmg' -o -name '*.zip' \) -print -quit)"
+          test -n "$(find desktop/release -type f -name '*.dmg' -print -quit)"
+          test -n "$(find desktop/release -type f -name '*.zip' -print -quit)"
+
+      - name: Publish immutable macOS prerelease assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to mutate it." >&2
+            exit 1
+          fi
+          dmg="$(find desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          zip="$(find desktop/release -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -n "$dmg" && test -n "$zip"
+          shasum -a 256 "$dmg" "$zip" > desktop/release/SHA256SUMS.txt
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --prerelease \
+            --title "Fabushi macOS latest main 67b70fff" \
+            --notes "Built from canonical main $SOURCE_SHA by FCM-008. This is a build-only prerelease. The full Electron Messenger E2E gate on run 32619314508 exposed separate Messaging regressions that remain tracked under FAB-P0001; this package is not claimed as fully E2E-accepted." \
+            "$dmg" "$zip" desktop/release/SHA256SUMS.txt
 
       - name: Upload latest macOS package
         uses: actions/upload-artifact@v7
@@ -112,5 +136,6 @@ jobs:
             desktop/release/*.zip
             desktop/release/*.blockmap
             desktop/release/latest-mac.yml
+            desktop/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
