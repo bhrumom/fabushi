@@ -6,11 +6,13 @@ on:
     paths:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
+      - ".github/workflows/ci_codex_sync.yml"
   pull_request:
     branches: ["main", "develop"]
     paths:
       - "third_party/mahayana"
       - "third_party/mahayana/**"
+      - ".github/workflows/ci_codex_sync.yml"
 
 jobs:
   test-mahayana-runtime:
