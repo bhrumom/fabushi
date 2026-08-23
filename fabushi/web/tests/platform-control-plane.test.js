@@ -29,8 +29,10 @@ assert.ok(
 
 const gateway = read('src/routes/platform-gateway-routes.js');
 assert.match(gateway, /https:\/\/mahayana-platform\.bhrumom\.workers\.dev/, 'gateway needs an explicit canonical upstream');
+assert.match(gateway, /pathname\.startsWith\('\/api\/auth\/browser\/'\)/, 'browser-first auth must always route through the Mahayana control plane');
 assert.match(gateway, /pathname\.startsWith\('\/v1\/'\)/, 'all v1 platform APIs must go to the Rust control plane');
 assert.match(gateway, /redirect: 'manual'/, 'OAuth redirects must be returned to the browser, not followed by the gateway');
+assert.match(gateway, /X-Fabushi-Control-Plane/, 'proxied browser auth must identify the canonical control plane');
 
 const requestGate = read('src/security/request-gate.js');
 assert.doesNotMatch(requestGate, /TRANSFER_RECEIPT_SECRET|leaderboard/i, 'retired leaderboard gate must stay removed');
@@ -73,10 +75,10 @@ assert.doesNotMatch(identityAuth, /offline_access/, 'sign-in gatekeepers must no
 const accountMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/account-migrations/0005_principals_connections.sql');
 const workspaceMigration = read('../../third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0007_workspace_messaging.sql');
 for (const table of ['account_principals', 'account_contact_points', 'account_connections', 'account_connection_grants']) {
-  assert.match(accountMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`), `missing ${table}`);
+  assert.match(accountMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\b`), `missing ${table}`);
 }
 for (const table of ['platform_workspaces', 'platform_agents', 'platform_peers', 'platform_conversations', 'platform_messages']) {
-  assert.match(workspaceMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`), `missing ${table}`);
+  assert.match(workspaceMigration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\b`), `missing ${table}`);
 }
 assert.match(workspaceMigration, /UNIQUE \(conversation_id, seq\)/, 'messages need stable per-conversation ordering');
 assert.match(workspaceMigration, /UNIQUE \(conversation_id, client_nonce\)/, 'message retries need idempotency');
