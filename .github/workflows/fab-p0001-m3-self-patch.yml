@@ -6,13 +6,18 @@ on:
       - fix/fab-p0001-m3-e2e-closure
     paths:
       - .github/workflows/fab-p0001-m3-self-patch.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fab-p0001-m3-self-patch.yml
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.repository == 'bhrumom/fabushi'
+    if: github.repository == 'bhrumom/fabushi' && (github.event_name == 'push' || github.head_ref == 'fix/fab-p0001-m3-e2e-closure')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
