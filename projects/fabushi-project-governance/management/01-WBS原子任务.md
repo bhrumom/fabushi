@@ -21,6 +21,7 @@
 | FPG-004.5 | 将编号流程写入 AGENTS/governance Skill/lifecycle/standard | yes | 新项目必须先读取 registry 并原子分配 next_sequence | canonical main file review | passed |
 | FPG-004.6 | GitHub Actions portfolio governance gate | yes | PR 上 validator workflow success | run 32561929188 | passed |
 | FPG-004.7 | Protected merge + canonical main verification | yes | 合并后 registry、5 项目 metadata、控制规则均可从 main 验证 | PR #1996 / merge 87462b14 / main fetch | passed |
+| FPG-005 | 强制当前 PR 合并 main 后才能进入下一个 PR 任务 | yes | AGENTS 明确 PR->required gates->merge main->main verify->next task 串行门禁 | PR + required checks + protected merge + main readback | in-progress |
 
 ## Status rule
 
