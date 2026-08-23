@@ -23,6 +23,17 @@ asr_included="$(read_json asrIncluded)"
 app_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist" 2>/dev/null || true)"
 [ "$app_id" = "com.ombhrum.fabushi" ] || { echo "Unexpected app bundle id: ${app_id:-missing}" >&2; exit 2; }
 
+# A Developer ID signed .app is a sealed code bundle. Replacing app.asar or a
+# nested executable invalidates the outer signature and can reintroduce macOS
+# Keychain authorization prompts. Production installs must therefore move by a
+# freshly signed/notarized full package, never by in-place hot patching.
+signing_team="$(codesign -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+if [ -n "$signing_team" ] && [ "$signing_team" != "not set" ]; then
+  echo "Fabushi at $app_path is a sealed Developer ID build (TeamIdentifier=$signing_team)." >&2
+  echo "Refusing to invalidate its signature with a hot update. Install the latest signed/notarized full package instead." >&2
+  exit 4
+fi
+
 if [ -f "$marker" ]; then
   installed_sha="$(tr -d '[:space:]' < "$marker")"
   if [ "$installed_sha" != "$base_sha" ] && [ "$installed_sha" != "$source_sha" ] && [ "${FABUSHI_HOT_UPDATE_FORCE:-0}" != "1" ]; then
