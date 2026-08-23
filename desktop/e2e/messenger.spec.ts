@@ -141,7 +141,12 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await expect(sidebar).not.toHaveAttribute('data-collapsed', 'true');
 
     await page.getByTestId('global-search-trigger').click();
-    await expect(page.getByTestId('global-search-surface')).toBeVisible();
+    const searchSurface = page.getByTestId('global-search-surface');
+    await expect(searchSurface).toBeVisible();
+    const searchSurfaceBox = await searchSurface.boundingBox();
+    const searchSidebarBox = await sidebar.boundingBox();
+    expect(searchSurfaceBox?.x ?? 9999).toBeGreaterThanOrEqual(searchSidebarBox?.x ?? 0);
+    expect((searchSurfaceBox?.x ?? 0) + (searchSurfaceBox?.width ?? 9999)).toBeLessThanOrEqual((searchSidebarBox?.x ?? 0) + (searchSidebarBox?.width ?? 0) + 1);
     for (const category of ['chats', 'channels', 'apps', 'posts', 'images', 'videos', 'downloads', 'links', 'files', 'music', 'audio']) {
       await expect(page.getByTestId(`global-search-tab-${category}`)).toBeVisible();
     }
@@ -311,13 +316,16 @@ test('desktop Messenger persists per-peer drafts and performs real in-conversati
     await expect(page.getByText(marker, { exact: true })).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
-    const search = page.getByTestId('conversation-search-input');
+    await expect(page.getByTestId('conversation-search-scope')).toContainText('此聊天');
+    const search = page.getByTestId('global-search-input');
     await search.fill(marker);
-    await expect(page.getByText(marker, { exact: true })).toHaveCount(1);
-    await expect(page.getByText('收到：' + marker, { exact: true })).toHaveCount(1);
+    const scopedSurface = page.getByTestId('global-search-surface');
+    await expect(scopedSurface).toContainText(marker);
+    await expect(page.getByTestId('global-search-tab-posts')).toHaveText('消息');
+    await expect(page.getByTestId('global-search-tab-chats')).toHaveCount(0);
 
     await search.fill('绝对不存在的会话内搜索结果-20260822');
-    await expect(page.getByTestId('message-search-empty')).toBeVisible();
+    await expect(scopedSurface.getByText('当前已加载内容中没有匹配结果')).toBeVisible();
   } finally {
     await app.close();
     await rm(appDataDir, { recursive: true, force: true });

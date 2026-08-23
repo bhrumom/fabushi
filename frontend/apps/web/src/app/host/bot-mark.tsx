@@ -74,7 +74,8 @@ export type BotMarkShape =
   | "arch"
   | "cloud"
   | "teardrop"
-  | "leaf";
+  | "leaf"
+  | "jelly";
 
 export type BotMarkColor =
   | "black"
@@ -138,7 +139,7 @@ type BotMarkProps = {
 };
 
 const IDENTITY_SHAPES: readonly BotMarkShape[] = [
-  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
+  "blob", "pebble", "bean", "egg", "squircle", "capsule", "cloud", "teardrop", "leaf", "jelly",
 ];
 
 const COLORS: readonly BotMarkColor[] = [
@@ -178,16 +179,17 @@ const SHAPE_PATHS: Record<BotMarkShape, string> = {
   cloud: "M21 80C9 80 4 67 9 57C12 50 18 47 25 47C24 31 35 19 49 19C61 19 71 27 74 39C88 39 96 50 94 63C93 73 85 80 75 80H21Z",
   teardrop: "M50 5C50 5 88 47 88 66C88 84 72 95 50 95C28 95 12 84 12 66C12 47 50 5 50 5Z",
   leaf: "M91 9C63 10 26 17 13 42C1 66 18 89 42 91C70 93 89 62 91 9Z",
+  jelly: "M12 56C12 29 29 10 50 10C71 10 88 29 88 56V64C88 73 83 79 76 80C70 81 66 77 62 71C59 78 55 83 49 83C43 83 39 78 36 71C32 77 27 81 21 79C15 77 12 71 12 63V56Z",
 };
 
 const SHAPE_SCALE: Record<BotMarkShape, number> = {
   blob: 0.94, pebble: 0.97, bean: 0.98, egg: 0.96, squircle: 0.9, tablet: 1,
   capsule: 0.98, cylinder: 0.96, hex: 0.93, gem: 0.94, crystal: 0.92, wedge: 0.94,
-  shield: 0.95, dome: 0.95, arch: 0.95, cloud: 0.96, teardrop: 0.94, leaf: 0.94,
+  shield: 0.95, dome: 0.95, arch: 0.95, cloud: 0.96, teardrop: 0.94, leaf: 0.94, jelly: 0.98,
 };
 
-const DEFAULT_POSE: BotMarkPose = { turn: 16, tilt: -10, roll: 11, scale: 1 };
-const DEFAULT_HOME_POSE: BotMarkPose = { turn: 23, tilt: -13, roll: 13, scale: 1 };
+const DEFAULT_POSE: BotMarkPose = { turn: 10, tilt: -6, roll: 4, scale: 1 };
+const DEFAULT_HOME_POSE: BotMarkPose = { turn: 16, tilt: -8, roll: 6, scale: 1 };
 const DEFAULT_FACE_TUNE: BotMarkFaceTune = { size: 0.9, gap: 1.12, height: 1, eyeWidth: 0.98, eyeHeight: 0.94 };
 
 function hashIdentity(value: string): number {
