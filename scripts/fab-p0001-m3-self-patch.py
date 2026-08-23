@@ -1,0 +1,279 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+def replace_or_verify(path: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text()
+    if new in text:
+        return
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(f"{path}: normalize expected one match, got {count}")
+    target.write_text(text.replace(old, new, 1))
+
+
+replace_or_verify(
+    "native/mahayana-messaging/src/engine.rs",
+    "    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n",
+    "    pub messages: BTreeMap<ConversationId, BTreeMap<MessageId, Message>>,\n"
+    "    pub read_cursors: BTreeMap<ConversationId, BTreeMap<ActorId, MessageId>>,\n",
+)
+replace_or_verify(
+    "native/mahayana-messaging/src/engine.rs",
+    """            Event::ConversationRead {
+                conversation_id,
+                message_id,
+                ..
+            } => {
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.last_read_message_id = Some(message_id.0);
+                    conversation.unread_count = 0;
+                    conversation.marked_unread = false;
+                }
+            }
+""",
+    """            Event::ConversationRead {
+                conversation_id,
+                actor_id,
+                message_id,
+            } => {
+                self.state
+                    .read_cursors
+                    .entry(conversation_id.clone())
+                    .or_default()
+                    .insert(actor_id, message_id.clone());
+                // Keep legacy snapshot fields coherent for older readers. Actor-specific
+                // clients receive the authoritative read state from the projected sync view.
+                if let Some(conversation) = self.state.conversations.get_mut(&conversation_id) {
+                    conversation.last_read_message_id = Some(message_id.0);
+                    conversation.unread_count = 0;
+                    conversation.marked_unread = false;
+                }
+            }
+""",
+)
+replace_or_verify(
+    "native/mahayana-messaging/src/service.rs",
+    "use crate::conversation::{ConversationId, ConversationKind};\n",
+    "use crate::conversation::{Conversation, ConversationId, ConversationKind};\n",
+)
+replace_or_verify(
+    "native/mahayana-messaging/src/service.rs",
+    """            ClientCommand::StopTyping { conversation_id } => {
+                self.typing_event(&actor_id, conversation_id, None, None, server_time_ms)
+            }
+""",
+    """            ClientCommand::StopTyping { conversation_id } => self.typing_event(
+                &actor_id,
+                conversation_id,
+                None,
+                Some(server_time_ms.saturating_add(TYPING_TTL_MS)),
+                server_time_ms,
+            ),
+""",
+)
+replace_or_verify(
+    "native/mahayana-messaging/src/service.rs",
+    """    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {
+""",
+    """    fn project_conversation_for_actor(
+        &self,
+        actor_id: &ActorId,
+        conversation: &Conversation,
+        server_time_ms: i64,
+    ) -> Conversation {
+        let state = self.engine.state();
+        let mut projected = conversation.clone();
+        let last_read = state
+            .read_cursors
+            .get(&conversation.id)
+            .and_then(|cursors| cursors.get(actor_id));
+        projected.last_read_message_id = last_read.map(|message_id| message_id.0.clone());
+
+        let mut ordered_messages = state
+            .messages
+            .get(&conversation.id)
+            .into_iter()
+            .flat_map(|messages| messages.values())
+            .collect::<Vec<_>>();
+        ordered_messages.sort_by(|left, right| {
+            left.created_at_ms
+                .cmp(&right.created_at_ms)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        let read_index = last_read.and_then(|message_id| {
+            ordered_messages
+                .iter()
+                .position(|message| &message.id == message_id)
+        });
+        let unread = ordered_messages
+            .iter()
+            .enumerate()
+            .filter(|(index, message)| {
+                let after_read = match read_index {
+                    Some(read_index) => *index > read_index,
+                    None => true,
+                };
+                let scheduled_is_visible = match message.scheduled_at_ms {
+                    Some(scheduled_at_ms) => scheduled_at_ms <= server_time_ms,
+                    None => true,
+                };
+                after_read
+                    && scheduled_is_visible
+                    && !message.deleted
+                    && &message.sender_id != actor_id
+            })
+            .count();
+        projected.unread_count = u32::try_from(unread).unwrap_or(u32::MAX);
+        projected
+    }
+
+    fn sync_envelope(&self, actor_id: &ActorId, limit: u32, server_time_ms: i64) -> ServerEnvelope {
+""",
+)
+replace_or_verify(
+    "native/mahayana-messaging/src/service.rs",
+    """                conversations: visible_conversation_ids
+                    .iter()
+                    .filter_map(|id| state.conversations.get(id))
+                    .take(max_items)
+                    .cloned()
+                    .collect(),
+""",
+    """                conversations: visible_conversation_ids
+                    .iter()
+                    .filter_map(|id| state.conversations.get(id))
+                    .take(max_items)
+                    .map(|conversation| {
+                        self.project_conversation_for_actor(actor_id, conversation, server_time_ms)
+                    })
+                    .collect(),
+""",
+)
+replace_or_verify(
+    "desktop/src/messaging-shell-v2.tsx",
+    """      case 'conversationChanged': {
+        const conversation = (event as unknown as { conversation: MessagingConversation }).conversation;
+        setSelfConversations((current) => upsertById(current, conversation));
+        break;
+      }
+""",
+    """      case 'conversationChanged': {
+        const conversation = (event as unknown as { conversation: MessagingConversation }).conversation;
+        setSelfConversations((current) => {
+          const existing = current.find((item) => item.id === conversation.id);
+          return upsertById(current, existing
+            ? {
+                ...conversation,
+                lastReadMessageId: existing.lastReadMessageId,
+                unreadCount: existing.unreadCount,
+                markedUnread: existing.markedUnread,
+              }
+            : conversation);
+        });
+        break;
+      }
+""",
+)
+replace_or_verify(
+    "desktop/src/messaging-shell-v2.tsx",
+    """      case 'messageAdded':
+      case 'messageChanged': {
+        const message = (event as unknown as { message: MessagingMessage }).message;
+        setSelfMessages((current) => {
+          const list = upsertById(current[message.conversationId] ?? [], message)
+            .sort((a, b) => a.createdAtMs - b.createdAtMs);
+          const next = { ...current, [message.conversationId]: list };
+          if (activePeerKeyRef.current === `selfhosted:${message.conversationId}`) {
+            setMessages(list.filter((item) => !item.deleted).map(displaySelfMessage));
+          }
+          return next;
+        });
+        setPendingSend(false);
+        break;
+      }
+      case 'messagesDeleted': {
+""",
+    """      case 'messageAdded':
+      case 'messageChanged': {
+        const message = (event as unknown as { message: MessagingMessage }).message;
+        const isActiveConversation = activePeerKeyRef.current === `selfhosted:${message.conversationId}`;
+        const isIncoming = message.senderId !== selfHosted.actorId;
+        setSelfMessages((current) => {
+          const list = upsertById(current[message.conversationId] ?? [], message)
+            .sort((a, b) => a.createdAtMs - b.createdAtMs);
+          const next = { ...current, [message.conversationId]: list };
+          if (isActiveConversation) {
+            setMessages(list.filter((item) => !item.deleted).map(displaySelfMessage));
+          }
+          return next;
+        });
+        if (event.type === 'messageAdded') {
+          setSelfConversations((current) => current.map((conversation) => conversation.id === message.conversationId
+            ? {
+                ...conversation,
+                lastMessageId: message.id,
+                updatedAtMs: Math.max(conversation.updatedAtMs, message.createdAtMs),
+                unreadCount: isIncoming && !isActiveConversation
+                  ? conversation.unreadCount + 1
+                  : conversation.unreadCount,
+              }
+            : conversation));
+          if (isIncoming && isActiveConversation) {
+            void selfHosted.markRead(message.conversationId, message.id).catch(() => {});
+          }
+        }
+        setPendingSend(false);
+        break;
+      }
+      case 'readChanged': {
+        const payload = event as unknown as { conversationId: string; actorId: string; messageId: string };
+        if (payload.actorId === selfHosted.actorId) {
+          setSelfConversations((current) => current.map((conversation) => conversation.id === payload.conversationId
+            ? {
+                ...conversation,
+                lastReadMessageId: payload.messageId,
+                unreadCount: 0,
+                markedUnread: false,
+              }
+            : conversation));
+        }
+        break;
+      }
+      case 'messagesDeleted': {
+""",
+)
+replace_or_verify(
+    "desktop/e2e/messenger.spec.ts",
+    """  await expect.poll(async () => {
+    const hostState = await page.getByTestId('host-status').getAttribute('data-state').catch(() => null);
+    if (hostState === 'ready') return true;
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    return page.getByTestId('open-messenger').isVisible().catch(() => false);
+  }, { timeout: 15_000 }).toBe(true);
+""",
+    """  await expect.poll(async () => {
+    if (await page.getByTestId('messenger-workspace').isVisible().catch(() => false)) return true;
+    if (await page.getByTestId('open-messenger').isVisible().catch(() => false)) return true;
+    const hostStatus = page.getByTestId('host-status');
+    if (!await hostStatus.isVisible().catch(() => false)) return false;
+    return await hostStatus.getAttribute('data-state').catch(() => null) === 'ready';
+  }, { timeout: 15_000 }).toBe(true);
+""",
+)
+
+driver = Path(os.environ["CANONICAL_DRIVER"])
+text = driver.read_text()
+start_marker = "          python3 - <<'PY'\n"
+end_marker = "          PY\n"
+if start_marker not in text:
+    raise RuntimeError("canonical M3 driver Python start marker missing")
+body = text.split(start_marker, 1)[1]
+if end_marker not in body:
+    raise RuntimeError("canonical M3 driver Python end marker missing")
+body = body.split(end_marker, 1)[0]
+code = "\n".join(line[10:] if line.startswith("          ") else line for line in body.splitlines()) + "\n"
+exec(compile(code, str(driver), "exec"), {"__name__": "__main__"})
