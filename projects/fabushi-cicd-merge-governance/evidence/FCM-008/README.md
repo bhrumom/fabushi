@@ -2,7 +2,7 @@
 
 ## Canonical source
 
-- `main`: `67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
+- Requested product source: `main@67b70fffa0720fa549fe6c1cc20f1f30bf1a3d2c`
 - Electron app version: `1.0.2`
 - macOS target: arm64
 
@@ -85,16 +85,40 @@ The replacement DMG was downloaded again from the GitHub Release onto the user's
 - Mounted app `spctl`: **accepted**, `source=Notarized Developer ID`.
 - Direct launch from the mounted DMG succeeded; process observed at PID `25077` with executable `/Volumes/.../fabushi.app/Contents/MacOS/fabushi`.
 
-The target Mac currently has only about `764 MiB` free on the data volume. A temporary copy-install simulation failed with `No space left on device`; that temporary copy was deleted. This is a separate storage-capacity issue, not a signature/notarization failure. The signed app itself launches successfully from the DMG.
+The target Mac had only about `764 MiB` free on the data volume during verification. A temporary copy-install simulation failed with `No space left on device`; that temporary copy was deleted. This is a separate storage-capacity issue, not a signature/notarization failure. The signed app itself launches successfully from the DMG.
 
 ## Permanent release-path repair
 
-Branch commit `da337309651dd61bad484e5e8cb5b2e94f6a8d98` updates `.github/workflows/native-electron-release.yml` so future macOS release packaging must:
+Branch commit `da337309651dd61bad484e5e8cb5b2e94f6a8d98` updated `.github/workflows/native-electron-release.yml` so future macOS release packaging must:
 
 1. import the repository Developer ID Application certificate;
 2. enable real electron-builder code signing for the macOS matrix target;
 3. submit the DMG to Apple notarization;
-4. staple the ticket;
+4. staple and validate the ticket;
 5. require Gatekeeper acceptance before artifact upload.
 
-FCM-008 remains `in-progress` until this permanent workflow fix and durable evidence are merged through protected `main` and re-read from canonical state.
+## Protected PR and canonical-main verification
+
+- Repair PR: #2044 — `[automerge-force] fix(release): require signed notarized macOS artifacts`.
+- Required PR checks: all passed, including:
+  - `CI result`;
+  - `Canonical architecture guardrails`;
+  - `Validate sensitive delivery governance`;
+  - `Validate immutable Project IDs`;
+  - `Measure canonical CI latency`;
+  - `Previous-good release is immutable and retrievable`.
+- Sensitive CI/CD path authorization was explicitly recorded through the repository-defined `[automerge-force]` mechanism; GitHub protected delivery remained the merge owner.
+- PR #2044 merged at 2026-08-23 as `278678efad2917259f4b988ae2e7b65a30eb70ea`.
+- Canonical `main` was re-read at `278678efad2917259f4b988ae2e7b65a30eb70ea`.
+- Re-read `.github/workflows/native-electron-release.yml` confirms, before macOS artifact upload:
+  - Developer ID Application certificate import;
+  - macOS `CSC_IDENTITY_AUTO_DISCOVERY=true`;
+  - notarization through `.github/scripts/notarize-macos-dmg.sh`;
+  - `xcrun stapler validate`;
+  - DMG `spctl -a -vvv -t open --context context:primary-signature`.
+
+The temporary build/repair workflows were removed before #2044 landed. The valid signed/notarized replacement release remains available, the invalid prerelease remains explicitly deprecated, and the canonical release path now prevents recurrence.
+
+## Final acceptance
+
+FCM-008 is accepted as **passed** after replacement-package verification on both CI and the target Mac plus canonical-main verification of the permanent release-path repair. Separate FAB-P0001 Messenger E2E failures remain outside this task and are not treated as resolved here.
