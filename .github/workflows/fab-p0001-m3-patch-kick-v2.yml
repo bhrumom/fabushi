@@ -1,4 +1,5 @@
 name: FAB-P0001 M3 canonical patch kick v2
+# retrigger: 2026-08-23T00:19Z after workflow exists on default branch
 
 on:
   push:
