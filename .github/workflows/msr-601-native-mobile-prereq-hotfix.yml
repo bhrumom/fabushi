@@ -1,0 +1,70 @@
+name: MSR-601 native mobile prerequisite hotfix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/msr-601-native-mobile-prereq-hotfix.yml'
+  push:
+    branches:
+      - fix/msr-601-cli-vendor-boundary-20260823
+    paths:
+      - '.github/workflows/msr-601-native-mobile-prereq-hotfix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-remove-self:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/msr-601-cli-vendor-boundary-20260823
+          fetch-depth: 0
+      - name: Add Linux native dependencies to the shared Rust host gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/native-mobile.yml')
+          text = path.read_text()
+          old = """      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+"""
+          new = """      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Install Linux native host dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
+            pkg-config libclang-dev libxcb1-dev libxrandr-dev libxfixes-dev \\
+            libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \\
+            libegl1-mesa-dev libgbm-dev
+      - uses: Swatinem/rust-cache@v2
+"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one shared-host toolchain marker, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          grep -q 'libwayland-dev libxkbcommon-dev' .github/workflows/native-mobile.yml
+      - name: Commit permanent workflow fix and remove this one-shot helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/msr-601-native-mobile-prereq-hotfix.yml
+          git add .github/workflows/native-mobile.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' '.github/workflows/msr-601-native-mobile-prereq-hotfix.yml' '.github/workflows/native-mobile.yml' | sort)"
+          git commit -m 'ci(mobile): install shared Rust host native prerequisites'
+          git push origin HEAD:fix/msr-601-cli-vendor-boundary-20260823
