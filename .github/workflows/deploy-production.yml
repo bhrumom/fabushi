@@ -349,3 +349,16 @@ jobs:
           test -s /tmp/production-health.json
           status=$(curl -sS -o /tmp/production-auth.json -w '%{http_code}' "$PRODUCTION_API_URL/api/auth/user-info")
           test "$status" = "401" -o "$status" = "403"
+
+          browser_start_status=$(curl -sS -o /tmp/production-browser-start.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data '{"platform":"desktop"}' \
+            "$PRODUCTION_API_URL/api/auth/browser/start")
+          test "$browser_start_status" = "200"
+          jq -e '.attemptId and .pollSecret and .loginUrl' /tmp/production-browser-start.json >/dev/null
+          ! grep -Fq 'This Cloudflare Worker is an API backend only.' /tmp/production-browser-start.json
+          login_url=$(jq -er '.loginUrl' /tmp/production-browser-start.json)
+          case "$login_url" in
+            "$PRODUCTION_API_URL/api/auth/browser/portal"*) ;;
+            *) echo "Production browser login escaped canonical API origin: $login_url" >&2; exit 1 ;;
+          esac
