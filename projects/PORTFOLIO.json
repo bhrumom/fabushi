@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 6,
+  "next_sequence": 7,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -61,6 +61,17 @@
       "registered_at": "2026-08-22",
       "first_canonical_main_commit": "88db63c328c3cba39971f3942509cb0b582502bc",
       "legacy_project_ids": ["MSR"]
+    },
+    {
+      "project_id": "FAB-P0006",
+      "project_key": "FAM",
+      "slug": "fabushi-always-on-marketing",
+      "name": "Fabushi Always-on Marketing",
+      "authoritative_path": "projects/fabushi-always-on-marketing",
+      "status": "active",
+      "registered_at": "2026-08-23",
+      "first_canonical_main_commit": "173e7f793987b6d0a9303b55e2060e2584552da9",
+      "legacy_project_ids": []
     }
   ]
 }
