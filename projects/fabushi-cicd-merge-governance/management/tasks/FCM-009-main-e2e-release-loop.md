@@ -83,3 +83,27 @@
 ## Next action
 
 Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA gate/release publication, then create protected PR and use Actions evidence to iterate until green.
+
+## 2026-08-24 — Round 2 native shared-host blocker
+
+- Exact main delivery run for `bc4aa98370fe719abee35f50d7f0bec36bf8bc71` correctly blocked publication: Native mobile run `32678047948` ended `failure`.
+- Android Compose simulated-user gate: PASS.
+- iOS SwiftUI simulated-user gate: PASS.
+- Shared Rust host contract: FAIL during `cargo clippy -p mahayana-app-host --all-targets -- -D warnings` because `wayland-sys` could not locate `wayland-client.pc`.
+- Root cause is runner provisioning, not product code: Ubuntu shared-host job omitted the Linux native development packages already installed by the Electron Host job.
+- Upstream/proven reference is recorded in `source/2026-08-24-fcm-009-native-wayland-dependency.md`.
+- Repair: install the same proven native dependency set before shared-host clippy/test. Release remains blocked until the repaired exact-main native gate is green.
+
+## 2026-08-24 — Round 3 merge-queue hygiene blocker
+
+- PR #2083 entered merge queue and created group SHA `983680ab3290f7d0b48d7f5a59382376028cb023`.
+- Two obsolete M3 one-shot workflow files immediately produced failed zero-job push runs (`32679156035`, `32679155565`) on the queue branch.
+- These recovery drivers target historical branch/issue/job identifiers and are not part of current canonical product validation.
+- They are removed so the `ALLGREEN` merge queue evaluates only current reusable gates instead of stale one-shot automation.
+
+## 2026-08-24 — Round 4 deterministic queue entry
+
+- After current-head PR checks were green, native auto-merge could remain armed without creating a `mergeQueueEntry`, leaving protected delivery stuck before merge-group validation.
+- GitHub's explicit `enqueuePullRequest` GraphQL mutation is now used after all required product gates pass.
+- This does not bypass protection: the merge queue still creates the merge-group commit and requires its configured `CI result` under the ALLGREEN policy before merging.
+- Source/provenance: `source/2026-08-24-fcm-009-explicit-merge-queue-enqueue.md`.
