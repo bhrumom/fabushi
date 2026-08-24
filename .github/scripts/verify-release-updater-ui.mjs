@@ -23,6 +23,7 @@ let applicationClosed = false;
 app.on('close', () => { applicationClosed = true; });
 const observedStates = [];
 let buttonText = '';
+let sawProgressIndicator = false;
 
 async function completeBrowserLogin(page) {
   await page.waitForLoadState('domcontentloaded');
@@ -64,6 +65,7 @@ try {
     try {
       const state = await update.getAttribute('data-state');
       if (state && observedStates.at(-1) !== state) observedStates.push(state);
+      if (await page.getByTestId('desktop-update-progress').isVisible().catch(() => false)) sawProgressIndicator = true;
     } catch {
       if (applicationClosed) break;
     }
@@ -73,12 +75,20 @@ try {
     throw new Error(`Clicking the update control did not start an updater transition; states=${observedStates.join(',')}`);
   }
 
+  if (observedStates.includes('downloading') && !sawProgressIndicator) {
+    throw new Error(`Updater entered downloading state without exposing progress UI; states=${observedStates.join(',')}`);
+  }
+  if (!applicationClosed) {
+    throw new Error(`One update click did not automatically close the previous app for installation; states=${observedStates.join(',')}`);
+  }
+
   await writeFile(evidencePath, `${JSON.stringify({
     expectedVersion,
     executablePath,
     buttonText,
     observedStates,
     applicationClosed,
+    sawProgressIndicator,
     clicked: true,
     timestamp: new Date().toISOString(),
   }, null, 2)}\n`);

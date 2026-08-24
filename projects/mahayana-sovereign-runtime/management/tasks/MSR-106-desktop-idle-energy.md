@@ -43,3 +43,17 @@ Eliminate the Mahayana desktop runtime busy-poll that keeps Fabushi near the top
 
 ## Current evidence / next gate
 Implementation pending exact-head CI, protected merge, exact-main packaged delivery, then target-Mac hidden-idle CPU remeasurement.
+
+## 2026-08-24 renderer/GPU continuation
+
+A second target-Mac measurement with packaged `1.0.798` while ChatGPT was foreground and Fabushi merely sat behind it showed the remaining dominant drain: Fabushi GPU process about `60.9% CPU` and renderer about `22.5% CPU`, while the local ChatGPT benchmark was near-idle (main about `0.2%`, GPU service about `1.3%` in the sampled process view).
+
+Root cause: the shared BotMark engine kept its global `requestAnimationFrame` clock alive whenever marks were intersection-visible, even when the Fabushi document had lost focus; CSS aura/breathe/orbit animations also continued. The energy fix therefore extends beyond Host long-polling:
+
+- suspend the shared JS motion clock whenever the document is hidden or the Fabushi window is unfocused;
+- set a document motion lifecycle marker so CSS BotMark compositor animations pause at the same boundary;
+- resume immediately on focus/visibility return;
+- cap focused shared motion dispatch to 30 FPS (slow organic avatar motion does not need 60+ attribute writes/sec);
+- preserve `prefers-reduced-motion` and per-mark pause semantics.
+
+Acceptance adds target-Mac background measurement after the packaged fix: renderer/GPU and `mahayana-app-host` must settle near idle rather than sustained double-digit CPU.
