@@ -20,6 +20,10 @@ for marker in required_component:
 required_engine = [
     'const frameListeners = new Set<FrameListener>()',
     'window.requestAnimationFrame(runMotionFrame)',
+    'MOTION_FRAME_INTERVAL_MS',
+    'document.visibilityState',
+    'document.hasFocus()',
+    'dataset.fabushiMotion',
     'function springStep(',
     'function eyeLensPath(',
     'function profileForState(',

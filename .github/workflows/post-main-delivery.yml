@@ -56,6 +56,8 @@ jobs:
           grep -F 'latest-mac.yml' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'gh release create "$tag" "${assets[@]}"' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'latest_args=(--latest)' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'Checksum manifest must never contain itself.' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'references missing release asset' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'desktop-update-cloud' .github/scripts/verify-release-updater-ui.mjs >/dev/null
           grep -F 'github.sha' .github/workflows/electron-desktop.yml >/dev/null
           grep -F 'github.sha' .github/workflows/native-mobile.yml >/dev/null
@@ -222,7 +224,28 @@ jobs:
           metadata_version="$(awk -F': ' '/^version:/ {gsub(/[[:space:]\r]/, "", $2); print $2; exit}' release-assets/latest-mac.yml)"
           test "$metadata_version" = "$version"
 
-          (cd release-assets && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt)
+          # electron-updater follows the URLs encoded in these channel files. Refuse to
+          # publish if a generated metadata URL does not resolve to an exact asset name.
+          for metadata in latest-mac.yml latest.yml latest-linux.yml; do
+            test -f "release-assets/$metadata"
+            while IFS= read -r referenced; do
+              test -n "$referenced"
+              if [ ! -f "release-assets/$referenced" ]; then
+                echo "$metadata references missing release asset: $referenced" >&2
+                exit 1
+              fi
+            done < <(awk '$1 == "-" && $2 == "url:" { print $3 }' "release-assets/$metadata" | tr -d "\"'")
+          done
+
+          # Write outside release-assets first. Creating the destination in-place before
+          # `find` can make the checksum file hash itself as an empty file.
+          checksum_file="$RUNNER_TEMP/SHA256SUMS.txt"
+          (cd release-assets && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 > "$checksum_file")
+          mv "$checksum_file" release-assets/SHA256SUMS.txt
+          if grep -Fq 'SHA256SUMS.txt' release-assets/SHA256SUMS.txt; then
+            echo 'Checksum manifest must never contain itself.' >&2
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
