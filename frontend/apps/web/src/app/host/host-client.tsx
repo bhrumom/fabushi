@@ -234,6 +234,23 @@ const defaultPreferences: HostPreferences = {
   autoReviewRules: [],
 };
 
+function serializeProductHostSettings(settings: ProductHostSettings): string {
+  return JSON.stringify({
+    notifications: settings.notifications,
+    autoUpdateWhenIdle: settings.autoUpdateWhenIdle,
+    localExecution: settings.localExecution,
+    routeEgressLocally: settings.routeEgressLocally,
+    securityKeys: settings.securityKeys,
+    webauthnProxyEnabled: settings.webauthnProxyEnabled,
+    localToolPermission: settings.localToolPermission,
+    remoteControlEnabled: settings.remoteControlEnabled,
+    aiComputerControlEnabled: settings.aiComputerControlEnabled,
+    autoReviewRules: settings.autoReviewRules,
+    inferenceProvider: settings.inferenceProvider,
+    sandboxRuntime: settings.sandboxRuntime,
+  });
+}
+
 const modelOptions = [
   { value: "auto", label: "自动选择" },
   { value: "deepseek-chat", label: "DeepSeek Chat" },
@@ -579,6 +596,10 @@ export default function HostClient() {
   const [preferences, setPreferences] = useState<HostPreferences>(defaultPreferences);
   const [hostSettingsHydrated, setHostSettingsHydrated] = useState(false);
   const lastHostSettingsJsonRef = useRef("");
+  const hostRouterSettingsRef = useRef<Pick<ProductHostSettings, "inferenceProvider" | "sandboxRuntime">>({
+    inferenceProvider: "fabushi",
+    sandboxRuntime: "host",
+  });
   const [auditRecords, setAuditRecords] = useState<unknown[]>([]);
   const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [ruleDraft, setRuleDraft] = useState("");
@@ -840,8 +861,9 @@ export default function HostClient() {
       remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
-    const serialized = JSON.stringify(settings);
+    const serialized = serializeProductHostSettings(settings);
     if (serialized === lastHostSettingsJsonRef.current) return;
     lastHostSettingsJsonRef.current = serialized;
     void transport.execute({
@@ -885,6 +907,7 @@ export default function HostClient() {
       remoteControlEnabled: true,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
     void (async () => {
       await transport.execute({
@@ -1450,7 +1473,11 @@ export default function HostClient() {
           setMcpToolResult(JSON.stringify(event.result, null, 2));
           break;
         case "settings.changed":
-          lastHostSettingsJsonRef.current = JSON.stringify(event.settings);
+          lastHostSettingsJsonRef.current = serializeProductHostSettings(event.settings);
+          hostRouterSettingsRef.current = {
+            inferenceProvider: event.settings.inferenceProvider,
+            sandboxRuntime: event.settings.sandboxRuntime,
+          };
           setHostSettingsHydrated(true);
           setPreferences((current) => ({
             ...current,
