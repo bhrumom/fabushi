@@ -27,5 +27,13 @@
 | FCM-009.8 | Reuse compiler/build state and expose cache telemetry | yes | source-hash host/JNI/staticlib + Gradle/AVD/DerivedData + sccache stats and warm cache summaries | implemented |
 | FCM-009.9 | Optionally prove old macOS Release can detect/click/install new Release | no | advisory release E2E may launch prior app, observe update cloud, click, and verify bundle replacement; failure is non-blocking by default | optional |
 | FCM-009.10 | Protected merge + canonical main delivery + Release closure | yes | PR merged, exact-main desktop/native required gates green, stable Release published, main readback | pending |
+| FCM-010 | Reduce PR CI hot-path latency with targeted classification and warm caches | yes | PR uses targeted Mahayana fast checks; heavyweight embedded-Codex matrix is post-merge; runtime edits avoid force-all; Next/Worker/Rust caches restore safely; protected merge evidence recorded | in-progress |
+| FCM-010.1 | Move heavyweight embedded-Codex desktop matrix off PR while preserving Mahayana targeted PR checks | yes | PR uses `mahayana-fast-checks`; push/main/manual uses Ubuntu/macOS/Windows heavyweight matrix | implemented |
+| FCM-010.2 | Restore Mahayana Cargo build state across canonical heavy runs | yes | rust-cache restore/save visible and cold fallback passes | implemented |
+| FCM-010.3 | Classify isolated Mahayana runtime changes without unknown force-all | yes | classifier selects only affected architecture domain | implemented |
+| FCM-010.4 | Restore Next.js incremental build cache | yes | `.next/cache` restored/saved on frontend run | implemented |
+| FCM-010.5 | Restore Fabushi Pay Worker Rust build state | yes | pay Worker target cache restored/saved on worker run | implemented |
+| FCM-010.6 | Merge optimized CI through protected main | yes | required PR checks/queue succeed and canonical main readback confirms definitions | pending |
+| FCM-010.7 | Verify post-merge heavyweight validation and cache behavior | yes | exact-main embedded-Codex run starts on all three OSes and cache steps execute | pending |
 
-`implemented` means the implementation exists but canonical protected merge/post-main acceptance may still be pending. `optional` means useful regression evidence that is not a default task-completion gate. FCM-009 must remain `in-progress` until FCM-009.10 has objective GitHub Actions + Release evidence; FCM-009.9 is not required for closure.
+`implemented` means the implementation exists but canonical protected merge/post-main acceptance may still be pending. `optional` means useful regression evidence that is not a default task-completion gate. FCM-009 must remain `in-progress` until FCM-009.10 has objective GitHub Actions + Release evidence; FCM-009.9 is not required for closure. FCM-010 remains `in-progress` until its optimized PR is merged and measured on canonical `main`.
