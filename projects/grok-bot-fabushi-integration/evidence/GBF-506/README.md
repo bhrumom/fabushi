@@ -7,8 +7,8 @@ Visual reference: pinned reconstructed repository screenshot `docs/assets/router
 | Gate | Evidence | Status |
 |---|---|---|
 | Lightweight local inspection | JSX/CSS diff review; no local renderer build | PASSED |
-| PR TypeScript/Electron contract | PR #2106: CI/frontend `32725104017`, Host complete journey `32725104003`, Electron `32725103923` | PASSED; final consolidated rerun pending |
-| Packaged Router visual evidence | `router-settings-modal` screenshot + video/trace/report for exact main SHA | PENDING |
-| Protected-main + Release | SHA/tag/assets/readback | PENDING |
+| PR TypeScript/Electron contract | PR #2106 canonical seven-gate `32731980249` | PASSED |
+| Packaged Router visual evidence | exact-main Electron `32733627050`; `router-settings-modal` screenshot + full video/trace/report retained | PASSED |
+| Protected-main + Release | `f81588d3...`; delivery `32734915241`; `desktop-1.0.867` | PASSED |
 
-The task remains `IMPLEMENTED`, not completed, until packaged visual inspection and delivery gates pass.
+GBF-506 is `RELEASED`.
