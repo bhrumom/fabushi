@@ -5,9 +5,9 @@ Implementation paths: `mahayana-runtime/src/kernel_conversation.rs`, `mahayana-a
 | Gate | Evidence | Status |
 |---|---|---|
 | Lightweight local inspection | diff review only; no local build/test | PASSED |
-| Rust/Node integration | PR #2106: CI `32725104017`, messaging `32725103886`, Host `32725104003`; Rust fast `32725103949` found and drove repair of a feature-gated import | FINAL RERUN PENDING |
-| Protected-main readback | exact merge SHA | PENDING |
-| Packaged continuity journey | screenshots/video/trace/report/log for exact main SHA | PENDING |
-| Release | tag/assets/target SHA | PENDING |
+| Rust/Node integration | PR #2106 canonical seven-gate `32731980249` | PASSED |
+| Protected-main readback | `f81588d33c1f10610ed0d0e4b147ae239b72b3a3` | PASSED |
+| Packaged continuity journey | Electron `32733627050`; native mobile `32733627056`; exact-main visual/debug bundles retained | PASSED |
+| Release | delivery `32734915241`; `desktop-1.0.867` targets exact main SHA | PASSED |
 
-The task remains `IMPLEMENTED`, not completed, until all required gates pass.
+GBF-308 is `RELEASED`.

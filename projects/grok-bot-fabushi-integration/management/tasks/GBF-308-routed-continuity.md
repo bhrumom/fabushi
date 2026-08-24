@@ -3,12 +3,12 @@
 - Project ID: `FAB-P0004`
 - Project Key: `GBF`
 - Task ID: `GBF-308`
-- Status: `IMPLEMENTED`
+- Status: `RELEASED`
 - Started: `2026-08-24 18:28 +08:00`
-- Updated: `2026-08-24 20:07 +08:00`
-- Completed: —
+- Updated: `2026-08-24 21:56 +08:00`
+- Completed: `2026-08-24 21:56 +08:00`
 - Branch: `codex/gbf-provider-router`
-- Commit / PR: unified PR head / [#2106](https://github.com/bhrumom/fabushi/pull/2106)
+- Commit / PR: unified head `4d8d3a6a...` / [#2106](https://github.com/bhrumom/fabushi/pull/2106) / main `f81588d3...`
 
 ## Objective and scope
 
@@ -38,4 +38,4 @@ The pinned reconstructed repository's Router/session behavior was inspected, but
 
 ## Evidence, risks and next action
 
-Lightweight local inspection only. Code-head CI `32725104017`, messaging `32725103886`, security `32725103937` and Host journey `32725104003` passed; the repaired consolidated head still requires its final Rust rerun. Transcript files contain user content and rely on private app-data permissions rather than telemetry storage. Merge only after green checks, then collect exact-main evidence/Release linkage.
+Lightweight local inspection only; no application build/test ran locally. Canonical seven-gate `32731980249` passed on the unified head, protected-main merge produced `f81588d3...`, exact-main Electron `32733627050` and native mobile `32733627056` passed with retained user-journey evidence, and post-main delivery `32734915241` published `desktop-1.0.867`. Transcript files contain user content and rely on private app-data permissions rather than telemetry storage. No remaining task blocker.
