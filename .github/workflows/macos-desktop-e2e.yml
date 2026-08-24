@@ -25,15 +25,18 @@ jobs:
     name: macOS Release desktop E2E
     if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'desktop-')
     runs-on: macos-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       EVIDENCE_DIR: ${{ github.workspace }}/macos-desktop-e2e-evidence
     steps:
-      - name: Checkout test helpers
+      - name: Checkout updater test helpers only
         uses: actions/checkout@v5
         with:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
+            .github/scripts/verify-release-updater-ui.mjs
+            desktop/package.json
+            desktop/package-lock.json
 
       - name: Prepare evidence folders
         shell: bash
@@ -73,6 +76,7 @@ jobs:
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isPrerelease,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
           jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nPrerelease: \(.isPrerelease)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=${tag#desktop-}" >> "$GITHUB_OUTPUT"
           echo "- Release: \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download macOS release assets
@@ -84,10 +88,15 @@ jobs:
           set -euo pipefail
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos-*.zip' --dir "$EVIDENCE_DIR/release" --clobber
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*macos-*.dmg' --dir "$EVIDENCE_DIR/release" --clobber || true
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'latest-mac.yml' --dir "$EVIDENCE_DIR/release" --clobber
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip.blockmap' --dir "$EVIDENCE_DIR/release" --clobber
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SHA256SUMS.txt' --dir "$EVIDENCE_DIR/release" --clobber || true
           find "$EVIDENCE_DIR/release" -maxdepth 1 -type f -print | sort | tee "$EVIDENCE_DIR/logs/02-downloaded-assets.log"
+          metadata_version="$(awk -F': ' '/^version:/ {gsub(/[[:space:]\r]/, "", $2); print $2; exit}' "$EVIDENCE_DIR/release/latest-mac.yml")"
+          test "$metadata_version" = '${{ steps.release.outputs.release_version }}'
 
-      - name: Upgrade compatibility smoke from previous desktop release
+      - id: previous
+        name: Upgrade compatibility smoke from previous desktop release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,9 +109,12 @@ jobs:
             arm64) previous_zip_pattern='*macos-arm64.zip' ;;
             *) previous_zip_pattern='*macos-x64.zip' ;;
           esac
-          previous_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 --json tagName --jq '[.[].tagName | select(startswith("desktop-") and . != env.RELEASE_TAG)][0] // ""')"
+          previous_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '[.[].tagName | select(startswith("desktop-") and . != env.RELEASE_TAG)][0] // ""')"
           if [ -z "$previous_tag" ]; then
             echo "No previous desktop release found; upgrade compatibility smoke skipped." | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+            echo 'previous_tag=' >> "$GITHUB_OUTPUT"
+            echo 'previous_app=' >> "$GITHUB_OUTPUT"
+            echo 'previous_executable=' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           previous_dir="$RUNNER_TEMP/previous-release"
@@ -121,20 +133,76 @@ jobs:
             echo "Previous .app bundle not found after unzip" | tee -a "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
             exit 1
           fi
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$previous_app/Contents/Info.plist")"
+          previous_executable="$previous_app/Contents/MacOS/$executable_name"
+          test -x "$previous_executable"
           echo "Previous app: $previous_app" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+          echo "Previous executable: $previous_executable" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
           xattr -dr com.apple.quarantine "$previous_app" 2>/dev/null || true
           screencapture -x "$EVIDENCE_DIR/screenshots/04-before-previous-launch.png" || true
           open -n "$previous_app" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
           sleep 8
-          pgrep -fl global_dharma_sharing >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
+          pgrep -fl "$executable_name" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || status=1
           screencapture -x "$EVIDENCE_DIR/screenshots/05-after-previous-launch.png" || true
-          pkill -f global_dharma_sharing >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || true
+          pkill -f "$previous_executable" >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log" 2>&1 || true
           sleep 2
           if [ "$status" -ne 0 ]; then
             echo "Previous desktop release launch failed during upgrade compatibility smoke." >&2
             exit "$status"
           fi
           echo "Previous desktop release launch succeeded before current release validation." >> "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "previous_app=$previous_app" >> "$GITHUB_OUTPUT"
+          echo "previous_executable=$previous_executable" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js for updater UI automation
+        if: steps.previous.outputs.previous_executable != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Restore Playwright/Electron test dependencies from npm cache
+        if: steps.previous.outputs.previous_executable != ''
+        working-directory: desktop
+        run: npm ci --prefer-offline
+
+      - name: Simulate old-version user clicking the profile update button
+        if: steps.previous.outputs.previous_executable != ''
+        shell: bash
+        env:
+          PREVIOUS_EXECUTABLE: ${{ steps.previous.outputs.previous_executable }}
+          EXPECTED_VERSION: ${{ steps.release.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          xattr -dr com.apple.quarantine '${{ steps.previous.outputs.previous_app }}' 2>/dev/null || true
+          node .github/scripts/verify-release-updater-ui.mjs \
+            "$PREVIOUS_EXECUTABLE" \
+            "$EXPECTED_VERSION" \
+            "$EVIDENCE_DIR/json/05-updater-ui.json"
+          cat "$EVIDENCE_DIR/json/05-updater-ui.json" | tee "$EVIDENCE_DIR/logs/05-updater-ui.log"
+
+      - name: Verify updater replaced the previous app bundle with the released version
+        if: steps.previous.outputs.previous_app != ''
+        shell: bash
+        env:
+          PREVIOUS_APP: ${{ steps.previous.outputs.previous_app }}
+          EXPECTED_VERSION: ${{ steps.release.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          actual=''
+          for attempt in $(seq 1 60); do
+            actual="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PREVIOUS_APP/Contents/Info.plist" 2>/dev/null || true)"
+            if [ "$actual" = "$EXPECTED_VERSION" ]; then
+              echo "Updater replaced previous bundle with version $actual" | tee "$EVIDENCE_DIR/logs/05-updater-install.log"
+              screencapture -x "$EVIDENCE_DIR/screenshots/06-after-updater-install.png" || true
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Updater did not replace previous bundle with $EXPECTED_VERSION; observed=${actual:-missing}" | tee "$EVIDENCE_DIR/logs/05-updater-install.log" >&2
+          exit 1
 
       - name: Verify checksums and install app
         id: install
@@ -142,7 +210,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f "$EVIDENCE_DIR/release/SHA256SUMS.txt" ]; then
-            (cd "$EVIDENCE_DIR/release" && grep -E 'macos-|SHA256SUMS' SHA256SUMS.txt | shasum -a 256 -c -) | tee "$EVIDENCE_DIR/logs/03-sha256.log"
+            (cd "$EVIDENCE_DIR/release" && grep -E 'macos-' SHA256SUMS.txt | shasum -a 256 -c -) | tee "$EVIDENCE_DIR/logs/03-sha256.log"
           else
             echo "SHA256SUMS.txt was not present in release assets" | tee "$EVIDENCE_DIR/logs/03-sha256.log"
           fi
@@ -172,7 +240,7 @@ jobs:
             echo "Installed app: $app_path"
             find "$app_path" -maxdepth 4 -print | sort | head -200
             /usr/libexec/PlistBuddy -c Print "$app_path/Contents/Info.plist" || true
-          } > "$EVIDENCE_DIR/logs/04-installed-app-structure.log" 2>&1
+          } > "$EVIDENCE_DIR/logs/06-installed-app-structure.log" 2>&1
 
       - name: Validate package CLI and gateway
         id: cli
@@ -186,13 +254,13 @@ jobs:
             exit 1
           fi
           doctor_json="$($cli doctor --json)"
-          echo "$doctor_json" | tee "$EVIDENCE_DIR/json/06-doctor.json"
+          echo "$doctor_json" | tee "$EVIDENCE_DIR/json/07-doctor.json"
           jq -e '.ok == true' <<<"$doctor_json" >/dev/null
           runtime_json="$($cli runtime-smoke --json)"
-          echo "$runtime_json" | tee "$EVIDENCE_DIR/json/07-runtime-smoke.json"
+          echo "$runtime_json" | tee "$EVIDENCE_DIR/json/08-runtime-smoke.json"
           jq -e '.ok == true' <<<"$runtime_json" >/dev/null
           miniapp_json="$($cli miniapp-smoke --json)"
-          echo "$miniapp_json" | tee "$EVIDENCE_DIR/json/08-miniapp-smoke.json"
+          echo "$miniapp_json" | tee "$EVIDENCE_DIR/json/09-miniapp-smoke.json"
           jq -e '.ok == true' <<<"$miniapp_json" >/dev/null
 
       - name: Launch desktop app and capture step screenshots
@@ -204,11 +272,12 @@ jobs:
           status=0
           xattr -dr com.apple.quarantine "$app_path" 2>/dev/null || true
           screencapture -x "$EVIDENCE_DIR/screenshots/08-before-launch.png" || true
-          open -n "$app_path" > "$EVIDENCE_DIR/logs/08-open-command.log" 2>&1 || status=1
+          open -n "$app_path" > "$EVIDENCE_DIR/logs/10-open-command.log" 2>&1 || status=1
           sleep 12
-          osascript -e 'tell application "System Events" to get name of every process whose background only is false' > "$EVIDENCE_DIR/logs/09-visible-processes.log" 2>&1 || true
+          osascript -e 'tell application "System Events" to get name of every process whose background only is false' > "$EVIDENCE_DIR/logs/11-visible-processes.log" 2>&1 || true
           screencapture -x "$EVIDENCE_DIR/screenshots/09-after-launch.png" || true
-          pgrep -fl global_dharma_sharing > "$EVIDENCE_DIR/logs/10-process-check.log" 2>&1 || status=1
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist" 2>/dev/null || echo fabushi)"
+          pgrep -fl "$executable_name" > "$EVIDENCE_DIR/logs/12-process-check.log" 2>&1 || status=1
           if [ "$status" -ne 0 ]; then
             echo "Desktop app launch/process check failed; see screenshots and logs." >&2
             exit "$status"
@@ -219,7 +288,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" <<'EOF'
+          cat > "$EVIDENCE_DIR/logs/13-miniapp-coverage.log" <<'EOF'
           Mini app E2E chain required by the hourly guard:
           - enter
           - load
@@ -229,17 +298,17 @@ jobs:
           - desktop/mini-app state consistency
 
           Automated evidence in this workflow:
-          - json/07-runtime-smoke.json validates the packaged Mahayana CLI and production defaults
-          - json/08-miniapp-smoke.json validates the seven official Codex plugin registry entries
-          - json/08-miniapp-smoke.json validates exact MCP Tool contracts and four-platform runtimeVariants
-          - json/08-miniapp-smoke.json validates versioned MCP App home resources and their MIME type
-          - json/08-miniapp-smoke.json rejects missing MCP servers, platform coverage, and non-versioned UI resources
-          - json/08-miniapp-smoke.json verifies the packaged desktop entry uses the MCP plugin contract
+          - json/08-runtime-smoke.json validates the packaged Mahayana CLI and production defaults
+          - json/09-miniapp-smoke.json validates the seven official Codex plugin registry entries
+          - json/09-miniapp-smoke.json validates exact MCP Tool contracts and four-platform runtimeVariants
+          - json/09-miniapp-smoke.json validates versioned MCP App home resources and their MIME type
+          - json/09-miniapp-smoke.json rejects missing MCP servers, platform coverage, and non-versioned UI resources
+          - json/09-miniapp-smoke.json verifies the packaged desktop entry uses the MCP plugin contract
 
           Remaining limitation:
           This is a packaged MCP contract smoke test, not pixel/coordinate-driven WebView clicking. It fails the workflow if the plugin contract breaks instead of recording a passive gap.
           EOF
-          cat "$EVIDENCE_DIR/logs/11-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
+          cat "$EVIDENCE_DIR/logs/13-miniapp-coverage.log" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write result summary
         if: always()
@@ -257,10 +326,10 @@ jobs:
             echo "## Coverage"
             echo "- Install/package/checksum: captured"
             echo "- Startup/process: captured when package checks permit launch"
-            echo "- Upgrade compatibility: previous desktop Release launch captured before current Release validation"
+            echo "- Upgrade compatibility: previous desktop Release launch captured"
+            echo "- Updater UX: old release detects the new version, exposes the profile update button, receives a real click, and must replace its app bundle with the released version"
             echo "- Gateway core route: captured by packaged CLI"
-            echo "- Mini-app host contract: captured by json/08-miniapp-smoke.json"
-            echo "- Mini-app chain: enter/load/core interaction/return/exception recovery/state consistency captured by CLI contract smoke"
+            echo "- Mini-app host contract: captured by json/09-miniapp-smoke.json"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload evidence artifact
