@@ -262,11 +262,14 @@ jobs:
         run: |
           set -euo pipefail
           tag="desktop-$VERSION"
-          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
+          # Only canonical desktop-X.Y.Z releases participate in updater ordering.
+          # Legacy desktop-v1.0.1-* tags sort after numeric SemVer under sort -V and
+          # previously caused every new desktop Release to be published with make_latest=false.
+          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
           make_latest=true
           if [ -n "$highest_version" ]; then
             newest="$(printf '%s\n%s\n' "$highest_version" "$VERSION" | sort -V | tail -1)"
-            if [ "$newest" != "$VERSION" ] || [ "$highest_version" = "$VERSION" ]; then
+            if [ "$newest" != "$VERSION" ]; then
               make_latest=false
             fi
           fi
@@ -292,6 +295,14 @@ jobs:
             test "$existing_target" = "$SOURCE_SHA"
             if [ "$existing_draft" != true ]; then
               echo "Release $tag is already published for $SOURCE_SHA; refusing to mutate published assets."
+              if [ "$make_latest" = true ]; then
+                gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f make_latest=true >/dev/null
+                latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+                if [ "$latest_tag" != "$tag" ]; then
+                  echo "GitHub Latest pointer did not advance to $tag; observed $latest_tag" >&2
+                  exit 1
+                fi
+              fi
               echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -317,6 +328,18 @@ jobs:
           test "$(jq -r '.prerelease' <<<"$published")" = false
           test "$(jq -r '.tag_name' <<<"$published")" = "$tag"
           test "$(jq -r '.target_commitish' <<<"$published")" = "$SOURCE_SHA"
+          if [ "$make_latest" = true ]; then
+            release_id="$(jq -r '.id' <<<"$published")"
+            # GitHub exposes make_latest directly on the Release REST API. Patch and
+            # read it back instead of trusting the CLI flag silently. electron-updater
+            # follows /releases/latest, so a stale pointer is a delivery failure.
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f make_latest=true >/dev/null
+            latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+            if [ "$latest_tag" != "$tag" ]; then
+              echo "GitHub Latest pointer did not advance to $tag; observed $latest_tag" >&2
+              exit 1
+            fi
+          fi
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
           {
             echo '## Published Release'
