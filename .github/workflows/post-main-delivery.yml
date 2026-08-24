@@ -1,0 +1,300 @@
+name: Post-main E2E Release delivery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/post-main-delivery.yml'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/workflows/native-mobile.yml'
+      - '.github/workflows/macos-desktop-e2e.yml'
+      - '.github/scripts/verify-release-updater-ui.mjs'
+  workflow_run:
+    workflows:
+      - Electron desktop quality gate
+    types:
+      - completed
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+
+concurrency:
+  group: post-main-delivery-${{ github.event.workflow_run.head_sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Post-main delivery contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout delivery control plane only
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/post-main-delivery.yml
+            .github/workflows/electron-desktop.yml
+            .github/workflows/native-mobile.yml
+            .github/workflows/macos-desktop-e2e.yml
+            .github/scripts/verify-release-updater-ui.mjs
+      - name: Check updater automation JavaScript syntax
+        run: node --check .github/scripts/verify-release-updater-ui.mjs
+      - name: Require exact-SHA and tested-artifact invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'github.event.workflow_run.head_sha' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'run-id:' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'needs.gate.outputs.electron_run_id' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'fabushi-delivery-mac.json' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'latest-mac.yml' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'desktop-update-cloud' .github/scripts/verify-release-updater-ui.mjs >/dev/null
+          grep -F 'github.sha' .github/workflows/electron-desktop.yml >/dev/null
+          grep -F 'github.sha' .github/workflows/native-mobile.yml >/dev/null
+          echo 'Post-main delivery control-plane invariants are present.'
+
+  gate:
+    name: Require exact-main desktop and mobile E2E
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    outputs:
+      source_sha: ${{ steps.meta.outputs.source_sha }}
+      electron_run_id: ${{ steps.meta.outputs.electron_run_id }}
+      native_run_id: ${{ steps.wait-native.outputs.native_run_id }}
+    steps:
+      - id: meta
+        name: Bind delivery to the completed Electron main run
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          ELECTRON_RUN_ID: ${{ github.event.workflow_run.id }}
+          ELECTRON_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_SHA"
+          test "$ELECTRON_CONCLUSION" = success
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "electron_run_id=$ELECTRON_RUN_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Post-main delivery source'
+            echo "- SHA: \`$SOURCE_SHA\`"
+            echo "- Electron run: \`$ELECTRON_RUN_ID\`"
+            echo "- Electron conclusion: \`$ELECTRON_CONCLUSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: wait-native
+        name: Wait for Native mobile result on the same main SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 7200))
+          native_run_id=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100")"
+            status="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .status // "missing"' <<<"$checks")"
+            conclusion="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .conclusion // ""' <<<"$checks")"
+            details_url="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .details_url // ""' <<<"$checks")"
+            if [ "$status" = completed ]; then
+              if [ "$conclusion" != success ]; then
+                echo "Native mobile result for $SOURCE_SHA concluded $conclusion" >&2
+                exit 1
+              fi
+              if [ -n "$details_url" ]; then
+                native_run_id="$(sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' <<<"$details_url" | head -1)"
+              fi
+              echo "native_run_id=$native_run_id" >> "$GITHUB_OUTPUT"
+              echo "- Native mobile result: success (run ${native_run_id:-unknown})" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Waiting for Native mobile result on $SOURCE_SHA: status=$status conclusion=${conclusion:-pending}"
+            sleep 20
+          done
+          echo "Timed out waiting for Native mobile result on $SOURCE_SHA" >&2
+          exit 1
+
+  publish:
+    name: Publish tested main artifacts to GitHub Release
+    needs: gate
+    if: needs.gate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+    concurrency:
+      group: fabushi-desktop-release-publication
+      cancel-in-progress: false
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      release_version: ${{ steps.collect.outputs.version }}
+      source_sha: ${{ needs.gate.outputs.source_sha }}
+    steps:
+      - name: Download tested macOS package artifacts from exact Electron run
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-mac
+          path: electron-artifacts/mac
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.gate.outputs.electron_run_id }}
+
+      - name: Download tested Windows package artifacts from exact Electron run
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-win
+          path: electron-artifacts/win
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.gate.outputs.electron_run_id }}
+
+      - name: Download tested Linux package artifacts from exact Electron run
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-linux
+          path: electron-artifacts/linux
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.gate.outputs.electron_run_id }}
+
+      - id: collect
+        name: Validate exact-SHA manifests and updater assets
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          mac_manifest="$(find electron-artifacts/mac -type f -name 'fabushi-delivery-mac.json' -print -quit)"
+          win_manifest="$(find electron-artifacts/win -type f -name 'fabushi-delivery-win.json' -print -quit)"
+          linux_manifest="$(find electron-artifacts/linux -type f -name 'fabushi-delivery-linux.json' -print -quit)"
+          test -n "$mac_manifest" && test -n "$win_manifest" && test -n "$linux_manifest"
+
+          version="$(jq -r '.version' "$mac_manifest")"
+          test -n "$version" && test "$version" != null
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Desktop delivery version is not monotonic SemVer: $version" >&2
+            exit 1
+          fi
+          for manifest in "$mac_manifest" "$win_manifest" "$linux_manifest"; do
+            test "$(jq -r '.version' "$manifest")" = "$version"
+            test "$(jq -r '.sha' "$manifest")" = "$SOURCE_SHA"
+          done
+
+          mkdir -p release-assets
+          while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
+            find electron-artifacts -type f \( \
+              -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o \
+              -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o \
+              -name 'latest-mac.yml' -o -name 'latest.yml' -o -name 'latest-linux.yml' -o \
+              -name 'fabushi-delivery-*.json' \
+            \) -print | sort
+          )
+
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
+          test -f release-assets/latest-mac.yml
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.zip.blockmap' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+
+          metadata_version="$(awk -F': ' '/^version:/ {gsub(/[[:space:]\r]/, "", $2); print $2; exit}' release-assets/latest-mac.yml)"
+          test "$metadata_version" = "$version"
+
+          (cd release-assets && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Validated exact-SHA updater assets for version $version / $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
+
+      - id: release
+        name: Create immutable tested Release without allowing out-of-order rollback
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
+          VERSION: ${{ steps.collect.outputs.version }}
+          ELECTRON_RUN_ID: ${{ needs.gate.outputs.electron_run_id }}
+          NATIVE_RUN_ID: ${{ needs.gate.outputs.native_run_id }}
+        run: |
+          set -euo pipefail
+          tag="desktop-$VERSION"
+          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
+          make_latest=true
+          if [ -n "$highest_version" ]; then
+            newest="$(printf '%s\n%s\n' "$highest_version" "$VERSION" | sort -V | tail -1)"
+            if [ "$newest" != "$VERSION" ] || [ "$highest_version" = "$VERSION" ]; then
+              make_latest=false
+            fi
+          fi
+
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF
+          Automated Fabushi desktop delivery from canonical main.
+
+          - Source SHA: \`$SOURCE_SHA\`
+          - Electron packaged-user E2E run: \`$ELECTRON_RUN_ID\`
+          - Native mobile simulated-user run: \`${NATIVE_RUN_ID:-unknown}\`
+          - Desktop version: \`$VERSION\`
+          - Publication ordering: make_latest=$make_latest
+
+          The macOS DMG/ZIP/updater metadata and Windows/Linux installers are the same artifacts that passed the Electron packaged-user gate for this source SHA.
+          EOF
+
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            release_id="$(jq -r '.id' <<<"$existing")"
+            existing_target="$(jq -r '.target_commitish' <<<"$existing")"
+            existing_draft="$(jq -r '.draft' <<<"$existing")"
+            test "$existing_target" = "$SOURCE_SHA"
+            if [ "$existing_draft" != true ]; then
+              echo "Release $tag is already published for $SOURCE_SHA; refusing to mutate published assets."
+              echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            created="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$tag" \
+              -f target_commitish="$SOURCE_SHA" \
+              -f name="Fabushi Desktop $VERSION" \
+              -f body="$(cat "$notes")" \
+              -F draft=true \
+              -F prerelease=false \
+              -f make_latest=false)"
+            release_id="$(jq -r '.id' <<<"$created")"
+          fi
+
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
+          test "${#assets[@]}" -gt 0
+          gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+
+          published="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest="$make_latest")"
+          test "$(jq -r '.draft' <<<"$published")" = false
+          test "$(jq -r '.tag_name' <<<"$published")" = "$tag"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Published Release'
+            echo "- Tag: \`$tag\`"
+            echo "- Target: \`$SOURCE_SHA\`"
+            echo "- make_latest: \`$make_latest\`"
+            echo "- macOS Release E2E will start from the release-published event."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve post-main delivery ledger
+        uses: actions/upload-artifact@v7
+        with:
+          name: post-main-delivery-${{ needs.gate.outputs.source_sha }}
+          path: |
+            release-assets/**
+          if-no-files-found: error
+          retention-days: 30
