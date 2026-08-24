@@ -504,4 +504,4 @@ jobs:
             exit 1
           fi
           mapfile -d '' assets < <(find release -type f -print0)
-          gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --generate-notes
+          gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --generate-notes --latest=false
