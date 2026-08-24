@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use mahayana_agent::{
-    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink,
+    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent,
     AgentMessageRequest, ApprovalResolution, McpAppSession, OpenMcpAppRequest,
     SharedAgentEventSink, StartThreadRequest,
 };
@@ -19,9 +19,8 @@ use mahayana_kernel::{
     ExecutionPolicy, KernelError, KernelEvent, KernelEventSink, OpenSessionRequest,
     OperationId as KernelOperationId, RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
 };
-use mahayana_mcp_runtime::{NativeMcpClient, NativeMcpRegistry, ResolvedMcpPlugin};
+use mahayana_mcp_runtime::{NativeMcpRegistry, ResolvedMcpPlugin};
 use mahayana_native_engine::NativeEngine;
-use mahayana_platform_core::HostPlatform;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -45,7 +44,6 @@ struct NativeThread {
 struct NativeMcpSession {
     plugin: ResolvedMcpPlugin,
     tools: Vec<Value>,
-    resources: Vec<Value>,
 }
 
 pub struct NativeAgentBackend {
@@ -290,12 +288,12 @@ impl AgentBackend for NativeAgentBackend {
         events: SharedAgentEventSink,
     ) -> Result<(), AgentError> {
         let thread = self.thread(&request.thread_id)?;
-        if let Ok(mcp) = self.mcp_session(&request.thread_id) {
-            if mcp
+        if let Ok(mcp) = self.mcp_session(&request.thread_id)
+            && mcp
                 .tools
                 .iter()
                 .any(|tool| tool.get("name").and_then(Value::as_str) == Some("chat"))
-            {
+        {
                 let result = self
                     .mcp_call(
                         mcp,
@@ -313,7 +311,6 @@ impl AgentBackend for NativeAgentBackend {
                         metadata: json!({"mcpResult":result}),
                     },
                 });
-            }
         }
 
         let sink: SharedKernelEventSink = Arc::new(NativeEventBridge {
@@ -479,7 +476,6 @@ impl AgentBackend for NativeAgentBackend {
                 NativeMcpSession {
                     plugin: resolved.clone(),
                     tools: tools.clone(),
-                    resources: resources.clone(),
                 },
             );
         Ok(McpAppSession {
