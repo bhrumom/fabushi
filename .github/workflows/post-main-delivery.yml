@@ -234,7 +234,7 @@ jobs:
                 echo "$metadata references missing release asset: $referenced" >&2
                 exit 1
               fi
-            done < <(awk '$1 == "-" && $2 == "url:" { value=$3; gsub(/^['\"']|['\"']$/, "", value); print value }' "release-assets/$metadata")
+            done < <(awk '$1 == "-" && $2 == "url:" { print $3 }' "release-assets/$metadata" | tr -d "\"'")
           done
 
           # Write outside release-assets first. Creating the destination in-place before
