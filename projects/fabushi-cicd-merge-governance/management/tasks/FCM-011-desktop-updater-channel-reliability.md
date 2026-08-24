@@ -65,3 +65,7 @@ The user validated `1.0.798` and reported two remaining UX regressions: the upda
 - release updater E2E fails if a downloading state has no progress UI or if the old app does not close automatically after the single click.
 
 This task now treats the old-client updater journey as required because FCM-011 directly changes updater behavior.
+
+## Follow-up PR #2094 CI input fix
+- The first follow-up CI run failed before architecture assertions because the `electron-feature-host-contract` sparse checkout did not include `desktop/package.json`, which is now an intentional updater artifact-name contract input.
+- `.github/workflows/ci.yml` now checks out that exact file; no runtime behavior changed in this correction.
