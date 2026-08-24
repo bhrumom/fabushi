@@ -72,7 +72,7 @@ jobs:
                 /^frontend\/apps\/host\//,
                 /^frontend\/apps\/web\/src\/app\/(host|remote-computer)\//,
                 /^frontend\/apps\/web\/src\/lib\/(fabushi-runtime|mahayana-host|remote-computer)\//,
-                /^third_party\/mahayana\/mahayana-rs\/(mahayana-agent-codex\/|mahayana-app-host\/|mahayana-computer\/|mahayana-feature-host\/|mahayana-host-protocol\/)/,
+                /^third_party\/mahayana\/mahayana-rs\/(mahayana-agent-codex\/|mahayana-app-host\/|mahayana-computer\/|mahayana-feature-host\/|mahayana-host-protocol\/|mahayana-runtime\/)/,
               ],
             };
 
@@ -238,6 +238,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/fabushi-pnpm-store
           key: frontend-pnpm-${{ runner.os }}-v2-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+      - name: Restore Next.js incremental build cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/apps/web/.next/cache
+          key: frontend-next-${{ runner.os }}-v1-${{ hashFiles('frontend/pnpm-lock.yaml') }}-${{ hashFiles('frontend/apps/web/**', 'frontend/packages/**') }}
+          restore-keys: |
+            frontend-next-${{ runner.os }}-v1-${{ hashFiles('frontend/pnpm-lock.yaml') }}-
       - name: Typecheck frontend workspace
         run: pnpm typecheck
       - name: Build official web frontend
@@ -266,6 +273,13 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+      - name: Restore Fabushi Pay Rust build state
+        uses: actions/cache@v4
+        with:
+          path: third_party/mahayana/mahayana-rs/mahayana-pay-worker/target
+          key: worker-rust-${{ runner.os }}-v1-${{ hashFiles('third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.lock', 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml') }}
+          restore-keys: |
+            worker-rust-${{ runner.os }}-v1-
       - name: Check Worker JavaScript syntax
         shell: bash
         run: |
