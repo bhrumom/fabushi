@@ -266,9 +266,18 @@ type SpringChannel = { value: number; velocity: number };
 const channel = (value: number): SpringChannel => ({ value, velocity: 0 });
 
 function springStep(spring: SpringChannel, target: number, dt: number, stiffness = 92, damping = 17): void {
-  const acceleration = (target - spring.value) * stiffness - spring.velocity * damping;
-  spring.velocity += acceleration * dt;
-  spring.value += spring.velocity * dt;
+  // Ambient marks are intentionally dispatched as slowly as 8 fps. Feeding
+  // that entire frame gap into a semi-implicit spring makes the high-energy
+  // profiles numerically unstable after a busy or throttled browser frame.
+  // Integrate bounded substeps so a delayed frame converges instead of
+  // producing an ever-growing SVG transform.
+  const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
+  const stepSeconds = dt / steps;
+  for (let step = 0; step < steps; step += 1) {
+    const acceleration = (target - spring.value) * stiffness - spring.velocity * damping;
+    spring.velocity += acceleration * stepSeconds;
+    spring.value += spring.velocity * stepSeconds;
+  }
 }
 
 function eyeLensPath(cx: number, cy: number, width: number, height: number, smile: number): string {
@@ -659,17 +668,17 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
           let dashOffset = 0;
           let stroke = "var(--fg)";
           if (accent === "pulse") {
-            radius = 42.5 + Math.sin(orbitPhase * 1.55) * 2.5;
-            opacity = 0.18 + (Math.sin(orbitPhase * 1.55) + 1) * 0.11;
+            radius = 42.5 + continuousMotion * Math.sin(orbitPhase * 1.55) * 2.5;
+            opacity = 0.29 + continuousMotion * Math.sin(orbitPhase * 1.55) * 0.11;
           } else if (accent === "orbit") {
-            radius = 44; opacity = 0.34; dashArray = "6 7"; dashOffset = -timeSeconds * 15;
+            radius = 44; opacity = 0.34; dashArray = "6 7"; dashOffset = -timeSeconds * 15 * continuousMotion;
           } else if (accent === "radar") {
-            radius = 44; opacity = 0.3; dashArray = "2 6"; dashOffset = -timeSeconds * 10;
+            radius = 44; opacity = 0.3; dashArray = "2 6"; dashOffset = -timeSeconds * 10 * continuousMotion;
           } else if (accent === "progress") {
-            radius = 44; opacity = 0.38; dashArray = "72 205"; dashOffset = -timeSeconds * 38;
+            radius = 44; opacity = 0.38; dashArray = "72 205"; dashOffset = -timeSeconds * 38 * continuousMotion;
           } else if (accent === "alert") {
-            radius = 43 + Math.sin(timeSeconds * 7.2) * 2.2;
-            opacity = 0.35 + (Math.sin(timeSeconds * 7.2) + 1) * 0.17;
+            radius = 43 + continuousMotion * Math.sin(timeSeconds * 7.2) * 2.2;
+            opacity = 0.52 + continuousMotion * Math.sin(timeSeconds * 7.2) * 0.17;
             stroke = "#ff5c6f";
           }
           accentRingRef.current.setAttribute("r", radius.toFixed(2));
@@ -681,7 +690,7 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
         if (radarSweepRef.current) {
           const showSweep = accent === "radar" || currentProps.state === "searching";
           radarSweepRef.current.setAttribute("opacity", showSweep ? "0.38" : "0");
-          radarSweepRef.current.setAttribute("transform", `rotate(${((timeSeconds * 92 + seededUnit(seed, 22) * 360) % 360).toFixed(2)} 50 50)`);
+          radarSweepRef.current.setAttribute("transform", `rotate(${((timeSeconds * 92 * continuousMotion + seededUnit(seed, 22) * 360) % 360).toFixed(2)} 50 50)`);
         }
         if (burstRingRef.current) {
           const burst = clamp(physics.burst.value, 0, 1);
@@ -698,7 +707,7 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
         const thinking = currentProps.state === "thinking" ? 1 : 0;
         thoughtDotsRef.current.forEach((dot, index) => {
           if (!dot) return;
-          const wave = (Math.sin(timeSeconds * 2.3 + index * 1.15 + phaseD) + 1) / 2;
+          const wave = reduced ? 0.5 : (Math.sin(timeSeconds * 2.3 + index * 1.15 + phaseD) + 1) / 2;
           dot.setAttribute("opacity", (thinking * (0.1 + wave * 0.38)).toFixed(3));
           dot.setAttribute("transform", `translate(0 ${(-wave * (1.2 + index * 0.45)).toFixed(2)})`);
         });

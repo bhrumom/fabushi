@@ -349,7 +349,7 @@ jobs:
             desktop/playwright-report/**
             desktop/test-results/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 90
 
       - name: Upload Electron packages
         if: github.event_name != 'pull_request'
@@ -358,4 +358,4 @@ jobs:
           name: fabushi-electron-${{ matrix.target }}
           path: desktop/release/**
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
