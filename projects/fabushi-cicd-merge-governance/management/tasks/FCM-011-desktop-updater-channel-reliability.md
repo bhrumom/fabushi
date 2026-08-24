@@ -100,3 +100,7 @@ Repair: Electron main now owns one synchronous in-memory desktop-update state. E
 The same target Mac showed why historical Energy Impact was extreme: background focus loss now correctly drives Fabushi processes to ~0% CPU, but foreground-idle `1.0.808` still measured roughly 76% GPU helper + 21% renderer. The avatar system was double-driving every idle mark: a 30-fps SVG JavaScript physics loop plus continuous CSS breathe/glow compositor animations. Ambient states now keep the living effect at an 8-fps JS cadence with no duplicate CSS breathe/glow; thinking/working/speaking/emphasized/pointer-follow states retain full 30-fps + active ambience. Background focus/visibility suspension remains unchanged.
 
 Acceptance remains open until exact-main Release on the target Mac proves visible download progress, one click -> download -> automatic install/relaunch, and post-relaunch version/readiness; energy proof must show background near-zero and substantially lower foreground-idle GPU/renderer CPU than the `1.0.808` baseline.
+
+### Round 5 CI interaction finding
+
+Host fast E2E found animated BotMark SVG paths intercepting pointer input intended for surrounding Host controls (`open-marketplace`, `大乘助手的电脑`). BotMark SVG is visual content inside parent controls, not its own input target, so the SVG layer now has `pointer-events: none`; parent buttons/list items remain the interactive hit target. This also removes needless per-path hit testing from animated avatars.
