@@ -73,9 +73,24 @@ jobs:
             exit 1
           fi
           cd rollback-assets
-          sed -E 's#([[:space:]]+)release/#\1#' SHA256SUMS.txt > SHA256SUMS.rollback.txt
+          : > SHA256SUMS.rollback.txt
+          manifest_digests="$(awk '{print $1}' SHA256SUMS.txt | grep -E '^[0-9a-fA-F]{64}$' | tr 'A-F' 'a-f' | sort -u)"
+          verified=0
+          while IFS= read -r -d '' asset; do
+            case "$asset" in
+              ./SHA256SUMS.txt|./SHA256SUMS.rollback.txt) continue ;;
+            esac
+            digest="$(sha256sum "$asset" | awk '{print tolower($1)}')"
+            if ! grep -Fxq "$digest" <<<"$manifest_digests"; then
+              echo "Downloaded rollback asset has no matching published checksum: $asset ($digest)" >&2
+              exit 1
+            fi
+            printf '%s  %s\n' "$digest" "$asset" >> SHA256SUMS.rollback.txt
+            verified=$((verified + 1))
+          done < <(find . -maxdepth 1 -type f -print0 | sort -z)
+          test "$verified" -gt 0
           sha256sum -c SHA256SUMS.rollback.txt
-          echo 'previous-good release checksums verified' >> "$GITHUB_STEP_SUMMARY"
+          echo "previous-good release checksums verified by content digest for $verified assets" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require immutable-release and canonical-gate guards in the current release workflow
         shell: bash

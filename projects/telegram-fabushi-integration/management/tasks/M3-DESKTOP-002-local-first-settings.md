@@ -111,3 +111,17 @@ Exact-main Electron run `32683544762` on `main@197dc768b972974aea3603eae8f80a46d
 The follow-up persists only the deterministic UI-safe test user when the test Host is created with the app's durable runtime data directory, restores it across Host process restart, and deletes it on explicit logout. No credentials or tokens cross into this file. The E2E also waits beyond the auth retry interval after first interaction and requires the login shell to remain absent.
 
 Status remains `TESTING` until the exact canonical-main packaged run emits a passing `startup-performance.json` under 1000 ms, all required desktop/mobile gates pass, and the tested artifacts are published as the new Release.
+
+## 2026-08-24 ChatGPT-style nonblocking startup continuation
+
+Target-Mac validation of packaged desktop `1.0.798` still exposed the full-screen copy `正在恢复你的工作空间`. The screen was misleading: it was `HostClient`'s `authResolved=false` gate, not a real workspace restore. `DesktopShellV2` routed `no projection + auth still unknown` into that HostClient path, and a transient auth transport error also forced an immediate signed-out remount.
+
+The installed ChatGPT desktop app on the same Mac was inspected as the user-requested UX reference: it paints its normal shell immediately instead of blocking the app behind a workspace-restore page. Fabushi follows the same product principle without copying proprietary implementation:
+
+- durable/local projection still paints immediately when present;
+- while projection/auth is genuinely unresolved, render the normal Fabushi Messenger shell bootstrap instead of the HostClient restore screen;
+- only an explicit successful `loggedIn=false` auth result may route to login; transport/network exceptions keep the local-first shell and retry;
+- HostClient resolves auth before conversations/connectors/skills/agents/settings hydration and labels its fallback accurately as account verification;
+- returning-user synchronization remains background reconciliation against canonical Rust/Host state.
+
+Acceptance for this continuation: a returning signed-in packaged client must never show `正在恢复你的工作空间`; transient auth/Host startup failure must not evict a valid cached Messenger; an explicitly signed-out client still reaches the login surface; exact-main packaged startup E2E remains under the existing `<1000 ms` target.
