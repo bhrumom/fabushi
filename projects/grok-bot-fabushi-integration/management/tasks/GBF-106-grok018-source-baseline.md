@@ -3,12 +3,12 @@
 - Project ID: `FAB-P0004`
 - Project Key: `GBF`
 - Task ID: `GBF-106`
-- Status: `IN_PROGRESS`
+- Status: `RELEASED`
 - Started: `2026-08-24 17:36 +08:00`
-- Updated: `2026-08-24 17:49 +08:00`
-- Completed: —
+- Updated: `2026-08-24 17:57 +08:00`
+- Completed: `2026-08-24 17:57 +08:00`
 - Branch: `codex/gbf-grok018-fusion`
-- Commit / PR: pending
+- Commit / PR: `d9ec679d2` / [#2105](https://github.com/bhrumom/fabushi/pull/2105) / merge `4520415a8a7e6beb6e5906ad547c692ad2dde0f3`
 
 ## Objective
 
@@ -42,7 +42,7 @@ Pin the user-specified reconstructed repository, recursively classify every trac
 2. Every tracked path has a non-empty domain and reuse decision — deterministic manifest validation: 2,111 / 2,111 passed.
 3. No path is classified for direct copying — summary assertion: passed.
 4. Net-new features have target tasks/architecture owners — WBS/ADR readback: GBF-307/308/408/506/805 + ADR-0007 recorded.
-5. Project records and evidence merge through protected `main` — PR/CI/main verification.
+5. Project records and evidence merge through protected `main` — passed; PR #2105 merged and canonical-main readback matched.
 
 ## Open-source survey and decision
 
@@ -54,7 +54,7 @@ Pin the user-specified reconstructed repository, recursively classify every trac
 
 - Generated: `evidence/GBF-106/manifest.tsv` (SHA-256 `8efec1d11bc87188e9945c5336d66ae0232d1511561a7e9ead3175b7fa564985`), `summary.json`, `README.md`.
 - Result: 2,111 entries; 29 `ADAPT_DESIGN`, 1,693 `CLEAN_ROOM_SPEC`, 347 `LEARN`, 42 `REJECT`; all five deterministic validation assertions true.
-- GitHub PR/CI/main: pending.
+- GitHub PR/CI/main: PR #2105; CI run `32713096020` passed, portfolio run `32713095842` passed, security run `32713095963` passed, rollback run `32713095954` passed; merged as `4520415a8a7e6beb6e5906ad547c692ad2dde0f3` and read back from canonical `main`.
 - Post-main product delivery: N/A for the audit-only portion; subsequent runtime/UI implementation tasks own packaged E2E and Release evidence.
 
 ## Risks / blockers
@@ -64,4 +64,4 @@ Pin the user-specified reconstructed repository, recursively classify every trac
 
 ## Next action
 
-Open the audit PR, pass required CI and protected-main closure, then start GBF-307 provider-router vertical slice.
+Continue GBF-307/506 provider-router vertical slice; GBF-106 itself has no remaining gate.

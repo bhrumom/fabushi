@@ -26,3 +26,7 @@ The accepted interpretation is complete observable-capability fusion through cle
 - Reconstructed settings presentation and provider readiness diagnostics.
 
 These features are additions to the existing GBF roadmap, not permission to introduce a second Grok/Node runtime.
+
+## Delivery sequencing clarification
+
+The user subsequently required all selected code/capability fusion to be completed in the current workstream before a single consolidated submission and unified CI/fix round. Therefore PR #2106 must not be merged from an intermediate vertical slice; GBF-307/308/408/506 implementation and project records are gathered first, then submitted together for GitHub verification and repair.
