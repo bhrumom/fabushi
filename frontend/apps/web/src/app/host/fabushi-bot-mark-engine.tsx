@@ -86,31 +86,69 @@ type FrameListener = (timeMs: number, deltaSeconds: number) => void;
 // One animation clock drives every mark. The engine writes SVG attributes directly,
 // so a sidebar full of agents does not cause a React render on every animation frame.
 const frameListeners = new Set<FrameListener>();
+const MOTION_FRAME_INTERVAL_MS = 1000 / 30;
 let motionFrameId: number | null = null;
 let lastMotionFrameMs = 0;
+let lastMotionDispatchMs = 0;
+let motionDocumentActive = true;
+let motionLifecycleInstalled = false;
+
+function updateMotionDocumentState(): void {
+  motionDocumentActive = document.visibilityState === "visible" && document.hasFocus();
+  document.documentElement.dataset.fabushiMotion = motionDocumentActive ? "active" : "paused";
+  if (!motionDocumentActive && motionFrameId !== null) {
+    window.cancelAnimationFrame(motionFrameId);
+    motionFrameId = null;
+    lastMotionFrameMs = 0;
+    lastMotionDispatchMs = 0;
+  } else if (motionDocumentActive && frameListeners.size > 0 && motionFrameId === null) {
+    motionFrameId = window.requestAnimationFrame(runMotionFrame);
+  }
+}
+
+function ensureMotionLifecycle(): void {
+  if (motionLifecycleInstalled) return;
+  motionLifecycleInstalled = true;
+  document.addEventListener("visibilitychange", updateMotionDocumentState);
+  window.addEventListener("focus", updateMotionDocumentState);
+  window.addEventListener("blur", updateMotionDocumentState);
+  updateMotionDocumentState();
+}
 
 function runMotionFrame(timeMs: number): void {
-  const rawDelta = lastMotionFrameMs ? (timeMs - lastMotionFrameMs) / 1000 : 1 / 60;
-  const deltaSeconds = Math.min(0.033, Math.max(1 / 240, rawDelta));
+  if (!motionDocumentActive) {
+    motionFrameId = null;
+    return;
+  }
+  if (lastMotionDispatchMs && timeMs - lastMotionDispatchMs < MOTION_FRAME_INTERVAL_MS) {
+    motionFrameId = window.requestAnimationFrame(runMotionFrame);
+    return;
+  }
+  const rawDelta = lastMotionFrameMs ? (timeMs - lastMotionFrameMs) / 1000 : 1 / 30;
+  const deltaSeconds = Math.min(0.05, Math.max(1 / 120, rawDelta));
   lastMotionFrameMs = timeMs;
+  lastMotionDispatchMs = timeMs;
   for (const listener of frameListeners) listener(timeMs, deltaSeconds);
   if (frameListeners.size > 0) {
     motionFrameId = window.requestAnimationFrame(runMotionFrame);
   } else {
     motionFrameId = null;
     lastMotionFrameMs = 0;
+    lastMotionDispatchMs = 0;
   }
 }
 
 function subscribeMotionFrame(listener: FrameListener): () => void {
+  ensureMotionLifecycle();
   frameListeners.add(listener);
-  if (motionFrameId === null) motionFrameId = window.requestAnimationFrame(runMotionFrame);
+  if (motionDocumentActive && motionFrameId === null) motionFrameId = window.requestAnimationFrame(runMotionFrame);
   return () => {
     frameListeners.delete(listener);
     if (frameListeners.size === 0 && motionFrameId !== null) {
       window.cancelAnimationFrame(motionFrameId);
       motionFrameId = null;
       lastMotionFrameMs = 0;
+      lastMotionDispatchMs = 0;
     }
   };
 }
