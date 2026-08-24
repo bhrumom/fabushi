@@ -9,6 +9,7 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/post-main-delivery.yml'
       - '.github/workflows/native-electron-release.yml'
       - '.github/workflows/global-dharma-rust.yml'
       - '.github/workflows/important-release-gate.yml'
@@ -23,6 +24,7 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/post-main-delivery.yml'
       - '.github/workflows/native-electron-release.yml'
       - '.github/workflows/global-dharma-rust.yml'
       - '.github/workflows/important-release-gate.yml'
@@ -51,6 +53,7 @@ jobs:
             /.github/scripts/require-release-source-gates.sh
             /.github/workflows/apple-store-delivery.yml
             /.github/workflows/google-play-delivery.yml
+            /.github/workflows/post-main-delivery.yml
             /.github/workflows/native-electron-release.yml
             /.github/workflows/global-dharma-rust.yml
             /.github/workflows/important-release-gate.yml
