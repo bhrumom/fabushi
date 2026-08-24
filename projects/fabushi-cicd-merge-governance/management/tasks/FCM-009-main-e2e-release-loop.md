@@ -11,13 +11,16 @@
 
 ## Objective
 
-建立仓库级持续交付闭环：每个 PR 合并到 `main` 后，立即以跨 run 缓存和同 run 产物复用进行最快安装包构建与真实用户 E2E；全部 required E2E 通过后发布绑定该 `main` SHA 的 GitHub Release，并保证已安装 Electron 客户端可通过头像旁更新控件检测、下载、替换并重启到新版本。
+建立仓库级持续交付闭环：每个 PR 合并到 `main` 后，立即以跨 run 缓存和同 run 产物复用进行最快安装包构建与真实用户 E2E；全部 required E2E 通过后发布绑定该 `main` SHA 的 GitHub Release，并保持 Electron Release 的版本和 updater 资产可供已安装客户端正常更新。
+
+“上一版已安装 App 必须发现新版、显示头像旁更新按钮、点击下载/替换/重启”的真实升级旅程不再是默认强制完成门禁；它保留为可选/建议性回归，或在修改 updater 本身的高风险任务中由该任务单独提升为 required gate。
 
 同时将“每个任务开工前先研究成熟开源方案”升级为 root Agent 强制门禁。
 
 ## Source requirements
 
 - `source/2026-08-24-main-e2e-release-open-source-first.md`
+- `source/2026-08-24-updater-proof-optional-clarification.md` — latest clarification; supersedes only the previous mandatory old-client updater-proof interpretation.
 - 历史相关需求：PR fast / post-main heavy、跨运行增量缓存、GitHub Release updater。
 
 ## Existing implementation reused
@@ -39,27 +42,27 @@
 ## Atomic work
 
 1. `FCM-009.1` Root Agent: mandatory open-source-first research record before implementation.
-2. `FCM-009.2` Root Agent: every merged task requires canonical-main build/E2E/release evidence before task closure.
+2. `FCM-009.2` Root Agent: every merged application-affecting task requires canonical-main required build/E2E/release evidence before task closure.
 3. `FCM-009.3` Preserve PR fast path; heavy installer/E2E/release belongs to post-main delivery.
 4. `FCM-009.4` Add canonical post-main delivery workflow that waits for desktop + native-mobile required E2E for the exact main SHA.
 5. `FCM-009.5` Publish only after all required E2E pass; release is immutable and bound to exact main SHA.
-6. `FCM-009.6` Ensure monotonic desktop versioning per accepted main build so older installed clients detect updates.
+6. `FCM-009.6` Ensure monotonic desktop versioning per accepted main build so installed clients can compare updates.
 7. `FCM-009.7` Require updater assets: DMG + macOS ZIP + `latest-mac.yml` + blockmap; preserve signed/notarized package provenance.
 8. `FCM-009.8` Add cache telemetry and warm/cold timing evidence; extend Rust hot path with compiler-result cache where safe.
-9. `FCM-009.9` Validate update path from a previous release to the new release in automated macOS E2E.
-10. `FCM-009.10` Protected PR merge + main delivery run + Release + canonical-main readback + closure records.
+9. `FCM-009.9` Optional regression: validate update path from a previous release to the new release in automated macOS E2E. This is non-blocking by default.
+10. `FCM-009.10` Protected PR merge + required main delivery run + Release + canonical-main readback + closure records.
 
 ## Acceptance criteria
 
 - Every merged PR produces a post-main delivery record for its exact SHA; no silent cancellation because a newer commit arrived.
 - Desktop + Android + iOS required simulated-user gates are green before publication.
-- Failed E2E blocks Release and leaves the originating task in-progress/blocked/failed.
-- Successful run publishes installable artifacts to GitHub Release.
+- Failed required E2E blocks Release and leaves the originating task in-progress/blocked/failed.
+- Successful required run publishes installable artifacts to GitHub Release.
 - Published desktop version is greater than the previous published desktop version and updater metadata is from the same build as the binaries.
-- A previous installed macOS release is exercised against the current Release/update channel; update availability/install path is objectively evidenced.
+- Release keeps updater-compatible assets/versioning. A previous-installed-App discovery/button/download/install/relaunch journey may be run as optional regression evidence, but is not required for ordinary task/Release closure unless that task explicitly promotes it to a required risk gate.
 - Cross-run cache miss clean fallback remains correct; warm small-change runs reuse prior compile/build state.
-- Root `AGENTS.md` explicitly requires open-source-first startup and post-main delivery evidence before task completion.
-- FCM-009 is not marked passed until its own PR is merged and the new post-main delivery loop succeeds on canonical `main`.
+- Root `AGENTS.md` explicitly requires open-source-first startup and required post-main build/E2E/Release evidence before task completion, while marking old-client updater journey proof optional by default.
+- FCM-009 is not marked passed until its required work is merged and the new post-main delivery loop succeeds on canonical `main`; optional updater E2E does not block FCM-009 closure.
 
 ## Verification / evidence
 
@@ -69,7 +72,7 @@
 - package/E2E artifacts and screenshots/reports.
 - cache hit/miss + duration summaries.
 - GitHub Release tag/assets/target commit.
-- macOS previous-release upgrade/update evidence.
+- optional macOS previous-release upgrade/update evidence when run.
 - canonical `main` readback.
 
 ## Risks
@@ -79,10 +82,11 @@
 - Cache pollution must never override source/toolchain/signature provenance.
 - GitHub-hosted runners are ephemeral; “热重载式” means persisted content-addressed cache and artifact reuse, not an actually persistent runner process.
 - Signing/notarization secrets may block Release even when tests pass; task remains blocked rather than publishing unsigned substitutes.
+- Optional updater-journey coverage can miss a regression between dedicated updater changes; updater-specific tasks should explicitly promote that journey to required when risk warrants it.
 
 ## Next action
 
-Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA gate/release publication, then create protected PR and use Actions evidence to iterate until green.
+Continue protected-main delivery repair/optimization until required exact-main desktop/native packaged E2E and Release evidence are green; updater journey proof may run independently as optional regression and does not block closure by default.
 
 ## 2026-08-24 — Round 2 native shared-host blocker
 
@@ -107,3 +111,10 @@ Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA ga
 - GitHub's explicit `enqueuePullRequest` GraphQL mutation is now used after all required product gates pass.
 - This does not bypass protection: the merge queue still creates the merge-group commit and requires its configured `CI result` under the ALLGREEN policy before merging.
 - Source/provenance: `source/2026-08-24-fcm-009-explicit-merge-queue-enqueue.md`.
+
+## 2026-08-24 — Round 5 updater-proof clarification
+
+- User explicitly clarified that validating a previous installed App discovering the new Release, showing the profile/avatar update control, clicking it, downloading/installing/replacing, and relaunching **does not have to be mandatory**.
+- This journey is therefore optional/non-blocking by default. It may still run automatically or manually for regression evidence.
+- Required post-main packaged E2E, Release publication, updater-compatible metadata/assets/versioning, signing/notarization, open-source-first, and warm-build integrity remain unchanged.
+- When a task directly changes updater behavior, that task may explicitly promote the updater journey to a required acceptance gate based on risk.
