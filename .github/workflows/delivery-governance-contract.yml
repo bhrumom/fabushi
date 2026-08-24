@@ -54,7 +54,7 @@ jobs:
           gate=.github/scripts/require-release-source-gates.sh
           test -s "$gate"
           grep -Fq "compare/main...\$SOURCE_SHA" "$gate"
-          for required in 'CI result' 'Electron desktop result' 'Native mobile result'; do
+          for required in 'CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'; do
             grep -Fq "$required" "$gate"
           done
 
@@ -105,6 +105,7 @@ jobs:
             echo '## FAB-P0003 delivery governance contract'
             echo
             echo '- Canonical release-source gates: present'
+            echo '- Per-platform desktop/mobile checks: present'
             echo '- Apple Store delivery gate: present'
             echo '- Google Play delivery gate: present'
             echo '- Sensitive CODEOWNERS coverage: present and narrow'
