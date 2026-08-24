@@ -49,6 +49,7 @@ jobs:
           set -euo pipefail
           grep -F 'github.event.workflow_run.head_sha' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'Native iOS' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'run-id:' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'needs.gate.outputs.electron_run_id' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'fabushi-delivery-mac.json' .github/workflows/post-main-delivery.yml >/dev/null
@@ -92,7 +93,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - id: wait-native
-        name: Wait for Native mobile result on the same main SHA
+        name: Wait for Android and iOS platform checks on the same main SHA
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,27 +102,37 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS + 7200))
           native_run_id=''
+          required_checks=('Native mobile result' 'Native iOS')
           while [ "$SECONDS" -lt "$deadline" ]; do
             checks="$(gh api -H 'Accept: application/vnd.github+json' "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100")"
-            status="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .status // "missing"' <<<"$checks")"
-            conclusion="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .conclusion // ""' <<<"$checks")"
-            details_url="$(jq -r '[.check_runs[] | select(.name == "Native mobile result")] | sort_by(.started_at) | last | .details_url // ""' <<<"$checks")"
-            if [ "$status" = completed ]; then
-              if [ "$conclusion" != success ]; then
-                echo "Native mobile result for $SOURCE_SHA concluded $conclusion" >&2
-                exit 1
+            all_done=true
+            for required in "${required_checks[@]}"; do
+              status="$(jq -r --arg required "$required" '[.check_runs[] | select(.name == $required)] | sort_by(.started_at) | last | .status // "missing"' <<<"$checks")"
+              conclusion="$(jq -r --arg required "$required" '[.check_runs[] | select(.name == $required)] | sort_by(.started_at) | last | .conclusion // ""' <<<"$checks")"
+              details_url="$(jq -r --arg required "$required" '[.check_runs[] | select(.name == $required)] | sort_by(.started_at) | last | .details_url // ""' <<<"$checks")"
+              if [ "$status" = completed ]; then
+                if [ "$conclusion" != success ]; then
+                  echo "$required for $SOURCE_SHA concluded $conclusion" >&2
+                  exit 1
+                fi
+                if [ -z "$native_run_id" ] && [ -n "$details_url" ]; then
+                  native_run_id="$(sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' <<<"$details_url" | head -1)"
+                fi
+              else
+                all_done=false
               fi
-              if [ -n "$details_url" ]; then
-                native_run_id="$(sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' <<<"$details_url" | head -1)"
-              fi
+              echo "Native check $required: status=$status conclusion=${conclusion:-pending}"
+            done
+            if [ "$all_done" = true ]; then
               echo "native_run_id=$native_run_id" >> "$GITHUB_OUTPUT"
-              echo "- Native mobile result: success (run ${native_run_id:-unknown})" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Native mobile result: success" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Native iOS: success" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Native workflow run: ${native_run_id:-unknown}" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            echo "Waiting for Native mobile result on $SOURCE_SHA: status=$status conclusion=${conclusion:-pending}"
             sleep 20
           done
-          echo "Timed out waiting for Native mobile result on $SOURCE_SHA" >&2
+          echo "Timed out waiting for Android and iOS native checks on $SOURCE_SHA" >&2
           exit 1
 
   publish:
