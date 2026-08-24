@@ -4,11 +4,12 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M3-DESKTOP-002`
 - **Stage**: `M3 桌面聊天完整交互`
-- **Status**: `COMPLETED`
+- **Status**: `TESTING`
 - **Started**: `2026-08-24`
 - **Updated**: `2026-08-24`
 - **Branch**: `feat/telegram-local-first-settings`
 - **Source**: `source/2026-08-24-local-first-startup-and-settings.md`
+- **Performance/Release source**: `source/2026-08-24-startup-performance-release-gate.md`
 - **Implementation commit**: `cda0bbc37c7f8b2623384fc5a9c1542aef5fcffa`
 - **PR**: `#2079`
 - **Merge commit**: `01b33d60f7d7d9add41a5fba84d21014094cb5dc`
@@ -51,6 +52,8 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 6. Supported toggles persist and affect their real UI behavior; unsupported server capabilities are shown disabled/planned.
 7. GitHub Actions typecheck/product gate and relevant Messenger Playwright coverage pass before completion.
 8. PR merges to protected `main` and canonical-main state is re-read before task is marked complete.
+9. Returning-user cached conversation list first-interactive time is objectively measured in packaged E2E and is `< 1000 ms`.
+10. The exact accepted main SHA completes the post-main packaged E2E → Release → updater proof before final `COMPLETED`.
 
 ## Verification plan
 
@@ -87,10 +90,8 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 - Canonical-main verification: PASS — `main` re-read at `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
 - Evidence index: `evidence/M3-DESKTOP-002/README.md`.
 
-## Blockers
+## Current delivery gate
 
-- None.
-
-## Closure
-
-All acceptance gates passed. PR #2079 entered the protected merge queue at position 1, passed merge-group revalidation, merged to `main`, and canonical `main` was re-read at `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
+- Core implementation PR #2079 is merged and canonical-main readback passed.
+- A new packaged returning-user startup performance E2E now enforces the project `< 1 second` first-interactive target.
+- Final task closure remains pending until this measurement is green on canonical main and the same accepted SHA is published through the post-main Release/updater loop.
