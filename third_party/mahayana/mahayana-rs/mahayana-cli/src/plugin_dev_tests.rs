@@ -1,4 +1,5 @@
 use super::*;
+use crate::pack_plugin_bundle_tar_gz;
 
 fn temporary_repository(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("mahayana-cli-{label}-{}", uuid::Uuid::new_v4()))
