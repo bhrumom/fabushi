@@ -87,8 +87,18 @@ After the task PR merges:
 6. Desktop Release assets must remain compatible with `electron-updater`. For macOS this includes the signed/notarized DMG, macOS ZIP, `latest-mac.yml`, and required blockmap/update metadata from the same build lineage. Windows/Linux updater/installable assets must likewise come from the accepted build.
 7. Every automatically published desktop build must have a monotonically increasing update-comparable version. Do not publish a changed binary under the same app version and expect installed clients to detect it.
 8. **Optional / recommended updater regression:** when useful, validate the update channel from a previous installed Release by checking that the old packaged app can discover a strictly newer stable GitHub Release, expose the update affordance beside the profile/avatar, download it, and exercise the install/relaunch path. This old-client journey is **not a default per-task or per-Release completion gate**. Run it as advisory regression, sampled release validation, or a task-specific required gate when the task itself changes updater behavior and its acceptance criteria explicitly require it.
-9. Record build run IDs, package artifacts, required E2E reports/screenshots, and Release tag/target SHA/assets in the originating task record. Record updater/upgrade evidence when that optional journey is run or when the task explicitly requires it.
+9. Record build run IDs, package artifacts, required E2E screenshots/videos/traces/reports/logs, and Release tag/target SHA/assets in the originating task record. Record updater/upgrade evidence when that optional journey is run or when the task explicitly requires it.
 10. Only after merge + canonical-main readback + required post-main E2E + verified Release evidence may that application-affecting task be marked `passed` / `completed` and reported as finished. Failure or absence of the optional old-client updater journey alone must not block an otherwise accepted task unless that task explicitly promoted the journey to a required acceptance gate.
+
+**Mandatory canonical-main E2E visual evidence contract:** every required E2E execution for a change accepted into canonical `main` must retain enough evidence to reconstruct the actual user journey, regardless of whether the test passed or failed. Failure-only evidence retention is not sufficient.
+
+- Capture detailed, step-labelled screenshots at meaningful checkpoints, including the relevant startup/onboarding/login/navigation/search/messaging/MiniApp/task-specific surfaces exercised by the journey. Do not rely on a single final screenshot when multiple meaningful actions occurred.
+- Retain a complete operation video covering the entire tested user journey. If a platform recorder imposes a duration limit, sequential segments are allowed, but together they must cover the full journey without an unexplained evidence gap.
+- Retain action/trace evidence and platform-native reports/logs where supported: Electron should keep Playwright video + screenshots + trace + HTML/test results; Android should keep emulator recording + screenshots + instrumentation results + relevant logcat/debug evidence; iOS should keep Simulator recording + screenshots + `.xcresult` + relevant crash/debug evidence.
+- Tie every evidence bundle to the exact canonical `main` SHA, app version, platform, workflow run/job, journey/test identifier, and timestamp. Artifact names must make the originating SHA/platform/run unambiguous.
+- Upload evidence on an `always()`-equivalent path so passing and failing executions both preserve evidence. Evidence capture/upload must not be skipped merely because test assertions passed.
+- Canonical-main E2E evidence should target **90-day retention** where GitHub repository/organization policy permits. If policy imposes a lower maximum, use the maximum permitted retention and record the constraint rather than silently dropping evidence early.
+- A required E2E assertion pass **without the required screenshot/video/trace/report evidence bundle is not evidentially complete** and must not satisfy the post-main completion gate. Fix the evidence pipeline and rerun against the applicable canonical `main` SHA.
 
 Build/test work for multiple accepted main SHAs may execute in parallel. Publication must be ordered safely so an older/slower run cannot replace a newer accepted Release. A newer commit must not silently erase the evidence/status of an earlier merged task; every merged task keeps an explicit post-main delivery result (`passed`, `failed`, `blocked`, or explicitly superseded with evidence).
 
@@ -202,7 +212,7 @@ The task record must include at least:
 - status;
 - implementation summary;
 - CI / E2E / security / performance / release / deployment / migration evidence when applicable;
-- post-main build/package/required-E2E/Release evidence or an objective N/A reason; optional updater journey evidence when run or when explicitly required by the task;
+- post-main build/package/required-E2E/Release evidence, including mandatory canonical-main E2E screenshots/videos/traces/reports/logs for application-affecting work, or an objective N/A reason; optional updater journey evidence when run or when explicitly required by the task;
 - blockers and risks;
 - next action;
 - started, updated, and completed timestamps.
@@ -240,12 +250,12 @@ Before saying a task is finished:
 10. Commit project-record changes to GitHub in the same task change stream when possible.
 11. Merge through required protected-main checks/merge queue.
 12. Verify canonical state on GitHub `main` after merge, including registry/project metadata parity when applicable.
-13. For application-affecting work, inspect the exact merged SHA's post-main packaged build and simulated-user E2E results. Do not reuse a different SHA's green result.
-14. If any required post-main E2E fails, keep the task `in-progress` / `blocked` / `failed`, fix it through a governed follow-up PR, merge, and repeat the post-main loop until green.
+13. For application-affecting work, inspect the exact merged SHA's post-main packaged build and simulated-user E2E results **and the required visual/debug evidence bundle**. Do not reuse a different SHA's green result or a different run's screenshots/video.
+14. If any required post-main E2E fails **or its required screenshots/video/trace/report evidence is missing**, keep the task `in-progress` / `blocked` / `failed`, fix it through a governed follow-up PR, merge, and repeat the post-main loop until green and evidentially complete.
 15. After required E2E is green, verify the GitHub Release is bound to the accepted `main` SHA, contains the required updater/installable assets, and has a strictly update-comparable version. Previous-installed-App discovery/button/download/install/relaunch evidence is optional by default and is required only when the task's own acceptance criteria explicitly promote it to a required gate.
 16. Only then mark or report that task as `passed` / `completed`. Other independently tracked tasks may proceed in parallel while any required gate is pending.
 
-If any required review/CI/merge/post-main build/E2E/release/deployment/migration/acceptance gate is pending, keep that task `in-progress`, `blocked`, or `failed` rather than marking it complete. This pending state does **not** prohibit work on other independently tracked tasks/PRs. Failure or absence of an optional updater journey does not by itself create a blocker.
+If any required review/CI/merge/post-main build/E2E/evidence/release/deployment/migration/acceptance gate is pending, keep that task `in-progress`, `blocked`, or `failed` rather than marking it complete. This pending state does **not** prohibit work on other independently tracked tasks/PRs. Failure or absence of an optional updater journey does not by itself create a blocker.
 
 ### 7. Source-of-truth precedence
 
@@ -275,7 +285,7 @@ and:
 
 When Task Orchestration is used, preserve the same immutable `FAB-Pxxxx` Project ID, Project Key, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub portfolio registry/project folder and live GitHub/CI facts remain authoritative.
 
-The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, open-source-first research, acceptance evidence, the PR-to-main completion gate, the required post-main packaged E2E/Release gate, the optional-by-default updater-proof policy, warm-build integrity, or completion closure.
+The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, open-source-first research, acceptance evidence, the PR-to-main completion gate, the required post-main packaged E2E/Release gate, the mandatory canonical-main E2E visual evidence contract, the optional-by-default updater-proof policy, warm-build integrity, or completion closure.
 
 ## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
 
