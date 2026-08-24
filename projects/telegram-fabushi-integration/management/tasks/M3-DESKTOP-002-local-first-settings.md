@@ -125,3 +125,16 @@ The installed ChatGPT desktop app on the same Mac was inspected as the user-requ
 - returning-user synchronization remains background reconciliation against canonical Rust/Host state.
 
 Acceptance for this continuation: a returning signed-in packaged client must never show `正在恢复你的工作空间`; transient auth/Host startup failure must not evict a valid cached Messenger; an explicitly signed-out client still reaches the login surface; exact-main packaged startup E2E remains under the existing `<1000 ms` target.
+
+## 2026-08-24 complete-contact first-frame continuation
+
+Target-Mac validation found another local-first defect: the left rail could paint only a few rows and then add the remaining contacts/conversations several seconds later. Source tracing identified two independent causes. First, the renderer projection persisted only self-hosted conversations/messages; legacy `conversation.list` / `bot.list` / `group.list` state always started empty and waited for Electron -> Rust Host initialization. Second, an initial self-hosted snapshot with `limit=20` applied that limit to actors and conversations as well as messages, then advanced `next_cursor` to the current journal cursor; rows after the first 20 had no later pagination path because background sync is cursor-delta-only.
+
+Repair contract:
+
+- the fast-start projection now persists the complete lightweight legacy conversation/Bot/group summaries so returning users paint the whole known left rail on the first frame;
+- Rust initial snapshot sync returns all visible actor + conversation metadata regardless of the heavy payload limit, while messages and other heavy collections remain bounded;
+- delta cursor behavior is unchanged; Rust remains authoritative and renderer projection is still display-only;
+- protocol coverage proves `limit=1` still returns every visible actor/conversation but only one message; packaged Messenger coverage proves a legacy peer is present in the persisted projection and survives reload.
+
+Task remains `TESTING` until protected merge, exact-main package gates, target-Mac no-delay observation, and the Release/updater loop are all green.
