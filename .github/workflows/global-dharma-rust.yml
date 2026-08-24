@@ -158,4 +158,4 @@ jobs:
           done
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release/* --generate-notes
+        run: gh release create "${GITHUB_REF_NAME}" release/* --generate-notes --latest=false
