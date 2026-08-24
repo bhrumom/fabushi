@@ -14,17 +14,26 @@ on:
       - "third_party/mahayana/**"
       - ".github/workflows/ci_codex_sync.yml"
 
+concurrency:
+  group: mahayana-codex-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-mahayana-runtime:
     name: Test embedded Codex Runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # PR feedback uses one representative Linux runner. Canonical main keeps
+        # the full desktop-family matrix so cross-platform drift is still caught
+        # before downstream delivery/release work.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
+    env:
+      CARGO_INCREMENTAL: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
       - name: Setup Rust toolchain
@@ -34,6 +43,12 @@ jobs:
           # full Mahayana clippy/test matrix on all three desktop runner families.
           toolchain: 1.97.1
           components: clippy, rustfmt
+      - name: Restore Mahayana Cargo build state
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs -> target
+          shared-key: mahayana-codex-runtime-v1-${{ runner.os }}-rust-1.97.1
+          cache-all-crates: true
       - name: Install Linux native capture/input dependencies
         if: runner.os == 'Linux'
         shell: bash
