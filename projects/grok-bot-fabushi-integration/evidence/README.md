@@ -10,3 +10,4 @@
 - `GBF-104/`: source-to-main path-level decision matrices.
 - `GBF-105/`: provenance ledger plus the 148-entry historical Grok Bot 0.20 vendor snapshot, marked reference-only/`PROVENANCE_BLOCKED`.
 - `M1-validation.json`: deterministic lightweight audit assertions.
+- `GBF-106/`: pinned `bhrum/grok-bot-0.18-reconstructed` commit/tree, 2,111-row path/domain/provenance manifest, and no-copy validation summary.
