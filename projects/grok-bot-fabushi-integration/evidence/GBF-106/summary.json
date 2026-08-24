@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "source": "https://github.com/bhrum/grok-bot-0.18-reconstructed",
+  "commit": "a9f633e09d49a85829b8236331b9e21f7e612634",
+  "tree": "b68f24972427952c4934e4364736fec62661044f",
+  "entries": 2111,
+  "manifest_sha256": "8efec1d11bc87188e9945c5336d66ae0232d1511561a7e9ead3175b7fa564985",
+  "domain_counts": {
+    "agent-host": 469,
+    "ci": 1,
+    "computer-local-execution": 87,
+    "coordinator": 22,
+    "documentation": 8,
+    "electron-main": 184,
+    "electron-preload": 16,
+    "generated-protocol": 145,
+    "inference-router": 6,
+    "local-docker-sandbox": 1,
+    "mcp-plugin-marketplace": 106,
+    "reconstruction-build-tooling": 33,
+    "reconstruction-manifest": 3,
+    "recovered-package": 551,
+    "renderer-reconstruction": 306,
+    "repository-support": 14,
+    "settings-router-ui": 16,
+    "shared-runtime-contract": 125,
+    "tests": 6,
+    "third-party-patch": 1,
+    "upstream-installer-archive": 5,
+    "usage-billing": 6
+  },
+  "decision_counts": {
+    "ADAPT_DESIGN": 29,
+    "CLEAN_ROOM_SPEC": 1693,
+    "LEARN": 347,
+    "REJECT": 42
+  },
+  "license_facts": {
+    "repository_license_declared": false,
+    "upstream_source_license_granted": false,
+    "original_installers_present_as_lfs_pointers": true,
+    "fabushi_policy": "clean-room behavior/API reimplementation only"
+  },
+  "validation": {
+    "exact_commit": true,
+    "exact_tree": true,
+    "all_paths_classified": true,
+    "all_paths_have_decision": true,
+    "no_copy_decision": true
+  }
+}
