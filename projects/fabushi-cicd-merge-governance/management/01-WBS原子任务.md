@@ -16,5 +16,16 @@
 | FCM-006 | Close project records and verify canonical main | yes | full enterprise scaffold + PR/CI/merge evidence + post-merge main verification | passed |
 | FCM-007 | Converge all 2026-08-23 intake PRs into canonical main | yes | every intake PR merged or proven superseded; no accepted change lost; final intake open count = 0 | passed |
 | FCM-008 | Build latest canonical macOS Electron package and provide download | yes | exact product source; Developer ID signed; Apple notarized + stapled; Gatekeeper accepted; target-Mac launch; permanent release gate merged and reverified | passed |
+| FCM-009 | Main post-merge E2E / Release / incremental feedback loop | yes | FCM-009.1–FCM-009.10 all pass with protected merge + real post-main Release evidence | in-progress |
+| FCM-009.1 | Require open-source-first research before implementation | yes | root Agent + task record require upstream architecture/license/security/maintenance review | implemented |
+| FCM-009.2 | Require post-main package/E2E/Release evidence before task closure | yes | root Agent blocks product-task completion until exact-main packaged E2E + Release/updater proof | implemented |
+| FCM-009.3 | Preserve PR fast path and move heavy package/E2E post-main | yes | Electron/native PR checks are lightweight; installer/emulator/simulator/Playwright heavy work runs on main | implemented |
+| FCM-009.4 | Run full canonical desktop + Android + iOS user gates for every main SHA | yes | main push uses SHA-isolated concurrency; Electron and Native mobile result are exact-SHA green | implemented |
+| FCM-009.5 | Publish only tested exact-SHA artifacts | yes | post-main workflow reuses exact Electron run artifacts and waits exact-SHA native result before Release | implemented |
+| FCM-009.6 | Give every main desktop delivery a monotonic update-comparable version | yes | Electron main package version is `major.minor.<electron-run-number>` and all platform manifests agree | implemented |
+| FCM-009.7 | Preserve updater assets and signed/notarized macOS provenance | yes | DMG + ZIP + `latest-mac.yml` + ZIP blockmap validated before Release | implemented |
+| FCM-009.8 | Reuse compiler/build state and expose cache telemetry | yes | source-hash host/JNI/staticlib + Gradle/AVD/DerivedData + sccache stats and warm cache summaries | implemented |
+| FCM-009.9 | Prove old macOS Release can detect/click/install new Release | yes | release-published macOS E2E launches prior app, waits update cloud, clicks, and verifies bundle version replacement | implemented |
+| FCM-009.10 | Protected merge + canonical main delivery + Release closure | yes | PR merged, exact-main desktop/native gates green, stable Release published, release E2E green, main readback | pending |
 
-All required FCM tasks are passed. FCM-008 was reopened after the first ad-hoc-signed prerelease failed Gatekeeper, then passed only after the replacement DMG and permanent Release workflow were independently verified through Apple notarization, Gatekeeper, target-Mac launch, protected PR #2044, and canonical-main re-read.
+`implemented` means the branch contains the implementation but canonical protected merge/post-main acceptance is still pending. FCM-009 must remain `in-progress` until FCM-009.10 has objective GitHub Actions + Release evidence.
