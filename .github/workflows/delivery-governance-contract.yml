@@ -9,6 +9,9 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/global-dharma-rust.yml'
+      - '.github/workflows/important-release-gate.yml'
       - '.github/workflows/delivery-governance-contract.yml'
       - '.github/workflows/automerge.yml'
       - 'projects/fabushi-cicd-merge-governance/**'
@@ -20,6 +23,9 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/global-dharma-rust.yml'
+      - '.github/workflows/important-release-gate.yml'
       - '.github/workflows/delivery-governance-contract.yml'
       - '.github/workflows/automerge.yml'
       - 'projects/fabushi-cicd-merge-governance/**'
@@ -45,6 +51,9 @@ jobs:
             /.github/scripts/require-release-source-gates.sh
             /.github/workflows/apple-store-delivery.yml
             /.github/workflows/google-play-delivery.yml
+            /.github/workflows/native-electron-release.yml
+            /.github/workflows/global-dharma-rust.yml
+            /.github/workflows/important-release-gate.yml
             /.github/workflows/automerge.yml
 
       - name: Validate release source gates
@@ -63,10 +72,17 @@ jobs:
             grep -Fq 'actions: read' "$workflow"
             grep -Fq 'Require canonical release source gates' "$workflow"
             grep -Fq 'require-release-source-gates.sh' "$workflow"
+            grep -Fq -- '--latest=false' "$workflow"
           done
 
           grep -Fq 'RELEASE_TARGET: android' .github/workflows/google-play-delivery.yml
           grep -Fq 'RELEASE_TARGET: ${{ inputs.target }}' .github/workflows/apple-store-delivery.yml
+          for workflow in \
+            .github/workflows/native-electron-release.yml \
+            .github/workflows/global-dharma-rust.yml \
+            .github/workflows/important-release-gate.yml; do
+            grep -Fq -- '--latest=false' "$workflow"
+          done
 
       - name: Validate narrow CODEOWNERS coverage
         shell: bash
