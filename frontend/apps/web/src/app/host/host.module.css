@@ -5617,6 +5617,13 @@
   animation-play-state: paused !important;
 }
 
+:global(html[data-fabushi-motion="paused"]) .botMark > svg,
+:global(html[data-fabushi-motion="paused"]) .botMarkAura,
+:global(html[data-fabushi-motion="paused"]) .botMarkAuraSecondary,
+:global(html[data-fabushi-motion="paused"]) .botMarkParticles i {
+  animation-play-state: paused !important;
+}
+
 @keyframes botMarkBreathe {
   0%, 100% { transform: translateY(0) rotate(-.35deg) scale(1); }
   34% { transform: translateY(-.9%) rotate(.65deg) scale(1.012, .995); }

@@ -47,6 +47,21 @@ Make a running Fabushi macOS client reliably discover the canonical desktop GitH
 ## PR CI finding
 - PR #2092 rollback drill initially failed because `.github/workflows/gbf-rollback-drill.yml` selected the first stable Release across every platform. A mobile/non-canonical Release can therefore be treated as the desktop rollback image.
 - The drill now selects only canonical `desktop-x.y.z` stable Releases and requires `latest-mac.yml`, a DMG, a macOS ZIP and checksums before accepting the rollback target.
+- The refreshed drill then exposed a producer defect in `desktop-1.0.798`: Windows/Linux channel metadata referenced non-ASCII/default builder names that did not equal the GitHub-published asset names, and `SHA256SUMS.txt` also contained a self-entry for an empty checksum file.
+- Electron Builder now emits deterministic ASCII artifact names for Windows/Linux at source; post-main publication validates every `url:` in all `latest*.yml` files against a collected asset before release and builds `SHA256SUMS.txt` in `$RUNNER_TEMP` before moving it into the asset directory.
+- The rollback drill verifies legacy 1.0.798 by content digest rather than stale filename, preserving full byte-integrity proof while future releases use exact canonical filenames.
 
 ## Current evidence / next gate
 Implementation pending refreshed PR CI, protected merge, exact-main packaged delivery and Release verification.
+
+## 2026-08-24 updater interaction continuation
+
+The user validated `1.0.798` and reported two remaining UX regressions: the update control exposed no download progress and the first click could stop at `ready`, requiring a second `安装更新` click. The installed ChatGPT app on the same Mac bundles Sparkle and has automatic checking/updating enabled; Sparkle's public API explicitly models download, extraction, ready-to-install and relaunch states. Fabushi keeps `electron-updater` but adopts the same state-machine quality:
+
+- `download-progress.percent` is rendered as a visible progress rail plus percentage text;
+- one click attaches to the real `update-downloaded` event before download begins, then transitions to staging and schedules `quitAndInstall`;
+- `autoInstallOnAppQuit=true` is a fallback if the process exits normally after download;
+- the renderer stays busy through downloading/staging instead of re-enabling a misleading second click;
+- release updater E2E fails if a downloading state has no progress UI or if the old app does not close automatically after the single click.
+
+This task now treats the old-client updater journey as required because FCM-011 directly changes updater behavior.
