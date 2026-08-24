@@ -73,3 +73,20 @@ PR #2093 exact-head CI correctly failed the `Electron Feature Host contract` bef
 ## 2026-08-24 post-main metadata parser quote repair
 
 After #2093 merged, comparison against the parallel #2094 branch found one valid unique delta: the updater metadata asset-name parser embedded a single quote inside a shell single-quoted awk program. Preserve the #2093 startup/updater/energy behavior and replace only that parser with `awk ... | tr -d` so the canonical post-main Bash step is syntactically safe. #2094 otherwise reverts the user-requested nonblocking startup and must not be merged wholesale.
+
+## 2026-08-24 Round 4 — GitHub Latest pointer ordering defect
+
+After `desktop-1.0.806`, `desktop-1.0.807`, and `desktop-1.0.808` all passed exact-main package/E2E and were published, GitHub `/releases/latest` still returned `desktop-1.0.798`. Release bodies proved all three newer releases had `Publication ordering: make_latest=false`.
+
+Root cause is deterministic: the ordering query accepted every tag beginning with `desktop-`, including historical tags such as `desktop-v1.0.1-1250-...`. After stripping only `desktop-`, GNU `sort -V` can rank the legacy `v...` strings after numeric `1.0.808`, so the guard incorrectly classified every modern Release as older.
+
+Repair:
+
+1. Only strict canonical tags matching `^desktop-[0-9]+[.][0-9]+[.][0-9]+$` participate in updater ordering.
+2. Equality with the currently highest version remains eligible for `make_latest=true`; this lets duplicate/retried exact-SHA delivery runs repair a stale Latest pointer without mutating assets.
+3. When a Release should be latest, explicitly PATCH the GitHub Release REST field `make_latest=true` after creation (or on an existing immutable Release), then read `/releases/latest` back and require its tag to equal the expected desktop tag.
+4. Delivery governance now statically requires the strict tag filter, explicit latest promotion, and readback failure message.
+
+Open-source/official reference: GitHub Release REST documents `make_latest` as `true|false|legacy`; GitHub CLI documents `--latest`, but Fabushi now verifies the authoritative REST readback instead of trusting a fire-and-forget flag.
+
+Acceptance is not complete until a newer fixed Release becomes `/releases/latest`, a running fixed client discovers the following Release without restart, and one-click progress/install/relaunch is proven on the target Mac.
