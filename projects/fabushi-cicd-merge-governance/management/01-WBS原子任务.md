@@ -35,5 +35,6 @@
 | FCM-010.5 | Restore Fabushi Pay Worker Rust build state | yes | pay Worker target cache restored/saved on worker run | implemented |
 | FCM-010.6 | Merge optimized CI through protected main | yes | required PR checks/queue succeed and canonical main readback confirms definitions | pending |
 | FCM-010.7 | Verify post-merge heavyweight validation and cache behavior | yes | exact-main embedded-Codex run starts on all three OSes and cache steps execute | pending |
+| FCM-010.8 | Enforce one product platform per runner allocation | yes | Electron PR uses one Linux runner; main uses one macOS, one Windows, one Linux runner; native main uses one Android and one iOS runner; release packaging uses one runner per product platform with only a non-build control-plane publisher | implemented |
 
 `implemented` means the implementation exists but canonical protected merge/post-main acceptance may still be pending. `optional` means useful regression evidence that is not a default task-completion gate. FCM-009 must remain `in-progress` until FCM-009.10 has objective GitHub Actions + Release evidence; FCM-009.9 is not required for closure. FCM-010 remains `in-progress` until its optimized PR is merged and measured on canonical `main`.
