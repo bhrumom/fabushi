@@ -20,3 +20,7 @@
 ## Closure
 
 All expected CI, merge-queue, and canonical-main evidence is present. M3-DESKTOP-002 is complete.
+
+## 2026-08-24 performance / Release continuation
+
+The task is re-opened from administrative closure to `TESTING` under the newer repository post-main delivery rule. A packaged Playwright performance gate now records `startup-performance.json` and requires cached conversation-list first interaction in `< 1000 ms`. Final closure requires exact-main packaged E2E + mobile gates + GitHub Release/updater evidence.
