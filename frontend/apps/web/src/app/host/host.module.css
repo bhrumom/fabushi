@@ -4085,6 +4085,7 @@
   height: 100%;
   display: block;
   overflow: visible;
+  pointer-events: none;
 }
 
 .sidebarBotMark { margin: 0; }
@@ -5504,8 +5505,11 @@
   position: relative;
   z-index: 2;
   transform-origin: 50% 54%;
-  animation: botMarkBreathe var(--bot-mark-breathe-duration) cubic-bezier(.46, 0, .54, 1) var(--bot-mark-motion-delay) infinite;
   filter: drop-shadow(0 4px 8px rgb(0 0 0 / 12%));
+}
+
+.botMark[data-motion-tier="active"] > svg {
+  animation: botMarkBreathe var(--bot-mark-breathe-duration) cubic-bezier(.46, 0, .54, 1) var(--bot-mark-motion-delay) infinite;
 }
 
 .botMarkAura,
@@ -5530,6 +5534,9 @@
   filter: blur(calc(var(--bot-mark-size) * .14));
   opacity: .16;
   transform: scale(.72);
+}
+
+.botMark[data-motion-tier="active"] .botMarkAuraSecondary {
   animation: botMarkGlow var(--bot-mark-breathe-duration) ease-in-out var(--bot-mark-motion-delay) infinite;
 }
 

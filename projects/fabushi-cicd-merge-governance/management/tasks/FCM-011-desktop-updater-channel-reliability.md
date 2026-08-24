@@ -5,8 +5,8 @@
 - **Task ID:** FCM-011
 - **Status:** in-progress
 - **Started:** 2026-08-24T13:52:00+08:00
-- **Updated:** 2026-08-24T14:00:00+08:00
-- **Branch:** `fix/desktop-updater-idle-energy`
+- **Updated:** 2026-08-24T15:36:00+08:00
+- **Branch:** `fix/desktop-updater-energy-closure`
 
 ## Objective
 Make a running Fabushi macOS client reliably discover the canonical desktop GitHub Release without requiring a process restart, while preventing Android/iOS/other repository releases from stealing GitHub's `Latest` pointer used by `electron-updater`. Repair the canonical post-main publication path so future desktop Releases publish atomically with updater assets.
@@ -90,3 +90,17 @@ Repair:
 Open-source/official reference: GitHub Release REST documents `make_latest` as `true|false|legacy`; GitHub CLI documents `--latest`, but Fabushi now verifies the authoritative REST readback instead of trusting a fire-and-forget flag.
 
 Acceptance is not complete until a newer fixed Release becomes `/releases/latest`, a running fixed client discovers the following Release without restart, and one-click progress/install/relaunch is proven on the target Mac.
+
+## 2026-08-24 Round 5 — live updater state race + foreground idle energy
+
+Target-Mac proof reached the fixed no-restart discovery gate: a running `1.0.808` process was merely refocused and immediately exposed `更新 1.0.809` after `desktop-1.0.809` became GitHub Latest. The first click then exposed a separate race: renderer UI had received `update-available / 1.0.809`, while `fabushi-native-state.json` still held `upToDate / 1.0.798`. `quitAndInstallUpdate` reread disk, so an immediate click could observe the stale value and exit without downloading.
+
+Repair: Electron main now owns one synchronous in-memory desktop-update state. Every updater event updates memory before renderer broadcast and then serially persists it; native capability handlers read/write that same live state when hosted by Electron. Disk remains restart persistence, not the real-time state machine. A regression intentionally starts disk at `1.0.798`, live state at `available / 1.0.9`, and requires the first click to download and schedule replacement restart.
+
+The same target Mac showed why historical Energy Impact was extreme: background focus loss now correctly drives Fabushi processes to ~0% CPU, but foreground-idle `1.0.808` still measured roughly 76% GPU helper + 21% renderer. The avatar system was double-driving every idle mark: a 30-fps SVG JavaScript physics loop plus continuous CSS breathe/glow compositor animations. Ambient states now keep the living effect at an 8-fps JS cadence with no duplicate CSS breathe/glow; thinking/working/speaking/emphasized/pointer-follow states retain full 30-fps + active ambience. Background focus/visibility suspension remains unchanged.
+
+Acceptance remains open until exact-main Release on the target Mac proves visible download progress, one click -> download -> automatic install/relaunch, and post-relaunch version/readiness; energy proof must show background near-zero and substantially lower foreground-idle GPU/renderer CPU than the `1.0.808` baseline.
+
+### Round 5 CI interaction finding
+
+Host fast E2E found animated BotMark SVG paths intercepting pointer input intended for surrounding Host controls (`open-marketplace`, `大乘助手的电脑`). BotMark SVG is visual content inside parent controls, not its own input target, so the SVG layer now has `pointer-events: none`; parent buttons/list items remain the interactive hit target. This also removes needless per-path hit testing from animated avatars.
