@@ -69,3 +69,7 @@ This task now treats the old-client updater journey as required because FCM-011 
 ## 2026-08-24 PR #2093 Round 1 CI sparse-checkout blocker
 
 PR #2093 exact-head CI correctly failed the `Electron Feature Host contract` before product tests because `assert-fabushi-desktop-architecture.py` now validates updater artifact naming in `desktop/package.json`, but that job's sparse checkout did not include the file. The repair adds only `desktop/package.json` to the existing contract job checkout; no validation is weakened or skipped.
+
+## 2026-08-24 post-main metadata parser quote repair
+
+After #2093 merged, comparison against the parallel #2094 branch found one valid unique delta: the updater metadata asset-name parser embedded a single quote inside a shell single-quoted awk program. Preserve the #2093 startup/updater/energy behavior and replace only that parser with `awk ... | tr -d` so the canonical post-main Bash step is syntactically safe. #2094 otherwise reverts the user-requested nonblocking startup and must not be merged wholesale.
