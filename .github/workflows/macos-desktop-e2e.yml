@@ -57,7 +57,7 @@ jobs:
             gh --version || true
           } > "$EVIDENCE_DIR/logs/00-environment.log" 2>&1
 
-      - name: Resolve desktop release
+      - name: Resolve desktop release and updater ordering
         id: release
         shell: bash
         env:
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           tag="$INPUT_RELEASE_TAG"
           if [ -z "$tag" ] || [ "$tag" = "latest" ]; then
-            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+            tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '[.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-")))][0].tagName // ""')"
           fi
           if [[ "$tag" != desktop-* ]]; then
             echo "Resolved release is not a desktop release: $tag" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
@@ -75,9 +75,22 @@ jobs:
           fi
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,name,publishedAt,isPrerelease,assets,targetCommitish,url > "$EVIDENCE_DIR/json/release.json"
           jq -r '. | "Release: \(.tagName)\nName: \(.name)\nPublished: \(.publishedAt)\nPrerelease: \(.isPrerelease)\nURL: \(.url)\nAssets:\n" + ([.assets[].name] | map("- " + .) | join("\n"))' "$EVIDENCE_DIR/json/release.json" | tee "$EVIDENCE_DIR/logs/01-release-metadata.log"
+
+          current_version="${tag#desktop-}"
+          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
+          is_highest=false
+          if [ "$current_version" = "$highest_version" ]; then
+            is_highest=true
+          fi
+
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "release_version=${tag#desktop-}" >> "$GITHUB_OUTPUT"
-          echo "- Release: \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "release_version=$current_version" >> "$GITHUB_OUTPUT"
+          echo "is_highest=$is_highest" >> "$GITHUB_OUTPUT"
+          {
+            echo "- Release: \`$tag\`"
+            echo "- Highest stable desktop version: \`${highest_version:-none}\`"
+            echo "- Updater target: \`$is_highest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download macOS release assets
         shell: bash
@@ -96,11 +109,13 @@ jobs:
           test "$metadata_version" = '${{ steps.release.outputs.release_version }}'
 
       - id: previous
-        name: Upgrade compatibility smoke from previous desktop release
+        name: Resolve and launch the nearest lower desktop release
+        if: steps.release.outputs.is_highest == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+          CURRENT_VERSION: ${{ steps.release.outputs.release_version }}
         run: |
           set -uo pipefail
           status=0
@@ -109,14 +124,27 @@ jobs:
             arm64) previous_zip_pattern='*macos-arm64.zip' ;;
             *) previous_zip_pattern='*macos-x64.zip' ;;
           esac
-          previous_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '[.[].tagName | select(startswith("desktop-") and . != env.RELEASE_TAG)][0] // ""')"
-          if [ -z "$previous_tag" ]; then
-            echo "No previous desktop release found; upgrade compatibility smoke skipped." | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+
+          previous_version=''
+          while IFS= read -r candidate; do
+            [ -n "$candidate" ] || continue
+            if [ "$candidate" = "$CURRENT_VERSION" ]; then
+              continue
+            fi
+            newest="$(printf '%s\n%s\n' "$candidate" "$CURRENT_VERSION" | sort -V | tail -1)"
+            if [ "$newest" = "$CURRENT_VERSION" ]; then
+              previous_version="$candidate"
+            fi
+          done < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V)
+
+          if [ -z "$previous_version" ]; then
+            echo "No lower desktop release found; updater compatibility smoke skipped." | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
             echo 'previous_tag=' >> "$GITHUB_OUTPUT"
             echo 'previous_app=' >> "$GITHUB_OUTPUT"
             echo 'previous_executable=' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          previous_tag="desktop-$previous_version"
           previous_dir="$RUNNER_TEMP/previous-release"
           previous_install="$RUNNER_TEMP/previous-installed"
           mkdir -p "$previous_dir" "$previous_install"
@@ -155,8 +183,16 @@ jobs:
           echo "previous_app=$previous_app" >> "$GITHUB_OUTPUT"
           echo "previous_executable=$previous_executable" >> "$GITHUB_OUTPUT"
 
+      - name: Record non-latest release updater policy
+        if: steps.release.outputs.is_highest != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'This release is not the highest stable desktop version. Package E2E still runs, but updater downgrade proof is intentionally skipped because installed clients must only move forward.' | tee "$EVIDENCE_DIR/logs/04-upgrade-compatibility.log"
+          echo '- Updater downgrade proof: skipped for non-highest historical Release' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set up Node.js for updater UI automation
-        if: steps.previous.outputs.previous_executable != ''
+        if: steps.release.outputs.is_highest == 'true' && steps.previous.outputs.previous_executable != ''
         uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -164,12 +200,12 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
 
       - name: Restore Playwright/Electron test dependencies from npm cache
-        if: steps.previous.outputs.previous_executable != ''
+        if: steps.release.outputs.is_highest == 'true' && steps.previous.outputs.previous_executable != ''
         working-directory: desktop
         run: npm ci --prefer-offline
 
       - name: Simulate old-version user clicking the profile update button
-        if: steps.previous.outputs.previous_executable != ''
+        if: steps.release.outputs.is_highest == 'true' && steps.previous.outputs.previous_executable != ''
         shell: bash
         env:
           PREVIOUS_EXECUTABLE: ${{ steps.previous.outputs.previous_executable }}
@@ -184,7 +220,7 @@ jobs:
           cat "$EVIDENCE_DIR/json/05-updater-ui.json" | tee "$EVIDENCE_DIR/logs/05-updater-ui.log"
 
       - name: Verify updater replaced the previous app bundle with the released version
-        if: steps.previous.outputs.previous_app != ''
+        if: steps.release.outputs.is_highest == 'true' && steps.previous.outputs.previous_app != ''
         shell: bash
         env:
           PREVIOUS_APP: ${{ steps.previous.outputs.previous_app }}
@@ -326,8 +362,9 @@ jobs:
             echo "## Coverage"
             echo "- Install/package/checksum: captured"
             echo "- Startup/process: captured when package checks permit launch"
-            echo "- Upgrade compatibility: previous desktop Release launch captured"
-            echo "- Updater UX: old release detects the new version, exposes the profile update button, receives a real click, and must replace its app bundle with the released version"
+            echo "- Upgrade compatibility: previous lower desktop Release launch captured when this Release is the highest stable version"
+            echo "- Updater UX: for the highest stable Release, an older release must detect the new version, expose the profile update button, receive a real click, and replace its app bundle with the released version"
+            echo "- Non-highest historical Releases: updater downgrade proof intentionally skipped; package E2E still required"
             echo "- Gateway core route: captured by packaged CLI"
             echo "- Mini-app host contract: captured by json/09-miniapp-smoke.json"
           } >> "$GITHUB_STEP_SUMMARY"
