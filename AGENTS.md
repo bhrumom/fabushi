@@ -19,6 +19,7 @@ Before substantial work:
 5. Read the matching project's `SOURCE_OF_TRUTH.md` first, then `README.md`, `PROJECT.yaml`, `OWNERS.md`, relevant `source/`, `docs/`, `decisions/`, `management/`, `evidence/`, and `runbooks/` files.
 6. Read current roadmap, WBS, milestones, acceptance matrix, risk register, dependency/blocker register, status report, changelog, open issues/actions, active task record, and relevant ADRs before deciding what to implement next.
 7. Verify code, branch, PR, CI, release, deployment, and migration facts against live GitHub/engineering systems rather than assuming project documentation is current.
+8. Complete the open-source-first startup gate in §1C before choosing a custom implementation.
 
 ### 1A. Global Project ID allocation gate
 
@@ -48,13 +49,66 @@ For every repository task that uses a PR:
 1. Finish that task's implementation, project records, and objective acceptance checks on its own branch/PR.
 2. Open and manage the task PR. While that PR is waiting on required review, CI, branch protection, or merge queue state, the agent may create, switch to, implement, and advance other independent tasks/PRs in parallel.
 3. Keep tracking the pending PR and return to it to resolve failures, conflicts, or requested changes. Parallel work is not permission to abandon a pending PR or lose its durable task/evidence state.
-4. **Before declaring that task complete or ending it as finished**, actively drive its PR through all required review/CI/protected-main/merge-queue gates and merge it into canonical `main`. If it cannot yet merge, keep that task `in-progress`, `blocked`, or `failed` rather than calling it complete.
+4. **Before declaring that task complete or ending it as finished**, actively drive its PR through all required review/CI/protected-main/merge-queue gates and merge it into canonical `main`. If it cannot yet merge, keep the task `in-progress`, `blocked`, or `failed` rather than calling it complete.
 5. Re-read/verify the relevant files and engineering facts from canonical GitHub `main` after merge. A PR being open, approved, green, queued, or merely pushed is not enough for task completion.
-6. Only after merge plus canonical-main verification may that individual task be marked `passed` / `completed` and reported as finished.
+6. Continue through the post-main delivery gate in §1D. Merge-to-main is necessary but is no longer sufficient to mark an application-affecting task complete.
 
-**Parallelism is explicitly allowed:** multiple independent tasks and PRs may be active at the same time, including while another PR is waiting on CI or the merge queue.
+**Parallelism is explicitly allowed:** multiple independent tasks and PRs may be active at the same time, including while another PR is waiting on CI, the merge queue, post-main build/E2E, or Release publication.
 
-**Closure is still strict:** every active task owns its own PR-to-main closure gate. Before finishing a task, the agent must return to that task, push its PR toward merge, resolve merge blockers when possible, and verify the result on `main`. Pending PRs must remain visible in project/task records until closed.
+**Closure is still strict:** every active task owns its own PR-to-main and post-main delivery closure evidence. Pending PRs and post-main delivery runs must remain visible in project/task records until closed.
+
+### 1C. CRITICAL: Open-source-first task startup gate
+
+Before implementing a task, redesigning an existing component, or inventing a new protocol/framework/tool, **search mature open-source repositories first** for a proven implementation of the same or closely related problem.
+
+For every substantive task:
+
+1. Search relevant upstream/official and well-maintained open-source repositories before substantial implementation. Prefer the canonical project and primary source repository over blogs, snippets, forks, or copied code.
+2. Inspect the candidate's architecture, APIs/data model, test strategy, operational edge cases, security posture, maintenance activity, license, and compatibility with Fabushi's current Electron/native/Rust architecture.
+3. Record the candidate repositories and the decision in the task/project records: what is reused, adapted, rejected, or learned; include the reason and license/provenance implications.
+4. If a mature compatible solution exists, **learn it first and reuse/adapt/fuse the proven design**, then optimize and innovate for Fabushi. Do not rebuild the same infrastructure from scratch merely to make it “ours”.
+5. Do not blindly copy code. Preserve licensing/attribution obligations, reject incompatible licenses or unsafe/unmaintained approaches, and integrate through Fabushi's own domain boundaries and tests.
+6. If no suitable mature implementation exists, record the search scope/candidates and the reason a custom implementation is necessary before writing that custom implementation.
+7. Research evidence is part of the task's durable source/decision record and acceptance evidence. Conversation memory alone is not sufficient evidence that a search happened.
+
+This gate is about avoiding duplicated engineering and learning from proven systems; it does not require adopting an open-source dependency when doing so would worsen security, maintainability, performance, licensing, or architectural fit.
+
+### 1D. CRITICAL: Post-main delivery gate — packaged build, simulated-user E2E, Release, and updater proof
+
+For every repository task whose merged change can affect the built/runnable Fabushi product, **merging the PR is not the end of the task**. The exact accepted `main` SHA must enter the canonical post-main delivery loop.
+
+After the task PR merges:
+
+1. Start/inspect the post-main workflows for the exact canonical `main` SHA. Build installable/package artifacts on GitHub-hosted CI; do not substitute a local developer build.
+2. Use the fastest safe warm-build path from §1E, but preserve deterministic clean-build fallback and exact source/toolchain provenance.
+3. Install or launch the produced package in CI where the platform permits it and run the canonical simulated-user journeys against the **packaged/installable application**, not only source-level unit tests. Required surfaces include Electron Playwright user journeys and the selected Android instrumentation / iOS UI journeys plus any task-specific E2E acceptance path.
+4. Treat E2E failures as implementation failures. Return to the task, fix the cause in a follow-up PR, merge through protected `main`, and run the loop again. Repeat until all required E2E gates for the accepted version are green. Never waive a failing E2E merely to publish.
+5. **Only after all required build/package/E2E gates for that exact SHA are successful**, publish the verified version to GitHub Releases. The Release/tag/assets must be traceable to that canonical `main` SHA.
+6. Desktop Release assets must remain compatible with `electron-updater`. For macOS this includes the signed/notarized DMG, macOS ZIP, `latest-mac.yml`, and required blockmap/update metadata from the same build lineage. Windows/Linux updater/installable assets must likewise come from the accepted build.
+7. Every automatically published desktop build must have a monotonically increasing update-comparable version. Do not publish a changed binary under the same app version and expect installed clients to detect it.
+8. Validate the update channel from a previous installed Release: the old packaged app must be able to discover a strictly newer stable GitHub Release, expose the update affordance beside the profile/avatar when available, download it, and exercise the install/relaunch path. Preserve automated evidence for this path when the platform allows it.
+9. Record build run IDs, package artifacts, E2E reports/screenshots, Release tag/target SHA/assets, and updater/upgrade evidence in the originating task record.
+10. Only after merge + canonical-main readback + required post-main E2E + verified Release/updater evidence may that application-affecting task be marked `passed` / `completed` and reported as finished.
+
+Build/test work for multiple accepted main SHAs may execute in parallel. Publication must be ordered safely so an older/slower run cannot replace a newer accepted Release. A newer commit must not silently erase the evidence/status of an earlier merged task; every merged task keeps an explicit post-main delivery result (`passed`, `failed`, `blocked`, or explicitly superseded with evidence).
+
+For repository-only changes that objectively cannot alter a packaged/runnable product (for example a prose-only historical note), the task may document `post-main product delivery: N/A` with an objective reason. Do not use the N/A path for application code, runtime, workflows, build/release configuration, dependencies, user-visible assets, tests, or product governance that changes delivery behavior.
+
+### 1E. CRITICAL: Fast-feedback / warm-build gate — hot-reload-like CI across runs
+
+GitHub-hosted runners are ephemeral, so CI cannot literally keep one process alive between runs. Fabushi must achieve **hot-reload-like feedback** by restoring the previous run's valid build state and rebuilding only the invalidated subgraph.
+
+For build/test workflows:
+
+- Do not intentionally start from zero on every round when a safe reusable cache/artifact exists.
+- Use content-addressed/versioned cache keys that include the relevant lockfile, toolchain/SDK version, platform/architecture, build profile, and source inputs. Use bounded `restore-keys` fallbacks only where stale-state correctness is understood.
+- Reuse immutable native Host binaries/JNI/static libraries when their source hash is unchanged; reuse npm/pnpm stores, Gradle dependency/build caches, Android AVD snapshots, Xcode DerivedData/SwiftPM state, Rust target/dependency state, and same-run artifacts instead of rebuilding identical inputs.
+- Use compiler-result caching such as `sccache` for Rust/C/C++ hot paths when it is compatible with the job, in addition to higher-level artifact caches; keep a normal compiler fallback.
+- Build the renderer/native host/package once per compatible input set and hand it to downstream test/package jobs rather than recompiling the same artifact repeatedly.
+- Select the smallest safe affected test/build surface for pull requests. After merge, run the required canonical delivery surface, but still reuse caches and unchanged platform intermediates.
+- Record cache hit/miss, restored key, compiler-cache statistics where available, and cold/warm wall-clock durations in Actions summaries/evidence. Optimize from measured bottlenecks rather than assumptions.
+- A cache miss, eviction, key-version change, or suspected corruption must fall back to a reproducible correct build. Never weaken signing, notarization, required E2E, source provenance, or release integrity to gain speed.
+- Cached outputs are acceleration data, not Release provenance. The accepted Release remains identified by the exact `main` source SHA, toolchain/configuration, required test evidence, and signed package artifacts.
 
 ### 2. If no project folder exists, create the enterprise standard before implementation
 
@@ -143,10 +197,12 @@ The task record must include at least:
 - dependencies;
 - acceptance criteria;
 - verification method/checks;
+- open-source survey and reuse/rejection decision;
 - branch / commit / PR;
 - status;
 - implementation summary;
 - CI / E2E / security / performance / release / deployment / migration evidence when applicable;
+- post-main build/package/E2E/Release/updater evidence or an objective N/A reason;
 - blockers and risks;
 - next action;
 - started, updated, and completed timestamps.
@@ -164,16 +220,16 @@ The GitHub portfolio registry and project folder are the durable working context
 - Keep planned work and verified completed work clearly separated.
 - Prefer the same branch/PR for implementation and its project-record updates.
 - Never mutate an existing registered Project ID to make a registry conflict disappear.
-- Parallel independent task/PR work is permitted. Keep each task separately tracked, and do not mark any task complete until that task's own PR satisfies the §1B merge-and-main-verification closure gate.
+- Parallel independent task/PR work is permitted. Keep each task separately tracked, and do not mark any task complete until that task's own PR and applicable post-main delivery satisfy §§1B–1E.
 
-### 6. Task completion is blocked until project records and evidence are current
+### 6. Task completion is blocked until project records, post-main verification, and evidence are current
 
-Do **not** report a task as complete merely because code was written, pushed, or a test passed.
+Do **not** report a task as complete merely because code was written, pushed, a PR was merged, or a source-level check passed.
 
 Before saying a task is finished:
 
 1. Run or inspect the defined acceptance checks, including `Project portfolio governance` when project identity/registry metadata is affected.
-2. Update the task record with actual results and evidence.
+2. Update the task record with actual results and evidence, including the open-source-first research decision.
 3. Update `management/01-WBS原子任务.md` for affected task states.
 4. Update `management/02-里程碑.md` when milestone gates change.
 5. Update `management/03-验收追踪矩阵.md` when acceptance status changes.
@@ -184,9 +240,12 @@ Before saying a task is finished:
 10. Commit project-record changes to GitHub in the same task change stream when possible.
 11. Merge through required protected-main checks/merge queue.
 12. Verify canonical state on GitHub `main` after merge, including registry/project metadata parity when applicable.
-13. Do not mark or report that task as finished until steps 11–12 are complete. Other independent tasks may proceed in parallel while these gates are pending.
+13. For application-affecting work, inspect the exact merged SHA's post-main packaged build and simulated-user E2E results. Do not reuse a different SHA's green result.
+14. If any required post-main E2E fails, keep the task `in-progress` / `blocked` / `failed`, fix it through a governed follow-up PR, merge, and repeat the post-main loop until green.
+15. After required E2E is green, verify the GitHub Release is bound to the accepted `main` SHA, contains the required updater/installable assets, has a strictly update-comparable version, and has update/upgrade evidence from the previous Release where applicable.
+16. Only then mark or report that task as `passed` / `completed`. Other independently tracked tasks may proceed in parallel while any of these gates are pending.
 
-If any required review/CI/merge/release/deployment/migration/acceptance gate is pending, keep that task `in-progress`, `blocked`, or `failed` rather than marking it complete. This pending state does **not** prohibit work on other independently tracked tasks/PRs.
+If any required review/CI/merge/post-main build/E2E/release/deployment/migration/acceptance gate is pending, keep that task `in-progress`, `blocked`, or `failed` rather than marking it complete. This pending state does **not** prohibit work on other independently tracked tasks/PRs.
 
 ### 7. Source-of-truth precedence
 
@@ -197,7 +256,7 @@ Unless a project defines a stricter rule, use this precedence:
 3. `projects/<project-slug>/SOURCE_OF_TRUTH.md` and designated source files;
 4. accepted ADRs and current project specs;
 5. current WBS/milestone/status/acceptance records;
-6. GitHub code/PR/CI/release/deployment facts for implementation state;
+6. GitHub code/PR/CI/post-main E2E/release/deployment facts for implementation state;
 7. external mirrors/control views such as Google Drive/Sheets;
 8. conversation memory.
 
@@ -216,7 +275,7 @@ and:
 
 When Task Orchestration is used, preserve the same immutable `FAB-Pxxxx` Project ID, Project Key, Stage ID, Task ID, requirement IDs, acceptance criteria, and evidence links in external control views. Google Sheets is a portfolio/control-plane view; for Fabushi repository work the GitHub portfolio registry/project folder and live GitHub/CI facts remain authoritative.
 
-The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, acceptance evidence, the PR-to-main completion gate, or completion closure.
+The root `AGENTS.md` rule is repository-wide. More specific nested instructions may add requirements, but must not bypass portfolio Project ID allocation, project-folder creation/reuse, task records, open-source-first research, acceptance evidence, the PR-to-main completion gate, the post-main packaged E2E/Release/updater gate, warm-build integrity, or completion closure.
 
 ## CRITICAL: Local Disk Safety — Never Build or Test the App Locally
 
