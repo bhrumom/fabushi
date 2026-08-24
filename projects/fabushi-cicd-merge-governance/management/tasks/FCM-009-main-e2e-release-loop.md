@@ -83,3 +83,13 @@
 ## Next action
 
 Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA gate/release publication, then create protected PR and use Actions evidence to iterate until green.
+
+## 2026-08-24 — Round 2 native shared-host blocker
+
+- Exact main delivery run for `bc4aa98370fe719abee35f50d7f0bec36bf8bc71` correctly blocked publication: Native mobile run `32678047948` ended `failure`.
+- Android Compose simulated-user gate: PASS.
+- iOS SwiftUI simulated-user gate: PASS.
+- Shared Rust host contract: FAIL during `cargo clippy -p mahayana-app-host --all-targets -- -D warnings` because `wayland-sys` could not locate `wayland-client.pc`.
+- Root cause is runner provisioning, not product code: Ubuntu shared-host job omitted the Linux native development packages already installed by the Electron Host job.
+- Upstream/proven reference is recorded in `source/2026-08-24-fcm-009-native-wayland-dependency.md`.
+- Repair: install the same proven native dependency set before shared-host clippy/test. Release remains blocked until the repaired exact-main native gate is green.
