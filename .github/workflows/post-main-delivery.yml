@@ -54,6 +54,8 @@ jobs:
           grep -F 'needs.gate.outputs.electron_run_id' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'fabushi-delivery-mac.json' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'latest-mac.yml' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'gh release create "$tag" "${assets[@]}"' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'latest_args=(--latest)' .github/workflows/post-main-delivery.yml >/dev/null
           grep -F 'desktop-update-cloud' .github/scripts/verify-release-updater-ui.mjs >/dev/null
           grep -F 'github.sha' .github/workflows/electron-desktop.yml >/dev/null
           grep -F 'github.sha' .github/workflows/native-mobile.yml >/dev/null
@@ -259,7 +261,7 @@ jobs:
           The macOS DMG/ZIP/updater metadata and Windows/Linux installers are the same artifacts that passed the Electron packaged-user gate for this source SHA.
           EOF
 
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" 2>/dev/null || true)"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\")" 2>/dev/null || true)"
           if [ -n "$existing" ]; then
             release_id="$(jq -r '.id' <<<"$existing")"
             existing_target="$(jq -r '.target_commitish' <<<"$existing")"
@@ -270,28 +272,28 @@ jobs:
               echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-          else
-            created="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
-              -f tag_name="$tag" \
-              -f target_commitish="$SOURCE_SHA" \
-              -f name="Fabushi Desktop $VERSION" \
-              -f body="$(cat "$notes")" \
-              -F draft=true \
-              -F prerelease=false \
-              -f make_latest=false)"
-            release_id="$(jq -r '.id' <<<"$created")"
+            echo "Removing stale draft Release $tag before retrying atomic publication."
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
           fi
 
           mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
           test "${#assets[@]}" -gt 0
-          gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          latest_args=(--latest)
+          if [ "$make_latest" != true ]; then
+            latest_args=(--latest=false)
+          fi
+          gh release create "$tag" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Fabushi Desktop $VERSION" \
+            --notes-file "$notes" \
+            "${latest_args[@]}"
 
-          published="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false \
-            -F prerelease=false \
-            -f make_latest="$make_latest")"
+          published="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
           test "$(jq -r '.draft' <<<"$published")" = false
+          test "$(jq -r '.prerelease' <<<"$published")" = false
           test "$(jq -r '.tag_name' <<<"$published")" = "$tag"
+          test "$(jq -r '.target_commitish' <<<"$published")" = "$SOURCE_SHA"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
           {
             echo '## Published Release'

@@ -47,6 +47,12 @@ REQUIRED_SNIPPETS = {
         "native-desktop",
         "runtime-event",
     ),
+    "desktop/electron/main.cjs": (
+        "installAutomaticDesktopUpdateChecks",
+        "browser-window-focus",
+        "DESKTOP_UPDATE_FOREGROUND_INTERVAL_MS",
+        "checkForDesktopUpdateAutomatically",
+    ),
     "frontend/apps/web/src/lib/mahayana-host/coordinator.ts": (
         "class MahayanaCoordinator",
         "getAgentTranscriptTail",

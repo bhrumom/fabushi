@@ -63,7 +63,7 @@ jobs:
             exit 0
           fi
           if [ "$PRERELEASE" = "true" ]; then
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --prerelease
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --prerelease --latest=false
           else
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --latest=false
           fi
