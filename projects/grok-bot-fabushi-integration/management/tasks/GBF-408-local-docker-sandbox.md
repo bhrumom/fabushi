@@ -3,12 +3,12 @@
 - Project ID: `FAB-P0004`
 - Project Key: `GBF`
 - Task ID: `GBF-408`
-- Status: `IMPLEMENTED`
+- Status: `RELEASED`
 - Started: `2026-08-24 18:05 +08:00`
-- Updated: `2026-08-24 20:07 +08:00`
-- Completed: —
+- Updated: `2026-08-24 21:56 +08:00`
+- Completed: `2026-08-24 21:56 +08:00`
 - Branch: `codex/gbf-provider-router`
-- Commit / PR: unified PR head / [#2106](https://github.com/bhrumom/fabushi/pull/2106)
+- Commit / PR: unified head `4d8d3a6a...` / [#2106](https://github.com/bhrumom/fabushi/pull/2106) / main `f81588d3...`
 
 ## Objective and scope
 
@@ -35,4 +35,4 @@ The reconstructed local Docker connector was studied for ownership, image and re
 
 ## Evidence, risks and next action
 
-Lightweight static inspection only. Code-head security `32725103937`, platform `32725103983`, native-mobile `32725103902` and multi-platform contracts `32725103959` passed. The final unified-head Rust rerun and packaged Windows/macOS/Linux behavior remain required. Daemon availability and first image acquisition can still fail at execution time and must surface as a recoverable tool error.
+Lightweight static inspection only; no local build/test. Canonical seven-gate `32731980249` passed. Exact-main Electron `32733627050` verified Windows Docker-available readiness plus macOS/Linux fail-closed behavior in packaged journeys; native mobile `32733627056` and post-main delivery `32734915241` passed, publishing `desktop-1.0.867`. Daemon availability and first image acquisition can still fail at execution time and surface as a recoverable tool error by design.
