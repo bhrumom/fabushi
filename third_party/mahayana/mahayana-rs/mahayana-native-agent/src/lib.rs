@@ -6,9 +6,8 @@
 
 use async_trait::async_trait;
 use mahayana_agent::{
-    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent,
-    AgentMessageRequest, ApprovalResolution, McpAppSession, OpenMcpAppRequest,
-    SharedAgentEventSink, StartThreadRequest,
+    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentMessageRequest,
+    ApprovalResolution, McpAppSession, OpenMcpAppRequest, SharedAgentEventSink, StartThreadRequest,
 };
 use mahayana_core::{
     AgentThreadId, ApprovalDecision, ConversationId, Message, MessageId, MessageRole,
@@ -294,23 +293,23 @@ impl AgentBackend for NativeAgentBackend {
                 .iter()
                 .any(|tool| tool.get("name").and_then(Value::as_str) == Some("chat"))
         {
-                let result = self
-                    .mcp_call(
-                        mcp,
-                        "chat".into(),
-                        json!({"message":request.text,"surface":"agent"}),
-                    )
-                    .await?;
-                return events.emit(AgentEvent::MessageCompleted {
-                    message: Message {
-                        id: MessageId::generated("mcp-chat"),
-                        conversation_id: request.conversation_id,
-                        role: MessageRole::Assistant,
-                        text: mcp_result_text(&result),
-                        created_at_ms: now_ms(),
-                        metadata: json!({"mcpResult":result}),
-                    },
-                });
+            let result = self
+                .mcp_call(
+                    mcp,
+                    "chat".into(),
+                    json!({"message":request.text,"surface":"agent"}),
+                )
+                .await?;
+            return events.emit(AgentEvent::MessageCompleted {
+                message: Message {
+                    id: MessageId::generated("mcp-chat"),
+                    conversation_id: request.conversation_id,
+                    role: MessageRole::Assistant,
+                    text: mcp_result_text(&result),
+                    created_at_ms: now_ms(),
+                    metadata: json!({"mcpResult":result}),
+                },
+            });
         }
 
         let sink: SharedKernelEventSink = Arc::new(NativeEventBridge {
