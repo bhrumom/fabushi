@@ -95,3 +95,19 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 - Core implementation PR #2079 is merged and canonical-main readback passed.
 - A new packaged returning-user startup performance E2E now enforces the project `< 1 second` first-interactive target.
 - Final task closure remains pending until this measurement is green on canonical main and the same accepted SHA is published through the post-main Release/updater loop.
+
+## 2026-08-24 durability/performance continuation
+
+Canonical `main@ace59b487bb8b1838508d08acbea5f4e7e4fa775` ran the new startup-performance E2E. The projection contained `首屏性能验收` before shutdown, but the row was missing after a full Electron relaunch; therefore the run produced no acceptable first-interactive measurement and Release stayed blocked.
+
+The follow-up fix on branch `fix/tfi-m3-durable-fast-start` mirrors the bounded renderer projection into the existing Electron native client-persistence store while preserving Rust SQLite/Host as authoritative. Startup prefers synchronous `localStorage`, falls back to the native mirror before routing to HostClient, and mirrors recovered data back into local storage. The E2E now verifies the durable mirror before closing the first process.
+
+Status remains `TESTING` until the protected-main packaged E2E records `< 1000 ms`, all required exact-main desktop/mobile gates pass, and the tested artifacts are published as a new Release.
+
+## 2026-08-24 returning-account session persistence continuation
+
+Exact-main Electron run `32683544762` on `main@197dc768b972974aea3603eae8f80a46df4714a4` confirmed the durable projection fallback itself succeeds: the seeded conversation is recovered into renderer storage after a full process restart. The test still fails because the deterministic Rust Feature Host keeps `auth_user` only in process memory; its first asynchronous `feature.auth.status` after relaunch returns signed-out and unmounts the restored Messenger.
+
+The follow-up persists only the deterministic UI-safe test user when the test Host is created with the app's durable runtime data directory, restores it across Host process restart, and deletes it on explicit logout. No credentials or tokens cross into this file. The E2E also waits beyond the auth retry interval after first interaction and requires the login shell to remain absent.
+
+Status remains `TESTING` until the exact canonical-main packaged run emits a passing `startup-performance.json` under 1000 ms, all required desktop/mobile gates pass, and the tested artifacts are published as the new Release.
