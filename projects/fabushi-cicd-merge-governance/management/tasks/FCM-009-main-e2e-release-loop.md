@@ -93,3 +93,10 @@ Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA ga
 - Root cause is runner provisioning, not product code: Ubuntu shared-host job omitted the Linux native development packages already installed by the Electron Host job.
 - Upstream/proven reference is recorded in `source/2026-08-24-fcm-009-native-wayland-dependency.md`.
 - Repair: install the same proven native dependency set before shared-host clippy/test. Release remains blocked until the repaired exact-main native gate is green.
+
+## 2026-08-24 — Round 3 merge-queue hygiene blocker
+
+- PR #2083 entered merge queue and created group SHA `983680ab3290f7d0b48d7f5a59382376028cb023`.
+- Two obsolete M3 one-shot workflow files immediately produced failed zero-job push runs (`32679156035`, `32679155565`) on the queue branch.
+- These recovery drivers target historical branch/issue/job identifiers and are not part of current canonical product validation.
+- They are removed so the `ALLGREEN` merge queue evaluates only current reusable gates instead of stale one-shot automation.

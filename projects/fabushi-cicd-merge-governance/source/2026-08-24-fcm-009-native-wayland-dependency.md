@@ -20,3 +20,14 @@ Do not weaken clippy, disable Wayland features, or skip the shared-host gate. Re
 - Android and iOS simulated-user gates remain green.
 - `Native mobile result` becomes green for the exact canonical main SHA.
 - Post-main Release remains blocked until this is true.
+
+## Merge-queue blocker discovered during repair
+
+The first merge-queue group for PR #2083 (`983680ab3290f7d0b48d7f5a59382376028cb023`) emitted two immediate failed workflow runs with **zero jobs**:
+
+- `32679156035` — `.github/workflows/fab-p0001-m3-kick-driver.yml`
+- `32679155565` — `.github/workflows/fab-p0001-m3-unread-patch-driver.yml`
+
+Both files are obsolete one-shot M3 recovery drivers: one checks out the stale `fix/fab-p0001-m3-e2e-closure` branch and hard-codes a historical failed job ID; the other is an issue-comment patch driver for the already superseded #2022 closure path. They are not production CI and have no remaining owner/reference in project records. Under the repository merge-queue `ALLGREEN` policy their synthetic queue failures can prevent the actual `CI result` merge-group validation from completing.
+
+Decision: remove both obsolete one-shot driver workflow files instead of weakening the merge queue. Canonical reusable messaging/Electron/Native gates remain unchanged.
