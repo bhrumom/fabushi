@@ -87,6 +87,8 @@ type FrameListener = (timeMs: number, deltaSeconds: number) => void;
 // so a sidebar full of agents does not cause a React render on every animation frame.
 const frameListeners = new Set<FrameListener>();
 const MOTION_FRAME_INTERVAL_MS = 1000 / 30;
+const AMBIENT_MOTION_FRAME_INTERVAL_MS = 1000 / 8;
+const AMBIENT_MOTION_STATES = new Set(["idle", "sleeping", "drowsy", "bored", "powering-down"]);
 let motionFrameId: number | null = null;
 let lastMotionFrameMs = 0;
 let lastMotionDispatchMs = 0;
@@ -481,17 +483,27 @@ export const FabushiBotMarkEngine = forwardRef<FabushiBotMarkEngineHandle, Fabus
       const phaseB = seededUnit(seed, 11) * Math.PI * 2;
       const phaseC = seededUnit(seed, 12) * Math.PI * 2;
       const phaseD = seededUnit(seed, 13) * Math.PI * 2;
+      let lastEngineFrameMs = 0;
 
       return subscribeMotionFrame((timeMs, deltaSeconds) => {
         if (!visibleRef.current) return;
 
         const currentProps = propsRef.current;
+        if (currentProps.paused) return;
+        const ambient = !currentProps.emphasis && !followPointer && AMBIENT_MOTION_STATES.has(currentProps.state);
+        const minimumIntervalMs = ambient ? AMBIENT_MOTION_FRAME_INTERVAL_MS : MOTION_FRAME_INTERVAL_MS;
+        if (lastEngineFrameMs && timeMs - lastEngineFrameMs < minimumIntervalMs) return;
+        const localDeltaSeconds = lastEngineFrameMs
+          ? Math.min(0.14, Math.max(1 / 120, (timeMs - lastEngineFrameMs) / 1000))
+          : deltaSeconds;
+        lastEngineFrameMs = timeMs;
+
         const profileValue = profileForState(currentProps.state);
         const physics = physicsRef.current;
         const timeSeconds = timeMs / 1000;
         const reduced = reducedMotionRef.current;
-        const continuousMotion = currentProps.paused || reduced ? 0 : 1;
-        const springDelta = currentProps.paused ? 0 : deltaSeconds;
+        const continuousMotion = reduced ? 0 : 1;
+        const springDelta = localDeltaSeconds;
 
         const baseWave = Math.sin(timeSeconds * (0.86 + profileValue.pace * 0.12) + phaseA);
         const secondaryWave = Math.sin(timeSeconds * (1.37 + profileValue.pace * 0.22) + phaseB);
