@@ -44,5 +44,9 @@ Make a running Fabushi macOS client reliably discover the canonical desktop GitH
 - `bash .github/scripts/assert-electron-feature-host-bridge.sh` — pass.
 - Release ownership source checks: Apple / Google Play / native-electron / Global Dharma / important release paths all contain `--latest=false`; canonical post-main retains `--latest`.
 
+## PR CI finding
+- PR #2092 rollback drill initially failed because `.github/workflows/gbf-rollback-drill.yml` selected the first stable Release across every platform. A mobile/non-canonical Release can therefore be treated as the desktop rollback image.
+- The drill now selects only canonical `desktop-x.y.z` stable Releases and requires `latest-mac.yml`, a DMG, a macOS ZIP and checksums before accepting the rollback target.
+
 ## Current evidence / next gate
-Implementation pending PR CI, protected merge, exact-main packaged delivery and Release verification.
+Implementation pending refreshed PR CI, protected merge, exact-main packaged delivery and Release verification.

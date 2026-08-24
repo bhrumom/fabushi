@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/gbf-rollback-drill.yml'
       - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/post-main-delivery.yml'
       - 'projects/grok-bot-fabushi-integration/**'
   workflow_dispatch:
 
@@ -31,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false)] | first')"
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^desktop-[0-9]+\\.[0-9]+\\.[0-9]+$")))] | first')"
           if [ -z "$release_json" ] || [ "$release_json" = "null" ]; then
-            echo 'No stable published GitHub release exists; rollback cannot be honestly demonstrated.' >&2
+            echo 'No canonical stable desktop GitHub release exists; desktop rollback cannot be honestly demonstrated.' >&2
             exit 1
           fi
           tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
@@ -59,6 +60,9 @@ jobs:
             exit 1
           fi
           find rollback-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
+          test -f rollback-assets/latest-mac.yml
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
 
       - name: Verify release checksums when published
         shell: bash
