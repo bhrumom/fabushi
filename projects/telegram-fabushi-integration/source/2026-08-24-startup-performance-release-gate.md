@@ -20,3 +20,18 @@ After the Telegram local-first/settings implementation is merged, run packaged s
 ## Delivery requirement
 
 The exact accepted main SHA must pass packaged Electron E2E plus the repository-required Android/iOS simulated-user gates. Only then may the post-main delivery workflow publish the tested artifacts with a monotonic version and updater metadata.
+
+## Canonical-main failure observed and durability repair
+
+Canonical `main@ace59b487bb8b1838508d08acbea5f4e7e4fa775` reached the new performance E2E. The seeded conversation was present in the in-renderer projection before shutdown, but after a full Electron process close/relaunch the expected cached row was absent, so no valid `< 1000 ms` timing result could be accepted. This exposes a durability gap in relying on Chromium `localStorage` alone for the non-authoritative fast-start projection across abrupt/full process teardown.
+
+Repair direction:
+
+- keep Rust SQLite/Host as the only authoritative messaging state;
+- keep `localStorage` as the zero-round-trip hot path when it is present;
+- mirror the bounded projection through the existing Electron native `clientPersistence` store (`fabushi-native-state.json`) so full-process restart has a durable fallback;
+- on startup, check local projection synchronously first, then recover the native mirror before choosing the login/HostClient path;
+- mirror a recovered native projection back into `localStorage` and continue canonical Host reconciliation normally;
+- require the performance E2E to prove the native mirror contains the seeded conversation before shutting down, then measure the real full relaunch.
+
+The release gate remains `< 1000 ms` and remains blocking until the canonical-main packaged run records a passing timing artifact.
