@@ -39,3 +39,7 @@
 ## 2026-08-24 — M3-DESKTOP-002 Telegram local-first + Settings
 
 - `M3-DESKTOP-002` — `TESTING`: returning-user fast-start projection, first sync 20 / cursor background 100, responsive zero-width absent info panel, Telegram-inspired Settings IA, supported desktop preference bindings, and Playwright regression coverage implemented in PR #2079. GitHub Actions + protected merge + canonical-main verification remain the completion gate.
+
+## 2026-08-24 — M3-DESKTOP-002 closed
+
+- `M3-DESKTOP-002` — `COMPLETED`: PR #2079 passed CI, Messaging Product Gate, self-hosted messaging, and Electron desktop quality gate, then merged through the protected merge queue as `01b33d60f7d7d9add41a5fba84d21014094cb5dc`. Canonical `main` was re-read at the merge SHA.
