@@ -77,6 +77,12 @@ jobs:
 
           grep -Fq 'RELEASE_TARGET: android' .github/workflows/google-play-delivery.yml
           grep -Fq 'RELEASE_TARGET: ${{ inputs.target }}' .github/workflows/apple-store-delivery.yml
+
+          post_main=.github/workflows/post-main-delivery.yml
+          grep -Fq 'test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$")' "$post_main"
+          grep -Fq 'releases/latest' "$post_main"
+          grep -Fq 'make_latest=true' "$post_main"
+          grep -Fq 'GitHub Latest pointer did not advance' "$post_main"
           for workflow in \
             .github/workflows/native-electron-release.yml \
             .github/workflows/global-dharma-rust.yml \
