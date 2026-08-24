@@ -5,7 +5,7 @@
 - **Task ID:** MSR-105
 - **Status:** in-progress
 - **Started:** 2026-08-24T08:11:00+08:00
-- **Updated:** 2026-08-24T08:11:00+08:00
+- **Updated:** 2026-08-24T08:14:00+08:00
 - **Completed:** null
 
 ## Objective
@@ -43,13 +43,13 @@ The desktop app host configures the native runtime data directory under `feature
 ## Branch / commit / PR
 Branch: `fix/msr-105-desktop-provider-readiness`
 Initial implementation commit: `4936c3c65869be9cbfc4411368115a0e06cddfaf`
-PR: pending
+PR: #2081
 
 ## Implementation summary
 Desktop startup now explicitly creates the runtime-owned fallback workspace before constructing `UnifiedAppHost`. The bootstrap is intentionally limited to the application-owned runtime path. This moves filesystem readiness to the lifecycle boundary instead of allowing an OS-level `ENOENT` to escape during the user's first chat request.
 
 ## Evidence
-Pending exact-head CI, PR review/merge, and canonical-main verification.
+PR #2081 is open and mergeable. Exact-head CI had not yet appeared at the first post-PR status read; merge remains blocked until required checks complete.
 
 ## Next action
-Open the focused PR, run required CI on the exact head, inspect any failures, and merge only after the branch is green.
+Run required CI on the exact #2081 head, inspect any failures, and merge only after the branch is green.
