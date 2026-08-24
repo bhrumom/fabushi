@@ -206,7 +206,7 @@ fn marketplace_install_extracts_a_verified_pages_bundle_into_the_repository() {
     )
     .expect("initialize source plugin");
     let source_plugin = source_repository.join(".agents/plugins/plugins/market-plugin");
-    let archive = codex_core_plugins::plugin_bundle_archive::pack_plugin_bundle_tar_gz(
+    let archive = pack_plugin_bundle_tar_gz(
         &source_plugin,
         50 * 1024 * 1024,
     )
@@ -241,7 +241,7 @@ fn marketplace_install_rejects_manifest_version_mismatch() {
     )
     .expect("initialize source plugin");
     let source_plugin = source_repository.join(".agents/plugins/plugins/versioned-plugin");
-    let archive = codex_core_plugins::plugin_bundle_archive::pack_plugin_bundle_tar_gz(
+    let archive = pack_plugin_bundle_tar_gz(
         &source_plugin,
         50 * 1024 * 1024,
     )
