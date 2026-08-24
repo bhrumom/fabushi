@@ -207,7 +207,6 @@ jobs:
                   repository(owner: $owner, name: $repo) {
                     pullRequest(number: $number) {
                       id
-                      autoMergeRequest { enabledAt }
                       mergeQueueEntry { position }
                     }
                   }
@@ -273,26 +272,21 @@ jobs:
               core.info(`PR #${pr.number} is already in the merge queue at position ${protectedPr.mergeQueueEntry.position}.`);
               return;
             }
-            if (protectedPr.autoMergeRequest) {
-              core.info(`PR #${pr.number} already has native auto-merge armed.`);
-              return;
-            }
 
-            await github.graphql(
+            const enqueued = await github.graphql(
               `mutation($pullRequestId: ID!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId,
-                  mergeMethod: SQUASH
-                }) {
-                  pullRequest { number }
+                enqueuePullRequest(input: { pullRequestId: $pullRequestId }) {
+                  mergeQueueEntry { position }
                 }
               }`,
               { pullRequestId: protectedPr.id },
             );
+            const position = enqueued.enqueuePullRequest?.mergeQueueEntry?.position;
+            core.info(`PR #${pr.number} entered the protected merge queue at position ${position ?? 'unknown'}.`);
 
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: pr.number,
-              body: `Automerge authorized after successful product gates: ${requiredWorkflows.join(', ')}. GitHub's protected merge/merge queue now owns the final merge and merge-group revalidation; this workflow does not directly merge into main.`,
+              body: `Protected merge queue authorized after successful product gates: ${requiredWorkflows.join(', ')}. PR entered the queue${position ? ` at position ${position}` : ''}; merge-group revalidation now owns the final merge into main.`,
             });
