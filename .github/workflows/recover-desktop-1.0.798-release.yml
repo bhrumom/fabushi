@@ -1,0 +1,132 @@
+name: Recover tested desktop 1.0.798 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/recover-desktop-1.0.798-release.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: fabushi-desktop-release-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish exact tested desktop 1.0.798 artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: b5a12dce29bbab514f53dc44d48180274f0331ce
+      ELECTRON_RUN_ID: '32692598152'
+      NATIVE_RUN_ID: '32692598587'
+      EXPECTED_VERSION: 1.0.798
+    steps:
+      - name: Download tested macOS package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-mac
+          path: electron-artifacts/mac
+          github-token: ${{ github.token }}
+          run-id: ${{ env.ELECTRON_RUN_ID }}
+
+      - name: Download tested Windows package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-win
+          path: electron-artifacts/win
+          github-token: ${{ github.token }}
+          run-id: ${{ env.ELECTRON_RUN_ID }}
+
+      - name: Download tested Linux package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: fabushi-electron-linux
+          path: electron-artifacts/linux
+          github-token: ${{ github.token }}
+          run-id: ${{ env.ELECTRON_RUN_ID }}
+
+      - name: Validate exact-SHA manifests and updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mac_manifest="$(find electron-artifacts/mac -type f -name 'fabushi-delivery-mac.json' -print -quit)"
+          win_manifest="$(find electron-artifacts/win -type f -name 'fabushi-delivery-win.json' -print -quit)"
+          linux_manifest="$(find electron-artifacts/linux -type f -name 'fabushi-delivery-linux.json' -print -quit)"
+          test -n "$mac_manifest" && test -n "$win_manifest" && test -n "$linux_manifest"
+
+          for manifest in "$mac_manifest" "$win_manifest" "$linux_manifest"; do
+            test "$(jq -r '.version' "$manifest")" = "$EXPECTED_VERSION"
+            test "$(jq -r '.sha' "$manifest")" = "$SOURCE_SHA"
+          done
+
+          mkdir -p release-assets
+          while IFS= read -r asset; do cp "$asset" release-assets/; done < <(
+            find electron-artifacts -type f \( \
+              -name '*.dmg' -o -name '*.zip' -o -name '*.blockmap' -o \
+              -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o \
+              -name 'latest-mac.yml' -o -name 'latest.yml' -o -name 'latest-linux.yml' -o \
+              -name 'fabushi-delivery-*.json' \
+            \) -print | sort
+          )
+
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
+          test -f release-assets/latest-mac.yml
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.zip.blockmap' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find release-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test "$(awk -F': ' '/^version:/ {gsub(/[[:space:]\r]/, "", $2); print $2; exit}' release-assets/latest-mac.yml)" = "$EXPECTED_VERSION"
+          (cd release-assets && find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt)
+
+      - name: Publish tested Release atomically with assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="desktop-$EXPECTED_VERSION"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\")" 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            release_id="$(jq -r '.id' <<<"$existing")"
+            existing_target="$(jq -r '.target_commitish' <<<"$existing")"
+            existing_draft="$(jq -r '.draft' <<<"$existing")"
+            test "$existing_target" = "$SOURCE_SHA"
+            if [ "$existing_draft" != true ]; then
+              echo "Release $tag is already published for $SOURCE_SHA."
+              exit 0
+            fi
+            echo "Deleting stale draft $tag from the failed publication attempt."
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
+          fi
+
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -print | sort)
+          test "${#assets[@]}" -gt 0
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF
+          Automated recovery publication of the exact tested Fabushi desktop artifacts.
+
+          - Source SHA: \`$SOURCE_SHA\`
+          - Electron packaged-user E2E run: \`$ELECTRON_RUN_ID\`
+          - Native mobile simulated-user run: \`$NATIVE_RUN_ID\`
+          - Desktop version: \`$EXPECTED_VERSION\`
+
+          The macOS DMG/ZIP/updater metadata and Windows/Linux installers are the same artifacts that already passed the canonical packaged-user gates for this source SHA.
+          EOF
+
+          gh release create "$tag" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Fabushi Desktop $EXPECTED_VERSION" \
+            --notes-file "$notes" \
+            --latest
+
+          published="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+          test "$(jq -r '.draft' <<<"$published")" = false
+          test "$(jq -r '.prerelease' <<<"$published")" = false
+          test "$(jq -r '.tag_name' <<<"$published")" = "$tag"
+          test "$(jq -r '.target_commitish' <<<"$published")" = "$SOURCE_SHA"
+          echo "Published $tag for exact tested SHA $SOURCE_SHA"
