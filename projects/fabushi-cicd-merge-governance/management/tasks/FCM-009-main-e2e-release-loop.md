@@ -100,3 +100,10 @@ Implement Agent rules + canonical post-main delivery workflow, wire exact-SHA ga
 - Two obsolete M3 one-shot workflow files immediately produced failed zero-job push runs (`32679156035`, `32679155565`) on the queue branch.
 - These recovery drivers target historical branch/issue/job identifiers and are not part of current canonical product validation.
 - They are removed so the `ALLGREEN` merge queue evaluates only current reusable gates instead of stale one-shot automation.
+
+## 2026-08-24 — Round 4 deterministic queue entry
+
+- After current-head PR checks were green, native auto-merge could remain armed without creating a `mergeQueueEntry`, leaving protected delivery stuck before merge-group validation.
+- GitHub's explicit `enqueuePullRequest` GraphQL mutation is now used after all required product gates pass.
+- This does not bypass protection: the merge queue still creates the merge-group commit and requires its configured `CI result` under the ALLGREEN policy before merging.
+- Source/provenance: `source/2026-08-24-fcm-009-explicit-merge-queue-enqueue.md`.
