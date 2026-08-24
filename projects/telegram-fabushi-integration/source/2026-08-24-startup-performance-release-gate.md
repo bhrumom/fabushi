@@ -35,3 +35,19 @@ Repair direction:
 - require the performance E2E to prove the native mirror contains the seeded conversation before shutting down, then measure the real full relaunch.
 
 The release gate remains `< 1000 ms` and remains blocking until the canonical-main packaged run records a passing timing artifact.
+
+## Returning-account session persistence blocker — canonical main `197dc768`
+
+The durable projection repair reached canonical `main@197dc768b972974aea3603eae8f80a46df4714a4`. Exact-main Electron run `32683544762` proved the native projection mirror works: after full relaunch the E2E recovered `首屏性能验收` into `localStorage`. The row still disappeared because the deterministic Rust test Feature Host reset `auth_user` on every host process start; the asynchronous `feature.auth.status` poll therefore returned signed-out and replaced Messenger with the login shell.
+
+This is an authentication-fixture persistence defect, not a renderer projection defect. Production already restores the Rust-owned account session locally before remote validation. The deterministic test backend must model the same returning-account lifecycle so packaged E2E exercises the production contract instead of a process-local fake session.
+
+Follow-up requirements:
+
+- when `FeatureHostController::create_with_host_config` runs in test mode with a real runtime data directory, persist only the UI-safe deterministic test user under that data directory;
+- restore that user on the next Host process so `feature.auth.status` remains logged in across a full Electron restart;
+- never persist access tokens, refresh tokens, passwords, or browser polling secrets in this test session file;
+- explicit `feature.auth.logout` must delete the persisted test session and a subsequent Host process must return signed-out;
+- keep the existing process-local `FeatureHostController::create(..., HostMode::Test)` behavior isolated for unit tests that do not provide a durable data directory;
+- the startup E2E must additionally prove the login shell does not replace Messenger after the asynchronous auth retry window;
+- `< 1000 ms` remains the blocking release target and no Release may publish until exact-main packaged evidence passes.

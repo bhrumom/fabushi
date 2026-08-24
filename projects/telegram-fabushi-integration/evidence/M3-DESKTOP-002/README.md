@@ -33,3 +33,11 @@ The task is re-opened from administrative closure to `TESTING` under the newer r
 - Failure mode: the seeded `首屏性能验收` projection existed before shutdown, but `[data-testid^="peer-selfhosted:channel:"]` with that title was absent after full process relaunch.
 - No timing value is accepted from this run because the release-gating row did not become interactive.
 - Follow-up evidence must include durable native projection verification, `startup-performance.json`, exact-main desktop/native success, and the resulting Release tag.
+
+## Exact-main durable-projection / auth-session evidence
+
+- Canonical main SHA: `197dc768b972974aea3603eae8f80a46df4714a4`.
+- Electron desktop quality run: `32683544762`; Host simulated user smoke job `97304464629`.
+- Result: 11/12 E2E passed. The performance case recovered `首屏性能验收` into `localStorage` after full relaunch, proving the native projection mirror worked, then failed because the UI changed to the login shell before the projected peer assertion.
+- Root cause: deterministic Rust test Feature Host `auth_user` was process-local; production's Rust-owned session restore path is already durable.
+- Follow-up must prove persisted test account restore, logout clearing, no credential fields in persisted state, no login-shell replacement after the auth retry window, and then produce the real `< 1000 ms` timing artifact.
