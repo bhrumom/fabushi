@@ -47,14 +47,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -F "github.event.workflow_run.head_sha" .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F "Native mobile result" .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F "run-id: ${{ '${{' }} needs.gate.outputs.electron_run_id }}" .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F "fabushi-delivery-mac.json" .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F "latest-mac.yml" .github/workflows/post-main-delivery.yml >/dev/null
-          grep -F "desktop-update-cloud" .github/scripts/verify-release-updater-ui.mjs >/dev/null
-          grep -F "github.sha" .github/workflows/electron-desktop.yml >/dev/null
-          grep -F "github.sha" .github/workflows/native-mobile.yml >/dev/null
+          grep -F 'github.event.workflow_run.head_sha' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'Native mobile result' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'run-id:' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'needs.gate.outputs.electron_run_id' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'fabushi-delivery-mac.json' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'latest-mac.yml' .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F 'desktop-update-cloud' .github/scripts/verify-release-updater-ui.mjs >/dev/null
+          grep -F 'github.sha' .github/workflows/electron-desktop.yml >/dev/null
+          grep -F 'github.sha' .github/workflows/native-mobile.yml >/dev/null
           echo 'Post-main delivery control-plane invariants are present.'
 
   gate:
