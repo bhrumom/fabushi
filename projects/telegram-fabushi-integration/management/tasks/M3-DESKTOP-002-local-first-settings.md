@@ -9,8 +9,10 @@
 - **Updated**: `2026-08-24`
 - **Branch**: `feat/telegram-local-first-settings`
 - **Source**: `source/2026-08-24-local-first-startup-and-settings.md`
+- **Performance/Release source**: `source/2026-08-24-startup-performance-release-gate.md`
 - **Implementation commit**: `cda0bbc37c7f8b2623384fc5a9c1542aef5fcffa`
 - **PR**: `#2079`
+- **Merge commit**: `01b33d60f7d7d9add41a5fba84d21014094cb5dc`
 
 ## Objective
 
@@ -50,6 +52,8 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 6. Supported toggles persist and affect their real UI behavior; unsupported server capabilities are shown disabled/planned.
 7. GitHub Actions typecheck/product gate and relevant Messenger Playwright coverage pass before completion.
 8. PR merges to protected `main` and canonical-main state is re-read before task is marked complete.
+9. Returning-user cached conversation list first-interactive time is objectively measured in packaged E2E and is `< 1000 ms`.
+10. The exact accepted main SHA completes the post-main packaged E2E → Release → updater proof before final `COMPLETED`.
 
 ## Verification plan
 
@@ -78,14 +82,16 @@ Adopt Telegram Desktop/Unigram's local-first, bounded-initial-load behavior in t
 
 - `git diff --check`: PASS before push.
 - Local application build/test: intentionally NOT RUN per repository disk-safety policy.
-- GitHub Actions: pending on PR #2079.
-- Protected merge + canonical-main verification: pending.
+- GitHub Actions: PASS — CI `32673731408`, Messaging Product Gate `32673731405`, self-hosted messaging `32673731410`, Electron desktop quality gate `32673731418`.
+- Electron renderer `tsc --noEmit && vite build`: PASS in the quality gate.
+- Messenger Playwright: PASS, including the new Telegram Settings + fast-start projection reload test.
+- macOS packaged E2E had one unrelated Mini App flake on the first attempt; the job rerun passed fully.
+- Protected merge queue: PASS — PR #2079 merged as `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
+- Canonical-main verification: PASS — `main` re-read at `01b33d60f7d7d9add41a5fba84d21014094cb5dc`.
 - Evidence index: `evidence/M3-DESKTOP-002/README.md`.
 
-## Blockers
+## Current delivery gate
 
-- Required GitHub Actions / protected-main gates have not completed yet; task remains `TESTING`.
-
-## Next action
-
-Drive PR #2079 through current-head CI, fix any failures, merge through protected `main`, then re-read canonical main and update acceptance/project records before closure.
+- Core implementation PR #2079 is merged and canonical-main readback passed.
+- A new packaged returning-user startup performance E2E now enforces the project `< 1 second` first-interactive target.
+- Final task closure remains pending until this measurement is green on canonical main and the same accepted SHA is published through the post-main Release/updater loop.
