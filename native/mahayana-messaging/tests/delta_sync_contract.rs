@@ -235,14 +235,36 @@ fn initial_snapshot_limit_keeps_complete_navigation_metadata() {
         })
         .expect("sync batch");
 
-    assert_eq!(conversations.len(), 2, "all visible conversation summaries must be present");
-    assert!(conversations.iter().any(|item| item.id == ConversationId::new("chat:direct")));
-    assert!(conversations.iter().any(|item| item.id == ConversationId::new("chat:second")));
-    assert_eq!(actors.len(), 3, "all actors visible through those conversations must be present");
-    assert!(actors.iter().any(|item| item.id == ActorId::new("human:alice")));
-    assert!(actors.iter().any(|item| item.id == ActorId::new("human:bob")));
-    assert!(actors.iter().any(|item| item.id == ActorId::new("human:carol")));
-    assert_eq!(messages.len(), 1, "heavy message payload must still honor the requested limit");
+    assert_eq!(
+        conversations.len(),
+        2,
+        "all visible conversation summaries must be present"
+    );
+    assert!(conversations
+        .iter()
+        .any(|item| item.id == ConversationId::new("chat:direct")));
+    assert!(conversations
+        .iter()
+        .any(|item| item.id == ConversationId::new("chat:second")));
+    assert_eq!(
+        actors.len(),
+        3,
+        "all actors visible through those conversations must be present"
+    );
+    assert!(actors
+        .iter()
+        .any(|item| item.id == ActorId::new("human:alice")));
+    assert!(actors
+        .iter()
+        .any(|item| item.id == ActorId::new("human:bob")));
+    assert!(actors
+        .iter()
+        .any(|item| item.id == ActorId::new("human:carol")));
+    assert_eq!(
+        messages.len(),
+        1,
+        "heavy message payload must still honor the requested limit"
+    );
 }
 
 #[test]
