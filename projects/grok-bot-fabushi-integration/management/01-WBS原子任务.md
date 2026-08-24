@@ -24,8 +24,8 @@
 | GBF-304 | M3 | 统一 session/checkpoint/resume/cancel | GBF-302 | crash/resume/cancel 语义唯一 | fault/recovery integration | evidence/GBF-304 | TESTED | post-main closure records stale | verify canonical main + delivery evidence |
 | GBF-305 | M3 | 统一 local exec | GBF-303 | 无绕过 capability gate 的执行口 | deny-path + code-path audit | evidence/GBF-305 | TESTED | post-main closure records stale | verify canonical main + delivery evidence |
 | GBF-306 | M3 | 统一错误/重试/超时/并发 | GBF-303..305 | 行为确定且可取消 | deterministic integration suite | evidence/GBF-306 | TESTED | post-main closure records stale | verify canonical main + delivery evidence |
-| GBF-307 | M3 | Mahayana provider Router 与就绪诊断 | GBF-106,302,303 | Fabushi/Codex/Claude/OpenRouter 共用单一 runtime/policy | provider contract + integration + packaged E2E | evidence/GBF-307 | IMPLEMENTED | CI/main/post-main pending | 统一提交后运行 Rust/Node/packaged gates |
-| GBF-308 | M3 | routed transcript/MCP/usage 连续性 | GBF-307 | provider 切换不破坏 transcript/tool/usage/approval | transcript + MCP + usage integration | evidence/GBF-308 | IMPLEMENTED | CI/main/post-main pending | 验证 native snapshot + Codex bootstrap + provider usage |
+| GBF-307 | M3 | Mahayana provider Router 与就绪诊断 | GBF-106,302,303 | Fabushi/Codex/Claude/OpenRouter 共用单一 runtime/policy | provider contract + integration + packaged E2E | evidence/GBF-307 | RELEASED | none | GBF-805 final parity closure |
+| GBF-308 | M3 | routed transcript/MCP/usage 连续性 | GBF-307 | provider 切换不破坏 transcript/tool/usage/approval | transcript + MCP + usage integration | evidence/GBF-308 | RELEASED | none | GBF-805 final parity closure |
 | GBF-401 | M4 | 定义 computer-control capability schema | GBF-204,305 | versioned target-bound contract | schema/threat review | evidence/GBF-401 | TESTED | post-main closure records stale | current-main target/replay regression |
 | GBF-402 | M4 | 实现/验证 macOS adapter | GBF-401 | observe/input/window 能力受控 | macOS E2E | evidence/GBF-402 | TESTED | post-main closure records stale | current-main macOS computer E2E |
 | GBF-403 | M4 | 实现/验证 Windows adapter | GBF-401 | observe/input/window 能力受控 | Windows E2E | evidence/GBF-403 | TESTED | post-main closure records stale | current-main Windows computer E2E |
@@ -33,13 +33,13 @@
 | GBF-405 | M4 | 浏览器标签页级控制 | GBF-401 | 控制目标 tab 不干扰其它 tab | browser isolation E2E | evidence/GBF-405 | TESTED | post-main closure records stale | current-main browser isolation E2E |
 | GBF-406 | M4 | 敏感输入一次性安全通道 | GBF-401 | approve/deny/expire/replay 安全 | security E2E | evidence/GBF-406 | TESTED | post-main closure records stale | current-main sensitive-input security E2E |
 | GBF-407 | M4 | computer-control crash/reconnect | GBF-402..406 | 恢复无重复副作用 | fault/idempotency E2E | evidence/GBF-407 | TESTED | post-main closure records stale | current-main reconnect/replay E2E |
-| GBF-408 | M4 | 本地容器执行环境 | GBF-106,401,407 | network-none/owner-labelled/digest-pinned/rebuild-safe | container lifecycle security + packaged E2E | evidence/GBF-408 | IMPLEMENTED | CI/main/post-main pending | GitHub 验证三平台 Docker 降级与工具错误 |
+| GBF-408 | M4 | 本地容器执行环境 | GBF-106,401,407 | network-none/owner-labelled/digest-pinned/rebuild-safe | container lifecycle security + packaged E2E | evidence/GBF-408 | RELEASED | none | GBF-805 final parity closure |
 | GBF-501 | M5 | Grok UI/交互能力盘点 | GBF-103 | UI 能力 100% 有保留/重写/废弃决策 | parity table review + packaged UI contract | evidence/GBF-501 | IN_PROGRESS | current motion/screenshot round pending | merge #2102, inspect packaged visual evidence |
 | GBF-502 | M5 | Fabushi 动态头像语义状态机 | GBF-501 | idle/listening/thinking/tool/speaking/result/error | state contract tests | evidence/GBF-502 | TESTED | post-main closure records stale | consume current runtime states in parity surface |
 | GBF-503 | M5 | 动画 timeline/composition engine | GBF-502 | 可组合可确定渲染 | deterministic animation tests | evidence/GBF-503 | TESTED | parity tuning in progress | Grok state choreography + screenshot tuning |
 | GBF-504 | M5 | 动画性能与无障碍 | GBF-503 | offscreen/reduced-motion/预算可验证 | perf + accessibility tests | evidence/GBF-504 | TESTED | post-main closure records stale | verify current-main motion/energy regression |
 | GBF-505 | M5 | 移除生产 Grok 视觉/runtime 依赖 | GBF-501..504 | production dependency audit clean | dependency/source audit | evidence/GBF-505 | TESTED | final provenance audit pending | keep all parity code Fabushi-owned |
-| GBF-506 | M5 | Router/usage/local sandbox 设置 parity | GBF-106,307,308,408 | 设置布局、持久化、状态和错误反馈与基准等效 | packaged screenshot/video/trace E2E | evidence/GBF-506 | IMPLEMENTED | visual CI/main/post-main pending | 检查 packaged modal screenshot 并统一修正 |
+| GBF-506 | M5 | Router/usage/local sandbox 设置 parity | GBF-106,307,308,408 | 设置布局、持久化、状态和错误反馈与基准等效 | packaged screenshot/video/trace E2E | evidence/GBF-506 | RELEASED | none | GBF-805 final parity closure |
 | GBF-601 | M6 | canonical data model 映射 | GBF-104,302 | 无长期重复会话/tool/permission model | schema review/migration test | evidence/GBF-601 | NOT_STARTED | M3 closure evidence stale | 建 schema map |
 | GBF-602 | M6 | crash/restart 恢复 | GBF-304,601 | 关键状态可恢复且无重复副作用 | fault injection | evidence/GBF-602 | NOT_STARTED | GBF-304/601 | 建恢复矩阵 |
 | GBF-603 | M6 | 统一 correlation/structured logging | GBF-203,303 | renderer->tool 链路可追踪且无秘密 | trace assertions/log audit | evidence/GBF-603 | NOT_STARTED | runtime | 统一 event fields |

@@ -3,12 +3,12 @@
 - Project ID: `FAB-P0004`
 - Project Key: `GBF`
 - Task ID: `GBF-506`
-- Status: `IMPLEMENTED`
+- Status: `RELEASED`
 - Started: `2026-08-24 17:57 +08:00`
-- Updated: `2026-08-24 20:07 +08:00`
-- Completed: —
+- Updated: `2026-08-24 21:56 +08:00`
+- Completed: `2026-08-24 21:56 +08:00`
 - Branch: `codex/gbf-provider-router`
-- Commit / PR: unified PR head / [#2106](https://github.com/bhrumom/fabushi/pull/2106)
+- Commit / PR: unified head `4d8d3a6a...` / [#2106](https://github.com/bhrumom/fabushi/pull/2106) / main `f81588d3...`
 
 ## Objective and scope
 
@@ -27,8 +27,8 @@ The pinned screenshot and observable labels/layout were used as a clean-room vis
 
 ## Implementation and evidence
 
-Added the centered `#191919/#2b2b2b/#292929` modal, exact four-item left navigation, Router forms/status/usage/sandbox panels, Usage & Billing, real update track/check/install controls, and General controls for theme, timezone, local execution ceiling, auto-review, security key and Messenger preferences. Added responsive collapse, focus trap, return-to-previous-surface/backdrop/close/Escape behavior, explicit errors and packaged screenshot attachment. Code-head Host journey `32725104003`, frontend CI `32725104017` and Electron contract `32725103923` passed. A baseline BotMark spring instability discovered by E2E was fixed with bounded integration and true reduced-motion semantics. Exact-main packaged visual acceptance remains pending.
+Added the centered `#191919/#2b2b2b/#292929` modal, exact four-item left navigation, Router forms/status/usage/sandbox panels, Usage & Billing, real update track/check/install controls, and General controls for theme, timezone, local execution ceiling, auto-review, security key and Messenger preferences. Added responsive collapse, focus trap, return-to-previous-surface/backdrop/close/Escape behavior, explicit errors and packaged screenshot attachment. A baseline BotMark spring instability discovered by E2E was fixed with bounded integration and true reduced-motion semantics. Canonical seven-gate `32731980249`, main Electron `32733627050`, native mobile `32733627056` and delivery `32734915241` passed; `desktop-1.0.867` contains the exact-main Windows/macOS/Linux packages and updater assets.
 
 ## Next action
 
-Complete the final unified-head checks, merge, and verify exact-main Windows/macOS/Linux package/E2E/Release evidence before completion.
+None for GBF-506. Broader final visual parity remains tracked by GBF-805.

@@ -7,8 +7,8 @@ Primary dependency provenance: Microsoft `devcontainers/images` (MIT), official 
 | Gate | Evidence | Status |
 |---|---|---|
 | Lightweight local inspection | CJS syntax + diff review only | PASSED |
-| Rust/Node security tests | PR #2106: security `32725103937`, platform `32725103983`, multi-platform contracts `32725103959` | PASSED; final consolidated rerun pending |
-| Windows/macOS/Linux packaged behavior | exact-main workflow/artifacts | PENDING |
-| Release | tag/assets/target SHA | PENDING |
+| Rust/Node security tests | PR #2106 canonical seven-gate `32731980249` | PASSED |
+| Windows/macOS/Linux packaged behavior | exact-main Electron `32733627050`; Windows Docker-ready state and cross-platform fallback behavior verified | PASSED |
+| Release | delivery `32734915241`; `desktop-1.0.867` targets `f81588d3...` | PASSED |
 
-The task remains `IMPLEMENTED`, not completed, until all required gates pass.
+GBF-408 is `RELEASED`.

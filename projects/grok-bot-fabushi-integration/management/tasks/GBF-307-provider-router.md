@@ -3,12 +3,12 @@
 - Project ID: `FAB-P0004`
 - Project Key: `GBF`
 - Task ID: `GBF-307`
-- Status: `IN_PROGRESS`
+- Status: `RELEASED`
 - Started: `2026-08-24 17:57 +08:00`
-- Updated: `2026-08-24 20:07 +08:00`
-- Completed: —
+- Updated: `2026-08-24 21:56 +08:00`
+- Completed: `2026-08-24 21:56 +08:00`
 - Branch: `codex/gbf-provider-router`
-- Commit / PR: unified PR head / [#2106](https://github.com/bhrumom/fabushi/pull/2106)
+- Commit / PR: unified head `4d8d3a6a...` / [#2106](https://github.com/bhrumom/fabushi/pull/2106) / main `f81588d3...`
 
 ## Objective
 
@@ -67,8 +67,10 @@ Add the provider-neutral Router contract and first production vertical slice ide
 
 - Index: `evidence/GBF-307/README.md`.
 - Lightweight local inspection: CJS syntax and diff checks only; no application build/test locally.
-- GitHub PR: #2106. Code-head CI `32725104017`, Host journey `32725104003`, Electron contract `32725103923`, messaging `32725103886`, security `32725103937`, native-mobile `32725103902` and portfolio `32725103915` passed.
-- Rust fast run `32725103949` exposed a no-default-features `Duration` import gate; the unified head removes the incorrect feature guard and awaits the final rerun. Main/package/Release remain pending.
+- GitHub PR: #2106 retained one unified commit; canonical seven-gate run `32731980249` passed against head `4d8d3a6a...`, including Electron `32731991098`, native mobile `32731993782`, CI `32731988653`, Mahayana, messaging, security and computer-control gates.
+- Protected merge queue accepted main SHA `f81588d33c1f10610ed0d0e4b147ae239b72b3a3` after merge-group CI `32733468063`.
+- Exact-main Electron run `32733627050` built and launched Windows/macOS/Linux packages and retained passing Playwright screenshots/video/trace/report; native mobile run `32733627056` passed Android/iOS simulated-user journeys.
+- Post-main delivery `32734915241` published [desktop-1.0.867](https://github.com/bhrumom/fabushi/releases/tag/desktop-1.0.867) targeting the exact main SHA with Windows installer, blockmap and `latest.yml` updater metadata.
 
 ## Risks / blockers
 
@@ -78,4 +80,4 @@ Add the provider-neutral Router contract and first production vertical slice ide
 
 ## Next action
 
-Complete the final unified-head rerun, merge through protected `main`, then collect exact-SHA packaged Windows/macOS/Linux E2E/visual evidence and Release linkage.
+None for GBF-307. Subsequent full-reference parity gaps remain tracked by GBF-805.
