@@ -1,6 +1,14 @@
 name: Post-main E2E Release delivery
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/post-main-delivery.yml'
+      - '.github/workflows/electron-desktop.yml'
+      - '.github/workflows/native-mobile.yml'
+      - '.github/workflows/macos-desktop-e2e.yml'
+      - '.github/scripts/verify-release-updater-ui.mjs'
   workflow_run:
     workflows:
       - Electron desktop quality gate
@@ -10,16 +18,49 @@ on:
 permissions:
   actions: read
   checks: read
-  contents: write
+  contents: read
 
 concurrency:
-  group: post-main-delivery-${{ github.event.workflow_run.head_sha }}
+  group: post-main-delivery-${{ github.event.workflow_run.head_sha || github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  contract:
+    name: Post-main delivery contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout delivery control plane only
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/workflows/post-main-delivery.yml
+            .github/workflows/electron-desktop.yml
+            .github/workflows/native-mobile.yml
+            .github/workflows/macos-desktop-e2e.yml
+            .github/scripts/verify-release-updater-ui.mjs
+      - name: Check updater automation JavaScript syntax
+        run: node --check .github/scripts/verify-release-updater-ui.mjs
+      - name: Require exact-SHA and tested-artifact invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "github.event.workflow_run.head_sha" .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F "Native mobile result" .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F "run-id: ${{ '${{' }} needs.gate.outputs.electron_run_id }}" .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F "fabushi-delivery-mac.json" .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F "latest-mac.yml" .github/workflows/post-main-delivery.yml >/dev/null
+          grep -F "desktop-update-cloud" .github/scripts/verify-release-updater-ui.mjs >/dev/null
+          grep -F "github.sha" .github/workflows/electron-desktop.yml >/dev/null
+          grep -F "github.sha" .github/workflows/native-mobile.yml >/dev/null
+          echo 'Post-main delivery control-plane invariants are present.'
+
   gate:
     name: Require exact-main desktop and mobile E2E
     if: >-
+      github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
@@ -85,8 +126,13 @@ jobs:
   publish:
     name: Publish tested main artifacts to GitHub Release
     needs: gate
+    if: needs.gate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      actions: read
+      checks: read
+      contents: write
     concurrency:
       group: fabushi-desktop-release-publication
       cancel-in-progress: false
@@ -179,12 +225,11 @@ jobs:
         run: |
           set -euo pipefail
           tag="desktop-$VERSION"
-          latest_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '[.[] | select(.tagName | startswith("desktop-")) | select(.isDraft == false and .isPrerelease == false)][0].tagName // ""')"
+          highest_version="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("desktop-"))) | .tagName' | sed 's/^desktop-//' | sort -V | tail -1)"
           make_latest=true
-          if [ -n "$latest_tag" ]; then
-            latest_version="${latest_tag#desktop-}"
-            newest="$(printf '%s\n%s\n' "$latest_version" "$VERSION" | sort -V | tail -1)"
-            if [ "$newest" != "$VERSION" ] || [ "$latest_version" = "$VERSION" ]; then
+          if [ -n "$highest_version" ]; then
+            newest="$(printf '%s\n%s\n' "$highest_version" "$VERSION" | sort -V | tail -1)"
+            if [ "$newest" != "$VERSION" ] || [ "$highest_version" = "$VERSION" ]; then
               make_latest=false
             fi
           fi
