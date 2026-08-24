@@ -6,12 +6,14 @@
 - **Status:** in-progress
 - **Started:** 2026-08-24
 - **Updated:** 2026-08-24
-- **Branch:** `project/fcm-009-main-e2e-release-loop`
+- **Branch:** `project/fcm-009-e2e-evidence`
 - **Supersedes stale setup PR:** #2062 (same objective, older baseline)
 
 ## Objective
 
 建立仓库级持续交付闭环：每个 PR 合并到 `main` 后，立即以跨 run 缓存和同 run 产物复用进行最快安装包构建与真实用户 E2E；全部 required E2E 通过后发布绑定该 `main` SHA 的 GitHub Release，并保持 Electron Release 的版本和 updater 资产可供已安装客户端正常更新。
+
+所有 canonical `main` required E2E 必须同时产出可回溯的视觉与调试证据：详细分步骤截图、覆盖完整测试旅程的操作视频（平台有时长限制时允许分段但必须连续覆盖完整旅程）、trace/action evidence、平台原生测试报告/日志以及精确 SHA/run/platform/version 元数据。成功和失败都必须留证，不能只在失败时保留视频或截图。
 
 “上一版已安装 App 必须发现新版、显示头像旁更新按钮、点击下载/替换/重启”的真实升级旅程不再是默认强制完成门禁；它保留为可选/建议性回归，或在修改 updater 本身的高风险任务中由该任务单独提升为 required gate。
 
@@ -21,6 +23,7 @@
 
 - `source/2026-08-24-main-e2e-release-open-source-first.md`
 - `source/2026-08-24-updater-proof-optional-clarification.md` — latest clarification; supersedes only the previous mandatory old-client updater-proof interpretation.
+- `source/2026-08-24-main-e2e-visual-evidence.md` — every required canonical-main E2E must retain detailed screenshots + complete operation video + trace/report/log evidence for both pass and failure.
 - 历史相关需求：PR fast / post-main heavy、跨运行增量缓存、GitHub Release updater。
 
 ## Existing implementation reused
@@ -51,17 +54,22 @@
 8. `FCM-009.8` Add cache telemetry and warm/cold timing evidence; extend Rust hot path with compiler-result cache where safe.
 9. `FCM-009.9` Optional regression: validate update path from a previous release to the new release in automated macOS E2E. This is non-blocking by default.
 10. `FCM-009.10` Protected PR merge + required main delivery run + Release + canonical-main readback + closure records.
+11. `FCM-009.11` Mandatory visual evidence: every canonical-main required E2E retains detailed step screenshots, complete operation video, trace/action evidence, native reports/logs, and exact-SHA metadata for pass and failure; missing evidence keeps the gate incomplete.
 
 ## Acceptance criteria
 
 - Every merged PR produces a post-main delivery record for its exact SHA; no silent cancellation because a newer commit arrived.
 - Desktop + Android + iOS required simulated-user gates are green before publication.
+- Every required canonical-main E2E run, including successful runs, produces detailed step-labelled screenshots and a complete operation video. Platform recorder duration limits may be handled with sequential video segments only when the full journey remains reconstructable.
+- Electron evidence includes Playwright video + screenshots + trace + HTML/test results; Android includes emulator recording + screenshots + instrumentation results + relevant logcat/debug output; iOS includes Simulator recording + screenshots + `.xcresult` + relevant debug/crash evidence.
+- Evidence artifacts identify the exact canonical `main` SHA, app version, platform, workflow run/job and test/journey, are uploaded even on failure, and target 90-day retention where repository/organization policy permits (otherwise maximum permitted retention is used and recorded).
+- A required E2E assertion pass without its mandatory evidence bundle is not evidentially complete and must not satisfy the post-main closure gate.
 - Failed required E2E blocks Release and leaves the originating task in-progress/blocked/failed.
 - Successful required run publishes installable artifacts to GitHub Release.
 - Published desktop version is greater than the previous published desktop version and updater metadata is from the same build as the binaries.
 - Release keeps updater-compatible assets/versioning. A previous-installed-App discovery/button/download/install/relaunch journey may be run as optional regression evidence, but is not required for ordinary task/Release closure unless that task explicitly promotes it to a required risk gate.
 - Cross-run cache miss clean fallback remains correct; warm small-change runs reuse prior compile/build state.
-- Root `AGENTS.md` explicitly requires open-source-first startup and required post-main build/E2E/Release evidence before task completion, while marking old-client updater journey proof optional by default.
+- Root `AGENTS.md` explicitly requires open-source-first startup, required post-main build/E2E/Release evidence, and mandatory pass/fail visual E2E evidence before task completion, while marking old-client updater journey proof optional by default.
 - FCM-009 is not marked passed until its required work is merged and the new post-main delivery loop succeeds on canonical `main`; optional updater E2E does not block FCM-009 closure.
 
 ## Verification / evidence
@@ -69,7 +77,7 @@
 - GitHub PR / protected checks / merge queue.
 - Main SHA and workflow run IDs.
 - Electron desktop result + Native mobile result.
-- package/E2E artifacts and screenshots/reports.
+- package/E2E artifacts, detailed screenshots, full/segmented operation recordings, traces, reports, logs and exact-SHA metadata.
 - cache hit/miss + duration summaries.
 - GitHub Release tag/assets/target commit.
 - optional macOS previous-release upgrade/update evidence when run.
@@ -83,10 +91,11 @@
 - GitHub-hosted runners are ephemeral; “热重载式” means persisted content-addressed cache and artifact reuse, not an actually persistent runner process.
 - Signing/notarization secrets may block Release even when tests pass; task remains blocked rather than publishing unsigned substitutes.
 - Optional updater-journey coverage can miss a regression between dedicated updater changes; updater-specific tasks should explicitly promote that journey to required when risk warrants it.
+- Always-retained main E2E video increases artifact storage; use platform-native compression/segmentation and bounded retention without weakening replay completeness.
 
 ## Next action
 
-Continue protected-main delivery repair/optimization until required exact-main desktop/native packaged E2E and Release evidence are green; updater journey proof may run independently as optional regression and does not block closure by default.
+Implement the canonical-main visual evidence contract in root `AGENTS.md` and post-main desktop/Android/iOS workflows, then drive the protected PR to `main` and verify that a real canonical-main run retains screenshots/video/trace/report artifacts for both pass/failure paths.
 
 ## 2026-08-24 — Round 2 native shared-host blocker
 
@@ -118,3 +127,11 @@ Continue protected-main delivery repair/optimization until required exact-main d
 - This journey is therefore optional/non-blocking by default. It may still run automatically or manually for regression evidence.
 - Required post-main packaged E2E, Release publication, updater-compatible metadata/assets/versioning, signing/notarization, open-source-first, and warm-build integrity remain unchanged.
 - When a task directly changes updater behavior, that task may explicitly promote the updater journey to a required acceptance gate based on risk.
+
+## 2026-08-24 — Round 6 mandatory visual evidence clarification
+
+- User requires every E2E associated with a change merged into `main` to produce detailed screenshots and operation video for retrospective debugging.
+- Requirement persisted in `source/2026-08-24-main-e2e-visual-evidence.md`.
+- Pass/fail parity is explicit: successful E2E must keep the visual evidence too; failure-only retention is insufficient.
+- Missing required screenshots/video/trace/report evidence means the post-main E2E delivery is incomplete even if assertions passed.
+- Active implementation branch is `project/fcm-009-e2e-evidence` from current `main`.
