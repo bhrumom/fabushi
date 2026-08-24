@@ -65,3 +65,7 @@ The user validated `1.0.798` and reported two remaining UX regressions: the upda
 - release updater E2E fails if a downloading state has no progress UI or if the old app does not close automatically after the single click.
 
 This task now treats the old-client updater journey as required because FCM-011 directly changes updater behavior.
+
+## 2026-08-24 PR #2093 Round 1 CI sparse-checkout blocker
+
+PR #2093 exact-head CI correctly failed the `Electron Feature Host contract` before product tests because `assert-fabushi-desktop-architecture.py` now validates updater artifact naming in `desktop/package.json`, but that job's sparse checkout did not include the file. The repair adds only `desktop/package.json` to the existing contract job checkout; no validation is weakened or skipped.

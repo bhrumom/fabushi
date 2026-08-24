@@ -408,6 +408,7 @@ jobs:
             /desktop/electron/offline-asr.cjs
             /.github/scripts/assert-native-desktop-edge-parity.py
             /desktop/electron/**
+            /desktop/package.json
             /desktop/src/edge/**
             /desktop/src/main.tsx
             /desktop/src/messaging-shell-v2.tsx
