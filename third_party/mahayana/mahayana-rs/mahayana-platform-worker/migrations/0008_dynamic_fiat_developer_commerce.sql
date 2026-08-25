@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS payment_product_catalog (
     description TEXT NOT NULL DEFAULT '',
     product_kind TEXT NOT NULL CHECK(product_kind IN ('digital_consumable','digital_durable','subscription','physical','service')),
     entitlement_capability TEXT NOT NULL,
+    tax_code TEXT,
     subscription_period_seconds INTEGER,
     catalog_status TEXT NOT NULL DEFAULT 'draft' CHECK(catalog_status IN ('draft','pending_sync','active','archived')),
     created_by_user_id TEXT NOT NULL,
@@ -94,8 +95,6 @@ CREATE TABLE IF NOT EXISTS developer_commerce_audit_events (
     created_at INTEGER NOT NULL
 );
 
--- Generic official developer identity. global-dharma is intentionally seeded through
--- the same ownership tables as every third-party Mini App, not through a pay-core special case.
 INSERT OR IGNORE INTO developer_commerce_profiles
     (developer_id, owner_user_id, display_name, status, created_at, updated_at)
 VALUES ('official.fabushi', 'system:official', 'Fabushi Official', 'active', 0, 0);
