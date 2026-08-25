@@ -283,7 +283,18 @@ mod payment_api {
     ) -> Result<Response> {
         require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
         let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-        if !matches!(provider.as_str(), "web" | "merchant") {
+        if !matches!(
+            provider.as_str(),
+            "web"
+                | "merchant"
+                | "stripe_connect"
+                | "adyen_platform"
+                | "paypal_multiparty"
+                | "wechat_platform"
+                | "alipay_platform"
+                | "lianlian_account_plus"
+                | "huifu_dougong"
+        ) {
             return error_response(
                 404,
                 "provider_not_found",
@@ -823,10 +834,22 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
             payment_api::admin_release_settlement,
         )
         .post_async(
-            "/v1/pay/admin/payout-accounts",
-            payment_api::admin_upsert_payout_account,
+            "/v1/pay/admin/settlements/reconcile",
+            payment_api::admin_reconcile_settlement,
         )
-        .post_async("/v1/pay/admin/payouts", payment_api::admin_create_payout)
+        .post_async(
+            "/v1/pay/admin/payout-accounts",
+            payment_api::admin_upsert_payout_account_v2,
+        )
+        .post_async("/v1/pay/admin/payouts", payment_api::admin_create_payout_v2)
+        .post_async(
+            "/v1/pay/admin/payouts/:payout_id/dispatch",
+            payment_api::admin_dispatch_payout,
+        )
+        .post_async(
+            "/v1/pay/admin/payout-routes/:route_id",
+            payment_api::admin_set_payout_route,
+        )
         .get_async(
             "/v1/pay/admin/developers/:developer_id/balance/:currency",
             payment_api::admin_developer_balance,

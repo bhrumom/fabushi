@@ -100,9 +100,7 @@ mod tests {
         assert!(allowed_commerce_proxy_path(
             "/v1/developer/commerce/miniapps/demo/products"
         ));
-        assert!(allowed_commerce_proxy_path(
-            "/v1/developer/commerce/payout"
-        ));
+        assert!(allowed_commerce_proxy_path("/v1/developer/commerce/payout"));
         assert!(allowed_commerce_proxy_path(
             "/v1/developer/commerce/payout/request"
         ));
