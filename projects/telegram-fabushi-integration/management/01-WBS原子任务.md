@@ -51,3 +51,9 @@
 ## 2026-08-24 — M3-DESKTOP-002 returning-session continuation
 
 - `M3-DESKTOP-002` — `TESTING`: durable projection restore is proven on canonical main; deterministic Rust test account persistence is the remaining full-restart blocker. Follow-up persists only UI-safe test identity in configured Host runtime data, deletes it on logout, and adds a post-auth-poll Messenger-stability E2E assertion. `< 1000 ms` exact-main packaged timing and Release remain blocking.
+
+## 2026-08-25 — M8-MARKET-001 Telegram-style Mini Apps marketplace
+
+- `M8-MARKET-001` — `IMPLEMENTED`: M8.T06 app registry 与 M8.T07 developer flow 已落 feature branch；包含 searchable/reviewed marketplace、external-source release metadata、default bot、slash/natural-language routing、BotFather/Mahayana generation workflow 与 HTTP/MCP contracts。
+- 市场后端不托管或代理包；package release 指向 immutable GitHub/HTTPS source，并携带 SHA-256/size 供 Mahayana installer 验证。
+- 完成门禁：current-head GitHub Actions → protected merge → canonical-main readback → exact-main packaged/E2E → strictly newer GitHub Release。
