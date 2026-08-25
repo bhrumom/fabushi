@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS monetization_journals (
   status TEXT NOT NULL DEFAULT 'posted',
   metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
+  CHECK(total_debits_minor = total_credits_minor),
   FOREIGN KEY(event_id) REFERENCES monetization_revenue_events(event_id)
 );
 
