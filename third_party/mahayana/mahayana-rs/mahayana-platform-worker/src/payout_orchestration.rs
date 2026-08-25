@@ -142,13 +142,25 @@ pub async fn admin_reconcile_settlement(
             | "web_marketplace"
             | "other_external_proceeds"
     ) {
-        return error_response(400, "invalid_settlement_source", "unsupported settlement source");
+        return error_response(
+            400,
+            "invalid_settlement_source",
+            "unsupported settlement source",
+        );
     }
     if input.tax_amount < 0 || input.provider_fee_amount < 0 || input.chargeback_amount < 0 {
-        return error_response(400, "invalid_settlement_amount", "settlement deductions must be non-negative");
+        return error_response(
+            400,
+            "invalid_settlement_amount",
+            "settlement deductions must be non-negative",
+        );
     }
     if input.reserve_bps > 10_000 {
-        return error_response(400, "invalid_reserve", "reserve basis points must be between 0 and 10000");
+        return error_response(
+            400,
+            "invalid_reserve",
+            "reserve basis points must be between 0 and 10000",
+        );
     }
     if let Some(reference) = input.provider_settlement_reference.as_deref() {
         validate_identifier(reference)?;
@@ -170,10 +182,18 @@ pub async fn admin_reconcile_settlement(
         return error_response(404, "payment_not_found", "payment intent was not found");
     };
     if !matches!(payment.status.as_str(), "succeeded" | "partially_refunded") {
-        return error_response(409, "settlement_not_allowed", "payment is not settlement eligible");
+        return error_response(
+            409,
+            "settlement_not_allowed",
+            "payment is not settlement eligible",
+        );
     }
     if payment.released_developer_amount != 0 {
-        return error_response(409, "settlement_already_released", "fiat settlement must be reconciled before any developer release");
+        return error_response(
+            409,
+            "settlement_already_released",
+            "fiat settlement must be reconciled before any developer release",
+        );
     }
 
     let gross_after_refunds = payment.amount.saturating_sub(payment.refunded_amount);
@@ -182,7 +202,11 @@ pub async fn admin_reconcile_settlement(
         .saturating_add(input.provider_fee_amount)
         .saturating_add(input.chargeback_amount);
     if deductions > gross_after_refunds {
-        return error_response(400, "settlement_deductions_exceed_receipts", "tax/provider/chargeback deductions exceed remaining gross receipts");
+        return error_response(
+            400,
+            "settlement_deductions_exceed_receipts",
+            "tax/provider/chargeback deductions exceed remaining gross receipts",
+        );
     }
     let net_receipts = gross_after_refunds - deductions;
     let platform_bps = u16::try_from(payment.platform_fee_bps).unwrap_or(10_000);
@@ -194,7 +218,11 @@ pub async fn admin_reconcile_settlement(
     let developer_before_reserve = net_receipts.saturating_sub(desired_platform_fee);
     let developer_adjustment = current_developer_net.saturating_sub(developer_before_reserve);
     if developer_adjustment.saturating_add(platform_fee_reduction) != deductions {
-        return error_response(500, "settlement_invariant_violation", "settlement waterfall is not balanced");
+        return error_response(
+            500,
+            "settlement_invariant_violation",
+            "settlement waterfall is not balanced",
+        );
     }
     let reserve_amount = proportional(developer_before_reserve, input.reserve_bps);
     let developer_payable = developer_before_reserve.saturating_sub(reserve_amount);
@@ -233,21 +261,65 @@ pub async fn admin_reconcile_settlement(
             "INSERT INTO journal_entries (entry_id,reference_type,reference_id,state,created_at) VALUES (?1,'settlement_reconciliation',?2,'draft',?3)",
             &adjustment_entry,&reconciliation_id,now)?);
         if developer_adjustment > 0 {
-            statements.push(journal_line_statement(&database,&format!("{adjustment_entry}:developer"),&adjustment_entry,&pending_account,&payment.currency,-developer_adjustment,now)?);
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{adjustment_entry}:developer"),
+                &adjustment_entry,
+                &pending_account,
+                &payment.currency,
+                -developer_adjustment,
+                now,
+            )?);
         }
         if platform_fee_reduction > 0 {
-            statements.push(journal_line_statement(&database,&format!("{adjustment_entry}:platform"),&adjustment_entry,&platform_account,&payment.currency,-platform_fee_reduction,now)?);
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{adjustment_entry}:platform"),
+                &adjustment_entry,
+                &platform_account,
+                &payment.currency,
+                -platform_fee_reduction,
+                now,
+            )?);
         }
         if input.provider_fee_amount > 0 {
-            statements.push(journal_line_statement(&database,&format!("{adjustment_entry}:provider"),&adjustment_entry,&provider_cost_account,&payment.currency,input.provider_fee_amount,now)?);
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{adjustment_entry}:provider"),
+                &adjustment_entry,
+                &provider_cost_account,
+                &payment.currency,
+                input.provider_fee_amount,
+                now,
+            )?);
         }
         if input.tax_amount > 0 {
-            statements.push(journal_line_statement(&database,&format!("{adjustment_entry}:tax"),&adjustment_entry,&tax_account,&payment.currency,input.tax_amount,now)?);
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{adjustment_entry}:tax"),
+                &adjustment_entry,
+                &tax_account,
+                &payment.currency,
+                input.tax_amount,
+                now,
+            )?);
         }
         if input.chargeback_amount > 0 {
-            statements.push(journal_line_statement(&database,&format!("{adjustment_entry}:chargeback"),&adjustment_entry,&chargeback_account,&payment.currency,input.chargeback_amount,now)?);
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{adjustment_entry}:chargeback"),
+                &adjustment_entry,
+                &chargeback_account,
+                &payment.currency,
+                input.chargeback_amount,
+                now,
+            )?);
         }
-        statements.push(post_balanced_entry_statement(&database,&adjustment_entry,now)?);
+        statements.push(post_balanced_entry_statement(
+            &database,
+            &adjustment_entry,
+            now,
+        )?);
     }
 
     if reserve_amount > 0 {
@@ -255,9 +327,29 @@ pub async fn admin_reconcile_settlement(
         statements.push(worker::query!(&database,
             "INSERT INTO journal_entries (entry_id,reference_type,reference_id,state,created_at) VALUES (?1,'settlement_reserve',?2,'draft',?3)",
             &reserve_entry,&reconciliation_id,now)?);
-        statements.push(journal_line_statement(&database,&format!("{reserve_entry}:pending"),&reserve_entry,&pending_account,&payment.currency,-reserve_amount,now)?);
-        statements.push(journal_line_statement(&database,&format!("{reserve_entry}:reserved"),&reserve_entry,&reserved_account,&payment.currency,reserve_amount,now)?);
-        statements.push(post_balanced_entry_statement(&database,&reserve_entry,now)?);
+        statements.push(journal_line_statement(
+            &database,
+            &format!("{reserve_entry}:pending"),
+            &reserve_entry,
+            &pending_account,
+            &payment.currency,
+            -reserve_amount,
+            now,
+        )?);
+        statements.push(journal_line_statement(
+            &database,
+            &format!("{reserve_entry}:reserved"),
+            &reserve_entry,
+            &reserved_account,
+            &payment.currency,
+            reserve_amount,
+            now,
+        )?);
+        statements.push(post_balanced_entry_statement(
+            &database,
+            &reserve_entry,
+            now,
+        )?);
     }
 
     if developer_payable > 0 {
@@ -267,14 +359,38 @@ pub async fn admin_reconcile_settlement(
         statements.push(worker::query!(&database,
             "INSERT INTO journal_entries (entry_id,reference_type,reference_id,state,created_at) VALUES (?1,'settlement_release',?2,'draft',?3)",
             &release_entry,&release_id,now)?);
-        statements.push(journal_line_statement(&database,&format!("{release_entry}:pending"),&release_entry,&pending_account,&payment.currency,-developer_payable,now)?);
-        statements.push(journal_line_statement(&database,&format!("{release_entry}:available"),&release_entry,&available_account,&payment.currency,developer_payable,now)?);
-        statements.push(post_balanced_entry_statement(&database,&release_entry,now)?);
+        statements.push(journal_line_statement(
+            &database,
+            &format!("{release_entry}:pending"),
+            &release_entry,
+            &pending_account,
+            &payment.currency,
+            -developer_payable,
+            now,
+        )?);
+        statements.push(journal_line_statement(
+            &database,
+            &format!("{release_entry}:available"),
+            &release_entry,
+            &available_account,
+            &payment.currency,
+            developer_payable,
+            now,
+        )?);
+        statements.push(post_balanced_entry_statement(
+            &database,
+            &release_entry,
+            now,
+        )?);
     }
 
-    statements.push(worker::query!(&database,
+    statements.push(worker::query!(
+        &database,
         "UPDATE payment_intents SET released_developer_amount=?1,updated_at=?2 WHERE payment_id=?3",
-        developer_before_reserve,now,&payment.payment_id)?);
+        developer_before_reserve,
+        now,
+        &payment.payment_id
+    )?);
     statements.push(worker::query!(&database,
         "UPDATE developer_settlement_reconciliations SET status='released',updated_at=?1 WHERE reconciliation_id=?2",
         now,&reconciliation_id)?);
@@ -305,31 +421,83 @@ pub async fn admin_upsert_payout_account_v2(
 ) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminPayoutAccountV2Request = request.json().await?;
-    for value in [&input.payout_account_id,&input.developer_id,&input.provider,&input.external_account_reference] {
+    for value in [
+        &input.payout_account_id,
+        &input.developer_id,
+        &input.provider,
+        &input.external_account_reference,
+    ] {
         validate_identifier(value)?;
     }
     if !supported_payout_provider(&input.provider) {
-        return error_response(400,"unsupported_payout_provider","unsupported payout provider");
+        return error_response(
+            400,
+            "unsupported_payout_provider",
+            "unsupported payout provider",
+        );
     }
     if !valid_country_code(&input.country_code) {
-        return error_response(400,"invalid_country","countryCode must be ISO alpha-2 uppercase");
+        return error_response(
+            400,
+            "invalid_country",
+            "countryCode must be ISO alpha-2 uppercase",
+        );
     }
-    if !matches!(input.legal_entity_type.as_str(),"individual"|"individual_business"|"company"|"nonprofit") {
-        return error_response(400,"invalid_legal_entity","unsupported legal entity type");
+    if !matches!(
+        input.legal_entity_type.as_str(),
+        "individual" | "individual_business" | "company" | "nonprofit"
+    ) {
+        return error_response(400, "invalid_legal_entity", "unsupported legal entity type");
     }
-    if !matches!(input.onboarding_state.as_str(),"not_started"|"pending"|"requirements_due"|"verified"|"rejected")
-        || !matches!(input.kyc_status.as_str(),"unverified"|"pending"|"verified"|"restricted"|"rejected") {
-        return error_response(400,"invalid_capability_state","invalid onboarding/KYC state");
+    if !matches!(
+        input.onboarding_state.as_str(),
+        "not_started" | "pending" | "requirements_due" | "verified" | "rejected"
+    ) || !matches!(
+        input.kyc_status.as_str(),
+        "unverified" | "pending" | "verified" | "restricted" | "rejected"
+    ) {
+        return error_response(
+            400,
+            "invalid_capability_state",
+            "invalid onboarding/KYC state",
+        );
     }
-    if input.currencies.is_empty() || input.currencies.iter().any(|currency| !valid_iso_currency(currency)) {
-        return error_response(400,"invalid_currency","at least one ISO currency is required");
+    if input.currencies.is_empty()
+        || input
+            .currencies
+            .iter()
+            .any(|currency| !valid_iso_currency(currency))
+    {
+        return error_response(
+            400,
+            "invalid_currency",
+            "at least one ISO currency is required",
+        );
     }
-    if input.purposes.is_empty() || input.purposes.iter().any(|purpose| !valid_payout_purpose(purpose)) {
-        return error_response(400,"invalid_payout_purpose","at least one supported payout purpose is required");
+    if input.purposes.is_empty()
+        || input
+            .purposes
+            .iter()
+            .any(|purpose| !valid_payout_purpose(purpose))
+    {
+        return error_response(
+            400,
+            "invalid_payout_purpose",
+            "at least one supported payout purpose is required",
+        );
     }
-    let state = if input.onboarding_state == "verified" && input.kyc_status == "verified" && input.payouts_enabled {"active"} else {"pending"};
-    let currencies_json = serde_json::to_string(&input.currencies).map_err(|e| worker::Error::RustError(e.to_string()))?;
-    let purposes_json = serde_json::to_string(&input.purposes).map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let state = if input.onboarding_state == "verified"
+        && input.kyc_status == "verified"
+        && input.payouts_enabled
+    {
+        "active"
+    } else {
+        "pending"
+    };
+    let currencies_json = serde_json::to_string(&input.currencies)
+        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let purposes_json = serde_json::to_string(&input.purposes)
+        .map_err(|e| worker::Error::RustError(e.to_string()))?;
     let metadata_json = input.provider_metadata.to_string();
     let now = now_seconds();
     let database = context.env.d1(DATABASE_BINDING)?;
@@ -339,7 +507,9 @@ pub async fn admin_upsert_payout_account_v2(
          VALUES (?1,?2,?3,?4,?5,?6,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?6)
          ON CONFLICT(payout_account_id) DO UPDATE SET developer_id=excluded.developer_id,provider=excluded.provider,external_account_reference=excluded.external_account_reference,state=excluded.state,country_code=excluded.country_code,legal_entity_type=excluded.legal_entity_type,onboarding_state=excluded.onboarding_state,kyc_status=excluded.kyc_status,payouts_enabled=excluded.payouts_enabled,currencies_json=excluded.currencies_json,purposes_json=excluded.purposes_json,provider_metadata_json=excluded.provider_metadata_json,is_default=excluded.is_default,last_capability_sync_at=excluded.last_capability_sync_at,updated_at=excluded.updated_at",
         &input.payout_account_id,&input.developer_id,&input.provider,&input.external_account_reference,state,now,&input.country_code,&input.legal_entity_type,&input.onboarding_state,&input.kyc_status,if input.payouts_enabled {1} else {0},&currencies_json,&purposes_json,&metadata_json,if input.is_default {1} else {0})?.run().await?;
-    Response::from_json(&json!({"ok":true,"payoutAccountId":input.payout_account_id,"state":state,"kycStatus":input.kyc_status,"payoutsEnabled":input.payouts_enabled}))
+    Response::from_json(
+        &json!({"ok":true,"payoutAccountId":input.payout_account_id,"state":state,"kycStatus":input.kyc_status,"payoutsEnabled":input.payouts_enabled}),
+    )
 }
 
 pub async fn admin_set_payout_route(
@@ -347,14 +517,27 @@ pub async fn admin_set_payout_route(
     context: RouteContext<()>,
 ) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
-    let route_id = route_identifier(&context,"route_id")?;
+    let route_id = route_identifier(&context, "route_id")?;
     let input: AdminPayoutRouteStateRequest = request.json().await?;
-    if !matches!(input.state.as_str(),"active"|"suspended"|"disabled"|"pending_configuration") {
-        return error_response(400,"invalid_route_state","unsupported payout route state");
+    if !matches!(
+        input.state.as_str(),
+        "active" | "suspended" | "disabled" | "pending_configuration"
+    ) {
+        return error_response(400, "invalid_route_state", "unsupported payout route state");
     }
-    let database=context.env.d1(DATABASE_BINDING)?;
-    let result=worker::query!(&database,"UPDATE payout_provider_routes SET state=?1,updated_at=?2 WHERE route_id=?3",&input.state,now_seconds(),route_id)?.run().await?;
-    if d1_changes(&result)==0 { return error_response(404,"route_not_found","payout route was not found"); }
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let result = worker::query!(
+        &database,
+        "UPDATE payout_provider_routes SET state=?1,updated_at=?2 WHERE route_id=?3",
+        &input.state,
+        now_seconds(),
+        route_id
+    )?
+    .run()
+    .await?;
+    if d1_changes(&result) == 0 {
+        return error_response(404, "route_not_found", "payout route was not found");
+    }
     Response::from_json(&json!({"ok":true,"routeId":route_id,"state":input.state}))
 }
 
@@ -364,12 +547,33 @@ pub async fn admin_create_payout_v2(
 ) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminPayoutRequest = request.json().await?;
-    for value in [&input.idempotency_key,&input.developer_id,&input.payout_account_id,&input.currency] { validate_identifier(value)?; }
-    if input.amount<=0 || !valid_iso_currency(&input.currency) { return error_response(400,"invalid_payout","positive amount and ISO currency are required"); }
-    let database=context.env.d1(DATABASE_BINDING)?;
-    if let Some(existing)=payout_by_idempotency(&database,&input.idempotency_key).await? {
-        if existing.developer_id!=input.developer_id || existing.payout_account_id!=input.payout_account_id || existing.currency!=input.currency || existing.amount!=input.amount {
-            return error_response(409,"idempotency_conflict","payout idempotency key was reused with different semantics");
+    for value in [
+        &input.idempotency_key,
+        &input.developer_id,
+        &input.payout_account_id,
+        &input.currency,
+    ] {
+        validate_identifier(value)?;
+    }
+    if input.amount <= 0 || !valid_iso_currency(&input.currency) {
+        return error_response(
+            400,
+            "invalid_payout",
+            "positive amount and ISO currency are required",
+        );
+    }
+    let database = context.env.d1(DATABASE_BINDING)?;
+    if let Some(existing) = payout_by_idempotency(&database, &input.idempotency_key).await? {
+        if existing.developer_id != input.developer_id
+            || existing.payout_account_id != input.payout_account_id
+            || existing.currency != input.currency
+            || existing.amount != input.amount
+        {
+            return error_response(
+                409,
+                "idempotency_conflict",
+                "payout idempotency key was reused with different semantics",
+            );
         }
         return Response::from_json(&json!({"payout":existing,"duplicate":true}));
     }
@@ -377,24 +581,65 @@ pub async fn admin_create_payout_v2(
         "SELECT payout_account_id,developer_id,provider,external_account_reference,country_code,state,onboarding_state,kyc_status,payouts_enabled,currencies_json,purposes_json FROM developer_payout_accounts WHERE payout_account_id=?1 AND developer_id=?2 LIMIT 1",
         &input.payout_account_id,&input.developer_id)?.first::<PayoutCapabilityRowV2>(None).await?
         .ok_or_else(||worker::Error::RustError("payout account was not found".into()))?;
-    let currencies:Vec<String>=serde_json::from_str(&account.currencies_json).map_err(|_|worker::Error::RustError("invalid payout currency capabilities".into()))?;
-    let purposes:Vec<String>=serde_json::from_str(&account.purposes_json).map_err(|_|worker::Error::RustError("invalid payout purpose capabilities".into()))?;
-    if account.state!="active" || account.onboarding_state!="verified" || account.kyc_status!="verified" || account.payouts_enabled!=1 || !currencies.iter().any(|v|v==&input.currency) || !purposes.iter().any(|v|v=="marketplace_payout") {
-        return error_response(409,"payout_account_unavailable","payout account is not verified/enabled for this currency and purpose");
+    let currencies: Vec<String> = serde_json::from_str(&account.currencies_json)
+        .map_err(|_| worker::Error::RustError("invalid payout currency capabilities".into()))?;
+    let purposes: Vec<String> = serde_json::from_str(&account.purposes_json)
+        .map_err(|_| worker::Error::RustError("invalid payout purpose capabilities".into()))?;
+    if account.state != "active"
+        || account.onboarding_state != "verified"
+        || account.kyc_status != "verified"
+        || account.payouts_enabled != 1
+        || !currencies.iter().any(|v| v == &input.currency)
+        || !purposes.iter().any(|v| v == "marketplace_payout")
+    {
+        return error_response(
+            409,
+            "payout_account_unavailable",
+            "payout account is not verified/enabled for this currency and purpose",
+        );
     }
-    let region=if account.country_code=="CN" {"CN"} else {"GLOBAL"};
+    let region = if account.country_code == "CN" {
+        "CN"
+    } else {
+        "GLOBAL"
+    };
     let route=worker::query!(&database,
         "SELECT route_id FROM payout_provider_routes WHERE region_code=?1 AND purpose='marketplace_payout' AND provider=?2 AND state='active' LIMIT 1",
         region,&account.provider)?.first::<Value>(None).await?;
-    if route.is_none() { return error_response(503,"payout_route_unavailable","provider route is not active for this region"); }
-    let available_account=developer_available_account(&input.developer_id,&input.currency);
-    if wallet_balance(&database,&available_account).await?<input.amount { return error_response(409,"insufficient_developer_balance","developer available balance is insufficient"); }
-    let payout_id=uuid::Uuid::new_v4().to_string();
-    let attempt_id=uuid::Uuid::new_v4().to_string();
-    let clearing_account=format!("payout-clearing:{}:{}",input.payout_account_id,input.currency);
-    let entry_id=format!("payout:{payout_id}");
-    let now=now_seconds();
-    let fingerprint=sha256_hex(format!("{}:{}:{}:{}:{}",input.developer_id,input.payout_account_id,input.currency,input.amount,input.idempotency_key).as_bytes());
+    if route.is_none() {
+        return error_response(
+            503,
+            "payout_route_unavailable",
+            "provider route is not active for this region",
+        );
+    }
+    let available_account = developer_available_account(&input.developer_id, &input.currency);
+    if wallet_balance(&database, &available_account).await? < input.amount {
+        return error_response(
+            409,
+            "insufficient_developer_balance",
+            "developer available balance is insufficient",
+        );
+    }
+    let payout_id = uuid::Uuid::new_v4().to_string();
+    let attempt_id = uuid::Uuid::new_v4().to_string();
+    let clearing_account = format!(
+        "payout-clearing:{}:{}",
+        input.payout_account_id, input.currency
+    );
+    let entry_id = format!("payout:{payout_id}");
+    let now = now_seconds();
+    let fingerprint = sha256_hex(
+        format!(
+            "{}:{}:{}:{}:{}",
+            input.developer_id,
+            input.payout_account_id,
+            input.currency,
+            input.amount,
+            input.idempotency_key
+        )
+        .as_bytes(),
+    );
     database.batch(vec![
         wallet_account_statement(&database,&available_account,"developer",&format!("{}:available",input.developer_id),&input.currency,now)?,
         wallet_account_statement(&database,&clearing_account,"platform",&format!("payout-clearing:{}",input.payout_account_id),&input.currency,now)?,
@@ -405,50 +650,92 @@ pub async fn admin_create_payout_v2(
         post_balanced_entry_statement(&database,&entry_id,now)?,
         worker::query!(&database,"INSERT INTO developer_payout_attempts (attempt_id,payout_id,provider,idempotency_key,state,request_fingerprint,created_at,updated_at) SELECT ?1,?2,?3,?4,'created',?5,?6,?6 FROM developer_payouts WHERE payout_id=?2",&attempt_id,&payout_id,&account.provider,&format!("dispatch:{}",input.idempotency_key),&fingerprint,now)?,
     ]).await?;
-    let Some(payout)=payout_by_idempotency(&database,&input.idempotency_key).await? else { return error_response(409,"insufficient_developer_balance","developer balance changed before payout reservation"); };
-    Response::from_json(&json!({"payout":payout,"attemptId":attempt_id,"provider":account.provider,"state":"created"}))
+    let Some(payout) = payout_by_idempotency(&database, &input.idempotency_key).await? else {
+        return error_response(
+            409,
+            "insufficient_developer_balance",
+            "developer balance changed before payout reservation",
+        );
+    };
+    Response::from_json(
+        &json!({"payout":payout,"attemptId":attempt_id,"provider":account.provider,"state":"created"}),
+    )
 }
 
 pub async fn admin_dispatch_payout(
     request: Request,
     context: RouteContext<()>,
 ) -> Result<Response> {
-    require_bearer_secret(&request,&context.env,"FABUSHI_PAY_ADMIN_TOKEN")?;
-    let payout_id=route_identifier(&context,"payout_id")?;
-    let database=context.env.d1(DATABASE_BINDING)?;
+    require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
+    let payout_id = route_identifier(&context, "payout_id")?;
+    let database = context.env.d1(DATABASE_BINDING)?;
     let payout=worker::query!(&database,
         "SELECT p.payout_id,p.idempotency_key,p.developer_id,p.payout_account_id,p.currency,p.amount,p.status,a.provider,a.external_account_reference FROM developer_payouts p JOIN developer_payout_accounts a ON a.payout_account_id=p.payout_account_id WHERE p.payout_id=?1 LIMIT 1",payout_id)?.first::<PayoutDispatchRow>(None).await?
         .ok_or_else(||worker::Error::RustError("payout not found".into()))?;
-    if !matches!(payout.status.as_str(),"pending"|"processing") { return error_response(409,"payout_not_dispatchable","payout is not dispatchable"); }
+    if !matches!(payout.status.as_str(), "pending" | "processing") {
+        return error_response(409, "payout_not_dispatchable", "payout is not dispatchable");
+    }
     let attempt=worker::query!(&database,"SELECT attempt_id,state FROM developer_payout_attempts WHERE payout_id=?1 ORDER BY created_at DESC LIMIT 1",payout_id)?.first::<PayoutAttemptStateRow>(None).await?
         .ok_or_else(||worker::Error::RustError("payout attempt not found".into()))?;
-    if matches!(attempt.state.as_str(),"submitted"|"processing"|"paid") { return Response::from_json(&json!({"ok":true,"payoutId":payout_id,"state":attempt.state,"duplicate":true})); }
-    let env_name=payout_executor_env(&payout.provider).ok_or_else(||worker::Error::RustError("unsupported payout provider".into()))?;
-    let executor_url=match context.env.var(env_name) { Ok(v)=>v.to_string(), Err(_)=>{
-        worker::query!(&database,"UPDATE developer_payout_attempts SET state='configuration_required',last_error='executor URL is not configured',updated_at=?1 WHERE attempt_id=?2",now_seconds(),&attempt.attempt_id)?.run().await?;
-        return error_response(503,"payout_provider_not_configured","payout provider executor is not configured");
-    }};
-    if !executor_url.starts_with("https://") || executor_url.contains(char::is_whitespace) { return error_response(500,"invalid_executor_url","payout executor URL must be HTTPS"); }
-    let token=context.env.secret("PAYOUT_PROVIDER_EXECUTOR_TOKEN")?.to_string();
-    let body=json!({"payoutId":payout.payout_id,"idempotencyKey":payout.idempotency_key,"developerId":payout.developer_id,"payoutAccountId":payout.payout_account_id,"externalAccountReference":payout.external_account_reference,"currency":payout.currency,"amount":payout.amount,"provider":payout.provider});
-    let headers=Headers::new();
-    headers.set("Authorization",&format!("Bearer {token}"))?;
-    headers.set("Content-Type","application/json")?;
-    let mut init=RequestInit::new();
-    init.with_method(Method::Post).with_headers(headers).with_body(Some(JsValue::from_str(&body.to_string())));
-    let outbound=Request::new_with_init(&executor_url,&init)?;
-    let mut response=Fetch::Request(outbound).send().await?;
-    let status=response.status_code();
-    let bytes=response.bytes().await?;
-    if !(200..300).contains(&status) {
-        let error=String::from_utf8_lossy(&bytes).chars().take(500).collect::<String>();
-        worker::query!(&database,"UPDATE developer_payout_attempts SET state='failed',response_code=?1,last_error=?2,updated_at=?3 WHERE attempt_id=?4",status.to_string(),&error,now_seconds(),&attempt.attempt_id)?.run().await?;
-        reverse_failed_payout(&database,payout_id,now_seconds()).await?;
-        return error_response(502,"payout_dispatch_failed","provider executor rejected payout");
+    if matches!(attempt.state.as_str(), "submitted" | "processing" | "paid") {
+        return Response::from_json(
+            &json!({"ok":true,"payoutId":payout_id,"state":attempt.state,"duplicate":true}),
+        );
     }
-    let payload:Value=serde_json::from_slice(&bytes).unwrap_or_else(|_|json!({}));
-    let provider_reference=payload.get("providerReference").and_then(Value::as_str);
+    let env_name = payout_executor_env(&payout.provider)
+        .ok_or_else(|| worker::Error::RustError("unsupported payout provider".into()))?;
+    let executor_url = match context.env.var(env_name) {
+        Ok(v) => v.to_string(),
+        Err(_) => {
+            worker::query!(&database,"UPDATE developer_payout_attempts SET state='configuration_required',last_error='executor URL is not configured',updated_at=?1 WHERE attempt_id=?2",now_seconds(),&attempt.attempt_id)?.run().await?;
+            return error_response(
+                503,
+                "payout_provider_not_configured",
+                "payout provider executor is not configured",
+            );
+        }
+    };
+    if !executor_url.starts_with("https://") || executor_url.contains(char::is_whitespace) {
+        return error_response(
+            500,
+            "invalid_executor_url",
+            "payout executor URL must be HTTPS",
+        );
+    }
+    let token = context
+        .env
+        .secret("PAYOUT_PROVIDER_EXECUTOR_TOKEN")?
+        .to_string();
+    let body = json!({"payoutId":payout.payout_id,"idempotencyKey":payout.idempotency_key,"developerId":payout.developer_id,"payoutAccountId":payout.payout_account_id,"externalAccountReference":payout.external_account_reference,"currency":payout.currency,"amount":payout.amount,"provider":payout.provider});
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {token}"))?;
+    headers.set("Content-Type", "application/json")?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post)
+        .with_headers(headers)
+        .with_body(Some(JsValue::from_str(&body.to_string())));
+    let outbound = Request::new_with_init(&executor_url, &init)?;
+    let mut response = Fetch::Request(outbound).send().await?;
+    let status = response.status_code();
+    let bytes = response.bytes().await?;
+    if !(200..300).contains(&status) {
+        let error = String::from_utf8_lossy(&bytes)
+            .chars()
+            .take(500)
+            .collect::<String>();
+        worker::query!(&database,"UPDATE developer_payout_attempts SET state='failed',response_code=?1,last_error=?2,updated_at=?3 WHERE attempt_id=?4",status.to_string(),&error,now_seconds(),&attempt.attempt_id)?.run().await?;
+        reverse_failed_payout(&database, payout_id, now_seconds()).await?;
+        return error_response(
+            502,
+            "payout_dispatch_failed",
+            "provider executor rejected payout",
+        );
+    }
+    let payload: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
+    let provider_reference = payload.get("providerReference").and_then(Value::as_str);
     worker::query!(&database,"UPDATE developer_payout_attempts SET state='submitted',provider_reference=?1,response_code=?2,last_error=NULL,updated_at=?3 WHERE attempt_id=?4",provider_reference,status.to_string(),now_seconds(),&attempt.attempt_id)?.run().await?;
     worker::query!(&database,"UPDATE developer_payouts SET status='processing',provider_reference=COALESCE(?1,provider_reference),updated_at=?2 WHERE payout_id=?3 AND status='pending'",provider_reference,now_seconds(),payout_id)?.run().await?;
-    Response::from_json(&json!({"ok":true,"payoutId":payout_id,"provider":payout.provider,"providerReference":provider_reference,"status":"processing"}))
+    Response::from_json(
+        &json!({"ok":true,"payoutId":payout_id,"provider":payout.provider,"providerReference":provider_reference,"status":"processing"}),
+    )
 }

@@ -558,7 +558,7 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
 pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
     let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-    if !matches!(provider.as_str(), "web" | "merchant") {
+    if !matches!(provider.as_str(), "web" | "merchant" | "stripe_connect" | "adyen_platform" | "paypal_multiparty" | "wechat_platform" | "alipay_platform" | "lianlian_account_plus" | "huifu_dougong") {
         return error_response(
             404,
             "provider_not_found",
@@ -619,6 +619,14 @@ pub async fn admin_release_settlement(
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let input: AdminSettlementRequest = request.json().await?;
     validate_identifier(&input.payment_id)?;
+    if input.payment_id.len() > 0 {
+        let database = context.env.d1(DATABASE_BINDING)?;
+        if let Some(payment) = payment_by_id(&database, &input.payment_id).await? {
+            if payment.currency != CREDITS_CURRENCY {
+                return error_response(409, "reconciliation_required", "fiat developer settlement must use the reconciliation waterfall");
+            }
+        }
+    }
     validate_identifier(&input.idempotency_key)?;
     let reserve_bps = input.reserve_bps.unwrap_or(0);
     if reserve_bps > 10_000 {
@@ -1607,6 +1615,8 @@ fn developer_pending_account(developer_id: &str, currency: &str) -> String {
 fn developer_available_account(developer_id: &str, currency: &str) -> String {
     format!("developer-available:{developer_id}:{currency}")
 }
+
+include!("payout_orchestration.rs");
 
 fn normalize_rail(value: &str) -> Result<&'static str> {
     match value.trim() {
