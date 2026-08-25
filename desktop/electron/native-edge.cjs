@@ -169,6 +169,7 @@ const methods = {
   getDeveloperPayoutOverview: { args: 'none' },
   upsertDeveloperPayoutProfile: { args: 'object' },
   requestDeveloperPayout: { args: 'object' },
+  createDeveloperPayoutOnboarding: { args: 'object' },
   devRestart: { args: 'none' },
   getProductionComputeAttachmentStatus: { args: 'none' },
   setProductionComputeAttachmentEnabled: { args: 'object' },
