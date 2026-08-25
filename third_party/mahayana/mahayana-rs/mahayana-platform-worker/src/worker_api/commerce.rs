@@ -1,7 +1,7 @@
+use super::*;
 use crate::capability_access::{
     EntitlementAccessInput, active_purchase_rails, evaluate_entitlement_access,
 };
-use super::*;
 
 pub(super) async fn wallet_balance(
     request: Request,
