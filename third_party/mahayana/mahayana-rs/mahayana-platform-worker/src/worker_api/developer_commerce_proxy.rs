@@ -76,7 +76,9 @@ pub async fn developer_commerce_proxy(
     } else {
         let bytes = request.bytes().await?;
         Some(String::from_utf8(bytes).map_err(|_| {
-            worker::Error::RustError("Developer Commerce proxy accepts UTF-8 request bodies only".into())
+            worker::Error::RustError(
+                "Developer Commerce proxy accepts UTF-8 request bodies only".into(),
+            )
         })?)
     };
     let mut init = RequestInit::new();
