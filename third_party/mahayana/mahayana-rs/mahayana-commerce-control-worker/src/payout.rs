@@ -180,18 +180,22 @@ pub fn preferred_providers(
         (SettlementRegion::MainlandChina, SettlementSource::WebMarketplace) => {
             &[LianlianAccountPlus, HuifuDougong]
         }
-        (SettlementRegion::Global, SettlementSource::WebMarketplace) => {
-            &[StripeConnect, AdyenPlatform, PaypalMultiparty, PaypalPayouts]
-        }
+        (SettlementRegion::Global, SettlementSource::WebMarketplace) => &[
+            StripeConnect,
+            AdyenPlatform,
+            PaypalMultiparty,
+            PaypalPayouts,
+        ],
         (
             SettlementRegion::Global,
             SettlementSource::AppleStoreProceeds
             | SettlementSource::GoogleStoreProceeds
             | SettlementSource::OtherExternalProceeds,
         ) => &[StripeConnect, AdyenPlatform, PaypalPayouts],
-        (SettlementRegion::Global, SettlementSource::WechatOrder | SettlementSource::AlipayOrder) => {
-            &[StripeConnect, AdyenPlatform, PaypalPayouts]
-        }
+        (
+            SettlementRegion::Global,
+            SettlementSource::WechatOrder | SettlementSource::AlipayOrder,
+        ) => &[StripeConnect, AdyenPlatform, PaypalPayouts],
     }
 }
 
