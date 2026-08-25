@@ -12,6 +12,8 @@ Make the official Global Dharma local prayer-wheel capability a canonical Fabush
 
 ## Atomic acceptance tasks
 
+### Round A — canonical access truth (#2135)
+
 - [x] Reuse canonical Rust Fabushi Pay and `PLATFORM_DB`; no second ledger.
 - [x] Reuse #2133 dynamic fiat Product/Price/provider binding instead of creating a parallel catalog.
 - [x] Add forward-only migration from legacy `local-prayer-wheel` to exact `local.prayer-wheel.start` capability.
@@ -21,13 +23,21 @@ Make the official Global Dharma local prayer-wheel capability a canonical Fabush
 - [x] Hide Apple/Google from active rails until provider bindings are active.
 - [x] Add static contract coverage for SKU/price/capability/provider invariants.
 - [ ] Compile/test through protected PR CI.
-- [ ] Wire the narrow authenticated user Pay proxy into the Platform Router.
+- [ ] Merge through protected `main`, then re-read canonical main SHA.
+
+### Round B — Host enforcement and checkout
+
+- [ ] Wire the narrow authenticated user Pay proxy into the Platform Router without exposing admin/provider routes.
 - [ ] Wire desktop Mini App Host access check + createIntent/openCheckout to the native authenticated bridge.
 - [ ] Gate Global Dharma `hostRequest` before any local prayer-wheel execution/staging.
 - [ ] Add desktop E2E: no entitlement -> purchase required -> checkout action; valid entitlement -> host request allowed.
 - [ ] Verify refund/cancel/expiry removes access in E2E/contract path.
-- [ ] Merge through protected `main`, then re-read canonical main SHA.
-- [ ] Apply production platform/payment migrations/deploy for the exact verified main SHA and run health/smoke/reconciliation.
+- [ ] Extend the same canonical access contract to native mobile host execution paths.
+
+### Round C — production delivery
+
+- [ ] Apply production platform/payment migrations/deploy for the exact verified main SHA.
+- [ ] Run production health/smoke/reconciliation and record evidence.
 
 ## External production dependencies
 
@@ -44,10 +54,9 @@ Until those provider-side facts exist, the corresponding rail must remain unavai
 
 - #2132 merged canonical Monetization convergence into main.
 - #2133 merged dynamic fiat commerce and Global Dharma product seed into main.
-- Branch: `feat/m9-global-dharma-paid-capability-v2`.
-- Core files:
+- Round A PR: #2135 from `feat/m9-global-dharma-paid-capability-v2`.
+- Core Round A files:
   - `migrations/0013_global_dharma_paid_capability_gate.sql`
   - `src/capability_access.rs`
   - `src/worker_api/commerce.rs`
-  - `src/worker_api/payment_proxy.rs`
   - `fabushi/web/tests/global-dharma-paid-capability.test.js`
