@@ -331,6 +331,7 @@ pub async fn checkout_action(request: Request, context: RouteContext<()>) -> Res
             "kind": "appleInAppPurchase",
             "productId": payment.provider_product_ref,
             "verifyPath": format!("/v1/pay/intents/{}/apple/verify", payment.payment_id),
+            "advancedCommercePath": format!("/v1/pay/intents/{}/apple/advanced-commerce", payment.payment_id),
         }),
         "google_play_billing" => json!({
             "kind": "googlePlayBilling",

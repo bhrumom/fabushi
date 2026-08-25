@@ -70,6 +70,12 @@ struct ProductRow {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+struct PayRailConfigRow {
+    allowed_rails_json: String,
+    provider_product_refs_json: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct AppleIntentRow {
     payment_id: String,
     user_id: String,
@@ -279,6 +285,9 @@ fn pay_rails_json(plans: &[ProviderBindingPlan]) -> Result<(String, String)> {
     let mut rails = Vec::new();
     let mut refs = serde_json::Map::new();
     for p in plans {
+        if p.sync_state != "active" {
+            continue;
+        }
         let rail = match p.provider.as_str() {
             "apple_advanced_commerce" => "apple_in_app_purchase",
             "google_play" => "google_play_billing",
@@ -472,6 +481,58 @@ async fn google_token(env: &Env) -> Result<String> {
     Ok(token.access_token)
 }
 
+async fn activate_google_pay_rail(
+    env: &Env,
+    product_id: &str,
+    external_product_ref: &str,
+    metadata: &str,
+    synced_at: i64,
+) -> Result<()> {
+    let db = env.d1(DB)?;
+    let row = worker::query!(
+        &db,
+        "SELECT allowed_rails_json, provider_product_refs_json FROM payment_product_config WHERE product_id=?1 LIMIT 1",
+        product_id
+    )?
+    .first::<PayRailConfigRow>(None)
+    .await?
+    .ok_or_else(|| worker::Error::RustError("payment product config not found".into()))?;
+    let mut rails: Vec<String> = serde_json::from_str(&row.allowed_rails_json)
+        .map_err(|_| worker::Error::RustError("invalid allowed rails configuration".into()))?;
+    let mut refs: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(&row.provider_product_refs_json)
+            .map_err(|_| worker::Error::RustError("invalid provider product references".into()))?;
+    if !rails.iter().any(|rail| rail == "google_play_billing") {
+        rails.push("google_play_billing".into());
+    }
+    refs.insert(
+        "google_play_billing".into(),
+        external_product_ref.to_string(),
+    );
+    let rails_json =
+        serde_json::to_string(&rails).map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let refs_json =
+        serde_json::to_string(&refs).map_err(|e| worker::Error::RustError(e.to_string()))?;
+
+    // Fail closed: make the provider binding active first, and only then expose the
+    // rail to PaymentIntent creation. If the second statement fails, pay core stays blocked.
+    worker::query!(
+        &db,
+        "UPDATE payment_provider_bindings SET sync_state='active',external_product_ref=?1,metadata_json=?2,last_error=NULL,last_synced_at=?3,updated_at=?3 WHERE product_id=?4 AND provider='google_play'",
+        external_product_ref, metadata, synced_at, product_id
+    )?
+    .run()
+    .await?;
+    worker::query!(
+        &db,
+        "UPDATE payment_product_config SET allowed_rails_json=?1,provider_product_refs_json=?2,updated_at=?3 WHERE product_id=?4",
+        &rails_json, &refs_json, synced_at, product_id
+    )?
+    .run()
+    .await?;
+    Ok(())
+}
+
 async fn send_google_json(
     method: Method,
     url: &str,
@@ -566,7 +627,7 @@ async fn sync_google(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         "convertedRegionCount": converted.converted_region_prices.len(),
     })
     .to_string();
-    worker::query!(&ctx.env.d1(DB)?,"UPDATE payment_provider_bindings SET sync_state='active',external_product_ref=?1,metadata_json=?2,last_error=NULL,last_synced_at=?3,updated_at=?3 WHERE product_id=?4 AND provider='google_play'",&external,&metadata,t,product_id)?.run().await?;
+    activate_google_pay_rail(&ctx.env, product_id, &external, &metadata, t).await?;
     Response::from_json(&json!({
         "ok": true,
         "provider": "google_play",
