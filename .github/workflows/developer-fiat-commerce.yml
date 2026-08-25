@@ -9,8 +9,10 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -18,7 +20,8 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
@@ -35,18 +38,23 @@ jobs:
         with:
           ref: feat/fab-p0001-dynamic-fiat-commerce
       - uses: dtolnay/rust-toolchain@stable
-      - name: Apply rustfmt once on the feature branch
-        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
-        run: cargo fmt
-      - name: Commit formatting if needed
+      - name: Apply deterministic platform proxy patch
+        run: node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
+      - name: Apply rustfmt
+        run: |
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
+      - name: Commit generated integration if needed
         run: |
           if git diff --quiet; then
             exit 0
           fi
           git config user.name 'fabushi-ci'
           git config user.email 'actions@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
-          git commit -m 'style(pay): rustfmt commerce control worker'
+          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs
+          git commit -m 'style(pay): integrate and format developer commerce'
           git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
 
   control-plane-unit:
@@ -71,6 +79,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - run: cargo check --target wasm32-unknown-unknown
+
+  platform-worker-wasm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+      - run: cargo fmt --check
 
   schema-contract:
     runs-on: ubuntu-latest
@@ -107,4 +128,7 @@ jobs:
           assert 'owner_user_id' not in block
           assert 'platform_fee_bps' not in block
           assert 'currency' in block and 'amount' in block
+          proxy = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
+          assert '/v1/pay/admin/products' in proxy
+          assert 'assert!(!allowed_commerce_proxy_path' in proxy
           PY
