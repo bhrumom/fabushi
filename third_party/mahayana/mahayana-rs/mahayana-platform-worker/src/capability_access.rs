@@ -29,9 +29,10 @@ pub(crate) fn evaluate_entitlement_access(
     }
 
     if input.product_kind == Some("subscription") {
-        if input.subscription_status.is_some_and(|status| {
-            !matches!(status, "trialing" | "active" | "past_due")
-        }) {
+        if input
+            .subscription_status
+            .is_some_and(|status| !matches!(status, "trialing" | "active" | "past_due"))
+        {
             return EntitlementAccessDecision {
                 allowed: false,
                 effective_expires_at: input
@@ -71,7 +72,10 @@ pub(crate) fn evaluate_entitlement_access(
         };
     }
 
-    if input.entitlement_expires_at.is_some_and(|expires_at| expires_at <= now) {
+    if input
+        .entitlement_expires_at
+        .is_some_and(|expires_at| expires_at <= now)
+    {
         return EntitlementAccessDecision {
             allowed: false,
             effective_expires_at: input.entitlement_expires_at,
