@@ -29,6 +29,8 @@ fn allowed_commerce_proxy_path(path: &str) -> bool {
     path == "/v1/developer/commerce/profile"
         || path == "/v1/developer/commerce/miniapps"
         || path.starts_with("/v1/developer/commerce/miniapps/")
+        || path == "/v1/developer/commerce/payout"
+        || path.starts_with("/v1/developer/commerce/payout/")
         || (path.starts_with("/v1/pay/intents/") && path.ends_with("/apple/advanced-commerce"))
 }
 
@@ -99,9 +101,16 @@ mod tests {
             "/v1/developer/commerce/miniapps/demo/products"
         ));
         assert!(allowed_commerce_proxy_path(
+            "/v1/developer/commerce/payout"
+        ));
+        assert!(allowed_commerce_proxy_path(
+            "/v1/developer/commerce/payout/request"
+        ));
+        assert!(allowed_commerce_proxy_path(
             "/v1/pay/intents/pay-1/apple/advanced-commerce"
         ));
         assert!(!allowed_commerce_proxy_path("/v1/pay/admin/products"));
+        assert!(!allowed_commerce_proxy_path("/v1/pay/admin/payouts"));
         assert!(!allowed_commerce_proxy_path("/api/auth/user-info"));
     }
 }
