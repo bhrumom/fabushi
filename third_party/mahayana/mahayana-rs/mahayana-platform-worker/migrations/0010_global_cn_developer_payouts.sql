@@ -32,9 +32,11 @@ CREATE TABLE IF NOT EXISTS developer_payout_profiles (
     payout_schedule TEXT NOT NULL DEFAULT 'manual' CHECK (payout_schedule IN (
         'manual', 'daily', 'weekly', 'monthly'
     )),
+    minimum_payout_amount INTEGER NOT NULL DEFAULT 0 CHECK (minimum_payout_amount >= 0),
     compliance_state TEXT NOT NULL DEFAULT 'pending' CHECK (compliance_state IN (
         'pending', 'eligible', 'restricted', 'disabled'
     )),
+    last_scheduled_payout_at INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -48,7 +50,7 @@ CREATE TABLE IF NOT EXISTS payout_provider_routes (
         'original_order_split', 'external_proceeds_payout', 'marketplace_payout'
     )),
     provider TEXT NOT NULL CHECK (provider IN (
-        'stripe_connect', 'adyen_platform', 'paypal_multiparty',
+        'stripe_connect', 'adyen_platform', 'paypal_multiparty', 'paypal_payouts',
         'wechat_platform', 'alipay_platform', 'lianlian_account_plus', 'huifu_dougong'
     )),
     priority INTEGER NOT NULL CHECK (priority >= 0),
@@ -87,6 +89,8 @@ CREATE TABLE IF NOT EXISTS developer_settlement_reconciliations (
     platform_fee_amount INTEGER NOT NULL CHECK (platform_fee_amount >= 0),
     reserve_bps INTEGER NOT NULL CHECK (reserve_bps BETWEEN 0 AND 10000),
     reserve_amount INTEGER NOT NULL CHECK (reserve_amount >= 0),
+    reserve_release_after INTEGER NOT NULL,
+    reserve_released_at INTEGER,
     developer_payable_amount INTEGER NOT NULL CHECK (developer_payable_amount >= 0),
     provider_settlement_reference TEXT,
     status TEXT NOT NULL CHECK (status IN ('reconciled', 'released', 'reversed')),
@@ -97,6 +101,8 @@ CREATE TABLE IF NOT EXISTS developer_settlement_reconciliations (
 
 CREATE INDEX IF NOT EXISTS settlement_reconciliations_developer_idx
     ON developer_settlement_reconciliations(developer_id, currency, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS settlement_reconciliations_reserve_idx
+    ON developer_settlement_reconciliations(status, reserve_release_after, reserve_released_at);
 
 CREATE TABLE IF NOT EXISTS store_settlement_batches (
     settlement_batch_id TEXT PRIMARY KEY,
@@ -115,11 +121,33 @@ CREATE TABLE IF NOT EXISTS store_settlement_batches (
     UNIQUE (provider, external_reference, currency)
 );
 
+CREATE TABLE IF NOT EXISTS developer_payout_onboarding_sessions (
+    session_id TEXT PRIMARY KEY,
+    developer_id TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK (provider IN (
+        'stripe_connect', 'adyen_platform', 'paypal_multiparty', 'paypal_payouts',
+        'wechat_platform', 'alipay_platform', 'lianlian_account_plus', 'huifu_dougong'
+    )),
+    country_code TEXT NOT NULL,
+    payout_account_id TEXT,
+    provider_session_reference TEXT,
+    state TEXT NOT NULL CHECK (state IN (
+        'created', 'pending', 'completed', 'expired', 'failed'
+    )),
+    expires_at INTEGER,
+    last_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS payout_onboarding_sessions_developer_idx
+    ON developer_payout_onboarding_sessions(developer_id, provider, state, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS developer_payout_attempts (
     attempt_id TEXT PRIMARY KEY,
     payout_id TEXT NOT NULL REFERENCES developer_payouts(payout_id) ON DELETE RESTRICT,
     provider TEXT NOT NULL CHECK (provider IN (
-        'stripe_connect', 'adyen_platform', 'paypal_multiparty',
+        'stripe_connect', 'adyen_platform', 'paypal_multiparty', 'paypal_payouts',
         'wechat_platform', 'alipay_platform', 'lianlian_account_plus', 'huifu_dougong'
     )),
     idempotency_key TEXT NOT NULL UNIQUE,
@@ -154,6 +182,7 @@ VALUES
 ('route.global.stripe.marketplace', 'GLOBAL', 'marketplace_payout', 'stripe_connect', 10, 'pending_configuration', 0, 0),
 ('route.global.adyen.marketplace', 'GLOBAL', 'marketplace_payout', 'adyen_platform', 20, 'pending_configuration', 0, 0),
 ('route.global.paypal.marketplace', 'GLOBAL', 'marketplace_payout', 'paypal_multiparty', 30, 'pending_configuration', 0, 0),
+('route.global.paypal-payouts.marketplace', 'GLOBAL', 'marketplace_payout', 'paypal_payouts', 40, 'pending_configuration', 0, 0),
 ('route.global.stripe.external', 'GLOBAL', 'external_proceeds_payout', 'stripe_connect', 10, 'pending_configuration', 0, 0),
 ('route.global.adyen.external', 'GLOBAL', 'external_proceeds_payout', 'adyen_platform', 20, 'pending_configuration', 0, 0),
-('route.global.paypal.external', 'GLOBAL', 'external_proceeds_payout', 'paypal_multiparty', 30, 'pending_configuration', 0, 0);
+('route.global.paypal-payouts.external', 'GLOBAL', 'external_proceeds_payout', 'paypal_payouts', 30, 'pending_configuration', 0, 0);
