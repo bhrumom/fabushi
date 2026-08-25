@@ -1,3 +1,4 @@
+include!("original_order_split.rs");
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AdminSettlementReconciliationRequest {
@@ -13,6 +14,8 @@ struct AdminSettlementReconciliationRequest {
     chargeback_amount: i64,
     #[serde(default)]
     reserve_bps: u16,
+    #[serde(default)]
+    reserve_hold_seconds: i64,
     #[serde(default)]
     provider_settlement_reference: Option<String>,
 }
@@ -83,6 +86,7 @@ fn supported_payout_provider(provider: &str) -> bool {
         "stripe_connect"
             | "adyen_platform"
             | "paypal_multiparty"
+            | "paypal_payouts"
             | "wechat_platform"
             | "alipay_platform"
             | "lianlian_account_plus"
@@ -110,6 +114,7 @@ fn payout_executor_env(provider: &str) -> Option<&'static str> {
         "stripe_connect" => Some("PAYOUT_STRIPE_CONNECT_EXECUTOR_URL"),
         "adyen_platform" => Some("PAYOUT_ADYEN_PLATFORM_EXECUTOR_URL"),
         "paypal_multiparty" => Some("PAYOUT_PAYPAL_MULTIPARTY_EXECUTOR_URL"),
+        "paypal_payouts" => Some("PAYOUT_PAYPAL_PAYOUTS_EXECUTOR_URL"),
         "wechat_platform" => Some("PAYOUT_WECHAT_PLATFORM_EXECUTOR_URL"),
         "alipay_platform" => Some("PAYOUT_ALIPAY_PLATFORM_EXECUTOR_URL"),
         "lianlian_account_plus" => Some("PAYOUT_LIANLIAN_ACCOUNT_PLUS_EXECUTOR_URL"),
@@ -153,6 +158,18 @@ pub async fn admin_reconcile_settlement(
             400,
             "invalid_settlement_amount",
             "settlement deductions must be non-negative",
+        );
+    }
+    let reserve_hold_seconds = if input.reserve_bps > 0 && input.reserve_hold_seconds == 0 {
+        604800
+    } else {
+        input.reserve_hold_seconds
+    };
+    if reserve_hold_seconds < 0 || reserve_hold_seconds > 7_776_000 {
+        return error_response(
+            400,
+            "invalid_reserve_hold",
+            "reserveHoldSeconds must be between 0 and 90 days",
         );
     }
     if input.reserve_bps > 10_000 {
@@ -238,6 +255,28 @@ pub async fn admin_reconcile_settlement(
     let release_entry = format!("settlement-release:{reconciliation_id}");
     let release_id = format!("reconciliation-release:{reconciliation_id}");
     let now = now_seconds();
+    let reserve_release_after = now.saturating_add(reserve_hold_seconds);
+
+    let original_split = if matches!(
+        input.settlement_source.as_str(),
+        "wechat_order" | "alipay_order"
+    ) && developer_payable > 0
+    {
+        Some(
+            execute_original_order_split(
+                &context.env,
+                &database,
+                &payment,
+                &input,
+                developer_payable,
+                desired_platform_fee,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let paid_account = developer_paid_account(&payment.developer_id, &payment.currency);
 
     let mut statements = vec![
         wallet_account_statement(&database, &pending_account, "developer", &format!("{}:pending", payment.developer_id), &payment.currency, now)?,
@@ -250,11 +289,21 @@ pub async fn admin_reconcile_settlement(
         worker::query!(
             &database,
             "INSERT INTO developer_settlement_reconciliations
-             (reconciliation_id,payment_id,idempotency_key,developer_id,region_code,settlement_source,currency,gross_amount,tax_amount,provider_fee_amount,refund_amount,chargeback_amount,net_receipts,platform_fee_bps,platform_fee_amount,reserve_bps,reserve_amount,developer_payable_amount,provider_settlement_reference,status,created_at,updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,'reconciled',?20,?20)",
-            &reconciliation_id,&payment.payment_id,&input.idempotency_key,&payment.developer_id,&input.region_code,&input.settlement_source,&payment.currency,payment.amount,input.tax_amount,input.provider_fee_amount,payment.refunded_amount,input.chargeback_amount,net_receipts,i64::from(platform_bps),desired_platform_fee,i64::from(input.reserve_bps),reserve_amount,developer_payable,input.provider_settlement_reference.as_deref(),now
+             (reconciliation_id,payment_id,idempotency_key,developer_id,region_code,settlement_source,currency,gross_amount,tax_amount,provider_fee_amount,refund_amount,chargeback_amount,net_receipts,platform_fee_bps,platform_fee_amount,reserve_bps,reserve_amount,reserve_release_after,developer_payable_amount,provider_settlement_reference,status,created_at,updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,'reconciled',?21,?21)",
+            &reconciliation_id,&payment.payment_id,&input.idempotency_key,&payment.developer_id,&input.region_code,&input.settlement_source,&payment.currency,payment.amount,input.tax_amount,input.provider_fee_amount,payment.refunded_amount,input.chargeback_amount,net_receipts,i64::from(platform_bps),desired_platform_fee,i64::from(input.reserve_bps),reserve_amount,reserve_release_after,developer_payable,input.provider_settlement_reference.as_deref(),now
         )?,
     ];
+    if original_split.is_some() {
+        statements.push(wallet_account_statement(
+            &database,
+            &paid_account,
+            "developer",
+            &format!("{}:paid", payment.developer_id),
+            &payment.currency,
+            now,
+        )?);
+    }
 
     if deductions > 0 {
         statements.push(worker::query!(&database,
@@ -357,8 +406,8 @@ pub async fn admin_reconcile_settlement(
             "INSERT INTO developer_settlement_releases (release_id,payment_id,idempotency_key,developer_id,currency,amount,released_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
             &release_id,&payment.payment_id,&format!("release:{}",input.idempotency_key),&payment.developer_id,&payment.currency,developer_payable,now)?);
         statements.push(worker::query!(&database,
-            "INSERT INTO journal_entries (entry_id,reference_type,reference_id,state,created_at) VALUES (?1,'settlement_release',?2,'draft',?3)",
-            &release_entry,&release_id,now)?);
+            "INSERT INTO journal_entries (entry_id,reference_type,reference_id,state,created_at) VALUES (?1,?2,?3,'draft',?4)",
+            &release_entry,if original_split.is_some(){"settlement_original_order_split"}else{"settlement_release"},&release_id,now)?);
         statements.push(journal_line_statement(
             &database,
             &format!("{release_entry}:pending"),
@@ -368,15 +417,30 @@ pub async fn admin_reconcile_settlement(
             -developer_payable,
             now,
         )?);
-        statements.push(journal_line_statement(
-            &database,
-            &format!("{release_entry}:available"),
-            &release_entry,
-            &available_account,
-            &payment.currency,
-            developer_payable,
-            now,
-        )?);
+        if let Some(split) = original_split.as_ref() {
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{release_entry}:paid"),
+                &release_entry,
+                &paid_account,
+                &payment.currency,
+                developer_payable,
+                now,
+            )?);
+            statements.push(worker::query!(&database,
+                "INSERT INTO developer_original_order_splits (split_id,reconciliation_id,payment_id,developer_id,provider,payout_account_id,source_provider_reference,currency,amount,platform_fee_amount,idempotency_key,provider_reference,state,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'paid',?13,?13)",
+                &split.split_id,&reconciliation_id,&payment.payment_id,&payment.developer_id,&split.provider,&split.payout_account_id,&split.source_provider_reference,&payment.currency,developer_payable,desired_platform_fee,&split.idempotency_key,&split.provider_reference,now)?);
+        } else {
+            statements.push(journal_line_statement(
+                &database,
+                &format!("{release_entry}:available"),
+                &release_entry,
+                &available_account,
+                &payment.currency,
+                developer_payable,
+                now,
+            )?);
+        }
         statements.push(post_balanced_entry_statement(
             &database,
             &release_entry,
@@ -410,7 +474,10 @@ pub async fn admin_reconcile_settlement(
         "platformFeeAmount": desired_platform_fee,
         "reserveBps": input.reserve_bps,
         "reserveAmount": reserve_amount,
+        "reserveReleaseAfter": reserve_release_after,
         "developerPayableAmount": developer_payable,
+        "settlementMode": if original_split.is_some() {"original_order_split"} else {"developer_payout"},
+        "originalSplitProviderReference": original_split.as_ref().map(|value| value.provider_reference.clone()),
         "status": "released"
     }))
 }
@@ -507,6 +574,9 @@ pub async fn admin_upsert_payout_account_v2(
          VALUES (?1,?2,?3,?4,?5,?6,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?6)
          ON CONFLICT(payout_account_id) DO UPDATE SET developer_id=excluded.developer_id,provider=excluded.provider,external_account_reference=excluded.external_account_reference,state=excluded.state,country_code=excluded.country_code,legal_entity_type=excluded.legal_entity_type,onboarding_state=excluded.onboarding_state,kyc_status=excluded.kyc_status,payouts_enabled=excluded.payouts_enabled,currencies_json=excluded.currencies_json,purposes_json=excluded.purposes_json,provider_metadata_json=excluded.provider_metadata_json,is_default=excluded.is_default,last_capability_sync_at=excluded.last_capability_sync_at,updated_at=excluded.updated_at",
         &input.payout_account_id,&input.developer_id,&input.provider,&input.external_account_reference,state,now,&input.country_code,&input.legal_entity_type,&input.onboarding_state,&input.kyc_status,if input.payouts_enabled {1} else {0},&currencies_json,&purposes_json,&metadata_json,if input.is_default {1} else {0})?.run().await?;
+    worker::query!(&database,
+        "UPDATE developer_payout_profiles SET compliance_state=CASE WHEN EXISTS (SELECT 1 FROM developer_payout_accounts a WHERE a.developer_id=?1 AND a.state='active' AND a.kyc_status='verified' AND a.payouts_enabled=1) THEN 'eligible' ELSE 'pending' END,updated_at=?2 WHERE developer_id=?1",
+        &input.developer_id,now)?.run().await?;
     Response::from_json(
         &json!({"ok":true,"payoutAccountId":input.payout_account_id,"state":state,"kycStatus":input.kyc_status,"payoutsEnabled":input.payouts_enabled}),
     )
@@ -696,6 +766,8 @@ pub async fn admin_dispatch_payout(
         }
     };
     if !executor_url.starts_with("https://") || executor_url.contains(char::is_whitespace) {
+        worker::query!(&database,"UPDATE developer_payout_attempts SET state='configuration_required',last_error='executor URL must be HTTPS',updated_at=?1 WHERE attempt_id=?2",now_seconds(),&attempt.attempt_id)?.run().await?;
+        reverse_failed_payout(&database, payout_id, now_seconds()).await?;
         return error_response(
             500,
             "invalid_executor_url",

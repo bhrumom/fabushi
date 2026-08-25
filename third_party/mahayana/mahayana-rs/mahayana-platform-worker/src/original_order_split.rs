@@ -81,8 +81,9 @@ async fn execute_original_order_split(
         )
     })?;
 
-    let env_name = payout_executor_env(provider)
-        .ok_or_else(|| worker::Error::RustError("unsupported original-order split provider".into()))?;
+    let env_name = payout_executor_env(provider).ok_or_else(|| {
+        worker::Error::RustError("unsupported original-order split provider".into())
+    })?;
     let executor_url = env
         .var(env_name)
         .map_err(|_| worker::Error::RustError(format!("missing {env_name}")))?

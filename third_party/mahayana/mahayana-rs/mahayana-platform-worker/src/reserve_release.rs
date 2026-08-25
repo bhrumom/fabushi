@@ -161,8 +161,14 @@ pub async fn admin_release_reserve(
     .first::<DueReserveRow>(None)
     .await?;
     let Some(row) = row else {
-        return error_response(409,"reserve_not_releasable","reserve is missing, already released, or still inside its hold window");
+        return error_response(
+            409,
+            "reserve_not_releasable",
+            "reserve is missing, already released, or still inside its hold window",
+        );
     };
     let released = release_one_reserve(&database, &row, now_seconds()).await?;
-    Response::from_json(&json!({"ok":true,"reconciliationId":reconciliation_id,"released":released}))
+    Response::from_json(
+        &json!({"ok":true,"reconciliationId":reconciliation_id,"released":released}),
+    )
 }

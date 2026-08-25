@@ -7,7 +7,7 @@ use uuid::Uuid;
 use wasm_bindgen::JsValue;
 use worker::{
     Context, Env, Fetch, Headers, Method, Request, RequestInit, Response, Result, RouteContext,
-    Router, event,
+    Router, ScheduleContext, ScheduledEvent, event,
 };
 
 const DB: &str = "PLATFORM_DB";
@@ -411,13 +411,55 @@ async fn apple_request(mut req: Request, ctx: RouteContext<()>) -> Result<Respon
             .generic_product_id
             .ok_or_else(|| worker::Error::RustError("missing generic product id".into()))?,
     };
-    let reference = Uuid::new_v4().to_string();
-    let envelope = build_advanced_commerce_request(&product, &input, &reference)
-        .map_err(|e| worker::Error::RustError(e.to_string()))?;
-    let encoded_request = STANDARD.encode(
-        serde_json::to_vec(&envelope.request_json)
-            .map_err(|e| worker::Error::RustError(e.to_string()))?,
-    );
+    let database = ctx.env.d1(DB)?;
+    let existing = worker::query!(&database,"SELECT request_reference_id,generic_product_id,request_json FROM apple_advanced_commerce_requests WHERE payment_id=?1 LIMIT 1",&product.payment_id)?.first::<Value>(None).await?;
+    let (reference, generic_product_id, request_json, is_new) = if let Some(existing) = existing {
+        let reference = existing
+            .get("request_reference_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                worker::Error::RustError("invalid stored Apple request reference".into())
+            })?
+            .to_string();
+        let generic = existing
+            .get("generic_product_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| worker::Error::RustError("invalid stored Apple generic product".into()))?
+            .to_string();
+        let request_json: Value = serde_json::from_str(
+            existing
+                .get("request_json")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    worker::Error::RustError("invalid stored Apple request JSON".into())
+                })?,
+        )
+        .map_err(|_| worker::Error::RustError("invalid stored Apple request JSON".into()))?;
+        (reference, generic, request_json, false)
+    } else {
+        let reference = Uuid::new_v4().to_string();
+        let envelope = build_advanced_commerce_request(&product, &input, &reference)
+            .map_err(|e| worker::Error::RustError(e.to_string()))?;
+        (
+            reference,
+            envelope.generic_product_id,
+            envelope.request_json,
+            true,
+        )
+    };
+    let request_bytes =
+        serde_json::to_vec(&request_json).map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let encoded_request = STANDARD.encode(&request_bytes);
+    if is_new {
+        let dynamic_sku =
+            mini_app_partner_sku(&product).map_err(|e| worker::Error::RustError(e.to_string()))?;
+        let price_milliunits = minor_units_to_milliunits(&product.currency, product.amount_minor)
+            .map_err(|e| worker::Error::RustError(e.to_string()))?;
+        let request_json_text = String::from_utf8(request_bytes.clone())
+            .map_err(|_| worker::Error::RustError("invalid Apple request encoding".into()))?;
+        let t = now();
+        worker::query!(&database,"INSERT INTO apple_advanced_commerce_requests (payment_id,request_reference_id,generic_product_id,dynamic_sku,currency,price_milliunits,tax_code,storefront,request_json,request_fingerprint,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",&product.payment_id,&reference,&generic_product_id,&dynamic_sku,&product.currency,price_milliunits,&product.tax_code,&input.storefront,&request_json_text,&encoded_request,t)?.run().await?;
+    }
     let claims = AppleJwsClaims {
         iss: env_text(&ctx.env, "APPLE_IAP_ISSUER_ID")?,
         iat: now(),
@@ -437,7 +479,7 @@ async fn apple_request(mut req: Request, ctx: RouteContext<()>) -> Result<Respon
     let token = encode(&header, &claims, &key)
         .map_err(|e| worker::Error::RustError(format!("Apple JWS signing failed: {e}")))?;
     Response::from_json(
-        &json!({"genericProductId":envelope.generic_product_id,"advancedCommerceData":{"signatureInfo":{"token":token}},"requestReferenceId":reference}),
+        &json!({"genericProductId":generic_product_id,"advancedCommerceData":{"signatureInfo":{"token":token}},"requestReferenceId":reference}),
     )
 }
 
@@ -713,9 +755,11 @@ async fn payout_overview(req: Request, ctx: RouteContext<()>) -> Result<Response
     let pending_pattern = format!("developer-pending:{}:%", developer.developer_id);
     let available_pattern = format!("developer-available:{}:%", developer.developer_id);
     let reserved_pattern = format!("developer-reserved:{}:%", developer.developer_id);
-    let balances=worker::query!(&db,"SELECT account_id,currency,balance FROM wallet_balances WHERE account_id LIKE ?1 OR account_id LIKE ?2 OR account_id LIKE ?3 ORDER BY currency,account_id",&pending_pattern,&available_pattern,&reserved_pattern)?.all().await?.results::<Value>()?;
+    let paid_pattern = format!("developer-paid:{}:%", developer.developer_id);
+    let balances=worker::query!(&db,"SELECT account_id,currency,balance FROM wallet_balances WHERE account_id LIKE ?1 OR account_id LIKE ?2 OR account_id LIKE ?3 OR account_id LIKE ?4 ORDER BY currency,account_id",&pending_pattern,&available_pattern,&reserved_pattern,&paid_pattern)?.all().await?.results::<Value>()?;
     let settlements=worker::query!(&db,"SELECT reconciliation_id,payment_id,region_code,settlement_source,currency,gross_amount,tax_amount,provider_fee_amount,refund_amount,chargeback_amount,net_receipts,platform_fee_amount,reserve_amount,developer_payable_amount,status,created_at FROM developer_settlement_reconciliations WHERE developer_id=?1 ORDER BY created_at DESC LIMIT 100",&developer.developer_id)?.all().await?.results::<Value>()?;
     let payouts=worker::query!(&db,"SELECT p.payout_id,p.payout_account_id,p.currency,p.amount,p.status,p.provider_reference,p.created_at,p.updated_at,a.provider FROM developer_payouts p JOIN developer_payout_accounts a ON a.payout_account_id=p.payout_account_id WHERE p.developer_id=?1 ORDER BY p.created_at DESC LIMIT 100",&developer.developer_id)?.all().await?.results::<Value>()?;
+    let original_splits=worker::query!(&db,"SELECT split_id,payment_id,provider,payout_account_id,currency,amount,platform_fee_amount,provider_reference,state,created_at FROM developer_original_order_splits WHERE developer_id=?1 ORDER BY created_at DESC LIMIT 100",&developer.developer_id)?.all().await?.results::<Value>()?;
     let region = profile_row
         .as_ref()
         .and_then(|v| v.get("country_code"))
@@ -724,7 +768,7 @@ async fn payout_overview(req: Request, ctx: RouteContext<()>) -> Result<Response
         .unwrap_or("GLOBAL");
     let routes=worker::query!(&db,"SELECT route_id,region_code,purpose,provider,priority,state FROM payout_provider_routes WHERE region_code=?1 ORDER BY purpose,priority",region)?.all().await?.results::<Value>()?;
     Response::from_json(
-        &json!({"profile":profile_row,"balances":balances,"accounts":accounts,"settlements":settlements,"payouts":payouts,"routes":routes}),
+        &json!({"profile":profile_row,"balances":balances,"accounts":accounts,"settlements":settlements,"payouts":payouts,"originalSplits":original_splits,"routes":routes}),
     )
 }
 
@@ -767,27 +811,309 @@ async fn request_payout(mut req: Request, ctx: RouteContext<()>) -> Result<Respo
     if !base.starts_with("https://") {
         return Response::error("invalid internal pay URL", 500);
     }
-    let admin = env_text(&ctx.env, "FABUSHI_PAY_ADMIN_TOKEN")?;
+    let create_body = json!({"idempotencyKey":input.idempotency_key,"developerId":developer.developer_id,"payoutAccountId":input.payout_account_id,"currency":input.currency,"amount":input.amount});
+    let (create_status, created) =
+        pay_admin_json(&ctx.env, "/v1/pay/admin/payouts", Some(create_body)).await?;
+    if !(200..300).contains(&create_status) {
+        return Ok(Response::from_json(&created)?.with_status(create_status));
+    }
+    let payout_id = created
+        .get("payout")
+        .and_then(|value| value.get("payoutId"))
+        .and_then(Value::as_str)
+        .or_else(|| created.get("payoutId").and_then(Value::as_str))
+        .ok_or_else(|| worker::Error::RustError("pay service response lacks payoutId".into()))?;
+    let (dispatch_status, dispatched) = pay_admin_json(
+        &ctx.env,
+        &format!("/v1/pay/admin/payouts/{}/dispatch", payout_id),
+        Some(json!({})),
+    )
+    .await?;
+    if !(200..300).contains(&dispatch_status) {
+        return Ok(Response::from_json(
+            &json!({"payout":created.get("payout"),"dispatch":dispatched}),
+        )?
+        .with_status(dispatch_status));
+    }
+    Response::from_json(&json!({"payout":created.get("payout"),"dispatch":dispatched}))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AutoPayoutCandidate {
+    developer_id: String,
+    preferred_currency: String,
+    payout_schedule: String,
+    minimum_payout_amount: i64,
+    last_scheduled_payout_at: Option<i64>,
+    payout_account_id: String,
+}
+
+fn payout_schedule_seconds(schedule: &str) -> Option<i64> {
+    match schedule {
+        "daily" => Some(86_400),
+        "weekly" => Some(604_800),
+        "monthly" => Some(2_592_000),
+        _ => None,
+    }
+}
+
+fn payout_schedule_due(schedule: &str, last: Option<i64>, current: i64) -> bool {
+    let Some(period) = payout_schedule_seconds(schedule) else {
+        return false;
+    };
+    last.map(|value| current.saturating_sub(value) >= period)
+        .unwrap_or(true)
+}
+
+async fn pay_admin_json(env: &Env, path: &str, body: Option<Value>) -> Result<(u16, Value)> {
+    let base = env
+        .var("FABUSHI_PAY_INTERNAL_URL")
+        .ok()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "https://pay.ombhrum.com".into());
+    if !base.starts_with("https://") || base.contains(char::is_whitespace) {
+        return Err(worker::Error::RustError(
+            "invalid FABUSHI_PAY_INTERNAL_URL".into(),
+        ));
+    }
+    let token = env_text(env, "FABUSHI_PAY_ADMIN_TOKEN")?;
     let headers = Headers::new();
-    headers.set("Authorization", &format!("Bearer {admin}"))?;
+    headers.set("Authorization", &format!("Bearer {token}"))?;
     headers.set("Content-Type", "application/json")?;
-    let body = json!({"idempotencyKey":input.idempotency_key,"developerId":developer.developer_id,"payoutAccountId":input.payout_account_id,"currency":input.currency,"amount":input.amount});
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post).with_headers(headers);
+    if let Some(body) = body {
+        init.with_body(Some(JsValue::from_str(&body.to_string())));
+    }
+    let request =
+        Request::new_with_init(&format!("{}{}", base.trim_end_matches('/'), path), &init)?;
+    let mut response = Fetch::Request(request).send().await?;
+    let status = response.status_code();
+    let bytes = response.bytes().await?;
+    let value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| json!({"raw":String::from_utf8_lossy(&bytes)}));
+    Ok((status, value))
+}
+
+async fn run_payout_maintenance(env: &Env) -> Result<()> {
+    // Release matured risk reserves first so the sweep sees the final available balance.
+    let (reserve_status, _) =
+        pay_admin_json(env, "/v1/pay/admin/settlements/reserves/release-due", None).await?;
+    if !(200..300).contains(&reserve_status) {
+        return Err(worker::Error::RustError(format!(
+            "reserve release sweep failed with HTTP {reserve_status}"
+        )));
+    }
+
+    let database = env.d1(DB)?;
+    let candidates = worker::query!(&database,
+        "SELECT p.developer_id,p.preferred_currency,p.payout_schedule,p.minimum_payout_amount,p.last_scheduled_payout_at,a.payout_account_id
+         FROM developer_payout_profiles p
+         JOIN developer_payout_accounts a ON a.developer_id=p.developer_id
+         WHERE p.compliance_state='eligible' AND p.payout_schedule<>'manual'
+           AND a.is_default=1 AND a.state='active' AND a.onboarding_state='verified'
+           AND a.kyc_status='verified' AND a.payouts_enabled=1
+           AND EXISTS (SELECT 1 FROM json_each(a.currencies_json) WHERE value=p.preferred_currency)
+           AND EXISTS (SELECT 1 FROM json_each(a.purposes_json) WHERE value='marketplace_payout')
+           AND EXISTS (
+             SELECT 1 FROM payout_provider_routes r
+             WHERE r.region_code=CASE WHEN p.country_code='CN' THEN 'CN' ELSE 'GLOBAL' END
+               AND r.purpose='marketplace_payout' AND r.provider=a.provider AND r.state='active'
+           )
+         ORDER BY p.developer_id,a.is_default DESC,a.created_at ASC")?.all().await?.results::<AutoPayoutCandidate>()?;
+    let current = now();
+    let mut seen = std::collections::BTreeSet::new();
+    for candidate in candidates {
+        if !seen.insert(candidate.developer_id.clone())
+            || !payout_schedule_due(
+                &candidate.payout_schedule,
+                candidate.last_scheduled_payout_at,
+                current,
+            )
+        {
+            continue;
+        }
+        let account_id = format!(
+            "developer-available:{}:{}",
+            candidate.developer_id, candidate.preferred_currency
+        );
+        let balance = worker::query!(
+            &database,
+            "SELECT balance FROM wallet_balances WHERE account_id=?1 LIMIT 1",
+            &account_id
+        )?
+        .first::<Value>(None)
+        .await?
+        .and_then(|value| value.get("balance").and_then(Value::as_i64))
+        .unwrap_or(0);
+        let minimum = candidate.minimum_payout_amount.max(1);
+        if balance < minimum {
+            continue;
+        }
+        let period = payout_schedule_seconds(&candidate.payout_schedule).unwrap_or(86_400);
+        let bucket = current / period;
+        let idempotency_key = format!(
+            "auto:{}:{}:{}",
+            candidate.developer_id, candidate.preferred_currency, bucket
+        );
+        let create_body = json!({
+            "idempotencyKey": idempotency_key,
+            "developerId": candidate.developer_id,
+            "payoutAccountId": candidate.payout_account_id,
+            "currency": candidate.preferred_currency,
+            "amount": balance
+        });
+        let (create_status, created) =
+            pay_admin_json(env, "/v1/pay/admin/payouts", Some(create_body)).await?;
+        if !(200..300).contains(&create_status) {
+            continue;
+        }
+        let payout_id = created
+            .get("payout")
+            .and_then(|value| value.get("payoutId"))
+            .and_then(Value::as_str)
+            .or_else(|| created.get("payoutId").and_then(Value::as_str));
+        let Some(payout_id) = payout_id else {
+            continue;
+        };
+        let (dispatch_status, _) = pay_admin_json(
+            env,
+            &format!("/v1/pay/admin/payouts/{}/dispatch", payout_id),
+            Some(json!({})),
+        )
+        .await?;
+        if (200..300).contains(&dispatch_status) {
+            worker::query!(&database,"UPDATE developer_payout_profiles SET last_scheduled_payout_at=?1,updated_at=?1 WHERE developer_id=?2",current,&candidate.developer_id)?.run().await?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PayoutOnboardingInput {
+    provider: String,
+    purpose: String,
+}
+
+fn allowed_onboarding_provider(region: &str, provider: &str, purpose: &str) -> bool {
+    if region == "CN" {
+        match purpose {
+            "original_order_split" => matches!(provider, "wechat_platform" | "alipay_platform"),
+            "external_proceeds_payout" | "marketplace_payout" => {
+                matches!(provider, "lianlian_account_plus" | "huifu_dougong")
+            }
+            _ => false,
+        }
+    } else {
+        match purpose {
+            "marketplace_payout" => matches!(
+                provider,
+                "stripe_connect" | "adyen_platform" | "paypal_multiparty" | "paypal_payouts"
+            ),
+            "external_proceeds_payout" => matches!(
+                provider,
+                "stripe_connect" | "adyen_platform" | "paypal_payouts"
+            ),
+            _ => false,
+        }
+    }
+}
+
+fn payout_onboarding_env(provider: &str) -> Option<&'static str> {
+    match provider {
+        "stripe_connect" => Some("PAYOUT_STRIPE_CONNECT_ONBOARDING_URL"),
+        "adyen_platform" => Some("PAYOUT_ADYEN_PLATFORM_ONBOARDING_URL"),
+        "paypal_multiparty" => Some("PAYOUT_PAYPAL_MULTIPARTY_ONBOARDING_URL"),
+        "paypal_payouts" => Some("PAYOUT_PAYPAL_PAYOUTS_ONBOARDING_URL"),
+        "wechat_platform" => Some("PAYOUT_WECHAT_PLATFORM_ONBOARDING_URL"),
+        "alipay_platform" => Some("PAYOUT_ALIPAY_PLATFORM_ONBOARDING_URL"),
+        "lianlian_account_plus" => Some("PAYOUT_LIANLIAN_ACCOUNT_PLUS_ONBOARDING_URL"),
+        "huifu_dougong" => Some("PAYOUT_HUIFU_DOUGONG_ONBOARDING_URL"),
+        _ => None,
+    }
+}
+
+async fn create_payout_onboarding(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let user = require_developer(&req, &ctx.env)?;
+    let developer = profile(&ctx.env, &user)
+        .await?
+        .ok_or_else(|| worker::Error::RustError("developer profile not found".into()))?;
+    let input: PayoutOnboardingInput = req.json().await?;
+    let database = ctx.env.d1(DB)?;
+    let payout_profile = worker::query!(&database,
+        "SELECT country_code,legal_entity_type,preferred_currency,compliance_state FROM developer_payout_profiles WHERE developer_id=?1 LIMIT 1",
+        &developer.developer_id)?.first::<Value>(None).await?
+        .ok_or_else(|| worker::Error::RustError("configure payout profile first".into()))?;
+    let country = payout_profile
+        .get("country_code")
+        .and_then(Value::as_str)
+        .unwrap_or("ZZ");
+    let region = if country == "CN" { "CN" } else { "GLOBAL" };
+    if !allowed_onboarding_provider(region, &input.provider, &input.purpose) {
+        return Response::error(
+            "provider/purpose is not eligible for this developer region",
+            400,
+        );
+    }
+    let active_route = worker::query!(&database,
+        "SELECT route_id FROM payout_provider_routes WHERE region_code=?1 AND purpose=?2 AND provider=?3 AND state='active' LIMIT 1",
+        region,&input.purpose,&input.provider)?.first::<Value>(None).await?;
+    if active_route.is_none() {
+        return Response::error(
+            "payout provider is not approved/configured for this route",
+            503,
+        );
+    }
+    let env_name = payout_onboarding_env(&input.provider)
+        .ok_or_else(|| worker::Error::RustError("unsupported payout onboarding provider".into()))?;
+    let endpoint = ctx
+        .env
+        .var(env_name)
+        .map_err(|_| worker::Error::RustError(format!("missing {env_name}")))?
+        .to_string();
+    if !endpoint.starts_with("https://") || endpoint.contains(char::is_whitespace) {
+        return Response::error("invalid payout onboarding endpoint", 500);
+    }
+    let token = env_text(&ctx.env, "PAYOUT_PROVIDER_EXECUTOR_TOKEN")?;
+    let session_id = format!("onboard.{}", Uuid::new_v4().simple());
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {token}"))?;
+    headers.set("Content-Type", "application/json")?;
+    let body = json!({"sessionId":session_id,"developerId":developer.developer_id,"provider":input.provider,"purpose":input.purpose,"countryCode":country,"legalEntityType":payout_profile.get("legal_entity_type").and_then(Value::as_str).unwrap_or("company"),"preferredCurrency":payout_profile.get("preferred_currency").and_then(Value::as_str).unwrap_or("USD")});
     let mut init = RequestInit::new();
     init.with_method(Method::Post)
         .with_headers(headers)
         .with_body(Some(JsValue::from_str(&body.to_string())));
-    let outbound = Request::new_with_init(
-        &format!("{}/v1/pay/admin/payouts", base.trim_end_matches('/')),
-        &init,
-    )?;
+    let outbound = Request::new_with_init(&endpoint, &init)?;
     let mut response = Fetch::Request(outbound).send().await?;
     let status = response.status_code();
     let bytes = response.bytes().await?;
-    let mut result = Response::from_bytes(bytes)?.with_status(status);
-    result
-        .headers_mut()
-        .set("Content-Type", "application/json")?;
-    Ok(result)
+    if !(200..300).contains(&status) {
+        worker::query!(&database,"INSERT INTO developer_payout_onboarding_sessions (session_id,developer_id,provider,country_code,state,last_error,created_at,updated_at) VALUES (?1,?2,?3,?4,'failed',?5,?6,?6)",&session_id,&developer.developer_id,&input.provider,country,&String::from_utf8_lossy(&bytes).chars().take(500).collect::<String>(),now())?.run().await?;
+        return Response::error("provider onboarding request failed", 502);
+    }
+    let payload: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| worker::Error::RustError("invalid payout onboarding response".into()))?;
+    let onboarding_url = payload
+        .get("onboardingUrl")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            worker::Error::RustError("provider onboarding response lacks onboardingUrl".into())
+        })?;
+    if !onboarding_url.starts_with("https://") {
+        return Response::error("provider onboarding URL must be HTTPS", 502);
+    }
+    let provider_session_reference = payload
+        .get("providerSessionReference")
+        .and_then(Value::as_str);
+    let payout_account_id = payload.get("payoutAccountId").and_then(Value::as_str);
+    let expires_at = payload.get("expiresAt").and_then(Value::as_i64);
+    let t = now();
+    worker::query!(&database,"INSERT INTO developer_payout_onboarding_sessions (session_id,developer_id,provider,country_code,payout_account_id,provider_session_reference,state,expires_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,'pending',?7,?8,?8)",&session_id,&developer.developer_id,&input.provider,country,payout_account_id,provider_session_reference,expires_at,t)?.run().await?;
+    Response::from_json(
+        &json!({"sessionId":session_id,"provider":input.provider,"purpose":input.purpose,"onboardingUrl":onboarding_url,"expiresAt":expires_at,"state":"pending"}),
+    )
 }
 
 #[event(fetch, respond_with_errors)]
@@ -796,6 +1122,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
       .get("/health",|_,_|Response::from_json(&json!({"ok":true,"service":"fabushi-commerce-control","schema":"fabushi.developer-commerce.v2"})))
       .get_async("/v1/developer/commerce/profile",get_profile).post_async("/v1/developer/commerce/profile",put_profile)
       .get_async("/v1/developer/commerce/payout",payout_overview).post_async("/v1/developer/commerce/payout/profile",put_payout_profile)
+      .post_async("/v1/developer/commerce/payout/onboarding",create_payout_onboarding)
       .post_async("/v1/developer/commerce/payout/request",request_payout)
       .get_async("/v1/developer/commerce/miniapps",list_apps).post_async("/v1/developer/commerce/miniapps/:mini_app_id",register_app)
       .get_async("/v1/developer/commerce/miniapps/:mini_app_id/products",list_products).post_async("/v1/developer/commerce/miniapps/:mini_app_id/products",create_product)
@@ -803,4 +1130,11 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
       .post_async("/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id/google/sync",sync_google)
       .post_async("/v1/pay/intents/:payment_id/apple/advanced-commerce",apple_request)
       .run(req,env).await
+}
+
+#[event(scheduled)]
+pub async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    if let Err(error) = run_payout_maintenance(&env).await {
+        worker::console_error!("developer payout maintenance failed: {}", error);
+    }
 }
