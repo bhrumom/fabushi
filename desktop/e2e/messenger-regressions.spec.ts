@@ -164,8 +164,17 @@ test('Messenger composer remains inside the desktop viewport for chat peers', as
     const count = Math.min(await peers.count(), 12);
     expect(count).toBeGreaterThan(0);
 
+    // Opening a peer can reorder the live list. Snapshot the stable testing contract
+    // before any click so subsequent actions keep targeting the same identities.
+    const peerTestIds: string[] = [];
     for (let index = 0; index < count; index += 1) {
-      const peer = peers.nth(index);
+      const testId = await peers.nth(index).getAttribute('data-testid');
+      expect(testId).toBeTruthy();
+      if (testId) peerTestIds.push(testId);
+    }
+
+    for (const peerTestId of peerTestIds) {
+      const peer = page.getByTestId(peerTestId);
       await peer.scrollIntoViewIfNeeded();
       await peer.click();
       await expectComposerInsideViewport(page);
@@ -188,23 +197,36 @@ test('switching peers keeps dynamic avatars visible and narrow layouts can open 
     await expect(peers.first()).toBeVisible();
     expect(await peers.count()).toBeGreaterThanOrEqual(2);
 
-    const first = peers.nth(0);
-    const second = peers.nth(1);
+    // Playwright locators are live. Capture the first two peer identities before clicking,
+    // because opening/reading a conversation may reorder the list and retarget nth().
+    const firstTestId = await peers.nth(0).getAttribute('data-testid');
+    const secondTestId = await peers.nth(1).getAttribute('data-testid');
+    if (!firstTestId || !secondTestId) throw new Error('expected stable test ids for the first two peers');
+    const first = page.getByTestId(firstTestId);
+    const second = page.getByTestId(secondTestId);
+
     // BotMark intentionally exposes the engine marker on both its semantic wrapper and inner SVG.
     // Count only the semantic outer mark carrying data-bot-id, so one avatar equals one identity.
     const visibleMark = '[data-engine="fabushi-motion-v2"][data-bot-id]:visible';
+    const firstMark = first.locator(visibleMark);
+    const secondMark = second.locator(visibleMark);
+    await expect(firstMark).toHaveCount(1);
+    await expect(secondMark).toHaveCount(1);
+    const firstBotId = await firstMark.getAttribute('data-bot-id');
+    const secondBotId = await secondMark.getAttribute('data-bot-id');
+    if (!firstBotId || !secondBotId) throw new Error('expected semantic bot ids for the first two peers');
 
     await first.click();
-    await expect(first.locator(visibleMark)).toHaveCount(1);
+    await expect(firstMark).toHaveAttribute('data-bot-id', firstBotId);
 
     await second.click();
-    await expect(second.locator(visibleMark)).toHaveCount(1);
-    await expect(first.locator(visibleMark)).toHaveCount(1);
+    await expect(secondMark).toHaveAttribute('data-bot-id', secondBotId);
+    await expect(firstMark).toHaveAttribute('data-bot-id', firstBotId);
 
     const headerIdentity = page.getByTestId('conversation-status').locator('xpath=../..');
     const headerMark = headerIdentity.locator(visibleMark);
     await expect(headerMark).toHaveCount(1);
-    expect(await headerMark.getAttribute('data-bot-id')).toBe(await second.locator(visibleMark).getAttribute('data-bot-id'));
+    await expect(headerMark).toHaveAttribute('data-bot-id', secondBotId);
 
     await page.setViewportSize({ width: 1100, height: 800 });
     const toggle = page.getByTestId('conversation-info-toggle');
