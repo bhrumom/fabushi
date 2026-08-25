@@ -13,7 +13,6 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
-      - '.github/scripts/repair-developer-payout-source.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -30,77 +29,39 @@ on:
       - 'projects/telegram-fabushi-integration/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-source:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: feat/fab-p0001-dynamic-fiat-commerce
-      - uses: dtolnay/rust-toolchain@stable
-      - run: node .github/scripts/repair-developer-payout-source.mjs
-      - name: Format repaired source
-        run: |
-          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
-          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
-          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml
-          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_finalize.rs
-      - name: Commit repaired source
-        run: |
-          if git diff --quiet; then exit 0; fi
-          git config user.name 'fabushi-ci'
-          git config user.email 'actions@users.noreply.github.com'
-          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs \
-                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
-                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_finalize.rs
-          git commit -m 'fix(pay): repair payout scheduler and paid finalization'
-          git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
-
   control-plane-unit:
-    needs: repair-source
-    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
       - run: cargo fmt --check
 
   control-plane-wasm:
-    needs: repair-source
-    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - run: cargo check --target wasm32-unknown-unknown
 
   platform-worker-wasm:
-    needs: repair-source
-    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -108,16 +69,12 @@ jobs:
       - run: cargo fmt --check
 
   pay-worker-wasm:
-    needs: repair-source
-    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-pay-worker
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -125,13 +82,9 @@ jobs:
       - run: cargo fmt --check
 
   schema-contract:
-    needs: repair-source
-    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - name: Verify commerce and payout authority
         run: |
           python3 - <<'PY'
