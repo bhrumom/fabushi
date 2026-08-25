@@ -1,0 +1,37 @@
+# M7-DESKTOP-004 — Bot avatar + info panel regression closure
+
+- **Project ID**: `FAB-P0001`
+- **Project Key**: `TFI`
+- **Task ID**: `M7-DESKTOP-004`
+- **Stage**: `M7 Bot/Agent 统一联系人体系`
+- **Status**: `IMPLEMENTED`
+- **Started**: `2026-08-25`
+- **Branch**: `fix/tfi-bot-avatar-info-panel`
+- **Source**: `../../source/2026-08-25-bot-avatar-info-panel-regression.md`
+
+## Root causes
+
+1. `MahayanaAgentWorkbench` hides the currently active peer's original BotMark when moving its animated avatar into a React portal. Hidden marks were only restored when the workbench unmounted, so every peer that had once been active could remain `display:none` after switching away.
+2. Workbench portal BotMarks used new `header:*` / `peer-active:*` / `info:*` IDs, changing the deterministic Motion v2 identity seed instead of preserving the Messenger BotMark identity.
+3. `MessengerWorkspace` included `wideInfoLayout` in `infoPanelVisible`, so at CSS widths `<=1280` the info panel was never rendered even when the user toggled it.
+
+## Implementation
+
+- Restore stale hidden BotMarks every portal refresh; only the three currently replaced originals may remain hidden.
+- Copy each original BotMark's `data-bot-id` / label into the portal target and reuse it for the animated replacement.
+- Scope workbench animation state to the selected conversation rather than leaking an active run from another Bot.
+- Render info panel whenever the user opens it; dock it only on wide layouts and render it as an absolute right drawer on narrower layouts.
+- Add stable test IDs for the info toggle and panel.
+- Add Playwright regression covering two peer switches, one visible Motion v2 avatar per peer/header, preserved identity, and narrow-width right-panel open/close.
+
+## Acceptance
+
+- `git diff --check` passes locally.
+- GitHub Actions desktop typecheck/build and Messenger regression Playwright pass on current PR head.
+- PR merges to protected `main` and canonical main is re-read.
+- Exact-main packaged desktop E2E retains screenshot/video/trace evidence.
+- This fix and M8 marketplace implementation are both included before publishing the next desktop Release.
+
+## Completion gate
+
+Keep below `RELEASED` until required current-head CI, protected merge, canonical-main readback, exact-main packaged E2E and the new GitHub Release all exist.
