@@ -9,11 +9,13 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
       - '.github/scripts/apply-google-global-pricing-patch.mjs'
+      - '.github/scripts/apply-commerce-active-rail-gate.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -21,11 +23,11 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
-      - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
-      - '.github/scripts/apply-google-global-pricing-patch.mjs'
+      - '.github/scripts/apply-commerce-active-rail-gate.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
 
@@ -45,6 +47,7 @@ jobs:
         run: |
           node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
           node .github/scripts/apply-google-global-pricing-patch.mjs
+          node .github/scripts/apply-commerce-active-rail-gate.mjs
       - name: Apply rustfmt
         run: |
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
@@ -57,6 +60,7 @@ jobs:
           git config user.name 'fabushi-ci'
           git config user.email 'actions@users.noreply.github.com'
           git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs
           git commit -m 'style(pay): integrate and format developer commerce'
@@ -123,16 +127,31 @@ jobs:
           assert "'web_provider'" in seed
           assert "'pending_configuration'" in seed
           PY
-      - name: Reject client authority over platform fees and developer identity
+      - name: Verify server pricing authority and active provider gate
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          s = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/domain.rs').read_text()
-          block = s[s.index('pub struct DeveloperProductDraft'):s.index('pub struct ProviderBindingPlan')]
-          assert 'developer_id' not in block
-          assert 'owner_user_id' not in block
-          assert 'platform_fee_bps' not in block
-          assert 'currency' in block and 'amount' in block
+          domain = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/domain.rs').read_text()
+          draft = domain[domain.index('pub struct DeveloperProductDraft'):domain.index('pub struct ProviderBindingPlan')]
+          assert 'developer_id' not in draft
+          assert 'owner_user_id' not in draft
+          assert 'platform_fee_bps' not in draft
+          assert 'currency' in draft and 'amount' in draft
+
+          pay = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs').read_text()
+          request = pay[pay.index('struct CreateIntentRequest'):pay.index('struct AppleVerifyRequest')]
+          assert 'sku:' in request and 'rail:' in request and 'idempotency_key:' in request
+          assert 'amount:' not in request and 'currency:' not in request and 'platform_fee' not in request
+          create = pay[pay.index('pub async fn create_intent'):pay.index('pub async fn get_intent')]
+          assert 'product.amount' in create and 'product.currency' in create and 'product.platform_fee_bps' in create
+          assert 'advancedCommercePath' in pay
+
+          worker = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
+          rails = worker[worker.index('fn pay_rails_json'):worker.index('async fn persist_product')]
+          assert 'p.sync_state != "active"' in rails
+          assert 'activate_google_pay_rail' in worker
+          assert 'google_play_billing' in worker
+
           proxy = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
           assert '/v1/pay/admin/products' in proxy
           assert 'assert!(!allowed_commerce_proxy_path' in proxy
