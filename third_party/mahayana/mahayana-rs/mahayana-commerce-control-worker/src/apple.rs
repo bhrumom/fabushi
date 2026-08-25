@@ -36,7 +36,7 @@ pub struct AppleAdvancedCommerceEnvelope {
 pub enum AppleRequestError {
     #[error("invalid Apple storefront")]
     InvalidStorefront,
-    #[error("invalid Apple catalog product")]
+    #[error("invalid or unsupported Apple Advanced Commerce catalog product")]
     InvalidProduct,
     #[error("Apple price conversion overflow")]
     PriceOverflow,
@@ -62,16 +62,27 @@ pub fn mini_app_partner_sku(product: &AppleCatalogProduct) -> Result<String, App
     Ok(sku)
 }
 
+fn apple_advanced_commerce_exponent(currency: &str) -> Option<u32> {
+    // Apple Advanced Commerce currently documents zero- or two-decimal price
+    // currencies. Reject every other ISO currency instead of guessing its
+    // exponent, because an unsupported value prevents the StoreKit sheet.
+    match currency {
+        "CLP" | "COP" | "DKK" | "HKD" | "HUF" | "IDR" | "INR" | "JPY" | "KRW" | "KZT"
+        | "MXN" | "NGN" | "NOK" | "PHP" | "PKR" | "RUB" | "SEK" | "THB" | "TWD" | "TZS"
+        | "VND" => Some(0),
+        "AED" | "AUD" | "BGN" | "BRL" | "CAD" | "CHF" | "CNY" | "CZK" | "EGP" | "EUR"
+        | "GBP" | "ILS" | "MYR" | "NZD" | "PEN" | "PLN" | "QAR" | "RON" | "SAR" | "SGD"
+        | "TRY" | "USD" | "ZAR" => Some(2),
+        _ => None,
+    }
+}
+
 pub fn minor_units_to_milliunits(currency: &str, amount: i64) -> Result<i64, AppleRequestError> {
     if !is_currency(currency) || amount <= 0 {
         return Err(AppleRequestError::InvalidProduct);
     }
-    let exponent = match currency {
-        "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND" => 3,
-        "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX"
-        | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0,
-        _ => 2,
-    };
+    let exponent = apple_advanced_commerce_exponent(currency)
+        .ok_or(AppleRequestError::InvalidProduct)?;
     let power = 3_u32.saturating_sub(exponent);
     amount
         .checked_mul(10_i64.pow(power))
@@ -187,5 +198,13 @@ mod tests {
     #[test]
     fn converts_zero_decimal_currency_to_milliunits() {
         assert_eq!(minor_units_to_milliunits("JPY", 700).unwrap(), 700000);
+    }
+
+    #[test]
+    fn rejects_currency_not_supported_by_advanced_commerce_price_table() {
+        assert_eq!(
+            minor_units_to_milliunits("KWD", 1000),
+            Err(AppleRequestError::InvalidProduct)
+        );
     }
 }
