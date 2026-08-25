@@ -90,6 +90,33 @@ pub(crate) fn evaluate_entitlement_access(
     }
 }
 
+pub(crate) fn active_purchase_rails(
+    allowed_rails: &[String],
+    active_providers_csv: &str,
+) -> Vec<String> {
+    let mut rails = Vec::new();
+    for provider in active_providers_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
+        let rail = match provider {
+            "apple_advanced_commerce" => "apple_in_app_purchase",
+            "google_play" => "google_play_billing",
+            "web_provider" => "web_provider",
+            "merchant_provider" => "merchant_provider",
+            "credits" => "credits",
+            _ => continue,
+        };
+        if allowed_rails.iter().any(|allowed| allowed == rail)
+            && !rails.iter().any(|existing| existing == rail)
+        {
+            rails.push(rail.to_string());
+        }
+    }
+    rails
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +214,22 @@ mod tests {
         );
         assert!(!decision.allowed);
         assert_eq!(decision.reason, "entitlement_inactive");
+    }
+
+    #[test]
+    fn purchase_rails_require_active_provider_binding() {
+        let allowed = vec![
+            "apple_in_app_purchase".to_string(),
+            "google_play_billing".to_string(),
+            "web_provider".to_string(),
+        ];
+        assert_eq!(
+            active_purchase_rails(&allowed, "web_provider"),
+            vec!["web_provider".to_string()]
+        );
+        assert_eq!(
+            active_purchase_rails(&allowed, "apple_advanced_commerce,google_play,web_provider"),
+            allowed
+        );
     }
 }
