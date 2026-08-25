@@ -32,6 +32,7 @@ pub enum PayoutProvider {
     StripeConnect,
     AdyenPlatform,
     PaypalMultiparty,
+    PaypalPayouts,
     WechatPlatform,
     AlipayPlatform,
     LianlianAccountPlus,
@@ -44,6 +45,7 @@ impl PayoutProvider {
             Self::StripeConnect => "stripe_connect",
             Self::AdyenPlatform => "adyen_platform",
             Self::PaypalMultiparty => "paypal_multiparty",
+            Self::PaypalPayouts => "paypal_payouts",
             Self::WechatPlatform => "wechat_platform",
             Self::AlipayPlatform => "alipay_platform",
             Self::LianlianAccountPlus => "lianlian_account_plus",
@@ -178,7 +180,18 @@ pub fn preferred_providers(
         (SettlementRegion::MainlandChina, SettlementSource::WebMarketplace) => {
             &[LianlianAccountPlus, HuifuDougong]
         }
-        (SettlementRegion::Global, _) => &[StripeConnect, AdyenPlatform, PaypalMultiparty],
+        (SettlementRegion::Global, SettlementSource::WebMarketplace) => {
+            &[StripeConnect, AdyenPlatform, PaypalMultiparty, PaypalPayouts]
+        }
+        (
+            SettlementRegion::Global,
+            SettlementSource::AppleStoreProceeds
+            | SettlementSource::GoogleStoreProceeds
+            | SettlementSource::OtherExternalProceeds,
+        ) => &[StripeConnect, AdyenPlatform, PaypalPayouts],
+        (SettlementRegion::Global, SettlementSource::WechatOrder | SettlementSource::AlipayOrder) => {
+            &[StripeConnect, AdyenPlatform, PaypalPayouts]
+        }
     }
 }
 
@@ -338,6 +351,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(selected.payout_account_id, "stripe");
+    }
+
+    #[test]
+    fn global_external_proceeds_can_use_paypal_payouts_without_fake_multiparty() {
+        let accounts = vec![account(
+            "paypal-payouts",
+            PayoutProvider::PaypalPayouts,
+            "USD",
+            PayoutPurpose::ExternalProceedsPayout,
+        )];
+        let selected = select_payout_account(
+            SettlementRegion::Global,
+            SettlementSource::AppleStoreProceeds,
+            "USD",
+            &accounts,
+        )
+        .unwrap();
+        assert_eq!(selected.payout_account_id, "paypal-payouts");
     }
 
     #[test]
