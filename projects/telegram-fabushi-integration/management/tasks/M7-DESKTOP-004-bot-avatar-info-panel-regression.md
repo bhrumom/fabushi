@@ -35,3 +35,11 @@
 ## Completion gate
 
 Keep below `RELEASED` until required current-head CI, protected merge, canonical-main readback, exact-main packaged E2E and the new GitHub Release all exist.
+
+## Exact-main delivery retry — 2026-08-25
+
+- Product main `3dd5e2e8122f0ac142a33002c969930ab4c05bf8` reached Electron run `32812505326`.
+- Linux real-Host E2E retained diagnostics artifact `9550324929` and correctly blocked publication.
+- New regression failed because the active peer contained two visible Motion v2 marks after Messenger re-render: the React-owned original mark had its external inline `display:none` overwritten while the Workbench portal mark remained.
+- Follow-up branch `fix/tfi-avatar-portal-e2e` replaces fragile inline-only hiding with a parent portal marker and CSS-enforced direct-child suppression, while clearing the marker whenever the portal moves.
+- Status remains `IMPLEMENTED`; Release is blocked until the follow-up merges and a new exact-main delivery is green.
