@@ -482,22 +482,25 @@ pub async fn verify_apple(mut request: Request, context: RouteContext<()>) -> Re
     let advanced_expected=worker::query!(&database,"SELECT request_reference_id,generic_product_id,dynamic_sku,currency,price_milliunits,tax_code FROM apple_advanced_commerce_requests WHERE payment_id=?1 LIMIT 1",&payment.payment_id)?.first::<AppleAdvancedCommerceExpectedRow>(None).await?;
     let advanced_binding=worker::query!(&database,"SELECT product_id FROM payment_provider_bindings WHERE product_id=?1 AND provider='apple_advanced_commerce' AND sync_state='active' LIMIT 1",&payment.product_id)?.first::<Value>(None).await?;
     if advanced_binding.is_some() && advanced_expected.is_none() {
-        return error_response(409,"apple_advanced_request_missing","Advanced Commerce checkout must be signed before transaction verification");
+        return error_response(
+            409,
+            "apple_advanced_request_missing",
+            "Advanced Commerce checkout must be signed before transaction verification",
+        );
     }
     let advanced_matches = match advanced_expected.as_ref() {
         Some(expected) => {
-            let info=payload.advanced_commerce_info.as_ref();
+            let info = payload.advanced_commerce_info.as_ref();
             info.is_some_and(|info| {
-                info.request_reference_id==expected.request_reference_id
-                    && info.tax_code==expected.tax_code
-                    && info.items.len()==1
-                    && info.items[0].sku==expected.dynamic_sku
-                    && info.items[0].price==expected.price_milliunits
+                info.request_reference_id == expected.request_reference_id
+                    && info.tax_code == expected.tax_code
+                    && info.items.len() == 1
+                    && info.items[0].sku == expected.dynamic_sku
+                    && info.items[0].price == expected.price_milliunits
                     && info.items[0].revocation_date.is_none()
-            })
-                && payload.product_id==expected.generic_product_id
-                && payload.app_account_token.as_deref()==Some(payment.payment_id.as_str())
-                && payload.currency.as_deref()==Some(expected.currency.as_str())
+            }) && payload.product_id == expected.generic_product_id
+                && payload.app_account_token.as_deref() == Some(payment.payment_id.as_str())
+                && payload.currency.as_deref() == Some(expected.currency.as_str())
         }
         None => true,
     };
@@ -615,7 +618,19 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
 pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
     let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-    if !matches!(provider.as_str(), "web" | "merchant" | "stripe_connect" | "adyen_platform" | "paypal_multiparty" | "paypal_payouts" | "wechat_platform" | "alipay_platform" | "lianlian_account_plus" | "huifu_dougong") {
+    if !matches!(
+        provider.as_str(),
+        "web"
+            | "merchant"
+            | "stripe_connect"
+            | "adyen_platform"
+            | "paypal_multiparty"
+            | "paypal_payouts"
+            | "wechat_platform"
+            | "alipay_platform"
+            | "lianlian_account_plus"
+            | "huifu_dougong"
+    ) {
         return error_response(
             404,
             "provider_not_found",
@@ -680,7 +695,11 @@ pub async fn admin_release_settlement(
         let database = context.env.d1(DATABASE_BINDING)?;
         if let Some(payment) = payment_by_id(&database, &input.payment_id).await? {
             if payment.currency != CREDITS_CURRENCY {
-                return error_response(409, "reconciliation_required", "fiat developer settlement must use the reconciliation waterfall");
+                return error_response(
+                    409,
+                    "reconciliation_required",
+                    "fiat developer settlement must use the reconciliation waterfall",
+                );
             }
         }
     }
