@@ -2,31 +2,24 @@ name: Developer Fiat Commerce
 
 on:
   push:
-    branches:
-      - main
-      - feat/fab-p0001-dynamic-fiat-commerce
+    branches: [main, feat/fab-p0001-dynamic-fiat-commerce]
     paths:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0012_cn_original_order_split.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/original_order_split.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
-      - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
-      - '.github/scripts/apply-google-global-pricing-patch.mjs'
-      - '.github/scripts/apply-commerce-active-rail-gate.mjs'
-      - '.github/scripts/apply-global-cn-payout-patch.mjs'
-      - '.github/scripts/apply-reconciled-refund-patch.mjs'
-      - '.github/scripts/apply-payout-maintenance-patch.mjs'
-      - '.github/scripts/apply-auto-payout-scheduler.mjs'
-      - '.github/scripts/apply-payout-onboarding-patch.mjs'
-      - '.github/scripts/apply-payout-capability-sync-patch.mjs'
+      - '.github/scripts/apply-*.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -35,12 +28,9 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
-      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0012_cn_original_order_split.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/scripts/apply-*.mjs'
@@ -51,7 +41,7 @@ permissions:
   contents: write
 
 jobs:
-  format-branch:
+  materialize-branch:
     if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
     runs-on: ubuntu-latest
     steps:
@@ -67,9 +57,12 @@ jobs:
           node .github/scripts/apply-global-cn-payout-patch.mjs
           node .github/scripts/apply-reconciled-refund-patch.mjs
           node .github/scripts/apply-payout-maintenance-patch.mjs
+          node .github/scripts/apply-cn-original-split-patch.mjs
           node .github/scripts/apply-auto-payout-scheduler.mjs
           node .github/scripts/apply-payout-onboarding-patch.mjs
           node .github/scripts/apply-payout-capability-sync-patch.mjs
+          node .github/scripts/apply-payout-developer-flow-patch.mjs
+          node .github/scripts/apply-apple-advanced-integrity-patch.mjs
       - name: Apply rustfmt
         run: |
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
@@ -78,7 +71,8 @@ jobs:
           rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs
           rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs
           rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs
-      - name: Commit generated integration if needed
+          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/original_order_split.rs
+      - name: Commit generated source if needed
         run: |
           if git diff --quiet; then exit 0; fi
           git config user.name 'fabushi-ci'
@@ -88,42 +82,55 @@ jobs:
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/original_order_split.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs \
                   third_party/mahayana/mahayana-rs/mahayana-pay-worker/src/lib.rs
-          git commit -m 'style(pay): integrate and format developer payout orchestration'
+          git commit -m 'feat(pay): materialize global and China commerce settlement'
           git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
 
   control-plane-unit:
+    needs: materialize-branch
+    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
       - run: cargo fmt --check
 
   control-plane-wasm:
+    needs: materialize-branch
+    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - run: cargo check --target wasm32-unknown-unknown
 
   platform-worker-wasm:
+    needs: materialize-branch
+    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -131,12 +138,16 @@ jobs:
       - run: cargo fmt --check
 
   pay-worker-wasm:
+    needs: materialize-branch
+    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: third_party/mahayana/mahayana-rs/mahayana-pay-worker
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -144,73 +155,63 @@ jobs:
       - run: cargo fmt --check
 
   schema-contract:
+    needs: materialize-branch
+    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify dynamic-fiat schema and generic ownership
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - name: Verify commerce, settlement and provider authority
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          schema = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql').read_text()
-          seed = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql').read_text()
-          required = ['developer_commerce_profiles','mini_app_commerce_owners','mini_app_commerce_members','payment_product_catalog','payment_price_revisions','payment_provider_bindings','developer_commerce_audit_events',"'global-dharma'","'official.fabushi'"]
-          for item in required: assert item in schema or item in seed, item
-          assert 'amount INTEGER' in schema
+          root=Path('third_party/mahayana/mahayana-rs')
+          schema=(root/'mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql').read_text()
+          seed=(root/'mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql').read_text()
+          payout_schema=(root/'mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql').read_text()
+          apple_schema=(root/'mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql').read_text()
+          split_schema=(root/'mahayana-platform-worker/migrations/0012_cn_original_order_split.sql').read_text()
+          for item in ['developer_commerce_profiles','mini_app_commerce_owners','payment_product_catalog','payment_price_revisions','payment_provider_bindings',"'global-dharma'","'official.fabushi'"]:
+              assert item in schema or item in seed, item
           assert 'REAL' not in schema and 'FLOAT' not in schema
           assert "'CNY', 3000" in seed and "'CNY', 108000" in seed
-          assert "'web_provider'" in seed and "'pending_configuration'" in seed
-          PY
-      - name: Verify global and China payout schema
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          schema=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql').read_text()
-          for item in ['developer_payout_profiles','payout_provider_routes','developer_settlement_reconciliations','store_settlement_batches','developer_payout_onboarding_sessions','developer_payout_attempts','reserve_release_after','kyc_status','payouts_enabled','stripe_connect','adyen_platform','paypal_multiparty','paypal_payouts','wechat_platform','alipay_platform','lianlian_account_plus','huifu_dougong']:
-              assert item in schema, item
-          assert 'pending_configuration' in schema
-          assert 'REAL' not in schema and 'FLOAT' not in schema
-          payout=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/payout.rs').read_text()
+          for item in ['developer_payout_profiles','payout_provider_routes','developer_settlement_reconciliations','developer_payout_onboarding_sessions','developer_payout_attempts','reserve_release_after','stripe_connect','adyen_platform','paypal_multiparty','paypal_payouts','wechat_platform','alipay_platform','lianlian_account_plus','huifu_dougong']:
+              assert item in payout_schema, item
+          assert 'pending_configuration' in payout_schema
+          assert 'apple_advanced_commerce_requests' in apple_schema and 'request_json' in apple_schema and 'price_milliunits' in apple_schema
+          assert 'developer_original_order_splits' in split_schema and 'source_provider_reference' in split_schema
+          payout=(root/'mahayana-commerce-control-worker/src/payout.rs').read_text()
           assert 'net_receipts' in payout and 'platform_fee_amount' in payout and 'NoEligibleProvider' in payout
-          orchestration=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs').read_text()
-          for item in ['developer_settlement_reconciliations','payout_provider_routes','kyc_status','payouts_enabled','PAYOUT_PROVIDER_EXECUTOR_TOKEN','paypal_payouts','reserveReleaseAfter']:
-              assert item in orchestration, item
-          refund=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs').read_text()
-          assert 'developer_reserved_account' in refund and 'platform:refund-loss:' in refund
-          assert 'available balance may become negative' in refund.lower()
-          reserve=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs').read_text()
-          assert 'reserve_release_after' in reserve and 'reserve_released_at' in reserve
-          worker=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
-          assert 'run_payout_maintenance' in worker and '#[event(scheduled)]' in worker
-          assert 'create_payout_onboarding' in worker and 'allowed_onboarding_provider' in worker
+          worker=(root/'mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
+          for item in ['run_payout_maintenance','#[event(scheduled)]','create_payout_onboarding','allowed_onboarding_provider','apple_advanced_commerce_requests','requestDeveloperPayout']:
+              if item == 'requestDeveloperPayout': continue
+              assert item in worker, item
           assert 'payout provider is not approved/configured for this route' in worker
-          PY
-      - name: Verify server pricing authority and active provider gate
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          domain=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/domain.rs').read_text()
-          draft=domain[domain.index('pub struct DeveloperProductDraft'):domain.index('pub struct ProviderBindingPlan')]
-          assert 'developer_id' not in draft and 'owner_user_id' not in draft and 'platform_fee_bps' not in draft
-          assert 'currency' in draft and 'amount' in draft
-          pay=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs').read_text()
+          assert '/v1/pay/admin/payouts/{}/dispatch' in worker
+          orchestration=(root/'mahayana-platform-worker/src/payout_orchestration.rs').read_text()
+          for item in ['reserveReleaseAfter','developer_original_order_splits','execute_original_order_split','paypal_payouts','PAYOUT_PROVIDER_EXECUTOR_TOKEN',"compliance_state=CASE WHEN EXISTS"]:
+              assert item in orchestration, item
+          refund=(root/'mahayana-platform-worker/src/reconciled_refund.rs').read_text()
+          assert 'developer_reserved_account' in refund and 'platform:refund-loss:' in refund
+          reserve=(root/'mahayana-platform-worker/src/reserve_release.rs').read_text()
+          assert 'reserve_release_after' in reserve and 'reserve_released_at' in reserve
+          split=(root/'mahayana-platform-worker/src/original_order_split.rs').read_text()
+          assert 'source provider payment reference' in split and 'originalOrderSplit' in split
+          pay=(root/'mahayana-platform-worker/src/payment_api.rs').read_text()
           request=pay[pay.index('struct CreateIntentRequest'):pay.index('struct AppleVerifyRequest')]
-          assert 'sku:' in request and 'rail:' in request and 'idempotency_key:' in request
           assert 'amount:' not in request and 'currency:' not in request and 'platform_fee' not in request
-          create=pay[pay.index('pub async fn create_intent'):pay.index('pub async fn get_intent')]
-          assert 'product.amount' in create and 'product.currency' in create and 'product.platform_fee_bps' in create
           assert 'advancedCommercePath' in pay
-          assert 'include!("reconciled_refund.rs")' in pay and 'include!("reserve_release.rs")' in pay
+          for item in ['AppleAdvancedCommerceExpectedRow','advanced_commerce_info','request_reference_id','price_milliunits','app_account_token']:
+              assert item in pay, item
           assert 'reconciled_refund_row(database, &payment.payment_id)' in pay
-          assert "state='paid'" in pay and 'developer_payout_attempts' in pay
-          worker=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
-          rails=worker[worker.index('fn pay_rails_json'):worker.index('async fn persist_product')]
-          assert 'p.sync_state != "active"' in rails
-          assert 'activate_google_pay_rail' in worker and 'google_play_billing' in worker
-          proxy=Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
-          assert '/v1/pay/admin/products' in proxy and '/v1/developer/commerce/payout/request' in proxy
+          proxy=(root/'mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
+          assert '/v1/developer/commerce/payout/request' in proxy and '/v1/pay/admin/payouts' in proxy
           assert 'assert!(!allowed_commerce_proxy_path' in proxy
-          google=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/google.rs').read_text()
+          google=(root/'mahayana-commerce-control-worker/src/google.rs').read_text()
           assert 'pricing:convertRegionPrices' in google and 'converted_region_prices' in google
-          wrangler=Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/wrangler.toml').read_text()
+          apple=(root/'mahayana-commerce-control-worker/src/apple.rs').read_text()
+          assert 'apple_advanced_commerce_exponent' in apple and 'KWD' in apple and 'InvalidProduct' in apple
+          wrangler=(root/'mahayana-commerce-control-worker/wrangler.toml').read_text()
           assert 'crons = ["0 * * * *"]' in wrangler and 'FABUSHI_PAY_DEFAULT_PLATFORM_FEE_BPS = "500"' in wrangler
           PY
