@@ -346,9 +346,24 @@ function globalDharmaChat(state, message) {
     });
   }
   if (message === '开始' && state.mode === 'local-prayer-wheel') {
-    return result('本地转经轮运行请求已准备好，宿主确认后才会执行。', {
-      handled: true, mode: state.mode,
-      hostRequest: { transport: 'mcp-host-bridge', capability: 'local.prayer-wheel.start', params: {} },
+    return result('本地转经轮需要有效权益。可选择月付 30 元或永久买断 1080 元；支付成功后宿主才会启动。', {
+      handled: true,
+      mode: state.mode,
+      hostRequest: {
+        transport: 'mcp-host-bridge',
+        capability: 'commerce.entitlement.require',
+        params: {
+          miniAppId: 'global-dharma',
+          capability: 'local.prayer-wheel.start',
+          plans: ['local-prayer-wheel.monthly', 'local-prayer-wheel.lifetime'],
+          restorePurchases: true,
+          onGranted: {
+            transport: 'mcp-host-bridge',
+            capability: 'local.prayer-wheel.start',
+            params: {},
+          },
+        },
+      },
     });
   }
   if (message === '开始' && state.mode === 'local-field') {

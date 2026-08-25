@@ -9,6 +9,8 @@ pub const REMOTE_COMPUTER_SCHEMA_V6: &str = include_str!("../migrations/0006_rem
 pub const WORKSPACE_MESSAGING_SCHEMA_V7: &str =
     include_str!("../migrations/0007_workspace_messaging.sql");
 pub const FABUSHI_PAY_SCHEMA_V7: &str = include_str!("../migrations/0007_fabushi_pay.sql");
+pub const MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8: &str =
+    include_str!("../migrations/0008_miniapp_payment_entitlements.sql");
 pub const ACCOUNT_AUTH_SCHEMA_V2: &str =
     include_str!("../account-migrations/0001_account_auth.sql");
 pub const ACCOUNT_OAUTH_SCHEMA_V3: &str =
@@ -105,6 +107,18 @@ fn validate_integer_amounts(schema: &str) -> Result<(), SchemaError> {
     Ok(())
 }
 
+pub fn validate_miniapp_payment_entitlements_schema(schema: &str) -> Result<(), SchemaError> {
+    require_tables(schema, &["payment_subscriptions"])?;
+    if !schema.contains("entitlement_duration_seconds")
+        || !schema.contains("billing_period_seconds")
+        || !schema.contains("local-prayer-wheel.monthly")
+        || !schema.contains("local-prayer-wheel.lifetime")
+    {
+        return Err(SchemaError::MissingTable("miniapp_payment_plan_fields"));
+    }
+    validate_integer_amounts(schema)
+}
+
 pub fn validate_listener_relay_schema(schema: &str) -> Result<(), SchemaError> {
     require_tables(schema, &["listener_registrations", "listener_events"])
 }
@@ -174,6 +188,8 @@ pub fn validate_account_principal_schema(schema: &str) -> Result<(), SchemaError
 #[cfg(target_arch = "wasm32")]
 mod identity_auth;
 
+#[cfg(target_arch = "wasm32")]
+mod payment_api;
 #[cfg(target_arch = "wasm32")]
 mod worker_api;
 

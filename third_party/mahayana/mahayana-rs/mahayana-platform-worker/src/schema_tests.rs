@@ -22,6 +22,19 @@ fn fabushi_pay_migration_contains_payment_and_settlement_invariants() {
 }
 
 #[test]
+fn miniapp_payment_entitlements_seed_global_dharma_plans() {
+    assert_eq!(
+        validate_miniapp_payment_entitlements_schema(MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8),
+        Ok(())
+    );
+    assert!(MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8.contains("'CNY', 3000"));
+    assert!(MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8.contains("'CNY', 108000"));
+    assert!(MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8.contains("2592000, 2592000"));
+    assert!(MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8.contains("local.prayer-wheel.start"));
+    assert!(!MINIAPP_PAYMENT_ENTITLEMENTS_SCHEMA_V8.contains("amount REAL"));
+}
+
+#[test]
 fn listener_relay_migration_contains_durable_registration_and_event_tables() {
     assert_eq!(
         validate_listener_relay_schema(LISTENER_RELAY_SCHEMA_V5),

@@ -103,6 +103,29 @@ struct ProductPolicyRow {
     platform_fee_bps: i64,
     allowed_rails_json: String,
     provider_product_refs_json: String,
+    display_name: String,
+    description: String,
+    entitlement_duration_seconds: Option<i64>,
+    billing_period_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct EntitlementAccessRow {
+    entitlement_id: String,
+    product_id: String,
+    order_id: String,
+    capability: String,
+    granted_at: i64,
+    expires_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SubscriptionAccessRow {
+    subscription_id: String,
+    status: String,
+    current_period_start: i64,
+    current_period_end: i64,
+    latest_payment_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -127,6 +150,8 @@ struct PaymentIntentRow {
     provider_reference: Option<String>,
     refunded_amount: i64,
     released_developer_amount: i64,
+    entitlement_duration_seconds: Option<i64>,
+    billing_period_seconds: Option<i64>,
     created_at: i64,
     updated_at: i64,
 }
@@ -264,8 +289,9 @@ pub async fn create_intent(mut request: Request, context: RouteContext<()>) -> R
         "INSERT INTO payment_intents
          (payment_id, idempotency_key, user_id, mini_app_id, developer_id, product_id, price_id,
           entitlement_capability, sku, product_kind, rail, provider_product_ref, currency, amount,
-          platform_fee_bps, status, refunded_amount, released_developer_amount, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 0, ?17, ?17)",
+          platform_fee_bps, status, refunded_amount, released_developer_amount,
+          entitlement_duration_seconds, billing_period_seconds, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0, 0, ?17, ?18, ?19, ?19)",
         &payment_id,
         &input.idempotency_key,
         &user_id,
@@ -282,6 +308,8 @@ pub async fn create_intent(mut request: Request, context: RouteContext<()>) -> R
         product.amount,
         product.platform_fee_bps,
         status,
+        product.entitlement_duration_seconds,
+        product.billing_period_seconds,
         now
     )?
     .run()
@@ -291,6 +319,98 @@ pub async fn create_intent(mut request: Request, context: RouteContext<()>) -> R
         .await?
         .ok_or_else(|| worker::Error::RustError("payment intent was not persisted".into()))?;
     payment_response(&payment)
+}
+
+pub async fn list_plans(request: Request, context: RouteContext<()>) -> Result<Response> {
+    let _user_id = authenticated_user(&request, &context.env)?;
+    let mini_app_id = route_identifier(&context, "mini_app_id")?;
+    let capability = route_identifier(&context, "capability")?;
+    validate_identifier(mini_app_id)?;
+    validate_identifier(capability)?;
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let plans = active_payment_plans(&database, mini_app_id, capability, now_seconds()).await?;
+    Response::from_json(&json!({
+        "schema": "mahayana.miniapp.payment-plans.v1",
+        "miniAppId": mini_app_id,
+        "capability": capability,
+        "plans": plans.iter().map(payment_plan_json).collect::<Vec<_>>(),
+    }))
+}
+
+pub async fn get_entitlement(request: Request, context: RouteContext<()>) -> Result<Response> {
+    let user_id = authenticated_user(&request, &context.env)?;
+    let mini_app_id = route_identifier(&context, "mini_app_id")?;
+    let capability = route_identifier(&context, "capability")?;
+    validate_identifier(mini_app_id)?;
+    validate_identifier(capability)?;
+    let database = context.env.d1(DATABASE_BINDING)?;
+    let now = now_seconds();
+    database
+        .batch(vec![
+            worker::query!(
+                &database,
+                "UPDATE entitlements SET status = 'expired'\n                 WHERE user_id = ?1 AND plugin_id = ?2 AND capability = ?3\n                   AND status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?4",
+                &user_id,
+                mini_app_id,
+                capability,
+                now
+            )?,
+            worker::query!(
+                &database,
+                "UPDATE payment_subscriptions SET status = 'expired', updated_at = ?1\n                 WHERE user_id = ?2 AND mini_app_id = ?3 AND capability = ?4\n                   AND status IN ('active', 'cancel_at_period_end', 'billing_retry')\n                   AND current_period_end <= ?1",
+                now,
+                &user_id,
+                mini_app_id,
+                capability
+            )?,
+        ])
+        .await?;
+    let entitlement = worker::query!(
+        &database,
+        "SELECT entitlement_id, product_id, order_id, capability, granted_at, expires_at\n         FROM entitlements\n         WHERE user_id = ?1 AND plugin_id = ?2 AND capability = ?3 AND status = 'active'\n           AND (expires_at IS NULL OR expires_at > ?4)\n         ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END DESC, expires_at DESC, granted_at DESC\n         LIMIT 1",
+        &user_id,
+        mini_app_id,
+        capability,
+        now
+    )?
+    .first::<EntitlementAccessRow>(None)
+    .await?;
+    let subscription = worker::query!(
+        &database,
+        "SELECT subscription_id, status, current_period_start, current_period_end, latest_payment_id
+         FROM payment_subscriptions
+         WHERE user_id = ?1 AND mini_app_id = ?2 AND capability = ?3
+         ORDER BY updated_at DESC LIMIT 1",
+        &user_id,
+        mini_app_id,
+        capability
+    )?
+    .first::<SubscriptionAccessRow>(None)
+    .await?;
+    let plans = active_payment_plans(&database, mini_app_id, capability, now).await?;
+    Response::from_json(&json!({
+        "schema": "mahayana.miniapp.entitlement.v1",
+        "miniAppId": mini_app_id,
+        "capability": capability,
+        "granted": entitlement.is_some(),
+        "checkedAt": now,
+        "entitlement": entitlement.map(|row| json!({
+            "entitlementId": row.entitlement_id,
+            "productId": row.product_id,
+            "orderId": row.order_id,
+            "capability": row.capability,
+            "grantedAt": row.granted_at,
+            "expiresAt": row.expires_at,
+        })),
+        "plans": plans.iter().map(payment_plan_json).collect::<Vec<_>>(),
+        "subscription": subscription.map(|row| json!({
+            "subscriptionId": row.subscription_id,
+            "status": row.status,
+            "currentPeriodStart": row.current_period_start,
+            "currentPeriodEnd": row.current_period_end,
+            "latestPaymentId": row.latest_payment_id,
+        })),
+    }))
 }
 
 pub async fn get_intent(request: Request, context: RouteContext<()>) -> Result<Response> {
@@ -557,7 +677,7 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
 pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
     let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-    if !matches!(provider.as_str(), "web" | "merchant") {
+    if !matches!(provider.as_str(), "apple" | "google" | "web" | "merchant") {
         return error_response(
             404,
             "provider_not_found",
@@ -844,6 +964,23 @@ pub async fn admin_developer_balance(
     )
 }
 
+fn provider_rail(provider: &str) -> Result<&'static str> {
+    match provider {
+        "apple" => Ok("apple_in_app_purchase"),
+        "google" => Ok("google_play_billing"),
+        "web" => Ok("web_provider"),
+        "merchant" => Ok("merchant_provider"),
+        _ => Err(worker::Error::RustError(
+            "normalized payment provider is not configured".into(),
+        )),
+    }
+}
+
+fn renewal_payment_id(provider: &str, event_id: &str) -> String {
+    let digest = sha256_hex(format!("{provider}:{event_id}").as_bytes());
+    format!("renewal-{}", &digest[..32])
+}
+
 async fn process_normalized_event(
     database: &worker::D1Database,
     provider: &str,
@@ -858,11 +995,7 @@ async fn process_normalized_event(
             let payment = payment_by_id(database, payment_id)
                 .await?
                 .ok_or_else(|| worker::Error::RustError("webhook payment not found".into()))?;
-            let expected_rail = if provider == "merchant" {
-                "merchant_provider"
-            } else {
-                "web_provider"
-            };
+            let expected_rail = provider_rail(provider)?;
             if payment.rail != expected_rail {
                 return Err(worker::Error::RustError(
                     "provider rail does not match payment intent".into(),
@@ -891,6 +1024,115 @@ async fn process_normalized_event(
                 "UPDATE payment_intents SET status = ?1, provider_reference = COALESCE(?2, provider_reference), updated_at = ?3
                  WHERE payment_id = ?4 AND status IN ('created', 'requires_action', 'processing')",
                 status, event.provider_reference.as_deref(), occurred_at, payment_id)?.run().await?;
+            Ok(Some(payment_id.to_string()))
+        }
+        "subscriptionRenewed" => {
+            let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
+            let provider_reference =
+                required_event_value(event.provider_reference.as_deref(), "providerReference")?;
+            let source = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("subscription payment not found".into()))?;
+            if source.product_kind != "subscription" || source.rail != provider_rail(provider)? {
+                return Err(worker::Error::RustError(
+                    "subscription renewal does not match the original product or rail".into(),
+                ));
+            }
+            let renewal_payment_id = renewal_payment_id(provider, &event.event_id);
+            let renewal_key = format!("subscription-renewal:{provider}:{}", event.event_id);
+            worker::query!(
+                database,
+                "INSERT OR IGNORE INTO payment_intents
+                 (payment_id, idempotency_key, user_id, mini_app_id, developer_id, product_id,
+                  price_id, entitlement_capability, sku, product_kind, rail, provider_product_ref,
+                  currency, amount, platform_fee_bps, status, refunded_amount,
+                  released_developer_amount, entitlement_duration_seconds, billing_period_seconds,
+                  created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'subscription', ?10, ?11,
+                         ?12, ?13, ?14, 'processing', 0, 0, ?15, ?16, ?17, ?17)",
+                &renewal_payment_id,
+                &renewal_key,
+                &source.user_id,
+                &source.mini_app_id,
+                &source.developer_id,
+                &source.product_id,
+                &source.price_id,
+                &source.entitlement_capability,
+                &source.sku,
+                &source.rail,
+                source.provider_product_ref.as_deref(),
+                &source.currency,
+                source.amount,
+                source.platform_fee_bps,
+                source.entitlement_duration_seconds,
+                source.billing_period_seconds,
+                occurred_at
+            )?
+            .run()
+            .await?;
+            let renewal = payment_by_id(database, &renewal_payment_id)
+                .await?
+                .ok_or_else(|| {
+                    worker::Error::RustError("renewal payment was not persisted".into())
+                })?;
+            post_success(
+                database,
+                &renewal,
+                provider,
+                provider_reference,
+                &event.event_id,
+                occurred_at,
+                false,
+            )
+            .await?;
+            Ok(Some(renewal_payment_id))
+        }
+        "subscriptionCancelled"
+        | "subscriptionBillingRetry"
+        | "subscriptionResumed"
+        | "subscriptionExpired" => {
+            let payment_id = required_event_value(event.payment_id.as_deref(), "paymentId")?;
+            let payment = payment_by_id(database, payment_id)
+                .await?
+                .ok_or_else(|| worker::Error::RustError("subscription payment not found".into()))?;
+            if payment.product_kind != "subscription" || payment.rail != provider_rail(provider)? {
+                return Err(worker::Error::RustError(
+                    "subscription event does not match the original product or rail".into(),
+                ));
+            }
+            let next_status = match event.event_type.as_str() {
+                "subscriptionCancelled" => "cancel_at_period_end",
+                "subscriptionBillingRetry" => "billing_retry",
+                "subscriptionResumed" => "active",
+                "subscriptionExpired" => "expired",
+                _ => unreachable!(),
+            };
+            worker::query!(
+                database,
+                "UPDATE payment_subscriptions SET status = ?1, updated_at = ?2
+                 WHERE user_id = ?3 AND mini_app_id = ?4 AND product_id = ?5",
+                next_status,
+                occurred_at,
+                &payment.user_id,
+                &payment.mini_app_id,
+                &payment.product_id
+            )?
+            .run()
+            .await?;
+            if next_status == "expired" {
+                worker::query!(
+                    database,
+                    "UPDATE entitlements SET status = 'expired'
+                     WHERE user_id = ?1 AND plugin_id = ?2 AND product_id = ?3
+                       AND capability = ?4 AND status = 'active'",
+                    &payment.user_id,
+                    &payment.mini_app_id,
+                    &payment.product_id,
+                    &payment.entitlement_capability
+                )?
+                .run()
+                .await?;
+            }
             Ok(Some(payment_id.to_string()))
         }
         "refundSucceeded" => {
@@ -1013,6 +1255,12 @@ async fn post_success(
     ) {
         return Err(worker::Error::RustError("payment is not capturable".into()));
     }
+    let entitlement_expires_at = next_entitlement_expiry(database, payment, occurred_at).await?;
+    let entitlement_period_start = entitlement_expires_at.and_then(|end| {
+        payment
+            .entitlement_duration_seconds
+            .map(|duration| end.saturating_sub(duration))
+    });
     let fee = platform_fee(payment, payment.amount);
     let developer_net = payment.amount.saturating_sub(fee);
     let source_account = if debit_user {
@@ -1152,8 +1400,8 @@ async fn post_success(
     statements.push(worker::query!(
         database,
         "INSERT OR IGNORE INTO entitlements
-         (entitlement_id, user_id, plugin_id, product_id, order_id, capability, status, granted_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7
+         (entitlement_id, user_id, plugin_id, product_id, order_id, capability, status, granted_at, expires_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8
          FROM payment_intents WHERE payment_id = ?5 AND status = 'succeeded'",
         &entitlement_id,
         &payment.user_id,
@@ -1161,8 +1409,37 @@ async fn post_success(
         &payment.product_id,
         &order_id,
         &payment.entitlement_capability,
-        occurred_at
+        occurred_at,
+        entitlement_expires_at
     )?);
+    if payment.product_kind == "subscription" {
+        let subscription_id = format!("subscription:{}:{}", payment.user_id, payment.product_id);
+        statements.push(worker::query!(
+            database,
+            "INSERT INTO payment_subscriptions
+             (subscription_id, user_id, mini_app_id, product_id, capability, rail, status,
+              current_period_start, current_period_end, original_payment_id, latest_payment_id,
+              created_at, updated_at)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?8, ?9, ?9, ?10, ?10
+             FROM payment_intents WHERE payment_id = ?9 AND status = 'succeeded' AND ?8 IS NOT NULL
+             ON CONFLICT(user_id, mini_app_id, product_id) DO UPDATE SET
+               status = 'active',
+               current_period_start = excluded.current_period_start,
+               current_period_end = excluded.current_period_end,
+               latest_payment_id = excluded.latest_payment_id,
+               updated_at = excluded.updated_at",
+            &subscription_id,
+            &payment.user_id,
+            &payment.mini_app_id,
+            &payment.product_id,
+            &payment.entitlement_capability,
+            &payment.rail,
+            entitlement_period_start,
+            entitlement_expires_at,
+            &payment.payment_id,
+            occurred_at
+        )?);
+    }
     statements.push(worker::query!(database,
         "INSERT OR IGNORE INTO audit_events
          (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
@@ -1317,6 +1594,34 @@ async fn apply_refund(
             occurred_at,
             &payment.payment_id
         )?);
+        if payment.product_kind == "subscription" {
+            statements.push(worker::query!(
+                database,
+                "UPDATE payment_subscriptions
+                 SET status = CASE
+                       WHEN EXISTS (
+                         SELECT 1 FROM entitlements e
+                         WHERE e.user_id = ?1 AND e.plugin_id = ?2 AND e.product_id = ?3
+                           AND e.capability = ?4 AND e.status = 'active'
+                           AND e.order_id <> ?5 AND e.expires_at > ?6
+                       ) THEN 'active' ELSE 'revoked' END,
+                     current_period_end = COALESCE((
+                       SELECT MAX(e.expires_at) FROM entitlements e
+                       WHERE e.user_id = ?1 AND e.plugin_id = ?2 AND e.product_id = ?3
+                         AND e.capability = ?4 AND e.status = 'active'
+                         AND e.order_id <> ?5 AND e.expires_at > ?6
+                     ), current_period_end),
+                     updated_at = ?6
+                 WHERE user_id = ?1 AND mini_app_id = ?2 AND product_id = ?3
+                   AND latest_payment_id = ?5",
+                &payment.user_id,
+                &payment.mini_app_id,
+                &payment.product_id,
+                &payment.entitlement_capability,
+                &payment.payment_id,
+                occurred_at
+            )?);
+        }
     }
     database.batch(statements).await?;
     Ok(())
@@ -1361,6 +1666,87 @@ async fn reverse_failed_payout(
     Ok(())
 }
 
+async fn next_entitlement_expiry(
+    database: &worker::D1Database,
+    payment: &PaymentIntentRow,
+    occurred_at: i64,
+) -> Result<Option<i64>> {
+    let Some(duration) = payment.entitlement_duration_seconds else {
+        return Ok(None);
+    };
+    if duration <= 0 {
+        return Err(worker::Error::RustError(
+            "entitlement duration must be a positive number of seconds".into(),
+        ));
+    }
+    #[derive(Debug, Deserialize)]
+    struct LatestExpiryRow {
+        expires_at: Option<i64>,
+    }
+    let latest = worker::query!(
+        database,
+        "SELECT MAX(expires_at) AS expires_at FROM entitlements
+         WHERE user_id = ?1 AND plugin_id = ?2 AND product_id = ?3
+           AND capability = ?4 AND status = 'active' AND expires_at > ?5",
+        &payment.user_id,
+        &payment.mini_app_id,
+        &payment.product_id,
+        &payment.entitlement_capability,
+        occurred_at
+    )?
+    .first::<LatestExpiryRow>(None)
+    .await?
+    .and_then(|row| row.expires_at);
+    Ok(Some(
+        latest
+            .unwrap_or(occurred_at)
+            .max(occurred_at)
+            .saturating_add(duration),
+    ))
+}
+
+async fn active_payment_plans(
+    database: &worker::D1Database,
+    mini_app_id: &str,
+    capability: &str,
+    now: i64,
+) -> Result<Vec<ProductPolicyRow>> {
+    worker::query!(
+        database,
+        "SELECT p.product_id, pr.price_id, p.plugin_id, p.sku,\n                p.entitlement_capability AS capability, pr.currency, pr.amount,\n                pc.developer_id, pc.product_kind, pc.platform_fee_bps,\n                pc.allowed_rails_json, pc.provider_product_refs_json,\n                pc.display_name, pc.description, pc.entitlement_duration_seconds,\n                pc.billing_period_seconds\n         FROM products p\n         JOIN prices pr ON pr.product_id = p.product_id\n         JOIN payment_product_config pc ON pc.product_id = p.product_id\n         WHERE p.plugin_id = ?1 AND p.entitlement_capability = ?2\n           AND p.active = 1 AND pc.active = 1 AND pr.active = 1\n           AND pr.starts_at <= ?3 AND (pr.ends_at IS NULL OR pr.ends_at > ?3)\n         ORDER BY CASE pc.product_kind WHEN 'subscription' THEN 0 ELSE 1 END, pr.amount ASC",
+        mini_app_id,
+        capability,
+        now
+    )?
+    .all()
+    .await?
+    .results::<ProductPolicyRow>()
+}
+
+fn payment_plan_json(plan: &ProductPolicyRow) -> Value {
+    let rails = serde_json::from_str::<Vec<String>>(&plan.allowed_rails_json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|rail| rail_api_name(&rail).to_string())
+        .collect::<Vec<_>>();
+    json!({
+        "productId": plan.product_id,
+        "priceId": plan.price_id,
+        "miniAppId": plan.plugin_id,
+        "sku": plan.sku,
+        "capability": plan.capability,
+        "displayName": plan.display_name,
+        "description": plan.description,
+        "productKind": product_kind_api_name(&plan.product_kind),
+        "amount": plan.amount,
+        "currency": plan.currency,
+        "billingPeriodSeconds": plan.billing_period_seconds,
+        "entitlementDurationSeconds": plan.entitlement_duration_seconds,
+        "allowedRails": rails,
+        "serverAuthoritative": true,
+    })
+}
+
 async fn active_payment_product(
     database: &worker::D1Database,
     mini_app_id: &str,
@@ -1372,7 +1758,9 @@ async fn active_payment_product(
         "SELECT p.product_id, pr.price_id, p.plugin_id, p.sku,
                 p.entitlement_capability AS capability, pr.currency, pr.amount,
                 pc.developer_id, pc.product_kind, pc.platform_fee_bps,
-                pc.allowed_rails_json, pc.provider_product_refs_json
+                pc.allowed_rails_json, pc.provider_product_refs_json,
+                pc.display_name, pc.description, pc.entitlement_duration_seconds,
+                pc.billing_period_seconds
          FROM products p
          JOIN prices pr ON pr.product_id = p.product_id
          JOIN payment_product_config pc ON pc.product_id = p.product_id
@@ -1395,7 +1783,7 @@ async fn payment_by_id(
         "SELECT payment_id, idempotency_key, user_id, mini_app_id, developer_id, product_id, price_id,
                 entitlement_capability, sku, product_kind, rail, provider_product_ref, currency, amount,
                 platform_fee_bps, status, provider_reference, refunded_amount, released_developer_amount,
-                created_at, updated_at
+                entitlement_duration_seconds, billing_period_seconds, created_at, updated_at
          FROM payment_intents WHERE payment_id = ?1", payment_id)?
         .first::<PaymentIntentRow>(None).await
 }
@@ -1409,7 +1797,7 @@ async fn payment_by_idempotency(
         "SELECT payment_id, idempotency_key, user_id, mini_app_id, developer_id, product_id, price_id,
                 entitlement_capability, sku, product_kind, rail, provider_product_ref, currency, amount,
                 platform_fee_bps, status, provider_reference, refunded_amount, released_developer_amount,
-                created_at, updated_at
+                entitlement_duration_seconds, billing_period_seconds, created_at, updated_at
          FROM payment_intents WHERE user_id = ?1 AND idempotency_key = ?2", user_id, idempotency_key)?
         .first::<PaymentIntentRow>(None).await
 }
@@ -1568,6 +1956,8 @@ fn payment_json(payment: &PaymentIntentRow) -> Value {
         "status": status_api_name(&payment.status),
         "providerReference": payment.provider_reference,
         "refundedAmount": payment.refunded_amount,
+        "entitlementDurationSeconds": payment.entitlement_duration_seconds,
+        "billingPeriodSeconds": payment.billing_period_seconds,
         "createdAt": payment.created_at,
         "updatedAt": payment.updated_at,
     })
@@ -1624,6 +2014,14 @@ fn rail_api_name(value: &str) -> &str {
         "google_play_billing" => "googlePlayBilling",
         "web_provider" => "webProvider",
         "merchant_provider" => "merchantProvider",
+        other => other,
+    }
+}
+
+fn product_kind_api_name(value: &str) -> &str {
+    match value {
+        "digital_consumable" => "digitalConsumable",
+        "digital_durable" => "digitalDurable",
         other => other,
     }
 }
