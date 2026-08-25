@@ -12,6 +12,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
@@ -20,6 +21,7 @@ on:
       - '.github/scripts/apply-google-global-pricing-patch.mjs'
       - '.github/scripts/apply-commerce-active-rail-gate.mjs'
       - '.github/scripts/apply-global-cn-payout-patch.mjs'
+      - '.github/scripts/apply-reconciled-refund-patch.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -30,11 +32,13 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/scripts/apply-global-cn-payout-patch.mjs'
+      - '.github/scripts/apply-reconciled-refund-patch.mjs'
       - '.github/scripts/apply-commerce-active-rail-gate.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
@@ -57,12 +61,14 @@ jobs:
           node .github/scripts/apply-google-global-pricing-patch.mjs
           node .github/scripts/apply-commerce-active-rail-gate.mjs
           node .github/scripts/apply-global-cn-payout-patch.mjs
+          node .github/scripts/apply-reconciled-refund-patch.mjs
       - name: Apply rustfmt
         run: |
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml
           rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs
+          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs
       - name: Commit generated integration if needed
         run: |
           if git diff --quiet; then
@@ -73,6 +79,7 @@ jobs:
           git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs \
                   third_party/mahayana/mahayana-rs/mahayana-pay-worker/src/lib.rs
@@ -177,6 +184,10 @@ jobs:
           assert 'payout_provider_routes' in orchestration
           assert 'kyc_status' in orchestration and 'payouts_enabled' in orchestration
           assert 'PAYOUT_PROVIDER_EXECUTOR_TOKEN' in orchestration
+          refund = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs').read_text()
+          assert 'developer-reserved:' in refund
+          assert 'platform:refund-loss:' in refund
+          assert 'available balance may become negative' in refund.lower()
           PY
       - name: Verify server pricing authority and active provider gate
         run: |
@@ -196,6 +207,8 @@ jobs:
           create = pay[pay.index('pub async fn create_intent'):pay.index('pub async fn get_intent')]
           assert 'product.amount' in create and 'product.currency' in create and 'product.platform_fee_bps' in create
           assert 'advancedCommercePath' in pay
+          assert 'include!("reconciled_refund.rs")' in pay
+          assert 'reconciled_refund_row(database, &payment.payment_id)' in pay
 
           worker = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
           rails = worker[worker.index('fn pay_rails_json'):worker.index('async fn persist_product')]
