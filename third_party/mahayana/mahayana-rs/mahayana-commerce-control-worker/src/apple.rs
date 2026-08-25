@@ -50,7 +50,12 @@ pub fn mini_app_partner_sku(product: &AppleCatalogProduct) -> Result<String, App
     {
         return Err(AppleRequestError::InvalidProduct);
     }
-    let sku = format!("{}|{}|{}", product.mini_app_sku, product.partner_name.trim(), product.partner_id);
+    let sku = format!(
+        "{}|{}|{}",
+        product.mini_app_sku,
+        product.partner_name.trim(),
+        product.partner_id
+    );
     if sku.len() > 128 {
         return Err(AppleRequestError::InvalidProduct);
     }
@@ -63,11 +68,14 @@ pub fn minor_units_to_milliunits(currency: &str, amount: i64) -> Result<i64, App
     }
     let exponent = match currency {
         "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND" => 3,
-        "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX" | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0,
+        "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX"
+        | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0,
         _ => 2,
     };
     let power = 3_u32.saturating_sub(exponent);
-    amount.checked_mul(10_i64.pow(power)).ok_or(AppleRequestError::PriceOverflow)
+    amount
+        .checked_mul(10_i64.pow(power))
+        .ok_or(AppleRequestError::PriceOverflow)
 }
 
 pub fn build_advanced_commerce_request(
@@ -161,13 +169,19 @@ mod tests {
     fn builds_apple_subscription_from_server_authoritative_fiat_price() {
         let value = build_advanced_commerce_request(
             &product("subscription"),
-            &AppleRequestInput { storefront: "CHN".into() },
+            &AppleRequestInput {
+                storefront: "CHN".into(),
+            },
             "62cc8233-3030-4014-8e9e-e5f957fe11df",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(value.request_json["operation"], "CREATE_SUBSCRIPTION");
         assert_eq!(value.request_json["currency"], "CNY");
         assert_eq!(value.request_json["items"][0]["price"], 30000);
-        assert_eq!(value.request_json["items"][0]["SKU"], "prayer-wheel.monthly|Fabushi|official.fabushi");
+        assert_eq!(
+            value.request_json["items"][0]["SKU"],
+            "prayer-wheel.monthly|Fabushi|official.fabushi"
+        );
     }
 
     #[test]

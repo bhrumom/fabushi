@@ -70,8 +70,10 @@ pub fn validate_product_draft(input: &DeveloperProductDraft) -> Result<(), Catal
     if input.description.chars().count() > 45 {
         return Err(CatalogError::InvalidIdentifier);
     }
-    if !matches!(input.product_kind.as_str(),
-        "digital_consumable" | "digital_durable" | "subscription" | "physical" | "service") {
+    if !matches!(
+        input.product_kind.as_str(),
+        "digital_consumable" | "digital_durable" | "subscription" | "physical" | "service"
+    ) {
         return Err(CatalogError::InvalidProductKind);
     }
     if !is_currency(&input.currency) {
@@ -88,7 +90,12 @@ pub fn validate_product_draft(input: &DeveloperProductDraft) -> Result<(), Catal
         return Err(CatalogError::InvalidSubscriptionPeriod);
     }
     if let Some(code) = input.tax_code.as_deref() {
-        if code.trim().is_empty() || code.len() > 64 || !code.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')) {
+        if code.trim().is_empty()
+            || code.len() > 64
+            || !code
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        {
             return Err(CatalogError::InvalidTaxCode);
         }
     }
@@ -101,8 +108,9 @@ pub fn validate_product_draft(input: &DeveloperProductDraft) -> Result<(), Catal
 
 pub fn normalized_rails(input: &DeveloperProductDraft) -> Result<Vec<String>, CatalogError> {
     let defaults: &[&str] = match input.product_kind.as_str() {
-        "digital_consumable" | "digital_durable" | "subscription" =>
-            &["apple_advanced_commerce", "google_play", "web_provider"],
+        "digital_consumable" | "digital_durable" | "subscription" => {
+            &["apple_advanced_commerce", "google_play", "web_provider"]
+        }
         "physical" | "service" => &["merchant_provider", "web_provider"],
         _ => return Err(CatalogError::InvalidProductKind),
     };
@@ -153,14 +161,24 @@ pub fn plan_provider_bindings(
                     provider: rail,
                     external_product_ref: generic.clone(),
                     generic_product_id: generic,
-                    sync_state: if active { "active" } else { "pending_configuration" }.into(),
+                    sync_state: if active {
+                        "active"
+                    } else {
+                        "pending_configuration"
+                    }
+                    .into(),
                 }
             }
             "google_play" => ProviderBindingPlan {
                 provider: rail,
                 external_product_ref: Some(google_product_id(mini_app_id, &input.sku)),
                 generic_product_id: None,
-                sync_state: if configuration.google_catalog_sync_enabled { "pending_sync" } else { "pending_configuration" }.into(),
+                sync_state: if configuration.google_catalog_sync_enabled {
+                    "pending_sync"
+                } else {
+                    "pending_configuration"
+                }
+                .into(),
             },
             "web_provider" => ProviderBindingPlan {
                 provider: rail,
@@ -174,7 +192,12 @@ pub fn plan_provider_bindings(
                 generic_product_id: None,
                 sync_state: "active".into(),
             },
-            "credits" => ProviderBindingPlan { provider: rail, external_product_ref: None, generic_product_id: None, sync_state: "active".into() },
+            "credits" => ProviderBindingPlan {
+                provider: rail,
+                external_product_ref: None,
+                generic_product_id: None,
+                sync_state: "active".into(),
+            },
             _ => return Err(CatalogError::InvalidRail),
         };
         result.push(binding);
@@ -183,7 +206,11 @@ pub fn plan_provider_bindings(
 }
 
 pub fn is_identifier(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 128 && value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
 }
 
 pub fn is_currency(value: &str) -> bool {
@@ -194,7 +221,13 @@ pub fn google_product_id(mini_app_id: &str, sku: &str) -> String {
     let mut value: String = format!("{}.{}", mini_app_id, sku)
         .to_ascii_lowercase()
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect();
     value.truncate(128);
     value
@@ -221,7 +254,10 @@ mod tests {
 
     #[test]
     fn digital_fiat_defaults_to_store_and_web() {
-        assert_eq!(normalized_rails(&monthly()).unwrap(), vec!["apple_advanced_commerce", "google_play", "web_provider"]);
+        assert_eq!(
+            normalized_rails(&monthly()).unwrap(),
+            vec!["apple_advanced_commerce", "google_play", "web_provider"]
+        );
     }
 
     #[test]
@@ -236,19 +272,31 @@ mod tests {
     fn credits_are_optional_not_a_fiat_intermediary() {
         let mut input = monthly();
         input.rails = vec!["credits".into()];
-        assert_eq!(validate_product_draft(&input), Err(CatalogError::CreditsCurrencyMismatch));
+        assert_eq!(
+            validate_product_draft(&input),
+            Err(CatalogError::CreditsCurrencyMismatch)
+        );
     }
 
     #[test]
     fn apple_fails_closed_without_program_configuration_or_tax_code() {
         let mut input = monthly();
         input.tax_code = None;
-        let plans = plan_provider_bindings("global-dharma", &input, &ProviderConfiguration {
-            apple_advanced_commerce_enabled: true,
-            apple_one_time_generic_product_id: Some("com.ombhrum.fabushi.miniapp.onetime".into()),
-            apple_subscription_generic_product_id: Some("com.ombhrum.fabushi.miniapp.subscription".into()),
-            google_catalog_sync_enabled: false,
-        }).unwrap();
+        let plans = plan_provider_bindings(
+            "global-dharma",
+            &input,
+            &ProviderConfiguration {
+                apple_advanced_commerce_enabled: true,
+                apple_one_time_generic_product_id: Some(
+                    "com.ombhrum.fabushi.miniapp.onetime".into(),
+                ),
+                apple_subscription_generic_product_id: Some(
+                    "com.ombhrum.fabushi.miniapp.subscription".into(),
+                ),
+                google_catalog_sync_enabled: false,
+            },
+        )
+        .unwrap();
         assert_eq!(plans[0].sync_state, "pending_configuration");
     }
 }
