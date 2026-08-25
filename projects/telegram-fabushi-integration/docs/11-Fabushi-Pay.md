@@ -1,129 +1,245 @@
 # Fabushi Pay / Monetization Platform
 
 - **项目**：Fabushi Telegram 全量融合
+- **Project ID**：`FAB-P0001`
 - **文档 ID**：DOC-11
-- **版本**：v1.1
-- **状态**：ACTIVE_DESIGN
+- **版本**：v1.2
+- **状态**：IMPLEMENTATION_ACTIVE
 - **基线日期**：2026-08-22
 - **扩展日期**：2026-08-25
-- **源计划**：`../source/完整telegram融合进fabushi.txt`
 
-目标：Mini App、Bot、Agent、聊天内商品、订阅和广告统一走 Fabushi Monetization Platform；支付只是收入来源之一。
+目标：Mini App、Bot、Agent、聊天内商品、订阅、广告和开发者收益统一进入 Fabushi Monetization Platform；支付只是收入来源之一。
 
-## 统一领域模型
+## 1. 唯一资金真相
 
-- Merchant / Developer
+生产资金移动的唯一权威是：
+
+- `third_party/mahayana/mahayana-rs/mahayana-pay-worker`
+- `PLATFORM_DB`
+- `wallet_accounts`
+- `journal_entries`
+- `journal_lines`
+- `wallet_balances`
+
+任何 Web/桌面/移动/MiniApp 业务层只能创建 PaymentIntent、提交 provider 事实、读取 entitlement/Revenue Event/余额投影，禁止再维护第二套可写余额或复式账本。
+
+`#2131` 第一轮建立的 legacy-DB 平行账本原型已经在 M9 canonical convergence 中退役；其有价值的不变量被迁移到 canonical Rust Pay + Monetization control plane。
+
+## 2. 统一领域模型
+
+- Developer / Merchant / DeveloperCompliance
 - Product / Price
-- Order / PaymentIntent / PaymentMethod / Provider
+- PaymentIntent / Order / PaymentAttempt / Provider
 - Subscription
 - Entitlement
 - RevenueEvent
 - Versioned SplitRule
-- Ledger Journal / Ledger Entry
-- Developer Balance: Pending / Available / Reserved / Paid
-- Settlement / Payout
+- Canonical Ledger Journal / Lines
+- Developer Pending / Available
+- SettlementRelease / PayoutAccount / PayoutRequest / Payout
 - Refund / Chargeback reversal
-- Ad Placement / Ad Event
-- WebhookEvent
+- Advertiser / Campaign / Placement / Verified Ad Event
+- ProviderEvent / Reconciliation
 
-## 总体资金流
-
-```text
-Payment / Subscription / Verified Ad Event / Future Revenue Source
-                         |
-                         v
-                   Revenue Event
-                         |
-                 Versioned Split Rule
-                         |
-                         v
-              Immutable Double-entry Ledger
-                         |
-                         v
-        Pending -> Available -> Reserved -> Paid
-                         |
-                         v
-                    PSP Payout
-```
-
-所有金额使用最小货币单位整数（fen/cents），禁止用浮点数进行账务计算。每个 journal 必须满足 `total_debits_minor == total_credits_minor`，数据库与领域服务同时保护该不变量。
-
-## Revenue Event
-
-Revenue Event 是广告、支付、订阅等商业化来源进入账本的唯一标准入口。最少包含：
-
-- event id + idempotency key
-- source/source id
-- scope type/scope id
-- gross amount minor + currency
-- customer/developer/miniapp/bot attribution
-- occurred at + metadata
-
-Provider webhook 重试、广告事件重试或网络重复投递必须复用同一个 idempotency key，不得重复形成收入。
-
-## 分账
-
-分账规则按 `scope + revenue source + version + effective window` 版本化。每个规则严格等于 `10000 bps`，历史事件固定使用事件发生时对应的规则版本。最小货币单位不能整除时采用确定性余数分配，保证逐分守恒。
-
-示例：
+## 3. 支付与资金流
 
 ```text
-100 CNY gross
-platform 20% + developer 75% + affiliate 5%
+MiniApp/Bot/Agent
+    |
+    v
+Monetization Checkout Facade
+    |
+    v
+Canonical Rust Fabushi Pay
+    |
+    +--> Credits
+    +--> Apple IAP
+    +--> Google Play Billing
+    +--> Web Provider
+    +--> Merchant Provider
+    |
+    v
+PaymentIntent -> provider verification/webhook
+    |
+    v
+Canonical balanced journal
+    |
+    +--> platform payment revenue
+    +--> developer pending
+    |
+    v
+Order + Entitlement
+    |
+    v
+Revenue Event projection
 ```
 
-未来支付处理费、税费、渠道成本应通过明确 ledger account / split component 表达，不允许通过修改历史余额模拟。
+所有金额都使用最小货币单位整数。实际资金 journal 每币种必须净额为 0；Revenue Event 是商业分析/分账追踪投影，不是第二本账。
 
-## 订阅与权益
+## 4. Provider adapters
 
-`Payment != Entitlement`。StoreKit、Play Billing、支付宝、Stripe、兑换码、管理员赠送最终都写入独立 Entitlement 模型，客户端只根据 Entitlement 判断是否解锁功能。订阅负责生命周期，支付负责资金确认，权益负责产品访问能力。
+Canonical Rust Pay 当前拥有：
 
-## 广告
+- `credits`
+- `apple_in_app_purchase`
+- `google_play_billing`
+- `web_provider`
+- `merchant_provider`
 
-广告事件先进入 `monetization_ad_events` staging 层。只有经过验证/反作弊并成为 billable event 后，才能转换为 Revenue Event，随后与支付收入共用同一分账、账本和开发者余额体系。
+Apple/Google 服务端验证与 provider transaction binding 在 Rust Pay 完成；标准化 web/merchant webhook 负责 `paymentSucceeded`、refund、chargeback、payout 等事件。
 
-首期事件类型面向 impression/click/conversion/rewarded-complete 扩展，不允许未经验证的客户端事件直接产生可提现余额。
+Legacy Alipay API 仅保留 compatibility；不得继续扩展第二套商业逻辑。新的支付产品必须进入 canonical PaymentIntent/provider rail。地区 PSP 可通过 web/merchant provider adapter 接入。
 
-## 开发者余额与提现
+## 5. Revenue Event
 
-开发者收益四个状态：
+Revenue Event 标准化 payment、subscription、advertising、refund、chargeback、payout、tip/API usage 等商业事件。
 
-1. Pending：已记账但仍处退款/反作弊/结算等待期。
-2. Available：可申请提现。
-3. Reserved：已提交 payout，资金被锁定。
-4. Paid：PSP 已确认打款完成。
+关键原则：
 
-提现状态机：`requested -> reviewing -> processing -> paid`，允许明确的 failed/cancelled 退出，但禁止 `requested -> paid` 直接跳转。
+- `(source_kind, source_id)` 唯一；
+- payment Revenue Event 只投影 canonical payment 结果，不重新记账；
+- refund/chargeback 保留原事件并创建 reversal Revenue Event；
+- fully refunded 原收入可标记 `reversed`，历史仍保留；
+- reconciliation 可以补漏投影，但不得改造资金余额。
 
-第一阶段由持牌 PSP/marketplace payout provider 托管实际资金并执行 KYC/KYB/payout；Fabushi 负责商业规则、账本、余额和结算编排，不自行充当资金托管机构。
+## 6. Versioned Split Rule
 
-## Provider Adapter
+规则按 `scope_type + scope_id + revenue_source + version + effective window` 管理。
 
-必须支持：
+支持 scope：platform、miniapp、product、ad placement。每条 two-party 规则必须满足：
 
-- Apple In-App Purchase / StoreKit（虚拟商品场景遵循平台规则）
-- Google Play Billing（虚拟商品场景遵循平台规则）
-- Stripe/Adyen/其他 marketplace provider（适用场景）
-- 支付宝及地区支付渠道
+```text
+platformBps + developerBps = 10000
+```
 
-Adapter 的职责是验证外部事实并产生标准事件，而不是各自维护余额或权益真相。
+规则不可回写历史版本；新规则通过新的 version/effective_from 生效。所有分配使用整数最小货币单位，余数确定性归属，确保逐分守恒。
 
-## Refund / Chargeback
+## 7. Subscription 与 Entitlement
 
-退款和拒付不得删除或修改历史 journal。必须生成引用原事件的 reversal Revenue Event / reversal journal，通过相反账务分录恢复正确状态，并保持 webhook 幂等。
+`Payment != Subscription != Entitlement`。
 
-## 合规与风险边界
+- Payment：证明一笔资金事实。
+- Subscription：管理 active/past_due/paused/cancelled/expired/refunded 生命周期、周期和 cancel-at-period-end。
+- Entitlement：唯一产品功能访问权限源。
 
-需要长期覆盖：平台规则、KYC/KYB、税务、退款/chargeback、对账、广告审核、广告反作弊、隐私同意、未成年人保护与 payout 风控。通用可转让/可提现用户储值余额不属于 V1 范围；如未来启用，必须先做对应支付/电子货币监管评估。
+成功 subscription PaymentIntent 建立订阅投影；Apple/Google/web provider 的 normalized lifecycle event 更新订阅周期，并同步 entitlement expiry/revocation。Reconciliation 会回收已过期但仍 active 的订阅/权益。
 
-## 当前 V1 落地
+## 8. Advertising Alliance
 
-- migration: `fabushi/web/migrations/20260825_monetization_platform_v1.sql`
-- domain core: `fabushi/web/src/services/monetization.js`
-- D1 persistence: `fabushi/web/src/services/monetization-store.js`
-- invariant tests: `fabushi/web/tests/monetization.test.js`
-- task record: `../management/tasks/M9-T06-monetization-core.md`
+V1 广告控制面包含：
 
-下一阶段：active split-rule resolver -> 现有支付 provider Revenue Event adapter -> refund reversal -> entitlement migration -> verified ads -> PSP payout。
+- Campaign
+- Placement
+- CPM / CPC / CPA / Rewarded billing
+- server-authoritative bid/budget
+- verified ad event
+- idempotency key
+- session/actor hash
+- canonical ad revenue journal
+- Revenue Event
+- developer pending revenue
 
-重要原则：支付/商业化系统不要和聊天 UI 直接耦合；Chat/MiniApp 只消费 Payment/Entitlement/Monetization 领域事件。
+客户端不能提交广告单价。只有受信事件生产者通过 secret-authenticated endpoint 产生 `verified` billable event 后才允许入账。广告分成可由 placement 默认 share 或 effective-dated Split Rule 覆盖。
+
+广告竞价、素材审核、品牌安全、受众同意与反作弊模型可以继续演进，但不得绕过 verified-event → canonical journal 边界。
+
+## 9. Developer revenue / settlement / payout
+
+开发者余额不存 mutable balance 字段，而从 canonical ledger 投影：
+
+```text
+Payment/Ad Revenue -> developer pending
+settlement release -> developer available
+payout reservation -> payout clearing
+provider result -> paid / failed(reversal)
+```
+
+Payout 请求必须同时满足：
+
+- developer profile 存在；
+- KYC/KYB compliance = `verified`；
+- `payout_enabled = true`；
+- canonical payout account = `active`；
+- canonical available balance 足够。
+
+Public developer API 只能申请 payout；实际资金保留/提交仍由 canonical Rust Pay 执行。KYC 身份材料不保存在 Fabushi 表中，仅保留外部 provider reference 和状态。
+
+## 10. Refund / Chargeback
+
+退款和拒付由 Rust Pay 创建反向 journal：
+
+- 按原平台费率退回 platform revenue；
+- 优先冲 developer pending，再冲 released/available；
+- 退款总额不能超过剩余可退款额；
+- webhook/event id 幂等；
+- 原 capture journal 永远保留。
+
+Monetization reconciliation 为成功退款补独立 reversal Revenue Event，便于开发者报表与审计。
+
+## 11. Reconciliation
+
+`POST /api/admin/monetization/reconcile` 负责：
+
+- 补成功 PaymentIntent 缺失的 Revenue Event；
+- 补成功退款 reversal Revenue Event；
+- fully refunded 原收入标记 reversed；
+- 过期 subscription/entitlement 回收；
+- payout request 与 canonical payout 状态收敛；
+- 检查 successful payment without journal；
+- 检查 orphan payment Revenue Event；
+- 检查 ad Revenue Event without journal；
+- 检查 posted journal 每币种是否不平衡。
+
+验收态要求 anomaly 为 0。
+
+## 12. API surface
+
+User/developer：
+
+- `POST /api/monetization/checkout`
+- `GET /api/monetization/payment?paymentId=...`
+- `GET /api/monetization/entitlements`
+- `GET /api/monetization/subscriptions`
+- `POST /api/monetization/developer/register`
+- `GET /api/monetization/developer/summary`
+- `POST /api/monetization/payouts/request`
+
+Trusted internal producer：
+
+- `POST /api/monetization/providers/subscription-event`
+- `POST /api/monetization/ads/events`
+
+Admin：
+
+- split rules
+- ad campaigns / placements
+- developer compliance
+- canonical payout account bridge
+- payout submit bridge
+- settlement release bridge
+- reconciliation
+
+## 13. 实现位置
+
+Canonical financial core：
+
+- `third_party/mahayana/mahayana-rs/mahayana-pay-worker/`
+- `third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs`
+- `.../migrations/0001_platform.sql`
+- `.../migrations/0007_fabushi_pay.sql`
+
+Unified monetization control plane：
+
+- `.../migrations/0008_monetization_platform.sql`
+- `fabushi/web/src/services/monetization-platform.js`
+- `fabushi/web/src/handlers/monetization-platform.js`
+- `fabushi/web/src/handlers/monetization-reconciliation.js`
+- `fabushi/web/src/routes/monetization-routes.js`
+- `fabushi/web/tests/monetization-platform.test.js`
+- `../management/tasks/M9-MONETIZATION-002-canonical-convergence.md`
+
+## 14. 合规边界
+
+V1 不把 Fabushi 设计成自行托管客户资金的支付机构。实际法币收单、KYC/KYB 与 payout 应交给有资质的 PSP/marketplace provider。通用、可转让、可提现的用户储值余额不属于 V1；若未来启用，必须先完成目标司法辖区的支付/电子货币监管评估。
+
+重要原则：商业化系统不与聊天 UI 直接耦合；Chat/MiniApp/Bot/Agent 只消费 Payment/Subscription/Entitlement/Revenue/Payout 领域事件。
