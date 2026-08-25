@@ -1,30 +1,12 @@
-# M7-DESKTOP-004 evidence — authenticated messaging account identity
+# M7-DESKTOP-004 evidence index
 
-## Production symptom
+## Implementation evidence
 
-The signed/notarized canonical-main macOS artifact at `25292d1c9f4640670612a2bf794d4e7df9b32d3a` was downloaded from GitHub Actions, its artifact SHA-256 matched GitHub, its DMG and app passed codesign/stapler/Gatekeeper, and it was installed and opened on the target arm64 Mac. The running app then showed:
+- Branch: `fix/tfi-bot-avatar-info-panel`
+- Product files: `desktop/src/mahayana-agent-workbench.tsx`, `desktop/src/messaging-shell-v2.tsx`, `desktop/src/messaging-shell.module.css`
+- Regression: `desktop/e2e/messenger-regressions.spec.ts`
+- User screenshot requirement: `source/2026-08-25-bot-avatar-info-panel-regression.md`
 
-`bridge/invoke-failed: host operation failed: authenticated account has no stable user id`
+## Pending release evidence
 
-This proved the remaining defect was above the Apple signing boundary and inside authenticated messaging access issuance.
-
-## Root cause evidence
-
-Production account responses serialize `user.id`, `userId`, and `userNo` as JSON numbers. `issue_messaging_access` previously selected the first present field and then called `Value::as_str()` once. A present numeric `user.id` therefore stopped resolution and produced `None` even when later compatible identity fields existed.
-
-## Current-head follow-up
-
-PR #2068 merged the functional repair before its final one-line rustfmt cleanup had reached the branch head. PR #2069 carries that formatting correction; this evidence update intentionally creates a post-open synchronize event so the complete current head is exercised by the repository pull-request gates before merge.
-
-## Repair evidence required before TESTED
-
-- current-head Rust/Host/CI gates green;
-- protected merge to main;
-- canonical-main full Electron package matrix green;
-- macOS notarization final status `Accepted` and stapled;
-- downloaded artifact digest equals GitHub Actions artifact digest;
-- installed app, Host and ASR all validate with Developer ID Team `M4Q99K4UR4` and stable identifiers;
-- app opens on the target Mac using the restored authenticated session;
-- no stable-user-id banner is present and Messenger initialization succeeds without requiring a new login.
-
-Until those facts are recorded, M7-DESKTOP-004 remains `TESTING`.
+Record final PR/head checks, protected merge SHA, canonical-main packaged E2E visual artifacts and the new Release tag/target/assets after they are produced.
