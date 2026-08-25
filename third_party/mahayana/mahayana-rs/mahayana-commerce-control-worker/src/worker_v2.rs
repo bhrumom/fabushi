@@ -472,11 +472,31 @@ async fn google_token(env: &Env) -> Result<String> {
     Ok(token.access_token)
 }
 
+async fn send_google_json(
+    method: Method,
+    url: &str,
+    body: &serde_json::Value,
+    token: &str,
+) -> Result<(u16, Vec<u8>)> {
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {token}"))?;
+    headers.set("Content-Type", "application/json")?;
+    let mut init = RequestInit::new();
+    init.with_method(method)
+        .with_headers(headers)
+        .with_body(Some(JsValue::from_str(&body.to_string())));
+    let outbound = Request::new_with_init(url, &init)?;
+    let mut response = Fetch::Request(outbound).send().await?;
+    let status = response.status_code();
+    let bytes = response.bytes().await?;
+    Ok((status, bytes))
+}
+
 async fn sync_google(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let user = require_developer(&req, &ctx.env)?;
     if !env_enabled(&ctx.env, "GOOGLE_PLAY_CATALOG_SYNC_ENABLED") {
         return Response::error("Google catalog sync is not enabled", 503);
-    };
+    }
     let app_id = ctx
         .param("mini_app_id")
         .ok_or_else(|| worker::Error::RustError("missing app".into()))?;
@@ -486,14 +506,6 @@ async fn sync_google(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     app_access(&ctx.env, &user, app_id, true).await?;
     let p = product_row(&ctx.env, app_id, product_id).await?;
     let external = google_product_id(app_id, &p.sku);
-    let region = match p.currency.as_str() {
-        "CNY" => "CN",
-        "JPY" => "JP",
-        "KRW" => "KR",
-        "GBP" => "GB",
-        "EUR" => "DE",
-        _ => "US",
-    };
     let spec = GoogleCatalogProduct {
         package_name: env_text(&ctx.env, "GOOGLE_PLAY_PACKAGE_NAME")?,
         product_id: external.clone(),
@@ -502,26 +514,42 @@ async fn sync_google(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         product_kind: p.product_kind,
         currency: p.currency,
         amount_minor: p.amount,
-        region_code: region.into(),
+        product_tax_category_code: p.tax_code,
     };
-    let call =
-        build_google_sync_request(&spec).map_err(|e| worker::Error::RustError(e.to_string()))?;
     let token = google_token(&ctx.env).await?;
-    let headers = Headers::new();
-    headers.set("Authorization", &format!("Bearer {token}"))?;
-    headers.set("Content-Type", "application/json")?;
-    let mut init = RequestInit::new();
-    init.with_method(if call.method == "POST" {
+
+    let conversion_call = build_google_price_conversion_request(&spec)
+        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let (conversion_status, conversion_body) = send_google_json(
+        Method::Post,
+        &conversion_call.url,
+        &conversion_call.body,
+        &token,
+    )
+    .await?;
+    if !(200..300).contains(&conversion_status) {
+        let error = String::from_utf8_lossy(&conversion_body)
+            .chars()
+            .take(500)
+            .collect::<String>();
+        let t = now();
+        worker::query!(&ctx.env.d1(DB)?,"UPDATE payment_provider_bindings SET sync_state='error',last_error=?1,updated_at=?2 WHERE product_id=?3 AND provider='google_play'",&error,t,product_id)?.run().await?;
+        return Response::from_json(
+            &json!({"ok":false,"stage":"convertRegionPrices","status":conversion_status,"error":error}),
+        );
+    }
+    let converted: GoogleConvertedPrices =
+        serde_json::from_slice(&conversion_body).map_err(|_| {
+            worker::Error::RustError("invalid Google converted pricing response".into())
+        })?;
+    let call = build_google_sync_request(&spec, &converted)
+        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let method = if call.method == "POST" {
         Method::Post
     } else {
         Method::Patch
-    })
-    .with_headers(headers)
-    .with_body(Some(JsValue::from_str(&call.body.to_string())));
-    let outbound = Request::new_with_init(&call.url, &init)?;
-    let mut res = Fetch::Request(outbound).send().await?;
-    let status = res.status_code();
-    let body = res.bytes().await?;
+    };
+    let (status, body) = send_google_json(method, &call.url, &call.body, &token).await?;
     let t = now();
     if !(200..300).contains(&status) {
         let error = String::from_utf8_lossy(&body)
@@ -529,12 +557,24 @@ async fn sync_google(req: Request, ctx: RouteContext<()>) -> Result<Response> {
             .take(500)
             .collect::<String>();
         worker::query!(&ctx.env.d1(DB)?,"UPDATE payment_provider_bindings SET sync_state='error',last_error=?1,updated_at=?2 WHERE product_id=?3 AND provider='google_play'",&error,t,product_id)?.run().await?;
-        return Response::from_json(&json!({"ok":false,"status":status,"error":error}));
+        return Response::from_json(
+            &json!({"ok":false,"stage":"catalogSync","status":status,"error":error}),
+        );
     }
-    worker::query!(&ctx.env.d1(DB)?,"UPDATE payment_provider_bindings SET sync_state='active',external_product_ref=?1,last_error=NULL,last_synced_at=?2,updated_at=?2 WHERE product_id=?3 AND provider='google_play'",&external,t,product_id)?.run().await?;
-    Response::from_json(
-        &json!({"ok":true,"provider":"google_play","externalProductRef":external,"status":status}),
-    )
+    let metadata = serde_json::json!({
+        "regionVersion": converted.region_version.version,
+        "convertedRegionCount": converted.converted_region_prices.len(),
+    })
+    .to_string();
+    worker::query!(&ctx.env.d1(DB)?,"UPDATE payment_provider_bindings SET sync_state='active',external_product_ref=?1,metadata_json=?2,last_error=NULL,last_synced_at=?3,updated_at=?3 WHERE product_id=?4 AND provider='google_play'",&external,&metadata,t,product_id)?.run().await?;
+    Response::from_json(&json!({
+        "ok": true,
+        "provider": "google_play",
+        "externalProductRef": external,
+        "status": status,
+        "regionVersion": converted.region_version.version,
+        "convertedRegionCount": converted.converted_region_prices.len()
+    }))
 }
 
 #[event(fetch, respond_with_errors)]
