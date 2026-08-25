@@ -202,10 +202,12 @@ test('switching peers keeps dynamic avatars visible and narrow layouts can open 
     expect(await headerMark.getAttribute('data-bot-id')).toBe(await first.locator(visibleMark).getAttribute('data-bot-id'));
 
     await second.click();
+    await expect(second).toHaveClass(/peerActive/);
     await expect(second.locator(visibleMark)).toHaveCount(1);
     await expect(first.locator(visibleMark)).toHaveCount(1);
     await expect(headerMark).toHaveCount(1);
-    expect(await headerMark.getAttribute('data-bot-id')).toBe(await second.locator(visibleMark).getAttribute('data-bot-id'));
+    const secondBotId = await second.locator(visibleMark).getAttribute('data-bot-id');
+    await expect.poll(() => headerMark.getAttribute('data-bot-id'), { timeout: 1_000 }).toBe(secondBotId);
 
     await page.setViewportSize({ width: 1100, height: 800 });
     const toggle = page.getByTestId('conversation-info-toggle');
@@ -224,8 +226,10 @@ test('switching peers keeps dynamic avatars visible and narrow layouts can open 
     expect(await infoMark.getAttribute('data-bot-id')).toBe(await second.locator(visibleMark).getAttribute('data-bot-id'));
 
     await first.click();
+    await expect(first).toHaveClass(/peerActive/);
     await expect(headerMark).toHaveCount(1);
-    expect(await headerMark.getAttribute('data-bot-id')).toBe(await first.locator(visibleMark).getAttribute('data-bot-id'));
+    const firstBotId = await first.locator(visibleMark).getAttribute('data-bot-id');
+    await expect.poll(() => headerMark.getAttribute('data-bot-id'), { timeout: 1_000 }).toBe(firstBotId);
     await expect(infoMark).toHaveCount(1);
     expect(await infoMark.getAttribute('data-bot-id')).toBe(await first.locator(visibleMark).getAttribute('data-bot-id'));
   } finally {
