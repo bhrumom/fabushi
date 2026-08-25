@@ -31,3 +31,13 @@ Record final PR/head checks, protected merge SHA, canonical-main packaged E2E vi
 ## Pending closure
 
 Record protected merge SHA, final exact-main Electron/native runs, retained screenshot/video/trace/report artifact IDs, Release tag, target commit and updater assets only after they exist.
+
+
+## Exact-main failure evidence — class-only peer selection
+
+- Canonical main: `eb4b340ce4d9d18cc69b4e60ec97037cbcb2c878`.
+- Electron delivery: `32822744019`.
+- Linux real-Host diagnostics: `9553768019`.
+- Result: 17/18 E2E passed; selected peer row switched to Incident Bot but Header portal identity remained the previous assistant at assertion time.
+- Root cause: peer selection is a CSS class mutation on reused DOM rows; the existing portal MutationObserver watched only child-list mutations.
+- Follow-up: observer now includes `attributes: true`, `attributeFilter: ['class']`, and refreshes only when a changed class belongs to a Messenger peer button; recovery polling is retained but no longer the normal switch path.

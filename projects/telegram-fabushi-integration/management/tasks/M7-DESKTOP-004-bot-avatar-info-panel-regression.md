@@ -66,3 +66,11 @@ Keep below `RELEASED` until required current-head CI, protected merge, canonical
 - Reviewed the official `facebook/react` portal/reconciliation design (MIT). The relevant architectural lesson is ownership, not code reuse: portal rendering must be driven by React props/state; external DOM `dataset` mutation is not a reliable reactive source.
 - Fabushi keeps its custom Motion v2 / Messenger integration because upstream React does not provide product identity semantics. No upstream code is copied.
 - Status remains `IMPLEMENTED`; Release is blocked until this follow-up passes protected merge and the resulting latest-main exact delivery is green.
+
+## Exact-main peer-selection observer follow-up — 2026-08-25
+
+- `main@eb4b340ce4d9d18cc69b4e60ec97037cbcb2c878` Electron delivery run `32822744019` again retained the failure instead of publishing. Linux real-Host diagnostics artifact: `9553768019`; 17/18 cases passed.
+- The selected-row identity fix was correct but propagation was not event-driven: `activePeerButton()` derives selection from the CSS-module `peerActive` class, while the Workbench MutationObserver watched only `childList`. Messenger reuses peer row DOM nodes and changes `class`, so the Workbench could remain stale until the 500 ms recovery interval.
+- Follow-up branch `fix/tfi-peer-selection-observer` observes peer-button `class` mutations (filtered to `button[data-testid^="peer-"]`) and refreshes portal identity immediately after the React commit; the 500 ms interval remains recovery-only.
+- E2E now waits for the selected peer's `peerActive` class and then polls Header semantic identity equality, so the assertion models the asynchronous React portal commit without accepting a permanently stale identity.
+- Status remains `IMPLEMENTED / RELEASE_BLOCKED` pending protected merge and a green exact-main delivery.
