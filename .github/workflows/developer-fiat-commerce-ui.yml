@@ -7,8 +7,6 @@ on:
       - 'desktop/electron/native-edge.cjs'
       - 'desktop/electron/native-capability-handlers.cjs'
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
-      - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
-      - '.github/scripts/apply-payout-onboarding-native-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
       - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
   pull_request:
@@ -16,34 +14,13 @@ on:
       - 'desktop/electron/native-edge.cjs'
       - 'desktop/electron/native-capability-handlers.cjs'
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
-      - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
-      - '.github/scripts/apply-payout-onboarding-native-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
       - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  integrate-branch:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: feat/fab-p0001-dynamic-fiat-commerce
-      - run: |
-          node .github/scripts/apply-botfather-commerce-desktop-patch.mjs
-          node .github/scripts/apply-payout-onboarding-native-patch.mjs
-      - name: Commit native bridge integration if needed
-        run: |
-          if git diff --quiet; then exit 0; fi
-          git config user.name 'fabushi-ci'
-          git config user.email 'actions@users.noreply.github.com'
-          git add desktop/electron/native-edge.cjs desktop/electron/native-capability-handlers.cjs
-          git commit -m 'feat(bot-father): wire developer commerce payout and onboarding bridge'
-          git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
-
   native-contract:
     runs-on: ubuntu-latest
     steps:
