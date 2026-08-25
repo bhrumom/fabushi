@@ -10,3 +10,24 @@
 ## Pending release evidence
 
 Record final PR/head checks, protected merge SHA, canonical-main packaged E2E visual artifacts and the new Release tag/target/assets after they are produced.
+
+
+## Exact-main failure evidence — selected-peer identity
+
+- Canonical main: `6ae21cba7878d113ac2902df94d867e7d3b7cd34`.
+- Electron delivery: `32813752100`.
+- Linux real-Host diagnostics: artifact `9550721736`.
+- Failure: selected peer `peer:bot:incident-bot`; Header semantic Motion v2 identity `peer:conversation:codex:agent:assistant`.
+- This evidence blocks Release and is treated as a product failure, not a waived assertion.
+
+## Follow-up implementation
+
+- Branch: `fix/tfi-selected-peer-avatar-identity`.
+- Identity authority: active peer row direct semantic BotMark.
+- React portal state now includes selected `activeBotId` + label; runtime task state remains independent.
+- Regression covers first → second → first peer Header identity and 1100px overlay info-panel identity.
+- Open-source-first reference: official `facebook/react` (MIT) portal/reconciliation design; architectural principle adapted, no source copied.
+
+## Pending closure
+
+Record protected merge SHA, final exact-main Electron/native runs, retained screenshot/video/trace/report artifact IDs, Release tag, target commit and updater assets only after they exist.
