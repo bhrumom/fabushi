@@ -1125,6 +1125,15 @@ function createNativeCapabilityHandlers(deps) {
       return platformRequest('POST', '/v1/developer/commerce/payout/request', { body: { payoutAccountId, currency, amount, idempotencyKey } });
     },
 
+    async createDeveloperPayoutOnboarding(params) {
+      const provider = cleanString(params.provider, 48);
+      const purpose = cleanString(params.purpose, 48);
+      const providers = new Set(['stripe_connect','adyen_platform','paypal_multiparty','paypal_payouts','wechat_platform','alipay_platform','lianlian_account_plus','huifu_dougong']);
+      const purposes = new Set(['original_order_split','external_proceeds_payout','marketplace_payout']);
+      if (!providers.has(provider) || !purposes.has(purpose)) throw new Error('Invalid payout onboarding route.');
+      return platformRequest('POST', '/v1/developer/commerce/payout/onboarding', { body: { provider, purpose } });
+    },
+
     async getSharingState(params) {
       const result = await platformRequest('GET', '/api/collaboration/state');
       const state = result?.state ?? { scope: 'fabushi-platform', rooms: [], joinRequests: [], typing: [], fetchedAtMs: Date.now() };
