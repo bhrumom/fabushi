@@ -1,0 +1,764 @@
+name: MSR-502 one-shot CLI control-plane parity
+
+on:
+  push:
+    branches:
+      - feat/msr-502-cli-control-plane-parity-20260825
+    paths:
+      - .github/workflows/msr-502-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out task branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/msr-502-cli-control-plane-parity-20260825
+          fetch-depth: 0
+
+      - name: Install Rust 1.92
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.92.0
+          components: rustfmt
+
+      - name: Apply MSR-502 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} matches, found {count}")
+              path.write_text(text.replace(old, new, expected), encoding="utf-8")
+
+          root = Path("third_party/mahayana/mahayana-rs")
+          cli = root / "mahayana-cli/src/main.rs"
+          product = root / "mahayana-product/src/lib.rs"
+          feature_host = root / "mahayana-feature-host/src/implementation.rs"
+
+          replace_exact(
+              cli,
+              '''    /// 管理和运行大乘 Mini App。
+              Miniapp {
+                  #[arg(required = true, trailing_var_arg = true)]
+                  args: Vec<String>,
+              },
+          ''',
+              '''    /// 管理和运行大乘 Mini App。
+              Miniapp {
+                  #[command(subcommand)]
+                  command: MiniAppCommand,
+              },
+          ''',
+          )
+
+          replace_exact(
+              cli,
+              '''#[derive(Debug, Subcommand)]
+          enum BotCommand {
+              List,
+              Hide { id: String },
+              Show { id: String },
+          }
+          ''',
+              '''#[derive(Debug, Subcommand)]
+          enum BotCommand {
+              /// 列出全部机器人及其会话标识。
+              List,
+              /// 创建一个由 Mahayana Host 持久化的机器人。
+              Create {
+                  name: String,
+                  #[arg(long, default_value = "")]
+                  description: String,
+                  #[arg(long, default_value = "")]
+                  title: String,
+                  #[arg(long)]
+                  avatar: Option<String>,
+                  #[arg(long)]
+                  avatar_shape: Option<String>,
+                  #[arg(long)]
+                  avatar_color: Option<String>,
+              },
+              /// 更新机器人资料与通知状态。
+              Update {
+                  id: String,
+                  #[arg(long)]
+                  name: Option<String>,
+                  #[arg(long)]
+                  description: Option<String>,
+                  #[arg(long)]
+                  title: Option<String>,
+                  #[arg(long)]
+                  avatar: Option<String>,
+                  #[arg(long)]
+                  avatar_shape: Option<String>,
+                  #[arg(long)]
+                  avatar_color: Option<String>,
+                  #[arg(long)]
+                  notifications_enabled: Option<bool>,
+                  #[arg(long)]
+                  notify_on_updates: Option<bool>,
+                  #[arg(long)]
+                  unread: Option<bool>,
+              },
+              /// 克隆现有机器人。
+              Clone { id: String },
+              /// 删除机器人。
+              Delete { id: String },
+              Hide { id: String },
+              Show { id: String },
+              /// 选择机器人并聊天；省略消息时进入交互式会话。
+              Chat {
+                  id: String,
+                  #[arg(trailing_var_arg = true)]
+                  text: Vec<String>,
+              },
+          }
+
+          #[derive(Debug, Subcommand)]
+          enum MiniAppCommand {
+              /// 列出本地 Runtime 已注册的 Mini App。
+              Registry,
+              /// 搜索官方 Mahayana 市场。
+              Search { query: String },
+              /// 列出当前账号已添加的 Mini App。
+              Added,
+              /// 安装并注册一个市场 Mini App。
+              Install { mini_app_id: String },
+              /// 打开 Mini App UI。
+              Open { mini_app_id: String },
+              /// 选择 Mini App Bot 对话；省略消息时进入交互式会话。
+              Chat {
+                  mini_app_id: String,
+                  #[arg(trailing_var_arg = true)]
+                  text: Vec<String>,
+              },
+              /// 运行 BotFather 生成流程；可同时创建草稿并提交审核。
+              Generate {
+                  #[arg(long)]
+                  prompt: String,
+                  #[arg(long)]
+                  id: Option<String>,
+                  #[arg(long)]
+                  title: Option<String>,
+                  #[arg(long)]
+                  description: Option<String>,
+                  #[arg(long)]
+                  repository: Option<String>,
+                  #[arg(long)]
+                  manifest: Option<PathBuf>,
+                  #[arg(long)]
+                  submit: bool,
+              },
+              /// 从 JSON 清单创建发布草稿。
+              Draft { manifest: PathBuf },
+              /// 将草稿提交到市场审核。
+              Submit { mini_app_id: String },
+          }
+          ''',
+          )
+
+          replace_exact(
+              cli,
+              '''        Some(CliCommand::Bot { command }) => {
+                      feature_surface_command(codex_executable_path, |controller| {
+                          bot_command(controller, command)
+                      })
+                  }
+          ''',
+              '''        Some(CliCommand::Bot { command }) => bot_command(codex_executable_path, command),
+          ''',
+          )
+
+          replace_exact(
+              cli,
+              '''        Some(CliCommand::Miniapp { args }) => miniapp_command(codex_executable_path, args),
+          ''',
+              '''        Some(CliCommand::Miniapp { command }) => {
+                      miniapp_command(codex_executable_path, command)
+                  }
+          ''',
+          )
+
+          replace_exact(
+              cli,
+              '''fn bot_command(controller: &FeatureHostController, command: BotCommand) -> Result<(), String> {
+              let request_id = feature_request_id("bot");
+              let command = match command {
+                  BotCommand::List => FeatureCommand::BotList { request_id },
+                  BotCommand::Hide { id } => FeatureCommand::BotSetHidden {
+                      request_id,
+                      id,
+                      hidden: true,
+                  },
+                  BotCommand::Show { id } => FeatureCommand::BotSetHidden {
+                      request_id,
+                      id,
+                      hidden: false,
+                  },
+              };
+              execute_feature_and_print(controller, command)
+          }
+          ''',
+              '''fn bot_command(
+              codex_executable_path: Option<&Path>,
+              command: BotCommand,
+          ) -> Result<(), String> {
+              match command {
+                  BotCommand::Chat { id, text } => {
+                      let conversation_id =
+                          resolve_bot_conversation_id(codex_executable_path, &id)?;
+                      with_runtime(codex_executable_path, |runtime| {
+                          if text.is_empty() {
+                              interactive_chat(runtime, Some(conversation_id))
+                          } else {
+                              send_and_stream(runtime, &conversation_id, &text.join(" "))
+                          }
+                      })
+                  }
+                  command => feature_surface_command(codex_executable_path, |controller| {
+                      execute_bot_feature_command(controller, command)
+                  }),
+              }
+          }
+
+          fn execute_bot_feature_command(
+              controller: &FeatureHostController,
+              command: BotCommand,
+          ) -> Result<(), String> {
+              let request_id = feature_request_id("bot");
+              let command = match command {
+                  BotCommand::List => FeatureCommand::BotList { request_id },
+                  BotCommand::Create {
+                      name,
+                      description,
+                      title,
+                      avatar,
+                      avatar_shape,
+                      avatar_color,
+                  } => FeatureCommand::BotCreate {
+                      request_id,
+                      name,
+                      description,
+                      title,
+                      avatar,
+                      avatar_shape,
+                      avatar_color,
+                  },
+                  BotCommand::Update {
+                      id,
+                      name,
+                      description,
+                      title,
+                      avatar,
+                      avatar_shape,
+                      avatar_color,
+                      notifications_enabled,
+                      notify_on_updates,
+                      unread,
+                  } => FeatureCommand::BotUpdate {
+                      request_id,
+                      id,
+                      name,
+                      description,
+                      title,
+                      avatar,
+                      avatar_shape,
+                      avatar_color,
+                      notifications_enabled,
+                      notify_on_updates,
+                      unread,
+                  },
+                  BotCommand::Clone { id } => FeatureCommand::BotClone { request_id, id },
+                  BotCommand::Delete { id } => FeatureCommand::BotDelete { request_id, id },
+                  BotCommand::Hide { id } => FeatureCommand::BotSetHidden {
+                      request_id,
+                      id,
+                      hidden: true,
+                  },
+                  BotCommand::Show { id } => FeatureCommand::BotSetHidden {
+                      request_id,
+                      id,
+                      hidden: false,
+                  },
+                  BotCommand::Chat { .. } => unreachable!("chat is handled before Host mutation"),
+              };
+              execute_feature_and_print(controller, command)
+          }
+
+          fn resolve_bot_conversation_id(
+              codex_executable_path: Option<&Path>,
+              id: &str,
+          ) -> Result<String, String> {
+              let controller = cli_feature_host(codex_executable_path)?;
+              let _ = drain_feature_events(&controller)?;
+              controller
+                  .execute(FeatureCommand::BotList {
+                      request_id: feature_request_id("bot-select"),
+                  })
+                  .map_err(|error| error.to_string())?;
+              let bot = drain_feature_events(&controller)?
+                  .into_iter()
+                  .find_map(|event| match event {
+                      HostEvent::BotListed { bots, .. } => {
+                          bots.into_iter().find(|bot| bot.id == id)
+                      }
+                      _ => None,
+                  })
+                  .ok_or_else(|| format!("未知机器人：{id}"))?;
+              let fallback = format!("mahayana-ai:agent:{}", bot.id);
+              Ok(bot.conversation_id.unwrap_or(fallback))
+          }
+          ''',
+          )
+
+          replace_exact(
+              cli,
+              '''fn miniapp_command(codex_executable_path: Option<&Path>, args: Vec<String>) -> Result<(), String> {
+              match args.first().map(String::as_str) {
+                  Some("registry") => product_command("mahayana.miniapps.registry", json!({})),
+                  Some("chat") => {
+                      let miniapp_id = args
+                          .get(1)
+                          .ok_or_else(|| "用法：mahayana miniapp chat <miniapp-id> <消息>".to_string())?;
+                      let message = args.get(2..).unwrap_or_default().join(" ");
+                      if message.trim().is_empty() {
+                          return Err("小程序消息不能为空".into());
+                      }
+                      with_runtime(codex_executable_path, |runtime| {
+                          send_and_stream(runtime, &format!("miniapp:{miniapp_id}"), &message)
+                      })
+                  }
+                  _ => Err("用法：mahayana miniapp registry|chat".into()),
+              }
+          }
+          ''',
+              '''fn miniapp_command(
+              codex_executable_path: Option<&Path>,
+              command: MiniAppCommand,
+          ) -> Result<(), String> {
+              let client = MahayanaProductClient::default();
+              match command {
+                  MiniAppCommand::Registry => {
+                      product_command("mahayana.miniapps.registry", json!({}))
+                  }
+                  MiniAppCommand::Search { query } => print_json(
+                      &client
+                          .marketplace_browse(Some(&query), Some("cli"))
+                          .map_err(|error| error.to_string())?,
+                  ),
+                  MiniAppCommand::Added => print_json(
+                      &client
+                          .marketplace_added()
+                          .map_err(|error| error.to_string())?,
+                  ),
+                  MiniAppCommand::Install { mini_app_id } => {
+                      let account = client
+                          .marketplace_add(&mini_app_id, Some("cli"))
+                          .map_err(|error| error.to_string())?;
+                      let controller = cli_feature_host(codex_executable_path)?;
+                      let _ = drain_feature_events(&controller)?;
+                      controller
+                          .execute(FeatureCommand::MarketplaceInstall {
+                              request_id: feature_request_id("miniapp-install"),
+                              mini_app_id,
+                          })
+                          .map_err(|error| error.to_string())?;
+                      let events = drain_feature_events(&controller)?;
+                      print_json(&json!({
+                          "account": account,
+                          "hostEvents": events,
+                      }))
+                  }
+                  MiniAppCommand::Open { mini_app_id } => {
+                      feature_surface_command(codex_executable_path, |controller| {
+                          execute_feature_and_print(
+                              controller,
+                              FeatureCommand::MiniAppOpen {
+                                  request_id: feature_request_id("miniapp-open"),
+                                  mini_app_id,
+                              },
+                          )
+                      })
+                  }
+                  MiniAppCommand::Chat { mini_app_id, text } => {
+                      let conversation_id = format!("miniapp:{mini_app_id}");
+                      with_runtime(codex_executable_path, |runtime| {
+                          if text.is_empty() {
+                              interactive_chat(runtime, Some(conversation_id))
+                          } else {
+                              send_and_stream(runtime, &conversation_id, &text.join(" "))
+                          }
+                      })
+                  }
+                  MiniAppCommand::Generate {
+                      prompt,
+                      id,
+                      title,
+                      description,
+                      repository,
+                      manifest,
+                      submit,
+                  } => {
+                      let mut request = json!({
+                          "prompt": prompt,
+                          "submitForReview": submit,
+                      });
+                      if let Some(id) = id {
+                          request["id"] = Value::String(id);
+                      }
+                      if let Some(title) = title {
+                          request["title"] = Value::String(title);
+                      }
+                      if let Some(description) = description {
+                          request["description"] = Value::String(description);
+                      }
+                      if let Some(repository) = repository {
+                          request["repository"] = Value::String(repository);
+                      }
+                      if let Some(path) = manifest {
+                          request["manifest"] = read_json_file(&path)?;
+                      }
+                      print_json(
+                          &client
+                              .marketplace_botfather_generate(&request)
+                              .map_err(|error| error.to_string())?,
+                      )
+                  }
+                  MiniAppCommand::Draft { manifest } => {
+                      let manifest = read_json_file(&manifest)?;
+                      print_json(
+                          &client
+                              .marketplace_create_draft(&manifest)
+                              .map_err(|error| error.to_string())?,
+                      )
+                  }
+                  MiniAppCommand::Submit { mini_app_id } => print_json(
+                      &client
+                          .marketplace_submit(&mini_app_id)
+                          .map_err(|error| error.to_string())?,
+                  ),
+              }
+          }
+
+          fn read_json_file(path: &Path) -> Result<Value, String> {
+              let bytes = fs::read(path)
+                  .map_err(|error| format!("读取 JSON 文件 {} 失败：{error}", path.display()))?;
+              serde_json::from_slice(&bytes)
+                  .map_err(|error| format!("JSON 文件 {} 无效：{error}", path.display()))
+          }
+          ''',
+          )
+
+          product_methods = '''    pub fn marketplace_added(&self) -> Result<Value, ProductError> {
+              let token = self.authorization_token(&Value::Null)?;
+              self.get_json("/v1/marketplace/added", &[], Some(&token))
+          }
+
+              pub fn marketplace_add(
+                  &self,
+                  plugin_id: &str,
+                  platform: Option<&str>,
+              ) -> Result<Value, ProductError> {
+                  let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+                  let platform = platform
+                      .map(safe_marketplace_platform)
+                      .transpose()?
+                      .unwrap_or("cli");
+                  let token = self.authorization_token(&Value::Null)?;
+                  self.post_json(
+                      &format!("/v1/marketplace/plugins/{plugin_id}/add"),
+                      json!({"platform": platform}),
+                      Some(&token),
+                  )
+              }
+
+              pub fn marketplace_botfather_generate(
+                  &self,
+                  request: &Value,
+              ) -> Result<Value, ProductError> {
+                  if !request.is_object() {
+                      return Err(ProductError::InvalidParameter("request"));
+                  }
+                  let token = self.authorization_token(&Value::Null)?;
+                  self.post_json(
+                      "/v1/marketplace/botfather/generate",
+                      request.clone(),
+                      Some(&token),
+                  )
+              }
+
+              pub fn marketplace_create_draft(
+                  &self,
+                  manifest: &Value,
+              ) -> Result<Value, ProductError> {
+                  if !manifest.is_object() {
+                      return Err(ProductError::InvalidParameter("manifest"));
+                  }
+                  let token = self.authorization_token(&Value::Null)?;
+                  self.post_json(
+                      "/v1/marketplace/publisher/drafts",
+                      manifest.clone(),
+                      Some(&token),
+                  )
+              }
+
+              pub fn marketplace_submit(&self, plugin_id: &str) -> Result<Value, ProductError> {
+                  let plugin_id = safe_path_identifier(plugin_id, "pluginId")?;
+                  let token = self.authorization_token(&Value::Null)?;
+                  self.post_json(
+                      &format!("/v1/marketplace/publisher/{plugin_id}/submit"),
+                      json!({}),
+                      Some(&token),
+                  )
+              }
+
+          '''
+          replace_exact(
+              product,
+              '''    pub fn marketplace_release_metadata(
+          ''',
+              product_methods + '''    pub fn marketplace_release_metadata(
+          ''',
+          )
+
+          for path in (product, feature_host):
+              text = path.read_text(encoding="utf-8")
+              count = text.count("codex:agent:")
+              if count == 0:
+                  raise SystemExit(f"{path}: expected at least one legacy emitted bot identifier")
+              text = text.replace("codex:agent:", "mahayana-ai:agent:")
+              path.write_text(text, encoding="utf-8")
+
+          text = feature_host.read_text(encoding="utf-8")
+          if 'kind: "codex".into(),' not in text or 'provider: "codex".into(),' not in text:
+              raise SystemExit("feature Host: expected vendor-facing conversation metadata")
+          text = text.replace('kind: "codex".into(),', 'kind: "mahayana-ai".into(),')
+          text = text.replace('provider: "codex".into(),', 'provider: "mahayana-ai".into(),')
+          feature_host.write_text(text, encoding="utf-8")
+
+          cli_tests = r'''
+
+          #[cfg(test)]
+          mod cli_control_plane_tests {
+              use super::*;
+
+              #[test]
+              fn parses_complete_bot_control_plane() {
+                  let create = Cli::try_parse_from([
+                      "mahayana",
+                      "bot",
+                      "create",
+                      "Research",
+                      "--description",
+                      "Source verification",
+                      "--title",
+                      "Researcher",
+                      "--avatar-shape",
+                      "orb",
+                  ])
+                  .expect("parse bot create");
+                  assert!(matches!(
+                      create.command,
+                      Some(CliCommand::Bot {
+                          command: BotCommand::Create { .. }
+                      })
+                  ));
+
+                  let update = Cli::try_parse_from([
+                      "mahayana",
+                      "bot",
+                      "update",
+                      "research-bot",
+                      "--notifications-enabled",
+                      "false",
+                      "--notify-on-updates",
+                      "true",
+                  ])
+                  .expect("parse bot update");
+                  assert!(matches!(
+                      update.command,
+                      Some(CliCommand::Bot {
+                          command: BotCommand::Update { .. }
+                      })
+                  ));
+
+                  for args in [
+                      vec!["mahayana", "bot", "clone", "research-bot"],
+                      vec!["mahayana", "bot", "delete", "research-bot"],
+                      vec!["mahayana", "bot", "chat", "research-bot"],
+                      vec!["mahayana", "bot", "chat", "research-bot", "verify", "sources"],
+                  ] {
+                      Cli::try_parse_from(args).expect("parse bot command");
+                  }
+              }
+
+              #[test]
+              fn parses_complete_miniapp_control_plane() {
+                  for args in [
+                      vec!["mahayana", "miniapp", "registry"],
+                      vec!["mahayana", "miniapp", "search", "dharma"],
+                      vec!["mahayana", "miniapp", "added"],
+                      vec!["mahayana", "miniapp", "install", "global-dharma"],
+                      vec!["mahayana", "miniapp", "open", "global-dharma"],
+                      vec!["mahayana", "miniapp", "chat", "global-dharma"],
+                      vec!["mahayana", "miniapp", "submit", "global-dharma"],
+                  ] {
+                      Cli::try_parse_from(args).expect("parse miniapp command");
+                  }
+
+                  let generate = Cli::try_parse_from([
+                      "mahayana",
+                      "miniapp",
+                      "generate",
+                      "--prompt",
+                      "Create a scripture learning Mini App",
+                      "--id",
+                      "scripture-learning",
+                      "--manifest",
+                      "manifest.json",
+                      "--submit",
+                  ])
+                  .expect("parse miniapp generate");
+                  assert!(matches!(
+                      generate.command,
+                      Some(CliCommand::Miniapp {
+                          command: MiniAppCommand::Generate { submit: true, .. }
+                      })
+                  ));
+              }
+
+              #[test]
+              fn bot_and_miniapp_commands_never_delegate_to_vendor_cli() {
+                  assert!(is_product_command("bot"));
+                  assert!(is_product_command("miniapp"));
+              }
+          }
+          '''
+          text = cli.read_text(encoding="utf-8")
+          if "mod cli_control_plane_tests" in text:
+              raise SystemExit("CLI control-plane tests already present")
+          cli.write_text(text + cli_tests, encoding="utf-8")
+
+          host_test = root / "mahayana-feature-host/tests/sovereign_bot_identity.rs"
+          host_test.parent.mkdir(parents=True, exist_ok=True)
+          host_test.write_text(
+              r'''use mahayana_feature_host::FeatureHostController;
+          use mahayana_host_protocol::FeatureCommand;
+          use mahayana_host_protocol::HostConfig;
+          use mahayana_host_protocol::HostEvent;
+          use mahayana_host_protocol::HostMode;
+          use mahayana_host_protocol::SurfacePlatform;
+
+          fn drain(controller: &FeatureHostController) -> Vec<HostEvent> {
+              let mut events = Vec::new();
+              while let Some(event) = controller.receive().expect("receive Host event") {
+                  events.push(event);
+              }
+              events
+          }
+
+          #[test]
+          fn newly_created_bots_emit_mahayana_owned_conversation_ids() {
+              let controller = FeatureHostController::create(
+                  HostConfig {
+                      profile_id: "sovereign-bot-id".into(),
+                      mode: HostMode::Test,
+                  },
+                  SurfacePlatform::Mock,
+              )
+              .expect("create test Host");
+              drain(&controller);
+
+              controller
+                  .execute(FeatureCommand::BotCreate {
+                      request_id: "create-research".into(),
+                      name: "Research".into(),
+                      description: "Source verification".into(),
+                      title: "Researcher".into(),
+                      avatar: None,
+                      avatar_shape: None,
+                      avatar_color: None,
+                  })
+                  .expect("create bot");
+
+              let bot = drain(&controller)
+                  .into_iter()
+                  .find_map(|event| match event {
+                      HostEvent::BotChanged { bot, .. } => Some(bot),
+                      _ => None,
+                  })
+                  .expect("bot.changed event");
+              let conversation_id = bot.conversation_id.expect("bot conversation id");
+              assert!(conversation_id.starts_with("mahayana-ai:agent:"));
+              assert!(!conversation_id.starts_with("codex:"));
+          }
+
+          #[test]
+          fn legacy_codex_conversation_ids_remain_protocol_readable() {
+              let command: FeatureCommand = serde_json::from_value(serde_json::json!({
+                  "type": "conversation.open",
+                  "requestId": "legacy-open",
+                  "conversationId": "codex:agent:legacy"
+              }))
+              .expect("deserialize legacy conversation id");
+              assert!(matches!(
+                  command,
+                  FeatureCommand::ConversationOpen { conversation_id, .. }
+                      if conversation_id == "codex:agent:legacy"
+              ));
+          }
+          ''',
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Format Mahayana workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml --all -- --check
+
+      - name: Test Mahayana CLI and control-plane contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-cli
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-cli --features codex-compat
+          cargo test --locked --manifest-path third_party/mahayana/mahayana-rs/Cargo.toml -p mahayana-platform-client -p mahayana-feature-host -p mahayana-host-protocol
+
+      - name: Verify sovereign identifiers and CLI surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'mahayana-ai:agent:' third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
+          ! grep -q 'conversation_id: Some("codex:agent:' third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs
+          grep -q 'enum MiniAppCommand' third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
+          grep -q 'BotCommand::Create' third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs
+          grep -q 'marketplace_botfather_generate' third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "fabushi-ci"
+          git config user.email "fabushi-ci@users.noreply.github.com"
+          git rm .github/workflows/msr-502-one-shot.yml
+          git add \
+            third_party/mahayana/mahayana-rs/mahayana-cli/src/main.rs \
+            third_party/mahayana/mahayana-rs/mahayana-product/src/lib.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/src/implementation.rs \
+            third_party/mahayana/mahayana-rs/mahayana-feature-host/tests/sovereign_bot_identity.rs
+          git commit -m "feat(mahayana): expose bot and miniapp control plane"
+          git push origin HEAD:feat/msr-502-cli-control-plane-parity-20260825
