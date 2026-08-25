@@ -1,0 +1,82 @@
+name: Developer Fiat Commerce
+
+on:
+  push:
+    branches:
+      - main
+      - feat/fab-p0001-dynamic-fiat-commerce
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/workflows/developer-fiat-commerce.yml'
+      - 'projects/telegram-fabushi-integration/**'
+  pull_request:
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/workflows/developer-fiat-commerce.yml'
+      - 'projects/telegram-fabushi-integration/**'
+
+permissions:
+  contents: read
+
+jobs:
+  control-plane-unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - run: cargo fmt --check
+
+  control-plane-wasm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+
+  schema-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify dynamic-fiat schema and generic ownership
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql')
+          s = p.read_text()
+          required = [
+              'developer_commerce_profiles', 'mini_app_commerce_owners',
+              'mini_app_commerce_members', 'payment_product_catalog',
+              'payment_price_revisions', 'payment_provider_bindings',
+              'developer_commerce_audit_events', "'global-dharma'", "'official.fabushi'"
+          ]
+          for item in required:
+              assert item in s, item
+          assert 'amount INTEGER' in s
+          assert 'REAL' not in s and 'FLOAT' not in s
+          PY
+      - name: Reject client authority over platform fees and developer identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/lib.rs').read_text()
+          block = s[s.index('pub struct DeveloperProductDraft'):s.index('pub struct ProviderBindingPlan')]
+          assert 'developer_id' not in block
+          assert 'owner_user_id' not in block
+          assert 'platform_fee_bps' not in block
+          assert 'currency' in block and 'amount' in block
+          PY
