@@ -920,7 +920,7 @@ async fn run_payout_maintenance(env: &Env) -> Result<()> {
              WHERE r.region_code=CASE WHEN p.country_code='CN' THEN 'CN' ELSE 'GLOBAL' END
                AND r.purpose='marketplace_payout' AND r.provider=a.provider AND r.state='active'
            )
-         ORDER BY p.developer_id,a.is_default DESC,a.created_at ASC")?.all().await?.results::<AutoPayoutCandidate>()?;
+         ORDER BY p.developer_id,a.is_default DESC,a.created_at ASC").all().await?.results::<AutoPayoutCandidate>()?;
     let current = now();
     let mut seen = std::collections::BTreeSet::new();
     for candidate in candidates {

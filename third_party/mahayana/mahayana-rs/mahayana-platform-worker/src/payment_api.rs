@@ -615,7 +615,7 @@ pub async fn verify_google(mut request: Request, context: RouteContext<()>) -> R
 pub async fn provider_webhook(mut request: Request, context: RouteContext<()>) -> Result<Response> {
     require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
     let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-    if !matches!(provider.as_str(), "web" | "merchant" | "stripe_connect" | "adyen_platform" | "paypal_multiparty" | "wechat_platform" | "alipay_platform" | "lianlian_account_plus" | "huifu_dougong") {
+    if !matches!(provider.as_str(), "web" | "merchant" | "stripe_connect" | "adyen_platform" | "paypal_multiparty" | "paypal_payouts" | "wechat_platform" | "alipay_platform" | "lianlian_account_plus" | "huifu_dougong") {
         return error_response(
             404,
             "provider_not_found",
@@ -1036,13 +1036,13 @@ async fn process_normalized_event(
         }
         "payoutPaid" => {
             let payout_id = required_event_value(event.payout_id.as_deref(), "payoutId")?;
-            worker::query!(database,
-                "UPDATE developer_payouts SET status = 'paid', provider_reference = COALESCE(?1, provider_reference), updated_at = ?2
-                 WHERE payout_id = ?3 AND status IN ('pending', 'processing')",
-                event.provider_reference.as_deref(), occurred_at, payout_id)?.run().await?;
-            worker::query!(database,
-                "UPDATE developer_payout_attempts SET state='paid',provider_reference=COALESCE(?1,provider_reference),last_error=NULL,updated_at=?2 WHERE payout_id=?3 AND state IN ('created','submitted','processing')",
-                event.provider_reference.as_deref(),occurred_at,payout_id)?.run().await?;
+            finalize_paid_payout(
+                database,
+                payout_id,
+                event.provider_reference.as_deref(),
+                occurred_at,
+            )
+            .await?;
             Ok(None)
         }
         "payoutFailed" => {
@@ -1695,6 +1695,7 @@ fn developer_available_account(developer_id: &str, currency: &str) -> String {
 include!("payout_orchestration.rs");
 include!("reconciled_refund.rs");
 include!("reserve_release.rs");
+include!("payout_finalize.rs");
 
 fn normalize_rail(value: &str) -> Result<&'static str> {
     match value.trim() {
