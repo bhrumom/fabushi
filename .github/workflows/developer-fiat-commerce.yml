@@ -9,13 +9,17 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
       - '.github/scripts/apply-google-global-pricing-patch.mjs'
       - '.github/scripts/apply-commerce-active-rail-gate.mjs'
+      - '.github/scripts/apply-global-cn-payout-patch.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -23,10 +27,14 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/scripts/apply-global-cn-payout-patch.mjs'
       - '.github/scripts/apply-commerce-active-rail-gate.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
@@ -48,10 +56,13 @@ jobs:
           node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
           node .github/scripts/apply-google-global-pricing-patch.mjs
           node .github/scripts/apply-commerce-active-rail-gate.mjs
+          node .github/scripts/apply-global-cn-payout-patch.mjs
       - name: Apply rustfmt
         run: |
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml
+          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs
       - name: Commit generated integration if needed
         run: |
           if git diff --quiet; then
@@ -61,9 +72,11 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs \
                   third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
-                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs
-          git commit -m 'style(pay): integrate and format developer commerce'
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-pay-worker/src/lib.rs
+          git commit -m 'style(pay): integrate and format developer commerce payouts'
           git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
 
   control-plane-unit:
@@ -102,6 +115,19 @@ jobs:
       - run: cargo check --target wasm32-unknown-unknown
       - run: cargo fmt --check
 
+  pay-worker-wasm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-pay-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+      - run: cargo fmt --check
+
   schema-contract:
     runs-on: ubuntu-latest
     steps:
@@ -126,6 +152,31 @@ jobs:
           assert "'CNY', 108000" in seed
           assert "'web_provider'" in seed
           assert "'pending_configuration'" in seed
+          PY
+      - name: Verify global and China payout schema
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          schema = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql').read_text()
+          for item in [
+              'developer_payout_profiles', 'payout_provider_routes',
+              'developer_settlement_reconciliations', 'store_settlement_batches',
+              'developer_payout_attempts', 'kyc_status', 'payouts_enabled',
+              'stripe_connect', 'adyen_platform', 'paypal_multiparty',
+              'wechat_platform', 'alipay_platform', 'lianlian_account_plus', 'huifu_dougong'
+          ]:
+              assert item in schema, item
+          assert 'pending_configuration' in schema
+          assert 'REAL' not in schema and 'FLOAT' not in schema
+          payout = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/payout.rs').read_text()
+          assert 'net_receipts' in payout
+          assert 'platform_fee_amount' in payout
+          assert 'NoEligibleProvider' in payout
+          orchestration = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs').read_text()
+          assert 'developer_settlement_reconciliations' in orchestration
+          assert 'payout_provider_routes' in orchestration
+          assert 'kyc_status' in orchestration and 'payouts_enabled' in orchestration
+          assert 'PAYOUT_PROVIDER_EXECUTOR_TOKEN' in orchestration
           PY
       - name: Verify server pricing authority and active provider gate
         run: |
@@ -154,6 +205,7 @@ jobs:
 
           proxy = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
           assert '/v1/pay/admin/products' in proxy
+          assert '/v1/developer/commerce/payout/request' in proxy
           assert 'assert!(!allowed_commerce_proxy_path' in proxy
           google = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/google.rs').read_text()
           assert 'pricing:convertRegionPrices' in google
