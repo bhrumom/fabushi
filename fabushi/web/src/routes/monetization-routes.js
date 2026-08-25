@@ -16,6 +16,7 @@ import {
   handleProviderSubscriptionEvent,
   handleTrustedAdEvent,
 } from '../handlers/monetization-platform.js';
+import { handleAdminMonetizationReconcile } from '../handlers/monetization-reconciliation.js';
 
 export async function routeMonetizationRequest({ pathname, method, request, env, db }) {
   if (pathname === '/api/monetization/checkout' && method === 'POST') return handleMonetizationCheckout(request, env, db);
@@ -35,5 +36,6 @@ export async function routeMonetizationRequest({ pathname, method, request, env,
   if (pathname === '/api/admin/monetization/payout-accounts' && method === 'POST') return handleAdminPayoutAccount(request, env, db);
   if (pathname === '/api/admin/monetization/payouts/submit' && method === 'POST') return handleAdminSubmitPayout(request, env, db);
   if (pathname === '/api/admin/monetization/settlements/release' && method === 'POST') return handleAdminReleaseSettlement(request, env, db);
+  if (pathname === '/api/admin/monetization/reconcile' && method === 'POST') return handleAdminMonetizationReconcile(request, env, db);
   return null;
 }
