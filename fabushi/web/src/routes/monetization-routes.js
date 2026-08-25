@@ -17,10 +17,12 @@ import {
   handleTrustedAdEvent,
 } from '../handlers/monetization-platform.js';
 import { handleAdminMonetizationReconcile } from '../handlers/monetization-reconciliation.js';
+import { handleMonetizationAccess } from '../handlers/monetization-access.js';
 
 export async function routeMonetizationRequest({ pathname, method, request, env, db }) {
   if (pathname === '/api/monetization/checkout' && method === 'POST') return handleMonetizationCheckout(request, env, db);
   if (pathname === '/api/monetization/payment' && method === 'GET') return handleMonetizationPayment(request, env, db);
+  if (pathname === '/api/monetization/access' && method === 'GET') return handleMonetizationAccess(request, env, db);
   if (pathname === '/api/monetization/entitlements' && method === 'GET') return handleMonetizationEntitlements(request, env, db);
   if (pathname === '/api/monetization/subscriptions' && method === 'GET') return handleMonetizationSubscriptions(request, env, db);
   if (pathname === '/api/monetization/developer/register' && method === 'POST') return handleDeveloperRegister(request, env, db);
