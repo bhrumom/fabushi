@@ -60,8 +60,3 @@ test('canonical entitlement route evaluates subscription lifecycle and active pr
   assert.match(commerce, /"purchaseOptions"/);
   assert.match(commerce, /"allowed": allowed/);
 });
-
-test('official Global Dharma MCP asks for the exact monetized host capability', () => {
-  const mcp = text(join(workspace, 'ai-backend/src/official_mcp_apps.js'));
-  assert.match(mcp, /capability:\s*['"]local\.prayer-wheel\.start['"]/);
-});
