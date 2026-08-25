@@ -45,9 +45,15 @@ pub async fn developer_commerce_proxy(
         .headers()
         .get("Authorization")?
         .filter(|value| value.starts_with("Bearer "))
-        .ok_or_else(|| worker::Error::RustError("missing Developer Commerce bearer token".into()))?;
+        .ok_or_else(|| {
+            worker::Error::RustError("missing Developer Commerce bearer token".into())
+        })?;
 
-    let mut target = format!("{}{}", commerce_control_base_url(&context.env)?, incoming.path());
+    let mut target = format!(
+        "{}{}",
+        commerce_control_base_url(&context.env)?,
+        incoming.path()
+    );
     if let Some(query) = incoming.query() {
         target.push('?');
         target.push_str(query);
@@ -71,7 +77,9 @@ pub async fn developer_commerce_proxy(
     let mut init = RequestInit::new();
     init.with_method(method).with_headers(headers);
     if let Some(body) = body {
-        init.with_body(Some(JsValue::from(js_sys::Uint8Array::from(body.as_slice()))));
+        init.with_body(Some(JsValue::from(js_sys::Uint8Array::from(
+            body.as_slice(),
+        ))));
     }
     let outbound = Request::new_with_init(&target, &init)?;
     let response = Fetch::Request(outbound).send().await?;
@@ -84,7 +92,9 @@ mod tests {
 
     #[test]
     fn proxy_surface_is_narrow() {
-        assert!(allowed_commerce_proxy_path("/v1/developer/commerce/profile"));
+        assert!(allowed_commerce_proxy_path(
+            "/v1/developer/commerce/profile"
+        ));
         assert!(allowed_commerce_proxy_path(
             "/v1/developer/commerce/miniapps/demo/products"
         ));
