@@ -29,7 +29,9 @@ pub enum GoogleCatalogError {
     UnsupportedCurrency,
 }
 
-pub fn build_google_sync_request(product: &GoogleCatalogProduct) -> Result<GoogleSyncRequest, GoogleCatalogError> {
+pub fn build_google_sync_request(
+    product: &GoogleCatalogProduct,
+) -> Result<GoogleSyncRequest, GoogleCatalogError> {
     if product.package_name.trim().is_empty()
         || product.product_id.trim().is_empty()
         || product.display_name.trim().is_empty()
@@ -96,13 +98,18 @@ pub fn build_google_sync_request(product: &GoogleCatalogProduct) -> Result<Googl
 fn money(currency: &str, amount_minor: i64) -> Result<serde_json::Value, GoogleCatalogError> {
     let exponent = match currency {
         "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND" => 3_u32,
-        "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX" | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0_u32,
+        "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF" | "UGX"
+        | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0_u32,
         _ => 2_u32,
     };
     let divisor = 10_i64.pow(exponent);
     let units = amount_minor / divisor;
     let remainder = amount_minor % divisor;
-    let nanos = if exponent == 0 { 0 } else { (remainder * 1_000_000_000_i64 / divisor) as i32 };
+    let nanos = if exponent == 0 {
+        0
+    } else {
+        (remainder * 1_000_000_000_i64 / divisor) as i32
+    };
     Ok(serde_json::json!({
         "currencyCode": currency,
         "units": units.to_string(),
@@ -125,9 +132,13 @@ mod tests {
             currency: "CNY".into(),
             amount_minor: 108000,
             region_code: "CN".into(),
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(req.method, "PATCH");
-        assert_eq!(req.body["purchaseOptions"][0]["regionalPricingAndAvailabilityConfigs"][0]["price"]["units"], "1080");
+        assert_eq!(
+            req.body["purchaseOptions"][0]["regionalPricingAndAvailabilityConfigs"][0]["price"]["units"],
+            "1080"
+        );
     }
 
     #[test]
@@ -141,8 +152,12 @@ mod tests {
             currency: "CNY".into(),
             amount_minor: 3000,
             region_code: "CN".into(),
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(req.method, "POST");
-        assert_eq!(req.body["basePlans"][0]["autoRenewingBasePlanType"]["billingPeriodDuration"], "P1M");
+        assert_eq!(
+            req.body["basePlans"][0]["autoRenewingBasePlanType"]["billingPeriodDuration"],
+            "P1M"
+        );
     }
 }
