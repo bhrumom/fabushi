@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import BotFatherCommercePanel from "./BotFatherCommercePanel";
 import DeveloperPayoutPanel from "./DeveloperPayoutPanel";
+import PayoutOnboardingCard from "./PayoutOnboardingCard";
 
 type CommercePageProps = { params: Promise<{ id: string }> };
 
@@ -16,6 +17,7 @@ export default async function CommercePage({ params }: CommercePageProps) {
       <BotFatherCommercePanel />
       <main style={{ maxWidth: 1080, margin: "-46px auto 0", padding: "0 24px 64px" }}>
         <DeveloperPayoutPanel />
+        <PayoutOnboardingCard />
       </main>
     </>
   );
