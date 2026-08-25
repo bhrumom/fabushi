@@ -13,6 +13,7 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
+      - '.github/scripts/apply-google-global-pricing-patch.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
   pull_request:
@@ -23,6 +24,8 @@ on:
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/scripts/apply-dynamic-commerce-platform-patch.mjs'
+      - '.github/scripts/apply-google-global-pricing-patch.mjs'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
 
@@ -38,8 +41,10 @@ jobs:
         with:
           ref: feat/fab-p0001-dynamic-fiat-commerce
       - uses: dtolnay/rust-toolchain@stable
-      - name: Apply deterministic platform proxy patch
-        run: node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
+      - name: Apply deterministic integration patches
+        run: |
+          node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
+          node .github/scripts/apply-google-global-pricing-patch.mjs
       - name: Apply rustfmt
         run: |
           cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
@@ -131,4 +136,7 @@ jobs:
           proxy = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs').read_text()
           assert '/v1/pay/admin/products' in proxy
           assert 'assert!(!allowed_commerce_proxy_path' in proxy
+          google = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/google.rs').read_text()
+          assert 'pricing:convertRegionPrices' in google
+          assert 'converted_region_prices' in google
           PY
