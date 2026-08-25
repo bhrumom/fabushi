@@ -9,12 +9,15 @@ on:
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
       - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
+      - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
   pull_request:
     paths:
       - 'desktop/electron/native-edge.cjs'
       - 'desktop/electron/native-capability-handlers.cjs'
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
+      - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
+      - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
 
 permissions:
   contents: write
@@ -34,7 +37,7 @@ jobs:
           git config user.name 'fabushi-ci'
           git config user.email 'actions@users.noreply.github.com'
           git add desktop/electron/native-edge.cjs desktop/electron/native-capability-handlers.cjs
-          git commit -m 'feat(bot-father): wire developer commerce native bridge'
+          git commit -m 'feat(bot-father): wire developer commerce payout bridge'
           git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
 
   native-contract:
@@ -49,14 +52,21 @@ jobs:
           from pathlib import Path
           edge=Path('desktop/electron/native-edge.cjs').read_text()
           handlers=Path('desktop/electron/native-capability-handlers.cjs').read_text()
-          for name in ['getDeveloperCommerceProfile','upsertDeveloperCommerceProfile','listDeveloperCommerceMiniApps','registerDeveloperCommerceMiniApp','listDeveloperCommerceProducts','createDeveloperCommerceProduct','updateDeveloperCommerceProduct','syncDeveloperCommerceGoogleProduct']:
+          commerce=['getDeveloperCommerceProfile','upsertDeveloperCommerceProfile','listDeveloperCommerceMiniApps','registerDeveloperCommerceMiniApp','listDeveloperCommerceProducts','createDeveloperCommerceProduct','updateDeveloperCommerceProduct','syncDeveloperCommerceGoogleProduct']
+          payout=['getDeveloperPayoutOverview','upsertDeveloperPayoutProfile','requestDeveloperPayout']
+          for name in commerce + payout:
               assert name in edge, name
               assert name in handlers, name
           create=handlers[handlers.index('async createDeveloperCommerceProduct'):handlers.index('async updateDeveloperCommerceProduct')]
+          payout_request=handlers[handlers.index('async requestDeveloperPayout'):handlers.index('async getSharingState')]
           for forbidden in ['developerId', 'ownerUserId', 'platformFeeBps']:
               assert forbidden not in create, forbidden
+              assert forbidden not in payout_request, forbidden
           assert "Number.isSafeInteger(amount)" in create
           assert "2592000" in create
+          assert "/v1/developer/commerce/payout/request" in payout_request
+          assert "Number.isSafeInteger(amount)" in payout_request
+          assert "payoutAccountId, currency, amount, idempotencyKey" in payout_request
           PY
 
   web-build:
@@ -74,6 +84,6 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
-      - name: Build web app with Bot Father Commerce route
+      - name: Build web app with Bot Father Commerce and payouts
         working-directory: frontend
         run: pnpm build:web
