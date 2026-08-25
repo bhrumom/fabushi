@@ -8,6 +8,7 @@ on:
       - 'desktop/electron/native-capability-handlers.cjs'
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
       - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
+      - '.github/scripts/apply-payout-onboarding-native-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
       - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'desktop/electron/native-capability-handlers.cjs'
       - 'frontend/apps/web/src/app/miniapps/[id]/commerce/**'
       - '.github/scripts/apply-botfather-commerce-desktop-patch.mjs'
+      - '.github/scripts/apply-payout-onboarding-native-patch.mjs'
       - '.github/workflows/developer-fiat-commerce-ui.yml'
       - 'projects/telegram-fabushi-integration/management/tasks/M9-PAY-003-global-cn-developer-payouts.md'
 
@@ -30,14 +32,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feat/fab-p0001-dynamic-fiat-commerce
-      - run: node .github/scripts/apply-botfather-commerce-desktop-patch.mjs
+      - run: |
+          node .github/scripts/apply-botfather-commerce-desktop-patch.mjs
+          node .github/scripts/apply-payout-onboarding-native-patch.mjs
       - name: Commit native bridge integration if needed
         run: |
           if git diff --quiet; then exit 0; fi
           git config user.name 'fabushi-ci'
           git config user.email 'actions@users.noreply.github.com'
           git add desktop/electron/native-edge.cjs desktop/electron/native-capability-handlers.cjs
-          git commit -m 'feat(bot-father): wire developer commerce payout bridge'
+          git commit -m 'feat(bot-father): wire developer commerce payout and onboarding bridge'
           git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
 
   native-contract:
@@ -53,20 +57,23 @@ jobs:
           edge=Path('desktop/electron/native-edge.cjs').read_text()
           handlers=Path('desktop/electron/native-capability-handlers.cjs').read_text()
           commerce=['getDeveloperCommerceProfile','upsertDeveloperCommerceProfile','listDeveloperCommerceMiniApps','registerDeveloperCommerceMiniApp','listDeveloperCommerceProducts','createDeveloperCommerceProduct','updateDeveloperCommerceProduct','syncDeveloperCommerceGoogleProduct']
-          payout=['getDeveloperPayoutOverview','upsertDeveloperPayoutProfile','requestDeveloperPayout']
+          payout=['getDeveloperPayoutOverview','upsertDeveloperPayoutProfile','requestDeveloperPayout','createDeveloperPayoutOnboarding']
           for name in commerce + payout:
               assert name in edge, name
               assert name in handlers, name
           create=handlers[handlers.index('async createDeveloperCommerceProduct'):handlers.index('async updateDeveloperCommerceProduct')]
-          payout_request=handlers[handlers.index('async requestDeveloperPayout'):handlers.index('async getSharingState')]
-          for forbidden in ['developerId', 'ownerUserId', 'platformFeeBps']:
+          payout_request=handlers[handlers.index('async requestDeveloperPayout'):handlers.index('async createDeveloperPayoutOnboarding')]
+          onboarding=handlers[handlers.index('async createDeveloperPayoutOnboarding'):handlers.index('async getSharingState')]
+          for forbidden in ['developerId','ownerUserId','platformFeeBps']:
               assert forbidden not in create, forbidden
               assert forbidden not in payout_request, forbidden
-          assert "Number.isSafeInteger(amount)" in create
-          assert "2592000" in create
-          assert "/v1/developer/commerce/payout/request" in payout_request
-          assert "Number.isSafeInteger(amount)" in payout_request
-          assert "payoutAccountId, currency, amount, idempotencyKey" in payout_request
+              assert forbidden not in onboarding, forbidden
+          assert 'Number.isSafeInteger(amount)' in create and '2592000' in create
+          assert '/v1/developer/commerce/payout/request' in payout_request
+          assert 'Number.isSafeInteger(amount)' in payout_request
+          assert 'payoutAccountId, currency, amount, idempotencyKey' in payout_request
+          assert '/v1/developer/commerce/payout/onboarding' in onboarding
+          assert 'lianlian_account_plus' in onboarding and 'stripe_connect' in onboarding
           PY
 
   web-build:
