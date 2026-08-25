@@ -13,6 +13,7 @@ use crate::identity_auth::configured_provider;
 use crate::identity_auth::provider_available;
 use crate::identity_auth::registration_email_available;
 use crate::identity_auth::send_registration_code;
+use crate::payment_api;
 use base64::Engine;
 use jsonwebtoken::Algorithm;
 use jsonwebtoken::DecodingKey;
@@ -419,6 +420,35 @@ use security::constant_time_eq;
 pub async fn main(request: Request, env: Env, _context: Context) -> Result<Response> {
     Router::new()
         .get("/health", |_, _| Response::from_json(&json!({"ok": true})))
+        .post_async(
+            "/v1/miniapps/:mini_app_id/pay/intents",
+            payment_api::create_intent,
+        )
+        .get_async(
+            "/v1/miniapps/:mini_app_id/pay/plans/:capability",
+            payment_api::list_plans,
+        )
+        .get_async(
+            "/v1/miniapps/:mini_app_id/entitlements/:capability",
+            payment_api::get_entitlement,
+        )
+        .get_async("/v1/pay/intents/:payment_id", payment_api::get_intent)
+        .post_async(
+            "/v1/pay/intents/:payment_id/checkout",
+            payment_api::checkout_action,
+        )
+        .post_async(
+            "/v1/pay/intents/:payment_id/credits/confirm",
+            payment_api::confirm_credits,
+        )
+        .post_async(
+            "/v1/pay/intents/:payment_id/apple/verify",
+            payment_api::verify_apple,
+        )
+        .post_async(
+            "/v1/pay/intents/:payment_id/google/verify",
+            payment_api::verify_google,
+        )
         .post_async("/api/auth/login", password_login)
         .post_async("/api/auth/browser/start", browser_login_start)
         .get_async("/api/auth/browser/portal", browser_login_portal)

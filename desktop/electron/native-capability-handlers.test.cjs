@@ -35,8 +35,9 @@ async function harness(run, options = {}) {
     net: options.net ?? { fetch: async () => { throw new Error('unexpected fetch'); } },
     nativeTheme: {},
     safeStorage,
-    shell: {},
+    shell: options.shell ?? {},
     host: options.host ?? { request: async () => ({ ok: true, data: null }) },
+    runExecutable: options.runExecutable,
     readNativeState: async () => state,
     mutateNativeState: async (mutator) => { state = await mutator(state); return state; },
     getDesktopUpdateStatus: options.getDesktopUpdateStatus,
@@ -82,6 +83,118 @@ test('marketplace native capabilities use canonical Feature Host method names', 
   assert.ok(calls.some(([method]) => method === 'feature.plugin.install'));
   assert.ok(calls.some(([method]) => method === 'feature.plugin.uninstall'));
   assert.equal(calls.some(([method]) => /^(marketplace|plugin)\./.test(method)), false);
+});
+
+test('paid Mini App capability fails closed before starting a local process', async () => {
+  let executions = 0;
+  const platformCalls = [];
+  const host = {
+    async request(method, params) {
+      assert.equal(method, 'platform.request');
+      platformCalls.push(params);
+      return {
+        ok: true,
+        data: {
+          schema: 'mahayana.miniapp.entitlement.v1',
+          miniAppId: 'global-dharma',
+          capability: 'local.prayer-wheel.start',
+          granted: false,
+          plans: [],
+        },
+      };
+    },
+  };
+  await harness(async ({ handlers }) => {
+    await assert.rejects(
+      handlers.invokeMiniAppHostRequest({
+        miniAppId: 'global-dharma',
+        capability: 'local.prayer-wheel.start',
+      }),
+      /payment_required/,
+    );
+  }, {
+    host,
+    runExecutable: async () => { executions += 1; return { stdout: 'unexpected' }; },
+  });
+  assert.equal(executions, 0);
+  assert.equal(platformCalls.length, 1);
+  assert.equal(platformCalls[0].method, 'GET');
+  assert.equal(
+    platformCalls[0].path,
+    '/v1/miniapps/global-dharma/entitlements/local.prayer-wheel.start',
+  );
+});
+
+test('paid Mini App capability starts only after a server-granted entitlement', async () => {
+  const previous = process.env.GLOBAL_DHARMA_CTL;
+  const executions = [];
+  try {
+    await harness(async ({ root, handlers }) => {
+      const executable = path.join(root, process.platform === 'win32' ? 'global-dharmactl.exe' : 'global-dharmactl');
+      await fs.writeFile(executable, 'test');
+      process.env.GLOBAL_DHARMA_CTL = executable;
+      const result = await handlers.invokeMiniAppHostRequest({
+        miniAppId: 'global-dharma',
+        capability: 'local.prayer-wheel.start',
+      });
+      assert.equal(result.started, true);
+      assert.equal(result.entitlement.productId, 'global-dharma-prayer-wheel-monthly');
+      assert.equal(result.output, 'started');
+    }, {
+      host: {
+        async request(method, params) {
+          assert.equal(method, 'platform.request');
+          assert.equal(params.authenticated, true);
+          return {
+            ok: true,
+            data: {
+              granted: true,
+              entitlement: {
+                entitlementId: 'entitlement-test',
+                productId: 'global-dharma-prayer-wheel-monthly',
+                expiresAt: 2_000_000_000,
+              },
+            },
+          };
+        },
+      },
+      runExecutable: async (file, args, options) => {
+        executions.push({ file, args, options });
+        return { stdout: 'started', stderr: '' };
+      },
+    });
+    assert.equal(executions.length, 1);
+    assert.deepEqual(executions[0].args, ['start']);
+    assert.equal(executions[0].options.windowsHide, true);
+  } finally {
+    if (previous === undefined) delete process.env.GLOBAL_DHARMA_CTL;
+    else process.env.GLOBAL_DHARMA_CTL = previous;
+  }
+});
+
+test('Mini App checkout opens only an HTTPS redirect returned by Fabushi Pay', async () => {
+  const opened = [];
+  await harness(async ({ handlers }) => {
+    const result = await handlers.openMiniAppCheckout({ paymentId: 'payment-test' });
+    assert.equal(result.opened, true);
+    assert.deepEqual(opened, ['https://checkout.example.test/pay?paymentId=payment-test']);
+  }, {
+    shell: { openExternal: async (url) => { opened.push(url); } },
+    host: {
+      async request() {
+        return {
+          ok: true,
+          data: {
+            payment: { paymentId: 'payment-test' },
+            checkoutAction: {
+              kind: 'redirect',
+              url: 'https://checkout.example.test/pay?paymentId=payment-test',
+            },
+          },
+        };
+      },
+    },
+  });
 });
 
 test('local tool permission cannot exceed the administrator ceiling', async () => {

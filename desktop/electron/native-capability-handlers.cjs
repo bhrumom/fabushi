@@ -6,6 +6,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_BINARY_BYTES = 32 * 1024 * 1024;
@@ -107,6 +111,7 @@ function createNativeCapabilityHandlers(deps) {
     setDesktopUpdateStatus,
     windowForEvent,
     broadcastNativeEvent,
+    runExecutable = (file, args, options) => execFileAsync(file, args, options),
   } = deps;
 
   const telemetryPath = () => path.join(app.getPath('userData'), 'diagnostics', 'native-events.ndjson');
@@ -168,6 +173,28 @@ function createNativeCapabilityHandlers(deps) {
       throw new Error(`Fabushi platform request failed: ${String(detail).slice(0, 1000)}`);
     }
     return response.data ?? null;
+  }
+
+  function paymentIdentifier(value, field) {
+    const normalized = cleanString(value, 240);
+    if (!normalized || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(normalized)) {
+      throw new Error(`${field} is invalid.`);
+    }
+    return normalized;
+  }
+
+  function paymentRail(value) {
+    const rail = cleanString(value, 80);
+    if (!new Set(['webProvider', 'appleInAppPurchase', 'googlePlayBilling', 'credits']).has(rail)) {
+      throw new Error('Unsupported Mini App payment rail.');
+    }
+    return rail;
+  }
+
+  async function globalDharmaCtl() {
+    const executable = await firstAvailableExecutable(process.env.GLOBAL_DHARMA_CTL, 'global-dharmactl');
+    if (!executable) throw new Error('Global Dharma local runtime is not installed.');
+    return executable;
   }
 
   async function loadSecretVault() {
@@ -854,6 +881,86 @@ function createNativeCapabilityHandlers(deps) {
     async getAccountAvatar() {
       const state = await readNativeState();
       return state.accountAvatar ?? null;
+    },
+
+    async getMiniAppEntitlement(params) {
+      const miniAppId = paymentIdentifier(params.miniAppId, 'miniAppId');
+      const capability = paymentIdentifier(params.capability, 'capability');
+      return platformRequest(
+        'GET',
+        `/v1/miniapps/${encodeURIComponent(miniAppId)}/entitlements/${encodeURIComponent(capability)}`,
+      );
+    },
+
+    async createMiniAppPaymentIntent(params) {
+      const miniAppId = paymentIdentifier(params.miniAppId, 'miniAppId');
+      const sku = paymentIdentifier(params.sku, 'sku');
+      const rail = paymentRail(params.rail);
+      const idempotencyKey = paymentIdentifier(
+        params.idempotencyKey || `desktop-${crypto.randomUUID()}`,
+        'idempotencyKey',
+      );
+      return platformRequest(
+        'POST',
+        `/v1/miniapps/${encodeURIComponent(miniAppId)}/pay/intents`,
+        { body: { sku, rail, idempotencyKey } },
+      );
+    },
+
+    async getMiniAppPaymentIntent(params) {
+      const paymentId = paymentIdentifier(params.paymentId, 'paymentId');
+      return platformRequest('GET', `/v1/pay/intents/${encodeURIComponent(paymentId)}`);
+    },
+
+    async openMiniAppCheckout(params) {
+      const paymentId = paymentIdentifier(params.paymentId, 'paymentId');
+      const result = await platformRequest(
+        'POST',
+        `/v1/pay/intents/${encodeURIComponent(paymentId)}/checkout`,
+        { body: {} },
+      );
+      const action = result?.checkoutAction;
+      if (action?.kind === 'redirect') {
+        const checkoutUrl = new URL(String(action.url || ''));
+        if (checkoutUrl.protocol !== 'https:' || !checkoutUrl.hostname) {
+          throw new Error('Fabushi Pay returned an unsafe checkout URL.');
+        }
+        await shell.openExternal(checkoutUrl.toString());
+        return { ...result, opened: true };
+      }
+      return { ...result, opened: false };
+    },
+
+    async invokeMiniAppHostRequest(params) {
+      const miniAppId = paymentIdentifier(params.miniAppId, 'miniAppId');
+      const capability = paymentIdentifier(params.capability, 'capability');
+      if (miniAppId !== 'global-dharma' || capability !== 'local.prayer-wheel.start') {
+        throw new Error('Unsupported paid Mini App host capability.');
+      }
+      const entitlement = await this.getMiniAppEntitlement({ miniAppId, capability });
+      if (entitlement?.granted !== true) {
+        const error = new Error('payment_required: a valid Fabushi Pay entitlement is required.');
+        error.code = 'payment_required';
+        error.entitlement = entitlement;
+        throw error;
+      }
+      const executable = await globalDharmaCtl();
+      const execution = await runExecutable(executable, ['start'], {
+        timeout: 30_000,
+        windowsHide: true,
+        maxBuffer: 256 * 1024,
+      });
+      return {
+        miniAppId,
+        capability,
+        started: true,
+        entitlement: {
+          entitlementId: entitlement.entitlement?.entitlementId ?? null,
+          productId: entitlement.entitlement?.productId ?? null,
+          expiresAt: entitlement.entitlement?.expiresAt ?? null,
+        },
+        output: cleanString(execution?.stdout, 8_000),
+      };
     },
 
     async getWeeklyUsage() {

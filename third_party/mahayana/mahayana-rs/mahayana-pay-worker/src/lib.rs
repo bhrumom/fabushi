@@ -111,6 +111,14 @@ mod payment_api {
         allowed_rails: Vec<String>,
         #[serde(default)]
         provider_product_refs: BTreeMap<String, String>,
+        #[serde(default)]
+        display_name: String,
+        #[serde(default)]
+        description: String,
+        #[serde(default)]
+        entitlement_duration_seconds: Option<i64>,
+        #[serde(default)]
+        billing_period_seconds: Option<i64>,
     }
 
     pub async fn verify_apple_bound(
@@ -283,7 +291,7 @@ mod payment_api {
     ) -> Result<Response> {
         require_bearer_secret(&request, &context.env, "FABUSHI_PAY_WEBHOOK_SECRET")?;
         let provider = route_identifier(&context, "provider")?.to_ascii_lowercase();
-        if !matches!(provider.as_str(), "web" | "merchant") {
+        if !matches!(provider.as_str(), "apple" | "google" | "web" | "merchant") {
             return error_response(
                 404,
                 "provider_not_found",
@@ -418,188 +426,19 @@ mod payment_api {
         event_id: &str,
         occurred_at: i64,
     ) -> Result<()> {
-        if matches!(
-            payment.status.as_str(),
-            "succeeded" | "partially_refunded" | "refunded"
-        ) {
-            if payment.provider_reference.as_deref() == Some(provider_reference) {
-                return Ok(());
-            }
-            return Err(worker::Error::RustError(
-                "provider reference conflicts with successful payment".into(),
-            ));
-        }
-        if !matches!(
-            payment.status.as_str(),
-            "created" | "requires_action" | "processing"
-        ) {
-            return Err(worker::Error::RustError("payment is not capturable".into()));
-        }
-        let fee = platform_fee(payment, payment.amount);
-        let developer_net = payment.amount.saturating_sub(fee);
-        let source_account = format!("provider-clearing:{provider}:{}", payment.currency);
-        let developer_account = developer_pending_account(&payment.developer_id, &payment.currency);
-        let platform_account = format!("platform:payment-revenue:{}", payment.currency);
-        let order_id = payment.payment_id.clone();
-        let entry_id = format!("payment:{}:capture", payment.payment_id);
-        let attempt_id = format!("payment-attempt:{}", payment.payment_id);
-        let entitlement_id = format!("payment-entitlement:{}", payment.payment_id);
-        let audit_id = format!("payment-audit:{}", payment.payment_id);
-        let mut statements = vec![
-            wallet_account_statement(
-                database,
-                &source_account,
-                "platform",
-                &format!("provider-clearing:{provider}"),
-                &payment.currency,
-                occurred_at,
-            )?,
-            wallet_account_statement(
-                database,
-                &developer_account,
-                "developer",
-                &format!("{}:pending", payment.developer_id),
-                &payment.currency,
-                occurred_at,
-            )?,
-            wallet_account_statement(
-                database,
-                &platform_account,
-                "platform",
-                "payment-revenue",
-                &payment.currency,
-                occurred_at,
-            )?,
-            worker::query!(
-                database,
-                "INSERT INTO orders
-                 (order_id, buyer_user_id, plugin_id, product_id, price_id, sku, currency, amount,
-                  status, idempotency_key, created_at, updated_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9, ?10, ?10
-                 FROM payment_intents pi
-                 WHERE pi.payment_id = ?11 AND pi.status IN ('created', 'requires_action', 'processing')
-                 ON CONFLICT(buyer_user_id, idempotency_key) DO NOTHING",
-                &order_id,
-                &payment.user_id,
-                &payment.mini_app_id,
-                &payment.product_id,
-                &payment.price_id,
-                &payment.sku,
-                &payment.currency,
-                payment.amount,
-                &payment.idempotency_key,
-                occurred_at,
-                &payment.payment_id
-            )?,
-            worker::query!(
-                database,
-                "INSERT OR IGNORE INTO journal_entries (entry_id, reference_type, reference_id, state, created_at)
-                 SELECT ?1, 'payment', ?2, 'draft', ?3 FROM orders WHERE order_id = ?2",
-                &entry_id,
-                &order_id,
-                occurred_at
-            )?,
-            journal_line_statement(
-                database,
-                &format!("{entry_id}:source"),
-                &entry_id,
-                &source_account,
-                &payment.currency,
-                -payment.amount,
-                occurred_at,
-            )?,
-        ];
-        if developer_net > 0 {
-            statements.push(journal_line_statement(
-                database,
-                &format!("{entry_id}:developer"),
-                &entry_id,
-                &developer_account,
-                &payment.currency,
-                developer_net,
-                occurred_at,
-            )?);
-        }
-        if fee > 0 {
-            statements.push(journal_line_statement(
-                database,
-                &format!("{entry_id}:platform"),
-                &entry_id,
-                &platform_account,
-                &payment.currency,
-                fee,
-                occurred_at,
-            )?);
-        }
-        statements.extend([
-            post_balanced_entry_statement(database, &entry_id, occurred_at)?,
-            worker::query!(
-                database,
-                "UPDATE payment_intents SET status = 'succeeded', provider_reference = ?1, updated_at = ?2
-                 WHERE payment_id = ?3 AND status IN ('created', 'requires_action', 'processing')
-                   AND EXISTS (SELECT 1 FROM journal_entries WHERE entry_id = ?4 AND state = 'posted')",
-                provider_reference,
-                occurred_at,
-                &payment.payment_id,
-                &entry_id
-            )?,
-            worker::query!(
-                database,
-                "UPDATE orders SET status = 'fulfilled', updated_at = ?1 WHERE order_id = ?2
-                   AND EXISTS (SELECT 1 FROM payment_intents WHERE payment_id = ?2 AND status = 'succeeded')",
-                occurred_at,
-                &order_id
-            )?,
-            worker::query!(
-                database,
-                "INSERT OR IGNORE INTO payment_attempts
-                 (attempt_id, order_id, provider, provider_event_id, provider_payment_id, status,
-                  request_fingerprint, created_at, updated_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5, 'captured', ?6, ?7, ?7 FROM orders WHERE order_id = ?2",
-                &attempt_id,
-                &order_id,
-                provider,
-                event_id,
-                provider_reference,
-                sha256_hex(format!("{}:{provider_reference}", payment.payment_id).as_bytes()),
-                occurred_at
-            )?,
-            worker::query!(
-                database,
-                "INSERT OR IGNORE INTO entitlements
-                 (entitlement_id, user_id, plugin_id, product_id, order_id, capability, status, granted_at)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7
-                 FROM payment_intents WHERE payment_id = ?5 AND status = 'succeeded'",
-                &entitlement_id,
-                &payment.user_id,
-                &payment.mini_app_id,
-                &payment.product_id,
-                &order_id,
-                &payment.entitlement_capability,
-                occurred_at
-            )?,
-            worker::query!(
-                database,
-                "INSERT OR IGNORE INTO audit_events
-                 (event_id, actor_type, actor_id, event_type, subject_type, subject_id, payload_json, created_at)
-                 SELECT ?1, 'system', ?2, 'payment.succeeded', 'payment', ?3, '{}', ?4
-                 WHERE EXISTS (SELECT 1 FROM payment_intents WHERE payment_id = ?3 AND status = 'succeeded')",
-                &audit_id,
-                provider,
-                &payment.payment_id,
-                occurred_at
-            )?,
-        ]);
-        database.batch(statements).await?;
-        let updated = payment_by_id(database, &payment.payment_id)
-            .await?
-            .ok_or_else(|| worker::Error::RustError("payment disappeared after capture".into()))?;
-        if updated.status != "succeeded" {
-            return Err(worker::Error::RustError(
-                "external payment ledger did not post atomically".into(),
-            ));
-        }
-        Ok(())
+        // Provider-specific handlers above bind the verified store transaction
+        // to this exact Payment Intent. Accounting, expiry, renewal extension
+        // and entitlement creation then use the single shared atomic path.
+        post_success(
+            database,
+            payment,
+            provider,
+            provider_reference,
+            event_id,
+            occurred_at,
+            false,
+        )
+        .await
     }
 
     pub async fn admin_upsert_product(
@@ -636,6 +475,33 @@ mod payment_api {
                 );
             }
         };
+        if product_kind == "subscription" {
+            if input.billing_period_seconds != Some(2_592_000)
+                || input.entitlement_duration_seconds != Some(2_592_000)
+            {
+                return error_response(
+                    400,
+                    "invalid_subscription_period",
+                    "subscriptions currently require a 30-day (2592000 second) period",
+                );
+            }
+        } else if input.billing_period_seconds.is_some() {
+            return error_response(
+                400,
+                "unexpected_billing_period",
+                "non-subscription products cannot define a billing period",
+            );
+        }
+        if input
+            .entitlement_duration_seconds
+            .is_some_and(|duration| duration <= 0)
+        {
+            return error_response(
+                400,
+                "invalid_entitlement_duration",
+                "entitlement duration must be positive",
+            );
+        }
         if input.allowed_rails.is_empty() {
             return error_response(
                 400,
@@ -740,8 +606,9 @@ mod payment_api {
                     &database,
                     "INSERT INTO payment_product_config
                      (product_id, developer_id, product_kind, platform_fee_bps,
-                      allowed_rails_json, provider_product_refs_json, active, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
+                      allowed_rails_json, provider_product_refs_json, active, created_at, updated_at,
+                      display_name, description, entitlement_duration_seconds, billing_period_seconds)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7, ?8, ?9, ?10, ?11)
                      ON CONFLICT(product_id) DO UPDATE SET
                        developer_id = excluded.developer_id,
                        product_kind = excluded.product_kind,
@@ -749,14 +616,22 @@ mod payment_api {
                        allowed_rails_json = excluded.allowed_rails_json,
                        provider_product_refs_json = excluded.provider_product_refs_json,
                        active = 1,
-                       updated_at = excluded.updated_at",
+                       updated_at = excluded.updated_at,
+                       display_name = excluded.display_name,
+                       description = excluded.description,
+                       entitlement_duration_seconds = excluded.entitlement_duration_seconds,
+                       billing_period_seconds = excluded.billing_period_seconds",
                     &input.product_id,
                     &input.developer_id,
                     product_kind,
                     i64::from(input.platform_fee_bps),
                     &rails_json,
                     &provider_refs_json,
-                    now
+                    now,
+                    &input.display_name,
+                    &input.description,
+                    input.entitlement_duration_seconds,
+                    input.billing_period_seconds
                 )?,
             ])
             .await?;
@@ -774,6 +649,10 @@ mod payment_api {
             "platformFeeBps": input.platform_fee_bps,
             "allowedRails": rails,
             "providerProductRefs": provider_refs,
+            "displayName": input.display_name,
+            "description": input.description,
+            "entitlementDurationSeconds": input.entitlement_duration_seconds,
+            "billingPeriodSeconds": input.billing_period_seconds,
         }))
     }
 }
@@ -795,6 +674,14 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async(
             "/v1/miniapps/:mini_app_id/pay/intents",
             payment_api::create_intent,
+        )
+        .get_async(
+            "/v1/miniapps/:mini_app_id/pay/plans/:capability",
+            payment_api::list_plans,
+        )
+        .get_async(
+            "/v1/miniapps/:mini_app_id/entitlements/:capability",
+            payment_api::get_entitlement,
         )
         .get_async("/v1/pay/intents/:payment_id", payment_api::get_intent)
         .post_async(

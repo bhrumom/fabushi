@@ -318,8 +318,18 @@ impl OfficialMiniAppEngine {
                 )
             }
             "开始" if state.mode.as_deref() == Some("local-prayer-wheel") => (
-                "本地转经轮运行请求已准备好，宿主确认后才会执行。",
-                json!({"handled":true,"mode":"local-prayer-wheel","hostRequest":host_request("local.prayer-wheel.start",json!({}))}),
+                "本地转经轮需要有效权益。可选择月付 30 元或永久买断 1080 元；支付成功后宿主才会启动。",
+                json!({
+                    "handled":true,
+                    "mode":"local-prayer-wheel",
+                    "hostRequest":host_request("commerce.entitlement.require",json!({
+                        "miniAppId":"global-dharma",
+                        "capability":"local.prayer-wheel.start",
+                        "plans":["local-prayer-wheel.monthly","local-prayer-wheel.lifetime"],
+                        "restorePurchases":true,
+                        "onGranted":host_request("local.prayer-wheel.start",json!({}))
+                    }))
+                }),
             ),
             "开始" if state.mode.as_deref() == Some("local-field") => (
                 "本地场能运行请求已准备好，宿主确认后才会执行。",
@@ -1763,6 +1773,45 @@ mod tests {
                 .pointer("/structuredContent/hostRequest/capability")
                 .and_then(Value::as_str),
             Some("network.send")
+        );
+    }
+
+    #[test]
+    fn local_prayer_wheel_requires_paid_entitlement_before_host_start() {
+        let mut engine = OfficialMiniAppEngine::default();
+        engine
+            .call_tool("global-dharma", "chat", json!({"message":"进入本地转经轮"}))
+            .unwrap();
+        let started = engine
+            .call_tool("global-dharma", "chat", json!({"message":"开始"}))
+            .unwrap();
+        assert_eq!(
+            started
+                .result
+                .pointer("/structuredContent/hostRequest/capability")
+                .and_then(Value::as_str),
+            Some("commerce.entitlement.require")
+        );
+        assert_eq!(
+            started
+                .result
+                .pointer("/structuredContent/hostRequest/params/capability")
+                .and_then(Value::as_str),
+            Some("local.prayer-wheel.start")
+        );
+        assert_eq!(
+            started
+                .result
+                .pointer("/structuredContent/hostRequest/params/plans/0")
+                .and_then(Value::as_str),
+            Some("local-prayer-wheel.monthly")
+        );
+        assert_eq!(
+            started
+                .result
+                .pointer("/structuredContent/hostRequest/params/onGranted/capability")
+                .and_then(Value::as_str),
+            Some("local.prayer-wheel.start")
         );
     }
 

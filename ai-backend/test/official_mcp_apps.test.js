@@ -155,6 +155,19 @@ test('global dharma chat handles quick replies and returns typed host requests',
     const confirmed = await client.callTool({ name: 'chat', arguments: { message: '确认发送' } });
     assert.equal(confirmed.structuredContent.hostRequest.transport, 'mcp-host-bridge');
     assert.equal(confirmed.structuredContent.hostRequest.capability, 'network.send');
+
+    await client.callTool({ name: 'chat', arguments: { message: '进入本地转经轮' } });
+    const prayerWheel = await client.callTool({ name: 'chat', arguments: { message: '开始' } });
+    const requirement = prayerWheel.structuredContent.hostRequest;
+    assert.equal(requirement.capability, 'commerce.entitlement.require');
+    assert.equal(requirement.params.miniAppId, 'global-dharma');
+    assert.equal(requirement.params.capability, 'local.prayer-wheel.start');
+    assert.deepEqual(requirement.params.plans, [
+      'local-prayer-wheel.monthly',
+      'local-prayer-wheel.lifetime',
+    ]);
+    assert.equal(requirement.params.restorePurchases, true);
+    assert.equal(requirement.params.onGranted.capability, 'local.prayer-wheel.start');
   } finally {
     await client.close();
     await server.close();

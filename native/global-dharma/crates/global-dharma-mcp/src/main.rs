@@ -90,7 +90,7 @@ fn tools() -> Vec<Value> {
         ),
         tool(
             "start",
-            "启动全球法布施服务",
+            "启动本地转经轮（需要月付或永久权益）",
             json!({}),
             false,
             false,
@@ -205,6 +205,32 @@ fn call_tool(request: &Value, stdout: &mut impl Write) -> Result<Value, (i64, St
             "_meta": {"ui/resourceUri": UI_URI}
         }));
     }
+    if name == "start" {
+        return Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": "本地转经轮需要有效权益：月付 30 元或永久买断 1080 元。支付成功后宿主才会启动。"
+            }],
+            "structuredContent": {
+                "handled": true,
+                "hostRequest": {
+                    "transport": "mcp-host-bridge",
+                    "capability": "commerce.entitlement.require",
+                    "params": {
+                        "miniAppId": "global-dharma",
+                        "capability": "local.prayer-wheel.start",
+                        "plans": ["local-prayer-wheel.monthly", "local-prayer-wheel.lifetime"],
+                        "restorePurchases": true,
+                        "onGranted": {
+                            "transport": "mcp-host-bridge",
+                            "capability": "local.prayer-wheel.start",
+                            "params": {}
+                        }
+                    }
+                }
+            }
+        }));
+    }
     if let Some(token) = request.pointer("/params/_meta/progressToken") {
         write_json(
             stdout,
@@ -239,7 +265,7 @@ fn read_resource(request: &Value) -> Result<Value, (i64, String)> {
 }
 
 fn home_html() -> &'static str {
-    r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'"><style>body{font:15px system-ui;background:#101722;color:#eef4ff;padding:20px}button{margin:4px;padding:9px 12px;border-radius:9px;border:1px solid #476080;background:#1a2a40;color:inherit}pre{white-space:pre-wrap}</style></head><body><h1>全球法布施</h1><p>命令与数据全部通过 MCP。</p><div id="tools"><button data-tool="status">/status</button><button data-tool="start">/start</button><button data-tool="stop">/stop</button><button data-tool="loop">/loop</button><button data-tool="logs">/logs</button></div><pre id="out">已连接</pre><script>(()=>{let id=0;const pending=new Map();const out=document.querySelector('#out');addEventListener('message',event=>{const m=event.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id!==undefined&&pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}if(m.method==='ui/notifications/tool-result')out.textContent=JSON.stringify(m.params,null,2)});function call(name){const requestId=++id;return new Promise(resolve=>{pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name,arguments:{}}},'*')})}document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=async()=>{out.textContent='执行中…';const response=await call(button.dataset.tool);out.textContent=JSON.stringify(response.result??response.error,null,2)})})()</script></body></html>"#
+    r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'"><style>body{font:15px system-ui;background:#101722;color:#eef4ff;padding:20px}button{margin:4px;padding:9px 12px;border-radius:9px;border:1px solid #476080;background:#1a2a40;color:inherit}pre{white-space:pre-wrap}</style></head><body><h1>全球法布施</h1><p>命令与数据全部通过 MCP。本地转经轮月付 30 元，永久买断 1080 元。</p><div id="tools"><button data-tool="status">/status</button><button data-tool="start">/start</button><button data-tool="stop">/stop</button><button data-tool="loop">/loop</button><button data-tool="logs">/logs</button></div><pre id="out">已连接</pre><script>(()=>{let id=0;const pending=new Map();const out=document.querySelector('#out');addEventListener('message',event=>{const m=event.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id!==undefined&&pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}if(m.method==='ui/notifications/tool-result')out.textContent=JSON.stringify(m.params,null,2)});function call(name){const requestId=++id;return new Promise(resolve=>{pending.set(requestId,resolve);parent.postMessage({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name,arguments:{}}},'*')})}document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=async()=>{out.textContent='执行中…';const response=await call(button.dataset.tool);out.textContent=JSON.stringify(response.result??response.error,null,2)})})()</script></body></html>"#
 }
 
 fn run_ctl(action: &str, args: Option<&Value>) -> Result<String, String> {
@@ -248,7 +274,7 @@ fn run_ctl(action: &str, args: Option<&Value>) -> Result<String, String> {
     match action {
         "deploy_latest" => child.arg("install-systemd"),
         "validate_config" => child.arg("validate-config"),
-        "status" | "logs" | "start" | "stop" | "loop" => child.arg(action),
+        "status" | "logs" | "stop" | "loop" => child.arg(action),
         "send" => {
             let task = args
                 .and_then(|value| value.get("task_id"))
@@ -322,6 +348,37 @@ mod tests {
                 "validate_config",
                 "deploy_latest"
             ]
+        );
+    }
+
+    #[test]
+    fn start_returns_paid_entitlement_request_without_launching_ctl() {
+        let request = json!({
+            "params": {"name": "start", "arguments": {}}
+        });
+        let mut output = Vec::new();
+        let result = call_tool(&request, &mut output).unwrap();
+        assert_eq!(
+            result
+                .pointer("/structuredContent/hostRequest/capability")
+                .and_then(Value::as_str),
+            Some("commerce.entitlement.require")
+        );
+        assert_eq!(
+            result
+                .pointer("/structuredContent/hostRequest/params/capability")
+                .and_then(Value::as_str),
+            Some("local.prayer-wheel.start")
+        );
+        assert_eq!(
+            result
+                .pointer("/structuredContent/hostRequest/params/plans/0")
+                .and_then(Value::as_str),
+            Some("local-prayer-wheel.monthly")
+        );
+        assert!(
+            output.is_empty(),
+            "start must not spawn or stream ctl progress"
         );
     }
 
