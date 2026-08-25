@@ -48,6 +48,34 @@ declare global {
 
 const ELECTRON_EDGE_CONTRACT_VERSION = 1;
 
+export const MAHAYANA_RUNTIME_EVENT_NAME = "fabushi:mahayana-runtime-event";
+export const MAHAYANA_COMMAND_EVENT_NAME = "fabushi:mahayana-command";
+
+export type MahayanaCommandBridgeContext = {
+  conversationKey?: string;
+  conversationId?: string;
+  agentId?: string;
+};
+
+export type MahayanaCommandBridgeDetail =
+  | {
+      phase: "dispatch";
+      command: RuntimeCommand;
+      context?: MahayanaCommandBridgeContext;
+    }
+  | {
+      phase: "accepted";
+      command: RuntimeCommand;
+      accepted: CommandAccepted;
+      context?: MahayanaCommandBridgeContext;
+    }
+  | {
+      phase: "failed";
+      command: RuntimeCommand;
+      error: string;
+      context?: MahayanaCommandBridgeContext;
+    };
+
 const idle = (milliseconds = 10) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
@@ -72,6 +100,41 @@ function miniAppIdForConversation(conversation: { id: string; title: string }): 
   const cleanId = conversation.id.trim();
   const namespaced = cleanId.match(/(?:^|:)([a-z0-9][a-z0-9-]*)$/i)?.[1];
   return namespaced || cleanId;
+}
+
+function bridgeContextForCommand(command: RuntimeCommand): MahayanaCommandBridgeContext | undefined {
+  if (command.type === "chat.send") {
+    const conversationKey = command.conversationId || command.agentId || "mahayana-assistant";
+    return {
+      conversationKey,
+      conversationId: command.conversationId,
+      agentId: command.agentId || "mahayana-assistant",
+    };
+  }
+  if (command.type === "conversation.open") {
+    return {
+      conversationKey: command.conversationId,
+      conversationId: command.conversationId,
+    };
+  }
+  return undefined;
+}
+
+function normalizeAgentCommand(command: RuntimeCommand): RuntimeCommand {
+  if (command.type !== "chat.send") return command;
+  return {
+    ...command,
+    mode: "agent",
+  };
+}
+
+function dispatchWindowBridgeEvent<T>(name: string, detail: T): void {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
+  window.dispatchEvent(new CustomEvent<T>(name, { detail }));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function isElectronMahayanaHostAvailable(): boolean {
@@ -125,20 +188,54 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     return info;
   }
 
-  execute(command: RuntimeCommand): Promise<CommandAccepted> {
-    if (command.type === "conversation.open") {
-      const miniAppId = this.miniAppConversations.get(command.conversationId);
-      if (miniAppId) {
-        return mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
-          command: {
-            type: "miniapp.open",
-            requestId: command.requestId,
-            miniAppId,
-          },
+  async execute(command: RuntimeCommand): Promise<CommandAccepted> {
+    const normalizedCommand = normalizeAgentCommand(command);
+    const context = bridgeContextForCommand(normalizedCommand);
+    dispatchWindowBridgeEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, {
+      phase: "dispatch",
+      command: normalizedCommand,
+      context,
+    });
+
+    try {
+      let accepted: CommandAccepted;
+      if (normalizedCommand.type === "conversation.open") {
+        const miniAppId = this.miniAppConversations.get(normalizedCommand.conversationId);
+        if (miniAppId) {
+          accepted = await mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+            command: {
+              type: "miniapp.open",
+              requestId: normalizedCommand.requestId,
+              miniAppId,
+            },
+          });
+        } else {
+          accepted = await mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+            command: normalizedCommand,
+          });
+        }
+      } else {
+        accepted = await mahayanaBridge().invoke<CommandAccepted>("feature.execute", {
+          command: normalizedCommand,
         });
       }
+
+      dispatchWindowBridgeEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, {
+        phase: "accepted",
+        command: normalizedCommand,
+        accepted,
+        context,
+      });
+      return accepted;
+    } catch (error) {
+      dispatchWindowBridgeEvent<MahayanaCommandBridgeDetail>(MAHAYANA_COMMAND_EVENT_NAME, {
+        phase: "failed",
+        command: normalizedCommand,
+        error: errorMessage(error),
+        context,
+      });
+      throw error;
     }
-    return mahayanaBridge().invoke<CommandAccepted>("feature.execute", { command });
   }
 
   marketplaceBrowse(query?: string): Promise<MarketplaceBrowseResult> {
@@ -256,6 +353,11 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     this.miniAppConversations.clear();
   }
 
+  private dispatchToListeners(event: RuntimeEvent): void {
+    dispatchWindowBridgeEvent<RuntimeEvent>(MAHAYANA_RUNTIME_EVENT_NAME, event);
+    for (const listener of this.listeners) listener(event);
+  }
+
   private dispatchEvent(event: RuntimeEvent): void {
     if (event.type === "conversation.listed") {
       const messengerConversations = event.conversations.filter((conversation) => {
@@ -270,10 +372,10 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
         ...event,
         conversations: messengerConversations,
       };
-      for (const listener of this.listeners) listener(normalizedEvent);
+      this.dispatchToListeners(normalizedEvent);
       return;
     }
-    for (const listener of this.listeners) listener(event);
+    this.dispatchToListeners(event);
   }
 
   private attachRuntimeEvents(): void {
