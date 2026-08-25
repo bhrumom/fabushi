@@ -17,6 +17,8 @@ jobs:
         with:
           ref: feat/fab-p0001-dynamic-fiat-commerce
       - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt
       - name: Format canonical payment source
         run: rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs
       - name: Commit formatting only
