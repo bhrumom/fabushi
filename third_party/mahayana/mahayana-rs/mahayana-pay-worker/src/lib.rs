@@ -290,6 +290,7 @@ mod payment_api {
                 | "stripe_connect"
                 | "adyen_platform"
                 | "paypal_multiparty"
+                | "paypal_payouts"
                 | "wechat_platform"
                 | "alipay_platform"
                 | "lianlian_account_plus"
@@ -836,6 +837,14 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         .post_async(
             "/v1/pay/admin/settlements/reconcile",
             payment_api::admin_reconcile_settlement,
+        )
+        .post_async(
+            "/v1/pay/admin/settlements/reserves/release-due",
+            payment_api::admin_release_due_reserves,
+        )
+        .post_async(
+            "/v1/pay/admin/settlements/reserves/:reconciliation_id/release",
+            payment_api::admin_release_reserve,
         )
         .post_async(
             "/v1/pay/admin/payout-accounts",
