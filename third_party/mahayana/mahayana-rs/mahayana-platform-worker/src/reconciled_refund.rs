@@ -210,7 +210,11 @@ async fn apply_refund_after_reconciliation(
         amount,
         occurred_at,
     )?);
-    statements.push(post_balanced_entry_statement(database, &entry_id, occurred_at)?);
+    statements.push(post_balanced_entry_statement(
+        database,
+        &entry_id,
+        occurred_at,
+    )?);
 
     let next_status = if new_refunded == payment.amount {
         "refunded"

@@ -1199,6 +1199,19 @@ async fn apply_refund(
     if !matches!(payment.status.as_str(), "succeeded" | "partially_refunded") {
         return Err(worker::Error::RustError("payment is not refundable".into()));
     }
+    if let Some(reconciliation) = reconciled_refund_row(database, &payment.payment_id).await? {
+        return apply_refund_after_reconciliation(
+            database,
+            payment,
+            &reconciliation,
+            provider,
+            refund_reference,
+            amount,
+            event_id,
+            occurred_at,
+        )
+        .await;
+    }
     let new_refunded = payment.refunded_amount.saturating_add(amount);
     let fee_refund = platform_fee(payment, new_refunded)
         .saturating_sub(platform_fee(payment, payment.refunded_amount));
@@ -1617,6 +1630,7 @@ fn developer_available_account(developer_id: &str, currency: &str) -> String {
 }
 
 include!("payout_orchestration.rs");
+include!("reconciled_refund.rs");
 
 fn normalize_rail(value: &str) -> Result<&'static str> {
     match value.trim() {
