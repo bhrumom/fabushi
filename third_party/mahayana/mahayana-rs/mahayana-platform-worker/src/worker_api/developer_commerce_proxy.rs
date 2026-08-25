@@ -74,14 +74,15 @@ pub async fn developer_commerce_proxy(
     let body = if matches!(method, Method::Get | Method::Head) {
         None
     } else {
-        Some(request.bytes().await?)
+        let bytes = request.bytes().await?;
+        Some(String::from_utf8(bytes).map_err(|_| {
+            worker::Error::RustError("Developer Commerce proxy accepts UTF-8 request bodies only".into())
+        })?)
     };
     let mut init = RequestInit::new();
     init.with_method(method).with_headers(headers);
     if let Some(body) = body {
-        init.with_body(Some(JsValue::from(js_sys::Uint8Array::from(
-            body.as_slice(),
-        ))));
+        init.with_body(Some(JsValue::from_str(&body)));
     }
     let outbound = Request::new_with_init(&target, &init)?;
     let response = Fetch::Request(outbound).send().await?;
