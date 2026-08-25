@@ -1,0 +1,16 @@
+project_id: FAB-P0008
+project_key: AAC
+legacy_project_ids: []
+name: Fabushi Account Access Control
+slug: fabushi-account-access-control
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/fabushi-account-access-control
+owner: Fabushi
+reviewers: []
+current_stage: account-entitlement-rollout
+created_at: 2026-08-25
+updated_at: 2026-08-25
+risk_tier: tier-1
+security_classification: internal
