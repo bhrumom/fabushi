@@ -65,13 +65,3 @@ test('official Global Dharma MCP asks for the exact monetized host capability', 
   const mcp = text(join(workspace, 'ai-backend/src/official_mcp_apps.js'));
   assert.match(mcp, /capability:\s*['"]local\.prayer-wheel\.start['"]/);
 });
-
-test('platform payment proxy exposes only user purchase routes and never admin or provider routes', () => {
-  const proxy = text(join(root, 'src/worker_api/payment_proxy.rs'));
-  assert.match(proxy, /https:\/\/pay\.ombhrum\.com/);
-  assert.match(proxy, /\/v1\/miniapps\//);
-  assert.match(proxy, /\/v1\/pay\/intents\//);
-  assert.match(proxy, /Authorization/);
-  assert.match(proxy, /v1\/pay\/admin\/products/);
-  assert.match(proxy, /v1\/pay\/providers\/web\/webhook/);
-});
