@@ -75,9 +75,7 @@ test('bot runs through Mahayana as a visible multi-step task and restores its ru
     const restoredRun = page.locator(`[data-testid="agent-run"][data-run-id="${persistedRunId}"]`);
     await expect(restoredRun).toBeVisible({ timeout: 15_000 });
     await expect(restoredRun).toHaveAttribute('data-status', 'completed');
-    await expect(restoredRun.getByTestId('agent-step')).toHaveCount(3, { timeout: 15_000 }).catch(async () => {
-      await expect.poll(async () => restoredRun.getByTestId('agent-step').count()).toBeGreaterThanOrEqual(3);
-    });
+    await expect.poll(async () => restoredRun.getByTestId('agent-step').count()).toBeGreaterThanOrEqual(3);
     await expect(restoredRun.getByTestId('agent-output')).toContainText('收到：');
   } finally {
     await app?.close().catch(() => undefined);
