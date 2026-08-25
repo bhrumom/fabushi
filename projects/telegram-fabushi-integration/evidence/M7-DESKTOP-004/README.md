@@ -41,3 +41,14 @@ Record protected merge SHA, final exact-main Electron/native runs, retained scre
 - Result: 17/18 E2E passed; selected peer row switched to Incident Bot but Header portal identity remained the previous assistant at assertion time.
 - Root cause: peer selection is a CSS class mutation on reused DOM rows; the existing portal MutationObserver watched only child-list mutations.
 - Follow-up: observer now includes `attributes: true`, `attributeFilter: ['class']`, and refreshes only when a changed class belongs to a Messenger peer button; recovery polling is retained but no longer the normal switch path.
+
+
+## Exact-main failure evidence — narrow right info drawer
+
+- Canonical main: `adcd73d0b68ddff403d5804d1b8d10f9b5e6c202`.
+- Electron delivery: `32823782495`.
+- Linux real-Host diagnostics: artifact `9554164364`.
+- Result: 17/18 E2E passed. Selected Incident Bot and Header identities were correct; the failure occurred only at `expect(getByTestId('messenger-info-panel')).toBeVisible()` after clicking `资料` at 1100px.
+- Screenshot/accessibility evidence shows the toggle is present and the selected Bot is correct, with no right drawer visible.
+- Root cause: legacy responsive CSS hid all `.infoPanel` elements at `<=1280px`, including the newer `data-overlay=true` drawer.
+- Follow-up: `fix/tfi-narrow-info-panel-toggle` hides only non-overlay info panels and keeps overlay panels flex-visible. No third-party code is required.
