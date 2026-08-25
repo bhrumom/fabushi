@@ -8,6 +8,7 @@ on:
     paths:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/workflows/developer-fiat-commerce.yml'
@@ -16,15 +17,38 @@ on:
     paths:
       - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
       - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs'
       - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
       - '.github/workflows/developer-fiat-commerce.yml'
       - 'projects/telegram-fabushi-integration/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  format-branch:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/fab-p0001-dynamic-fiat-commerce
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply rustfmt once on the feature branch
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+        run: cargo fmt
+      - name: Commit formatting if needed
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'fabushi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+          git commit -m 'style(pay): rustfmt commerce control worker'
+          git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
+
   control-plane-unit:
     runs-on: ubuntu-latest
     defaults:
@@ -56,8 +80,8 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql')
-          s = p.read_text()
+          schema = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql').read_text()
+          seed = Path('third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql').read_text()
           required = [
               'developer_commerce_profiles', 'mini_app_commerce_owners',
               'mini_app_commerce_members', 'payment_product_catalog',
@@ -65,15 +89,19 @@ jobs:
               'developer_commerce_audit_events', "'global-dharma'", "'official.fabushi'"
           ]
           for item in required:
-              assert item in s, item
-          assert 'amount INTEGER' in s
-          assert 'REAL' not in s and 'FLOAT' not in s
+              assert item in schema or item in seed, item
+          assert 'amount INTEGER' in schema
+          assert 'REAL' not in schema and 'FLOAT' not in schema
+          assert "'CNY', 3000" in seed
+          assert "'CNY', 108000" in seed
+          assert "'web_provider'" in seed
+          assert "'pending_configuration'" in seed
           PY
       - name: Reject client authority over platform fees and developer identity
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          s = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/lib.rs').read_text()
+          s = Path('third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/domain.rs').read_text()
           block = s[s.index('pub struct DeveloperProductDraft'):s.index('pub struct ProviderBindingPlan')]
           assert 'developer_id' not in block
           assert 'owner_user_id' not in block
