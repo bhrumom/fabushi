@@ -43,3 +43,11 @@ Keep below `RELEASED` until required current-head CI, protected merge, canonical
 - New regression failed because the active peer contained two visible Motion v2 marks after Messenger re-render: the React-owned original mark had its external inline `display:none` overwritten while the Workbench portal mark remained.
 - Follow-up branch `fix/tfi-avatar-portal-e2e` replaces fragile inline-only hiding with a parent portal marker and CSS-enforced direct-child suppression, while clearing the marker whenever the portal moves.
 - Status remains `IMPLEMENTED`; Release is blocked until the follow-up merges and a new exact-main delivery is green.
+
+## Exact-main selector correction — 2026-08-25
+
+- Follow-up product main `c0b5534d0c0e1b6fb916819c499adbdd5b855b46` reached Electron run `32812950533`; the real-Host journey retained diagnostics artifact `9550478342` and again blocked publication.
+- The retained screenshot shows one rendered BotMark. Source inspection proves the semantic BotMark wrapper and its inner SVG both intentionally carry `data-engine="fabushi-motion-v2"`, so the original regression locator counted two DOM nodes for one visible avatar identity.
+- Acceptance is corrected, not weakened: only the semantic outer BotMark carrying `data-bot-id` is counted via `[data-engine="fabushi-motion-v2"][data-bot-id]:visible`.
+- Peer switching, stable `data-bot-id` identity, and the 1100px right info drawer remain mandatory assertions.
+- Branch `fix/tfi-avatar-regression-selector-v2` is based on the current canonical main `54eeb8ad3caf64c02ef834142cb63d38b12033a9`; Release remains blocked until this correction passes protected merge and a later exact-main product delivery is fully green.
