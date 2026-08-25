@@ -1,4 +1,4 @@
-import { MiniAppMarketplaceError, officialMiniAppManifests } from './miniapp_marketplace.js';
+import { MiniAppMarketplace, MiniAppMarketplaceError, officialMiniAppManifests } from './miniapp_marketplace.js';
 import { requireManifest } from './miniapp_marketplace_server_common.js';
 
 export const MINIAPP_PACKAGE_COMMIT = 'a76587178c6b63be7963f14deb550e00bb0a425e';
@@ -6,6 +6,83 @@ export const MINIAPP_BOT_PROTOCOL = 'fabushi.miniapp.bot.v2';
 
 const RAW_PACKAGE_ROOT = `https://raw.githubusercontent.com/bhrumom/fabushi/${MINIAPP_PACKAGE_COMMIT}/marketplace/packages`;
 export const ALL_PLATFORMS = ['desktop', 'mobile', 'web', 'cli', 'ios', 'android'];
+
+
+// Compatibility guard for the original v2 domain ranker: popularity is a
+// ranking signal, never a search match. Keep discovery filtering at the
+// catalog boundary so REST, MCP and direct marketplace consumers share the
+// same behavior while the persistent store remains backward compatible.
+const SEARCH_GUARD = Symbol.for('fabushi.miniapp.marketplace.search-guard.v2');
+
+function normalizedDiscoveryText(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function discoveryDocument(plugin) {
+  return normalizedDiscoveryText([
+    plugin.pluginId,
+    plugin.displayName,
+    plugin.description,
+    plugin.latestVersion,
+    plugin.source?.publisher?.id,
+    plugin.source?.publisher?.displayName,
+    plugin.source?.repository,
+    plugin.source?.bot?.id,
+    plugin.source?.bot?.username,
+    plugin.source?.bot?.displayName,
+    ...(plugin.platforms ?? []),
+    ...(plugin.source?.surfaces ?? []).flatMap((surface) => [
+      surface.id,
+      surface.kind,
+      surface.title,
+      surface.command,
+      surface.server,
+      ...(surface.platforms ?? []),
+      ...(surface.capabilities ?? []),
+    ]),
+    ...(plugin.source?.commands ?? []).flatMap((command) => [
+      command.name,
+      command.description,
+      command.usage,
+      command.tool,
+      ...(command.aliases ?? []),
+      ...(command.naturalLanguageHints ?? []),
+    ]),
+  ].filter(Boolean).join(' '));
+}
+
+function matchesDiscovery(plugin, query) {
+  const normalized = normalizedDiscoveryText(query);
+  if (!normalized) return true;
+  const document = discoveryDocument(plugin);
+  if (document.includes(normalized)) return true;
+  const tokens = normalized.split(' ').filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => document.includes(token));
+}
+
+if (!MiniAppMarketplace.prototype[SEARCH_GUARD]) {
+  const originalBrowse = MiniAppMarketplace.prototype.browse;
+  Object.defineProperty(MiniAppMarketplace.prototype, SEARCH_GUARD, {
+    configurable: false,
+    enumerable: false,
+    value: true,
+    writable: false,
+  });
+  MiniAppMarketplace.prototype.browse = function browseWithDiscoveryGuard(options = {}) {
+    const query = normalizedDiscoveryText(options.query);
+    if (!query) return originalBrowse.call(this, options);
+    const requestedLimit = Math.max(1, Math.min(200, Number(options.limit) || 50));
+    const payload = originalBrowse.call(this, { ...options, limit: 200 });
+    return {
+      ...payload,
+      plugins: payload.plugins.filter((plugin) => matchesDiscovery(plugin, query)).slice(0, requestedLimit),
+    };
+  };
+}
 
 const packageCatalog = {
   'bot-father': {

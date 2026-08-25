@@ -6,7 +6,12 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { MINIAPP_MARKETPLACE_PROTOCOL } from './miniapp_marketplace.js';
-import { ALL_PLATFORMS, browseMarketplace } from './miniapp_marketplace_catalog.js';
+import {
+  ALL_PLATFORMS,
+  MINIAPP_BOT_PROTOCOL,
+  browseMarketplace,
+  marketplaceReleaseResponse,
+} from './miniapp_marketplace_catalog.js';
 import {
   annotations,
   commandDispatch,
