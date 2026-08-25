@@ -1,108 +1,161 @@
-@@PATCH@@
- permissions:
--  contents: write
-+  contents: read
- 
- jobs:
--  materialize-branch:
--    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
--    runs-on: ubuntu-latest
--    steps:
--      - uses: actions/checkout@v4
--        with:
--          ref: feat/fab-p0001-dynamic-fiat-commerce
--      - uses: dtolnay/rust-toolchain@stable
--      - name: Apply deterministic integration patches
--        run: |
--          node .github/scripts/apply-dynamic-commerce-platform-patch.mjs
--          node .github/scripts/apply-google-global-pricing-patch.mjs
--          node .github/scripts/apply-commerce-active-rail-gate.mjs
--          node .github/scripts/apply-global-cn-payout-patch.mjs
--          node .github/scripts/apply-reconciled-refund-patch.mjs
--          node .github/scripts/apply-payout-maintenance-patch.mjs
--          node .github/scripts/apply-cn-original-split-patch.mjs
--          node .github/scripts/apply-auto-payout-scheduler.mjs
--          node .github/scripts/apply-payout-onboarding-patch.mjs
--          node .github/scripts/apply-payout-capability-sync-patch.mjs
--          node .github/scripts/apply-payout-developer-flow-patch.mjs
--          node .github/scripts/apply-apple-advanced-integrity-patch.mjs
--      - name: Apply rustfmt
--        run: |
--          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
--          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
--          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml
--          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs
--          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs
--          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs
--          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/original_order_split.rs
--      - name: Commit generated source if needed
--        run: |
--          if git diff --quiet; then exit 0; fi
--          git config user.name 'fabushi-ci'
--          git config user.email 'actions@users.noreply.github.com'
--          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_orchestration.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reconciled_refund.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/reserve_release.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/original_order_split.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/worker_api/developer_commerce_proxy.rs \
--                  third_party/mahayana/mahayana-rs/mahayana-pay-worker/src/lib.rs
--          git commit -m 'feat(pay): materialize global and China commerce settlement'
--          git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
--
-   control-plane-unit:
--    needs: materialize-branch
--    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
-     runs-on: ubuntu-latest
-@@
-     steps:
-       - uses: actions/checkout@v4
--        with:
--          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
-       - uses: dtolnay/rust-toolchain@stable
-@@
-   control-plane-wasm:
--    needs: materialize-branch
--    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
-     runs-on: ubuntu-latest
-@@
-     steps:
-       - uses: actions/checkout@v4
--        with:
--          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
-       - uses: dtolnay/rust-toolchain@stable
-@@
-   platform-worker-wasm:
--    needs: materialize-branch
--    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
-     runs-on: ubuntu-latest
-@@
-     steps:
-       - uses: actions/checkout@v4
--        with:
--          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
-       - uses: dtolnay/rust-toolchain@stable
-@@
-   pay-worker-wasm:
--    needs: materialize-branch
--    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
-     runs-on: ubuntu-latest
-@@
-     steps:
-       - uses: actions/checkout@v4
--        with:
--          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
-       - uses: dtolnay/rust-toolchain@stable
-@@
-   schema-contract:
--    needs: materialize-branch
--    if: always() && (needs.materialize-branch.result == 'success' || needs.materialize-branch.result == 'skipped')
-     runs-on: ubuntu-latest
-     steps:
-       - uses: actions/checkout@v4
--        with:
--          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
-       - name: Verify commerce, settlement and provider authority
-@@ENDPATCH@@
+name: Developer Fiat Commerce
+
+on:
+  push:
+    branches: [main, feat/fab-p0001-dynamic-fiat-commerce]
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0012_cn_original_order_split.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml'
+      - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/scripts/repair-developer-payout-source.mjs'
+      - '.github/workflows/developer-fiat-commerce.yml'
+      - 'projects/telegram-fabushi-integration/**'
+  pull_request:
+    paths:
+      - 'third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0008_dynamic_fiat_developer_commerce.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0009_global_dharma_dynamic_fiat_seed.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/migrations/0012_cn_original_order_split.sql'
+      - 'third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/**'
+      - 'third_party/mahayana/mahayana-rs/mahayana-pay-worker/**'
+      - '.github/workflows/developer-fiat-commerce.yml'
+      - 'projects/telegram-fabushi-integration/**'
+
+permissions:
+  contents: write
+
+jobs:
+  repair-source:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/fab-p0001-dynamic-fiat-commerce
+      - uses: dtolnay/rust-toolchain@stable
+      - run: node .github/scripts/repair-developer-payout-source.mjs
+      - name: Format repaired source
+        run: |
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/Cargo.toml
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-platform-worker/Cargo.toml
+          cargo fmt --manifest-path third_party/mahayana/mahayana-rs/mahayana-pay-worker/Cargo.toml
+          rustfmt --edition 2024 third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_finalize.rs
+      - name: Commit repaired source
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'fabushi-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git add third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker/src/worker_v2.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payment_api.rs \
+                  third_party/mahayana/mahayana-rs/mahayana-platform-worker/src/payout_finalize.rs
+          git commit -m 'fix(pay): repair payout scheduler and paid finalization'
+          git push origin HEAD:feat/fab-p0001-dynamic-fiat-commerce
+
+  control-plane-unit:
+    needs: repair-source
+    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+      - run: cargo fmt --check
+
+  control-plane-wasm:
+    needs: repair-source
+    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-commerce-control-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+
+  platform-worker-wasm:
+    needs: repair-source
+    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-platform-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+      - run: cargo fmt --check
+
+  pay-worker-wasm:
+    needs: repair-source
+    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party/mahayana/mahayana-rs/mahayana-pay-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo check --target wasm32-unknown-unknown
+      - run: cargo fmt --check
+
+  schema-contract:
+    needs: repair-source
+    if: always() && (needs.repair-source.result == 'success' || needs.repair-source.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/fab-p0001-dynamic-fiat-commerce' && 'feat/fab-p0001-dynamic-fiat-commerce' || github.sha }}
+      - name: Verify commerce and payout authority
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('third_party/mahayana/mahayana-rs')
+          payout_schema=(root/'mahayana-platform-worker/migrations/0010_global_cn_developer_payouts.sql').read_text()
+          apple_schema=(root/'mahayana-platform-worker/migrations/0011_apple_advanced_commerce_integrity.sql').read_text()
+          split_schema=(root/'mahayana-platform-worker/migrations/0012_cn_original_order_split.sql').read_text()
+          for item in ['developer_payout_profiles','payout_provider_routes','developer_settlement_reconciliations','developer_payout_onboarding_sessions','developer_payout_attempts','reserve_release_after','stripe_connect','adyen_platform','paypal_multiparty','paypal_payouts','wechat_platform','alipay_platform','lianlian_account_plus','huifu_dougong']:
+              assert item in payout_schema, item
+          assert 'pending_configuration' in payout_schema
+          assert 'apple_advanced_commerce_requests' in apple_schema and 'request_json' in apple_schema and 'price_milliunits' in apple_schema
+          assert 'developer_original_order_splits' in split_schema and 'source_provider_reference' in split_schema
+          worker=(root/'mahayana-commerce-control-worker/src/worker_v2.rs').read_text()
+          assert 'run_payout_maintenance' in worker and '#[event(scheduled)]' in worker
+          assert 'create_payout_onboarding' in worker and 'allowed_onboarding_provider' in worker
+          assert 'ORDER BY p.developer_id,a.is_default DESC,a.created_at ASC").all()' in worker
+          pay=(root/'mahayana-platform-worker/src/payment_api.rs').read_text()
+          assert 'include!("payout_finalize.rs")' in pay and 'finalize_paid_payout(' in pay
+          assert 'AppleAdvancedCommerceExpectedRow' in pay and 'advanced_commerce_info' in pay
+          finalize=(root/'mahayana-platform-worker/src/payout_finalize.rs').read_text()
+          assert 'developer_payout_paid' in finalize and 'payout-clearing:' in finalize and 'external-payout:' in finalize
+          orchestration=(root/'mahayana-platform-worker/src/payout_orchestration.rs').read_text()
+          assert 'execute_original_order_split' in orchestration and 'reserveReleaseAfter' in orchestration
+          refund=(root/'mahayana-platform-worker/src/reconciled_refund.rs').read_text()
+          assert 'platform:refund-loss:' in refund
+          PY
