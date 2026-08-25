@@ -1097,6 +1097,34 @@ function createNativeCapabilityHandlers(deps) {
       return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/${encodeURIComponent(productId)}/google/sync`, { body: {} });
     },
 
+    async getDeveloperPayoutOverview() {
+      return platformRequest('GET', '/v1/developer/commerce/payout');
+    },
+
+    async upsertDeveloperPayoutProfile(params) {
+      const countryCode = cleanString(params.countryCode, 2).toUpperCase();
+      const legalEntityType = cleanString(params.legalEntityType, 32);
+      const preferredCurrency = cleanString(params.preferredCurrency, 3).toUpperCase();
+      const payoutSchedule = cleanString(params.payoutSchedule, 16);
+      const entityKinds = new Set(['individual','individual_business','company','nonprofit']);
+      const schedules = new Set(['manual','daily','weekly','monthly']);
+      if (!/^[A-Z]{2}$/.test(countryCode) || !entityKinds.has(legalEntityType) || !/^[A-Z]{3}$/.test(preferredCurrency) || !schedules.has(payoutSchedule)) {
+        throw new Error('Invalid developer payout profile.');
+      }
+      return platformRequest('POST', '/v1/developer/commerce/payout/profile', { body: { countryCode, legalEntityType, preferredCurrency, payoutSchedule } });
+    },
+
+    async requestDeveloperPayout(params) {
+      const payoutAccountId = cleanString(params.payoutAccountId, 160);
+      const currency = cleanString(params.currency, 3).toUpperCase();
+      const idempotencyKey = cleanString(params.idempotencyKey, 160);
+      const amount = Number(params.amount);
+      if (!payoutAccountId || !/^[A-Za-z0-9._:-]+$/.test(payoutAccountId) || !/^[A-Z]{3}$/.test(currency) || !idempotencyKey || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey) || !Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error('Invalid developer payout request.');
+      }
+      return platformRequest('POST', '/v1/developer/commerce/payout/request', { body: { payoutAccountId, currency, amount, idempotencyKey } });
+    },
+
     async getSharingState(params) {
       const result = await platformRequest('GET', '/api/collaboration/state');
       const state = result?.state ?? { scope: 'fabushi-platform', rooms: [], joinRequests: [], typing: [], fetchedAtMs: Date.now() };
