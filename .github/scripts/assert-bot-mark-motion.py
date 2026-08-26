@@ -8,12 +8,13 @@ host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding
 
 required_component = [
     'FabushiBotMarkEngine',
-    'data-engine="grok-mark"',
+    'data-engine="fabushi-motion-v2"',
+    'data-renderer="grok-mark"',
     '"blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"',
 ]
 for marker in required_component:
     if marker not in component:
-        raise SystemExit(f'BotMark motion gate: missing Grok mark integration: {marker}')
+        raise SystemExit(f'BotMark motion gate: missing semantic/Grok renderer integration: {marker}')
 
 required_engine = [
     'const VIEWBOX = "-15 -15 259 259"',
@@ -57,4 +58,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: Grok geometry, eyes, state motion, pointer gaze, and reduced-motion support.')
+print('BotMark motion gate passed: stable Fabushi semantics with Grok geometry, eyes, state motion, pointer gaze, and reduced-motion support.')
