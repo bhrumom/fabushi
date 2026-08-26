@@ -14,7 +14,7 @@
   - `Johnserf-Seed/TikTokDownload` (MIT; last pushed 2024-06-28): proven filename/dedup/batch ergonomics; learn behavior, reject older implementation as primary parser.
   - `Evil0ctal/Douyin_TikTok_Download_API` (Apache-2.0; active 2025-10-12): strong async API/signature architecture; learn multi-shape parsing, reject remote cookie-bearing service and broad platform scope.
   - Decision: custom Rust adapter inside the existing official MiniApp boundary, with no copied upstream code; preserve links/licenses in evidence and fail closed on access controls.
-- Branch: `codex/douyin-batch-downloader-miniapp`; commit/PR: pending.
+- Branch: `codex/douyin-batch-downloader-miniapp`; implementation/package provenance commit: `a0f03ccf0ef019172fc208c115d090dacb7443b5`; PR: pending.
 - Status: in progress.
 - Implementation summary: project/governance intake created; implementation pending.
 - CI/E2E/security/performance/release/deployment/migration evidence: pending.

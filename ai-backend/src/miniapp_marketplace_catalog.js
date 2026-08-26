@@ -1,7 +1,7 @@
 import { MiniAppMarketplace, MiniAppMarketplaceError, officialMiniAppManifests } from './miniapp_marketplace.js';
 import { requireManifest } from './miniapp_marketplace_server_common.js';
 
-export const MINIAPP_PACKAGE_COMMIT = 'a76587178c6b63be7963f14deb550e00bb0a425e';
+export const MINIAPP_PACKAGE_COMMIT = 'a0f03ccf0ef019172fc208c115d090dacb7443b5';
 export const MINIAPP_BOT_PROTOCOL = 'fabushi.miniapp.bot.v2';
 
 const RAW_PACKAGE_ROOT = `https://raw.githubusercontent.com/bhrumom/fabushi/${MINIAPP_PACKAGE_COMMIT}/marketplace/packages`;
