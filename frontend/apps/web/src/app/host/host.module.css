@@ -5256,7 +5256,7 @@
 }
 
 .loginHeroMark {
-  filter: drop-shadow(0 22px 36px rgb(0 0 0 / 36%));
+  filter: none;
 }
 
 .loginPresenceHalo {
@@ -5493,8 +5493,8 @@
   .loginLoadingRail i { animation: none !important; }
 }
 
-/* Living Fabushi marks: asynchronous breathing and state ambience stay in CSS
-   so lists of agents do not require per-frame JavaScript. */
+/* Grok-style marks animate their inner SVG group directly. The wrapper must
+   not add a second transform, shadow, or surface effect. */
 .botMark {
   isolation: isolate;
   --bot-mark-breathe-duration: 5200ms;
@@ -5505,7 +5505,8 @@
   position: relative;
   z-index: 2;
   transform-origin: 50% 54%;
-  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 12%));
+  animation: none !important;
+  filter: none;
 }
 
 .botMark[data-motion-tier="active"] > svg {
@@ -6090,7 +6091,7 @@
   place-items: center;
   margin: -4px 0 6px;
 }
-.onboardingMarkStage > span {
+.onboardingMarkStage > span:not(.onboardingBotMark) {
   position: absolute;
   inset: 10px 3px 4px;
   z-index: -1;
@@ -6098,7 +6099,7 @@
   border-radius: 48% 52% 55% 45% / 52% 46% 54% 48%;
   animation: onboardingHalo 7s linear infinite;
 }
-.onboardingBotMark { margin: 0; filter: drop-shadow(0 24px 42px rgb(0 0 0 / 28%)); }
+.onboardingBotMark { margin: 0; filter: none; }
 .onboardingEyebrow {
   margin: 0 0 12px;
   color: #9484e9;
@@ -6404,7 +6405,7 @@
   .iconButton,
   .onboardingProgress i,
   .onboardingBots > article,
-  .onboardingMarkStage > span,
+  .onboardingMarkStage > span:not(.onboardingBotMark),
   .accountAvatarStage > i {
     animation: none !important;
     transition: none !important;
