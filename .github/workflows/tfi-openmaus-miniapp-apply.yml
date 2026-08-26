@@ -42,8 +42,21 @@ jobs:
       - name: Apply deterministic integration edits
         shell: bash
         run: |
-          set -euo pipefail
-          node .github/scripts/tfi-openmaus-miniapp-transform.mjs
+          set -uo pipefail
+          set +e
+          node .github/scripts/tfi-openmaus-miniapp-transform.mjs > /tmp/tfi-transform.log 2>&1
+          status=$?
+          cat /tmp/tfi-transform.log
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/tfi-transform.log .github/tfi-transform-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/tfi-transform-error.txt
+            git commit -m "chore(tfi): capture deterministic transform failure"
+            git push origin HEAD:feat/tfi-m8-openmaus-avatar-miniapp-bot-parity
+            exit "$status"
+          fi
+          set -e
           node --test desktop/electron/native-capability-handlers.test.cjs
 
       - name: Commit generated integration
@@ -53,6 +66,7 @@ jobs:
           rm -f .github/patches/tfi-openmaus-miniapp.patch
           rm -f .github/scripts/tfi-openmaus-miniapp-transform.mjs
           rm -f .github/workflows/tfi-openmaus-miniapp-apply.yml
+          rm -f .github/tfi-transform-error.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
