@@ -21,7 +21,7 @@ permissions:
 
 concurrency:
   group: douyin-batch-downloader-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
