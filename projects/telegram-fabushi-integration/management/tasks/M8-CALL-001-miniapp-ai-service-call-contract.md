@@ -3,11 +3,11 @@
 - Project ID: `FAB-P0001`
 - Project Key: `TFI`
 - Task ID: `M8-CALL-001`
-- Status: `IN_PROGRESS`
+- Status: `TESTED / COMPLETED`
 - Branch: `feat/tfi-miniapp-ai-service-calls`
 - Started: `2026-08-23`
-- Updated: `2026-08-23`
-- Completed: N/A
+- Updated: `2026-08-26`
+- Completed: `2026-08-26`
 
 ## Objective
 
@@ -68,23 +68,32 @@
 
 ## Verification
 
-- GitHub Actions Rust/CI workflow 编译并运行 `mahayana-messaging` 测试。
-- 本机仅做源码/差异轻量检查；依据根 `AGENTS.md` 禁止本地 build/test。
+- GitHub Actions final PR head `1c1a479eb93be7e21becaa2211463cb6f97b8a06`：
+  - Mahayana fast checks `32969707544` — SUCCESS
+  - Fabushi self-hosted messaging `32969707602` — SUCCESS
+  - Messaging Product Gate `32969707606` — SUCCESS
+  - CI `32969707626` — SUCCESS
+  - Developer Fiat Commerce `32969707538` — SUCCESS
+  - Project portfolio governance `32969707591` — SUCCESS
+  - Explicit automerge `32969707671` — SUCCESS
+- 本机未运行 application build/test；依据根 `AGENTS.md`，GitHub Actions current-head evidence 为验证权威。
+- PR #2063 通过 protected merge，merge SHA `1f406461c01ac9ace5e187fd8b9a0e2c63cbcb5d`。
+- canonical `main` 回读确认 `native/mahayana-messaging/src/miniapp_service_call.rs` blob `d6f3f503c1bccde38408ce507b9342717813b3ec` 已落地。
 
 ## Evidence
 
 - Core MCP-only refactor commit: `89cad5682e6abcb3bb9e23c132bb772db9ea0bba`
 - Source requirement update: `fa2a96e953643b49465a2a5de34db9283ead048e`
-- PR: #2063
-- CI: latest-head pending
+- Conflict-resolution integration head: `1c1a479eb93be7e21becaa2211463cb6f97b8a06`
+- Protected merge: PR #2063 → `1f406461c01ac9ace5e187fd8b9a0e2c63cbcb5d`
 - Evidence index: `evidence/M8-CALL-001/README.md`
 
-## Risks / blockers
+## Risks / follow-up scope
 
-- 实际 STT、AI MCP resolver、MCP Host executor、媒体 transport 尚未在本任务内接线；本任务完成后仍需后续原子任务。
+- 实际 STT、AI MCP resolver、MCP Host executor、媒体 transport 不属于本原子任务，继续由 `M8-CALL-002`、`M8-CALL-003`、`M8-CALL-004` 与 M10/M11 后续任务承接。
 - MCP Tool catalog 必须来自该 MiniApp 的真实 `tools/list`，不能由模型自行生成；Host 接线任务需要保留现有 MCP 审批/高风险工具确认语义。
-- 新增协议字段需确认向后兼容策略；当前先保持 protocol version 2，仅扩展 serde 枚举/结构，若跨版本兼容测试要求升级则另立 ADR/任务。
+- 新增协议字段保持 protocol version 2；若后续跨版本兼容测试要求升级，另立 ADR/任务。
 
 ## Next action
 
-通过 GitHub Actions 验证 MCP-only Rust contract；随后落地 host-side `tools/list` catalog snapshot、AI constrained tool selection、`tools/call` executor、Conversation result projection，并继续拆分 STT/desktop-mobile UI/E2E。
+推进 `M8-CALL-002` streaming STT + Conversation projection、`M8-CALL-003` real `tools/list` constrained resolver + `tools/call` Host executor，以及 `M8-CALL-004` unified composer routing；本任务本身已完成并通过 current-head CI、protected merge 与 canonical-main verification。
