@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -112,6 +113,60 @@ const AMBIENT_MOTION_STATES = new Set<BotMarkState>([
   "idle", "sleeping", "drowsy", "bored", "powering-down",
 ]);
 
+const botIdentityAliases = new Map<string, string>();
+const botIdentityListeners = new Set<() => void>();
+let botIdentityVersion = 0;
+
+/**
+ * Resolve a UI-specific BotMark id to the stable Bot identity used by the
+ * animation engine. Surface prefixes are deliberately ignored so the same Bot
+ * cannot change shape/color merely because it moved from the peer list into a
+ * workbench run card. Conversation aliases are registered only when runtime
+ * data proves which Bot owns that conversation.
+ */
+export function canonicalBotIdentity(botId: string): string {
+  let current = botId.trim() || "mahayana-assistant";
+  const seen = new Set<string>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const aliased = botIdentityAliases.get(current);
+    if (!aliased || aliased === current) break;
+    current = aliased;
+  }
+
+  const workbench = /^workbench:(.+)$/u.exec(current);
+  if (workbench?.[1]) return `bot:${workbench[1]}`;
+  const peerBot = /^peer:(?:bot|agent):(.+)$/u.exec(current);
+  if (peerBot?.[1]) return `bot:${peerBot[1]}`;
+  return current;
+}
+
+export function registerBotIdentityAlias(alias: string, canonical: string): void {
+  const normalizedAlias = alias.trim();
+  if (!normalizedAlias) return;
+  const normalizedCanonical = canonicalBotIdentity(canonical);
+  if (!normalizedCanonical || normalizedAlias === normalizedCanonical) return;
+  if (botIdentityAliases.get(normalizedAlias) === normalizedCanonical) return;
+  botIdentityAliases.set(normalizedAlias, normalizedCanonical);
+  botIdentityVersion += 1;
+  botIdentityListeners.forEach((listener) => listener());
+}
+
+export function registerBotIdentityAliases(
+  aliases: ReadonlyArray<{ alias: string; canonical: string }>,
+): void {
+  aliases.forEach(({ alias, canonical }) => registerBotIdentityAlias(alias, canonical));
+}
+
+function subscribeBotIdentity(listener: () => void): () => void {
+  botIdentityListeners.add(listener);
+  return () => botIdentityListeners.delete(listener);
+}
+
+function botIdentitySnapshot(): number {
+  return botIdentityVersion;
+}
+
 export function botMarkMotionTier(
   state: BotMarkState,
   emphasis = false,
@@ -160,15 +215,16 @@ function shapeHash(value: string): number {
 }
 
 export function botMarkShape(botId: string): BotMarkShape {
-  return IDENTITY_SHAPES[shapeHash(botId) % IDENTITY_SHAPES.length] ?? "blob";
+  return IDENTITY_SHAPES[shapeHash(canonicalBotIdentity(botId)) % IDENTITY_SHAPES.length] ?? "blob";
 }
 
 export function botMarkShapeIndex(botId: string): number {
-  return shapeHash(botId) % IDENTITY_SHAPES.length;
+  return shapeHash(canonicalBotIdentity(botId)) % IDENTITY_SHAPES.length;
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
-  const seed = (hashIdentity(botId) ^ Math.imul(1, 2654435769)) >>> 0;
+  const identity = canonicalBotIdentity(botId);
+  const seed = (hashIdentity(identity) ^ Math.imul(1, 2654435769)) >>> 0;
   const index = Math.floor(identityRandom((seed ^ 2654435769) >>> 0)() * COLORS.length);
   return COLORS[index] ?? "gray";
 }
@@ -198,8 +254,10 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
   },
   ref,
 ) {
-  const shape = shapeOverride ?? botMarkShape(botId);
-  const color = colorOverride ?? botMarkColorId(botId);
+  useSyncExternalStore(subscribeBotIdentity, botIdentitySnapshot, botIdentitySnapshot);
+  const identityId = canonicalBotIdentity(botId);
+  const shape = shapeOverride ?? botMarkShape(identityId);
+  const color = colorOverride ?? botMarkColorId(identityId);
   const style = {
     width: size,
     height: size,
@@ -211,6 +269,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     <span
       className={`${styles.botMark} ${className}`.trim()}
       data-bot-id={botId}
+      data-canonical-bot-id={identityId}
       data-agent-state={state}
       data-paused={paused || undefined}
       data-shape={shape}
@@ -225,7 +284,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     >
       <FabushiBotMarkEngine
         ref={ref}
-        botId={botId}
+        botId={identityId}
         state={state}
         size={size}
         shape={shape}
