@@ -6,9 +6,8 @@
 
 use async_trait::async_trait;
 use mahayana_agent::{
-    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentEventSink,
-    AgentMessageRequest, ApprovalResolution, McpAppSession, OpenMcpAppRequest,
-    SharedAgentEventSink, StartThreadRequest,
+    AgentActivity, AgentActivityStatus, AgentBackend, AgentError, AgentEvent, AgentMessageRequest,
+    ApprovalResolution, McpAppSession, OpenMcpAppRequest, SharedAgentEventSink, StartThreadRequest,
 };
 use mahayana_core::{
     AgentThreadId, ApprovalDecision, ConversationId, Message, MessageId, MessageRole,
@@ -19,9 +18,8 @@ use mahayana_kernel::{
     ExecutionPolicy, KernelError, KernelEvent, KernelEventSink, OpenSessionRequest,
     OperationId as KernelOperationId, RunRequest, RuntimeProfile, SessionId, SharedKernelEventSink,
 };
-use mahayana_mcp_runtime::{NativeMcpClient, NativeMcpRegistry, ResolvedMcpPlugin};
+use mahayana_mcp_runtime::{NativeMcpRegistry, ResolvedMcpPlugin};
 use mahayana_native_engine::NativeEngine;
-use mahayana_platform_core::HostPlatform;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -45,7 +43,6 @@ struct NativeThread {
 struct NativeMcpSession {
     plugin: ResolvedMcpPlugin,
     tools: Vec<Value>,
-    resources: Vec<Value>,
 }
 
 pub struct NativeAgentBackend {
@@ -163,18 +160,21 @@ impl KernelEventSink for NativeEventBridge {
                 },
             },
             KernelEvent::UsageUpdated {
+                total_tokens,
                 input_tokens,
+                cached_input_tokens,
                 output_tokens,
+                reasoning_output_tokens,
                 ..
             } => AgentEvent::TokenUsageUpdated {
                 usage: ModelTokenUsageSnapshot {
                     total: None,
                     last: ModelTokenUsage {
-                        total_tokens: to_i64(input_tokens.saturating_add(output_tokens)),
+                        total_tokens: to_i64(total_tokens),
                         input_tokens: to_i64(input_tokens),
-                        cached_input_tokens: 0,
+                        cached_input_tokens: to_i64(cached_input_tokens),
                         output_tokens: to_i64(output_tokens),
-                        reasoning_output_tokens: 0,
+                        reasoning_output_tokens: to_i64(reasoning_output_tokens),
                     },
                     model_context_window: None,
                 },
@@ -290,30 +290,29 @@ impl AgentBackend for NativeAgentBackend {
         events: SharedAgentEventSink,
     ) -> Result<(), AgentError> {
         let thread = self.thread(&request.thread_id)?;
-        if let Ok(mcp) = self.mcp_session(&request.thread_id) {
-            if mcp
+        if let Ok(mcp) = self.mcp_session(&request.thread_id)
+            && mcp
                 .tools
                 .iter()
                 .any(|tool| tool.get("name").and_then(Value::as_str) == Some("chat"))
-            {
-                let result = self
-                    .mcp_call(
-                        mcp,
-                        "chat".into(),
-                        json!({"message":request.text,"surface":"agent"}),
-                    )
-                    .await?;
-                return events.emit(AgentEvent::MessageCompleted {
-                    message: Message {
-                        id: MessageId::generated("mcp-chat"),
-                        conversation_id: request.conversation_id,
-                        role: MessageRole::Assistant,
-                        text: mcp_result_text(&result),
-                        created_at_ms: now_ms(),
-                        metadata: json!({"mcpResult":result}),
-                    },
-                });
-            }
+        {
+            let result = self
+                .mcp_call(
+                    mcp,
+                    "chat".into(),
+                    json!({"message":request.text,"surface":"agent"}),
+                )
+                .await?;
+            return events.emit(AgentEvent::MessageCompleted {
+                message: Message {
+                    id: MessageId::generated("mcp-chat"),
+                    conversation_id: request.conversation_id,
+                    role: MessageRole::Assistant,
+                    text: mcp_result_text(&result),
+                    created_at_ms: now_ms(),
+                    metadata: json!({"mcpResult":result}),
+                },
+            });
         }
 
         let sink: SharedKernelEventSink = Arc::new(NativeEventBridge {
@@ -479,7 +478,6 @@ impl AgentBackend for NativeAgentBackend {
                 NativeMcpSession {
                     plugin: resolved.clone(),
                     tools: tools.clone(),
-                    resources: resources.clone(),
                 },
             );
         Ok(McpAppSession {

@@ -458,6 +458,8 @@ export interface SearchMediaMatch {
 }
 
 export type LocalToolPermission = "never" | "ask" | "always";
+export type InferenceProvider = "fabushi" | "codex" | "claude-code" | "openrouter";
+export type SandboxRuntime = "host" | "local-docker";
 export type AutoReviewBehavior = "allow" | "ask";
 export interface AutoReviewRule {
   id: string;
@@ -475,6 +477,8 @@ export interface ProductHostSettings {
   remoteControlEnabled: boolean;
   aiComputerControlEnabled: boolean;
   autoReviewRules: AutoReviewRule[];
+  inferenceProvider: InferenceProvider;
+  sandboxRuntime: SandboxRuntime;
 }
 
 export interface ListenerIntegrationSummary {

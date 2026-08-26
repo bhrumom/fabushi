@@ -1,0 +1,144 @@
+name: Douyin Batch Downloader MiniApp
+
+on:
+  pull_request:
+    paths:
+      - '.agents/plugins/marketplace.json'
+      - '.agents/plugins/plugins/douyin-batch-downloader/**'
+      - 'ai-backend/src/miniapp_marketplace*.js'
+      - 'ai-backend/test/miniapp_marketplace.test.js'
+      - 'frontend/apps/web/public/.well-known/mahayana/marketplace.json'
+      - 'marketplace/packages/douyin-batch-downloader/**'
+      - 'projects/telegram-fabushi-integration/source/2026-08-26-douyin-batch-downloader-miniapp.md'
+      - 'projects/telegram-fabushi-integration/management/tasks/M8-DL-001-douyin-batch-downloader.md'
+      - 'projects/telegram-fabushi-integration/evidence/M8-DL-001/**'
+      - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
+      - '.github/workflows/douyin-batch-downloader.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: douyin-batch-downloader-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
+  PLUGIN_PACKAGE: fabushi-official-miniapps
+  PLUGIN_BINARY: third_party/mahayana/mahayana-rs/target/ci/fabushi-plugin-cli
+  EXPECTED_PACKAGE_SHA256: 6784eb6ade91ef75ff61717a232dd154c7a3fb28c093ce330bc7ca4857ace473
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Restore Rust warm build state
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/mahayana/mahayana-rs
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ai-backend
+        run: npm ci
+
+      - name: Validate portfolio and marketplace files
+        run: |
+          python3 scripts/check-project-portfolio.py
+          python3 scripts/check-official-plugin-marketplace.py
+
+      - name: Verify independent package boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e ai-backend/src/douyin_downloader.js
+          if grep -q 'douyin_downloader' ai-backend/src/miniapp_marketplace_http.js; then
+            echo 'Douyin runtime must not be embedded in ai-backend' >&2
+            exit 1
+          fi
+          test -f .agents/plugins/plugins/douyin-batch-downloader/.mcp.json
+          test -f .agents/plugins/plugins/douyin-batch-downloader/.mahayana/plugin.json
+          test -f marketplace/packages/douyin-batch-downloader/1.0.0/app.tar.gz
+          jq -e '
+            .portable == true and
+            (.modes | index("MCP")) != null and
+            (.modes | index("CLI")) != null and
+            (.modes | index("GUI")) != null and
+            .descriptors.mcp == ".mcp.json" and
+            .descriptors.mahayana == ".mahayana/plugin.json" and
+            .runtimeDependency.provider == "fabushi-official-miniapps"
+          ' marketplace/packages/douyin-batch-downloader/1.0.0/fabushi-miniapp.json >/dev/null
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
+
+      - name: Test downloader Rust contracts
+        run: cargo test --locked --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli douyin_downloader
+
+      - name: Test marketplace search and install contracts
+        working-directory: ai-backend
+        run: node --test test/miniapp_marketplace.test.js
+
+      - name: Build deterministic local runtime
+        run: cargo build --locked --profile ci --manifest-path "$MAHAYANA_MANIFEST" --package "$PLUGIN_PACKAGE" --bin fabushi-plugin-cli
+
+      - name: Verify manifest and package digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          "$PLUGIN_BINARY" --plugin douyin-batch-downloader --dump-manifest > evidence/plugin-manifest.json
+          jq -e '
+            .plugin.name == "douyin-batch-downloader" and
+            ([.tools[].name] | index("resolve") != null) and
+            ([.tools[].name] | index("download") != null)
+          ' evidence/plugin-manifest.json >/dev/null
+          package=marketplace/packages/douyin-batch-downloader/1.0.0/app.tar.gz
+          actual="$(sha256sum "$package" | cut -d' ' -f1)"
+          test "$actual" = "$EXPECTED_PACKAGE_SHA256"
+          tar -tzf "$package" | sort > evidence/package-files.txt
+          grep -Fx '.codex-plugin/plugin.json' evidence/package-files.txt
+          grep -Fx '.mahayana/plugin.json' evidence/package-files.txt
+          grep -Fx '.mcp.json' evidence/package-files.txt
+          grep -Fx 'README.md' evidence/package-files.txt
+          grep -Fx 'fabushi-miniapp.json' evidence/package-files.txt
+          grep -Fx 'index.html' evidence/package-files.txt
+          printf '%s  %s\n' "$actual" "$package" > evidence/package-sha256.txt
+
+      - name: Record warm-build metrics
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Douyin downloader validation'
+            echo "- SHA: $GITHUB_SHA"
+            echo '- Rust cache: see Swatinem/rust-cache step output'
+            echo '- Runtime boundary: portable package + Mahayana shared runtime; no ai-backend app runtime'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: douyin-downloader-contract-${{ github.sha }}-${{ github.run_id }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 90

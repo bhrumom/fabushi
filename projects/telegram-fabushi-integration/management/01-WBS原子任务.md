@@ -35,3 +35,40 @@
 - [项目治理任务](wbs/governance.md)
 
 状态变更必须同时更新对应分卷、验收追踪矩阵、状态报告与任务记录。
+
+## 2026-08-24 — M3-DESKTOP-002 Telegram local-first + Settings
+
+- `M3-DESKTOP-002` — `TESTING`: returning-user fast-start projection, first sync 20 / cursor background 100, responsive zero-width absent info panel, Telegram-inspired Settings IA, supported desktop preference bindings, and Playwright regression coverage implemented in PR #2079. GitHub Actions + protected merge + canonical-main verification remain the completion gate.
+
+## 2026-08-24 — M3-DESKTOP-002 closed
+
+- `M3-DESKTOP-002` — `COMPLETED`: PR #2079 passed CI, Messaging Product Gate, self-hosted messaging, and Electron desktop quality gate, then merged through the protected merge queue as `01b33d60f7d7d9add41a5fba84d21014094cb5dc`. Canonical `main` was re-read at the merge SHA.
+
+## 2026-08-24 — M3-DESKTOP-002 performance continuation
+
+- `M3-DESKTOP-002` — `TESTING`: canonical-main full-relaunch E2E exposed a renderer-projection durability gap. Follow-up adds an existing native client-persistence mirror/fallback and durable-preclose assertion; `< 1000 ms` packaged timing + exact-main Release remain blocking.
+
+## 2026-08-24 — M3-DESKTOP-002 returning-session continuation
+
+- `M3-DESKTOP-002` — `TESTING`: durable projection restore is proven on canonical main; deterministic Rust test account persistence is the remaining full-restart blocker. Follow-up persists only UI-safe test identity in configured Host runtime data, deletes it on logout, and adds a post-auth-poll Messenger-stability E2E assertion. `< 1000 ms` exact-main packaged timing and Release remain blocking.
+
+## 2026-08-25 — M8-MARKET-001 Telegram-style Mini Apps marketplace
+
+- `M8-MARKET-001` — `IMPLEMENTED`: M8.T06 app registry 与 M8.T07 developer flow 已落 feature branch；包含 searchable/reviewed marketplace、external-source release metadata、default bot、slash/natural-language routing、BotFather/Mahayana generation workflow 与 HTTP/MCP contracts。
+- 市场后端不托管或代理包；package release 指向 immutable GitHub/HTTPS source，并携带 SHA-256/size 供 Mahayana installer 验证。
+- 完成门禁：current-head GitHub Actions → protected merge → canonical-main readback → exact-main packaged/E2E → strictly newer GitHub Release。
+
+## 2026-08-26 — M8-DL-001 抖音批量无平台水印下载小程序
+
+- `M8-DL-001` — `IMPLEMENTED`: 新增官方 `douyin-batch-downloader`，复用现有 Marketplace seed、Bot identity 和 Web Mini App surface；支持 jingxuan/modal_id、canonical video URL、短链接和作品 ID。
+- clean-source contract：只选择 `bit_rate.play_addr` / `video.play_addr`，明确不把 `download_addr` 当无平台水印源；批量上限 50、并发 4、逐项错误隔离。
+- 下载代理仅允许抖音/字节 CDN HTTPS Host并转发 Range，避免任意 URL SSRF；UI 明示仅用于拥有、获授权或法律允许保存的公开内容。
+- 任务记录：`management/tasks/M8-DL-001-douyin-batch-downloader.md`；证据索引：`evidence/M8-DL-001/README.md`。
+- 完成门禁：current-head CI → protected merge → canonical-main readback → exact-main packaged/E2E evidence → verified GitHub Release。
+
+## 2026-08-26 — M8-DL-001 independent package continuation
+
+- `M8-DL-001` — `TESTING`: 用户要求把 Downloader 从 `ai-backend` 内置功能提升为独立可安装、可迁移 Mini App。当前 branch 已删除 Downloader 专属 backend runtime/routes，保留通用 Marketplace；应用改由 versioned `app.tar.gz` + immutable release metadata + Mahayana shared runtime 分发。
+- 独立 surface 已具备 GUI、`.mcp.json` stdio MCP、`.mahayana/plugin.json` CLI，以及 Rust `official-miniapps` provider 的 `resolve` / `download` 工具；portable boundary 由 dedicated CI 断言。
+- 并行 PR #2136 的 package/runtime 实现已作为 feeder 合入当前 branch；错误引入的重复 `FAB-P0009 / DBD` 与 `projects/douyin-batch-downloader-miniapp/**` 已移除，唯一 canonical project 仍为 `FAB-P0001 / TFI`。
+- 客观验证：package digest、MCP/CLI descriptors、无 `ai-backend/src/douyin_downloader.js`、Rust fmt/test/build、Marketplace search/install tests；全部 current-head checks + protected merge + exact-main packaged E2E/Release 完成前不得晋级 `COMPLETED`。

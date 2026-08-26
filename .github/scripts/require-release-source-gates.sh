@@ -8,13 +8,16 @@ set -euo pipefail
 
 case "$RELEASE_TARGET" in
   macos)
-    required_checks=('CI result' 'Electron desktop result')
+    required_checks=('CI result' 'Electron desktop result' 'Electron macOS')
     ;;
-  ios|android)
+  ios)
+    required_checks=('CI result' 'Native iOS')
+    ;;
+  android)
     required_checks=('CI result' 'Native mobile result')
     ;;
   both)
-    required_checks=('CI result' 'Electron desktop result' 'Native mobile result')
+    required_checks=('CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS')
     ;;
   *)
     echo "Unsupported RELEASE_TARGET '$RELEASE_TARGET'." >&2

@@ -5,6 +5,7 @@ const { inspectOfflineAsr, downloadOfflineAsrModel, transcribeOfflineAudio } = r
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_BINARY_BYTES = 32 * 1024 * 1024;
@@ -13,9 +14,14 @@ const MAX_DIAGNOSTIC_BYTES = 256 * 1024;
 const SENSITIVE_KEY = /(secret|token|password|authorization|cookie|credential|private.?key)/i;
 const LOCAL_TOOL_PERMISSIONS = new Set(['never', 'ask', 'always']);
 const UPDATE_TRACKS = new Set(['stable', 'beta', 'alpha']);
+const DEFAULT_DOCKER_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu24.04@sha256:c5cc2b45afe06a1df3aba17e58ba0dc4a02b999493198dab37dd0ccd4e2b0705';
 
 function cleanString(value, limit = 4096) {
   return String(value ?? '').replace(/\0/g, '').trim().slice(0, limit);
+}
+
+function isPinnedContainerImage(value) {
+  return /^[^\s@]+@sha256:[a-fA-F0-9]{64}$/.test(cleanString(value, 1000));
 }
 
 function safeFileName(value, fallback = 'attachment.bin') {
@@ -97,6 +103,8 @@ function createNativeCapabilityHandlers(deps) {
     host,
     readNativeState,
     mutateNativeState,
+    getDesktopUpdateStatus,
+    setDesktopUpdateStatus,
     windowForEvent,
     broadcastNativeEvent,
   } = deps;
@@ -179,6 +187,56 @@ function createNativeCapabilityHandlers(deps) {
     await fs.rename(temp, secretPath());
   }
 
+  function vaultSecretConfigured(vault, name) {
+    const ciphertext = vault?.[name]?.ciphertext;
+    if (typeof ciphertext !== 'string' || !ciphertext || !safeStorage?.isEncryptionAvailable?.()) return false;
+    try {
+      const value = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
+      return Boolean(value) && !/[\r\n]/.test(value);
+    } catch {
+      return false;
+    }
+  }
+
+  async function isRegularFile(filePath) {
+    if (!filePath) return false;
+    try { return (await fs.stat(filePath)).isFile(); } catch { return false; }
+  }
+
+  async function inspectCodexAuth(filePath) {
+    if (!filePath) return { authenticated: false, reason: 'missing' };
+    try {
+      const metadata = await fs.lstat(filePath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        return { authenticated: false, reason: 'unsafe-file-type' };
+      }
+      if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) {
+        return { authenticated: false, reason: 'unsafe-permissions' };
+      }
+      if (metadata.size > 1024 * 1024) return { authenticated: false, reason: 'oversized' };
+      const value = JSON.parse(await fs.readFile(filePath, 'utf8'));
+      const apiKey = cleanString(value?.OPENAI_API_KEY, 16);
+      const accessToken = cleanString(value?.tokens?.access_token, 16);
+      const idToken = cleanString(value?.tokens?.id_token, 16);
+      const authenticated = Boolean(apiKey || accessToken || idToken);
+      return { authenticated, reason: authenticated ? 'credential-present' : 'credential-missing' };
+    } catch {
+      return { authenticated: false, reason: 'unreadable' };
+    }
+  }
+
+  async function firstAvailableExecutable(explicitPath, command) {
+    const suffix = process.platform === 'win32' ? '.exe' : '';
+    const candidates = [
+      cleanString(explicitPath, 4096),
+      ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map((directory) => path.join(directory, `${command}${suffix}`)),
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (await isRegularFile(candidate)) return candidate;
+    }
+    return null;
+  }
+
   function requireSecretEncryption() {
     if (!safeStorage?.isEncryptionAvailable?.()) {
       throw new Error('OS-backed secret encryption is not available on this device.');
@@ -200,17 +258,41 @@ function createNativeCapabilityHandlers(deps) {
 
   async function currentUpdateStatus() {
     const state = await readNativeState();
-    return state.updateStatus ?? {
+    const status = typeof getDesktopUpdateStatus === 'function'
+      ? await getDesktopUpdateStatus()
+      : state.updateStatus ?? {
       type: 'upToDate',
       version: app.getVersion(),
-      track: state.preferences?.updateTrack ?? 'stable',
     };
+    return { ...status, track: status?.track ?? state.preferences?.updateTrack ?? 'stable' };
   }
 
   async function writeUpdateStatus(status) {
+    if (typeof setDesktopUpdateStatus === 'function') return setDesktopUpdateStatus(status);
     await mutateNativeState((state) => ({ ...state, updateStatus: status }));
     broadcastNativeEvent('update-status', status);
     return status;
+  }
+
+  function waitForUpdateDownloaded(timeoutMs = 180_000) {
+    if (!autoUpdater?.once) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        autoUpdater.removeListener?.('update-downloaded', onDownloaded);
+        autoUpdater.removeListener?.('error', onError);
+      };
+      const onDownloaded = (info) => { cleanup(); resolve(info ?? null); };
+      const onError = (error) => { cleanup(); reject(error instanceof Error ? error : new Error(String(error))); };
+      autoUpdater.once('update-downloaded', onDownloaded);
+      autoUpdater.once('error', onError);
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timed out waiting for the desktop update to finish downloading.'));
+      }, timeoutMs);
+      timer.unref?.();
+    });
   }
 
   const handlers = {
@@ -361,14 +443,31 @@ function createNativeCapabilityHandlers(deps) {
     },
 
     async quitAndInstallUpdate(params) {
-      const status = await currentUpdateStatus();
+      let status = await currentUpdateStatus();
       const expected = cleanString(params.expectedVersion, 80);
       if (expected && status.version && expected !== status.version) throw new Error('Update version changed before install.');
-      if (!autoUpdater?.quitAndInstall || status.type !== 'ready') {
+      if (!autoUpdater?.quitAndInstall) {
+        return { installed: false, reason: 'Desktop updater is unavailable.' };
+      }
+      if (status.type === 'available' || status.type === 'downloading' || status.type === 'staging') {
+        if (!autoUpdater?.downloadUpdate) {
+          return { installed: false, reason: 'Desktop updater cannot download this release.' };
+        }
+        const version = status.version ?? expected ?? app.getVersion();
+        const downloaded = waitForUpdateDownloaded();
+        await writeUpdateStatus({ type: 'downloading', version, progress: 0 });
+        await Promise.all([autoUpdater.downloadUpdate(), downloaded]);
+        status = await currentUpdateStatus();
+        if (status.type !== 'ready') status = await writeUpdateStatus({ type: 'ready', version });
+      }
+      if (status.type !== 'ready') {
         return { installed: false, reason: 'No downloaded desktop update is ready.' };
       }
-      setImmediate(() => autoUpdater.quitAndInstall());
-      return { installed: true, version: status.version ?? null };
+      const version = status.version ?? expected ?? app.getVersion();
+      await writeUpdateStatus({ type: 'staging', version });
+      const installTimer = setTimeout(() => autoUpdater.quitAndInstall(false, true), 120);
+      installTimer.unref?.();
+      return { installed: true, version };
     },
 
     async setAutoUpdateWhenIdleOptIn(params) {
@@ -777,6 +876,31 @@ function createNativeCapabilityHandlers(deps) {
     async getUsageSummary() {
       const weekly = await this.getWeeklyUsage();
       const state = await readNativeState();
+      const entries = Array.isArray(state.usageEvents) ? state.usageEvents : [];
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const byProvider = Object.values(entries.filter((item) => Number(item.timestampMs) >= cutoff).reduce((result, item) => {
+        const provider = cleanString(item.provider, 80) || 'fabushi';
+        const current = result[provider] ?? {
+          provider,
+          requests: 0,
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+          lifetimeTokens: Number(state.usageLifetimeByProvider?.[provider] ?? 0),
+          lastUsedAtMs: null,
+        };
+        current.requests += 1;
+        current.inputTokens += Number(item.inputTokens ?? 0);
+        current.cachedInputTokens += Number(item.cachedInputTokens ?? 0);
+        current.outputTokens += Number(item.outputTokens ?? 0);
+        current.reasoningTokens += Number(item.reasoningTokens ?? 0);
+        current.totalTokens += Number(item.totalTokens ?? 0);
+        current.lastUsedAtMs = Math.max(Number(current.lastUsedAtMs ?? 0), Number(item.timestampMs ?? 0)) || null;
+        result[provider] = current;
+        return result;
+      }, {}));
       let membership = null;
       try { membership = await platformRequest('GET', '/api/stripe/membership-status'); } catch { /* offline/not logged in */ }
       return {
@@ -784,7 +908,47 @@ function createNativeCapabilityHandlers(deps) {
         membership,
         lifetimeTokens: Number(state.usageLifetimeTokens ?? weekly.totalTokens),
         updatedAtMs: state.usageUpdatedAtMs ?? null,
+        byProvider,
       };
+    },
+
+    async getInferenceRouterStatus() {
+      const home = os.homedir();
+      const codexHome = cleanString(process.env.CODEX_HOME, 4096) || path.join(home, '.codex');
+      const codexAuth = path.join(codexHome, 'auth.json');
+      const claudeCredentials = path.join(home, '.claude', '.credentials.json');
+      const [codexCli, claudeCli, codexAuthStatus, claudeCredentialFile, vault] = await Promise.all([
+        firstAvailableExecutable(process.env.CODEX_PATH, 'codex'),
+        firstAvailableExecutable(process.env.CLAUDE_CODE_PATH, 'claude'),
+        inspectCodexAuth(codexAuth),
+        isRegularFile(claudeCredentials),
+        loadSecretVault(),
+      ]);
+      const claudeAuthenticated = claudeCredentialFile || Boolean(cleanString(process.env.ANTHROPIC_API_KEY, 16));
+      const codexAuthenticated = codexAuthStatus.authenticated;
+      const openRouterConfigured = vaultSecretConfigured(vault, 'inference/openrouter/api-key');
+      const claudeApiConfigured = vaultSecretConfigured(vault, 'inference/claude/api-key')
+        || Boolean(cleanString(process.env.ANTHROPIC_API_KEY, 16));
+      const dockerCli = await firstAvailableExecutable(process.env.DOCKER_PATH, 'docker');
+      const dockerImagePinned = isPinnedContainerImage(process.env.MAHAYANA_DOCKER_IMAGE || DEFAULT_DOCKER_IMAGE);
+      return {
+        schemaVersion: 1,
+        providers: [
+          { id: 'fabushi', label: 'Fabushi', available: true, authenticated: true, source: 'mahayana' },
+          { id: 'codex', label: 'Codex', available: codexCli != null && codexAuthenticated, authenticated: codexAuthenticated, installed: codexCli != null, source: 'local-session', reason: codexAuthStatus.reason },
+          { id: 'claude-code', label: 'Claude', available: claudeApiConfigured, authenticated: claudeApiConfigured, installed: claudeCli != null, localSessionAuthenticated: claudeAuthenticated, source: claudeApiConfigured ? 'os-secret-vault' : 'local-session-diagnostic' },
+          { id: 'openrouter', label: 'OpenRouter', available: openRouterConfigured, authenticated: openRouterConfigured, installed: true, source: 'os-secret-vault' },
+        ],
+        sandboxes: [
+          { id: 'host', label: 'Fabushi Host', available: true, source: 'mahayana' },
+          { id: 'local-docker', label: 'Local Docker', available: dockerCli != null && dockerImagePinned, installed: dockerCli != null, imagePinned: dockerImagePinned, source: 'local-cli+pinned-image' },
+        ],
+      };
+    },
+
+    restartInferenceRouter() {
+      host.restart('inference Provider credential changed');
+      return host.health();
     },
 
     async getReviewPreferences() {
@@ -850,6 +1014,125 @@ function createNativeCapabilityHandlers(deps) {
     reportClientFailure(params) { return report('client-failure', params); },
     reportHeapMetrics(params) { return report('heap-metrics', params); },
     noteConversationForDiagnostics(params) { return report('conversation-diagnostics', params); },
+
+    async getDeveloperCommerceProfile() {
+      return platformRequest('GET', '/v1/developer/commerce/profile');
+    },
+
+    async upsertDeveloperCommerceProfile(params) {
+      const displayName = cleanString(params.displayName, 80);
+      if (!displayName) throw new Error('Developer display name is required.');
+      return platformRequest('POST', '/v1/developer/commerce/profile', { body: { displayName } });
+    },
+
+    async listDeveloperCommerceMiniApps() {
+      return platformRequest('GET', '/v1/developer/commerce/miniapps');
+    },
+
+    async registerDeveloperCommerceMiniApp(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const displayName = cleanString(params.displayName, 30);
+      if (!miniAppId || !/^[A-Za-z0-9._:-]+$/.test(miniAppId) || !displayName) {
+        throw new Error('Valid Mini App ID and display name are required.');
+      }
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}`, { body: { displayName } });
+    },
+
+    async listDeveloperCommerceProducts(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      if (!miniAppId || !/^[A-Za-z0-9._:-]+$/.test(miniAppId)) throw new Error('Valid Mini App ID is required.');
+      return platformRequest('GET', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products`);
+    },
+
+    async createDeveloperCommerceProduct(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const sku = cleanString(params.sku, 128);
+      const displayName = cleanString(params.displayName, 30);
+      const description = cleanString(params.description, 45);
+      const productKind = cleanString(params.productKind, 40);
+      const entitlementCapability = cleanString(params.entitlementCapability, 128);
+      const currency = cleanString(params.currency, 3).toUpperCase();
+      const taxCode = cleanString(params.taxCode, 64) || undefined;
+      const amount = Number(params.amount);
+      const allowedKinds = new Set(['digital_consumable','digital_durable','subscription','physical','service']);
+      const allowedRails = new Set(['apple_advanced_commerce','google_play','web_provider','merchant_provider','credits']);
+      const rails = Array.isArray(params.rails) ? [...new Set(params.rails.map((value) => cleanString(value, 40)).filter((value) => allowedRails.has(value)))].slice(0, 5) : [];
+      if (!miniAppId || !sku || !displayName || !entitlementCapability || !allowedKinds.has(productKind) || !/^[A-Z]{3}$/.test(currency) || !Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error('Invalid Developer Commerce product payload.');
+      }
+      const body = { sku, displayName, description, productKind, entitlementCapability, currency, amount, rails };
+      if (taxCode) body.taxCode = taxCode;
+      if (productKind === 'subscription') body.subscriptionPeriodSeconds = 2592000;
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products`, { body });
+    },
+
+    async updateDeveloperCommerceProduct(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const sku = cleanString(params.sku, 128);
+      const displayName = cleanString(params.displayName, 30);
+      const description = cleanString(params.description, 45);
+      const productKind = cleanString(params.productKind, 40);
+      const entitlementCapability = cleanString(params.entitlementCapability, 128);
+      const currency = cleanString(params.currency, 3).toUpperCase();
+      const taxCode = cleanString(params.taxCode, 64) || undefined;
+      const amount = Number(params.amount);
+      const allowedKinds = new Set(['digital_consumable','digital_durable','subscription','physical','service']);
+      const allowedRails = new Set(['apple_advanced_commerce','google_play','web_provider','merchant_provider','credits']);
+      const rails = Array.isArray(params.rails) ? [...new Set(params.rails.map((value) => cleanString(value, 40)).filter((value) => allowedRails.has(value)))].slice(0, 5) : [];
+      if (!miniAppId || !sku || !displayName || !entitlementCapability || !allowedKinds.has(productKind) || !/^[A-Z]{3}$/.test(currency) || !Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error('Invalid Developer Commerce product payload.');
+      }
+      const body = { sku, displayName, description, productKind, entitlementCapability, currency, amount, rails };
+      if (taxCode) body.taxCode = taxCode;
+      if (productKind === 'subscription') body.subscriptionPeriodSeconds = 2592000;
+      const productId = cleanString(params.productId, 128);
+      if (!productId) throw new Error('Product ID is required.');
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/${encodeURIComponent(productId)}`, { body });
+    },
+
+    async syncDeveloperCommerceGoogleProduct(params) {
+      const miniAppId = cleanString(params.miniAppId, 128);
+      const productId = cleanString(params.productId, 128);
+      if (!miniAppId || !productId) throw new Error('Mini App ID and product ID are required.');
+      return platformRequest('POST', `/v1/developer/commerce/miniapps/${encodeURIComponent(miniAppId)}/products/${encodeURIComponent(productId)}/google/sync`, { body: {} });
+    },
+
+    async getDeveloperPayoutOverview() {
+      return platformRequest('GET', '/v1/developer/commerce/payout');
+    },
+
+    async upsertDeveloperPayoutProfile(params) {
+      const countryCode = cleanString(params.countryCode, 2).toUpperCase();
+      const legalEntityType = cleanString(params.legalEntityType, 32);
+      const preferredCurrency = cleanString(params.preferredCurrency, 3).toUpperCase();
+      const payoutSchedule = cleanString(params.payoutSchedule, 16);
+      const entityKinds = new Set(['individual','individual_business','company','nonprofit']);
+      const schedules = new Set(['manual','daily','weekly','monthly']);
+      if (!/^[A-Z]{2}$/.test(countryCode) || !entityKinds.has(legalEntityType) || !/^[A-Z]{3}$/.test(preferredCurrency) || !schedules.has(payoutSchedule)) {
+        throw new Error('Invalid developer payout profile.');
+      }
+      return platformRequest('POST', '/v1/developer/commerce/payout/profile', { body: { countryCode, legalEntityType, preferredCurrency, payoutSchedule } });
+    },
+
+    async requestDeveloperPayout(params) {
+      const payoutAccountId = cleanString(params.payoutAccountId, 160);
+      const currency = cleanString(params.currency, 3).toUpperCase();
+      const idempotencyKey = cleanString(params.idempotencyKey, 160);
+      const amount = Number(params.amount);
+      if (!payoutAccountId || !/^[A-Za-z0-9._:-]+$/.test(payoutAccountId) || !/^[A-Z]{3}$/.test(currency) || !idempotencyKey || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey) || !Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error('Invalid developer payout request.');
+      }
+      return platformRequest('POST', '/v1/developer/commerce/payout/request', { body: { payoutAccountId, currency, amount, idempotencyKey } });
+    },
+
+    async createDeveloperPayoutOnboarding(params) {
+      const provider = cleanString(params.provider, 48);
+      const purpose = cleanString(params.purpose, 48);
+      const providers = new Set(['stripe_connect','adyen_platform','paypal_multiparty','paypal_payouts','wechat_platform','alipay_platform','lianlian_account_plus','huifu_dougong']);
+      const purposes = new Set(['original_order_split','external_proceeds_payout','marketplace_payout']);
+      if (!providers.has(provider) || !purposes.has(purpose)) throw new Error('Invalid payout onboarding route.');
+      return platformRequest('POST', '/v1/developer/commerce/payout/onboarding', { body: { provider, purpose } });
+    },
 
     async getSharingState(params) {
       const result = await platformRequest('GET', '/api/collaboration/state');

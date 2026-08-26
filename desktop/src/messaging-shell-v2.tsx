@@ -5,6 +5,7 @@ import {
   Bot,
   Bookmark,
   Check,
+  CloudDownload,
   Copy,
   Edit3,
   FileText,
@@ -36,17 +37,22 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import HostClient from '../../frontend/apps/web/src/app/host/host-client';
 import { BotMark, type BotMarkState } from '../../frontend/apps/web/src/app/host/bot-mark';
 import type {
   BotSummary,
   ConversationSummary,
   GroupSummary,
+  InferenceProvider,
+  ProductHostSettings,
   RuntimeEvent,
+  SandboxRuntime,
+  UpdateState,
 } from '../../frontend/apps/web/src/lib/mahayana-host/contracts';
-import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
+import { ElectronMahayanaHostTransport, isElectronMahayanaHostAvailable, MAHAYANA_ACCOUNT_SESSION_RESET_EVENT } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 import { MockMahayanaHostTransport } from '../../frontend/apps/web/src/lib/mahayana-host/mock-transport';
+import { invokeNativeDesktop, subscribeNativeDesktopEvents } from '../../frontend/apps/web/src/lib/fabushi-runtime/native-desktop';
 import type { InstalledPluginPointer, MahayanaHostTransport, MarketplacePluginSummary } from '../../frontend/apps/web/src/lib/mahayana-host/transport';
 import {
   SelfHostedMessagingClientV2,
@@ -74,6 +80,7 @@ import {
   type IncomingFabushiCall,
   type WebRtcCallStatus,
 } from './webrtc-call-controller';
+import { isTerminalAuthSessionFailure } from './auth-session';
 
 type MessengerSection =
   | 'chats'
@@ -142,6 +149,40 @@ type EditDialogState = { conversationId: string; messageId: string; originalText
 type InvoiceDialogState = { conversationId: string; title: string; amount: string } | null;
 type InfoTab = 'media' | 'files' | 'links';
 type SearchCategory = 'chats' | 'channels' | 'apps' | 'posts' | 'images' | 'videos' | 'downloads' | 'links' | 'files' | 'music' | 'audio';
+type SettingsCategory = 'account' | 'router' | 'usage' | 'updates' | 'notifications' | 'privacy' | 'data' | 'chat' | 'folders' | 'devices' | 'calls' | 'language' | 'advanced' | 'fabushi';
+
+type InferenceRouterStatus = {
+  schemaVersion: 1;
+  providers: Array<{ id: InferenceProvider; label: string; available: boolean; authenticated: boolean; installed?: boolean; source: string }>;
+  sandboxes: Array<{ id: SandboxRuntime; label: string; available: boolean; source: string }>;
+};
+
+type ProviderUsageSummary = { provider: string; requests: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; totalTokens: number; lifetimeTokens: number; lastUsedAtMs: number | null };
+type UsageSummary = { totalTokens: number; lifetimeTokens?: number; events: number; source: string; updatedAtMs?: number | null; byProvider?: ProviderUsageSummary[] };
+
+type DesktopMessengerPreferences = {
+  showInfoPanel: boolean;
+  messagePreview: boolean;
+  autoPlayMedia: boolean;
+  enterToSend: boolean;
+  reducedMotion: boolean;
+};
+
+type MessengerProjection = {
+  version: 1;
+  savedAtMs: number;
+  actorId?: string;
+  cursor?: string | null;
+  activePeerKey?: string | null;
+  // The complete lightweight left-rail model is persisted for first-frame paint.
+  // Rust/Host remains authoritative and reconciles these display-only summaries in background.
+  legacyConversations?: ConversationSummary[];
+  legacyBots?: BotSummary[];
+  legacyGroups?: GroupSummary[];
+  selfActors: MessagingActor[];
+  selfConversations: MessagingConversation[];
+  selfMessages: Record<string, MessagingMessage[]>;
+};
 
 const searchCategories: ReadonlyArray<{ id: SearchCategory; label: string }> = [
   { id: 'chats', label: '聊天' },
@@ -160,12 +201,135 @@ const searchCategories: ReadonlyArray<{ id: SearchCategory; label: string }> = [
 const messengerSettingsKey = 'fabushi.desktop.messenger-settings.v2';
 const messengerDraftsKey = 'fabushi.desktop.messenger-drafts.v2';
 const messengerSidebarWidthKey = 'fabushi.desktop.sidebar-width.v3';
+const messengerProjectionKey = 'fabushi.desktop.messenger-projection.v1';
+const messengerConversationJournalKey = 'fabushi.desktop.mahayana-conversation-journal.v1';
+const messengerPreferencesKey = 'fabushi.desktop.telegram-settings.v1';
 const initialPeerRenderCount = 120;
 const initialMessageRenderCount = 240;
+const initialSyncLimit = 20;
+const backgroundSyncLimit = 100;
+const projectionConversationLimit = 80;
+const projectionMessageLimit = 80;
+
+const defaultDesktopMessengerPreferences: DesktopMessengerPreferences = {
+  showInfoPanel: true,
+  messagePreview: true,
+  autoPlayMedia: false,
+  enterToSend: true,
+  reducedMotion: false,
+};
+
+const defaultProductHostSettings: ProductHostSettings = {
+  notifications: true,
+  autoUpdateWhenIdle: true,
+  localExecution: true,
+  routeEgressLocally: false,
+  securityKeys: false,
+  webauthnProxyEnabled: false,
+  localToolPermission: 'ask',
+  remoteControlEnabled: false,
+  aiComputerControlEnabled: true,
+  autoReviewRules: [],
+  inferenceProvider: 'fabushi',
+  sandboxRuntime: 'host',
+};
+
+function asMessengerProjection(value: unknown): MessengerProjection | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const parsed = value as Partial<MessengerProjection>;
+  if (parsed.version !== 1 || !Array.isArray(parsed.selfConversations) || !Array.isArray(parsed.selfActors)) return null;
+  if (!parsed.selfMessages || typeof parsed.selfMessages !== 'object' || Array.isArray(parsed.selfMessages)) return null;
+  if (parsed.legacyConversations !== undefined && !Array.isArray(parsed.legacyConversations)) return null;
+  if (parsed.legacyBots !== undefined && !Array.isArray(parsed.legacyBots)) return null;
+  if (parsed.legacyGroups !== undefined && !Array.isArray(parsed.legacyGroups)) return null;
+  return parsed as MessengerProjection;
+}
+
+function readMessengerProjection(): MessengerProjection | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return asMessengerProjection(JSON.parse(window.localStorage.getItem(messengerProjectionKey) || 'null'));
+  } catch {
+    return null;
+  }
+}
+
+async function readDurableMessengerProjection(): Promise<MessengerProjection | null> {
+  const local = readMessengerProjection();
+  if (local) return local;
+  try {
+    const durable = asMessengerProjection(await invokeNativeDesktop<unknown>('readClientPersistence', { key: messengerProjectionKey }));
+    if (!durable) return null;
+    try {
+      window.localStorage.setItem(messengerProjectionKey, JSON.stringify(durable));
+    } catch {
+      // The native client-persistence mirror remains available for the next launch.
+    }
+    return durable;
+  } catch {
+    return null;
+  }
+}
+
+function readDesktopMessengerPreferences(): DesktopMessengerPreferences {
+  if (typeof window === 'undefined') return defaultDesktopMessengerPreferences;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(messengerPreferencesKey) || '{}') as Partial<DesktopMessengerPreferences>;
+    return { ...defaultDesktopMessengerPreferences, ...stored };
+  } catch {
+    return defaultDesktopMessengerPreferences;
+  }
+}
+
+function persistMessengerProjection(projection: MessengerProjection): void {
+  try {
+    window.localStorage.setItem(messengerProjectionKey, JSON.stringify(projection));
+  } catch {
+    // Fast-start projection is best effort; Rust SQLite remains authoritative.
+  }
+  void invokeNativeDesktop<boolean>('writeClientPersistence', {
+    key: messengerProjectionKey,
+    value: projection,
+  }).catch(() => {
+    // Native persistence is a durability mirror only; canonical Rust SQLite remains authoritative.
+  });
+}
+
+async function clearAccountScopedDesktopCaches(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    // Tell every live Mahayana renderer transport to discard its in-memory
+    // account journal before React unmount cleanup can flush it back to disk.
+    window.dispatchEvent(new Event(MAHAYANA_ACCOUNT_SESSION_RESET_EVENT));
+    try {
+      window.localStorage.removeItem(messengerProjectionKey);
+      window.localStorage.removeItem(messengerDraftsKey);
+      window.localStorage.removeItem(messengerConversationJournalKey);
+    } catch {
+      // Native persistence cleanup below remains authoritative for fast-start.
+    }
+  }
+  try {
+    await invokeNativeDesktop<boolean>('removeClientPersistence', { key: messengerProjectionKey });
+  } catch {
+    // Older/unavailable native edges must not block signing out locally.
+  }
+}
 
 function createTransport(): MahayanaHostTransport {
   if (isElectronMahayanaHostAvailable()) return new ElectronMahayanaHostTransport();
   return new MockMahayanaHostTransport({ authenticated: true });
+}
+
+function isDesktopUpdateState(value: unknown): value is UpdateState {
+  if (!value || typeof value !== 'object') return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === 'string' && ['loading', 'disabled', 'checking', 'available', 'downloading', 'staging', 'ready', 'upToDate', 'error'].includes(type);
+}
+
+type ActionableDesktopUpdateState = Extract<UpdateState, { type: 'available' | 'downloading' | 'staging' | 'ready' }>;
+
+function isActionableDesktopUpdateState(value: UpdateState | null): value is ActionableDesktopUpdateState {
+  return Boolean(value && ['available', 'downloading', 'staging', 'ready'].includes(value.type));
 }
 
 
@@ -305,7 +469,34 @@ function upsertById<T extends { id: string }>(items: T[], item: T): T[] {
 
 export default function DesktopShellV2() {
   const authTransport = useMemo(() => createTransport(), []);
+  const localProjection = useMemo(() => readMessengerProjection(), []);
+  const [startupProjection, setStartupProjection] = useState<MessengerProjection | null>(localProjection);
+  const [projectionLookupComplete, setProjectionLookupComplete] = useState(Boolean(localProjection));
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  const resetToLogin = useCallback(async (revokeSession = true) => {
+    try {
+      if (revokeSession) await authTransport.logout();
+    } catch {
+      // Product logout is best effort remotely; local account state is cleared below.
+    } finally {
+      await clearAccountScopedDesktopCaches();
+      setStartupProjection(null);
+      setProjectionLookupComplete(true);
+      setAuthenticated(false);
+    }
+  }, [authTransport]);
+
+  useEffect(() => {
+    if (localProjection) return;
+    let closed = false;
+    void readDurableMessengerProjection().then((projection) => {
+      if (closed) return;
+      setStartupProjection(projection);
+      setProjectionLookupComplete(true);
+    });
+    return () => { closed = true; };
+  }, [localProjection]);
 
   useEffect(() => {
     let closed = false;
@@ -314,11 +505,21 @@ export default function DesktopShellV2() {
       try {
         const state = await authTransport.authStatus();
         if (closed) return;
+        if (!state.loggedIn) {
+          await clearAccountScopedDesktopCaches();
+          if (closed) return;
+          setStartupProjection(null);
+        }
         setAuthenticated(state.loggedIn);
         if (!state.loggedIn) retryTimer = window.setTimeout(() => void checkAuth(), 900);
-      } catch {
+      } catch (cause) {
         if (closed) return;
-        setAuthenticated(false);
+        if (isTerminalAuthSessionFailure(cause)) {
+          await resetToLogin(true);
+          return;
+        }
+        // A transient Host/network failure must not replace a valid local-first shell
+        // with a login/restore screen. Only an explicit loggedIn=false response signs out.
         retryTimer = window.setTimeout(() => void checkAuth(), 1_800);
       }
     };
@@ -328,26 +529,72 @@ export default function DesktopShellV2() {
       if (retryTimer) window.clearTimeout(retryTimer);
       void authTransport.close();
     };
-  }, [authTransport]);
+  }, [authTransport, resetToLogin]);
 
+  const showMessenger = projectionLookupComplete
+    && authenticated !== false
+    && (authenticated === true || Boolean(startupProjection));
+  const showLogin = projectionLookupComplete && authenticated === false;
   return (
-    <div className={styles.desktopRoot} data-testid="desktop-shell">
-      {authenticated === true ? <MessengerWorkspace /> : <HostClient />}
+    <div className={styles.desktopRoot} data-testid="desktop-shell" data-local-first={showMessenger && authenticated !== true ? 'true' : undefined}>
+      {showMessenger
+        ? <MessengerWorkspace initialProjection={startupProjection} onLogout={() => resetToLogin(true)} />
+        : showLogin
+          ? <HostClient />
+          : <DesktopFastStartBootstrap />}
     </div>
   );
 }
 
-function MessengerWorkspace() {
+function DesktopFastStartBootstrap() {
+  return (
+    <main
+      className={`${styles.messenger} ${styles.fabushiUnified}`}
+      data-testid="desktop-fast-start-bootstrap"
+      aria-busy="true"
+      aria-label="Fabushi 正在连接"
+      style={{ gridTemplateColumns: '330px minmax(420px,1fr)' }}
+    >
+      <aside className={styles.chatList}>
+        <header className={styles.listHeader}>
+          <span className={styles.sidebarBrand} title="Fabushi"><BotMark botId="fabushi:bootstrap" state="idle" size={30} paused label="Fabushi" /></span>
+          <strong>聊天</strong>
+        </header>
+        <label className={styles.searchBox}>
+          <Search size={16} />
+          <input disabled placeholder="搜索" aria-label="搜索" />
+        </label>
+        <div className={styles.peerList} aria-hidden="true" />
+        <div className={styles.sidebarFooter}>
+          <button type="button" className={styles.profileNavigationTrigger} disabled>
+            <BotMark botId="fabushi:bootstrap:self" state="idle" size={38} paused label="我的头像" />
+            <span><strong>我</strong><small>正在连接</small></span>
+          </button>
+        </div>
+      </aside>
+      <section className={styles.chatWorkspace}>
+        <div className={styles.chatEmpty}>
+          <BotMark botId="fabushi:bootstrap:workspace" state="idle" size={72} paused label="Fabushi" />
+          <strong>Fabushi</strong>
+          <p>界面已经就绪，正在后台连接本机服务。</p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function MessengerWorkspace({ initialProjection, onLogout }: { initialProjection?: MessengerProjection | null; onLogout: () => Promise<void> }) {
   const transport = useMemo(() => createTransport(), []);
-  const selfHosted = useMemo(() => new SelfHostedMessagingClientV2(transport), [transport]);
+  const startupProjection = useMemo(() => initialProjection ?? readMessengerProjection(), [initialProjection]);
+  const selfHosted = useMemo(() => new SelfHostedMessagingClientV2(transport, { actorId: startupProjection?.actorId }), [transport, startupProjection]);
   const [hostReady, setHostReady] = useState(false);
   const [section, setSection] = useState<MessengerSection>('chats');
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [bots, setBots] = useState<BotSummary[]>([]);
-  const [groups, setGroups] = useState<GroupSummary[]>([]);
-  const [selfActors, setSelfActors] = useState<MessagingActor[]>([]);
-  const [selfConversations, setSelfConversations] = useState<MessagingConversation[]>([]);
-  const [selfMessages, setSelfMessages] = useState<Record<string, MessagingMessage[]>>({});
+  const [conversations, setConversations] = useState<ConversationSummary[]>(startupProjection?.legacyConversations ?? []);
+  const [bots, setBots] = useState<BotSummary[]>(startupProjection?.legacyBots ?? []);
+  const [groups, setGroups] = useState<GroupSummary[]>(startupProjection?.legacyGroups ?? []);
+  const [selfActors, setSelfActors] = useState<MessagingActor[]>(startupProjection?.selfActors ?? []);
+  const [selfConversations, setSelfConversations] = useState<MessagingConversation[]>(startupProjection?.selfConversations ?? []);
+  const [selfMessages, setSelfMessages] = useState<Record<string, MessagingMessage[]>>(startupProjection?.selfMessages ?? {});
   const [selfStories, setSelfStories] = useState<MessagingStory[]>([]);
   const [selfCommunities, setSelfCommunities] = useState<MessagingCommunityState[]>([]);
   const [selfBotProfiles, setSelfBotProfiles] = useState<MessagingBotProfile[]>([]);
@@ -358,7 +605,7 @@ function MessengerWorkspace() {
   const [selfOrders, setSelfOrders] = useState<MessagingOrder[]>([]);
   const [walletAccount, setWalletAccount] = useState<MessagingWalletAccount | null>(null);
   const [walletEntries, setWalletEntries] = useState<MessagingLedgerEntry[]>([]);
-  const [activePeerKey, setActivePeerKey] = useState<string | null>(null);
+  const [activePeerKey, setActivePeerKey] = useState<string | null>(startupProjection?.activePeerKey ?? null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [composer, setComposer] = useState('');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -369,12 +616,22 @@ function MessengerWorkspace() {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchCategory, setGlobalSearchCategory] = useState<SearchCategory>('chats');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(330);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
-  const [conversationSearch, setConversationSearch] = useState('');
+  const [desktopUpdateState, setDesktopUpdateState] = useState<UpdateState | null>(null);
+  const [desktopUpdateBusy, setDesktopUpdateBusy] = useState(false);
   const [peerRenderCount, setPeerRenderCount] = useState(initialPeerRenderCount);
   const [messageRenderCount, setMessageRenderCount] = useState(initialMessageRenderCount);
-  const [infoOpen, setInfoOpen] = useState(true);
+  const [desktopPreferences, setDesktopPreferences] = useState<DesktopMessengerPreferences>(() => readDesktopMessengerPreferences());
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('account');
+  const settingsReturnSectionRef = useRef<MessengerSection>('chats');
+  const [hostSettings, setHostSettings] = useState<ProductHostSettings>(defaultProductHostSettings);
+  const [routerStatus, setRouterStatus] = useState<InferenceRouterStatus | null>(null);
+  const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(null);
+  const [infoOpen, setInfoOpen] = useState(() => readDesktopMessengerPreferences().showInfoPanel);
+  const [narrowInfoOpen, setNarrowInfoOpen] = useState(false);
+  const [wideInfoLayout, setWideInfoLayout] = useState(() => typeof window === 'undefined' ? true : window.innerWidth > 1280);
   const [infoTab, setInfoTab] = useState<InfoTab>('media');
   const [pendingSend, setPendingSend] = useState(false);
   const [typingByConversation, setTypingByConversation] = useState<Record<string, Record<string, number>>>({});
@@ -398,7 +655,7 @@ function MessengerWorkspace() {
   const [pinnedPeerKeys, setPinnedPeerKeys] = useState<Set<string>>(() => new Set());
   const [archivedPeerKeys, setArchivedPeerKeys] = useState<Set<string>>(() => new Set());
   const activePeerKeyRef = useRef<string | null>(null);
-  const messagingCursorRef = useRef<string | null>(null);
+  const messagingCursorRef = useRef<string | null>(startupProjection?.cursor ?? null);
   const syncInFlightRef = useRef(false);
   const typingStopTimerRef = useRef<number | null>(null);
   const peersRef = useRef<PeerItem[]>([]);
@@ -408,11 +665,116 @@ function MessengerWorkspace() {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const storyInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const sessionResetInFlightRef = useRef(false);
 
   useEffect(() => {
     activePeerKeyRef.current = activePeerKey;
   }, [activePeerKey]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const nextWide = window.innerWidth > 1280;
+      setWideInfoLayout(nextWide);
+      if (nextWide) setNarrowInfoOpen(false);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    if (!error || !isTerminalAuthSessionFailure(error) || sessionResetInFlightRef.current) return;
+    sessionResetInFlightRef.current = true;
+    void onLogout()
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => { sessionResetInFlightRef.current = false; });
+  }, [error, onLogout]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(messengerPreferencesKey, JSON.stringify(desktopPreferences));
+    } catch {
+      // Desktop-only preferences are best effort.
+    }
+  }, [desktopPreferences]);
+
+  useEffect(() => {
+    if (!startupProjection?.activePeerKey?.startsWith('selfhosted:')) return;
+    const conversationId = startupProjection.activePeerKey.slice('selfhosted:'.length);
+    const cached = (startupProjection.selfMessages[conversationId] ?? []).filter((message) => !message.deleted);
+    setMessages(cached.map(displaySelfMessage));
+  }, [startupProjection]);
+
+  useEffect(() => {
+    if (!selfConversations.length && !selfActors.length && !conversations.length && !bots.length && !groups.length) return;
+    const timer = window.setTimeout(() => {
+      const conversationIds = new Set(
+        [...selfConversations]
+          .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+          .slice(0, projectionConversationLimit)
+          .map((conversation) => conversation.id),
+      );
+      const boundedMessages = Object.fromEntries(
+        Object.entries(selfMessages)
+          .filter(([conversationId]) => conversationIds.has(conversationId))
+          .map(([conversationId, list]) => [conversationId, list.slice(-projectionMessageLimit)]),
+      );
+      persistMessengerProjection({
+        version: 1,
+        savedAtMs: Date.now(),
+        actorId: selfHosted.actorId,
+        cursor: messagingCursorRef.current,
+        activePeerKey,
+        legacyConversations: conversations,
+        legacyBots: bots,
+        legacyGroups: groups,
+        selfActors,
+        selfConversations: [...selfConversations]
+          .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+          .slice(0, projectionConversationLimit),
+        selfMessages: boundedMessages,
+      });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [activePeerKey, bots, conversations, groups, selfActors, selfConversations, selfMessages, selfHosted.actorId]);
+
+  function updateDesktopPreference<K extends keyof DesktopMessengerPreferences>(key: K, value: DesktopMessengerPreferences[K]) {
+    setDesktopPreferences((current) => ({ ...current, [key]: value }));
+    if (key === 'showInfoPanel') setInfoOpen(Boolean(value));
+  }
+
+  function updateHostSetting<K extends keyof ProductHostSettings>(key: K, value: ProductHostSettings[K]) {
+    const settings = { ...hostSettings, [key]: value };
+    setHostSettings(settings);
+    void execute({ type: 'settings.update', requestId: nextRequestId('settings-update'), settings });
+  }
+
+  async function configureProviderSecret(provider: 'claude-code' | 'openrouter', value: string) {
+    try {
+      const name = provider === 'claude-code' ? 'inference/claude/api-key' : 'inference/openrouter/api-key';
+      await invokeNativeDesktop('upsertSecrets', { name, value });
+      if (hostSettings.inferenceProvider === provider) await invokeNativeDesktop('restartInferenceRouter');
+      const status = await invokeNativeDesktop<InferenceRouterStatus>('getInferenceRouterStatus');
+      setRouterStatus(status);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    }
+  }
+
+  async function removeProviderSecret(provider: 'claude-code' | 'openrouter') {
+    try {
+      const name = provider === 'claude-code' ? 'inference/claude/api-key' : 'inference/openrouter/api-key';
+      await invokeNativeDesktop('removeSecrets', { name });
+      const status = await invokeNativeDesktop<InferenceRouterStatus>('getInferenceRouterStatus');
+      setRouterStatus(status);
+      if (hostSettings.inferenceProvider === provider) updateHostSetting('inferenceProvider', 'fabushi');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    }
+  }
 
   useEffect(() => {
     const stored = Number(window.localStorage.getItem(messengerSidebarWidthKey));
@@ -422,6 +784,27 @@ function MessengerWorkspace() {
   useEffect(() => {
     try { window.localStorage.setItem(messengerSidebarWidthKey, String(Math.round(sidebarWidth))); } catch { /* best effort */ }
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    let disposed = false;
+    const acceptUpdateState = (payload: unknown) => {
+      if (disposed || !isDesktopUpdateState(payload)) return;
+      setDesktopUpdateState(payload);
+      if (payload.type === 'available' || payload.type === 'upToDate' || payload.type === 'error') {
+        setDesktopUpdateBusy(false);
+      }
+    };
+    const unsubscribe = subscribeNativeDesktopEvents({ 'update-status': acceptUpdateState });
+    void invokeNativeDesktop<UpdateState>('getUpdateStatus').then(acceptUpdateState).catch(() => {});
+    const timer = window.setTimeout(() => {
+      void invokeNativeDesktop<UpdateState>('checkForUpdates').then(acceptUpdateState).catch(() => {});
+    }, 1_500);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -443,7 +826,9 @@ function MessengerWorkspace() {
   useEffect(() => {
     if (!activePeerKey) return;
     setComposer(drafts[activePeerKey] ?? '');
-    setConversationSearch('');
+    setSearch('');
+    setGlobalSearchOpen(false);
+    setConversationSearchOpen(false);
     setMessageRenderCount(initialMessageRenderCount);
   }, [activePeerKey]);
 
@@ -540,10 +925,19 @@ function MessengerWorkspace() {
       .then(async () => {
         if (closed) return;
         setHostReady(true);
+        void execute({ type: 'settings.get', requestId: nextRequestId('settings-get') });
         refreshLegacy();
         try {
-          await selfHosted.ensureCurrentActor();
-          await selfHosted.sync();
+          const account = await transport.authStatus().catch(() => null);
+          const cachedActor = startupProjection?.selfActors.find((actor) => actor.id === selfHosted.actorId);
+          const username = account?.user?.username?.trim() || cachedActor?.username;
+          const displayName = account?.user?.nickname?.trim()
+            || username
+            || account?.user?.email?.trim()
+            || cachedActor?.displayName
+            || '当前用户';
+          await selfHosted.ensureCurrentActor(displayName, username);
+          await selfHosted.sync(initialSyncLimit, messagingCursorRef.current);
           void webRtcRef.current?.connect().catch(() => {});
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : String(cause));
@@ -555,7 +949,50 @@ function MessengerWorkspace() {
       unsubscribe();
       void transport.close();
     };
-  }, [transport, selfHosted]);
+  }, [transport, selfHosted, startupProjection]);
+
+  useEffect(() => {
+    if (!hostReady || section !== 'settings' || !['router', 'usage'].includes(settingsCategory)) return;
+    let disposed = false;
+    void Promise.all([
+      invokeNativeDesktop<InferenceRouterStatus>('getInferenceRouterStatus'),
+      invokeNativeDesktop<UsageSummary>('getUsageSummary'),
+    ]).then(([status, usage]) => {
+      if (disposed) return;
+      setRouterStatus(status);
+      setUsageSummary(usage);
+    }).catch((cause: unknown) => {
+      if (!disposed) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => { disposed = true; };
+  }, [hostReady, section, settingsCategory]);
+
+  useEffect(() => {
+    if (section !== 'settings') return;
+    const modal = document.querySelector<HTMLElement>('[data-testid="settings-modal-backdrop"] [role="dialog"]');
+    const focusable = () => Array.from(modal?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? []);
+    window.requestAnimationFrame(() => modal?.querySelector<HTMLElement>('[data-testid="settings-close"]')?.focus());
+    const handleSettingsKeys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeSettings();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', handleSettingsKeys);
+    return () => window.removeEventListener('keydown', handleSettingsKeys);
+  }, [section]);
 
   useEffect(() => {
     if (!hostReady || section !== 'miniapps') return;
@@ -585,7 +1022,7 @@ function MessengerWorkspace() {
       });
       if (syncInFlightRef.current) return;
       syncInFlightRef.current = true;
-      void selfHosted.sync(1000, messagingCursorRef.current)
+      void selfHosted.sync(backgroundSyncLimit, messagingCursorRef.current)
         .catch(() => {})
         .finally(() => { syncInFlightRef.current = false; });
     }, 2_000);
@@ -638,6 +1075,7 @@ function MessengerWorkspace() {
   function handleSelfHostedEvent(runtimeEvent: RuntimeEvent): boolean {
     const hostEvent = asMessagingHostEvent(runtimeEvent);
     if (!hostEvent) return false;
+    const previousCursor = messagingCursorRef.current;
     if (hostEvent.envelope.cursor) messagingCursorRef.current = hostEvent.envelope.cursor;
     const event = hostEvent.envelope.event;
     switch (event.type) {
@@ -653,26 +1091,32 @@ function MessengerWorkspace() {
           bots?: MessagingBotProfile[];
           botExecutions?: MessagingBotExecution[];
         };
-        const nextConversations = payload.conversations ?? [];
         const grouped: Record<string, MessagingMessage[]> = {};
         for (const message of payload.messages ?? []) {
           (grouped[message.conversationId] ??= []).push(message);
         }
         for (const list of Object.values(grouped)) list.sort((a, b) => a.createdAtMs - b.createdAtMs);
-        setSelfActors(payload.actors ?? []);
-        setSelfConversations(nextConversations);
-        setSelfMessages(grouped);
-        setSelfInvoices(payload.invoices ?? []);
-        setSelfOrders(payload.orders ?? []);
-        setSelfStories(payload.stories ?? []);
-        setSelfCommunities(payload.communities ?? []);
-        setSelfBotProfiles(payload.bots ?? []);
-        setSelfBotExecutions(payload.botExecutions ?? []);
-        const active = activePeerKeyRef.current;
-        if (active?.startsWith('selfhosted:')) {
-          const conversationId = active.slice('selfhosted:'.length);
-          setMessages((grouped[conversationId] ?? []).filter((message) => !message.deleted).map(displaySelfMessage));
-        }
+        setSelfActors((current) => (payload.actors ?? []).reduce((items, actor) => upsertById(items, actor), previousCursor ? current : []));
+        setSelfConversations((current) => (payload.conversations ?? []).reduce((items, conversation) => upsertById(items, conversation), previousCursor ? current : []));
+        setSelfMessages((current) => {
+          const next = previousCursor ? { ...current } : {};
+          for (const [conversationId, incoming] of Object.entries(grouped)) {
+            next[conversationId] = incoming.reduce((items, message) => upsertById(items, message), next[conversationId] ?? [])
+              .sort((a, b) => a.createdAtMs - b.createdAtMs);
+          }
+          const active = activePeerKeyRef.current;
+          if (active?.startsWith('selfhosted:')) {
+            const conversationId = active.slice('selfhosted:'.length);
+            setMessages((next[conversationId] ?? []).filter((message) => !message.deleted).map(displaySelfMessage));
+          }
+          return next;
+        });
+        setSelfInvoices((current) => (payload.invoices ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
+        setSelfOrders((current) => (payload.orders ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
+        setSelfStories((current) => (payload.stories ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
+        setSelfCommunities((current) => (payload.communities ?? []).reduce((items, item) => [...items.filter((existing) => existing.conversationId !== item.conversationId), item], previousCursor ? current : []));
+        setSelfBotProfiles((current) => (payload.bots ?? []).reduce((items, item) => [...items.filter((existing) => existing.actorId !== item.actorId), item], previousCursor ? current : []));
+        setSelfBotExecutions((current) => (payload.botExecutions ?? []).reduce((items, item) => upsertById(items, item), previousCursor ? current : []));
         break;
       }
       case 'conversationChanged': {
@@ -863,6 +1307,9 @@ function MessengerWorkspace() {
           setPendingSend(false);
         }
         break;
+      case 'settings.changed':
+        setHostSettings(event.settings);
+        break;
       case 'chat.message':
         setPendingSend(false);
         setMessages((current) => {
@@ -911,8 +1358,8 @@ function MessengerWorkspace() {
   }, [section, selfHosted]);
 
   const visibleStories = useMemo(() => selfStories
-    .filter((story) => story.pinnedToProfile || story.expiresAtMs > Date.now())
-    .sort((left, right) => right.createdAtMs - left.createdAtMs), [selfStories]);
+    .filter((story) => story.ownerId !== selfHosted.actorId && (story.pinnedToProfile || story.expiresAtMs > Date.now()))
+    .sort((left, right) => right.createdAtMs - left.createdAtMs), [selfStories, selfHosted]);
 
   const peers = useMemo<PeerItem[]>(() => {
     const legacyConversations = conversations.map((conversation): PeerItem => ({
@@ -993,11 +1440,12 @@ function MessengerWorkspace() {
     return !query || `${peer.title} ${peer.subtitle}`.toLowerCase().includes(query);
   });
   const sectionIsPeerList = ['chats', 'contacts', 'bots', 'groups', 'channels', 'saved', 'archive'].includes(section);
+  const layoutInfoOpen = wideInfoLayout ? infoOpen : narrowInfoOpen;
+  const infoPanelVisible = Boolean(layoutInfoOpen && activePeer && sectionIsPeerList);
+  const infoPanelDocked = Boolean(infoPanelVisible && wideInfoLayout);
+  const currentActor = selfActors.find((actor) => actor.id === selfHosted.actorId);
   const renderedPeers = visiblePeers.slice(0, peerRenderCount);
-  const conversationQuery = conversationSearch.trim().toLowerCase();
-  const matchingMessages = conversationQuery
-    ? messages.filter((message) => message.text.toLowerCase().includes(conversationQuery))
-    : messages;
+  const matchingMessages = messages;
   const renderedMessages = matchingMessages.slice(Math.max(0, matchingMessages.length - messageRenderCount));
 
   useEffect(() => {
@@ -1031,7 +1479,8 @@ function MessengerWorkspace() {
   async function openPeer(peer: PeerItem) {
     setActivePeerKey(peer.key);
     setComposer(drafts[peer.key] ?? '');
-    setConversationSearch('');
+    setSearch('');
+    setGlobalSearchOpen(false);
     setMessageRenderCount(initialMessageRenderCount);
     setReplyTo(null);
     setError(null);
@@ -1157,37 +1606,6 @@ function MessengerWorkspace() {
     }
   }
 
-  async function publishStoryFile(file: File) {
-    setAttachmentProgress(`正在上传动态 ${file.name}…`);
-    try {
-      const media = await selfHosted.uploadBlob(file, (uploaded, total) => {
-        setAttachmentProgress(`正在上传动态 ${file.name} · ${Math.round((uploaded / total) * 100)}%`);
-      });
-      const caption = window.prompt('动态说明（可选）', '') ?? '';
-      const privacyInput = (window.prompt('可见范围：everyone / contacts / closeFriends / selected', 'everyone') ?? 'everyone').trim();
-      const privacy = ['everyone', 'contacts', 'closeFriends', 'selected'].includes(privacyInput)
-        ? privacyInput as 'everyone' | 'contacts' | 'closeFriends' | 'selected'
-        : 'everyone';
-      let includedActorIds: string[] = [];
-      if (privacy === 'selected') {
-        const selected = window.prompt('输入允许查看的 Actor ID，用逗号分隔', '') ?? '';
-        includedActorIds = selected.split(',').map((value) => value.trim()).filter(Boolean);
-        if (!includedActorIds.length) throw new Error('Selected 动态至少需要一名可见联系人。');
-      }
-      await selfHosted.publishStory({
-        media,
-        caption,
-        privacy,
-        includedActorIds,
-        protectedContent: true,
-        allowReplies: true,
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setAttachmentProgress(null);
-    }
-  }
 
   async function openStory(story: MessagingStory) {
     setActiveStory(story);
@@ -1569,12 +1987,20 @@ async function saveInvoiceDialog() {
   async function refreshMiniApps(query = miniAppQuery) {
     setMiniAppLoading(true);
     try {
-      const [catalog, installed] = await Promise.all([
+      const [catalogResult, installedResult] = await Promise.allSettled([
         transport.marketplaceBrowse(query),
         transport.pluginListInstalled(),
       ]);
-      setMarketplaceApps(catalog.plugins);
-      setInstalledMiniApps(Object.fromEntries(installed.plugins.map((plugin) => [plugin.pluginId, plugin])));
+      if (catalogResult.status === 'fulfilled') {
+        setMarketplaceApps(catalogResult.value.plugins);
+      } else {
+        setError(catalogResult.reason instanceof Error ? catalogResult.reason.message : String(catalogResult.reason));
+      }
+      if (installedResult.status === 'fulfilled') {
+        setInstalledMiniApps(Object.fromEntries(installedResult.value.plugins.map((plugin) => [plugin.pluginId, plugin])));
+      } else {
+        setError(installedResult.reason instanceof Error ? installedResult.reason.message : String(installedResult.reason));
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -1641,6 +2067,20 @@ async function saveInvoiceDialog() {
   }
 
 
+  async function installDesktopUpdate(state: UpdateState) {
+    if (!['available', 'downloading', 'staging', 'ready'].includes(state.type)) return;
+    setDesktopUpdateBusy(true);
+    try {
+      const result = await invokeNativeDesktop<{ installed?: boolean; reason?: string }>('quitAndInstallUpdate', {
+        expectedVersion: 'version' in state ? state.version : undefined,
+      });
+      if (result?.installed === false) throw new Error(result.reason || '无法开始桌面更新');
+    } catch (cause) {
+      setDesktopUpdateBusy(false);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   function startSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
@@ -1666,7 +2106,12 @@ async function saveInvoiceDialog() {
       void ensureSavedMessages();
       return;
     }
+    if (next === 'settings' && section !== 'settings') settingsReturnSectionRef.current = section;
     setSection(next);
+  }
+
+  function closeSettings() {
+    setSection(settingsReturnSectionRef.current === 'settings' ? 'chats' : settingsReturnSectionRef.current);
   }
 
   return (
@@ -1674,24 +2119,40 @@ async function saveInvoiceDialog() {
       className={`${styles.messenger} ${styles.fabushiUnified}`}
       data-testid="messenger-workspace"
       data-sidebar-collapsed={sidebarWidth <= 112 || undefined}
-      style={{ gridTemplateColumns: !globalSearchOpen && infoOpen && activePeer && sectionIsPeerList ? `${sidebarWidth}px minmax(420px,1fr) 286px` : `${sidebarWidth}px minmax(420px,1fr)` }}
-      onClick={() => { setMessageMenu(null); setProfileMenuOpen(false); }}
+      data-reduce-motion={desktopPreferences.reducedMotion || undefined}
+      data-testid-ready-projection={startupProjection ? 'true' : undefined}
+      style={{ gridTemplateColumns: infoPanelDocked ? `${sidebarWidth}px minmax(420px,1fr) 286px` : `${sidebarWidth}px minmax(420px,1fr)` }}
+      onClick={() => { setMessageMenu(null); setProfileMenuOpen(false); setCreateMenuOpen(false); }}
     >
       <aside className={styles.chatList} data-testid="messenger-sidebar" data-collapsed={sidebarWidth <= 112 || undefined} onClick={(event) => event.stopPropagation()}>
         <header className={styles.listHeader}>
           <span className={styles.sidebarBrand} title="Fabushi"><BotMark botId="fabushi:brand" state="idle" size={30} label="Fabushi" /></span>
           <strong>{sectionTitle(section)}</strong>
-          <button type="button" className={styles.iconButton} aria-label="新建" onClick={() => setNewDialog({ type: 'group', name: '', selectedBotIds: new Set() })}><SquarePen size={18} /></button>
+          <div className={styles.createMenuWrap}>
+            <button type="button" className={styles.iconButton} aria-label="新建" data-active={createMenuOpen} onClick={(event) => { event.stopPropagation(); setCreateMenuOpen((value) => !value); }}><SquarePen size={18} /></button>
+            {createMenuOpen ? <div className={styles.createMenu} onClick={(event) => event.stopPropagation()}>
+              <button type="button" onClick={() => { setCreateMenuOpen(false); setNewDialog({ type: 'group', name: '', selectedBotIds: new Set() }); }}><Users size={16} /><span>新建群组</span></button>
+              <button type="button" onClick={() => { setCreateMenuOpen(false); setNewDialog({ type: 'channel', name: '', description: '' }); }}><Radio size={16} /><span>新建频道</span></button>
+            </div> : null}
+          </div>
         </header>
-        <label className={styles.searchBox} data-testid="global-search-trigger" onClick={() => setGlobalSearchOpen(true)}>
+        <label className={styles.searchBox} data-testid="global-search-trigger" onClick={() => { if (sidebarWidth <= 112) setSidebarWidth(330); setGlobalSearchOpen(true); }}>
           <Search size={16} />
-          <input value={search} onFocus={() => setGlobalSearchOpen(true)} onChange={(event) => setSearch(event.target.value)} placeholder="搜索" />
-          {search ? <button type="button" aria-label="清除搜索" onClick={(event) => { event.stopPropagation(); setSearch(''); }}><X size={14} /></button> : null}
+          <input
+            ref={searchInputRef}
+            data-testid="global-search-input"
+            value={search}
+            onFocus={() => { if (sidebarWidth <= 112) setSidebarWidth(330); setGlobalSearchOpen(true); }}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={conversationSearchOpen && activePeer ? `搜索 ${activePeer.title}` : '搜索'}
+          />
+          {search ? <button type="button" aria-label="清除搜索" onClick={(event) => { event.stopPropagation(); setSearch(''); searchInputRef.current?.focus(); }}><X size={14} /></button> : globalSearchOpen && !conversationSearchOpen ? <button type="button" aria-label="关闭搜索" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setGlobalSearchOpen(false); setGlobalSearchCategory('chats'); }}><X size={14} /></button> : null}
         </label>
-        {['chats', 'contacts'].includes(section) && sidebarWidth > 112 ? <div className={extra.storyStrip}>
-          <button type="button" className={extra.storyItem} onClick={() => storyInputRef.current?.click()} title="发布动态">
-            <span className={extra.storyRing} data-own="true"><BotMark botId={`story:self:${selfHosted.actorId || 'local'}`} state="idle" size={40} label="我的动态" /><b>+</b></span><small>我的动态</small>
-          </button>
+        {conversationSearchOpen && activePeer ? <div className={styles.searchScope} data-testid="conversation-search-scope">
+          <span>此聊天</span><strong>{activePeer.title}</strong>
+          <button type="button" aria-label="退出当前会话搜索" onClick={() => { setConversationSearchOpen(false); setGlobalSearchCategory('chats'); setSearch(''); searchInputRef.current?.focus(); }}><X size={13} /></button>
+        </div> : null}
+        {['chats', 'contacts'].includes(section) && sidebarWidth > 112 && visibleStories.length ? <div className={extra.storyStrip}>
           {visibleStories.map((story) => {
             const actor = selfActors.find((item) => item.id === story.ownerId);
             const name = actor?.displayName ?? (story.ownerId === selfHosted.actorId ? '我' : story.ownerId);
@@ -1699,14 +2160,26 @@ async function saveInvoiceDialog() {
               <span className={extra.storyRing}><BotMark botId={`story:${story.ownerId}`} state="idle" size={40} label={name} /></span><small>{name}</small>
             </button>;
           })}
-          <input ref={storyInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void publishStoryFile(file); }} />
         </div> : null}
-        {sectionIsPeerList ? (
+        {globalSearchOpen ? (
+          <GlobalSearchWorkspace
+            query={search}
+            category={globalSearchCategory}
+            onCategory={setGlobalSearchCategory}
+            scopePeer={conversationSearchOpen ? activePeer : null}
+            peers={peers}
+            messages={messages}
+            miniApps={marketplaceApps}
+            installedMiniApps={installedMiniApps}
+            miniAppBusy={miniAppBusy}
+            miniAppLoading={miniAppLoading}
+            onOpenPeer={(peer) => { setGlobalSearchOpen(false); setConversationSearchOpen(false); setSearch(''); setSection(peer.kind === 'channel' ? 'channels' : 'chats'); void openPeer(peer); }}
+            onOpenMiniApp={openMiniApp}
+            onInstallMiniApp={installMiniApp}
+            onUninstallMiniApp={uninstallMiniApp}
+          />
+        ) : sectionIsPeerList ? (
           <div className={styles.peerList}>
-            <div className={styles.quickActions}>
-              <button type="button" onClick={() => setNewDialog({ type: 'group', name: '', selectedBotIds: new Set() })}><Users size={17} /><span>新建群组</span></button>
-              <button type="button" onClick={() => setNewDialog({ type: 'channel', name: '', description: '' })}><Radio size={17} /><span>新建频道</span></button>
-            </div>
             {renderedPeers.map((peer) => (
               <button data-testid={`peer-${peer.key}`} key={peer.key} type="button" className={peer.key === activePeerKey ? styles.peerActive : styles.peer} onClick={() => void openPeer(peer)}>
                 <BotMark
@@ -1718,7 +2191,7 @@ async function saveInvoiceDialog() {
                 />
                 <span className={styles.peerCopy}>
                   <span><strong>{peer.title}</strong><time>{formatTime(peer.updatedAtMs)}</time></span>
-                  <small>{peer.subtitle}</small>
+                  <small>{desktopPreferences.messagePreview ? peer.subtitle : peer.unread ? '有新消息' : '消息预览已关闭'}</small>
                 </span>
                 <span className={styles.peerMeta}>{peer.pinned ? <Pin size={12} /> : null}{mutedPeerKeys.has(peer.key) ? <BellOff size={12} /> : null}{peer.unread ? <b>{peer.unread}</b> : null}</span>
               </button>
@@ -1727,10 +2200,44 @@ async function saveInvoiceDialog() {
             {!visiblePeers.length ? <EmptyList section={section} /> : null}
           </div>
         ) : (
-          <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
+          <SectionPanel section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} settings={{ category: settingsCategory, onCategory: setSettingsCategory }} />
         )}
         <div className={styles.sidebarFooter}>
           {profileMenuOpen ? <ProfileNavigationMenu section={section} onNavigate={navigateFromProfile} /> : null}
+          {isActionableDesktopUpdateState(desktopUpdateState) ? <button
+            type="button"
+            className={styles.updateCloudButton}
+            data-testid="desktop-update-cloud"
+            data-state={desktopUpdateState.type}
+            disabled={desktopUpdateBusy}
+            title={desktopUpdateState.type === 'ready' ? '更新已下载，点击后立即安装并重启' : '点击一次即可下载、安装并自动重启'}
+            onClick={() => void installDesktopUpdate(desktopUpdateState)}
+          >
+            <CloudDownload size={18} />
+            <span>{desktopUpdateState.type === 'ready'
+              ? '重启并更新'
+              : desktopUpdateState.type === 'downloading'
+                ? `下载更新 ${Math.max(0, Math.min(100, Math.round(desktopUpdateState.progress ?? 0)))}%`
+                : desktopUpdateState.type === 'staging'
+                  ? '正在安装并重启…'
+                  : `更新 ${desktopUpdateState.version}`}</span>
+            {desktopUpdateState.type === 'downloading' || desktopUpdateState.type === 'staging' ? (
+              <span
+                className={styles.updateProgressTrack}
+                data-testid="desktop-update-progress"
+                data-indeterminate={desktopUpdateState.type === 'staging' || undefined}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={desktopUpdateState.type === 'downloading' ? Math.max(0, Math.min(100, Math.round(desktopUpdateState.progress ?? 0))) : undefined}
+              >
+                <i
+                  className={styles.updateProgressFill}
+                  style={desktopUpdateState.type === 'downloading' ? { width: `${Math.max(0, Math.min(100, desktopUpdateState.progress ?? 0))}%` } : undefined}
+                />
+              </span>
+            ) : null}
+          </button> : null}
           <button
             type="button"
             className={styles.profileNavigationTrigger}
@@ -1754,25 +2261,7 @@ async function saveInvoiceDialog() {
       </aside>
 
       <section className={styles.chatWorkspace}>
-        {globalSearchOpen ? (
-          <GlobalSearchWorkspace
-            query={search}
-            onQuery={setSearch}
-            category={globalSearchCategory}
-            onCategory={setGlobalSearchCategory}
-            peers={peers}
-            messages={messages}
-            miniApps={marketplaceApps}
-            installedMiniApps={installedMiniApps}
-            miniAppBusy={miniAppBusy}
-            miniAppLoading={miniAppLoading}
-            onOpenPeer={(peer) => { setGlobalSearchOpen(false); setSearch(''); setSection(peer.kind === 'channel' ? 'channels' : 'chats'); void openPeer(peer); }}
-            onOpenMiniApp={openMiniApp}
-            onInstallMiniApp={installMiniApp}
-            onUninstallMiniApp={uninstallMiniApp}
-            onClose={() => { setGlobalSearchOpen(false); setSearch(''); }}
-          />
-        ) : activePeer && sectionIsPeerList ? (
+        {activePeer && sectionIsPeerList ? (
           <>
             <header className={styles.chatHeader}>
               <div className={styles.chatIdentity}>
@@ -1789,13 +2278,19 @@ async function saveInvoiceDialog() {
                 <button type="button" title="语音通话" onClick={() => void startCall('voice')}><PhoneCall size={18} /></button>
                 <button type="button" title="视频通话" onClick={() => void startCall('video')}><Video size={18} /></button>
                 {activePeer.source === 'selfhosted' ? <button type="button" title="发送账单" onClick={() => void createInvoiceForActivePeer()}><WalletCards size={18} /></button> : null}
-                <button type="button" title="搜索当前会话" data-active={conversationSearchOpen} onClick={() => setConversationSearchOpen((value) => !value)}><Search size={18} /></button>
+                <button type="button" title="搜索当前会话" data-active={conversationSearchOpen} onClick={() => {
+                  const next = !conversationSearchOpen;
+                  setConversationSearchOpen(next);
+                  setGlobalSearchOpen(next);
+                  setGlobalSearchCategory(next ? 'posts' : 'chats');
+                  setSearch('');
+                  window.setTimeout(() => searchInputRef.current?.focus(), 0);
+                }}><Search size={18} /></button>
                 <button type="button" title={activePeer.pinned ? '取消置顶' : '置顶'} onClick={() => void togglePinConversation(activePeer)}><Pin size={18} /></button>
                 <button type="button" title={mutedPeerKeys.has(activePeer.key) ? '开启通知' : '静音'} onClick={() => void toggleMuteConversation(activePeer)}><BellOff size={18} /></button>
-                <button type="button" title="资料" data-active={infoOpen} onClick={() => setInfoOpen((value) => !value)}><MoreVertical size={18} /></button>
+                <button type="button" title="资料" data-testid="conversation-info-toggle" data-active={layoutInfoOpen} onClick={() => wideInfoLayout ? setInfoOpen((value) => !value) : setNarrowInfoOpen((value) => !value)}><MoreVertical size={18} /></button>
               </div>
             </header>
-            {conversationSearchOpen ? <label className={styles.inChatSearch}><Search size={15} /><input data-testid="conversation-search-input" value={conversationSearch} onChange={(event) => { setConversationSearch(event.target.value); setMessageRenderCount(initialMessageRenderCount); }} placeholder="在当前会话中搜索" autoFocus /><button type="button" onClick={() => { setConversationSearch(''); setConversationSearchOpen(false); }}><X size={14} /></button></label> : null}
             {error ? <div className={styles.errorBanner} role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)}><X size={14} /></button></div> : null}
             <div className={styles.messageArea}>
               <div className={styles.dayDivider}>今天</div>
@@ -1812,14 +2307,14 @@ async function saveInvoiceDialog() {
                 >
                   {message.pinned ? <Pin size={11} /> : null}
                   {message.mediaType === 'photo' && blobMediaUrl(message.media) ? <img className={extra.messageMedia} src={blobMediaUrl(message.media)} alt={message.media?.fileName ?? '图片'} /> : null}
-                  {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline src={blobMediaUrl(message.media)} /> : null}
+                  {message.mediaType === 'video' && blobMediaUrl(message.media) ? <video className={extra.messageMedia} controls playsInline autoPlay={desktopPreferences.autoPlayMedia} src={blobMediaUrl(message.media)} /> : null}
                   {message.mediaType === 'document' && blobMediaUrl(message.media) ? <a className={extra.messageFile} href={blobMediaUrl(message.media)} download={message.media?.fileName}><FileText size={17} />{message.media?.fileName ?? '文件'}</a> : null}
                   <p>{message.text}</p>
                   {message.reactions?.length ? <div className={extra.reactions}>{message.reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div> : null}
                   <small>{formatTime(message.createdAtMs)} {message.role === 'me' ? <Check size={12} /> : null}</small>
                 </article>
               ))}
-              {!matchingMessages.length ? <div className={styles.chatEmpty} data-testid="message-search-empty"><BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, false, hostReady) : 'idle'} size={78} className={styles.agentAvatarMark} label={activePeer.title} /><strong>{conversationQuery ? '没有匹配消息' : activePeer.title}</strong><p>{conversationQuery ? '换一个关键词继续搜索。' : '联系人、AI Bot、群组和频道使用同一个 Fabushi 消息产品层。'}</p></div> : null}
+              {!matchingMessages.length ? <div className={styles.chatEmpty} data-testid="message-search-empty"><BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, false, hostReady) : 'idle'} size={78} className={styles.agentAvatarMark} label={activePeer.title} /><strong>{activePeer.title}</strong><p>联系人、AI Bot、群组和频道使用同一个 Fabushi 消息产品层。</p></div> : null}
             </div>
             {replyTo ? <div className={extra.composerBanner}><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
             {scheduledAtMs ? <div className={extra.composerBanner}><span>⏱</span><div><strong>定时发送</strong><span>{new Date(scheduledAtMs).toLocaleString()}</span></div><button type="button" onClick={() => setScheduledAtMs(undefined)}><X size={14} /></button></div> : null}
@@ -1835,24 +2330,28 @@ async function saveInvoiceDialog() {
               <input ref={mediaInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
               <input ref={fileInputRef} type="file" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void sendAttachmentFile(file); }} />
               {attachmentProgress ? <span className={extra.uploadProgress}>{attachmentProgress}</span> : null}
-              <textarea data-testid="messenger-input" value={composer} onChange={(event) => updateComposer(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="消息" rows={1} />
+              <textarea data-testid="messenger-input" value={composer} onChange={(event) => updateComposer(event.target.value)} onKeyDown={(event) => {
+                const submitWithEnter = desktopPreferences.enterToSend && event.key === 'Enter' && !event.shiftKey;
+                const submitWithShortcut = !desktopPreferences.enterToSend && event.key === 'Enter' && (event.metaKey || event.ctrlKey);
+                if (submitWithEnter || submitWithShortcut) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+              }} placeholder="消息" rows={1} />
               <button type="button" title="表情"><Smile size={20} /></button>
               <button type="button" data-active={silentSend} title={silentSend ? '关闭静默发送' : '静默发送'} onClick={() => setSilentSend((value) => !value)}><BellOff size={19} /></button>
               {composer.trim() ? <button data-testid="messenger-send" className={styles.sendButton} type="submit" disabled={!hostReady || pendingSend}><Send size={19} /></button> : <button type="button" title="语音消息"><Mic size={20} /></button>}
             </form>
           </>
         ) : (
-          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} />
+          <FeatureWorkspace section={section} onOpenMiniApp={openMiniApp} onInstallMiniApp={installMiniApp} onUninstallMiniApp={uninstallMiniApp} miniApps={marketplaceApps} installedMiniApps={installedMiniApps} miniAppQuery={miniAppQuery} onMiniAppQuery={setMiniAppQuery} miniAppLoading={miniAppLoading} miniAppBusy={miniAppBusy} onInvoice={() => void createInvoiceForActivePeer()} payment={{ account: walletAccount, entries: walletEntries, orders: selfOrders, invoices: selfInvoices, actorId: selfHosted.actorId }} onRefund={(orderId) => void refundOrder(orderId)} settings={{ category: settingsCategory, onCategory: setSettingsCategory, preferences: desktopPreferences, onPreference: updateDesktopPreference, actor: currentActor, actorId: selfHosted.actorId, hostSettings, onHostSetting: updateHostSetting, onConfigureProviderSecret: configureProviderSecret, onRemoveProviderSecret: removeProviderSecret, routerStatus, usageSummary, onInstallUpdate: installDesktopUpdate, onLogout }} />
         )}
       </section>
 
-      {!globalSearchOpen && infoOpen && activePeer && sectionIsPeerList ? (
-        <aside className={styles.infoPanel}>
-          <header><strong>资料</strong><button type="button" onClick={() => setInfoOpen(false)}><X size={17} /></button></header>
+      {infoPanelVisible && activePeer ? (
+        <aside className={styles.infoPanel} data-testid="messenger-info-panel" data-overlay={!wideInfoLayout || undefined}>
+          <header><strong>资料</strong><button type="button" onClick={() => wideInfoLayout ? setInfoOpen(false) : setNarrowInfoOpen(false)}><X size={17} /></button></header>
           <div className={styles.profileCard}>
             <BotMark botId={`peer:${activePeer.kind}:${activePeer.actorId ?? activePeer.id}`} state={isAgentPeer(activePeer) ? botMarkStateForPeer(activePeer, selfBotExecutions, pendingSend, hostReady) : 'idle'} size={92} className={styles.agentProfileMark} label={activePeer.title} />
             <strong>{activePeer.title}</strong><small>{activePeer.subtitle}</small>
-            <div><button type="button" onClick={() => void startCall('voice')}><PhoneCall size={18} /><span>通话</span></button><button type="button" onClick={() => void startCall('video')}><Video size={18} /><span>视频</span></button><button type="button" onClick={() => setConversationSearchOpen(true)}><Search size={18} /><span>搜索</span></button></div>
+            <div><button type="button" onClick={() => void startCall('voice')}><PhoneCall size={18} /><span>通话</span></button><button type="button" onClick={() => void startCall('video')}><Video size={18} /><span>视频</span></button><button type="button" onClick={() => { setConversationSearchOpen(true); setGlobalSearchOpen(true); setGlobalSearchCategory('posts'); setSearch(''); window.setTimeout(() => searchInputRef.current?.focus(), 0); }}><Search size={18} /><span>搜索</span></button></div>
           </div>
           <div className={styles.profileActions}>
             <button type="button" onClick={() => void toggleMuteConversation(activePeer)}><BellOff size={17} /><span>{mutedPeerKeys.has(activePeer.key) ? '开启通知' : '静音通知'}</span></button>
@@ -1874,6 +2373,19 @@ async function saveInvoiceDialog() {
       {activeStory ? <StoryViewer story={activeStory} owner={selfActors.find((actor) => actor.id === activeStory.ownerId)} own={activeStory.ownerId === selfHosted.actorId} onClose={() => setActiveStory(null)} onReact={(reaction) => void reactToActiveStory(reaction)} onDelete={() => void selfHosted.deleteStory(activeStory.id).then(() => setActiveStory(null)).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))} /> : null}
       {localCall ? <CallDialog call={localCall} localVideoRef={localVideoRef} remoteVideoRef={remoteVideoRef} remoteAudioRef={remoteAudioRef} canAccept={Boolean(incomingCall)} onAccept={() => void acceptIncomingCall()} onDecline={() => void declineIncomingCall()} onMute={() => void toggleCallMute()} onVideo={() => void toggleCallVideo()} onShare={() => void shareCallScreen()} onEnd={() => void endCall()} /> : null}
       {miniApp ? <MiniAppDialog app={miniApp} onClose={() => setMiniApp(null)} /> : null}
+      {section === 'settings' ? <div className={styles.settingsModalBackdrop} data-testid="settings-modal-backdrop" onMouseDown={closeSettings}>
+        <section className={styles.settingsModal} role="dialog" aria-modal="true" aria-label="设置" onMouseDown={(event) => event.stopPropagation()}>
+          <aside className={styles.settingsModalSidebar}>
+            <header><strong>Settings</strong></header>
+            <SettingsNavigation category={settingsCategory} onCategory={setSettingsCategory} />
+          </aside>
+          <div className={styles.settingsModalContent}>
+            <button type="button" className={styles.settingsModalClose} data-testid="settings-close" aria-label="关闭设置" onClick={closeSettings}><X size={19} /></button>
+            {error ? <div className={styles.settingsModalError} role="alert"><span>{error}</span><button type="button" aria-label="关闭错误" onClick={() => setError(null)}><X size={14} /></button></div> : null}
+            <SettingsWorkspace category={settingsCategory} onCategory={setSettingsCategory} preferences={desktopPreferences} onPreference={updateDesktopPreference} actor={currentActor} actorId={selfHosted.actorId} hostSettings={hostSettings} onHostSetting={updateHostSetting} onConfigureProviderSecret={configureProviderSecret} onRemoveProviderSecret={removeProviderSecret} routerStatus={routerStatus} usageSummary={usageSummary} onInstallUpdate={installDesktopUpdate} onLogout={onLogout} />
+          </div>
+        </section>
+      </div> : null}
     </main>
   );
 }
@@ -1901,9 +2413,9 @@ function ProfileNavigationMenu({ section, onNavigate }: { section: MessengerSect
 
 type GlobalSearchWorkspaceProps = {
   query: string;
-  onQuery: (value: string) => void;
   category: SearchCategory;
   onCategory: (value: SearchCategory) => void;
+  scopePeer?: PeerItem | null;
   peers: PeerItem[];
   messages: DisplayMessage[];
   miniApps: MarketplacePluginSummary[];
@@ -1914,7 +2426,6 @@ type GlobalSearchWorkspaceProps = {
   onOpenMiniApp: (id: string) => Promise<void>;
   onInstallMiniApp: (app: MarketplacePluginSummary) => Promise<void>;
   onUninstallMiniApp: (id: string) => Promise<void>;
-  onClose: () => void;
 };
 
 function GlobalSearchWorkspace(props: GlobalSearchWorkspaceProps) {
@@ -1931,19 +2442,18 @@ function GlobalSearchWorkspace(props: GlobalSearchWorkspaceProps) {
   });
   const appResults = props.miniApps.filter((app) => matches(`${app.displayName} ${app.description} ${app.pluginId}`));
   const unsupportedMediaCategory = props.category === 'music' || props.category === 'audio';
+  const categories = props.scopePeer
+    ? searchCategories.filter((item) => ['posts', 'images', 'videos', 'downloads', 'links', 'files', 'music', 'audio'].includes(item.id))
+    : searchCategories;
 
-  return <div className={styles.globalSearch} data-testid="global-search-surface">
-    <header className={styles.globalSearchHeader}>
-      <label><Search size={20} /><input data-testid="global-search-input" value={props.query} onChange={(event) => props.onQuery(event.target.value)} placeholder="搜索聊天、频道、应用、文件…" autoFocus />{props.query ? <button type="button" aria-label="清除搜索" onClick={() => props.onQuery('')}><X size={18} /></button> : null}</label>
-      <button type="button" aria-label="关闭搜索" onClick={props.onClose}><X size={20} /></button>
-    </header>
-    <nav className={styles.globalSearchTabs} aria-label="搜索分类">
-      {searchCategories.map((item) => <button key={item.id} type="button" data-testid={`global-search-tab-${item.id}`} data-active={props.category === item.id} onClick={() => props.onCategory(item.id)}>{item.label}</button>)}
+  return <div className={styles.globalSearch} data-testid="global-search-surface" data-scoped={props.scopePeer ? 'true' : undefined}>
+    <nav className={styles.globalSearchTabs} aria-label={props.scopePeer ? '当前会话搜索分类' : '搜索分类'}>
+      {categories.map((item) => <button key={item.id} type="button" data-testid={`global-search-tab-${item.id}`} data-active={props.category === item.id} onClick={() => props.onCategory(item.id)}>{props.scopePeer && item.id === 'posts' ? '消息' : item.label}</button>)}
     </nav>
     <div className={styles.globalSearchResults}>
-      {props.category === 'chats' ? peerResults.filter((peer) => peer.kind !== 'channel').map((peer) => <button key={peer.key} type="button" className={styles.searchResultRow} onClick={() => props.onOpenPeer(peer)}><BotMark botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`} state="idle" size={46} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><time>{formatTime(peer.updatedAtMs)}</time></button>) : null}
-      {props.category === 'channels' ? peerResults.filter((peer) => peer.kind === 'channel').map((peer) => <button key={peer.key} type="button" className={styles.searchResultRow} onClick={() => props.onOpenPeer(peer)}><BotMark botId={`peer:channel:${peer.id}`} state="idle" size={46} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><time>{formatTime(peer.updatedAtMs)}</time></button>) : null}
-      {props.category === 'apps' ? <div className={styles.searchAppResults}>{props.miniAppLoading ? <div className={styles.marketplaceStatus}>正在搜索在线应用市场…</div> : appResults.map((app) => {
+      {!props.scopePeer && props.category === 'chats' ? peerResults.filter((peer) => peer.kind !== 'channel').map((peer) => <button key={peer.key} type="button" className={styles.searchResultRow} onClick={() => props.onOpenPeer(peer)}><BotMark botId={`peer:${peer.kind}:${peer.actorId ?? peer.id}`} state="idle" size={46} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><time>{formatTime(peer.updatedAtMs)}</time></button>) : null}
+      {!props.scopePeer && props.category === 'channels' ? peerResults.filter((peer) => peer.kind === 'channel').map((peer) => <button key={peer.key} type="button" className={styles.searchResultRow} onClick={() => props.onOpenPeer(peer)}><BotMark botId={`peer:channel:${peer.id}`} state="idle" size={46} label={peer.title} /><span><strong>{peer.title}</strong><small>{peer.subtitle}</small></span><time>{formatTime(peer.updatedAtMs)}</time></button>) : null}
+      {!props.scopePeer && props.category === 'apps' ? <div className={styles.searchAppResults}>{props.miniAppLoading ? <div className={styles.marketplaceStatus}>正在搜索在线应用市场…</div> : appResults.map((app) => {
         const installed = props.installedMiniApps[app.pluginId];
         const busy = props.miniAppBusy.has(app.pluginId);
         const update = Boolean(installed && installed.version !== app.latestVersion);
@@ -1951,16 +2461,16 @@ function GlobalSearchWorkspace(props: GlobalSearchWorkspaceProps) {
       })}</div> : null}
       {['posts', 'images', 'videos', 'downloads', 'links', 'files'].includes(props.category) ? mediaResults.map((message) => <article key={message.id} className={styles.searchMessageResult}><BotMark botId={`search-message:${message.id}`} state="idle" size={38} label="消息" /><div><p>{message.text || (message.mediaType === 'photo' ? '图片' : message.mediaType === 'video' ? '视频' : '文件')}</p><small>{new Date(message.createdAtMs).toLocaleString()}</small></div></article>) : null}
       {unsupportedMediaCategory ? <SearchEmptyState label="当前会话尚无可搜索的音频索引" /> : null}
-      {props.category === 'chats' && !peerResults.filter((peer) => peer.kind !== 'channel').length ? <SearchEmptyState label={normalized ? '没有匹配的聊天' : '最近搜索结果将显示在此处'} /> : null}
-      {props.category === 'channels' && !peerResults.filter((peer) => peer.kind === 'channel').length ? <SearchEmptyState label={normalized ? '没有匹配的频道' : '最近搜索结果将显示在此处'} /> : null}
-      {props.category === 'apps' && !props.miniAppLoading && !appResults.length ? <SearchEmptyState label="没有匹配的在线应用" /> : null}
+      {!props.scopePeer && props.category === 'chats' && !peerResults.filter((peer) => peer.kind !== 'channel').length ? <SearchEmptyState label={normalized ? '没有匹配的聊天' : '最近搜索结果将显示在此处'} /> : null}
+      {!props.scopePeer && props.category === 'channels' && !peerResults.filter((peer) => peer.kind === 'channel').length ? <SearchEmptyState label={normalized ? '没有匹配的频道' : '最近搜索结果将显示在此处'} /> : null}
+      {!props.scopePeer && props.category === 'apps' && !props.miniAppLoading && !appResults.length ? <SearchEmptyState label="没有匹配的在线应用" /> : null}
       {['posts', 'images', 'videos', 'downloads', 'links', 'files'].includes(props.category) && !mediaResults.length ? <SearchEmptyState label={normalized ? '当前已加载内容中没有匹配结果' : '最近搜索结果将显示在此处'} /> : null}
     </div>
   </div>;
 }
 
 function SearchEmptyState({ label }: { label: string }) {
-  return <div className={styles.globalSearchEmpty}><Search size={58} /><strong>{label}</strong><small>输入关键词或切换分类继续搜索。</small></div>;
+  return <div className={styles.globalSearchEmpty}><Search size={44} /><strong>{label}</strong><small>在左侧搜索框输入关键词，或切换分类继续搜索。</small></div>;
 }
 
 function EmptyList({ section }: { section: MessengerSection }) {
@@ -2307,17 +2817,241 @@ function MiniAppMarketplaceWorkspace(props: MiniAppMarketplaceProps) {
   </div>;
 }
 
-function SectionPanel({ section, onInvoice, payment, onRefund, ...miniAppProps }: { section: MessengerSection; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void } & MiniAppMarketplaceProps) {
+type SettingsNavigationProps = {
+  category: SettingsCategory;
+  onCategory: (category: SettingsCategory) => void;
+};
+
+type SettingsWorkspaceProps = SettingsNavigationProps & {
+  preferences: DesktopMessengerPreferences;
+  onPreference: <K extends keyof DesktopMessengerPreferences>(key: K, value: DesktopMessengerPreferences[K]) => void;
+  actor?: MessagingActor;
+  actorId: string;
+  hostSettings: ProductHostSettings;
+  onHostSetting: <K extends keyof ProductHostSettings>(key: K, value: ProductHostSettings[K]) => void;
+  onConfigureProviderSecret: (provider: 'claude-code' | 'openrouter', value: string) => Promise<void>;
+  onRemoveProviderSecret: (provider: 'claude-code' | 'openrouter') => Promise<void>;
+  routerStatus: InferenceRouterStatus | null;
+  usageSummary: UsageSummary | null;
+  onInstallUpdate: (state: UpdateState) => Promise<void>;
+  onLogout: () => Promise<void>;
+};
+
+const settingsNavigationItems: ReadonlyArray<{ id: SettingsCategory; label: string; subtitle: string; glyph: string }> = [
+  { id: 'account', label: 'General', subtitle: '资料与通用设置', glyph: '⚙' },
+  { id: 'router', label: 'Router', subtitle: '模型与执行环境', glyph: '⌁' },
+  { id: 'usage', label: 'Usage & Billing', subtitle: '用量与账户额度', glyph: '▥' },
+  { id: 'updates', label: 'Updates', subtitle: '版本与自动更新', glyph: '↻' },
+];
+
+function SettingsNavigation({ category, onCategory }: SettingsNavigationProps) {
+  return <div className={styles.settingsNavigation} data-testid="telegram-settings-navigation">
+    {settingsNavigationItems.map((item) => <button key={item.id} type="button" data-testid={`settings-category-${item.id}`} data-active={category === item.id} onClick={() => onCategory(item.id)}>
+      <span>{item.glyph}</span><div><strong>{item.label}</strong><small>{item.subtitle}</small></div>
+    </button>)}
+  </div>;
+}
+
+function SettingsToggleRow({ title, description, checked, onChange, testId }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void; testId?: string }) {
+  return <label className={styles.settingsRow}><div><strong>{title}</strong><small>{description}</small></div><input data-testid={testId} type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} /></label>;
+}
+
+function SettingsPlannedRow({ title, description }: { title: string; description: string }) {
+  return <div className={`${styles.settingsRow} ${styles.settingsRowDisabled}`}><div><strong>{title}</strong><small>{description}</small></div><em>后端接入中</em></div>;
+}
+
+const inferenceProviderCopy: ReadonlyArray<{ id: InferenceProvider; label: string; description: string }> = [
+  { id: 'fabushi', label: 'Fabushi', description: '使用 Fabushi/Mahayana 自有推理服务、统一工具权限与账号额度。' },
+  { id: 'codex', label: 'Codex', description: '复用本机 Codex 登录；新会话在同一 Mahayana runtime 中运行。' },
+  { id: 'claude-code', label: 'Claude', description: '通过 Claude Messages API 接入同一 Mahayana MCP、工具与审批链。' },
+  { id: 'openrouter', label: 'OpenRouter', description: '使用保存在系统加密保险库中的 OpenRouter 凭据。' },
+];
+
+function SettingsChoiceRow({ title, description, status, selected, disabled, testId, onSelect }: { title: string; description: string; status: string; selected: boolean; disabled: boolean; testId: string; onSelect: () => void }) {
+  return <button className={styles.settingsChoiceRow} type="button" data-testid={testId} data-selected={selected} disabled={disabled} onClick={onSelect}>
+    <span className={styles.settingsChoiceDot} aria-hidden="true" />
+    <div><strong>{title}</strong><small>{description}</small></div>
+    <em>{status}</em>
+  </button>;
+}
+
+function SettingsWorkspace({ category, preferences, onPreference, actor, actorId, hostSettings, onHostSetting, onConfigureProviderSecret, onRemoveProviderSecret, routerStatus, usageSummary, onInstallUpdate, onLogout }: SettingsWorkspaceProps) {
+  const [openRouterKey, setOpenRouterKey] = useState('');
+  const [openRouterSaving, setOpenRouterSaving] = useState(false);
+  const [claudeKey, setClaudeKey] = useState('');
+  const [claudeSaving, setClaudeSaving] = useState(false);
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
+  const [timeZone, setTimeZone] = useState('');
+  const [localToolPermission, setLocalToolPermission] = useState<'always' | 'ask' | 'never'>('ask');
+  const [localToolCeiling, setLocalToolCeiling] = useState<'always' | 'ask' | 'never'>('always');
+  const [autoReviewInstructions, setAutoReviewInstructions] = useState('');
+  const [securityKeyEnabled, setSecurityKeyEnabled] = useState(false);
+  const [settingsUpdateStatus, setSettingsUpdateStatus] = useState<(UpdateState & { track?: 'stable' | 'beta' | 'alpha' }) | null>(null);
+  const [updateTrack, setUpdateTrack] = useState<'stable' | 'beta' | 'alpha'>('stable');
+  const [settingsActionError, setSettingsActionError] = useState<string | null>(null);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const meta = settingsNavigationItems.find((item) => item.id === category)!;
+  const profileName = actor?.displayName || '当前用户';
+  const selectedProviderUsage = usageSummary?.byProvider?.find((item) => item.provider === hostSettings.inferenceProvider);
+  const selectedProviderReadiness = routerStatus?.providers.find((item) => item.id === hostSettings.inferenceProvider);
+  function runNativeSetting<T>(promise: Promise<T>, apply?: (value: T) => void) {
+    setSettingsActionError(null);
+    void promise.then((value) => apply?.(value)).catch((cause: unknown) => setSettingsActionError(cause instanceof Error ? cause.message : String(cause)));
+  }
+  useEffect(() => {
+    if (category !== 'account') return;
+    let disposed = false;
+    void Promise.all([
+      invokeNativeDesktop<{ preference?: 'system' | 'light' | 'dark' }>('getThemeState'),
+      invokeNativeDesktop<string>('getTimeZone'),
+      invokeNativeDesktop<'always' | 'ask' | 'never'>('getLocalToolPermission'),
+      invokeNativeDesktop<'always' | 'ask' | 'never'>('getLocalToolPermissionCeiling'),
+      invokeNativeDesktop<string>('getAutoReviewInstructions'),
+      invokeNativeDesktop<boolean>('getWebauthnProxyEnabled'),
+    ]).then(([theme, zone, permission, ceiling, instructions, securityKey]) => {
+      if (disposed) return;
+      setThemePreference(theme.preference ?? 'system');
+      setTimeZone(zone);
+      setLocalToolPermission(permission);
+      setLocalToolCeiling(ceiling);
+      setAutoReviewInstructions(instructions);
+      setSecurityKeyEnabled(securityKey);
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [category]);
+  useEffect(() => {
+    if (category !== 'updates') return;
+    let disposed = false;
+    void invokeNativeDesktop<UpdateState & { track?: 'stable' | 'beta' | 'alpha' }>('getUpdateStatus').then((status) => {
+      if (disposed) return;
+      setSettingsUpdateStatus(status);
+      setUpdateTrack(status.track ?? 'stable');
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [category]);
+  return <div className={styles.settingsWorkspace} data-testid="telegram-settings-workspace">
+    <header><div><h2>{meta.label}</h2><p>{meta.subtitle}</p></div></header>
+    {settingsActionError ? <div className={styles.settingsInlineError} role="alert"><span>{settingsActionError}</span><button type="button" aria-label="关闭设置错误" onClick={() => setSettingsActionError(null)}><X size={13} /></button></div> : null}
+    {category === 'account' ? <section className={styles.settingsGroup}>
+      <div className={styles.settingsProfile}><BotMark botId={`self:${actorId}`} state="idle" size={72} label={profileName} /><div><strong>{profileName}</strong><small>{actor?.username ? `@${actor.username}` : actorId}</small><p>{actor?.bio || 'Fabushi 统一 Actor 资料由 Rust 消息核心管理。'}</p></div></div>
+      <label className={styles.settingsSelectRow}><div><strong>Theme</strong><small>跟随系统，或固定浅色/深色界面。</small></div><select data-testid="settings-theme" value={themePreference} onChange={(event) => { const preference = event.target.value as 'system' | 'light' | 'dark'; setThemePreference(preference); runNativeSetting(invokeNativeDesktop('setThemePreference', { preference })); }}><option value="system">Follow System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label className={styles.settingsSelectRow}><div><strong>Execution on Local Computer</strong><small>权限不能超过管理员上限：{localToolCeiling}。</small></div><select data-testid="settings-local-tool-permission" value={localToolPermission} onChange={(event) => { const permission = event.target.value as 'always' | 'ask' | 'never'; runNativeSetting(invokeNativeDesktop<'always' | 'ask' | 'never'>('setLocalToolPermission', { permission }), setLocalToolPermission); }}><option value="always" disabled={localToolCeiling !== 'always'}>Always allow</option><option value="ask" disabled={localToolCeiling === 'never'}>Ask every time</option><option value="never">Never allow</option></select></label>
+      <form className={styles.settingsSecretRow} onSubmit={(event) => { event.preventDefault(); runNativeSetting(invokeNativeDesktop('setTimeZoneOverride', { timeZone: timeZone.trim() || null })); }}><div><strong>Timezone</strong><small>用于计划任务、消息时间和本地自动化。</small></div><input data-testid="settings-time-zone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} placeholder="Asia/Shanghai" /><button type="submit">保存</button></form>
+      <form className={styles.settingsSecretRow} onSubmit={(event) => { event.preventDefault(); runNativeSetting(invokeNativeDesktop('setAutoReviewInstructions', { instructions: autoReviewInstructions })); }}><div><strong>Auto-review instructions</strong><small>本地工具执行前的附加审查规则。</small></div><input data-testid="settings-auto-review" value={autoReviewInstructions} onChange={(event) => setAutoReviewInstructions(event.target.value)} placeholder="每次修改配置前先询问" /><button type="submit">保存</button></form>
+      <SettingsToggleRow title="Use hardware security keys" description="在当前平台可用时允许安全密钥代理；每次使用仍需批准。" checked={securityKeyEnabled} onChange={(enabled) => { setSecurityKeyEnabled(enabled); runNativeSetting(invokeNativeDesktop<boolean>('setWebauthnProxyEnabled', { enabled }), setSecurityKeyEnabled); }} />
+      <SettingsToggleRow testId="settings-toggle-message-preview" title="消息预览" description="在会话列表显示最近消息摘要。" checked={preferences.messagePreview} onChange={(value) => onPreference('messagePreview', value)} />
+      <SettingsToggleRow testId="settings-toggle-autoplay-media" title="自动播放视频" description="聊天内视频加载后自动播放。" checked={preferences.autoPlayMedia} onChange={(value) => onPreference('autoPlayMedia', value)} />
+      <SettingsToggleRow testId="settings-toggle-info-panel" title="显示资料侧栏" description="宽屏聊天时显示右侧资料栏。" checked={preferences.showInfoPanel} onChange={(value) => onPreference('showInfoPanel', value)} />
+      <SettingsToggleRow testId="settings-toggle-enter-send" title="Enter 发送消息" description="关闭后使用 Command/Ctrl + Enter 发送。" checked={preferences.enterToSend} onChange={(value) => onPreference('enterToSend', value)} />
+      <SettingsToggleRow testId="settings-toggle-reduced-motion" title="减少动态效果" description="关闭大部分界面过渡动画。" checked={preferences.reducedMotion} onChange={(value) => onPreference('reducedMotion', value)} />
+      <div className={styles.settingsActionRow}><div><strong>退出登录</strong><small>撤销当前 Fabushi 会话并清除本机账户快速启动缓存；设备通用偏好设置保留。</small></div><button data-testid="settings-logout" data-danger="true" type="button" disabled={logoutBusy} onClick={() => { if (logoutBusy) return; setLogoutBusy(true); void onLogout().catch((cause: unknown) => setSettingsActionError(cause instanceof Error ? cause.message : String(cause))).finally(() => setLogoutBusy(false)); }}>{logoutBusy ? '退出中…' : '退出登录'}</button></div>
+    </section> : null}
+    {category === 'router' ? <>
+      <section className={styles.settingsGroup} data-testid="router-provider-settings">
+        <label className={styles.settingsSelectRow}>
+          <div><strong>Provider</strong><small>{inferenceProviderCopy.find((item) => item.id === hostSettings.inferenceProvider)?.description}</small></div>
+          <select data-testid="router-provider-select" value={hostSettings.inferenceProvider} onChange={(event) => onHostSetting('inferenceProvider', event.target.value as InferenceProvider)}>
+            {inferenceProviderCopy.map((provider) => {
+              const readiness = routerStatus?.providers.find((item) => item.id === provider.id);
+              const adapterReady = true;
+              const available = readiness?.available ?? provider.id === 'fabushi';
+              return <option key={provider.id} data-testid={`router-provider-${provider.id}`} value={provider.id} disabled={!adapterReady || !available}>{provider.label}</option>;
+            })}
+          </select>
+        </label>
+        <div className={styles.settingsInfoRow}><strong>账户状态</strong><small>{hostSettings.inferenceProvider === 'fabushi' ? '使用当前 Fabushi/Mahayana 账户。' : '凭据由本机系统加密存储或受控 Provider 会话提供。'}</small><em>{(selectedProviderReadiness?.available ?? hostSettings.inferenceProvider === 'fabushi') ? '就绪' : '未配置'}</em></div>
+        <form className={styles.settingsSecretRow} onSubmit={(event) => {
+          event.preventDefault();
+          if (!openRouterKey.trim() || openRouterSaving) return;
+          setOpenRouterSaving(true);
+          void onConfigureProviderSecret('openrouter', openRouterKey.trim()).then(() => setOpenRouterKey('')).catch(() => {}).finally(() => setOpenRouterSaving(false));
+        }}>
+          <div><strong>OpenRouter API key</strong><small>仅保存到操作系统加密保险库；不会回显或写入项目设置。</small></div>
+          <input data-testid="router-openrouter-key" type="password" autoComplete="off" value={openRouterKey} onChange={(event) => setOpenRouterKey(event.target.value)} placeholder="sk-or-…" />
+          <span className={styles.settingsSecretActions}><button data-testid="router-openrouter-save" type="submit" disabled={!openRouterKey.trim() || openRouterSaving}>{openRouterSaving ? '保存中…' : '保存'}</button>{routerStatus?.providers.find((item) => item.id === 'openrouter')?.authenticated ? <button data-testid="router-openrouter-remove" type="button" data-secondary="true" onClick={() => void onRemoveProviderSecret('openrouter')}>移除</button> : null}</span>
+        </form>
+        <form className={styles.settingsSecretRow} onSubmit={(event) => {
+          event.preventDefault();
+          if (!claudeKey.trim() || claudeSaving) return;
+          setClaudeSaving(true);
+          void onConfigureProviderSecret('claude-code', claudeKey.trim()).then(() => setClaudeKey('')).catch(() => {}).finally(() => setClaudeSaving(false));
+        }}>
+          <div><strong>Claude API key</strong><small>Claude Code 本机会话只用于诊断；API 推理凭据单独保存在系统加密保险库。</small></div>
+          <input data-testid="router-claude-key" type="password" autoComplete="off" value={claudeKey} onChange={(event) => setClaudeKey(event.target.value)} placeholder="sk-ant-…" />
+          <span className={styles.settingsSecretActions}><button data-testid="router-claude-save" type="submit" disabled={!claudeKey.trim() || claudeSaving}>{claudeSaving ? '保存中…' : '保存'}</button>{routerStatus?.providers.find((item) => item.id === 'claude-code')?.authenticated ? <button data-testid="router-claude-remove" type="button" data-secondary="true" onClick={() => void onRemoveProviderSecret('claude-code')}>移除</button> : null}</span>
+        </form>
+      </section>
+      <section className={styles.settingsGroup} data-testid="router-usage-settings">
+        <div className={styles.settingsInfoRow}><strong>请求</strong><small>最近 7 天由 {hostSettings.inferenceProvider} 返回用量的请求。</small><em>{selectedProviderUsage?.requests.toLocaleString() ?? '0'}</em></div>
+        <div className={styles.settingsInfoRow}><strong>输入 tokens</strong><small>提供方报告的输入总量。</small><em>{selectedProviderUsage?.inputTokens.toLocaleString() ?? '0'}</em></div>
+        <div className={styles.settingsInfoRow}><strong>输出 tokens</strong><small>提供方报告的输出总量。</small><em>{selectedProviderUsage?.outputTokens.toLocaleString() ?? '0'}</em></div>
+        <div className={styles.settingsInfoRow}><strong>缓存 tokens</strong><small>命中提供方 prompt cache 的输入。</small><em>{selectedProviderUsage?.cachedInputTokens.toLocaleString() ?? '0'}</em></div>
+        <div className={styles.settingsInfoRow}><strong>累计用量</strong><small>本机有界运行时计数；账单仍以提供方为准。</small><em>{selectedProviderUsage ? `${selectedProviderUsage.lifetimeTokens.toLocaleString()} tokens` : '0 tokens'}</em></div>
+        <div className={styles.settingsInfoRow}><strong>最后使用</strong><small>不会记录或上传 prompt 内容。</small><em>{selectedProviderUsage?.lastUsedAtMs ? new Date(selectedProviderUsage.lastUsedAtMs).toLocaleString() : '尚未使用'}</em></div>
+      </section>
+      <section className={styles.settingsGroup} data-testid="router-sandbox-settings">
+        <SettingsChoiceRow testId="router-sandbox-host" title="Fabushi Host" description="使用当前设备的 Mahayana capability-gated Host。" status="可用" selected={hostSettings.sandboxRuntime === 'host'} disabled={false} onSelect={() => onHostSetting('sandboxRuntime', 'host')} />
+        <SettingsChoiceRow testId="router-sandbox-local-docker" title="Local Docker" description="无网络、只读根目录、资源受限且 owner-bound 的本地容器执行环境。" status={routerStatus?.sandboxes.find((item) => item.id === 'local-docker')?.available ? '可用' : '需要 Docker 与固定摘要镜像'} selected={hostSettings.sandboxRuntime === 'local-docker'} disabled={!routerStatus?.sandboxes.find((item) => item.id === 'local-docker')?.available} onSelect={() => onHostSetting('sandboxRuntime', 'local-docker')} />
+      </section>
+    </> : null}
+    {category === 'usage' ? <section className={styles.settingsGroup} data-testid="usage-billing-settings">
+      <div className={styles.settingsInfoRow}><strong>最近 7 天</strong><small>所有 Provider 返回并由本机汇总的 token 用量。</small><em>{usageSummary?.totalTokens.toLocaleString() ?? '0'} tokens</em></div>
+      <div className={styles.settingsInfoRow}><strong>累计用量</strong><small>本机有界计数，仅用于使用趋势；账单以提供方为准。</small><em>{usageSummary?.lifetimeTokens?.toLocaleString() ?? '0'} tokens</em></div>
+      <div className={styles.settingsInfoRow}><strong>请求事件</strong><small>不会记录或上传 prompt 与回复正文。</small><em>{usageSummary?.events.toLocaleString() ?? '0'}</em></div>
+      {(usageSummary?.byProvider ?? []).map((item) => <div className={styles.settingsInfoRow} key={item.provider}><strong>{inferenceProviderCopy.find((provider) => provider.id === item.provider)?.label ?? item.provider}</strong><small>{item.requests.toLocaleString()} 次请求 · 输入 {item.inputTokens.toLocaleString()} · 输出 {item.outputTokens.toLocaleString()}</small><em>{item.totalTokens.toLocaleString()} tokens</em></div>)}
+    </section> : null}
+    {category === 'updates' ? <section className={styles.settingsGroup} data-testid="updates-settings">
+      <div className={styles.settingsInfoRow}><strong>当前状态</strong><small>从已签名的 GitHub Release 更新通道检查新版本。</small><em>{settingsUpdateStatus?.type ?? '读取中'}</em></div>
+      <label className={styles.settingsSelectRow}><div><strong>Release track</strong><small>稳定版、Beta 或 Alpha；切换不会跳过签名与完整性验证。</small></div><select data-testid="settings-update-track" value={updateTrack} onChange={(event) => { const track = event.target.value as 'stable' | 'beta' | 'alpha'; setUpdateTrack(track); runNativeSetting(invokeNativeDesktop<UpdateState & { track?: 'stable' | 'beta' | 'alpha' }>('setUpdateTrack', { track }), setSettingsUpdateStatus); }}><option value="stable">Stable</option><option value="beta">Beta</option><option value="alpha">Alpha</option></select></label>
+      <div className={styles.settingsActionRow}><div><strong>Check for updates</strong><small>立即刷新所选发布通道。</small></div><button type="button" data-testid="settings-check-updates" onClick={() => runNativeSetting(invokeNativeDesktop<UpdateState>('checkForUpdates'), setSettingsUpdateStatus)}>检查更新</button></div>
+      {settingsUpdateStatus && isActionableDesktopUpdateState(settingsUpdateStatus) ? <div className={styles.settingsActionRow}><div><strong>安装 {settingsUpdateStatus.version}</strong><small>下载完成后安全退出、安装并重新启动。</small></div><button type="button" data-testid="settings-install-update" onClick={() => void onInstallUpdate(settingsUpdateStatus)}>下载并安装</button></div> : null}
+      <div className={styles.settingsInfoRow}><strong>安装方式</strong><small>下载完成后从头像旁的更新入口安装并重启。</small><em>electron-updater</em></div>
+      <div className={styles.settingsInfoRow}><strong>发布完整性</strong><small>安装包与更新元数据必须来自同一 canonical main 构建。</small><em>强制验证</em></div>
+    </section> : null}
+    {category === 'notifications' ? <section className={styles.settingsGroup}>
+      <SettingsToggleRow testId="settings-toggle-message-preview" title="消息预览" description="在会话列表显示最近消息摘要。" checked={preferences.messagePreview} onChange={(value) => onPreference('messagePreview', value)} />
+      <SettingsPlannedRow title="桌面通知" description="按私聊、群组和频道分别控制系统通知。" />
+      <SettingsPlannedRow title="通知声音" description="选择提示音，并支持按会话覆盖。" />
+    </section> : null}
+    {category === 'privacy' ? <section className={styles.settingsGroup}>
+      <SettingsPlannedRow title="屏蔽用户" description="查看和管理已屏蔽 Actor。" />
+      <SettingsPlannedRow title="最后上线与在线状态" description="基于 Fabushi presence ACL 控制可见范围。" />
+      <SettingsPlannedRow title="两步验证与本地锁" description="接入统一账户安全策略后启用。" />
+    </section> : null}
+    {category === 'data' ? <section className={styles.settingsGroup}>
+      <SettingsToggleRow testId="settings-toggle-autoplay-media" title="自动播放视频" description="聊天内视频加载后自动播放；默认关闭以节省资源。" checked={preferences.autoPlayMedia} onChange={(value) => onPreference('autoPlayMedia', value)} />
+      <div className={styles.settingsInfoRow}><strong>本地消息数据库</strong><small>Rust SQLite 是权威本地存储；Renderer 只保存有界快速启动投影。</small><em>已启用</em></div>
+      <SettingsPlannedRow title="自动下载媒体" description="按网络类型、会话类型和文件大小设置策略。" />
+      <SettingsPlannedRow title="存储占用" description="按媒体类型查看缓存并执行安全清理。" />
+    </section> : null}
+    {category === 'chat' ? <section className={styles.settingsGroup}>
+      <SettingsToggleRow testId="settings-toggle-info-panel" title="显示资料侧栏" description="宽屏聊天时显示右侧资料栏；窄屏自动收起且不占布局宽度。" checked={preferences.showInfoPanel} onChange={(value) => onPreference('showInfoPanel', value)} />
+      <SettingsToggleRow testId="settings-toggle-enter-send" title="Enter 发送消息" description="关闭后使用 Command/Ctrl + Enter 发送，Enter 换行。" checked={preferences.enterToSend} onChange={(value) => onPreference('enterToSend', value)} />
+      <SettingsToggleRow testId="settings-toggle-reduced-motion" title="减少动态效果" description="关闭大部分界面过渡动画，适合低功耗或辅助功能场景。" checked={preferences.reducedMotion} onChange={(value) => onPreference('reducedMotion', value)} />
+      <SettingsPlannedRow title="聊天背景与气泡" description="主题、背景、字号与消息密度将在统一主题引擎中开放。" />
+    </section> : null}
+    {category === 'folders' ? <section className={styles.settingsGroup}><SettingsPlannedRow title="聊天文件夹" description="创建、排序并共享自定义会话过滤器。" /><SettingsPlannedRow title="归档行为" description="设置新消息到来时是否自动移出归档。" /></section> : null}
+    {category === 'devices' ? <section className={styles.settingsGroup}><SettingsPlannedRow title="活动会话" description="列出已授权设备、最近活动与远程退出操作。" /><SettingsPlannedRow title="新设备登录提醒" description="设备身份系统接入后开启安全提醒。" /></section> : null}
+    {category === 'calls' ? <section className={styles.settingsGroup}><div className={styles.settingsInfoRow}><strong>通话引擎</strong><small>Fabushi 自建信令 + WebRTC，支持语音、视频与屏幕共享。</small><em>可用</em></div><SettingsPlannedRow title="输入/输出设备" description="选择麦克风、摄像头和扬声器，并进行测试。" /><SettingsPlannedRow title="点对点与 TURN 策略" description="按隐私策略选择直连或中继。" /></section> : null}
+    {category === 'language' ? <section className={styles.settingsGroup}><div className={styles.settingsInfoRow}><strong>界面语言</strong><small>当前跟随系统语言。</small><em>跟随系统</em></div><SettingsPlannedRow title="翻译语言" description="为消息翻译和 AI 翻译指定首选语言。" /></section> : null}
+    {category === 'advanced' ? <section className={styles.settingsGroup}><div className={styles.settingsInfoRow}><strong>增量同步</strong><small>首轮最多 20 条；后续基于 cursor 每批最多 100 条，避免启动大同步。</small><em>已启用</em></div><div className={styles.settingsInfoRow}><strong>应用更新</strong><small>检测到 GitHub Release 新版本后可从头像旁云朵入口下载并安装。</small><em>自动检测</em></div><SettingsPlannedRow title="代理与网络" description="支持直连、系统代理与自建代理节点。" /></section> : null}
+    {category === 'fabushi' ? <section className={styles.settingsGroup}><div className={styles.settingsInfoRow}><strong>AI Bot / Agent</strong><small>联系人、Bot、群组与频道共用 Actor/Conversation 消息模型。</small><em>已融合</em></div><div className={styles.settingsInfoRow}><strong>Mini Apps</strong><small>从在线市场搜索、验证、安装，并在受控宿主容器运行。</small><em>已融合</em></div><SettingsPlannedRow title="AI 权限中心" description="统一管理电脑控制、敏感输入、Mini App 与 Bot 权限。" /></section> : null}
+  </div>;
+}
+
+function SectionPanel({ section, onInvoice, payment, onRefund, settings: _settings, ...miniAppProps }: { section: MessengerSection; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void; settings: SettingsNavigationProps } & MiniAppMarketplaceProps) {
   if (section === 'miniapps') return <MiniAppMarketplaceList {...miniAppProps} />;
   if (section === 'payments') return <div className={styles.sectionList}><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} compact /></div>;
   if (section === 'folders') return <div className={styles.sectionList}><div className={styles.panelHint}><Folder size={24} /><strong>聊天文件夹</strong><p>按联系人、Bot、群组、频道、未读和静音状态组织。</p></div></div>;
   if (section === 'calls') return <div className={styles.sectionList}><div className={styles.panelHint}><Phone size={24} /><strong>最近通话</strong><p>从会话顶部发起语音/视频。</p></div></div>;
+  if (section === 'settings') return <div className={styles.sectionList} aria-hidden="true" />;
   return <div className={styles.sectionList}><div className={styles.panelHint}><Settings size={24} /><strong>{sectionTitle(section)}</strong><p>该功能入口已合并进统一 Messenger。</p></div></div>;
 }
 
-function FeatureWorkspace({ section, onInvoice, payment, onRefund, ...miniAppProps }: { section: MessengerSection; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void } & MiniAppMarketplaceProps) {
+function FeatureWorkspace({ section, onInvoice, payment, onRefund, settings: _settings, ...miniAppProps }: { section: MessengerSection; onInvoice: () => void; payment: PaymentUiState; onRefund: (orderId: string) => void; settings: SettingsWorkspaceProps } & MiniAppMarketplaceProps) {
   if (section === 'miniapps') return <MiniAppMarketplaceWorkspace {...miniAppProps} />;
   if (section === 'payments') return <div className={styles.featureWorkspace}><WalletCards size={54} /><h2>Fabushi Pay</h2><p>自建余额、Invoice、Order、退款与外部 settlement 都由 Rust 账本结算。</p><PaymentOverview payment={payment} onInvoice={onInvoice} onRefund={onRefund} /></div>;
   if (section === 'calls') return <div className={styles.featureWorkspace}><Phone size={54} /><h2>通话</h2><p>本机媒体已接通，Rust realtime 已具备一对一/群组通话信令状态。</p></div>;
+  if (section === 'settings') return <div className={styles.featureWorkspace} aria-hidden="true" />;
   return <div className={styles.featureWorkspace}><MessageCircle size={54} /><h2>{sectionTitle(section)}</h2><p>联系人、Bot、群组和频道正在统一到同一个 Fabushi Actor/Conversation 模型。</p></div>;
 }

@@ -1,10 +1,16 @@
 const { app } = require('electron');
 const { spawn } = require('node:child_process');
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline');
 
 const PRODUCTION_PRODUCT_API_BASE_URL = 'https://api.ombhrum.com';
 const DEVELOPMENT_PRODUCT_API_BASE_URL = 'https://mahayana-platform.bhrumom.workers.dev';
+const INFERENCE_PROVIDERS = new Set(['fabushi', 'codex', 'claude-code', 'openrouter']);
+const SANDBOX_RUNTIMES = new Set(['host', 'local-docker']);
+const DEFAULT_DOCKER_IMAGE = 'mcr.microsoft.com/devcontainers/base:ubuntu24.04@sha256:c5cc2b45afe06a1df3aba17e58ba0dc4a02b999493198dab37dd0ccd4e2b0705';
 
 function productApiBaseUrl(appImpl = app, env = process.env) {
   const configured = env.MAHAYANA_API_BASE_URL?.trim();
@@ -18,6 +24,25 @@ function productApiBaseUrl(appImpl = app, env = process.env) {
   return appImpl.isPackaged ? PRODUCTION_PRODUCT_API_BASE_URL : DEVELOPMENT_PRODUCT_API_BASE_URL;
 }
 
+function persistedInferenceProvider(appImpl = app, fsImpl = fs) {
+  return persistedRouterSettings(appImpl, fsImpl).inferenceProvider;
+}
+
+function persistedRouterSettings(appImpl = app, fsImpl = fs) {
+  try {
+    const settingsPath = path.join(appImpl.getPath('userData'), 'feature-host', 'settings.json');
+    const parsed = JSON.parse(fsImpl.readFileSync(settingsPath, 'utf8'));
+    const provider = String(parsed?.inferenceProvider ?? 'fabushi');
+    const sandboxRuntime = String(parsed?.sandboxRuntime ?? 'host');
+    return {
+      inferenceProvider: INFERENCE_PROVIDERS.has(provider) ? provider : 'fabushi',
+      sandboxRuntime: SANDBOX_RUNTIMES.has(sandboxRuntime) ? sandboxRuntime : 'host',
+    };
+  } catch {
+    return { inferenceProvider: 'fabushi', sandboxRuntime: 'host' };
+  }
+}
+
 class MahayanaHostProcess {
   constructor(options = {}) {
     this.app = options.app ?? app;
@@ -27,6 +52,8 @@ class MahayanaHostProcess {
     this.platform = options.platform ?? process.platform;
     this.resourcesPath = options.resourcesPath ?? process.resourcesPath;
     this.now = options.now ?? Date.now;
+    this.fs = options.fs ?? fs;
+    this.providerEnvironment = options.providerEnvironment ?? (() => ({}));
 
     this.child = null;
     this.currentGeneration = 0;
@@ -37,6 +64,12 @@ class MahayanaHostProcess {
     this.startedAt = null;
     this.lastExit = null;
     this.unexpectedExitCount = 0;
+    this.lifecycleSequence = 0;
+    this.lastLifecycleEvent = null;
+    this.activeInferenceProvider = 'fabushi';
+    this.activeSandboxRuntime = 'host';
+    this.events = new EventEmitter();
+    this.events.setMaxListeners(32);
   }
 
   executablePath() {
@@ -58,7 +91,34 @@ class MahayanaHostProcess {
       startedAt: this.startedAt,
       lastExit: this.lastExit ? { ...this.lastExit } : null,
       unexpectedExitCount: this.unexpectedExitCount,
+      lifecycleSequence: this.lifecycleSequence,
+      lastLifecycleEvent: this.lastLifecycleEvent ? { ...this.lastLifecycleEvent } : null,
+      inferenceProvider: this.activeInferenceProvider,
+      sandboxRuntime: this.activeSandboxRuntime,
     });
+  }
+
+  onLifecycle(listener) {
+    if (typeof listener !== 'function') throw new TypeError('Mahayana host lifecycle listener must be a function.');
+    this.events.on('lifecycle', listener);
+    return () => this.events.off('lifecycle', listener);
+  }
+
+  emitLifecycle(type, detail = {}) {
+    const event = Object.freeze({
+      type,
+      sequence: ++this.lifecycleSequence,
+      at: this.now(),
+      state: this.state,
+      generation: this.currentGeneration,
+      pid: this.child?.pid ?? null,
+      pending: this.pending.size,
+      unexpectedExitCount: this.unexpectedExitCount,
+      ...detail,
+    });
+    this.lastLifecycleEvent = event;
+    this.events.emit('lifecycle', event);
+    return event;
   }
 
   start() {
@@ -66,21 +126,52 @@ class MahayanaHostProcess {
     if (this.child) return this.child;
 
     const generation = this.currentGeneration + 1;
-    const child = this.spawn(this.executablePath(), [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...this.env,
-        MAHAYANA_API_BASE_URL: productApiBaseUrl(this.app, this.env),
-        MAHAYANA_AUTH_STORAGE_NAMESPACE: this.env.MAHAYANA_AUTH_STORAGE_NAMESPACE || 'fabushi-desktop-v2',
-        FABUSHI_APP_DATA: this.app.getPath('userData'),
-      },
-      windowsHide: true,
-    });
-
+    const { inferenceProvider, sandboxRuntime } = persistedRouterSettings(this.app, this.fs);
+    const providerEnvironment = this.providerEnvironment(inferenceProvider) ?? {};
+    this.activeInferenceProvider = inferenceProvider;
+    this.activeSandboxRuntime = sandboxRuntime;
     this.currentGeneration = generation;
+    this.state = 'starting';
+    this.emitLifecycle('starting');
+
+    let child;
+    try {
+      child = this.spawn(this.executablePath(), [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...this.env,
+          ANTHROPIC_API_KEY: '',
+          OPENROUTER_API_KEY: '',
+          MAHAYANA_MODEL_BEARER_TOKEN: '',
+          MAHAYANA_API_BASE_URL: productApiBaseUrl(this.app, this.env),
+          MAHAYANA_AUTH_STORAGE_NAMESPACE: this.env.MAHAYANA_AUTH_STORAGE_NAMESPACE || 'fabushi-desktop-v2',
+          FABUSHI_APP_DATA: this.app.getPath('userData'),
+          MAHAYANA_AGENT_ENGINE: inferenceProvider === 'codex' ? 'codex' : '',
+          MAHAYANA_USE_CODEX_ACCOUNT: inferenceProvider === 'codex' ? '1' : '0',
+          MAHAYANA_INFERENCE_PROVIDER: inferenceProvider,
+          MAHAYANA_SANDBOX_RUNTIME: sandboxRuntime,
+          MAHAYANA_DOCKER_BIN: this.env.MAHAYANA_DOCKER_BIN || this.env.DOCKER_PATH || 'docker',
+          MAHAYANA_DOCKER_IMAGE: this.env.MAHAYANA_DOCKER_IMAGE || DEFAULT_DOCKER_IMAGE,
+          MAHAYANA_CODEX_HOME: inferenceProvider === 'codex'
+            ? (this.env.CODEX_HOME || path.join(os.homedir(), '.codex'))
+            : '',
+          ...providerEnvironment,
+        },
+        windowsHide: true,
+      });
+    } catch (error) {
+      this.state = 'stopped';
+      this.startedAt = null;
+      this.unexpectedExitCount += 1;
+      this.lastExit = Object.freeze({ error: error instanceof Error ? error.message : String(error), at: this.now() });
+      this.emitLifecycle('spawn-failed', { error: this.lastExit.error });
+      throw error;
+    }
+
     this.child = child;
     this.state = 'running';
     this.startedAt = this.now();
+    this.emitLifecycle('running');
 
     const lines = this.readline.createInterface({ input: child.stdout });
     lines.on('line', (line) => {
@@ -89,6 +180,7 @@ class MahayanaHostProcess {
         message = JSON.parse(line);
       } catch (error) {
         this.rejectGeneration(generation, new Error(`Invalid Mahayana host response: ${error}`));
+        this.emitLifecycle('protocol-error', { error: error instanceof Error ? error.message : String(error) });
         return;
       }
       const key = String(message.id ?? '');
@@ -125,6 +217,7 @@ class MahayanaHostProcess {
         this.state = 'stopped';
         this.unexpectedExitCount += 1;
         this.lastExit = Object.freeze({ ...metadata, at: this.now() });
+        this.emitLifecycle('stopped', { ...metadata, recoverable: true });
       }
     }
     this.rejectGeneration(generation, error);
@@ -145,6 +238,7 @@ class MahayanaHostProcess {
         const pending = this.pending.get(key);
         if (!pending || pending.generation !== generation) return;
         this.pending.delete(key);
+        this.emitLifecycle('request-timeout', { method: String(method), requestId: id });
         reject(new Error(`Mahayana host request timed out: ${method}`));
       }, timeoutMs);
       timer.unref?.();
@@ -176,10 +270,11 @@ class MahayanaHostProcess {
     if (this.closed) throw new Error('Mahayana host is closed.');
     const child = this.child;
     const generation = this.currentGeneration;
+    this.state = 'restarting';
+    this.emitLifecycle('restarting', { reason: String(reason) });
     if (child) {
       this.child = null;
       this.startedAt = null;
-      this.state = 'stopped';
       this.rejectGeneration(generation, new Error(`Mahayana host restarted: ${reason}`));
       child.kill();
     }
@@ -195,13 +290,18 @@ class MahayanaHostProcess {
     this.child = null;
     this.startedAt = null;
     this.rejectGeneration(generation, new Error('Mahayana host closed.'));
+    this.emitLifecycle('closed');
     child?.kill();
+    this.events.removeAllListeners();
   }
 }
 
 module.exports = {
   DEVELOPMENT_PRODUCT_API_BASE_URL,
+  DEFAULT_DOCKER_IMAGE,
   MahayanaHostProcess,
   PRODUCTION_PRODUCT_API_BASE_URL,
   productApiBaseUrl,
+  persistedInferenceProvider,
+  persistedRouterSettings,
 };

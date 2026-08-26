@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,7 +109,9 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await openMessenger(page);
 
     const profileNavigation = page.getByTestId('profile-navigation-trigger');
-    await expect(profileNavigation.locator('[data-engine="fabushi-motion-v2"]').first()).toBeVisible();
+    const profileMark = profileNavigation.locator('[data-engine="fabushi-motion-v2"]').first();
+    await expect(profileMark).toBeVisible();
+    await expect(profileMark).toHaveAttribute('data-motion-tier', 'ambient');
     await profileNavigation.click();
     await expect(page.getByTestId('profile-navigation-menu')).toBeVisible();
     for (const label of [
@@ -141,7 +143,12 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await expect(sidebar).not.toHaveAttribute('data-collapsed', 'true');
 
     await page.getByTestId('global-search-trigger').click();
-    await expect(page.getByTestId('global-search-surface')).toBeVisible();
+    const searchSurface = page.getByTestId('global-search-surface');
+    await expect(searchSurface).toBeVisible();
+    const searchSurfaceBox = await searchSurface.boundingBox();
+    const searchSidebarBox = await sidebar.boundingBox();
+    expect(searchSurfaceBox?.x ?? 9999).toBeGreaterThanOrEqual(searchSidebarBox?.x ?? 0);
+    expect((searchSurfaceBox?.x ?? 0) + (searchSurfaceBox?.width ?? 9999)).toBeLessThanOrEqual((searchSidebarBox?.x ?? 0) + (searchSidebarBox?.width ?? 0) + 1);
     for (const category of ['chats', 'channels', 'apps', 'posts', 'images', 'videos', 'downloads', 'links', 'files', 'music', 'audio']) {
       await expect(page.getByTestId(`global-search-tab-${category}`)).toBeVisible();
     }
@@ -162,9 +169,238 @@ test('desktop Messenger unifies Telegram-class navigation with Fabushi agent ide
     await expect(page.getByTitle('开启通知')).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
-    await expect(page.getByPlaceholder('在当前会话中搜索')).toBeVisible();
+    await expect(page.getByTestId('conversation-search-scope')).toContainText('此聊天');
+    await expect(page.getByTestId('global-search-input')).toBeFocused();
+    await expect(page.getByTestId('global-search-surface')).toHaveAttribute('data-scoped', 'true');
   } finally {
     await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+
+test('Router settings modal binds providers, usage, sandbox, preferences and fast-start projection', async ({}, testInfo) => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-settings-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    const cachedLegacyPeer = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
+    await expect(cachedLegacyPeer).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      return Boolean(projection?.legacyConversations?.some((item: { id?: string }) => item.id === 'codex:agent:assistant'));
+    }), { timeout: 5_000 }).toBe(true);
+
+    await page.getByTestId('profile-navigation-trigger').click();
+    await page.getByTitle('设置', { exact: true }).click();
+    await expect(page.getByTestId('settings-modal-backdrop')).toBeVisible();
+    await expect(page.getByTestId('telegram-settings-navigation')).toBeVisible();
+    await expect(page.getByTestId('telegram-settings-workspace')).toBeVisible();
+
+    for (const category of ['account', 'router', 'usage', 'updates']) {
+      await expect(page.getByTestId(`settings-category-${category}`)).toBeVisible();
+    }
+
+    await page.getByTestId('settings-category-router').click();
+    await expect(page.getByTestId('router-provider-settings')).toBeVisible();
+    await expect(page.getByTestId('router-provider-select')).toHaveValue('fabushi');
+    // Native <option> disabled-state accessibility differs across Electron's
+    // platform builds. The DOM attribute is the cross-platform product contract.
+    await expect(page.getByTestId('router-provider-claude-code')).toHaveAttribute('disabled', '');
+    await expect(page.getByTestId('router-provider-openrouter')).toHaveAttribute('disabled', '');
+    await expect(page.getByTestId('router-usage-settings')).toContainText('tokens');
+    await expect(page.getByTestId('router-sandbox-host')).toHaveAttribute('data-selected', 'true');
+    const localDockerSandbox = page.getByTestId('router-sandbox-local-docker');
+    const localDockerAvailable = (await localDockerSandbox.textContent())?.includes('可用') ?? false;
+    expect(await localDockerSandbox.getAttribute('disabled')).toBe(localDockerAvailable ? null : '');
+    await testInfo.attach('router-settings-modal', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+
+    await page.getByTestId('settings-category-usage').click();
+    await expect(page.getByTestId('usage-billing-settings')).toContainText('最近 7 天');
+    await page.getByTestId('settings-category-updates').click();
+    await expect(page.getByTestId('updates-settings')).toContainText('electron-updater');
+    await expect(page.getByTestId('settings-update-track')).toHaveValue('stable');
+
+    await page.getByTestId('settings-category-account').click();
+    await expect(page.getByTestId('settings-theme')).toBeVisible();
+    await expect(page.getByTestId('settings-local-tool-permission')).toBeVisible();
+    await expect(page.getByTestId('settings-time-zone')).toBeVisible();
+    await expect(page.getByText('Enter 发送消息')).toBeVisible();
+    await expect(page.getByText('显示资料侧栏')).toBeVisible();
+    await expect(page.getByText('减少动态效果')).toBeVisible();
+    await page.getByTestId('settings-toggle-reduced-motion').check();
+    await expect(page.getByTestId('messenger-workspace')).toHaveAttribute('data-reduce-motion', 'true');
+
+    const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('fabushi.desktop.telegram-settings.v1') || '{}'));
+    expect(preferences.reducedMotion).toBe(true);
+
+    await page.getByTestId('settings-close').click();
+    await expect(page.getByTestId('settings-modal-backdrop')).toHaveCount(0);
+    await page.getByTestId('profile-navigation-trigger').click();
+    await page.getByTitle('聊天', { exact: true }).click();
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建频道' }).click();
+    await page.getByPlaceholder('频道名称').fill('本地优先投影验收');
+    await page.getByPlaceholder('频道简介').fill('Telegram-style local-first');
+    await page.getByRole('button', { name: '创建频道' }).click();
+    const channelPeer = page.locator('[data-testid^="peer-selfhosted:channel:"]').filter({ hasText: '本地优先投影验收' }).first();
+    await expect(channelPeer).toBeVisible();
+    await channelPeer.click();
+
+    await expect.poll(async () => page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      return Boolean(projection?.activePeerKey?.startsWith('selfhosted:') && projection?.selfConversations?.some((item: { title?: string }) => item.title === '本地优先投影验收'));
+    }), { timeout: 5_000 }).toBe(true);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('messenger-workspace')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('messenger-workspace')).toHaveAttribute('data-testid-ready-projection', 'true');
+    await expect(page.getByText('本地优先投影验收').first()).toBeVisible();
+    await expect(page.getByTestId('peer-legacy:conversation:codex:agent:assistant')).toBeVisible();
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+
+test('account settings logs out and clears account-scoped fast-start caches', async () => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-logout-e2e-'));
+  const app = await launchDesktopApp(appDataDir);
+
+  try {
+    const page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    const assistant = page.getByTestId('peer-legacy:conversation:codex:agent:assistant');
+    await expect(assistant).toBeVisible();
+    await assistant.click();
+    await page.getByTestId('messenger-input').fill('退出登录缓存清理验收');
+    await page.getByTestId('messenger-send').click();
+    await expect(page.getByText('收到：退出登录缓存清理验收')).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => {
+      const journal = JSON.parse(localStorage.getItem('fabushi.desktop.mahayana-conversation-journal.v1') || 'null');
+      return Object.keys(journal?.conversations ?? {}).length;
+    })).toBeGreaterThan(0);
+
+    await page.evaluate(() => {
+      localStorage.setItem('fabushi.desktop.messenger-projection.v1', JSON.stringify({ version: 1, selfActors: [], selfConversations: [], selfMessages: {}, savedAtMs: Date.now() }));
+      localStorage.setItem('fabushi.desktop.messenger-drafts.v2', JSON.stringify({ sample: 'private draft' }));
+    });
+
+    await page.getByTestId('profile-navigation-trigger').click();
+    await page.getByTitle('设置', { exact: true }).click();
+    await page.getByTestId('settings-category-account').click();
+    const logout = page.getByTestId('settings-logout');
+    await expect(logout).toBeVisible();
+    await expect(logout).toHaveText('退出登录');
+    await logout.click();
+
+    await expect(page.getByTestId('login-gate')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('messenger-workspace')).toHaveCount(0);
+    const accountCaches = await page.evaluate(() => [
+      localStorage.getItem('fabushi.desktop.messenger-projection.v1'),
+      localStorage.getItem('fabushi.desktop.messenger-drafts.v2'),
+      localStorage.getItem('fabushi.desktop.mahayana-conversation-journal.v1'),
+    ]);
+    expect(accountCaches).toEqual([null, null, null]);
+
+    await page.getByTestId('browser-login-start').click();
+    await expect(page.getByTestId('messenger-workspace')).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await app.close();
+    await rm(appDataDir, { recursive: true, force: true });
+  }
+});
+
+test('returning-user local-first conversation list is interactive within the one-second target', async ({}, testInfo) => {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-messenger-startup-perf-e2e-'));
+  let app = await launchDesktopApp(appDataDir);
+
+  try {
+    let page = await app.firstWindow();
+    await completeBrowserLogin(page);
+    await openMessenger(page);
+
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建频道' }).click();
+    await page.getByPlaceholder('频道名称').fill('首屏性能验收');
+    await page.getByPlaceholder('频道简介').fill('local-first startup timing');
+    await page.getByRole('button', { name: '创建频道' }).click();
+    const seededPeer = page.locator('[data-testid^="peer-selfhosted:channel:"]').filter({ hasText: '首屏性能验收' }).first();
+    await expect(seededPeer).toBeVisible();
+    await seededPeer.click();
+    await expect.poll(async () => page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      return Boolean(projection?.activePeerKey?.startsWith('selfhosted:') && projection?.selfConversations?.some((item: { title?: string }) => item.title === '首屏性能验收'));
+    }), { timeout: 5_000 }).toBe(true);
+    await expect.poll(async () => page.evaluate(async () => {
+      const bridge = (window as unknown as {
+        fabushiNative?: { invoke<T>(method: string, params?: Record<string, unknown>): Promise<T> };
+      }).fabushiNative;
+      if (!bridge) return false;
+      const projection = await bridge.invoke<{ activePeerKey?: string; selfConversations?: Array<{ title?: string }> } | null>(
+        'readClientPersistence',
+        { key: 'fabushi.desktop.messenger-projection.v1' },
+      );
+      return Boolean(projection?.activePeerKey?.startsWith('selfhosted:')
+        && projection?.selfConversations?.some((item) => item.title === '首屏性能验收'));
+    }), { timeout: 5_000 }).toBe(true);
+
+    await app.close();
+
+    const launchStartedAtMs = Date.now();
+    app = await launchDesktopApp(appDataDir);
+    page = await app.firstWindow();
+    const workspace = page.getByTestId('messenger-workspace');
+    const projectedPeer = page.locator('[data-testid^="peer-selfhosted:channel:"]').filter({ hasText: '首屏性能验收' }).first();
+
+    await expect(workspace).toBeVisible({ timeout: 5_000 });
+    await expect(workspace).toHaveAttribute('data-testid-ready-projection', 'true');
+    await expect.poll(async () => page.evaluate(() => {
+      const projection = JSON.parse(localStorage.getItem('fabushi.desktop.messenger-projection.v1') || 'null');
+      return Boolean(projection?.selfConversations?.some((item: { title?: string }) => item.title === '首屏性能验收'));
+    }), { timeout: 2_000 }).toBe(true);
+    await expect(projectedPeer).toBeVisible({ timeout: 5_000 });
+
+    const rendererToConversationListMs = await page.evaluate(() => performance.now());
+    const launchToConversationListMs = Date.now() - launchStartedAtMs;
+    await projectedPeer.click();
+    await expect(page.getByTestId('messenger-input')).toBeVisible({ timeout: 2_000 });
+    const rendererToComposerInteractiveMs = await page.evaluate(() => performance.now());
+
+    // The async account-status poll must not replace the locally restored Messenger
+    // with the login shell after first paint. Waiting longer than the retry cadence
+    // turns the previous transient failure into an explicit returning-session gate.
+    await page.waitForTimeout(1_100);
+    await expect(page.getByTestId('login-gate')).toHaveCount(0);
+    await expect(workspace).toBeVisible();
+    await expect(projectedPeer).toBeVisible();
+
+    const evidence = {
+      targetMs: 1_000,
+      metric: 'renderer-navigation-to-cached-conversation-list-interactive',
+      rendererToConversationListMs: Math.round(rendererToConversationListMs * 100) / 100,
+      rendererToComposerInteractiveMs: Math.round(rendererToComposerInteractiveMs * 100) / 100,
+      launchToConversationListMs,
+      packaged: Boolean(packagedExecutable),
+      platform: process.platform,
+      passed: rendererToConversationListMs < 1_000,
+    };
+    const evidenceJson = `${JSON.stringify(evidence, null, 2)}\n`;
+    console.log(`[startup-performance] ${JSON.stringify(evidence)}`);
+    await writeFile(testInfo.outputPath('startup-performance.json'), evidenceJson);
+    await testInfo.attach('startup-performance', { body: Buffer.from(evidenceJson), contentType: 'application/json' });
+
+    expect(
+      rendererToConversationListMs,
+      `cached conversation list must become interactive within 1000ms; measured ${rendererToConversationListMs.toFixed(2)}ms`,
+    ).toBeLessThan(1_000);
+  } finally {
+    await app.close().catch(() => undefined);
     await rm(appDataDir, { recursive: true, force: true });
   }
 });
@@ -178,7 +414,8 @@ test('desktop Messenger creates a self-hosted channel and executes message mutat
     await completeBrowserLogin(page);
     await openMessenger(page);
 
-    await page.getByRole('button', { name: '新建频道' }).first().click();
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建频道' }).click();
     await expect(page.getByText('Fabushi 自建广播会话')).toBeVisible();
     await page.getByPlaceholder('频道名称').fill('自建频道验收');
     await page.getByPlaceholder('频道简介').fill('不依赖 Telegram API');
@@ -232,7 +469,8 @@ test('desktop Messenger creates a real Bot collaboration group and sends into it
     await completeBrowserLogin(page);
     await openMessenger(page);
 
-    await page.getByRole('button', { name: '新建群组' }).first().click();
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: '新建群组' }).click();
     await expect(page.getByText('现有 AI 群组 Host 会执行 Bot 多轮协作')).toBeVisible();
     await page.getByPlaceholder('群组名称').fill('人机协作验收群');
 
@@ -311,13 +549,16 @@ test('desktop Messenger persists per-peer drafts and performs real in-conversati
     await expect(page.getByText(marker, { exact: true })).toBeVisible();
 
     await page.getByTitle('搜索当前会话').click();
-    const search = page.getByTestId('conversation-search-input');
+    await expect(page.getByTestId('conversation-search-scope')).toContainText('此聊天');
+    const search = page.getByTestId('global-search-input');
     await search.fill(marker);
-    await expect(page.getByText(marker, { exact: true })).toHaveCount(1);
-    await expect(page.getByText('收到：' + marker, { exact: true })).toHaveCount(1);
+    const scopedSurface = page.getByTestId('global-search-surface');
+    await expect(scopedSurface).toContainText(marker);
+    await expect(page.getByTestId('global-search-tab-posts')).toHaveText('消息');
+    await expect(page.getByTestId('global-search-tab-chats')).toHaveCount(0);
 
     await search.fill('绝对不存在的会话内搜索结果-20260822');
-    await expect(page.getByTestId('message-search-empty')).toBeVisible();
+    await expect(scopedSurface.getByText('当前已加载内容中没有匹配结果')).toBeVisible();
   } finally {
     await app.close();
     await rm(appDataDir, { recursive: true, force: true });
