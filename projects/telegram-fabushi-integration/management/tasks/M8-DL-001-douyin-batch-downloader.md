@@ -4,69 +4,101 @@
 - **Project Key**: `TFI`
 - **Task ID**: `M8-DL-001`
 - **Stage**: `M8 Mini Apps`
-- **Status**: `IMPLEMENTED`
+- **Status**: `TESTING`
 - **Started**: `2026-08-26`
+- **Updated**: `2026-08-26`
 - **Branch**: `feat/tfi-douyin-batch-downloader-miniapp`
+- **Canonical PR**: `#2141`
 - **Source requirement**: `../../source/2026-08-26-douyin-batch-downloader-miniapp.md`
 
 ## Objective
 
-把已验证的抖音公开作品 clean `play_addr` 下载方法产品化为 Fabushi 官方 Mini App，并复用现有 Marketplace、Bot identity 与统一下载后端，支持批量粘贴和下载。
+把已经验证的抖音公开作品 clean playback 下载能力从平台内置后端拆出，交付为 **独立、可安装、可迁移的 Fabushi Mini App**：Marketplace 只负责发现/release，Mahayana Host 安装并运行 package；同一 Mini App 同时具有 GUI、MCP、CLI 和默认 Bot 路由能力。
 
-## Implementation
+## Current implementation
 
-- `ai-backend/src/douyin_downloader.js`
-  - Douyin URL/分享文本/作品 ID 解析；
-  - 短链有限跳转且每一跳只允许 Douyin Host；
-  - Web detail API + public share page fallback；
-  - 最高 bitrate `play_addr` 选择，明确不读取 `download_addr` 作为 clean source；
-  - 最多 50 条、并发 4 的批量解析；
-  - allowlist + HTTPS + Range 的媒体代理；
-  - 批量 GUI；
-  - 官方 `douyin-batch-downloader` Mini App manifest、默认 Bot 与 commands。
-- `ai-backend/src/miniapp_marketplace_http.js`
-  - 将该 manifest 加入 Marketplace seed；
-  - 注册 downloader REST/UI/media routes。
-- `ai-backend/test/douyin_downloader.test.js`
-  - jingxuan/canonical/numeric ID；
-  - highest-bitrate clean source；
-  - short-link redirect；
-  - Marketplace discovery；
-  - batch partial failure isolation。
+### Portable package
 
-## Security / compliance boundary
+- `marketplace/packages/douyin-batch-downloader/1.0.0/app.tar.gz`
+  - versioned install artifact；
+  - expected SHA-256: `9b7aa85b751755cc776a884afba2927ceb661d7580c8b135826bc8760cc6ba75`；
+  - Marketplace release metadata 使用 immutable GitHub source + digest/size。
+- `marketplace/packages/douyin-batch-downloader/1.0.0/fabushi-miniapp.json`
+  - protocol `fabushi.miniapp.package.v1`；
+  - 声明 `GUI / MCP / CLI / 本地` modes；
+  - 入口 `index.html`。
 
-- 不读取用户常用浏览器 Cookie，不持久化登录凭证。
-- 不绕过 DRM、付费墙或私密访问控制。
-- 媒体代理不能转发任意互联网 URL；仅允许抖音/字节 CDN HTTPS 域名。
-- UI 明示仅下载用户拥有、获授权或法律允许保存的公开内容。
+### Mini App descriptors
+
+- `.agents/plugins/plugins/douyin-batch-downloader/.mahayana/plugin.json`
+  - CLI runtime：`./runtime/cli/fabushi-plugin-cli --plugin douyin-batch-downloader`；
+  - shared WASM runtime descriptor；
+  - tools: `resolve`, `download`。
+- `.agents/plugins/plugins/douyin-batch-downloader/.mcp.json`
+  - 本地 stdio MCP：`fabushi-plugin-cli --plugin douyin-batch-downloader mcp-serve`。
+- `.agents/plugins/plugins/douyin-batch-downloader/.codex-plugin/plugin.json`
+  - 插件身份/分发元数据。
+
+### Local runtime
+
+- `third_party/mahayana/mahayana-rs/providers/official-miniapps/src/douyin_downloader.rs`
+  - 批量输入、去重、限速、重试；
+  - Douyin HTTPS source allowlist；
+  - Douyin/ByteDance media HTTPS allowlist；
+  - clean playback candidate 选择并排除 `playwm` / `watermark=1`；
+  - 安全文件名、最大文件大小、临时 `.part` + atomic finalize；
+  - 下载完成输出 bytes / SHA-256 / batch `manifest.json`；
+  - 可选 Cookie 仅允许显式参数、cookie file 或 `DOUYIN_COOKIE`，不读取浏览器 Cookie。
+
+### Platform decoupling
+
+Downloader 专属 `ai-backend/src/douyin_downloader.js` 和对应 backend test 已删除；`ai-backend/src/miniapp_marketplace_http.js` 已恢复为纯通用 Marketplace router，不再挂载 Downloader 专属 `/resolve`、`/batch`、`/media` routes。平台后端只通过通用 Marketplace catalog/release/install contract 认识该应用。
+
+这意味着迁移单位是：**Mini App package + descriptor + compatible Mahayana shared runtime**。它不依赖 Fabushi ai-backend 的应用专属实现，可以在其它兼容 Fabushi/Mahayana Host 上重新安装同一 immutable release。它不是脱离 Mahayana Host 即可独立启动的完全自包含二进制，这一点不做虚假承诺。
+
+## Architecture / install flow
+
+`Marketplace search -> mahayana.external-release.v1 -> immutable app.tar.gz + SHA-256 -> Feature Host / Plugin Installer -> local GUI / CLI / MCP -> shared official-miniapps Rust runtime`
+
+Bot/自然语言和 slash command 应路由到同一 Mini App tool surface，而不是建立第二份解析器。
+
+## Governance correction
+
+并行实现 PR `#2136` 已作为 feeder 实现合并进本任务 feature branch，吸收其 portable package、MCP/CLI descriptor 和 Rust runtime。它曾错误创建重复 `FAB-P0009 / DBD` 项目；本任务已删除全部 `projects/douyin-batch-downloader-miniapp/**` 记录，并将 `projects/PORTFOLIO.json` 恢复到 canonical main 的 P0001-P0008 / `next_sequence=9`。本工作唯一权威项目保持 `FAB-P0001 / TFI`。
 
 ## Open-source-first decision
 
-调研 `yt-dlp` extractor 分层和现有公开 Douyin parser 的 `aweme_id -> metadata -> play_addr` 路径。复用其架构思想，不复制第三方源码；采用 Fabushi 自有 manifest、URL allowlist、批量限流和错误模型。
+继续采用 `yt-dlp` extractor 分层思想和公开 Douyin parser 的 public playback-source思路，不复制第三方源码。Fabushi 自己负责 package/release、runtime、MCP/CLI、allowlist、批量执行和错误模型。
 
 ## Acceptance criteria
 
-1. Marketplace 搜索“抖音”可以发现 `douyin-batch-downloader`。
-2. 用户提供的 `jingxuan?modal_id=7491613333141900602` 结构可正确提取 ID。
-3. clean stream 只来自 `bit_rate.play_addr` / `video.play_addr`，测试明确排除 `download_addr`。
-4. 单次最多 50 条、并发受控、逐条返回结果。
-5. 下载代理支持 Range 且具有严格 SSRF Host allowlist。
-6. GUI 支持多行粘贴、批量解析、逐项下载和下载全部成功项。
-7. current-head `npm run check` + `npm test` 通过。
-8. PR 合并 canonical `main` 后，通过 exact-main packaged/E2E 和 Release gate 才能 COMPLETED。
+1. Marketplace 可以发现 `douyin-batch-downloader`，并返回 package install release。
+2. package SHA-256/size 与 release metadata 一致，Mahayana installer 可验证。
+3. package manifest 声明 GUI/MCP/CLI/local modes；`.mcp.json` 与 `.mahayana/plugin.json` 客观存在且指向同一 runtime。
+4. `ai-backend` 不包含 Downloader 专属 runtime/router。
+5. Rust runtime `resolve` / `download` contract tests 通过，且 source/media allowlist、安全文件名、批量输入等单测通过。
+6. `cargo fmt --check`、Rust test/build、Marketplace search/install test、package digest 检查全部 current-head CI 通过。
+7. duplicate project/fake P0009 不存在；`projects/PORTFOLIO.json` 与 canonical main identity policy 一致。
+8. canonical PR #2141 通过 protected main gate 并从 main 回读验证。
+9. exact-main packaged E2E 保留 required screenshots/video/trace/reports，随后发布指向 accepted main SHA 的 GitHub Release，才可 `COMPLETED`。
 
-## Verification / evidence
+## Verification / evidence so far
 
-- Implementation commits: `fd13a64b8f3e4dde58453df812f4787d5c3020eb`, `3167cceb46f1d6038ec76735681e58832f6052f2`, `e54c3fabdcecef0f6f19802150dc5d9726d7bdc3`, `009c175d6b1b6454573f019ded84db01fc654ca7`.
-- Source persistence: `36c307b76968d6ec7b63ddacf1de17e9232a2a41`.
-- CI / PR / merge / exact-main / Release evidence: pending.
+- Original embedded implementation commits: `fd13a64b8f3e4dde58453df812f4787d5c3020eb` → `009c175d6b1b6454573f019ded84db01fc654ca7`（历史 provenance；已被独立 package 架构取代）。
+- Feeder PR #2136 merged into feature branch as `fb1478d0f9d52b9cdee32acac6fb1c7581ece680`.
+- Portfolio duplicate cleanup: `baed8e4c66badb0409d04eb15aeab8341af5362e` + removal commits.
+- ai-backend decoupling: `81f6385f856251559f2ef64c29c3dd7df282620b`, `55594d4ebad5723c7aedb2db12430bd756ab61a5`, `8ac37f594032761aa03df29720162059b7075034`, `953724e369b3154245fce5c4a7896c8b20345e80`.
+- Rustfmt repair after feeder CI evidence: `fc1f13be0acdf3b993695bc0aa5d5b190a22f989`.
+- Dedicated portable-boundary CI update: `892570d5004d194c648d93c77f931f0e7d1dc803`.
+- Updated persisted requirement: `1c55a9e77f8334efad9f8c0b2e2e7acae3f5baef`.
+- Current-head CI / merge / exact-main / Release evidence: pending.
 
-## Blockers
+## Blockers / risks
 
-- Douyin public web metadata shape/anti-bot behavior can change; adapter has stable errors and share-page fallback but production must monitor parse-failure rate.
-- Task cannot be closed before protected-main + post-main delivery evidence.
+- Douyin 页面结构与反自动化行为会变化，runtime 必须在登录/验证码出现时显式失败，不尝试绕过。
+- 当前 package 是 portable UI/package + compatible Mahayana shared runtime 模型；如果未来要求“完全自包含、无 Mahayana Host 也能执行”，需另立 artifact/runtime packaging 设计，不应混淆当前验收。
+- 任务在 current-head CI、protected merge、canonical-main packaged E2E 与 Release 完成前不得关闭。
 
 ## Next action
 
-Open PR, run repository CI, fix any failures, merge to protected `main`, then run exact-main packaged/E2E delivery and publish the verified Release.
+重新打开 canonical PR #2141，运行最新 dedicated/repository CI；修复失败后合并 protected `main`，随后完成 exact-main package/E2E/Release 交付闭环。
