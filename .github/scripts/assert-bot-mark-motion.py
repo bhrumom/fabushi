@@ -10,6 +10,8 @@ required_component = [
     'FabushiBotMarkEngine',
     'data-engine="fabushi-motion-v2"',
     'data-renderer="grok-mark"',
+    'data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}',
+    'AMBIENT_MOTION_STATES',
     '"blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"',
 ]
 for marker in required_component:
@@ -58,4 +60,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: stable Fabushi semantics with Grok geometry, eyes, state motion, pointer gaze, and reduced-motion support.')
+print('BotMark motion gate passed: stable Fabushi semantics and motion tiers with Grok geometry, eyes, state motion, pointer gaze, and reduced-motion support.')
