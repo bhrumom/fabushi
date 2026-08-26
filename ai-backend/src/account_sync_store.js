@@ -431,6 +431,15 @@ export class AccountSyncStore {
     return this.s.listCloudValues.all(accountId, miniAppId);
   }
 
+  recordEvent(accountIdInput, eventTypeInput, entityIdInput, payload = {}) {
+    const accountId = normalizeAccountId(accountIdInput);
+    const eventType = String(eventTypeInput ?? '').trim();
+    const entityId = String(entityIdInput ?? '').trim();
+    if (!eventType || !entityId) throw new Error('account sync event type and entity id are required');
+    const sequence = this.#appendEvent(accountId, eventType, entityId, payload);
+    return { sequence, cursor: encodeCursor(sequence) };
+  }
+
   currentCursor(accountIdInput) {
     const accountId = normalizeAccountId(accountIdInput);
     return encodeCursor(Number(this.s.currentSequence.get(accountId)?.sequence ?? 0));
