@@ -117,6 +117,7 @@ Provenance stays explicit: reimplement observable behavior and architecture in F
 
 The implementation is being exercised only by normal product/CI workflows, not by the forbidden auto-confirm runner.
 
+- The canonical merge queue is enabled only for the manually implemented branch; the preceding GitHub Actions startup failures are infrastructure results, not accepted product evidence, so the normal required checks are being retriggered rather than bypassed.
 - Messaging Product Gate on head `9e2b2e8f96158cadc385cc12a132525aa354203e`: `Rust self-hosted product` passed, including rustfmt, library/server tests, clippy, media queue tests and production Feature Host bridge checks.
 - The same gate's `Electron Messenger contract` passed, including desktop dependency install, Feature Host architecture verification, self-hosted call-signaling policy, Native Edge parity and Messenger V2 TypeScript typecheck.
 - GBF security closure on the same head passed.
