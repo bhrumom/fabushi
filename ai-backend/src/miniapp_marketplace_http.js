@@ -15,10 +15,6 @@ import {
   officialMiniAppPackageSeeds,
 } from './miniapp_marketplace_catalog.js';
 import {
-  createDouyinDownloaderRouter,
-  douyinDownloaderManifest,
-} from './douyin_downloader.js';
-import {
   commandDispatch,
   publicBaseUrl,
   publisherForRequest,
@@ -37,14 +33,13 @@ import {
 const MAX_JSON_BYTES = '1mb';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-export function createMiniAppMarketplaceRouter({ dataDir, storagePath, store, douyinFetchImpl } = {}) {
+export function createMiniAppMarketplaceRouter({ dataDir, storagePath, store } = {}) {
   const marketplace = store ?? new MiniAppMarketplace({
     storagePath: storagePath ?? path.join(dataDir ?? process.cwd(), 'miniapps', 'marketplace-v2.json'),
-    seed: [...officialMiniAppPackageSeeds(), douyinDownloaderManifest()],
+    seed: officialMiniAppPackageSeeds(),
   });
   const router = express.Router();
   router.use(express.json({ limit: MAX_JSON_BYTES }));
-  router.use(createDouyinDownloaderRouter({ fetchImpl: douyinFetchImpl ?? globalThis.fetch }));
 
   router.get('/v1/marketplace/plugins', route(async (req, res) => {
     const identity = requestIdentity(req);
