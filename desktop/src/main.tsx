@@ -16,7 +16,7 @@ if (!root) {
   throw new Error('Fabushi desktop root element is missing');
 }
 
-async function bootstrapDesktop(): Promise<void> {
+async function bootstrapDesktop(rootElement: HTMLDivElement): Promise<void> {
   installDesktopAccountSessionSync();
   // Restore native persisted projections before transport/workbench reducers
   // read their first-frame local cache. This makes localStorage a projection;
@@ -25,7 +25,7 @@ async function bootstrapDesktop(): Promise<void> {
   installBotIdentityAliases();
   installDurableAgentState();
 
-  createRoot(root).render(
+  createRoot(rootElement).render(
     <StrictMode>
       <DesktopShellV2 />
       <MahayanaAgentWorkbench />
@@ -36,6 +36,6 @@ async function bootstrapDesktop(): Promise<void> {
   installSelfHostedMahayanaInvocationBridge();
 }
 
-void bootstrapDesktop().catch((error: unknown) => {
+void bootstrapDesktop(root).catch((error: unknown) => {
   console.error('Fabushi desktop bootstrap failed', error);
 });
