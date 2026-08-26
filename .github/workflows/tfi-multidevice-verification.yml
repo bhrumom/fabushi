@@ -1,0 +1,45 @@
+name: TFI multi-device synchronization verification
+
+on:
+  push:
+    branches: [feat/tfi-multidevice-account-sync]
+    paths: [.github/workflows/tfi-multidevice-verification.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            ai-backend
+            contracts/automation
+            desktop
+            frontend/apps/web/src
+            frontend/packages/shared/src
+            frontend/packages/widgets/src
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Install backend dependencies
+        working-directory: ai-backend
+        run: npm ci
+      - name: Check synchronized backend sources
+        working-directory: ai-backend
+        run: npm run check
+      - name: Verify two-device account, Mini App, Bot history and CloudStorage recovery
+        working-directory: ai-backend
+        run: node --test test/account_sync_store.test.js test/miniapp_marketplace_http.test.js test/multidevice_account_sync_integration.test.js
+      - name: Verify Electron account bridge
+        run: node --test desktop/electron/native-capability-handlers.test.cjs
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Verify desktop renderer
+        working-directory: desktop
+        run: npm run build:renderer
