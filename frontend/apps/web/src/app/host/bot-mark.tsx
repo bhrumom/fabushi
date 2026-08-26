@@ -1,5 +1,7 @@
 import {
   forwardRef,
+  useEffect,
+  useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
@@ -52,6 +54,13 @@ export type BotMarkState =
   | "bouncing"
   | "powering-down";
 
+/**
+ * Shape overrides remain in the public type for persisted/backward-compatible
+ * appearance data, but normal identity rendering now uses one base silhouette.
+ * OpenMausBot proved that color/expression/motion are sufficient identity
+ * dimensions and that a bot-id -> unrelated body-shape lottery makes dense
+ * lists look visually broken.
+ */
 export type BotMarkShape =
   | "blob"
   | "pebble"
@@ -95,15 +104,13 @@ type BotMarkProps = {
   emphasis?: boolean;
   spinSignal?: number;
   badgeColor?: string;
+  /** Explicit low-power/static rendering, aligned with OpenMausBot. */
+  animated?: boolean;
   paused?: boolean;
   shape?: BotMarkShape;
   color?: BotMarkColor;
   eyeColor?: string;
 };
-
-const IDENTITY_SHAPES: readonly BotMarkShape[] = [
-  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
-];
 
 const COLORS: readonly BotMarkColor[] = [
   "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
@@ -120,9 +127,7 @@ let botIdentityVersion = 0;
 /**
  * Resolve a UI-specific BotMark id to the stable Bot identity used by the
  * animation engine. Surface prefixes are deliberately ignored so the same Bot
- * cannot change shape/color merely because it moved from the peer list into a
- * workbench run card. Conversation aliases are registered only when runtime
- * data proves which Bot owns that conversation.
+ * cannot change color merely because it moved between product surfaces.
  */
 export function canonicalBotIdentity(botId: string): string {
   let current = botId.trim() || "mahayana-assistant";
@@ -207,19 +212,17 @@ function identityRandom(seed: number): () => number {
   };
 }
 
-function shapeHash(value: string): number {
-  let hash = hashIdentity(value);
-  hash = Math.imul(hash ^ hash >>> 16, 73244475);
-  hash = Math.imul(hash ^ hash >>> 13, 3266489909);
-  return (hash ^ hash >>> 16) >>> 0;
+/**
+ * Normal product identity uses one body silhouette, matching OpenMausBot's
+ * unified mascot model. The function is retained because persisted callers and
+ * tests import it, but identity no longer hashes into eight unrelated bodies.
+ */
+export function botMarkShape(_botId: string): BotMarkShape {
+  return "blob";
 }
 
-export function botMarkShape(botId: string): BotMarkShape {
-  return IDENTITY_SHAPES[shapeHash(canonicalBotIdentity(botId)) % IDENTITY_SHAPES.length] ?? "blob";
-}
-
-export function botMarkShapeIndex(botId: string): number {
-  return shapeHash(canonicalBotIdentity(botId)) % IDENTITY_SHAPES.length;
+export function botMarkShapeIndex(_botId: string): number {
+  return 0;
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
@@ -232,6 +235,32 @@ export function botMarkColorId(botId: string): BotMarkColor {
 export function botMarkColor(botId: string): string {
   const value = COLOR_VALUES[botMarkColorId(botId)];
   return `light-dark(${value.light}, ${value.dark})`;
+}
+
+/**
+ * OpenMausBot's page-visible strategy adapted for Electron: hidden or unfocused
+ * windows do not keep dozens of mascots repainting. The engine still paints a
+ * resting frame when paused, so identities never disappear.
+ */
+function useAvatarMotionAllowed(): boolean {
+  const read = () => {
+    if (typeof document === "undefined" || typeof window === "undefined") return true;
+    return document.visibilityState === "visible" && document.hasFocus();
+  };
+  const [allowed, setAllowed] = useState(read);
+  useEffect(() => {
+    const update = () => setAllowed(read());
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    update();
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+    };
+  }, []);
+  return allowed;
 }
 
 export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
@@ -247,6 +276,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     emphasis = false,
     spinSignal = 0,
     badgeColor,
+    animated = true,
     paused = false,
     shape: shapeOverride,
     color: colorOverride,
@@ -256,6 +286,8 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
 ) {
   useSyncExternalStore(subscribeBotIdentity, botIdentitySnapshot, botIdentitySnapshot);
   const identityId = canonicalBotIdentity(botId);
+  const motionAllowed = useAvatarMotionAllowed();
+  const effectivePaused = paused || !animated || !motionAllowed;
   const shape = shapeOverride ?? botMarkShape(identityId);
   const color = colorOverride ?? botMarkColorId(identityId);
   const style = {
@@ -271,12 +303,12 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-bot-id={botId}
       data-canonical-bot-id={identityId}
       data-agent-state={state}
-      data-paused={paused || undefined}
+      data-paused={effectivePaused || undefined}
       data-shape={shape}
       data-color={color}
       data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}
       data-engine="fabushi-motion-v2"
-      data-renderer="grok-mark"
+      data-renderer="openmaus-unified-mark"
       style={style}
       aria-label={label}
       aria-hidden={label ? undefined : true}
@@ -294,7 +326,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
         emphasis={emphasis}
         spinSignal={spinSignal}
         badgeColor={badgeColor}
-        paused={paused}
+        paused={effectivePaused}
         eyeColor={eyeColor}
       />
       {children}
