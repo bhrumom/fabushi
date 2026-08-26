@@ -65,3 +65,10 @@
 - 下载代理仅允许抖音/字节 CDN HTTPS Host并转发 Range，避免任意 URL SSRF；UI 明示仅用于拥有、获授权或法律允许保存的公开内容。
 - 任务记录：`management/tasks/M8-DL-001-douyin-batch-downloader.md`；证据索引：`evidence/M8-DL-001/README.md`。
 - 完成门禁：current-head CI → protected merge → canonical-main readback → exact-main packaged/E2E evidence → verified GitHub Release。
+
+## 2026-08-26 — M8-DL-001 independent package continuation
+
+- `M8-DL-001` — `TESTING`: 用户要求把 Downloader 从 `ai-backend` 内置功能提升为独立可安装、可迁移 Mini App。当前 branch 已删除 Downloader 专属 backend runtime/routes，保留通用 Marketplace；应用改由 versioned `app.tar.gz` + immutable release metadata + Mahayana shared runtime 分发。
+- 独立 surface 已具备 GUI、`.mcp.json` stdio MCP、`.mahayana/plugin.json` CLI，以及 Rust `official-miniapps` provider 的 `resolve` / `download` 工具；portable boundary 由 dedicated CI 断言。
+- 并行 PR #2136 的 package/runtime 实现已作为 feeder 合入当前 branch；错误引入的重复 `FAB-P0009 / DBD` 与 `projects/douyin-batch-downloader-miniapp/**` 已移除，唯一 canonical project 仍为 `FAB-P0001 / TFI`。
+- 客观验证：package digest、MCP/CLI descriptors、无 `ai-backend/src/douyin_downloader.js`、Rust fmt/test/build、Marketplace search/install tests；全部 current-head checks + protected merge + exact-main packaged E2E/Release 完成前不得晋级 `COMPLETED`。
