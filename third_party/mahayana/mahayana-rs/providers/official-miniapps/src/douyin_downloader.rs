@@ -43,7 +43,9 @@ impl Config {
         let mut seen = BTreeSet::new();
         urls.retain(|value| seen.insert(value.clone()));
         if urls.is_empty() {
-            return Err("urls, url, or input containing at least one Douyin URL is required".into());
+            return Err(
+                "urls, url, or input containing at least one Douyin URL is required".into(),
+            );
         }
         for value in &urls {
             validate_douyin_url(value)?;
@@ -52,7 +54,10 @@ impl Config {
             .unwrap_or(200)
             .clamp(1, 2_000) as usize;
         if urls.len() > max_items {
-            return Err(format!("batch has {} URLs; maxItems is {max_items}", urls.len()));
+            return Err(format!(
+                "batch has {} URLs; maxItems is {max_items}",
+                urls.len()
+            ));
         }
         let cookie = text(arguments, &["cookie"])
             .or_else(|| text(arguments, &["cookieFile", "cookie_file"]).and_then(read_cookie_file))
@@ -146,9 +151,18 @@ fn execute(tool: &str, config: Config) -> Result<Value, String> {
             .iter()
             .filter(|video| matches!(video.status.as_str(), "resolved" | "downloaded" | "skipped"))
             .count(),
-        downloaded: videos.iter().filter(|video| video.status == "downloaded").count(),
-        skipped: videos.iter().filter(|video| video.status == "skipped").count(),
-        failed: videos.iter().filter(|video| video.status == "failed").count(),
+        downloaded: videos
+            .iter()
+            .filter(|video| video.status == "downloaded")
+            .count(),
+        skipped: videos
+            .iter()
+            .filter(|video| video.status == "skipped")
+            .count(),
+        failed: videos
+            .iter()
+            .filter(|video| video.status == "failed")
+            .count(),
         videos,
     };
     if tool == "download" {
@@ -157,7 +171,11 @@ fn execute(tool: &str, config: Config) -> Result<Value, String> {
     serde_json::to_value(&manifest).map_err(|error| error.to_string())
 }
 
-fn resolve_with_retries(client: &Client, source_url: &str, config: &Config) -> Result<VideoRecord, String> {
+fn resolve_with_retries(
+    client: &Client,
+    source_url: &str,
+    config: &Config,
+) -> Result<VideoRecord, String> {
     let mut last_error = String::new();
     for attempt in 1..=config.retries {
         match resolve_video(client, source_url, config.cookie.as_deref()) {
@@ -165,13 +183,19 @@ fn resolve_with_retries(client: &Client, source_url: &str, config: &Config) -> R
             Err(error) => last_error = error,
         }
         if attempt < config.retries {
-            thread::sleep(Duration::from_millis(config.delay_ms.saturating_mul(attempt as u64)));
+            thread::sleep(Duration::from_millis(
+                config.delay_ms.saturating_mul(attempt as u64),
+            ));
         }
     }
     Err(last_error)
 }
 
-fn resolve_video(client: &Client, source_url: &str, cookie: Option<&str>) -> Result<VideoRecord, String> {
+fn resolve_video(
+    client: &Client,
+    source_url: &str,
+    cookie: Option<&str>,
+) -> Result<VideoRecord, String> {
     let mut request = client
         .get(source_url)
         .header(USER_AGENT, DESKTOP_UA)
@@ -180,23 +204,33 @@ fn resolve_video(client: &Client, source_url: &str, cookie: Option<&str>) -> Res
     if let Some(cookie) = cookie {
         request = request.header(COOKIE, cookie);
     }
-    let response = request.send().map_err(|error| format!("request failed: {error}"))?;
+    let response = request
+        .send()
+        .map_err(|error| format!("request failed: {error}"))?;
     let final_url = response.url().clone();
     validate_douyin_url(final_url.as_str())?;
     if !response.status().is_success() {
         return Err(format!("Douyin returned HTTP {}", response.status()));
     }
-    let html = response.text().map_err(|error| format!("failed to read page: {error}"))?;
+    let html = response
+        .text()
+        .map_err(|error| format!("failed to read page: {error}"))?;
     if is_access_challenge(&html) {
-        return Err("Douyin requires login/verification; reauthenticate manually and retry at a lower rate".into());
+        return Err(
+            "Douyin requires login/verification; reauthenticate manually and retry at a lower rate"
+                .into(),
+        );
     }
     let decoded = decode_page_source(&html);
     let candidates = collect_media_candidates(&decoded);
     let media_url = candidates
         .into_iter()
         .find(|candidate| is_watermark_free_candidate(candidate))
-        .ok_or_else(|| "no authorized watermark-free playback URL was exposed by the page".to_string())?;
-    let aweme_id = extract_aweme_id(final_url.as_str(), &decoded).unwrap_or_else(|| short_hash(source_url));
+        .ok_or_else(|| {
+            "no authorized watermark-free playback URL was exposed by the page".to_string()
+        })?;
+    let aweme_id =
+        extract_aweme_id(final_url.as_str(), &decoded).unwrap_or_else(|| short_hash(source_url));
     Ok(VideoRecord {
         source_url: source_url.into(),
         canonical_url: final_url.to_string(),
@@ -211,7 +245,11 @@ fn resolve_video(client: &Client, source_url: &str, cookie: Option<&str>) -> Res
     })
 }
 
-fn download_record(client: &Client, config: &Config, record: &mut VideoRecord) -> Result<(), String> {
+fn download_record(
+    client: &Client,
+    config: &Config,
+    record: &mut VideoRecord,
+) -> Result<(), String> {
     let media_url = record
         .watermark_free_url
         .as_deref()
@@ -235,10 +273,14 @@ fn download_record(client: &Client, config: &Config, record: &mut VideoRecord) -
         let _ = fs::remove_file(&temporary);
     })?;
     if path.exists() {
-        fs::remove_file(&path).map_err(|error| format!("failed to replace {}: {error}", path.display()))?;
+        fs::remove_file(&path)
+            .map_err(|error| format!("failed to replace {}: {error}", path.display()))?;
     }
-    fs::rename(&temporary, &path).map_err(|error| format!("failed to finalize {}: {error}", path.display()))?;
-    let bytes = fs::metadata(&path).map_err(|error| error.to_string())?.len();
+    fs::rename(&temporary, &path)
+        .map_err(|error| format!("failed to finalize {}: {error}", path.display()))?;
+    let bytes = fs::metadata(&path)
+        .map_err(|error| error.to_string())?
+        .len();
     let digest = sha256_file(&path)?;
     record.status = "downloaded".into();
     record.output_path = Some(path.to_string_lossy().into_owned());
@@ -253,7 +295,9 @@ fn write_media(mut response: Response, path: &Path, max_bytes: u64) -> Result<()
     }
     if let Some(length) = response.content_length() {
         if length > max_bytes {
-            return Err(format!("media is {length} bytes, above maxBytes {max_bytes}"));
+            return Err(format!(
+                "media is {length} bytes, above maxBytes {max_bytes}"
+            ));
         }
     }
     let content_type = response
@@ -268,7 +312,9 @@ fn write_media(mut response: Response, path: &Path, max_bytes: u64) -> Result<()
     let mut buffer = [0_u8; 64 * 1024];
     let mut written = 0_u64;
     loop {
-        let count = response.read(&mut buffer).map_err(|error| error.to_string())?;
+        let count = response
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
         if count == 0 {
             break;
         }
@@ -276,7 +322,8 @@ fn write_media(mut response: Response, path: &Path, max_bytes: u64) -> Result<()
         if written > max_bytes {
             return Err(format!("download exceeded maxBytes {max_bytes}"));
         }
-        file.write_all(&buffer[..count]).map_err(|error| error.to_string())?;
+        file.write_all(&buffer[..count])
+            .map_err(|error| error.to_string())?;
     }
     if written == 0 {
         return Err("downloaded media is empty".into());
@@ -295,7 +342,12 @@ fn build_client() -> Result<Client, String> {
 
 fn extract_urls(value: &str) -> Vec<String> {
     Regex::new(r#"https?://[^\s\"'<>，。；]+"#)
-        .map(|regex| regex.find_iter(value).map(|item| item.as_str().to_string()).collect())
+        .map(|regex| {
+            regex
+                .find_iter(value)
+                .map(|item| item.as_str().to_string())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -313,7 +365,10 @@ fn collect_media_candidates(source: &str) -> Vec<String> {
     let mut candidates = BTreeSet::new();
     if let Ok(regex) = Regex::new(r#"https://[^\s\"'<>\\]+"#) {
         for match_ in regex.find_iter(source) {
-            let candidate = match_.as_str().trim_end_matches([',', '}', ']']).to_string();
+            let candidate = match_
+                .as_str()
+                .trim_end_matches([',', '}', ']'])
+                .to_string();
             if looks_like_video_url(&candidate) {
                 candidates.insert(candidate);
             }
@@ -322,7 +377,11 @@ fn collect_media_candidates(source: &str) -> Vec<String> {
     let mut candidates = candidates.into_iter().collect::<Vec<_>>();
     candidates.sort_by_key(|url| {
         let watermark = url.contains("playwm") || url.contains("watermark=1");
-        let quality = if url.contains("origin") || url.contains("source") { 0 } else { 1 };
+        let quality = if url.contains("origin") || url.contains("source") {
+            0
+        } else {
+            1
+        };
         (watermark, quality, std::cmp::Reverse(url.len()))
     });
     candidates
@@ -337,7 +396,9 @@ fn looks_like_video_url(value: &str) -> bool {
 }
 
 fn is_watermark_free_candidate(value: &str) -> bool {
-    !value.contains("/playwm/") && !value.contains("watermark=1") && validate_media_url(value).is_ok()
+    !value.contains("/playwm/")
+        && !value.contains("watermark=1")
+        && validate_media_url(value).is_ok()
 }
 
 fn validate_douyin_url(value: &str) -> Result<(), String> {
@@ -371,9 +432,17 @@ fn host_is(host: Option<&str>, domain: &str) -> bool {
 }
 
 fn extract_aweme_id(url: &str, source: &str) -> Option<String> {
-    for pattern in [r"/video/(\d{8,})", r#"\"aweme_id\"\s*:\s*\"(\d{8,})\""#, r"modal_id=(\d{8,})"] {
+    for pattern in [
+        r"/video/(\d{8,})",
+        r#"\"aweme_id\"\s*:\s*\"(\d{8,})\""#,
+        r"modal_id=(\d{8,})",
+    ] {
         if let Ok(regex) = Regex::new(pattern) {
-            if let Some(value) = regex.captures(url).or_else(|| regex.captures(source)).and_then(|captures| captures.get(1)) {
+            if let Some(value) = regex
+                .captures(url)
+                .or_else(|| regex.captures(source))
+                .and_then(|captures| captures.get(1))
+            {
                 return Some(value.as_str().into());
             }
         }
@@ -412,7 +481,11 @@ fn safe_filename(value: &str) -> String {
         }
     }
     let output = output.trim_matches([' ', '-', '.']);
-    if output.is_empty() { "douyin-video".into() } else { output.into() }
+    if output.is_empty() {
+        "douyin-video".into()
+    } else {
+        output.into()
+    }
 }
 
 fn failed_record(source_url: &str, failure: String) -> VideoRecord {
@@ -432,7 +505,10 @@ fn failed_record(source_url: &str, failure: String) -> VideoRecord {
 
 fn short_hash(value: &str) -> String {
     let digest = Sha256::digest(value.as_bytes());
-    digest[..8].iter().map(|byte| format!("{byte:02x}")).collect()
+    digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -441,10 +517,16 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
-        if count == 0 { break; }
+        if count == 0 {
+            break;
+        }
         digest.update(&buffer[..count]);
     }
-    Ok(digest.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
@@ -453,29 +535,53 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
 }
 
 fn text(value: &Value, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| value.get(*key)?.as_str().map(str::trim).filter(|value| !value.is_empty()).map(str::to_string))
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)?
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn integer(value: &Value, keys: &[&str]) -> Option<u64> {
-    keys.iter().find_map(|key| value.get(*key).and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok())))
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()))
+    })
 }
 
 fn boolean(value: &Value, keys: &[&str]) -> Option<bool> {
-    keys.iter().find_map(|key| value.get(*key).and_then(Value::as_bool))
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(Value::as_bool))
 }
 
 fn read_cookie_file(path: String) -> Option<String> {
-    fs::read_to_string(path).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+    fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn is_access_challenge(value: &str) -> bool {
-    ["captcha", "verify-center", "安全验证", "扫码登录", "请登录后查看"]
-        .iter()
-        .any(|needle| value.to_lowercase().contains(&needle.to_lowercase()))
+    [
+        "captcha",
+        "verify-center",
+        "安全验证",
+        "扫码登录",
+        "请登录后查看",
+    ]
+    .iter()
+    .any(|needle| value.to_lowercase().contains(&needle.to_lowercase()))
 }
 
 fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]
@@ -501,7 +607,10 @@ mod tests {
     #[test]
     fn sanitizes_paths_and_extracts_video_ids() {
         assert_eq!(safe_filename("../危险:*?标题"), "危险-标题");
-        assert_eq!(extract_aweme_id("https://www.douyin.com/video/729123456789", "").as_deref(), Some("729123456789"));
+        assert_eq!(
+            extract_aweme_id("https://www.douyin.com/video/729123456789", "").as_deref(),
+            Some("729123456789")
+        );
     }
 
     #[test]
@@ -509,7 +618,8 @@ mod tests {
         let config = Config::from_arguments(&json!({
             "input":"分享 https://v.douyin.com/abc/\nhttps://v.douyin.com/abc/",
             "urls":["https://www.douyin.com/video/729123456789"]
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(config.urls.len(), 2);
         assert_eq!(config.max_items, 200);
     }
