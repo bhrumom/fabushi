@@ -152,6 +152,19 @@
       "category": "Productivity"
     },
     {
+      "name": "douyin-batch-downloader",
+      "version": "1.0.0",
+      "source": {
+        "source": "local",
+        "path": "./plugins/douyin-batch-downloader"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    },
+    {
       "name": "xhttp-split",
       "version": "0.2.0+codex.20260811090326",
       "source": {

@@ -541,6 +541,8 @@ export class MockMahayanaHostTransport implements MahayanaHostTransport {
     remoteControlEnabled: false,
     aiComputerControlEnabled: true,
     autoReviewRules: [],
+    inferenceProvider: "fabushi",
+    sandboxRuntime: "host",
   };
   private listenerIntegrations = new Map(defaultListeners().map((integration) => [integration.platform, integration]));
   private updateState: UpdateState = { type: "upToDate", version: "0.1.0" };

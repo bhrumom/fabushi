@@ -9,6 +9,10 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/post-main-delivery.yml'
+      - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/global-dharma-rust.yml'
+      - '.github/workflows/important-release-gate.yml'
       - '.github/workflows/delivery-governance-contract.yml'
       - '.github/workflows/automerge.yml'
       - 'projects/fabushi-cicd-merge-governance/**'
@@ -20,6 +24,10 @@ on:
       - '.github/scripts/require-release-source-gates.sh'
       - '.github/workflows/apple-store-delivery.yml'
       - '.github/workflows/google-play-delivery.yml'
+      - '.github/workflows/post-main-delivery.yml'
+      - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/global-dharma-rust.yml'
+      - '.github/workflows/important-release-gate.yml'
       - '.github/workflows/delivery-governance-contract.yml'
       - '.github/workflows/automerge.yml'
       - 'projects/fabushi-cicd-merge-governance/**'
@@ -45,6 +53,10 @@ jobs:
             /.github/scripts/require-release-source-gates.sh
             /.github/workflows/apple-store-delivery.yml
             /.github/workflows/google-play-delivery.yml
+            /.github/workflows/post-main-delivery.yml
+            /.github/workflows/native-electron-release.yml
+            /.github/workflows/global-dharma-rust.yml
+            /.github/workflows/important-release-gate.yml
             /.github/workflows/automerge.yml
 
       - name: Validate release source gates
@@ -54,7 +66,7 @@ jobs:
           gate=.github/scripts/require-release-source-gates.sh
           test -s "$gate"
           grep -Fq "compare/main...\$SOURCE_SHA" "$gate"
-          for required in 'CI result' 'Electron desktop result' 'Native mobile result'; do
+          for required in 'CI result' 'Electron desktop result' 'Electron macOS' 'Electron Windows' 'Native mobile result' 'Native iOS'; do
             grep -Fq "$required" "$gate"
           done
 
@@ -63,10 +75,23 @@ jobs:
             grep -Fq 'actions: read' "$workflow"
             grep -Fq 'Require canonical release source gates' "$workflow"
             grep -Fq 'require-release-source-gates.sh' "$workflow"
+            grep -Fq -- '--latest=false' "$workflow"
           done
 
           grep -Fq 'RELEASE_TARGET: android' .github/workflows/google-play-delivery.yml
           grep -Fq 'RELEASE_TARGET: ${{ inputs.target }}' .github/workflows/apple-store-delivery.yml
+
+          post_main=.github/workflows/post-main-delivery.yml
+          grep -Fq 'test("^desktop-[0-9]+[.][0-9]+[.][0-9]+$")' "$post_main"
+          grep -Fq 'releases/latest' "$post_main"
+          grep -Fq 'make_latest=true' "$post_main"
+          grep -Fq 'GitHub Latest pointer did not advance' "$post_main"
+          for workflow in \
+            .github/workflows/native-electron-release.yml \
+            .github/workflows/global-dharma-rust.yml \
+            .github/workflows/important-release-gate.yml; do
+            grep -Fq -- '--latest=false' "$workflow"
+          done
 
       - name: Validate narrow CODEOWNERS coverage
         shell: bash
@@ -105,6 +130,7 @@ jobs:
             echo '## FAB-P0003 delivery governance contract'
             echo
             echo '- Canonical release-source gates: present'
+            echo '- Per-platform desktop/mobile checks: present'
             echo '- Apple Store delivery gate: present'
             echo '- Google Play delivery gate: present'
             echo '- Sensitive CODEOWNERS coverage: present and narrow'

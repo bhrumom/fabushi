@@ -1,4 +1,5 @@
-const { app, autoUpdater, BrowserWindow, dialog, ipcMain, Menu, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, nativeTheme, Notification, protocol, safeStorage, shell, session } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -25,13 +26,62 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const host = new MahayanaHostProcess();
+function encryptedProviderSecret(name) {
+  if (!safeStorage?.isEncryptionAvailable?.()) {
+    return null;
+  }
+  const secretFile = path.join(app.getPath('userData'), 'secure', 'secrets.json');
+  let vault;
+  try { vault = JSON.parse(fsSync.readFileSync(secretFile, 'utf8')); }
+  catch { return null; }
+  const ciphertext = vault?.[name]?.ciphertext;
+  if (typeof ciphertext !== 'string' || !ciphertext) {
+    return null;
+  }
+  try {
+    const value = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
+    return value && !/[\r\n]/.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function providerEnvironment(inferenceProvider) {
+  if (inferenceProvider === 'openrouter') {
+    const value = encryptedProviderSecret('inference/openrouter/api-key');
+    if (!value) return {};
+    return {
+      MAHAYANA_MODEL_BEARER_TOKEN: value,
+      MAHAYANA_OPENROUTER_MODEL: process.env.MAHAYANA_OPENROUTER_MODEL || 'openai/gpt-5.2',
+    };
+  }
+  if (inferenceProvider === 'claude-code') {
+    const value = encryptedProviderSecret('inference/claude/api-key') || process.env.ANTHROPIC_API_KEY?.trim();
+    if (!value || /[\r\n]/.test(value)) return {};
+    return {
+      MAHAYANA_MODEL_BEARER_TOKEN: value,
+      MAHAYANA_CLAUDE_MODEL: process.env.MAHAYANA_CLAUDE_MODEL || 'claude-sonnet-4-6',
+    };
+  }
+  return {
+    // Never forward provider credentials to the Fabushi/Codex Host generation.
+  };
+}
+
+const host = new MahayanaHostProcess({ providerEnvironment });
 let mahayanaEdgeServer = null;
 let nativeEdgeServer = null;
 let hostEventPumpStopped = false;
 let hostEventPump = null;
 const messagingAccessCache = new Map();
 let messagingSignalingClient = null;
+let availableDesktopUpdateVersion = null;
+let runtimeDesktopUpdateStatus = null;
+const DESKTOP_UPDATE_CHECK_MIN_INTERVAL_MS = 60_000;
+const DESKTOP_UPDATE_FOREGROUND_INTERVAL_MS = 5 * 60_000;
+let lastAutomaticDesktopUpdateCheckAt = 0;
+let automaticDesktopUpdateCheckTimer = null;
+let automaticDesktopUpdateCheckPromise = null;
 
 function normalizeMessagingAccessParams(params) {
   const deviceId = String(params?.deviceId || 'desktop:electron').trim();
@@ -306,6 +356,36 @@ async function mutateNativeState(mutator) {
     await fs.rename(temp, file);
   });
   return nativeStateWrite;
+}
+
+function normalizePersistedDesktopUpdateStatus(status) {
+  const currentVersion = app.getVersion();
+  if (!status || typeof status !== 'object') return { type: 'upToDate', version: currentVersion };
+  const version = typeof status.version === 'string' && status.version ? status.version : currentVersion;
+  if (status.type === 'upToDate') return { ...status, version: currentVersion };
+  if (version === currentVersion && ['available', 'downloading', 'ready', 'staging'].includes(status.type)) {
+    return { type: 'upToDate', version: currentVersion };
+  }
+  return { ...status, version };
+}
+
+async function getDesktopUpdateStatus() {
+  if (runtimeDesktopUpdateStatus) return runtimeDesktopUpdateStatus;
+  const state = await readNativeState();
+  runtimeDesktopUpdateStatus = normalizePersistedDesktopUpdateStatus(state.updateStatus);
+  return runtimeDesktopUpdateStatus;
+}
+
+function setDesktopUpdateStatus(status, { broadcast = true } = {}) {
+  // The updater is a live process state machine. Set memory before broadcasting so
+  // a renderer click triggered by this exact event can never read stale disk state.
+  runtimeDesktopUpdateStatus = status;
+  if (broadcast) broadcastNativeEvent('update-status', status);
+  return mutateNativeState((state) => ({ ...state, updateStatus: status }))
+    .catch((error) => {
+      console.warn('[updater] unable to persist live update status', error instanceof Error ? error.message : String(error));
+    })
+    .then(() => status);
 }
 
 function persistenceKey(value) {
@@ -600,6 +680,8 @@ function installNativeEdge() {
     host,
     readNativeState,
     mutateNativeState,
+    getDesktopUpdateStatus,
+    setDesktopUpdateStatus,
     windowForEvent,
     broadcastNativeEvent,
     markDeepLinksReady: () => deepLinkRouter.markReady(),
@@ -652,8 +734,13 @@ function installMahayanaEdge() {
 
 function noteRuntimeUsage(event) {
   if (!event || event.type !== 'usage.updated') return;
+  const provider = String(host.activeInferenceProvider || 'fabushi');
+  const inputTokens = Math.max(0, Number(event.inputTokens ?? 0));
+  const cachedInputTokens = Math.max(0, Number(event.cachedInputTokens ?? 0));
+  const outputTokens = Math.max(0, Number(event.outputTokens ?? 0));
+  const reasoningTokens = Math.max(0, Number(event.reasoningTokens ?? 0));
   const totalTokens = Math.max(0, Number(event.totalTokens ?? 0));
-  const item = { timestampMs: Date.now(), totalTokens };
+  const item = { timestampMs: Date.now(), provider, inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens };
   void mutateNativeState((state) => {
     const previous = Array.isArray(state.usageEvents) ? state.usageEvents : [];
     const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
@@ -662,6 +749,10 @@ function noteRuntimeUsage(event) {
       ...state,
       usageEvents,
       usageLifetimeTokens: Number(state.usageLifetimeTokens ?? 0) + totalTokens,
+      usageLifetimeByProvider: {
+        ...(state.usageLifetimeByProvider ?? {}),
+        [provider]: Number(state.usageLifetimeByProvider?.[provider] ?? 0) + totalTokens,
+      },
       usageUpdatedAtMs: item.timestampMs,
     };
   }).catch((error) => console.error('[native-edge] failed to persist usage telemetry', error));
@@ -680,6 +771,16 @@ function broadcastMahayanaEvent(event) {
     if (win.isDestroyed() || win.webContents.isDestroyed()) continue;
     mahayanaEdgeServer.emit(win.webContents, 'runtime-event', event);
   }
+  if (event?.type === 'settings.changed'
+      && ((typeof event.settings?.inferenceProvider === 'string'
+        && event.settings.inferenceProvider !== host.activeInferenceProvider)
+        || (typeof event.settings?.sandboxRuntime === 'string'
+          && event.settings.sandboxRuntime !== host.activeSandboxRuntime))) {
+    setImmediate(() => {
+      try { host.restart('inference Router settings changed'); }
+      catch (error) { console.error('[mahayana-edge] Router restart failed', error); }
+    });
+  }
 }
 
 function startHostEventPump() {
@@ -688,7 +789,7 @@ function startHostEventPump() {
   hostEventPump = (async () => {
     while (!hostEventPumpStopped) {
       try {
-        const event = await host.request('feature.receive', {});
+        const event = await host.request('feature.receive', { timeoutMs: 500 });
         if (event) broadcastMahayanaEvent(event);
         else await sleep(10);
       } catch (error) {
@@ -804,30 +905,63 @@ function createWindow() {
 
 function installAutoUpdaterEvents() {
   if (!autoUpdater?.on) return;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
   autoUpdater.on('checking-for-update', () => {
-    void mutateNativeState((state) => ({ ...state, updateStatus: { type: 'checking', version: app.getVersion() } }));
-    broadcastNativeEvent('update-status', { type: 'checking', version: app.getVersion() });
+    const status = { type: 'checking', version: app.getVersion() };
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('update-not-available', (info) => {
+    availableDesktopUpdateVersion = null;
     const status = { type: 'upToDate', version: info?.version ?? app.getVersion() };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('update-available', (info) => {
-    const status = { type: 'downloading', version: info?.version ?? null };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    availableDesktopUpdateVersion = info?.version ?? app.getVersion();
+    const status = { type: 'available', version: availableDesktopUpdateVersion, notes: typeof info?.releaseNotes === 'string' ? info.releaseNotes : undefined };
+    void setDesktopUpdateStatus(status);
   });
-  autoUpdater.on('update-downloaded', (_event, _notes, version) => {
-    const status = { type: 'ready', version: version ?? null };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+  autoUpdater.on('download-progress', (progress) => {
+    const status = { type: 'downloading', version: availableDesktopUpdateVersion ?? app.getVersion(), progress: Number.isFinite(progress?.percent) ? Math.round(progress.percent) : undefined };
+    void setDesktopUpdateStatus(status);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    availableDesktopUpdateVersion = info?.version ?? availableDesktopUpdateVersion ?? app.getVersion();
+    const status = { type: 'ready', version: availableDesktopUpdateVersion };
+    void setDesktopUpdateStatus(status);
   });
   autoUpdater.on('error', (error) => {
     const status = { type: 'error', message: error instanceof Error ? error.message : String(error) };
-    void mutateNativeState((state) => ({ ...state, updateStatus: status }));
-    broadcastNativeEvent('update-status', status);
+    void setDesktopUpdateStatus(status);
   });
+}
+
+async function checkForDesktopUpdateAutomatically({ force = false } = {}) {
+  if (!app.isPackaged || !autoUpdater?.checkForUpdates) return null;
+  const now = Date.now();
+  if (!force && now - lastAutomaticDesktopUpdateCheckAt < DESKTOP_UPDATE_CHECK_MIN_INTERVAL_MS) return null;
+  if (automaticDesktopUpdateCheckPromise) return automaticDesktopUpdateCheckPromise;
+  lastAutomaticDesktopUpdateCheckAt = now;
+  automaticDesktopUpdateCheckPromise = autoUpdater.checkForUpdates()
+    .catch((error) => {
+      console.warn('[updater] automatic update check failed', error instanceof Error ? error.message : String(error));
+      return null;
+    })
+    .finally(() => { automaticDesktopUpdateCheckPromise = null; });
+  return automaticDesktopUpdateCheckPromise;
+}
+
+function installAutomaticDesktopUpdateChecks() {
+  if (!app.isPackaged) return;
+  const startupTimer = setTimeout(() => { void checkForDesktopUpdateAutomatically({ force: true }); }, 4_000);
+  startupTimer.unref?.();
+  app.on('browser-window-focus', () => { void checkForDesktopUpdateAutomatically(); });
+  automaticDesktopUpdateCheckTimer = setInterval(() => {
+    const hasFocusedWindow = BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isFocused());
+    if (hasFocusedWindow) void checkForDesktopUpdateAutomatically();
+  }, DESKTOP_UPDATE_FOREGROUND_INTERVAL_MS);
+  automaticDesktopUpdateCheckTimer.unref?.();
 }
 
 function installApplicationMenu() {
@@ -995,11 +1129,17 @@ app.whenReady().then(() => {
   host.start();
   createWindow();
   startHostEventPump();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  installAutomaticDesktopUpdateChecks();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    void checkForDesktopUpdateAutomatically();
+  });
 });
 
 app.on('window-all-closed', () => { deepLinkRouter.markNotReady(); if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => {
+  if (automaticDesktopUpdateCheckTimer) clearInterval(automaticDesktopUpdateCheckTimer);
+  automaticDesktopUpdateCheckTimer = null;
   hostEventPumpStopped = true;
   mahayanaEdgeServer?.dispose();
   mahayanaEdgeServer = null;

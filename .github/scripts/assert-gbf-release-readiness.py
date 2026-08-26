@@ -44,7 +44,10 @@ release = (workflows / 'native-electron-release.yml').read_text(encoding='utf-8'
 for marker in (
     'CI result',
     'Electron desktop result',
+    'Electron macOS',
+    'Electron Windows',
     'Native mobile result',
+    'Native iOS',
     'already exists; refusing to mutate an existing release',
     'gh release create',
     'SHA256SUMS.txt',
@@ -82,4 +85,4 @@ for marker in (
     if marker not in adr:
         raise SystemExit(f'GBF release readiness: historical-branch ADR missing {marker}')
 
-print('GBF release readiness passed: canonical seven-gate RC, rollback integrity, immutable signed release and historical-branch isolation are all enforced.')
+print('GBF release readiness passed: canonical per-platform gates, rollback integrity, immutable signed release and historical-branch isolation are all enforced.')

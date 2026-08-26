@@ -1,7 +1,7 @@
 {
   "name": "@fabushi/desktop",
-  "version": "1.0.2",
-  "description": "全球法布施 Electron desktop client",
+  "version": "1.0.3",
+  "description": "Fabushi Electron desktop client",
   "homepage": "https://fabushi.ombhrum.com/",
   "author": "bhrumom",
   "desktopName": "com.ombhrum.fabushi",
@@ -10,6 +10,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
+    "prebuild:renderer": "node scripts/prepare-desktop-window-branding.mjs",
     "build:renderer": "tsc --noEmit && vite build",
     "build:host": "cargo build --release -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs",
     "build:host:ci": "cargo build --profile ci -p mahayana-app-host-desktop --bin mahayana-app-host --manifest-path ../third_party/mahayana/mahayana-rs/Cargo.toml && node scripts/stage-host.mjs ci",
@@ -19,6 +20,7 @@
     "start": "electron ."
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.14.0",
     "react": "19.1.1",
     "react-dom": "19.1.1"
@@ -36,7 +38,7 @@
   },
   "build": {
     "appId": "com.ombhrum.fabushi",
-    "productName": "全球法布施",
+    "productName": "Fabushi",
     "executableName": "fabushi",
     "asar": true,
     "directories": {
@@ -80,7 +82,9 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "artifactName": "fabushi-${version}-setup.${ext}",
+      "icon": "resources/icon.png"
     },
     "linux": {
       "category": "Utility",
@@ -89,7 +93,8 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "artifactName": "fabushi-${version}-${arch}.${ext}"
     },
     "deb": {
       "packageName": "fabushi",
@@ -120,6 +125,14 @@
       "icon": "resources/icon.png"
     },
     "afterSign": "scripts/notarize-after-sign.cjs",
-    "copyright": "Copyright © 2026 Fabushi. All rights reserved."
+    "copyright": "Copyright © 2026 Fabushi. All rights reserved.",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bhrumom",
+        "repo": "fabushi",
+        "releaseType": "release"
+      }
+    ]
   }
 }

@@ -4,20 +4,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const test = require('node:test');
 
 const { createNativeCapabilityHandlers } = require('./native-capability-handlers.cjs');
 
 async function harness(run, options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fabushi-native-cap-test-'));
-  let state = { preferences: {}, clientPersistence: {} };
+  let state = options.initialState ?? { preferences: {}, clientPersistence: {} };
   const safeStorage = options.safeStorage ?? {
     isEncryptionAvailable: () => true,
     encryptString: (value) => Buffer.from(`encrypted:${value}`, 'utf8'),
     decryptString: (bytes) => bytes.toString('utf8').replace(/^encrypted:/, ''),
   };
   const app = {
-    isPackaged: false,
+    isPackaged: options.isPackaged ?? false,
     getPath(name) {
       if (name === 'userData') return path.join(root, 'user-data');
       if (name === 'downloads') return path.join(root, 'downloads');
@@ -29,7 +30,7 @@ async function harness(run, options = {}) {
   for (const name of ['userData', 'downloads', 'temp']) await fs.mkdir(app.getPath(name), { recursive: true });
   const handlers = createNativeCapabilityHandlers({
     app,
-    autoUpdater: {},
+    autoUpdater: options.autoUpdater ?? {},
     dialog: {},
     net: options.net ?? { fetch: async () => { throw new Error('unexpected fetch'); } },
     nativeTheme: {},
@@ -38,6 +39,8 @@ async function harness(run, options = {}) {
     host: options.host ?? { request: async () => ({ ok: true, data: null }) },
     readNativeState: async () => state,
     mutateNativeState: async (mutator) => { state = await mutator(state); return state; },
+    getDesktopUpdateStatus: options.getDesktopUpdateStatus,
+    setDesktopUpdateStatus: options.setDesktopUpdateStatus,
     windowForEvent: () => ({}),
     broadcastNativeEvent: () => {},
   });
@@ -116,6 +119,107 @@ test('secret vault never persists plaintext and listSecrets does not reveal valu
   });
 });
 
+test('inference Router readiness reports local sessions and encrypted OpenRouter configuration without secrets', async () => {
+  const previous = {
+    CODEX_HOME: process.env.CODEX_HOME,
+    CODEX_PATH: process.env.CODEX_PATH,
+    CLAUDE_CODE_PATH: process.env.CLAUDE_CODE_PATH,
+    DOCKER_PATH: process.env.DOCKER_PATH,
+    MAHAYANA_DOCKER_IMAGE: process.env.MAHAYANA_DOCKER_IMAGE,
+  };
+  try {
+    await harness(async ({ root, handlers }) => {
+      const codexHome = path.join(root, 'codex-home');
+      const bin = path.join(root, process.platform === 'win32' ? 'provider.exe' : 'provider');
+      await fs.mkdir(codexHome, { recursive: true });
+      await fs.writeFile(path.join(codexHome, 'auth.json'), JSON.stringify({ tokens: { access_token: 'test-access-token' } }), { mode: 0o600 });
+      await fs.writeFile(bin, 'test');
+      process.env.CODEX_HOME = codexHome;
+      process.env.CODEX_PATH = bin;
+      process.env.CLAUDE_CODE_PATH = bin;
+      process.env.DOCKER_PATH = bin;
+      process.env.MAHAYANA_DOCKER_IMAGE = `ghcr.io/bhrumom/fabushi-sandbox@sha256:${'a'.repeat(64)}`;
+      await handlers.upsertSecrets({ name: 'inference/openrouter/api-key', value: 'never-return-this-key' });
+      await handlers.upsertSecrets({ name: 'inference/claude/api-key', value: 'never-return-this-claude-key' });
+
+      const status = await handlers.getInferenceRouterStatus();
+      assert.equal(status.schemaVersion, 1);
+      assert.equal(status.providers.find((provider) => provider.id === 'fabushi').available, true);
+      assert.equal(status.providers.find((provider) => provider.id === 'codex').authenticated, true);
+      assert.equal(status.providers.find((provider) => provider.id === 'openrouter').available, true);
+      assert.equal(status.providers.find((provider) => provider.id === 'claude-code').available, true);
+      assert.equal(status.sandboxes.find((sandbox) => sandbox.id === 'local-docker').available, true);
+      assert.equal(JSON.stringify(status).includes('never-return-this-key'), false);
+      assert.equal(JSON.stringify(status).includes('never-return-this-claude-key'), false);
+    });
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+});
+
+test('inference readiness rejects an unreadable encrypted Provider credential', async () => {
+  await harness(async ({ app, handlers }) => {
+    const secureRoot = path.join(app.getPath('userData'), 'secure');
+    await fs.mkdir(secureRoot, { recursive: true });
+    await fs.writeFile(path.join(secureRoot, 'secrets.json'), JSON.stringify({
+      'inference/openrouter/api-key': { ciphertext: Buffer.from('corrupt').toString('base64') },
+    }));
+    const status = await handlers.getInferenceRouterStatus();
+    assert.equal(status.providers.find((provider) => provider.id === 'openrouter').available, false);
+  }, {
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(value),
+      decryptString: () => { throw new Error('corrupt ciphertext'); },
+    },
+  });
+});
+
+test('usage summary preserves provider-reported token breakdown without prompt content', async () => {
+  const timestampMs = Date.now();
+  await harness(async ({ handlers }) => {
+    const summary = await handlers.getUsageSummary();
+    const codex = summary.byProvider.find((item) => item.provider === 'codex');
+    assert.deepEqual(codex, {
+      provider: 'codex',
+      requests: 1,
+      inputTokens: 120,
+      cachedInputTokens: 40,
+      outputTokens: 30,
+      reasoningTokens: 10,
+      totalTokens: 160,
+      lifetimeTokens: 900,
+      lastUsedAtMs: timestampMs,
+    });
+    assert.equal(JSON.stringify(summary).includes('prompt'), false);
+  }, {
+    initialState: {
+      preferences: {},
+      clientPersistence: {},
+      usageEvents: [{ timestampMs, provider: 'codex', inputTokens: 120, cachedInputTokens: 40, outputTokens: 30, reasoningTokens: 10, totalTokens: 160 }],
+      usageLifetimeTokens: 900,
+      usageLifetimeByProvider: { codex: 900 },
+      usageUpdatedAtMs: timestampMs,
+    },
+  });
+});
+
+test('credential changes can restart only the inference Host generation', async () => {
+  const reasons = [];
+  const host = {
+    restart(reason) { reasons.push(reason); },
+    health() { return { state: 'running', generation: 2 }; },
+    async request() { return { ok: true, data: null }; },
+  };
+  await harness(async ({ handlers }) => {
+    assert.deepEqual(handlers.restartInferenceRouter(), { state: 'running', generation: 2 });
+  }, { host });
+  assert.deepEqual(reasons, ['inference Provider credential changed']);
+});
+
 test('managed attachment operations reject path escape attempts', async () => {
   await harness(async ({ root, handlers }) => {
     const outside = path.join(root, 'outside.bin');
@@ -148,5 +252,59 @@ test('diagnostic reports redact nested secrets before persistence', async () => 
     assert.equal(record.payload.ordinary, 'safe-value');
     assert.equal(raw.includes('token-value'), false);
     assert.equal(raw.includes('password-value'), false);
+  });
+});
+
+
+test('desktop update click uses live status even while persisted state is stale', async () => {
+  const calls = [];
+  let liveStatus = { type: 'available', version: '1.0.9' };
+  const autoUpdater = new EventEmitter();
+  autoUpdater.downloadUpdate = async () => {
+    calls.push('download');
+    setImmediate(() => autoUpdater.emit('update-downloaded', { version: '1.0.9' }));
+    return ['/tmp/fabushi-update.zip'];
+  };
+  autoUpdater.quitAndInstall = (silent, forceRunAfter) => { calls.push(['install', silent, forceRunAfter]); };
+  await harness(async ({ handlers, getState }) => {
+    assert.equal(getState().updateStatus.version, '1.0.798', 'disk intentionally begins stale');
+    const result = await handlers.quitAndInstallUpdate({ expectedVersion: '1.0.9' });
+    assert.equal(result.installed, true);
+    assert.equal(result.version, '1.0.9');
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    assert.deepEqual(calls, ['download', ['install', false, true]]);
+  }, {
+    isPackaged: true,
+    autoUpdater,
+    initialState: { preferences: {}, clientPersistence: {}, updateStatus: { type: 'upToDate', version: '1.0.798' } },
+    getDesktopUpdateStatus: async () => liveStatus,
+    setDesktopUpdateStatus: async (status) => { liveStatus = status; return status; },
+  });
+});
+
+test('desktop update click downloads a GitHub release and schedules replacement restart', async () => {
+  const calls = [];
+  const autoUpdater = new EventEmitter();
+  autoUpdater.downloadUpdate = async () => {
+    calls.push('download');
+    setImmediate(() => autoUpdater.emit('update-downloaded', { version: '1.0.3' }));
+    return ['/tmp/fabushi-update.zip'];
+  };
+  autoUpdater.quitAndInstall = (silent, forceRunAfter) => { calls.push(['install', silent, forceRunAfter]); };
+  await harness(async ({ handlers, getState }) => {
+    const result = await handlers.quitAndInstallUpdate({ expectedVersion: '1.0.3' });
+    assert.equal(result.installed, true);
+    assert.equal(result.version, '1.0.3');
+    assert.equal(getState().updateStatus.type, 'staging');
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    assert.deepEqual(calls, ['download', ['install', false, true]]);
+  }, {
+    isPackaged: true,
+    autoUpdater,
+    initialState: {
+      preferences: {},
+      clientPersistence: {},
+      updateStatus: { type: 'available', version: '1.0.3' },
+    },
   });
 });

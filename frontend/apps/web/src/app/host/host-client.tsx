@@ -234,6 +234,23 @@ const defaultPreferences: HostPreferences = {
   autoReviewRules: [],
 };
 
+function serializeProductHostSettings(settings: ProductHostSettings): string {
+  return JSON.stringify({
+    notifications: settings.notifications,
+    autoUpdateWhenIdle: settings.autoUpdateWhenIdle,
+    localExecution: settings.localExecution,
+    routeEgressLocally: settings.routeEgressLocally,
+    securityKeys: settings.securityKeys,
+    webauthnProxyEnabled: settings.webauthnProxyEnabled,
+    localToolPermission: settings.localToolPermission,
+    remoteControlEnabled: settings.remoteControlEnabled,
+    aiComputerControlEnabled: settings.aiComputerControlEnabled,
+    autoReviewRules: settings.autoReviewRules,
+    inferenceProvider: settings.inferenceProvider,
+    sandboxRuntime: settings.sandboxRuntime,
+  });
+}
+
 const modelOptions = [
   { value: "auto", label: "自动选择" },
   { value: "deepseek-chat", label: "DeepSeek Chat" },
@@ -579,6 +596,10 @@ export default function HostClient() {
   const [preferences, setPreferences] = useState<HostPreferences>(defaultPreferences);
   const [hostSettingsHydrated, setHostSettingsHydrated] = useState(false);
   const lastHostSettingsJsonRef = useRef("");
+  const hostRouterSettingsRef = useRef<Pick<ProductHostSettings, "inferenceProvider" | "sandboxRuntime">>({
+    inferenceProvider: "fabushi",
+    sandboxRuntime: "host",
+  });
   const [auditRecords, setAuditRecords] = useState<unknown[]>([]);
   const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [ruleDraft, setRuleDraft] = useState("");
@@ -840,8 +861,9 @@ export default function HostClient() {
       remoteControlEnabled: preferences.remoteControlEnabled,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
-    const serialized = JSON.stringify(settings);
+    const serialized = serializeProductHostSettings(settings);
     if (serialized === lastHostSettingsJsonRef.current) return;
     lastHostSettingsJsonRef.current = serialized;
     void transport.execute({
@@ -885,6 +907,7 @@ export default function HostClient() {
       remoteControlEnabled: true,
       aiComputerControlEnabled: preferences.aiComputerControlEnabled,
       autoReviewRules: preferences.autoReviewRules,
+      ...hostRouterSettingsRef.current,
     };
     void (async () => {
       await transport.execute({
@@ -1450,7 +1473,11 @@ export default function HostClient() {
           setMcpToolResult(JSON.stringify(event.result, null, 2));
           break;
         case "settings.changed":
-          lastHostSettingsJsonRef.current = JSON.stringify(event.settings);
+          lastHostSettingsJsonRef.current = serializeProductHostSettings(event.settings);
+          hostRouterSettingsRef.current = {
+            inferenceProvider: event.settings.inferenceProvider,
+            sandboxRuntime: event.settings.sandboxRuntime,
+          };
           setHostSettingsHydrated(true);
           setPreferences((current) => ({
             ...current,
@@ -1702,6 +1729,30 @@ export default function HostClient() {
     void transport
       .initialize({ profileId: "default", mode })
       .then(async () => {
+        // Resolve authentication first. Conversation/tool/workspace hydration is background
+        // work and must never hold a full-screen returning-user gate.
+        try {
+          const authState = await Promise.race([
+            transport.authStatus(),
+            new Promise<never>((_, reject) =>
+              window.setTimeout(
+                () => reject(new Error("账号服务响应超时，请重新登录")),
+                8_000,
+              ),
+            ),
+          ]);
+          setAuth(authState);
+          if (authState.loggedIn) {
+            setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
+          }
+        } catch (cause: unknown) {
+          setAuth({ loggedIn: false });
+          setLoginError(
+            `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        } finally {
+          setAuthResolved(true);
+        }
         await transport.execute({
           type: "conversation.list",
           requestId: "conversation-list-initial",
@@ -1730,28 +1781,6 @@ export default function HostClient() {
             requestId: "update-status-initial",
           }),
         ]);
-        try {
-          const authState = await Promise.race([
-            transport.authStatus(),
-            new Promise<never>((_, reject) =>
-              window.setTimeout(
-                () => reject(new Error("账号服务响应超时，请重新登录")),
-                8_000,
-              ),
-            ),
-          ]);
-          setAuth(authState);
-          if (authState.loggedIn) {
-            setFeatureStates((current) => ({ ...current, "auth.login": "passed" }));
-          }
-        } catch (cause: unknown) {
-          setAuth({ loggedIn: false });
-          setLoginError(
-            `无法恢复账号会话：${cause instanceof Error ? cause.message : String(cause)}`,
-          );
-        } finally {
-          setAuthResolved(true);
-        }
         const stored = JSON.parse(
           window.localStorage.getItem("fabushi.installed-miniapps") ?? "[]",
         ) as unknown;
@@ -4868,8 +4897,8 @@ export default function HostClient() {
             <section className={`${styles.fabushiWelcome} ${styles.loginExperience}`} role="status" aria-live="polite">
               <BotMark botId="fabushi-account" state="waking" size={96} className={styles.loginHeroMark} paused={false} />
               <p className={styles.loginEyebrow}>FABUSHI ACCOUNT</p>
-              <h2>正在恢复你的工作空间</h2>
-              <p>安全会话保存在本机；不会把登录凭据暴露给界面层。</p>
+              <h2>正在验证账号</h2>
+              <p>界面不会等待工作空间同步；这里只确认本机安全会话是否仍有效。</p>
               <div className={styles.loginLoadingRail}><i /><i /><i /></div>
             </section>
           ) : browserLoginAttempt ? (

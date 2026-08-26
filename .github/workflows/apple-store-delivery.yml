@@ -571,5 +571,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "Fabushi Apple $APP_VERSION ($BUILD_NUMBER)" \
-            --notes "Signed store-distribution packages accepted by App Store Connect from $SOURCE_SHA. These assets are also retained here exactly as delivered; Apple review/public availability remains controlled in App Store Connect."
+            --notes "Signed store-distribution packages accepted by App Store Connect from $SOURCE_SHA. These assets are also retained here exactly as delivered; Apple review/public availability remains controlled in App Store Connect." \
+            --latest=false
           echo "- GitHub Release: $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

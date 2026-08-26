@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/gbf-rollback-drill.yml'
       - '.github/workflows/native-electron-release.yml'
+      - '.github/workflows/post-main-delivery.yml'
       - 'projects/grok-bot-fabushi-integration/**'
   workflow_dispatch:
 
@@ -31,9 +32,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false)] | first')"
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^desktop-[0-9]+\\.[0-9]+\\.[0-9]+$")))] | first')"
           if [ -z "$release_json" ] || [ "$release_json" = "null" ]; then
-            echo 'No stable published GitHub release exists; rollback cannot be honestly demonstrated.' >&2
+            echo 'No canonical stable desktop GitHub release exists; desktop rollback cannot be honestly demonstrated.' >&2
             exit 1
           fi
           tag="$(jq -r '.tag_name // empty' <<<"$release_json")"
@@ -59,6 +60,9 @@ jobs:
             exit 1
           fi
           find rollback-assets -maxdepth 1 -type f -printf '%f\n' | sort >> "$GITHUB_STEP_SUMMARY"
+          test -f rollback-assets/latest-mac.yml
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$(find rollback-assets -maxdepth 1 -type f -name '*macos-*.zip' -print -quit)"
 
       - name: Verify release checksums when published
         shell: bash
@@ -69,9 +73,24 @@ jobs:
             exit 1
           fi
           cd rollback-assets
-          sed -E 's#([[:space:]]+)release/#\1#' SHA256SUMS.txt > SHA256SUMS.rollback.txt
+          : > SHA256SUMS.rollback.txt
+          manifest_digests="$(awk '{print $1}' SHA256SUMS.txt | grep -E '^[0-9a-fA-F]{64}$' | tr 'A-F' 'a-f' | sort -u)"
+          verified=0
+          while IFS= read -r -d '' asset; do
+            case "$asset" in
+              ./SHA256SUMS.txt|./SHA256SUMS.rollback.txt) continue ;;
+            esac
+            digest="$(sha256sum "$asset" | awk '{print tolower($1)}')"
+            if ! grep -Fxq "$digest" <<<"$manifest_digests"; then
+              echo "Downloaded rollback asset has no matching published checksum: $asset ($digest)" >&2
+              exit 1
+            fi
+            printf '%s  %s\n' "$digest" "$asset" >> SHA256SUMS.rollback.txt
+            verified=$((verified + 1))
+          done < <(find . -maxdepth 1 -type f -print0 | sort -z)
+          test "$verified" -gt 0
           sha256sum -c SHA256SUMS.rollback.txt
-          echo 'previous-good release checksums verified' >> "$GITHUB_STEP_SUMMARY"
+          echo "previous-good release checksums verified by content digest for $verified assets" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require immutable-release and canonical-gate guards in the current release workflow
         shell: bash

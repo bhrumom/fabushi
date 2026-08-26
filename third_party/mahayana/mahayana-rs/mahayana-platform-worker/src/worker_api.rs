@@ -70,8 +70,14 @@ const OAUTH_ATTEMPT_SECONDS: i64 = 10 * 60;
 const USAGE_WINDOW_SECONDS: i64 = 30 * 24 * 60 * 60;
 const USAGE_RESERVATION_SECONDS: i64 = 10 * 60;
 const MAX_TOKENS_PER_RESERVATION: i64 = 2_000_000;
+const UNLIMITED_AI_TOKEN_LIMIT: i64 = 9_007_199_254_740_991;
+const BUILTIN_SUPER_ADMIN_ACCOUNT_IDS: &[&str] = &["22"];
 const MARKETPLACE_DEPLOYMENT_VERIFY_ATTEMPTS: usize = 6;
 const MARKETPLACE_DEPLOYMENT_VERIFY_DELAY_SECONDS: u64 = 3;
+
+fn is_builtin_super_admin_account_id(user_id: &str) -> bool {
+    BUILTIN_SUPER_ADMIN_ACCOUNT_IDS.contains(&user_id.trim())
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct MarketplacePluginRow {
@@ -402,6 +408,7 @@ struct AuthenticatedAccount {
 mod account;
 mod ai_usage;
 mod commerce;
+mod developer_commerce_proxy;
 mod listener_relay;
 mod marketplace;
 mod remote_computer;
@@ -410,6 +417,7 @@ mod security;
 use account::*;
 use ai_usage::*;
 use commerce::*;
+use developer_commerce_proxy::*;
 use listener_relay::*;
 use marketplace::*;
 use remote_computer::*;
@@ -511,6 +519,42 @@ pub async fn main(request: Request, env: Env, _context: Context) -> Result<Respo
         )
         .get_async("/v1/wallet/balance", wallet_balance)
         .get_async("/v1/wallet/history", wallet_history)
+        .get_async("/v1/developer/commerce/profile", developer_commerce_proxy)
+        .post_async("/v1/developer/commerce/profile", developer_commerce_proxy)
+        .get_async("/v1/developer/commerce/payout", developer_commerce_proxy)
+        .post_async(
+            "/v1/developer/commerce/payout/profile",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/developer/commerce/payout/request",
+            developer_commerce_proxy,
+        )
+        .get_async("/v1/developer/commerce/miniapps", developer_commerce_proxy)
+        .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id",
+            developer_commerce_proxy,
+        )
+        .get_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/developer/commerce/miniapps/:mini_app_id/products/:product_id/google/sync",
+            developer_commerce_proxy,
+        )
+        .post_async(
+            "/v1/pay/intents/:payment_id/apple/advanced-commerce",
+            developer_commerce_proxy,
+        )
         .post_async("/v1/plugins/:plugin_id/commerce/quote", commerce_quote)
         .post_async(
             "/v1/plugins/:plugin_id/commerce/purchase",
