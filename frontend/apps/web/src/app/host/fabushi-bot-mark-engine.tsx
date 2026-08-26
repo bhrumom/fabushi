@@ -50,6 +50,17 @@ const COLOR_VALUES: Record<BotMarkColor, string> = {
   gray: "#959595",
 };
 
+const FABUSHI_STATE_TO_OPENMAUS: Partial<Record<BotMarkState, CursorState>> = {
+  "tool-running": "working",
+  speaking: "listening",
+  result: "happy",
+  error: "alerting",
+};
+
+function openMausState(state: BotMarkState): CursorState {
+  return FABUSHI_STATE_TO_OPENMAUS[state] ?? state as CursorState;
+}
+
 function mix(hex: string, toward: string, amount: number): string {
   const source = Number.parseInt(hex.slice(1), 16);
   const target = Number.parseInt(toward.slice(1), 16);
@@ -119,7 +130,7 @@ export const FabushiBotMarkEngine = forwardRef<BotMarkHandle, FabushiBotMarkEngi
     return (
       <CursorAvatar
         ref={avatarRef}
-        state={state as CursorState}
+        state={openMausState(state)}
         size={size}
         silhouette={OPENMAUS_SILHOUETTE}
         gradient={gradientFor(color)}
