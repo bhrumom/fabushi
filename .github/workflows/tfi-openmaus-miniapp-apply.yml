@@ -1,3 +1,4 @@
+# One-shot reviewed integration applicator; the job deletes this workflow after success.
 name: TFI OpenMaus MiniApp one-shot integration
 
 on:
