@@ -1,0 +1,53 @@
+name: TFI multi-device account sync one-shot
+
+on:
+  push:
+    branches:
+      - feat/tfi-multidevice-account-sync
+    paths:
+      - .github/workflows/tfi-multidevice-account-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            .github/scripts/apply-tfi-multidevice-account-sync.py
+            .github/workflows/tfi-multidevice-account-sync.yml
+            ai-backend
+            desktop/electron/native-capability-handlers.cjs
+            desktop/electron/native-capability-handlers.test.cjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ai-backend/package-lock.json
+      - name: Apply deterministic account sync integration
+        run: python3 .github/scripts/apply-tfi-multidevice-account-sync.py
+      - name: Validate transformed source
+        run: git diff --check
+      - name: Install AI backend dependencies
+        working-directory: ai-backend
+        run: npm ci --ignore-scripts
+      - name: Test account sync and marketplace multi-device behavior
+        working-directory: ai-backend
+        run: node --test test/account_sync_store.test.js test/miniapp_marketplace_http.test.js
+      - name: Test desktop native account bridge
+        run: node --test desktop/electron/native-capability-handlers.test.cjs
+      - name: Commit generated integration and remove one-shot machinery
+        env:
+          BRANCH: feat/tfi-multidevice-account-sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/apply-tfi-multidevice-account-sync.py .github/workflows/tfi-multidevice-account-sync.yml
+          git add ai-backend/src/account_sync_store.js ai-backend/src/platform_api.js ai-backend/src/miniapp_marketplace_mcp.js desktop/electron/native-capability-handlers.cjs desktop/electron/native-capability-handlers.test.cjs
+          git commit -m "feat(sync): integrate account difference stream and native bridge"
+          git push origin "HEAD:${BRANCH}"
