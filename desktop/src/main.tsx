@@ -18,9 +18,9 @@ if (!root) {
 
 async function bootstrapDesktop(): Promise<void> {
   installDesktopAccountSessionSync();
-  // Restore native/Rust-backed projections before transport/workbench reducers
-  // read their first-frame local cache. This keeps localStorage a projection,
-  // not the restart authority.
+  // Restore native persisted projections before transport/workbench reducers
+  // read their first-frame local cache. This makes localStorage a projection;
+  // canonical cloud/Rust authority is verified separately by GBF-601/602.
   await restoreDurableAgentState();
   installBotIdentityAliases();
   installDurableAgentState();
