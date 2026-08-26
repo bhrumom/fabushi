@@ -34,6 +34,8 @@ function discoveryDocument(plugin) {
     plugin.source?.bot?.id,
     plugin.source?.bot?.username,
     plugin.source?.bot?.displayName,
+    ...(plugin.categories ?? []),
+    ...(plugin.tags ?? []),
     ...(plugin.platforms ?? []),
     ...(plugin.source?.surfaces ?? []).flatMap((surface) => [
       surface.id,
@@ -79,7 +81,14 @@ if (!MiniAppMarketplace.prototype[SEARCH_GUARD]) {
     const payload = originalBrowse.call(this, { ...options, limit: 200 });
     return {
       ...payload,
-      plugins: payload.plugins.filter((plugin) => matchesDiscovery(plugin, query)).slice(0, requestedLimit),
+      plugins: payload.plugins.filter((plugin) => {
+        const manifest = this.get(plugin.pluginId);
+        return matchesDiscovery({
+          ...plugin,
+          categories: manifest?.categories ?? [],
+          tags: manifest?.tags ?? [],
+        }, query);
+      }).slice(0, requestedLimit),
     };
   };
 }
@@ -223,6 +232,8 @@ export function browseMarketplace(store, options = {}, baseUrl = '') {
       const release = marketplaceReleaseResponse(manifest, options.platform || 'desktop');
       return {
         ...plugin,
+        categories: manifest.categories,
+        tags: manifest.tags,
         releaseManifest: release.releaseManifest,
         source: { ...plugin.source, ...release.source },
         bot: manifest.bot,
