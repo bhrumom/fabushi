@@ -389,8 +389,7 @@ const emptyBotDraft: BotDraft = {
 };
 
 const botShapeOptions: BotMarkShape[] = [
-  "blob", "pebble", "bean", "egg", "squircle", "tablet", "capsule", "cylinder",
-  "hex", "gem", "crystal", "wedge", "shield", "dome", "arch", "cloud", "teardrop", "leaf",
+  "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
 ];
 const botColorOptions: BotMarkColor[] = [
   "black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",

@@ -1,15 +1,9 @@
 import {
   forwardRef,
-  useCallback,
-  useEffect,
-  useId,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { FabushiBotMarkEngine } from "./fabushi-bot-mark-engine";
 import styles from "./host.module.css";
 
 export type BotMarkState =
@@ -56,22 +50,12 @@ export type BotMarkState =
 export type BotMarkShape =
   | "blob"
   | "pebble"
-  | "bean"
-  | "egg"
   | "squircle"
   | "tablet"
-  | "capsule"
-  | "cylinder"
-  | "hex"
-  | "gem"
-  | "crystal"
   | "wedge"
-  | "shield"
-  | "dome"
-  | "arch"
+  | "hex"
   | "cloud"
-  | "teardrop"
-  | "leaf";
+  | "teardrop";
 
 export type BotMarkColor =
   | "black"
@@ -93,21 +77,6 @@ export type BotMarkHandle = {
 };
 
 type GazePoint = { x: number; y: number };
-type BotMarkPose = { turn?: number; tilt?: number; roll?: number; scale?: number };
-type BotMarkFaceTune = {
-  size?: number;
-  gap?: number;
-  height?: number;
-  eyeWidth?: number;
-  eyeHeight?: number;
-};
-type BotMarkInkGradient = {
-  from: string;
-  to: string;
-  angle?: number;
-  fromPos?: number;
-  toPos?: number;
-};
 
 type BotMarkProps = {
   botId: string;
@@ -125,13 +94,6 @@ type BotMarkProps = {
   shape?: BotMarkShape;
   color?: BotMarkColor;
   eyeColor?: string;
-  pose?: BotMarkPose;
-  poseHome?: BotMarkPose;
-  faceTune?: BotMarkFaceTune;
-  eyeScale?: number;
-  uniformEyes?: boolean;
-  eyeTopology?: boolean;
-  inkGradient?: BotMarkInkGradient | null;
 };
 
 const IDENTITY_SHAPES: readonly BotMarkShape[] = [
@@ -156,103 +118,48 @@ const COLOR_VALUES: Record<BotMarkColor, { light: string; dark: string }> = {
   gray: { light: "#959595", dark: "#777777" },
 };
 
-const SHAPE_PATHS: Record<BotMarkShape, string> = {
-  blob: "M50 9C68 8 88 20 91 39C95 59 85 82 65 90C43 99 18 88 10 67C3 48 10 25 28 15C35 11 42 9 50 9Z",
-  pebble: "M31 11H69C82 11 91 23 91 37V63C91 78 80 90 65 92H35C20 91 9 79 9 64V36C9 23 18 13 31 11Z",
-  bean: "M22 18C33 7 51 8 64 16C80 25 91 41 90 58C89 76 75 90 57 92C39 94 22 85 13 70C2 52 7 33 22 18Z",
-  egg: "M50 7C67 7 82 24 88 43C95 66 82 91 55 94C29 97 10 80 12 56C13 35 30 8 50 7Z",
-  squircle: "M29 9H71C84 9 91 16 91 29V71C91 84 84 91 71 91H29C16 91 9 84 9 71V29C9 16 16 9 29 9Z",
-  tablet: "M24 12H76C85 12 91 20 91 29V71C91 81 84 88 74 88H26C16 88 9 81 9 71V29C9 20 15 12 24 12Z",
-  capsule: "M28 15H72C86 15 94 27 94 42V58C94 73 85 85 70 85H30C15 85 6 73 6 58V42C6 27 14 15 28 15Z",
-  cylinder: "M22 19C22 11 78 11 78 19V81C78 89 22 89 22 81V19Z",
-  hex: "M27 10H73L94 50L73 90H27L6 50L27 10Z",
-  gem: "M50 5L88 28L82 72L50 95L18 72L12 28L50 5Z",
-  crystal: "M50 4L82 20L94 55L70 93H30L6 55L18 20L50 4Z",
-  wedge: "M16 18L91 32L78 88L10 72L16 18Z",
-  shield: "M50 6L88 18V49C88 73 73 88 50 95C27 88 12 73 12 49V18L50 6Z",
-  dome: "M11 55C11 31 28 11 50 11C72 11 89 31 89 55V89H11V55Z",
-  arch: "M13 91V48C13 25 29 9 50 9C71 9 87 25 87 48V91H67V49C67 38 60 30 50 30C40 30 33 38 33 49V91H13Z",
-  cloud: "M21 80C9 80 4 67 9 57C12 50 18 47 25 47C24 31 35 19 49 19C61 19 71 27 74 39C88 39 96 50 94 63C93 73 85 80 75 80H21Z",
-  teardrop: "M50 5C50 5 88 47 88 66C88 84 72 95 50 95C28 95 12 84 12 66C12 47 50 5 50 5Z",
-  leaf: "M91 9C63 10 26 17 13 42C1 66 18 89 42 91C70 93 89 62 91 9Z",
-};
-
 function hashIdentity(value: string): number {
-  let hash = 0x811c9dc5;
-  for (const char of value) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-    hash ^= hash >>> 13;
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
   }
   return hash >>> 0;
 }
 
+function identityRandom(seed: number): () => number {
+  let value = seed >>> 0;
+  return () => {
+    value = value + 1831565813 | 0;
+    let next = Math.imul(value ^ value >>> 15, 1 | value);
+    next = next + Math.imul(next ^ next >>> 7, 61 | next) ^ next;
+    return ((next ^ next >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function shapeHash(value: string): number {
+  let hash = hashIdentity(value);
+  hash = Math.imul(hash ^ hash >>> 16, 73244475);
+  hash = Math.imul(hash ^ hash >>> 13, 3266489909);
+  return (hash ^ hash >>> 16) >>> 0;
+}
+
 export function botMarkShape(botId: string): BotMarkShape {
-  return IDENTITY_SHAPES[hashIdentity(`shape:${botId}`) % IDENTITY_SHAPES.length] ?? "blob";
+  return IDENTITY_SHAPES[shapeHash(botId) % IDENTITY_SHAPES.length] ?? "blob";
 }
 
 export function botMarkShapeIndex(botId: string): number {
-  return hashIdentity(`shape:${botId}`) % IDENTITY_SHAPES.length;
+  return shapeHash(botId) % IDENTITY_SHAPES.length;
 }
 
 export function botMarkColorId(botId: string): BotMarkColor {
-  return COLORS[hashIdentity(`color:${botId}`) % COLORS.length] ?? "brown";
+  const seed = (hashIdentity(botId) ^ Math.imul(1, 2654435769)) >>> 0;
+  const index = Math.floor(identityRandom((seed ^ 2654435769) >>> 0)() * COLORS.length);
+  return COLORS[index] ?? "gray";
 }
 
 export function botMarkColor(botId: string): string {
   const value = COLOR_VALUES[botMarkColorId(botId)];
   return `light-dark(${value.light}, ${value.dark})`;
-}
-
-function gazeVectorForRect(rect: DOMRect, point: GazePoint): GazePoint {
-  const halfWidth = Math.max(rect.width / 2, 1);
-  const halfHeight = Math.max(rect.height / 2, 1);
-  return {
-    x: Math.max(-1, Math.min(1, (point.x - (rect.left + halfWidth)) / halfWidth)),
-    y: Math.max(-1, Math.min(1, (point.y - (rect.top + halfHeight)) / halfHeight)),
-  };
-}
-
-function eyeExpression(state: BotMarkState): { width: number; height: number; y: number; tilt: number } {
-  if (["sleeping", "powering-down"].includes(state)) return { width: 8, height: 1.5, y: 50, tilt: 0 };
-  if (["drowsy", "bored", "suspicious"].includes(state)) return { width: 8, height: 3, y: 49, tilt: state === "suspicious" ? -7 : 0 };
-  if (["surprised", "scared", "waking"].includes(state)) return { width: 7.5, height: 10, y: 48, tilt: 0 };
-  if (["happy", "laughing", "celebrate", "proud"].includes(state)) return { width: 8, height: 4.5, y: 47, tilt: 0 };
-  if (["angry", "alerting"].includes(state)) return { width: 8, height: 4, y: 48, tilt: -12 };
-  if (["sad", "shy"].includes(state)) return { width: 7.5, height: 5, y: 50, tilt: 7 };
-  return { width: 7.5, height: 7, y: 48, tilt: 0 };
-}
-
-function motionForState(state: BotMarkState, phase: boolean): { rotate: number; x: number; y: number; scale: number } {
-  const direction = phase ? 1 : -1;
-  if (["alerting", "angry", "confused"].includes(state)) return { rotate: direction * 4, x: direction * 1.8, y: 0, scale: 1 };
-  if (["celebrate", "excited", "bouncing", "playful"].includes(state)) return { rotate: direction * 3, x: 0, y: phase ? -3 : 1, scale: phase ? 1.06 : 0.98 };
-  if (["radar", "orbit", "loading", "progress", "searching"].includes(state)) return { rotate: direction * 5, x: direction, y: -direction, scale: 1 };
-  if (["writing", "sending", "receiving", "uploading", "working"].includes(state)) return { rotate: direction * 1.5, x: direction * 1.2, y: 0, scale: 1 };
-  if (["humming", "listening", "dictating"].includes(state)) return { rotate: 0, x: 0, y: direction, scale: phase ? 1.02 : 0.99 };
-  return { rotate: direction * 0.7, x: 0, y: phase ? -0.5 : 0.5, scale: 1 };
-}
-
-function stateAccent(state: BotMarkState): "none" | "orbit" | "pulse" | "alert" {
-  if (["orbit", "radar", "searching", "loading", "progress"].includes(state)) return "orbit";
-  if (["thinking", "working", "writing", "sending", "receiving", "uploading", "spawning"].includes(state)) return "pulse";
-  if (["alerting", "angry", "scared"].includes(state)) return "alert";
-  return "none";
-}
-
-function canBlink(state: BotMarkState): boolean {
-  return !["sleeping", "powering-down", "loading", "progress", "radar"].includes(state);
-}
-
-function markRhythm(botId: string) {
-  const seed = hashIdentity(`rhythm:${botId}`);
-  return {
-    fastMs: 520 + (seed % 310),
-    slowMs: 760 + ((seed >>> 5) % 520),
-    blinkMs: 2_900 + ((seed >>> 9) % 3_600),
-    breatheMs: 4_200 + ((seed >>> 13) % 2_700),
-    delayMs: -((seed >>> 17) % 3_000),
-  };
 }
 
 export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
@@ -272,250 +179,47 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
     shape: shapeOverride,
     color: colorOverride,
     eyeColor,
-    pose,
-    poseHome,
-    faceTune,
-    eyeScale = 1,
-    uniformEyes = true,
-    eyeTopology = true,
-    inkGradient = null,
   },
   ref,
 ) {
-  const wrapperRef = useRef<HTMLSpanElement | null>(null);
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const blinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const blinkResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gradientId = useId().replace(/:/g, "");
-  const clipId = `${gradientId}-clip`;
-  const glowId = `${gradientId}-glow`;
-  const [gaze, setGaze] = useState<GazePoint>({ x: 0, y: 0 });
-  const [phase, setPhase] = useState(false);
-  const [blinking, setBlinking] = useState(false);
-  const [spinDegrees, setSpinDegrees] = useState(0);
-  const [impulse, setImpulse] = useState<"none" | "bounce" | "burst">("none");
   const shape = shapeOverride ?? botMarkShape(botId);
   const color = colorOverride ?? botMarkColorId(botId);
-  const colorValue = COLOR_VALUES[color];
-  const rhythm = useMemo(() => markRhythm(botId), [botId]);
-
-  const triggerImpulse = useCallback((kind: "bounce" | "burst") => {
-    if (resetTimer.current) clearTimeout(resetTimer.current);
-    setImpulse(kind);
-    resetTimer.current = setTimeout(() => setImpulse("none"), 260);
-  }, []);
-
-  useImperativeHandle(ref, () => ({
-    spin(turns = 1) {
-      setSpinDegrees((degrees) => degrees + Math.max(-4, Math.min(4, turns)) * 360);
-    },
-    bounce() {
-      triggerImpulse("bounce");
-    },
-    burst() {
-      triggerImpulse("burst");
-    },
-  }), [triggerImpulse]);
-
-  useEffect(() => () => {
-    if (resetTimer.current) clearTimeout(resetTimer.current);
-    if (phaseTimer.current) clearTimeout(phaseTimer.current);
-    if (blinkTimer.current) clearTimeout(blinkTimer.current);
-    if (blinkResetTimer.current) clearTimeout(blinkResetTimer.current);
-  }, []);
-
-  useEffect(() => {
-    if (spinSignal) setSpinDegrees((degrees) => degrees + 360);
-  }, [spinSignal]);
-
-  useEffect(() => {
-    if (paused) return undefined;
-    let disposed = false;
-    const tick = (nextPhase: boolean) => {
-      if (disposed) return;
-      setPhase(nextPhase);
-      phaseTimer.current = setTimeout(
-        () => tick(!nextPhase),
-        nextPhase ? rhythm.fastMs : rhythm.slowMs,
-      );
-    };
-    phaseTimer.current = setTimeout(() => tick(true), Math.max(120, rhythm.fastMs / 2));
-    return () => {
-      disposed = true;
-      if (phaseTimer.current) clearTimeout(phaseTimer.current);
-    };
-  }, [paused, rhythm.fastMs, rhythm.slowMs]);
-
-  useEffect(() => {
-    if (paused || !canBlink(state)) {
-      setBlinking(false);
-      return undefined;
-    }
-    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      return undefined;
-    }
-    let disposed = false;
-    const blink = () => {
-      if (disposed || document.visibilityState === "hidden") {
-        blinkTimer.current = setTimeout(blink, rhythm.blinkMs);
-        return;
-      }
-      setBlinking(true);
-      blinkResetTimer.current = setTimeout(() => setBlinking(false), 105);
-      const jitter = (hashIdentity(`${botId}:${Date.now() >> 12}`) % 1_200) - 600;
-      blinkTimer.current = setTimeout(blink, Math.max(1_800, rhythm.blinkMs + jitter));
-    };
-    blinkTimer.current = setTimeout(blink, rhythm.blinkMs);
-    return () => {
-      disposed = true;
-      if (blinkTimer.current) clearTimeout(blinkTimer.current);
-      if (blinkResetTimer.current) clearTimeout(blinkResetTimer.current);
-    };
-  }, [botId, paused, rhythm.blinkMs, state]);
-
-  const updateGaze = useCallback((point: GazePoint | null) => {
-    const element = wrapperRef.current;
-    if (!element || !point) {
-      setGaze({ x: 0, y: 0 });
-      return;
-    }
-    const rect = element.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      const next = gazeVectorForRect(rect, point);
-      setGaze((current) => ({
-        x: current.x + (next.x - current.x) * 0.42,
-        y: current.y + (next.y - current.y) * 0.42,
-      }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!followPointer) updateGaze(gazeTarget);
-  }, [followPointer, gazeTarget, updateGaze]);
-
-  useEffect(() => {
-    if (!followPointer) return undefined;
-    const onPointerMove = (event: PointerEvent) => updateGaze({ x: event.clientX, y: event.clientY });
-    const onPointerLeave = () => setGaze({ x: 0, y: 0 });
-    window.addEventListener("pointermove", onPointerMove, { passive: true });
-    document.documentElement.addEventListener("pointerleave", onPointerLeave);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      document.documentElement.removeEventListener("pointerleave", onPointerLeave);
-    };
-  }, [followPointer, updateGaze]);
-
-  const expression = eyeExpression(state);
-  const motion = paused ? { rotate: 0, x: 0, y: 0, scale: 1 } : motionForState(state, phase);
-  const accent = stateAccent(state);
-  const homePose = state === "idle" || state === "sleeping" ? poseHome : pose;
-  const faceScale = Math.max(0.7, Math.min(1.35, (faceTune?.size ?? 1) * eyeScale));
-  const eyeGap = 16 * (faceTune?.gap ?? 1);
-  const eyeWidth = expression.width * (faceTune?.eyeWidth ?? 1) * faceScale;
-  const eyeHeight = (blinking ? 1.15 : expression.height) * (faceTune?.eyeHeight ?? 1) * (faceTune?.height ?? 1) * faceScale;
-  const eyeY = expression.y + gaze.y * 2.4;
-  const leftX = 50 - eyeGap / 2 + gaze.x * 2.8;
-  const rightX = 50 + eyeGap / 2 + gaze.x * 2.8;
-  const impulseScale = impulse === "burst" ? 1.12 : impulse === "bounce" ? 1.06 : 1;
-  const impulseY = impulse === "bounce" ? -4 : 0;
-  const rotation = (homePose?.roll ?? 0) * 0.08 + motion.rotate + spinDegrees;
-  const baseScale = Math.max(0.82, Math.min(1.14, homePose?.scale ?? 1));
-  const fill = inkGradient ? `url(#${gradientId})` : "var(--fg)";
   const style = {
     width: size,
     height: size,
     "--bot-mark-size": `${size}px`,
-    "--fg": `light-dark(${colorValue.light}, ${colorValue.dark})`,
-    "--bg": eyeColor ?? "var(--bot-mark-eye-color, var(--app, #0b0b0b))",
-    "--bot-mark-breathe-duration": `${rhythm.breatheMs}ms`,
-    "--bot-mark-orbit-duration": `${Math.round(rhythm.breatheMs * 1.45)}ms`,
-    "--bot-mark-pulse-duration": `${Math.round(rhythm.breatheMs * 0.72)}ms`,
-    "--bot-mark-sleep-duration": `${Math.round(rhythm.breatheMs * 1.3)}ms`,
-    "--bot-mark-task-duration": `${Math.round(rhythm.breatheMs * 0.62)}ms`,
-    "--bot-mark-motion-delay": `${rhythm.delayMs}ms`,
+    "--bot-mark-eye-color": eyeColor ?? "var(--app, #fff)",
   } as CSSProperties;
-
-  const transform = useMemo(
-    () => `translate(${motion.x} ${motion.y + impulseY}) rotate(${rotation} 50 50) scale(${baseScale * motion.scale * impulseScale})`,
-    [baseScale, impulseScale, impulseY, motion, rotation],
-  );
 
   return (
     <span
-      ref={wrapperRef}
       className={`${styles.botMark} ${className}`.trim()}
       data-bot-id={botId}
       data-agent-state={state}
       data-paused={paused || undefined}
       data-shape={shape}
       data-color={color}
-      data-blinking={blinking || undefined}
-      data-accent={accent}
+      data-engine="grok-mark"
       style={style}
       aria-label={label}
       aria-hidden={label ? undefined : true}
       role={label ? "img" : undefined}
     >
-      <span className={styles.botMarkAura} aria-hidden="true" />
-      <span className={styles.botMarkAuraSecondary} aria-hidden="true" />
-      <span className={styles.botMarkParticles} aria-hidden="true"><i /><i /><i /></span>
-      <svg viewBox="0 0 100 100" focusable="false" aria-hidden="true">
-        <defs>
-          <clipPath id={clipId}><path d={SHAPE_PATHS[shape]} /></clipPath>
-          <radialGradient id={glowId} cx="30%" cy="22%" r="70%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
-            <stop offset="34%" stopColor="#ffffff" stopOpacity="0.09" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-          </radialGradient>
-          {inkGradient ? (
-            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1" gradientTransform={`rotate(${inkGradient.angle ?? 45} .5 .5)`}>
-              <stop offset={`${inkGradient.fromPos ?? 0}%`} stopColor={inkGradient.from} />
-              <stop offset={`${inkGradient.toPos ?? 100}%`} stopColor={inkGradient.to} />
-            </linearGradient>
-          ) : null}
-        </defs>
-        {emphasis || accent !== "none" ? (
-          <circle
-            cx="50"
-            cy="50"
-            r={accent === "orbit" ? (phase ? 46 : 42) : 43}
-            fill="none"
-            stroke="var(--fg)"
-            strokeWidth={accent === "alert" ? 3 : 1.5}
-            opacity={accent === "alert" ? (phase ? 0.75 : 0.25) : (phase ? 0.38 : 0.16)}
-            strokeDasharray={accent === "orbit" ? "7 6" : undefined}
-          />
-        ) : null}
-        <g style={{ transition: "transform 260ms cubic-bezier(.2,.8,.2,1)" }} transform={transform}>
-          <path d={SHAPE_PATHS[shape]} fill="var(--fg)" opacity="0.13" transform="translate(2 3) scale(.985)" />
-          <path d={SHAPE_PATHS[shape]} fill={fill} />
-          <ellipse cx="32" cy="25" rx="30" ry="23" fill={`url(#${glowId})`} clipPath={`url(#${clipId})`} opacity={emphasis ? 0.72 : 0.42} />
-          {eyeTopology ? (
-            <path
-              d={`M${leftX + eyeWidth / 2 + 2} ${eyeY} Q50 ${eyeY + (state === "curious" ? -3 : 1)} ${rightX - eyeWidth / 2 - 2} ${eyeY}`}
-              fill="none"
-              stroke="var(--bg)"
-              strokeWidth="1.2"
-              opacity="0.12"
-            />
-          ) : null}
-          <g fill="var(--bg)" transform={`rotate(${expression.tilt} 50 ${eyeY})`}>
-            <ellipse cx={leftX} cy={eyeY} rx={eyeWidth / 2} ry={eyeHeight / 2} />
-            <ellipse
-              cx={rightX}
-              cy={eyeY + (uniformEyes ? 0 : 1.2)}
-              rx={(eyeWidth * (uniformEyes ? 1 : 0.92)) / 2}
-              ry={(eyeHeight * (uniformEyes ? 1 : 1.08)) / 2}
-            />
-          </g>
-          {state === "curious" ? <circle cx="50" cy="68" r="2.2" fill="var(--bg)" opacity="0.65" /> : null}
-          {state === "happy" || state === "laughing" ? <path d="M39 65Q50 73 61 65" fill="none" stroke="var(--bg)" strokeWidth="2.4" strokeLinecap="round" /> : null}
-          {state === "shy" ? <g fill="#ff7d9c" opacity="0.45"><circle cx="31" cy="60" r="2.7" /><circle cx="69" cy="60" r="2.7" /></g> : null}
-          {state === "thinking" ? <circle cx="70" cy="31" r="2.2" fill="var(--bg)" opacity={phase ? 0.48 : 0.18} /> : null}
-        </g>
-        {badgeColor ? <circle cx="82" cy="80" r="7" fill={badgeColor} stroke="var(--bg)" strokeWidth="2" /> : null}
-      </svg>
+      <FabushiBotMarkEngine
+        ref={ref}
+        botId={botId}
+        state={state}
+        size={size}
+        shape={shape}
+        color={color}
+        gazeTarget={gazeTarget}
+        followPointer={followPointer}
+        emphasis={emphasis}
+        spinSignal={spinSignal}
+        badgeColor={badgeColor}
+        paused={paused}
+        eyeColor={eyeColor}
+      />
       {children}
     </span>
   );
