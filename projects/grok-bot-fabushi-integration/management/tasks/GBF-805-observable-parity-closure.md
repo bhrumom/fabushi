@@ -113,6 +113,16 @@ Provenance stays explicit: reimplement observable behavior and architecture in F
 - Updated `desktop/src/main.tsx` to restore durable state before rendering and install the identity/durability bridges.
 - Extended the existing `assert-bot-mark-motion.py` gate to reject regressions that drop canonical identity or native restart/account-boundary persistence.
 
+## Direct test evidence
+
+The implementation is being exercised only by normal product/CI workflows, not by the forbidden auto-confirm runner.
+
+- Messaging Product Gate on head `9e2b2e8f96158cadc385cc12a132525aa354203e`: `Rust self-hosted product` passed, including rustfmt, library/server tests, clippy, media queue tests and production Feature Host bridge checks.
+- The same gate's `Electron Messenger contract` passed, including desktop dependency install, Feature Host architecture verification, self-hosted call-signaling policy, Native Edge parity and Messenger V2 TypeScript typecheck.
+- GBF security closure on the same head passed.
+- An earlier Electron gate exposed a real TypeScript narrowing problem in the new async bootstrap; it was fixed directly in source by passing the validated `HTMLDivElement` into the async bootstrap rather than suppressing the compiler.
+- Full exact-main packaged desktop/mobile/release/update evidence is still pending and remains blocking.
+
 ## Acceptance gates
 
 - Existing selectors/assertions/security gates are not weakened to obtain green CI.
