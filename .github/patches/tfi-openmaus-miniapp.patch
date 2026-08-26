@@ -1,0 +1,226 @@
+diff --git a/desktop/src/messaging-shell-v2.tsx b/desktop/src/messaging-shell-v2.tsx
+--- a/desktop/src/messaging-shell-v2.tsx
++++ b/desktop/src/messaging-shell-v2.tsx
+@@ -91,6 +91,12 @@ type MessengerSection =
+ type PeerKind = 'conversation' | 'bot' | 'group' | 'channel' | 'saved';
+ type PeerSource = 'legacy' | 'selfhosted';
+ 
++type MiniAppBotCommand = {
++  name: string;
++  description?: string;
++  usage?: string;
++};
++
+ type PeerItem = {
+   key: string;
+   id: string;
+@@ -108,6 +114,8 @@ type PeerItem = {
+   archived: boolean;
+   updatedAtMs: number;
+   avatar?: string;
++  miniAppId?: string;
++  miniAppCommands?: MiniAppBotCommand[];
+ };
+@@ -224,6 +232,64 @@ const defaultProductHostSettings: ProductHostSettings = {
+   sandboxRuntime: 'host',
+ };
+ 
++type MiniAppBotProjection = {
++  miniAppId: string;
++  id: string;
++  username?: string;
++  displayName: string;
++  description: string;
++  commands: MiniAppBotCommand[];
++};
++
++const MINIAPP_BOT_ROUTE_PREFIX = '[[fabushi-miniapp-bot:';
++
++function recordValue(value: unknown): Record<string, unknown> | null {
++  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
++}
++
++function stringValue(value: unknown): string | undefined {
++  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
++}
++
++function miniAppBotProjection(app: MarketplacePluginSummary): MiniAppBotProjection | null {
++  const source = recordValue(app.source);
++  const release = recordValue(app.releaseManifest);
++  const bot = recordValue(source?.bot) ?? recordValue(release?.bot);
++  if (!bot) return null;
++  const id = stringValue(bot.id);
++  if (!id) return null;
++  const rawCommands = Array.isArray(source?.commands)
++    ? source.commands
++    : Array.isArray(release?.commands)
++      ? release.commands
++      : [];
++  const commands = rawCommands.flatMap((entry): MiniAppBotCommand[] => {
++    const command = recordValue(entry);
++    const name = stringValue(command?.name);
++    if (!name) return [];
++    return [{
++      name,
++      description: stringValue(command?.description),
++      usage: stringValue(command?.usage) ?? `/${app.pluginId}:${name}`,
++    }];
++  });
++  return {
++    miniAppId: app.pluginId,
++    id,
++    username: stringValue(bot.username),
++    displayName: stringValue(bot.displayName) ?? app.displayName,
++    description: stringValue(bot.description) ?? app.description ?? 'Mini App Bot',
++    commands,
++  };
++}
++
++function routedMiniAppBotText(peer: PeerItem, text: string): string {
++  const commandNames = (peer.miniAppCommands ?? []).map((command) => command.name).join(',');
++  return `[[fabushi-miniapp-bot:${peer.miniAppId};commands=${commandNames}]]\n${text}`;
++}
++
++function visibleMiniAppBotText(text: string): string {
++  if (!text.startsWith(MINIAPP_BOT_ROUTE_PREFIX)) return text;
++  const separator = text.indexOf('\n');
++  return separator >= 0 ? text.slice(separator + 1) : text;
++}
++
+ function asMessengerProjection(value: unknown): MessengerProjection | null {
+@@ -3894,6 +3960,7 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+   const [incomingCall, setIncomingCall] = useState<IncomingFabushiCall | null>(null);
+   const [miniApp, setMiniApp] = useState<{ id: string; title: string; html: string } | null>(null);
+   const [marketplaceApps, setMarketplaceApps] = useState<MarketplacePluginSummary[]>([]);
++  const [miniAppIdentityCatalog, setMiniAppIdentityCatalog] = useState<MarketplacePluginSummary[]>([]);
+   const [installedMiniApps, setInstalledMiniApps] = useState<Record<string, InstalledPluginPointer>>({});
+@@ -4384,7 +4451,7 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+             id,
+             source: 'legacy',
+             role: event.role === 'user' ? 'me' : 'peer',
+-            text: event.text,
++            text: event.role === 'user' ? visibleMiniAppBotText(event.text) : event.text,
+             createdAtMs: Date.now(),
+           }];
+@@ -4430,6 +4497,12 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       archived: archivedPeerKeys.has(`legacy:conversation:${conversation.id}`),
+       updatedAtMs: conversation.updatedAtMs,
+     }));
++    const miniAppBotProjections = miniAppIdentityCatalog
++      .filter((app) => Boolean(installedMiniApps[app.pluginId]))
++      .map(miniAppBotProjection)
++      .filter((projection): projection is MiniAppBotProjection => Boolean(projection));
++    const miniAppByBotId = new Map(miniAppBotProjections.map((projection) => [projection.id, projection]));
+     const conversationIds = new Set(conversations.map((conversation) => conversation.id));
+     const botPeers = bots
+       .filter((bot) => !bot.conversationId || !conversationIds.has(bot.conversationId))
+@@ -4449,8 +4522,30 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+         archived: archivedPeerKeys.has(`legacy:bot:${bot.id}`),
+         updatedAtMs: 0,
+         avatar: bot.avatar,
++        miniAppId: miniAppByBotId.get(bot.id)?.miniAppId,
++        miniAppCommands: miniAppByBotId.get(bot.id)?.commands,
+       }));
++    const existingBotIds = new Set(botPeers.map((peer) => peer.actorId ?? peer.id));
++    const miniAppBotPeers = miniAppBotProjections
++      .filter((projection) => !existingBotIds.has(projection.id))
++      .map((projection): PeerItem => ({
++        key: `miniapp:bot:${projection.miniAppId}`,
++        id: projection.id,
++        source: 'legacy',
++        actorId: projection.id,
++        kind: 'bot',
++        title: projection.displayName,
++        subtitle: projection.username ? `@${projection.username} · ${projection.description}` : projection.description,
++        unread: 0,
++        pinned: pinnedPeerKeys.has(`miniapp:bot:${projection.miniAppId}`),
++        archived: archivedPeerKeys.has(`miniapp:bot:${projection.miniAppId}`),
++        updatedAtMs: 0,
++        miniAppId: projection.miniAppId,
++        miniAppCommands: projection.commands,
++      }));
+     const legacyGroups = groups.map((group): PeerItem => ({
+@@ -4482,13 +4577,13 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       updatedAtMs: conversation.updatedAtMs,
+       avatar: conversation.avatarUrl,
+     }));
+-    return [...legacyConversations, ...botPeers, ...legacyGroups, ...nativePeers].sort((left, right) => {
++    return [...legacyConversations, ...botPeers, ...miniAppBotPeers, ...legacyGroups, ...nativePeers].sort((left, right) => {
+       if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+       return right.updatedAtMs - left.updatedAtMs;
+     });
+-  }, [conversations, bots, groups, selfConversations, pinnedPeerKeys, archivedPeerKeys]);
++  }, [conversations, bots, groups, selfConversations, pinnedPeerKeys, archivedPeerKeys, miniAppIdentityCatalog, installedMiniApps]);
+@@ -4566,6 +4661,10 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       })) ?? []);
+       return;
+     }
++    if (peer.miniAppId) {
++      setMessages([]);
++      return;
++    }
+     if (peer.conversationId) {
+@@ -4590,6 +4689,14 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       } else if (activePeer.kind === 'group' && activePeer.groupId) {
+         await execute({ type: 'group.send', requestId: nextRequestId('group-send'), id: activePeer.groupId, text });
++      } else if (activePeer.miniAppId) {
++        await execute({
++          type: 'chat.send',
++          requestId: nextRequestId('miniapp-bot-send'),
++          text: routedMiniAppBotText(activePeer, text),
++          agentId: 'mahayana-assistant',
++        });
+       } else {
+@@ -5048,10 +5155,14 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+   async function refreshMiniApps(query = miniAppQuery) {
+     setMiniAppLoading(true);
+     try {
+-      const [catalogResult, installedResult] = await Promise.allSettled([
+-        transport.marketplaceBrowse(query),
++      const catalogPromise = transport.marketplaceBrowse(query);
++      const identityCatalogPromise = query.trim() ? transport.marketplaceBrowse('') : catalogPromise;
++      const [catalogResult, identityCatalogResult, installedResult] = await Promise.allSettled([
++        catalogPromise,
++        identityCatalogPromise,
+         transport.pluginListInstalled(),
+       ]);
+       if (catalogResult.status === 'fulfilled') {
+         setMarketplaceApps(catalogResult.value.plugins);
+@@ -5059,6 +5170,11 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       } else {
+         setError(catalogResult.reason instanceof Error ? catalogResult.reason.message : String(catalogResult.reason));
+       }
++      if (identityCatalogResult.status === 'fulfilled') {
++        setMiniAppIdentityCatalog(identityCatalogResult.value.plugins);
++      } else {
++        setError(identityCatalogResult.reason instanceof Error ? identityCatalogResult.reason.message : String(identityCatalogResult.reason));
++      }
+       if (installedResult.status === 'fulfilled') {
+@@ -5106,7 +5222,7 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+       const installed = installedMiniApps[id] ?? await transport.pluginActive(id);
+       if (!installed) throw new Error('请先从在线 Mini App 市场安装此应用');
+       const document = await transport.pluginUiDocument(id);
+-      const title = marketplaceApps.find((app) => app.pluginId === id)?.displayName ?? id;
++      const title = miniAppIdentityCatalog.find((app) => app.pluginId === id)?.displayName ?? marketplaceApps.find((app) => app.pluginId === id)?.displayName ?? id;
+       setMiniApp({ id, title, html: document.html });
+@@ -571,7 +571,9 @@ function matchesSection(peer: PeerItem, section: MessengerSection): boolean {
+   if (section === 'chats') return !peer.archived;
+-  if (section === 'contacts') return peer.source === 'legacy' && peer.kind === 'conversation' && peer.id.startsWith('mahayana:contact:');
++  if (section === 'contacts') {
++    return Boolean(peer.miniAppId) || (peer.source === 'legacy' && peer.kind === 'conversation' && peer.id.startsWith('mahayana:contact:'));
++  }
+   if (section === 'bots') return peer.kind === 'bot';
+@@ -5337,6 +5455,7 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+               </div>
+               <div className={styles.headerActions}>
++                {activePeer.miniAppId ? <button type="button" data-testid="miniapp-bot-open" title="打开小程序" onClick={() => void openMiniApp(activePeer.miniAppId!)}><AppWindow size={18} /></button> : null}
+                 <button type="button" title="语音通话" onClick={() => void startCall('voice')}><PhoneCall size={18} /></button>
+@@ -5400,6 +5519,14 @@ export default function MessagingShellV2({ onLogout }: { onLogout: () => void }
+             {replyTo ? <div className={extra.composerBanner}><Reply size={15} /><div><strong>回复</strong><span>{replyTo.text}</span></div><button type="button" onClick={() => setReplyTo(null)}><X size={14} /></button></div> : null}
+             {scheduledAtMs ? <div className={extra.composerBanner}><span>⏱</span><div><strong>定时发送</strong><span>{new Date(scheduledAtMs).toLocaleString()}</span></div><button type="button" onClick={() => setScheduledAtMs(undefined)}><X size={14} /></button></div> : null}
++            {activePeer.miniAppId && composer.trimStart().startsWith('/') && activePeer.miniAppCommands?.length ? <div className={extra.composerBanner} data-testid="miniapp-bot-commands">
++              <AppWindow size={15} />
++              <div><strong>小程序命令</strong><span>{activePeer.miniAppCommands.map((command) => command.name).join(' · ')}</span></div>
++              {activePeer.miniAppCommands.slice(0, 4).map((command) => <button key={command.name} type="button" title={command.description} onClick={() => updateComposer(command.usage ?? `/${activePeer.miniAppId}:${command.name}`)}>/{command.name}</button>)}
++            </div> : null}
+             <form className={styles.composer} onSubmit={(event) => void sendMessage(event)}>
