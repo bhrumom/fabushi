@@ -3188,7 +3188,7 @@ mod tests {
     }
 
     #[test]
-    fn marketplace_browse_is_public_even_with_an_expired_local_session() {
+    fn marketplace_browse_is_public_and_omits_authorization() {
         use std::io::{Read, Write};
         use std::net::TcpListener;
         use std::thread;
@@ -3223,17 +3223,9 @@ mod tests {
             root.join("session.json"),
             root.join("product-surface.json"),
         );
-        client
-            .save_session(&json!({
-                "accessToken": "expired-access",
-                "accessTokenExpiresAt": 0,
-                "provider": "password"
-            }))
-            .expect("save expired local session");
-
         let catalog = client
             .marketplace_browse(Some("global"), Some("desktop"))
-            .expect("public marketplace must bypass stale login refresh");
+            .expect("public marketplace must not require account authorization");
         assert_eq!(catalog["plugins"][0]["pluginId"], "global-dharma");
         server.join().expect("join marketplace test server");
         let _ = std::fs::remove_dir_all(root);
