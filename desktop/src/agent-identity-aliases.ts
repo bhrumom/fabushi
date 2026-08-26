@@ -1,7 +1,4 @@
-import {
-  registerBotIdentityAliases,
-  type BotMarkState,
-} from '../../frontend/apps/web/src/app/host/bot-mark';
+import { registerBotIdentityAliases } from '../../frontend/apps/web/src/app/host/bot-mark';
 import { MAHAYANA_RUNTIME_EVENT_NAME } from '../../frontend/apps/web/src/lib/mahayana-host/electron-transport';
 
 export type BotIdentityAlias = { alias: string; canonical: string };
@@ -120,8 +117,3 @@ export function installBotIdentityAliases(): () => void {
   window.addEventListener(MAHAYANA_RUNTIME_EVENT_NAME, onRuntimeEvent);
   return () => window.removeEventListener(MAHAYANA_RUNTIME_EVENT_NAME, onRuntimeEvent);
 }
-
-// Keep this module free of animation-state ownership. This exported type-only
-// assertion makes accidental state coupling a compile-time error without adding
-// runtime code; identity and activity must remain separate concerns.
-export type _BotIdentityDoesNotOwnState = BotMarkState;
