@@ -1,0 +1,18 @@
+project_id: FAB-P0009
+project_key: DBD
+legacy_project_ids: []
+name: Fabushi Douyin Batch Downloader MiniApp
+slug: douyin-batch-downloader-miniapp
+status: active
+repository: bhrumom/fabushi
+authoritative_branch: main
+authoritative_path: projects/douyin-batch-downloader-miniapp
+owner: Fabushi product engineering
+reviewers: []
+current_stage: DBD-S1-implementation
+created_at: 2026-08-26
+updated_at: 2026-08-26
+risk_tier: tier-2
+security_classification: internal
+related_projects: [FAB-P0005]
+source_systems: [GitHub, Douyin authenticated web session]

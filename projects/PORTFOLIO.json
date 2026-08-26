@@ -5,7 +5,7 @@
   "project_id_regex": "^FAB-P[0-9]{4}$",
   "allocation_policy": "monotonic-no-reuse",
   "ordering_basis": "first-formal-project-folder-commit-on-canonical-main",
-  "next_sequence": 9,
+  "next_sequence": 10,
   "projects": [
     {
       "project_id": "FAB-P0001",
@@ -105,6 +105,17 @@
       "status": "active",
       "registered_at": "2026-08-25",
       "first_canonical_main_commit": "52b7c10889e585660b7d2a22a40781c22f31b7a1",
+      "legacy_project_ids": []
+    },
+    {
+      "project_id": "FAB-P0009",
+      "project_key": "DBD",
+      "slug": "douyin-batch-downloader-miniapp",
+      "name": "Fabushi Douyin Batch Downloader MiniApp",
+      "authoritative_path": "projects/douyin-batch-downloader-miniapp",
+      "status": "active",
+      "registered_at": "2026-08-26",
+      "first_canonical_main_commit": "0000000000000000000000000000000000000000",
       "legacy_project_ids": []
     }
   ]

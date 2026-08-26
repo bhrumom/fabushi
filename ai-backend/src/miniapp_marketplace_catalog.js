@@ -105,6 +105,11 @@ const packageCatalog = {
     sha256: '43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be',
     sizeBytes: 1827,
   },
+  'douyin-batch-downloader': {
+    version: '1.0.0',
+    sha256: '9b7aa85b751755cc776a884afba2927ceb661d7580c8b135826bc8760cc6ba75',
+    sizeBytes: 1981,
+  },
   'hermes-installer': {
     version: '1.0.0',
     sha256: '95adcdb83440ed143874c402c222856de89dc5bfd7ec910dbeece089d88aeec4',
