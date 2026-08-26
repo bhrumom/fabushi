@@ -14,6 +14,7 @@ const {
   pushChannel,
   serveMainEdge,
 } = require('./edge-ipc.cjs');
+const { NATIVE_EDGE } = require('./native-edge.cjs');
 
 function fakeIpcMain() {
   const handlers = new Map();
@@ -64,6 +65,28 @@ test('edge exposes only declared methods and normalizes no-arg invocations', asy
   assert.equal(client.unknown, undefined);
   assert.deepEqual(await client.ping(), { keys: [] });
   assert.deepEqual(await client.echo({ value: 7 }), { value: 7 });
+});
+
+test('native desktop edge exposes the complete account synchronization surface', () => {
+  const requiredMethods = [
+    'getAccountSync',
+    'getAccountMiniApps',
+    'getAccountBots',
+    'addBotToAccount',
+    'removeBotFromAccount',
+    'addMiniAppToAccount',
+    'removeMiniAppFromAccount',
+    'routeMiniAppInput',
+    'getMiniAppBotMessages',
+    'appendMiniAppBotMessages',
+    'getMiniAppCloudStorage',
+    'setMiniAppCloudStorage',
+    'deleteMiniAppCloudStorage',
+    'reconcileAccountMiniApps',
+  ];
+  for (const method of requiredMethods) {
+    assert.ok(NATIVE_EDGE.methods[method], `native edge is missing account sync method ${method}`);
+  }
 });
 
 test('main edge fails closed for untrusted senders and missing handlers', async () => {
