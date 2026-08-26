@@ -108,6 +108,18 @@ const COLORS: readonly BotMarkColor[] = [
   "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray",
 ];
 
+const AMBIENT_MOTION_STATES = new Set<BotMarkState>([
+  "idle", "sleeping", "drowsy", "bored", "powering-down",
+]);
+
+export function botMarkMotionTier(
+  state: BotMarkState,
+  emphasis = false,
+  followPointer = false,
+): "ambient" | "active" {
+  return !emphasis && !followPointer && AMBIENT_MOTION_STATES.has(state) ? "ambient" : "active";
+}
+
 const COLOR_VALUES: Record<BotMarkColor, { light: string; dark: string }> = {
   black: { light: "#000000", dark: "#FFFFFF" },
   brown: { light: "#A27952", dark: "#855C36" },
@@ -203,6 +215,7 @@ export const BotMark = forwardRef<BotMarkHandle, BotMarkProps>(function BotMark(
       data-paused={paused || undefined}
       data-shape={shape}
       data-color={color}
+      data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}
       data-engine="fabushi-motion-v2"
       data-renderer="grok-mark"
       style={style}
