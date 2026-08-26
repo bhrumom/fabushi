@@ -27,7 +27,7 @@ env:
   MAHAYANA_MANIFEST: third_party/mahayana/mahayana-rs/Cargo.toml
   PLUGIN_PACKAGE: fabushi-official-miniapps
   PLUGIN_BINARY: third_party/mahayana/mahayana-rs/target/ci/fabushi-plugin-cli
-  EXPECTED_PACKAGE_SHA256: 9b7aa85b751755cc776a884afba2927ceb661d7580c8b135826bc8760cc6ba75
+  EXPECTED_PACKAGE_SHA256: 6784eb6ade91ef75ff61717a232dd154c7a3fb28c093ce330bc7ca4857ace473
 
 jobs:
   validate:
@@ -77,8 +77,15 @@ jobs:
           test -f .agents/plugins/plugins/douyin-batch-downloader/.mcp.json
           test -f .agents/plugins/plugins/douyin-batch-downloader/.mahayana/plugin.json
           test -f marketplace/packages/douyin-batch-downloader/1.0.0/app.tar.gz
-          jq -e '(.modes | index("MCP")) != null and (.modes | index("CLI")) != null and (.modes | index("GUI")) != null' \
-            marketplace/packages/douyin-batch-downloader/1.0.0/fabushi-miniapp.json >/dev/null
+          jq -e '
+            .portable == true and
+            (.modes | index("MCP")) != null and
+            (.modes | index("CLI")) != null and
+            (.modes | index("GUI")) != null and
+            .descriptors.mcp == ".mcp.json" and
+            .descriptors.mahayana == ".mahayana/plugin.json" and
+            .runtimeDependency.provider == "fabushi-official-miniapps"
+          ' marketplace/packages/douyin-batch-downloader/1.0.0/fabushi-miniapp.json >/dev/null
 
       - name: Check Rust formatting
         run: cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
@@ -108,6 +115,10 @@ jobs:
           actual="$(sha256sum "$package" | cut -d' ' -f1)"
           test "$actual" = "$EXPECTED_PACKAGE_SHA256"
           tar -tzf "$package" | sort > evidence/package-files.txt
+          grep -Fx '.codex-plugin/plugin.json' evidence/package-files.txt
+          grep -Fx '.mahayana/plugin.json' evidence/package-files.txt
+          grep -Fx '.mcp.json' evidence/package-files.txt
+          grep -Fx 'README.md' evidence/package-files.txt
           grep -Fx 'fabushi-miniapp.json' evidence/package-files.txt
           grep -Fx 'index.html' evidence/package-files.txt
           printf '%s  %s\n' "$actual" "$package" > evidence/package-sha256.txt
