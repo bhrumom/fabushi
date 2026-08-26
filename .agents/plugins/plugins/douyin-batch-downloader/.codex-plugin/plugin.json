@@ -1,0 +1,26 @@
+{
+  "name": "douyin-batch-downloader",
+  "version": "1.0.0",
+  "description": "Batch-download authorized Douyin shares as watermark-free local MP4 files when the current session exposes a non-watermarked stream.",
+  "author": { "name": "Fabushi" },
+  "license": "Proprietary",
+  "keywords": ["douyin", "video", "batch", "download", "watermark-free", "rust", "mcp"],
+  "mcpServers": "./.mcp.json",
+  "runtimeVariants": [
+    {
+      "id": "local-cli",
+      "server": "douyin-batch-downloader-local",
+      "platforms": ["cli", "desktop"],
+      "priority": 300
+    }
+  ],
+  "interface": {
+    "displayName": "抖音批量无水印下载",
+    "shortDescription": "把有权访问的抖音分享批量保存为本地无水印 MP4。",
+    "longDescription": "粘贴多条抖音分享链接后，本地 Rust 运行时会限速解析、去重、选择当前会话可访问的最高质量无水印播放地址，安全落盘并生成脱敏 manifest.json。不会绕过登录、验证码、私密内容或 DRM。",
+    "developerName": "Fabushi",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Open World"],
+    "defaultPrompt": "下载这些我有权访问的抖音视频到本地；遇到登录、验证码或私密内容就停止并报告，不要绕过。"
+  }
+}

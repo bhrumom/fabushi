@@ -1,7 +1,7 @@
 import { MiniAppMarketplace, MiniAppMarketplaceError, officialMiniAppManifests } from './miniapp_marketplace.js';
 import { requireManifest } from './miniapp_marketplace_server_common.js';
 
-export const MINIAPP_PACKAGE_COMMIT = 'a76587178c6b63be7963f14deb550e00bb0a425e';
+export const MINIAPP_PACKAGE_COMMIT = 'a0f03ccf0ef019172fc208c115d090dacb7443b5';
 export const MINIAPP_BOT_PROTOCOL = 'fabushi.miniapp.bot.v2';
 
 const RAW_PACKAGE_ROOT = `https://raw.githubusercontent.com/bhrumom/fabushi/${MINIAPP_PACKAGE_COMMIT}/marketplace/packages`;
@@ -104,6 +104,11 @@ const packageCatalog = {
     version: '1.0.0',
     sha256: '43de877dc87b5dff306164eb143baad545ef40bea2247f28cbe21616829478be',
     sizeBytes: 1827,
+  },
+  'douyin-batch-downloader': {
+    version: '1.0.0',
+    sha256: '9b7aa85b751755cc776a884afba2927ceb661d7580c8b135826bc8760cc6ba75',
+    sizeBytes: 1981,
   },
   'hermes-installer': {
     version: '1.0.0',
