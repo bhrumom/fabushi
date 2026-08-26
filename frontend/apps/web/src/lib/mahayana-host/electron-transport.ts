@@ -226,6 +226,10 @@ function persistConversationJournal(journal: ConversationJournal): void {
             .map((message) => ({ ...message })),
         ]),
     );
+    if (Object.keys(conversations).length === 0) {
+      window.localStorage.removeItem(CONVERSATION_JOURNAL_KEY);
+      return;
+    }
     window.localStorage.setItem(
       CONVERSATION_JOURNAL_KEY,
       JSON.stringify({ version: CONVERSATION_JOURNAL_VERSION, conversations }),
