@@ -1,13 +1,30 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import subprocess
 
-component = Path('frontend/apps/web/src/app/host/bot-mark.tsx').read_text(encoding='utf-8')
-engine = Path('frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx').read_text(encoding='utf-8')
-styles = Path('frontend/apps/web/src/app/host/host.module.css').read_text(encoding='utf-8')
-host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding='utf-8')
-identity_aliases = Path('desktop/src/agent-identity-aliases.ts').read_text(encoding='utf-8')
-durable_state = Path('desktop/src/durable-agent-state.ts').read_text(encoding='utf-8')
-desktop_main = Path('desktop/src/main.tsx').read_text(encoding='utf-8')
+
+def read_repo_text(path: str) -> str:
+    file_path = Path(path)
+    if file_path.exists():
+        return file_path.read_text(encoding='utf-8')
+    result = subprocess.run(
+        ['git', 'show', f'HEAD:{path}'],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding='utf-8',
+    )
+    return result.stdout
+
+
+component = read_repo_text('frontend/apps/web/src/app/host/bot-mark.tsx')
+engine = read_repo_text('frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx')
+styles = read_repo_text('frontend/apps/web/src/app/host/host.module.css')
+host = read_repo_text('frontend/apps/web/src/app/host/host-client.tsx')
+identity_aliases = read_repo_text('desktop/src/agent-identity-aliases.ts')
+durable_state = read_repo_text('desktop/src/durable-agent-state.ts')
+desktop_main = read_repo_text('desktop/src/main.tsx')
 
 required_component = [
     'FabushiBotMarkEngine',
