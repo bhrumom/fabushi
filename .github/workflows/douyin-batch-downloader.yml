@@ -9,8 +9,9 @@ on:
       - 'ai-backend/test/miniapp_marketplace.test.js'
       - 'frontend/apps/web/public/.well-known/mahayana/marketplace.json'
       - 'marketplace/packages/douyin-batch-downloader/**'
-      - 'projects/PORTFOLIO.json'
-      - 'projects/douyin-batch-downloader-miniapp/**'
+      - 'projects/telegram-fabushi-integration/source/2026-08-26-douyin-batch-downloader-miniapp.md'
+      - 'projects/telegram-fabushi-integration/management/tasks/M8-DL-001-douyin-batch-downloader.md'
+      - 'projects/telegram-fabushi-integration/evidence/M8-DL-001/**'
       - 'third_party/mahayana/mahayana-rs/providers/official-miniapps/**'
       - '.github/workflows/douyin-batch-downloader.yml'
   workflow_dispatch:
@@ -64,6 +65,21 @@ jobs:
           python3 scripts/check-project-portfolio.py
           python3 scripts/check-official-plugin-marketplace.py
 
+      - name: Verify independent package boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e ai-backend/src/douyin_downloader.js
+          if grep -q 'douyin_downloader' ai-backend/src/miniapp_marketplace_http.js; then
+            echo 'Douyin runtime must not be embedded in ai-backend' >&2
+            exit 1
+          fi
+          test -f .agents/plugins/plugins/douyin-batch-downloader/.mcp.json
+          test -f .agents/plugins/plugins/douyin-batch-downloader/.mahayana/plugin.json
+          test -f marketplace/packages/douyin-batch-downloader/1.0.0/app.tar.gz
+          jq -e '(.modes | index("MCP")) != null and (.modes | index("CLI")) != null and (.modes | index("GUI")) != null' \
+            marketplace/packages/douyin-batch-downloader/1.0.0/fabushi-miniapp.json >/dev/null
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path "$MAHAYANA_MANIFEST" --all -- --check
 
@@ -104,7 +120,7 @@ jobs:
             echo '## Douyin downloader validation'
             echo "- SHA: $GITHUB_SHA"
             echo '- Rust cache: see Swatinem/rust-cache step output'
-            echo '- Validation used the dedicated downloader package/test surface'
+            echo '- Runtime boundary: portable package + Mahayana shared runtime; no ai-backend app runtime'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload contract evidence
