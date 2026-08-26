@@ -55,6 +55,7 @@ const CONVERSATION_EQUIVALENCE_WINDOW_MS = 60_000;
 
 export const MAHAYANA_RUNTIME_EVENT_NAME = "fabushi:mahayana-runtime-event";
 export const MAHAYANA_COMMAND_EVENT_NAME = "fabushi:mahayana-command";
+export const MAHAYANA_ACCOUNT_SESSION_RESET_EVENT = "fabushi:mahayana-account-session-reset";
 
 export type MahayanaCommandBridgeContext = {
   conversationKey?: string;
@@ -311,7 +312,22 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
   private pumping = false;
   private unsubscribeBridge: (() => void) | null = null;
   private unsubscribeCommandObserver: (() => void) | null = null;
+  private unsubscribeAccountSessionReset: (() => void) | null = null;
   private journalPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  private discardJournalOnClose = false;
+
+  constructor() {
+    if (typeof window !== "undefined") {
+      const onAccountSessionReset = () => {
+        this.discardJournalOnClose = true;
+        this.discardConversationJournal();
+      };
+      window.addEventListener(MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, onAccountSessionReset);
+      this.unsubscribeAccountSessionReset = () => {
+        window.removeEventListener(MAHAYANA_ACCOUNT_SESSION_RESET_EVENT, onAccountSessionReset);
+      };
+    }
+  }
 
   subscribe(listener: RuntimeEventListener): () => void {
     this.listeners.add(listener);
@@ -500,8 +516,11 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
     this.unsubscribeBridge = null;
     this.unsubscribeCommandObserver?.();
     this.unsubscribeCommandObserver = null;
+    this.unsubscribeAccountSessionReset?.();
+    this.unsubscribeAccountSessionReset = null;
     this.miniAppConversations.clear();
-    this.flushConversationJournal();
+    if (this.discardJournalOnClose) this.discardConversationJournal();
+    else this.flushConversationJournal();
   }
 
   private dispatchToListeners(event: RuntimeEvent): void {
@@ -696,6 +715,21 @@ export class ElectronMahayanaHostTransport implements MahayanaHostTransport {
       this.journalPersistTimer = null;
     }
     persistConversationJournal(this.conversationJournal);
+  }
+
+  private discardConversationJournal(): void {
+    if (this.journalPersistTimer) {
+      clearTimeout(this.journalPersistTimer);
+      this.journalPersistTimer = null;
+    }
+    this.conversationJournal.conversations = {};
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(CONVERSATION_JOURNAL_KEY);
+      } catch {
+        // Logout/session revocation must still clear in-memory account data.
+      }
+    }
   }
 
   private refreshUnscopedSuppression(): void {
