@@ -20,6 +20,7 @@ def read_repo_text(path: str) -> str:
 
 component = read_repo_text('frontend/apps/web/src/app/host/bot-mark.tsx')
 engine = read_repo_text('frontend/apps/web/src/app/host/fabushi-bot-mark-engine.tsx')
+openmaus = read_repo_text('frontend/apps/web/src/app/host/openmaus-cursor-avatar.tsx')
 styles = read_repo_text('frontend/apps/web/src/app/host/host.module.css')
 host = read_repo_text('frontend/apps/web/src/app/host/host-client.tsx')
 identity_aliases = read_repo_text('desktop/src/agent-identity-aliases.ts')
@@ -29,19 +30,29 @@ desktop_main = read_repo_text('desktop/src/main.tsx')
 required_component = [
     'FabushiBotMarkEngine',
     'data-engine="fabushi-motion-v2"',
-    'data-renderer="grok-mark"',
+    'data-renderer="openmaus-unified-mark"',
     'data-motion-tier={botMarkMotionTier(state, emphasis, followPointer)}',
     'AMBIENT_MOTION_STATES',
-    '"blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"',
     'canonicalBotIdentity',
     'registerBotIdentityAliases',
     'useSyncExternalStore(subscribeBotIdentity, botIdentitySnapshot, botIdentitySnapshot)',
     'data-canonical-bot-id={identityId}',
     'botId={identityId}',
+    'animated?: boolean',
+    'function useAvatarMotionAllowed()',
+    'document.visibilityState === "visible"',
+    'document.hasFocus()',
+    'const effectivePaused = paused || !animated || !motionAllowed',
+    'return "blob";',
 ]
 for marker in required_component:
     if marker not in component:
-        raise SystemExit(f'BotMark motion gate: missing semantic/Grok renderer integration: {marker}')
+        raise SystemExit(f'BotMark motion gate: missing OpenMaus/Fabushi identity integration: {marker}')
+
+# The normal identity path must never hash Bot IDs into unrelated body shapes.
+for forbidden in ['IDENTITY_SHAPES[', 'shapeHash(canonicalBotIdentity', 'shapeHash(value']:
+    if forbidden in component:
+        raise SystemExit(f'BotMark motion gate: irregular identity-shape lottery returned: {forbidden}')
 
 # Identity and activity are separate concerns: list/header/profile/workbench marks
 # must use a canonical Bot seed, while state still follows the active Agent run.
@@ -88,28 +99,47 @@ for bootstrap_marker in [
         raise SystemExit(f'BotMark motion gate: desktop bootstrap skipped GBF-805 identity/durability stage: {bootstrap_marker}')
 
 required_engine = [
-    'const VIEWBOX = "-15 -15 259 259"',
-    'const CENTER = 114.2705',
-    'normalizeArtifactPath',
-    'roundedPolygon',
-    'const MOTION:',
-    'requestAnimationFrame(tick)',
-    'prefers-reduced-motion: reduce',
-    'scale(1 ${motion.eye})',
-    '<ellipse cx={CENTER - 29}',
-    '<ellipse cx={CENTER + 29}',
+    'CursorAvatar',
+    'DEFAULT_SILHOUETTE',
+    'OPENMAUS_SILHOUETTE',
+    'gradientFor(color)',
+    'openMausState(state)',
+    '"tool-running": "working"',
+    'speaking: "listening"',
+    'result: "happy"',
+    'error: "alerting"',
+    'paused={paused}',
+    'effects={!paused}',
+    'autoBlink={!paused}',
+    'autoExpression={!paused}',
+    'milind-soni/OpenMausBot@667af71ae7e93640ba4b1a5f3b38a1ad342025da',
 ]
 for marker in required_engine:
     if marker not in engine:
-        raise SystemExit(f'BotMark motion gate: missing Grok mark behavior: {marker}')
+        raise SystemExit(f'BotMark motion gate: missing OpenMaus wrapper behavior: {marker}')
+
+required_upstream = [
+    'SPDX-License-Identifier: Apache-2.0',
+    'Vendored from milind-soni/OpenMausBot@667af71ae7e93640ba4b1a5f3b38a1ad342025da',
+    'export type CursorState',
+    'export const CursorAvatar',
+    'prefers-reduced-motion: reduce',
+    'if (p.paused)',
+    'e.pausedPaint',
+    'setTimeout(() =>',
+    'requestAnimationFrame(step)',
+]
+for marker in required_upstream:
+    if marker not in openmaus:
+        raise SystemExit(f'BotMark motion gate: pinned OpenMaus source/provenance is incomplete: {marker}')
 
 for semantic_state in ['tool-running', 'speaking', 'result', 'error']:
-    if f'"{semantic_state}"' not in component or f'"{semantic_state}"' not in engine:
-        raise SystemExit(f'BotMark motion gate: missing Agent lifecycle state: {semantic_state}')
+    if f'"{semantic_state}"' not in component:
+        raise SystemExit(f'BotMark motion gate: missing Fabushi Agent lifecycle state: {semantic_state}')
 
 for forbidden in ['setInterval(() =>', 'surfaceGradientRef', 'radarSweepRef', 'botMarkParticles']:
     if forbidden in component or forbidden in engine:
-        raise SystemExit(f'BotMark motion gate: non-Grok visual effect returned: {forbidden}')
+        raise SystemExit(f'BotMark motion gate: retired custom visual effect returned: {forbidden}')
 
 required_styles = [
     '.botMark > svg',
@@ -120,7 +150,7 @@ required_styles = [
 ]
 for marker in required_styles:
     if marker not in styles:
-        raise SystemExit(f'BotMark motion gate: missing Grok-compatible CSS contract: {marker}')
+        raise SystemExit(f'BotMark motion gate: missing mascot CSS contract: {marker}')
 
 # Pointer-follow is intentionally reserved for large hero/profile marks. Keeping
 # it out of agent-list rows avoids N pointer listeners for a long sidebar.
@@ -129,4 +159,4 @@ if 'className={styles.sidebarBotMark}' in host:
     if 'followPointer' in sidebar_region:
         raise SystemExit('BotMark motion gate: sidebar list marks must not attach pointer-follow listeners')
 
-print('BotMark motion gate passed: stable canonical Bot identity, native restart durability, Grok geometry/eyes, semantic activity motion, pointer gaze, and reduced-motion support.')
+print('BotMark motion gate passed: pinned OpenMaus mascot source, unified body geometry, canonical identity, visibility/static pause controls, semantic activity mapping, native durability, and reduced-motion support.')
