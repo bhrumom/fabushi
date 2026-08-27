@@ -51,6 +51,27 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Enforce canonical application architecture before dependency install
+        if: matrix.target == 'linux'
+        shell: bash
+        run: bash .github/scripts/assert-native-electron-canonical.sh
+
+      - name: Verify Electron Feature Host bridge contract before dependency install
+        if: matrix.target == 'linux'
+        shell: bash
+        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
+
+      - name: Run dependency-free architecture and UI contracts
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          python3 .github/scripts/assert-fabushi-desktop-architecture.py
+          python3 .github/scripts/assert-native-desktop-edge-parity.py
+          python3 .github/scripts/assert-auth-entry-flow.py
+          python3 .github/scripts/assert-bot-mark-motion.py
+          python3 .github/scripts/assert-product-ui-contracts.py
+          python3 .github/scripts/assert-native-capability-semantics.py
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -61,27 +82,6 @@ jobs:
       - name: Install Electron dependencies
         working-directory: desktop
         run: npm ci --prefer-offline
-
-      - name: Enforce canonical application architecture
-        if: matrix.target == 'linux'
-        shell: bash
-        run: bash .github/scripts/assert-native-electron-canonical.sh
-
-      - name: Verify Electron Feature Host bridge contract
-        if: matrix.target == 'linux'
-        shell: bash
-        run: bash .github/scripts/assert-electron-feature-host-bridge.sh
-
-      - name: Run lightweight architecture and UI contracts
-        if: matrix.target == 'linux'
-        shell: bash
-        run: |
-          python3 .github/scripts/assert-fabushi-desktop-architecture.py
-          python3 .github/scripts/assert-native-desktop-edge-parity.py
-          python3 .github/scripts/assert-auth-entry-flow.py
-          python3 .github/scripts/assert-bot-mark-motion.py
-          python3 .github/scripts/assert-product-ui-contracts.py
-          python3 .github/scripts/assert-native-capability-semantics.py
 
       - name: Run Electron main-process contract tests
         if: matrix.target == 'linux'
