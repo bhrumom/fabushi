@@ -4,6 +4,7 @@ from pathlib import Path
 host = Path('frontend/apps/web/src/app/host/host-client.tsx').read_text(encoding='utf-8')
 styles = Path('frontend/apps/web/src/app/host/host.module.css').read_text(encoding='utf-8')
 miniapp_projection = Path('desktop/src/miniapp-bot-projection.ts').read_text(encoding='utf-8')
+messaging_shell = Path('desktop/src/messaging-shell-v2.tsx').read_text(encoding='utf-8')
 marketplace_catalog = Path('ai-backend/src/miniapp_marketplace_catalog.js').read_text(encoding='utf-8')
 
 required_host = [
@@ -34,15 +35,19 @@ for marker in required_host:
     if marker not in host:
         raise SystemExit(f'product UI gate: missing required user-facing path: {marker}')
 
-# Marketplace browse is the canonical Mini App identity/command source consumed by
-# Messenger. Keep the projection aligned with its top-level shape so account Bot
-# deduplication cannot silently drop the slash-command catalog.
+# Marketplace browse is the canonical Mini App identity/command producer.
+# Messenger must consume top-level Bot/command metadata and, for installed apps,
+# merge the account-authoritative catalog so cross-device restoration retains the
+# same Bot identity and slash commands.
 for marker in ['bot: manifest.bot', 'commands: release.commands']:
     if marker not in marketplace_catalog:
         raise SystemExit(f'product UI gate: marketplace no longer exposes canonical Mini App metadata: {marker}')
-for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)', 'readAccountMiniApps()', 'accountMiniAppsAsMarketplaceSummaries']:
+for marker in ['recordValue(app.bot)', 'Array.isArray(app.commands)']:
     if marker not in miniapp_projection:
-        raise SystemExit(f'product UI gate: Messenger drops canonical Mini App metadata: {marker}')
+        raise SystemExit(f'product UI gate: Messenger projection drops canonical Mini App metadata: {marker}')
+for marker in ['readAccountMiniApps()', 'accountMiniAppsAsMarketplaceSummaries']:
+    if marker not in messaging_shell:
+        raise SystemExit(f'product UI gate: Messenger does not consume account-authoritative Mini App metadata: {marker}')
 
 host_ui_files = [
     Path('frontend/apps/web/src/app/host/host-client.tsx'),
@@ -107,4 +112,4 @@ for marker in required_styles:
     if marker not in styles:
         raise SystemExit(f'product UI gate: missing unified surface style: {marker}')
 
-print('Product UI contract gate passed: login, identity, onboarding, extensions, network, automation, Mini App Bot commands and runtime surfaces remain reachable.')
+print('Product UI contract gate passed: login, identity, onboarding, extensions, network, automation, account-authoritative Mini App Bot commands and runtime surfaces remain reachable.')
