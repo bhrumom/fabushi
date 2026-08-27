@@ -7,7 +7,8 @@ use mahayana_host_protocol::{
 use mahayana_js_runtime::{DeepSeekJsHost, scan_package_compatibility};
 use mahayana_native_engine::ProcessExecution;
 use mahayana_plugin_runtime::{
-    ExternalReleaseManifest, InstalledPluginPointer, PermissionManager, PluginInstaller, PluginState,
+    ExternalReleaseManifest, InstalledPluginPointer, PermissionManager, PluginInstaller,
+    PluginState,
 };
 use mahayana_product::MahayanaProductClient;
 use serde::{Deserialize, Serialize};
