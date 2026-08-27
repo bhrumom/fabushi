@@ -19,6 +19,7 @@ const FORBIDDEN_CALLER_HEADERS = new Set([
   'api-key',
 ]);
 const REDACTED_RESPONSE_HEADERS = new Set(['set-cookie', 'authorization', 'proxy-authorization']);
+const REDACTION = '[redacted]';
 
 function cleanString(value, limit = 4096) {
   return String(value ?? '').replace(/\0/g, '').trim().slice(0, limit);
@@ -181,6 +182,49 @@ function injectCredential(headers, injection, secret) {
   return next;
 }
 
+function credentialRedactionTokens(injection, secret) {
+  const tokens = new Set([
+    secret,
+    Buffer.from(secret, 'utf8').toString('base64'),
+    encodeURIComponent(secret),
+  ]);
+  try {
+    const escaped = JSON.stringify(secret);
+    if (escaped.length >= 2) tokens.add(escaped.slice(1, -1));
+  } catch { /* a JS string is always JSON-serializable */ }
+  if (injection.type === 'basic') {
+    tokens.add(Buffer.from(`${injection.username}:${secret}`, 'utf8').toString('base64'));
+  }
+  return [...tokens].filter((token) => typeof token === 'string' && token.length > 0);
+}
+
+function redactText(value, tokens) {
+  let output = String(value ?? '');
+  for (const token of tokens) output = output.split(token).join(REDACTION);
+  return output;
+}
+
+function redactBuffer(value, tokens) {
+  let output = Buffer.from(value);
+  const replacement = Buffer.from(REDACTION, 'utf8');
+  for (const token of tokens) {
+    const needle = Buffer.from(token, 'utf8');
+    if (!needle.length) continue;
+    const parts = [];
+    let start = 0;
+    let index = output.indexOf(needle, start);
+    if (index < 0) continue;
+    while (index >= 0) {
+      parts.push(output.subarray(start, index), replacement);
+      start = index + needle.length;
+      index = output.indexOf(needle, start);
+    }
+    parts.push(output.subarray(start));
+    output = Buffer.concat(parts);
+  }
+  return output;
+}
+
 async function credentialFetch(deps, params) {
   const { app, safeStorage, net } = deps;
   if (!net?.fetch) throw new Error('Electron network service is unavailable.');
@@ -208,7 +252,9 @@ async function credentialFetch(deps, params) {
   if (!ALLOWED_METHODS.has(method)) throw new Error('Credential request method is not allowed.');
   const body = encodedBody(params);
   if ((method === 'GET' || method === 'HEAD') && body?.length) throw new Error(`${method} credential requests cannot contain a body.`);
-  const headers = injectCredential(sanitizeCallerHeaders(params.headers), binding.injection, decryptSecret(safeStorage, item));
+  const secret = decryptSecret(safeStorage, item);
+  const redactionTokens = credentialRedactionTokens(binding.injection, secret);
+  const headers = injectCredential(sanitizeCallerHeaders(params.headers), binding.injection, secret);
 
   // Redirects are intentionally never followed with credentials. A 3xx is
   // returned to the caller, which can request a separately bound origin.
@@ -218,11 +264,18 @@ async function credentialFetch(deps, params) {
     redirect: 'manual',
     ...(body?.length ? { body } : {}),
   });
-  const responseBytes = Buffer.from(await response.arrayBuffer());
-  if (responseBytes.byteLength > MAX_RESPONSE_BYTES) throw new Error('Credential response exceeds the safety limit.');
+  const rawResponseBytes = Buffer.from(await response.arrayBuffer());
+  if (rawResponseBytes.byteLength > MAX_RESPONSE_BYTES) throw new Error('Credential response exceeds the safety limit.');
+  // Do not trust the remote endpoint to keep credentials opaque: diagnostic
+  // and echo APIs can reflect request headers back to the caller. Scrub the
+  // raw secret plus common encoded forms before any result crosses back into
+  // the Renderer/model boundary.
+  const responseBytes = redactBuffer(rawResponseBytes, redactionTokens);
   const responseHeaders = {};
   for (const [name, value] of response.headers.entries()) {
-    if (!REDACTED_RESPONSE_HEADERS.has(name.toLowerCase())) responseHeaders[name] = value;
+    if (!REDACTED_RESPONSE_HEADERS.has(name.toLowerCase())) {
+      responseHeaders[name] = redactText(value, redactionTokens);
+    }
   }
 
   item.lastUsedAtMs = Date.now();
