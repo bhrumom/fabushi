@@ -817,7 +817,7 @@ fn create_feature_host(
             == Ok("local-docker")
         {
             ProcessExecution::LocalDocker {
-                docker_path: std::env::var_os("DOCKER_PATH")
+                docker_path: std::env::var_os("MAHAYANA_DOCKER_BIN")
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("docker")),
                 image: std::env::var("MAHAYANA_DOCKER_IMAGE").unwrap_or_default(),
