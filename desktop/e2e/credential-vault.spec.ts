@@ -43,7 +43,7 @@ async function listSecrets(page: Page): Promise<Array<Record<string, unknown>>> 
   });
 }
 
-test('installed Credential Vault keeps plaintext opaque while create, rotate and revoke stay usable', async () => {
+test('installed Credential Vault keeps saved plaintext opaque while create, rotate and revoke stay usable', async () => {
   const appDataDir = await mkdtemp(path.join(tmpdir(), 'fabushi-credential-e2e-'));
   const app = await launchDesktopApp(appDataDir);
 
@@ -53,7 +53,7 @@ test('installed Credential Vault keeps plaintext opaque while create, rotate and
 
     await page.getByTestId('credential-vault-button').click();
     await expect(page.getByRole('dialog', { name: '凭据保险库' })).toBeVisible();
-    await expect(page.getByText('明文不可读取')).toBeVisible();
+    await expect(page.getByText('保存后不可读回')).toBeVisible();
 
     await page.getByTestId('credential-secret-ref').fill(SECRET_REF);
     await page.getByPlaceholder('GitHub Production').fill('Credential E2E');
