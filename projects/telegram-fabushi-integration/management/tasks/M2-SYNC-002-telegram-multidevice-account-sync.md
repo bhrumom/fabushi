@@ -10,7 +10,8 @@
 - **Packaged acceptance PR**: `#2160` — merged as `69bafdbd726ba78e99f3dd69700183f00851a970`
 - **Native product-edge repair PR**: `#2161` — merged as `ab6e3eb4787f9570aaff00342362000e1e960973`
 - **E2E shell-contract repair PR**: `#2162` — merged as `f565e46d070ce6f23183d861fee6cda589eca460`
-- **Active acceptance branch**: `fix/tfi-m2-sync-e2e-peer-identity`
+- **Canonical Bot-identity E2E PR**: `#2163` — merged as `9c06c53572f7c95996cd59b05401f1b978d85db6`
+- **Active repair branch**: `fix/tfi-m2-sync-miniapp-command-projection`
 - **Source**: `../../source/2026-08-27-telegram-multidevice-account-sync.md`
 - **Depends on**: `M2-SYNC-001`, `M8-MARKET-002`
 
@@ -74,38 +75,35 @@ The implementation intentionally keeps two durable synchronization domains inste
 - Backend integration uses different device/session tokens for the same account and verifies Mini App/Bot/history/CloudStorage/content convergence plus different-account isolation.
 - Electron native bridge tests cover account sync, account Bot and Mini App package reconciliation APIs.
 - Renderer TypeScript + Vite build proves the desktop coordinator/CloudStorage bridge compiles in the shipping renderer.
-- Exact-main packaged Electron acceptance covers install → Contacts/Bots → Bot chat → restart/history recovery → Mini App CloudStorage recovery and retains screenshot/video/trace evidence.
+- Exact-main packaged Electron acceptance covers install → Contacts/Bots → `/` commands → Bot chat → restart/history recovery → Mini App CloudStorage recovery and retains screenshot/video/trace evidence.
 - Protected PR gates, merge queue, canonical-main packaged E2E and exact-SHA Release remain mandatory before completion.
-- **State**: TESTING — product projection is visible; final E2E locator now being aligned to canonical user-facing Bot identity.
+- **State**: TESTING — fourth exact-main run found a real Marketplace-to-Messenger command metadata projection gap; repair implemented on active branch.
 
-## Exact-main regression found during acceptance
+## Exact-main acceptance history
 
-Electron exact-main run `33024284365` against `18042e968f80c97efba6f8bc6878579348c21d3a` correctly failed before packaging. The diagnostic UI reported:
+### First exact-main — shipping IPC gap
+Electron run `33024284365` on `18042e968f80c97efba6f8bc6878579348c21d3a` failed before packaging with:
 
 `No handler registered for 'fabushi-edge:native-desktop:call:addMiniAppToAccount'`.
 
-Root cause: the account-sync methods existed in `native-capability-handlers.cjs` and direct handler tests passed, but `desktop/electron/native-edge.cjs` had not allowlisted the new account-sync surface. Therefore renderer calls could not cross the shipping Electron IPC boundary. The same acceptance also showed that real-Host E2E test mode needs deterministic account-platform persistence rather than accidentally depending on product-network authentication after the local Feature Host login.
+Root cause: account-sync handlers existed, but the shipping `native-edge.cjs` allowlist omitted them. PR `#2161` exposed the complete edge and added deterministic file-backed test-account platform persistence for installs, Bot membership, history, CloudStorage and account cursor while leaving production `platform.request` unchanged. Artifact: `9627834782`.
 
-The repair branch therefore:
-- exposes the complete account-sync method set on `NATIVE_EDGE`;
-- adds a regression contract test that fails if any account-sync method is missing from the edge;
-- adds a deterministic, file-backed test account platform used only when `FABUSHI_FEATURE_HOST_MODE=test` so the real Rust Host E2E remains network-free while preserving Mini App installs, Bot memberships, Bot history, CloudStorage and account cursor across process restart;
-- leaves production `platform.request` behavior unchanged.
+### Second exact-main — stale shell test contract
+Electron run `33025670225` on `ab6e3eb4787f9570aaff00342362000e1e960973` proved native-edge parity and all main-process tests were green, but old E2E assertions expected historical copy and the new recovery helper had a first-surface race. PR `#2162` aligned tests to the shipping `账号云同步` copy and established first-surface stabilization. Artifact: `9628343898`. Native run `33025670242` passed iOS SwiftUI and Android Compose simulated-user tests.
 
-## Second exact-main acceptance result
+### Third exact-main — internal peer-key coupling
+Electron run `33026283621` on `f565e46d070ce6f23183d861fee6cda589eca460` reduced the real-Host suite to one failure. Artifact `9628549449` proved the Global Dharma Bot was visibly present as `全球法布施 … @global_dharma_bot`; the test was still coupled to temporary `miniapp:bot:*` peer keys. PR `#2163` moved acceptance to the stable user-facing Bot identity.
 
-Electron exact-main run `33025670225` against `ab6e3eb4787f9570aaff00342362000e1e960973` again blocked release before Linux packaging. This run proved the native-edge repair itself is active: edge parity reported 184 methods, all 37 Electron main-process tests passed, including account-sync edge coverage and deterministic test-account restart persistence. The remaining failures were acceptance-test contract drift rather than a missing product edge:
+### Fourth exact-main — canonical commands dropped
+Electron run `33026757416` on `9c06c53572f7c95996cd59b05401f1b978d85db6` passed 20/21 real Rust Host user journeys. The only remaining failure occurred after the synchronized `@global_dharma_bot` was opened successfully: entering `/` did not render `miniapp-bot-commands`. Artifact `9628733328` shows the Bot is open and the composer contains `/`, but no command menu exists.
 
-- the real UI successfully opened the Global Dharma iframe and displayed `Mini App · 已安装线上包 · 账号云同步`, while two older E2E assertions still expected the historical `受控宿主容器` copy;
-- `miniapp-bot-parity.spec.ts` checked onboarding/login selectors before the first DOM surface had stabilized, so the onboarding dialog could mount after the helper had already moved on to waiting for Messenger. Other long-lived E2E helpers already guard this race with an initial surface poll.
+This is a real product projection bug, not test drift. `browseMarketplace()` returns canonical `bot` and `commands` metadata at the **top level** of each Marketplace plugin, while `miniAppBotProjection()` only read `source.bot/source.commands` and `releaseManifest.bot/releaseManifest.commands`. Account-level Bot convergence therefore preserved the visible Bot identity and Mini App launch link but could drop its slash-command catalog.
 
-Diagnostic artifact `9628343898` (`fabushi-electron-linux-e2e-diagnostics`) contains screenshots, traces and error contexts. PR `#2162` synchronized assertions to the current product copy and adopted the established deterministic first-surface wait before onboarding/login handling. Product sync semantics were unchanged.
-
-## Third exact-main acceptance result
-
-Electron exact-main run `33026283621` against `f565e46d070ce6f23183d861fee6cda589eca460` reduced the real-Host suite to a single failure. Diagnostic artifact `9628549449` proves the product requirement itself is already satisfied: after installation, the Contacts rail visibly contains a button named `全球法布施 … @global_dharma_bot` while the failing assertion waits for the internal test id `peer-miniapp:bot:global-dharma`.
-
-This is expected after account-level Bot convergence. Messenger deduplicates a Mini App-owned Bot against an existing canonical Bot identity; therefore the same visible Bot may be backed by a canonical Bot peer key instead of the temporary `miniapp:bot:*` projection key. The internal peer key is not a product contract. The acceptance test is being repaired to assert and open the Bot by its stable user-facing identity `@global_dharma_bot`, in both Contacts and Bots, while retaining all downstream history/CloudStorage restart assertions.
+The active repair:
+- extends `MarketplacePluginSummary` to type canonical top-level `bot`, `commands`, `surfaces` and `installMode` metadata;
+- makes `miniAppBotProjection()` prefer top-level `app.bot` and `app.commands`, retaining legacy source/release fallbacks;
+- preserves an explicit server-provided slash usage when present;
+- extends the fast product UI contract gate so Marketplace top-level Bot/command output and Messenger consumption cannot silently diverge again.
 
 ## Open-source-first decision
 
@@ -121,19 +119,14 @@ This is expected after account-level Bot convergence. Messenger deduplicates a M
 - Mini App package bytes/runtime caches remain device-local, while installation entitlement/configuration is account-level.
 - Secure device storage remains intentionally device-local and never enters general account sync.
 - Account logout/switch cannot expose the previous account's cursor or projection.
-- Exact-main packaged Electron acceptance must demonstrate install → Contacts/Bots → Bot chat → restart/history recovery → Mini App CloudStorage recovery and retain screenshot/video/trace evidence.
+- Exact-main packaged Electron acceptance must demonstrate install → Contacts/Bots → `/` command catalog → Bot chat → restart/history recovery → Mini App CloudStorage recovery and retain screenshot/video/trace evidence.
 
 ## Evidence
 
 - Evidence index: `../../evidence/M2-SYNC-002/README.md`.
-- Renderer integration gate: GitHub Actions run `33022386381` — SUCCESS (`git diff --check`, Native tests, Electron TypeScript + Vite renderer build).
-- Two-device integration gate: GitHub Actions run `33022543329` — SUCCESS. Verified different session tokens for one account, Mini App install/Bot projection, Mini App Bot history, CloudStorage, content state, cursor difference replay, uninstall propagation and cross-account isolation.
-- Implementation PR `#2159` merged as exact main SHA `18042e968f80c97efba6f8bc6878579348c21d3a`.
-- Packaged acceptance PR `#2160` merged as `69bafdbd726ba78e99f3dd69700183f00851a970`, strengthening `desktop/e2e/miniapp-bot-parity.spec.ts` with Bot history + `FabushiMiniApp.CloudStorage` restart recovery, before/after screenshots, and existing Playwright video + trace capture.
-- Native product-edge PR `#2161` merged as `ab6e3eb4787f9570aaff00342362000e1e960973`; its current-head protected gates all passed.
-- E2E shell-contract PR `#2162` merged as `f565e46d070ce6f23183d861fee6cda589eca460`; all protected gates passed.
-- First exact-main Electron run `33024284365` failed before packaging; artifact id `9627834782` captured the missing native-edge handler.
-- Second exact-main Electron run `33025670225` failed after native-edge repair; artifact id `9628343898` proved product UI success plus stale copy/first-surface test drift. Exact-main Native mobile run `33025670242` succeeded on iOS SwiftUI and Android Compose simulated user tests.
-- Third exact-main Electron run `33026283621` has a single real-Host failure; artifact id `9628549449` proves the Global Dharma Bot is present in Contacts under canonical visible identity while the test still expected a projection-specific peer key. This run is regression evidence, not completion evidence.
-- Persistent regression tests include `ai-backend/test/account_sync_store.test.js`, `ai-backend/test/miniapp_marketplace_http.test.js`, `ai-backend/test/multidevice_account_sync_integration.test.js`, `desktop/electron/native-capability-handlers.test.cjs`, and `desktop/electron/edge-ipc.test.cjs`.
-- **Completion remains blocked** until the canonical Bot-identity E2E repair is protected/merged, the next exact-main Electron + Native delivery succeeds, packaged E2E evidence is archived, and the matching exact-SHA Release is published.
+- Renderer integration gate: GitHub Actions run `33022386381` — SUCCESS.
+- Two-device integration gate: GitHub Actions run `33022543329` — SUCCESS; different session tokens for one account converged Mini App install/Bot projection/history/CloudStorage/content state, difference replay and uninstall, with cross-account isolation.
+- PRs `#2159`, `#2160`, `#2161`, `#2162`, `#2163` are merged through protected `main`.
+- Fourth exact-main run `33026757416`: 20/21 real-Host journeys passed; artifact `9628733328` captured the missing slash-command menu after canonical Bot convergence. This is regression evidence, not completion evidence.
+- Persistent regression tests include `ai-backend/test/account_sync_store.test.js`, `ai-backend/test/miniapp_marketplace_http.test.js`, `ai-backend/test/multidevice_account_sync_integration.test.js`, `desktop/electron/native-capability-handlers.test.cjs`, `desktop/electron/edge-ipc.test.cjs`, the product UI contract gate, and `desktop/e2e/miniapp-bot-parity.spec.ts`.
+- **Completion remains blocked** until the command-projection repair is protected/merged, a new exact-main Electron + Native delivery succeeds, packaged recovery evidence is archived, and the matching exact-SHA Release is published.
