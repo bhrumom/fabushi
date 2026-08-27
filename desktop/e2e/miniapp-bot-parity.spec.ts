@@ -116,7 +116,7 @@ test('installed Mini App projects its Bot into Contacts/Bots and recovers Bot hi
     const naturalText = 'please show status now';
     await input.fill(commandText);
     await page.getByTestId('messenger-send').click();
-    await expect(page.getByText('command', { exact: true })).toBeVisible();
+    await expect(page.getByText('查看当前运行状态', { exact: true })).toBeVisible();
 
     await input.fill(naturalText);
     await page.getByTestId('messenger-send').click();
